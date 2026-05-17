@@ -360,6 +360,19 @@ option shapes, real database connectivity, broad `wpdb`, persistent cache,
 full WordPress option APIs, plugins/themes, request/SAPI fidelity,
 references/copy-on-write, or native support.
 
+After Milestone 1314, the placeholder MySQLi `wp_options` state island also
+supports the exact
+`DELETE FROM wp_options WHERE option_name IN (...)` shape, including the
+current backticked table/column spelling and the no-params
+`mysqli_execute_query($handle, $query)` path. A committed transient-shaped
+`wpdb`/object-cache fixture proves deleting a transient value row and timeout
+row from deterministic option state while clearing the bounded in-memory cache
+slot. This is executable evidence for one bounded transient cleanup shape
+only; it does not claim arbitrary `DELETE` SQL, prepared name-list binding,
+real MySQL, persistent object cache, broad `wpdb`, full WordPress option or
+transient APIs, plugins/themes, request/SAPI fidelity, references/copy-on-write,
+or native support.
+
 After Milestone 1273, `phpc run` tracks whether response headers are still open
 or whether bytes have reached unbuffered stdout. The current
 `headers_sent($file, $line)` slice writes direct-variable filename and line

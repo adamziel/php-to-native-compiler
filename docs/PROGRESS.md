@@ -4,6 +4,170 @@
 
 Implemented:
 
+- Added Milestone 1315, the WordPress-focused queue refresh after the
+  integrated Milestones 1311-1314 batch. `GOAL.MD` now keeps the current
+  parallel focus on the newly closed slices: public `__destruct()` shutdown
+  behavior, nested by-reference `foreach` over direct array/request-bag paths,
+  local `filemtime()` metadata, and exact `wp_options` option-name-list
+  deletes over the placeholder MySQLi state island. `docs/NEXT_TASKS.md` opens
+  Milestones 1316-1319 for the next four implementation lanes and Milestone
+  1320 for the next queue refresh; `docs/LANE_WORKERS.md` points workers at
+  the same larger missing subsystems: object/interface semantics, general
+  references/COW, request/SAPI/filesystem/stream behavior, and executable
+  WordPress database/bootstrap evidence. Manual full gate passed before
+  checkpoint: `cargo test` completed successfully, `phpc test` reported
+  `1428` fixture tests passed with `0` failures, and `phpc test
+  --compare-php` reported `1428` fixture tests passed with `0` failures,
+  `820` system PHP comparisons, and `608` skipped `phpc-only` fixtures.
+
+- Added Milestone 1312, a bounded reference/COW WordPress blocker slice for
+  by-reference iteration over nested direct array/request-bag paths. The
+  interpreter now represents by-reference `foreach` roots as a direct symbol or
+  root-global symbol plus a nested key path, so
+  `foreach ($items["outer"] as &$value)`,
+  `foreach ($_REQUEST["payload"] as &$value)`, and
+  `foreach ($GLOBALS["bag"]["child"] as &$value)` route the loop value to the
+  selected nested array slot. The slice preserves loop-body mutation, appended
+  tail visitation, post-loop lingering aliases, `unset($value)` detachment,
+  and function-scope request-bag mutation for the committed
+  `milestone1312` fixture. This does not implement full PHP reference
+  containers, broad copy-on-write, object-property or ArrayAccess iterable
+  roots, reference-returning call iterables, exact warning/notice behavior, or
+  native lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=target/focused-1312-refcow CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  foreach foreach_by_reference_mutates_nested_array_and_global_request_paths
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  foreach -- --test-threads=1` passed with `19` tests; `cargo run -q -p
+  phpc -- test tests/fixtures/milestone1312` passed with `1` fixture; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1312/nested_reference_foreach_paths.php` printed
+  `one:a|two:b|three:c|three:c`, `tail|tail`, `x=ex|y=why|y=why`, and
+  `alpha|changed`; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1312` passed with `1` system PHP comparison and `0`
+  skips; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1312` reported `1` passed fixture, `1` comparison,
+  and `0` skips; `cargo run -q -p phpc -- test --list-fixtures
+  tests/fixtures/milestone1312` reported `1` fixture, `1` CLI exercise, `0`
+  missing expectation sidecars, `0` unrecognized sidecars, and `0`
+  `.phpc-only` reason gaps. The updated older `milestone747`
+  by-reference-foreach boundary fixture also passed under `cargo run -q -p
+  phpc -- test tests/fixtures/milestone747` and `cargo run -q -p phpc --
+  test --compare-php tests/fixtures/milestone747` with `1` compared fixture
+  and `1` `.phpc-only` skip; `cargo fmt --check` passed; and `git diff
+  --check -- README.md compiler/src/interpreter.rs
+  compiler/tests/foreach.rs docs/ARCHITECTURE.md docs/NEXT_TASKS.md
+  docs/PROGRESS.md docs/SUPPORT.md tests/fixtures/milestone747
+  tests/fixtures/milestone1312` passed. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1311, a bounded object lifecycle slice for WordPress-facing
+  class semantics. `phpc run` now tracks successfully allocated objects whose
+  class declares or inherits a public non-static no-argument `__destruct`
+  method, including current shallow clones, and runs those destructors during
+  normal script shutdown and after `exit` in reverse allocation order. The
+  committed Milestone 1311 fixture proves inherited destructor dispatch and
+  cloned object destructor ordering against system PHP. This does not implement
+  static/private/protected destructors, destructor parameters, destructor
+  execution on runtime-error paths, exact PHP fatal/shutdown/GC ordering,
+  cyclic garbage collection, handle reuse, `__clone` dispatch, full
+  references/copy-on-write, or native lowering. Focused verification passed
+  with `CARGO_TARGET_DIR=target/focused-1311-object CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  object_model public_destructors_run_at_shutdown_for_allocated_objects --
+  --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  object_model -- --test-threads=1` passed with `233` tests; `cargo run -q -p
+  phpc -- test tests/fixtures/milestone1311` passed with `1` fixture; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1311/object_shutdown_destructors.php` printed
+  `construct:first`, `construct:second`, `body`, `destruct:copy`,
+  `destruct:second`, and `destruct:first`; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1311` passed with `1` system PHP
+  comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1311` reported `1` passed
+  fixture, `1` comparison, and `0` skips; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1311` reported `1` fixture, `1` CLI
+  exercise, `0` missing expectation sidecars, `0` unrecognized sidecars, and
+  `0` `.phpc-only` reason gaps; and `cargo fmt --check` passed. Full
+  gate/checkpoint deferred until integration.
+
+- Added Milestone 1314, a bounded WordPress database/bootstrap evidence slice.
+  The placeholder MySQLi `wp_options` state island now supports the exact
+  `DELETE FROM wp_options WHERE option_name IN (...)` shape, including the
+  current backticked table/column spelling, deterministic affected-row
+  metadata, duplicate requested-name de-duplication, skipped missing names,
+  and the no-params `mysqli_execute_query($handle, $query)` path. A committed
+  Milestone 1314 transient-shaped `wpdb`/object-cache fixture proves deleting
+  deterministic transient value and timeout option rows while clearing the
+  bounded in-memory cache slot. This does not add real MySQL connectivity,
+  arbitrary SQL, arbitrary predicates or subqueries, prepared name-list
+  binding, persistent object cache, broad `wpdb`, full WordPress option or
+  transient APIs, plugin/theme loading, request/SAPI fidelity,
+  references/copy-on-write, or native lowering. Focused verification passed
+  with `CARGO_TARGET_DIR=target/focused-1314-wpdb CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  mysqli_extension
+  mysqli_query_deletes_current_wordpress_option_name_lists_from_state -- --test-threads=1`
+  passed with `1` test; `cargo test -p phpc --test mysqli_extension
+  wordpress_option -- --test-threads=1` passed with `32` tests; `cargo run
+  -q -p phpc -- test tests/fixtures/milestone1314` passed with `1` fixture;
+  direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1314/mysqli_wp_options_transient_name_list_delete_state.php`
+  printed
+  `cached-feed:cache|deleted:2|cache-miss|rows=siteurl=https://example.test`;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1314`
+  passed with `1` fixture, `0` system PHP comparisons, and `1`
+  `.phpc-only` skip;
+  `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1314` reported `1` passed fixture, `0` PHP
+  comparisons, and `1` `.phpc-only` skip; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1314` reported `1` fixture, `1`
+  CLI exercise, `0` missing expectation sidecars, `0` unrecognized sidecars,
+  and `0` `.phpc-only` reason gaps; `cargo fmt` was applied after
+  `cargo fmt --check` reported one wrapping diff, and the follow-up
+  `cargo fmt --check` passed; `git diff --check -- compiler/src/interpreter.rs
+  compiler/tests/mysqli_extension.rs docs/ARCHITECTURE.md docs/NEXT_TASKS.md
+  docs/SUPPORT.md docs/WORDPRESS_COMPATIBILITY.md docs/extensions/mysqli.md
+  tests/fixtures/milestone1314` passed. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1313, a bounded WordPress request/filesystem stat metadata
+  slice. `phpc run` now exposes `filemtime($path)` for one string local path,
+  using the existing process-path-then-repository-root local path policy and
+  returning the host filesystem modification time as a Unix-timestamp integer
+  for existing local entries. Missing paths return `false`, stream-wrapper
+  paths reject with a stable runtime boundary, string-valued dynamic calls can
+  resolve `filemtime`, and native function-table introspection recognizes the
+  name while direct native calls still reject under the existing function-call
+  lowering boundary. The committed Milestone 1313 fixture proves the supported
+  existing-file path against system PHP and uses PHP error-control only around
+  the missing-path assertion because exact warning emission remains
+  unsupported. This does not implement include-path metadata lookup,
+  stream-wrapper metadata, `php://temp`, stream resources, PHP stat-cache
+  behavior, `open_basedir`, exact warning fidelity, non-UTF-8 paths,
+  pre-Unix-epoch timestamps, oversized timestamps beyond the current signed
+  64-bit integer subset, references/copy-on-write, or native filesystem
+  metadata lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=target/focused-1313-sapi CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  filemtime_builtin -- --test-threads=1` passed with `5` tests; `cargo fmt
+  --check` passed; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1313` passed with `1` fixture; direct `cargo run -q
+  -p phpc -- run
+  tests/fixtures/milestone1313/filemtime_local_metadata.php` printed
+  `mtime-ok|yes|callable|repeat|missing-false`; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1313` passed with `1` system PHP
+  comparison and `0` skips; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1313` reported `1` passed fixture, `1` comparison,
+  and `0` skips; `cargo run -q -p phpc -- test --list-fixtures
+  tests/fixtures/milestone1313` reported `1` fixture, `1` CLI exercise, `0`
+  missing expectation sidecars, `0` unrecognized sidecars, and `0`
+  `.phpc-only` reason gaps; and `git diff --check -- compiler/src/interpreter.rs
+  compiler/src/codegen.rs compiler/tests/filemtime_builtin.rs README.md
+  docs/ARCHITECTURE.md docs/NEXT_TASKS.md docs/PROGRESS.md docs/SUPPORT.md
+  tests/fixtures/milestone1313` passed. Full gate/checkpoint deferred until
+  integration.
+
 - Added Milestone 1310, the WordPress-focused queue refresh after the
   integrated Milestones 1306-1309 batch. `GOAL.MD` now keeps the current
   parallel focus on the newly closed slices: declared class/interface method

@@ -523,16 +523,19 @@
   direct non-reference-returning function calls returning arrays; those route
   the loop value variable to an internal temporary array slot and preserve
   PHP's post-loop lingering reference behavior without mutating a source
-  variable. Direct string-keyed `$GLOBALS` roots, such as
-  `foreach ($GLOBALS["bag"] as $key => &$value)`, also route the loop value to
-  the selected root global array slot, including from function scope. After
-  loop completion the loop variable remains routed to the last
+  variable. Direct array-offset paths such as
+  `foreach ($items["child"] as &$value)`, auto-global/request-bag paths such as
+  `foreach ($_REQUEST["payload"] as &$value)`, and string-keyed `$GLOBALS`
+  paths such as `foreach ($GLOBALS["bag"]["child"] as $key => &$value)` also
+  route the loop value to the selected nested array slot, including from
+  function scope for root superglobals. After loop completion the loop
+  variable remains routed to the last
   successfully iterated existing slot until `unset($value)` detaches it. Empty
   array iteration creates no lingering reference. This is still not full PHP
   by-reference iteration: broad array reordering/replacement semantics, full
   reference containers, copy-on-write, object/Traversable iteration, nested
-  lvalue iterables such as `$items[0]` or `$GLOBALS["bag"]["child"]`,
-  non-string-keyed `$GLOBALS` roots, reference-returning call iterables,
+  object-property or ArrayAccess iterables, non-string-keyed `$GLOBALS` roots,
+  reference-returning call iterables,
   foreach destructuring, array/object/ArrayAccess offset loop variables,
   nested-offset loop values, and native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
@@ -724,7 +727,12 @@
   name resolved through the current class table. Classes without `__construct`
   are supported only with no constructor arguments. Declared or inherited
   public instance `__construct` methods execute with scoped `$this`,
-  positional arguments, and the current default-parameter subset. Dynamic class
+  positional arguments, and the current default-parameter subset. Successfully
+  allocated objects whose class declares or inherits a public non-static
+  no-argument `__destruct` method run that destructor during normal script
+  shutdown, including after `exit`, in reverse allocation order for the current
+  allocated-object queue; cloned objects without `__clone` are also queued for
+  the same shutdown destructor path. Dynamic class
   variables with non-string values report a stable runtime boundary, and
   dynamic strings naming missing classes use the current undefined-class
   diagnostic. Instantiating an abstract class reports a stable runtime boundary;
@@ -976,7 +984,7 @@
   `rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
-  `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `filesize`,
+  `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
@@ -1581,11 +1589,14 @@
   placeholder `mysqli` object, string query, and optional PHP list scalar/null
   params array for the same exact known placeholder SQL shapes. It returns a
   placeholder `mysqli_result` for deterministic SELECT placeholders and
-  `true` for current deterministic no-result shapes, and rejects params arrays
-  whose length does not match the query `?` placeholder count. This is not
+  `true` for current deterministic no-result shapes and for the exact
+  no-placeholder `DELETE FROM wp_options WHERE option_name IN (...)` state
+  island shape, and rejects params arrays whose length does not match the
+  query `?` placeholder count. This is not
   broad prepared SQL execution, named params-array support, hidden statement
-  status-copy fidelity, mutation SQL, host database state, PHP warning/error
-  fidelity, mysqlnd behavior, or native statement lowering.
+  status-copy fidelity, mutation SQL beyond that exact option-name-list
+  delete shape, host database state, PHP warning/error fidelity, mysqlnd
+  behavior, or native statement lowering.
   `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable
   names for the current known placeholder statement result shape, and
   `mysqli_stmt_fetch($statement)` copies buffered placeholder row values into
@@ -1750,7 +1761,11 @@
   same affected-row behavior, accepts a later
   exact `DELETE FROM wp_options WHERE option_name = ...` by removing existing
   recorded options with `mysqli_affected_rows($handle) === 1` and treating
-  missing option names as successful zero-row deletes, and lets a later
+  missing option names as successful zero-row deletes, accepts a later exact
+  `DELETE FROM wp_options WHERE option_name IN (...)` by removing each
+  distinct recorded option name in the single-quoted list and reporting the
+  number of removed rows, including through
+  `mysqli_execute_query($handle, $query)` with no params, and lets a later
   exact
   `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1`
   return the recorded value through the existing placeholder result/fetch
@@ -1802,7 +1817,8 @@
   arbitrary projection beyond exact option id/name/value/autoload/name-value/full-row/full-row-with-id shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
-  `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
+  `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond
+  exact option-name equality and option-name-list shapes, real
   transaction isolation/locking/savepoint behavior,
   host database execution, warning/error fidelity, PDO, broad
   prepared-statement mutation state, or native lowering. The current
@@ -2039,6 +2055,16 @@
   non-string coercions, non-UTF-8 paths, oversized file handling beyond the
   current signed 64-bit integer subset, partial-output behavior, and native
   lowering remain unsupported.
+  `filemtime($path)` accepts one string local path, rejects stream-wrapper
+  paths, returns the host modification time as a Unix-timestamp integer for
+  existing local filesystem entries, and returns `false` for missing paths. It
+  shares the same current relative path policy as `file_exists`. This is a
+  bounded WordPress request/filesystem stat metadata slice, not full PHP
+  filesystem support: include-path lookup, stream wrappers, PHP stat-cache
+  behavior, `open_basedir`, warning behavior, non-string coercions, non-UTF-8
+  paths, pre-Unix-epoch timestamps, oversized timestamps beyond the current
+  signed 64-bit integer subset, partial-output behavior, and native lowering
+  remain unsupported.
   `realpath($path)` accepts exactly one string local path, rejects
   stream-wrapper paths, resolves existing paths through the host filesystem,
   and returns the resolved path as a UTF-8 string. Missing or otherwise
@@ -3156,9 +3182,10 @@
   insertion order over a snapshot of the current entries and writes the current
   value to the direct loop variable in the active scope. `foreach ($array as
   $key => $value)` additionally writes the current integer or string key as an
-  `int` or `string` value to the direct key loop variable. By-reference value
-  iteration forms parse but remain runtime boundaries; they do not create
-  aliases, mutate array slots by reference, or model copy-on-write. Missing key reads
+  `int` or `string` value to the direct key loop variable. Bounded
+  by-reference value iteration is supported for the direct and nested array
+  roots documented above, but it still does not provide full PHP reference
+  containers or copy-on-write. Missing key reads
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`, `array_values`,
@@ -3784,7 +3811,7 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
-  `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `filesize`,
+  `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
@@ -4156,7 +4183,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
-  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `filesize`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
+  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -4334,7 +4361,7 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
-  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `filesize`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4837,6 +4864,13 @@
   still reject under the function-call boundary until native filesystem
   metadata, warning plus `false` recovery, stat-cache behavior,
   include_path/open_basedir policy, stream-wrapper handling,
+  references/copy-on-write, and exact native diagnostics exist, while native
+  function-table introspection recognizes the name.
+  `filemtime` accepts the same current one-string local modification-time
+  metadata subset as the builtin section above; direct native
+  `filemtime(...)` calls still reject under the function-call boundary until
+  native filesystem metadata, warning plus `false` recovery, stat-cache
+  behavior, include_path/open_basedir policy, stream-wrapper handling,
   references/copy-on-write, and exact native diagnostics exist, while native
   function-table introspection recognizes the name.
   `getcwd` accepts the same current no-argument UTF-8 process-current-dir slice
@@ -5543,12 +5577,18 @@
   `parent::__construct(...)` calls from instance context, execute in
   `phpc run` with scoped `$this`. Protected constructors are callable from
   same-class or child-class method context through `new ClassName(...)`.
+  Public non-static no-argument `__destruct` methods, including inherited
+  destructors, execute during normal shutdown for successfully allocated or
+  cloned objects that reached the current allocation tracker.
   Constructor arguments for classes without a constructor, private
   constructors without same-class construction context, protected constructors
   outside same-class/child-class construction context, static constructors,
-  constructor promotion, explicit parent calls outside active child instance
-  context, named arguments, references/copy-on-write, exact PHP
-  `Error`/`TypeError` object behavior, and native lowering remain unsupported.
+  static/private/protected destructors, destructor parameters, destructor
+  execution on runtime-error paths, cyclic garbage collection, exact object
+  lifetime and handle-reuse ordering, constructor promotion, explicit parent
+  calls outside active child instance context, named arguments,
+  references/copy-on-write, exact PHP `Error`/`TypeError` object behavior, and
+  native lowering remain unsupported.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,

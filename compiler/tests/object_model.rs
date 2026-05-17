@@ -6564,6 +6564,44 @@ echo $default->label();
 }
 
 #[test]
+fn public_destructors_run_at_shutdown_for_allocated_objects() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+        echo "construct:", $this->name, "\n";
+    }
+
+    public function __destruct() {
+        echo "destruct:", $this->name;
+        if ($this->name !== "first") {
+            echo "\n";
+        }
+    }
+}
+
+class Child extends Base {}
+
+$first = new Child("first");
+$second = new Child("second");
+$copy = clone $first;
+$copy->name = "copy";
+echo "body\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "construct:first\nconstruct:second\nbody\ndestruct:copy\ndestruct:second\ndestruct:first"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn parent_method_calls_execute_with_current_this_binding() {
     let execution = run_source(
         r#"<?php

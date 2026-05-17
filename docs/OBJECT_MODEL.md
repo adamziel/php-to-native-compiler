@@ -6,7 +6,10 @@ object-execution slice, not full PHP object execution.
 The current implementation parses top-level class declarations into metadata,
 including a single `extends Parent` link between declared classes, and can
 evaluate `new ClassName(...)` for declared classes, including public or
-inherited public instance `__construct` execution. It stores class identity
+inherited public instance `__construct` execution. Successfully allocated
+objects whose class declares or inherits a public non-static no-argument
+`__destruct` method are queued for shutdown destructor execution, including
+clones created through the current shallow clone slice. It stores class identity
 plus `null`
 instance-property slots for the exact class and inherited public/protected/private
 properties with declaring-class ownership. Compatible public/protected
@@ -303,11 +306,17 @@ to `null`, and then executes a declared or inherited public instance
 arguments use the current positional argument and default-parameter subset.
 Protected constructors can execute through `new ClassName(...)` from
 same-class or child-class method context.
+Public non-static no-argument destructors, including inherited destructors, run
+during normal script shutdown in reverse allocation order for objects reached
+by the current allocation tracker.
 Undefined classes, constructor arguments for classes without constructors,
 private constructors without same-class construction context, protected
 constructors outside same-class/child-class construction context, parent
 constructor calls outside active child instance context, and static
-constructors produce stable runtime errors.
+constructors produce stable runtime errors. Static, private, or protected
+destructors, destructor parameters, destructor execution on runtime-error
+paths, cyclic garbage collection, exact object lifetime ordering, handle reuse,
+and native lowering remain unsupported.
 
 The property syntax slice accepts `$object->name` reads and direct-variable
 `$object->name = <expr>` writes when `name` is a declared public instance
@@ -444,7 +453,7 @@ binding, magic methods beyond the current direct missing-property
 `__get`/`__isset`/`__set` slice, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic property
 semantics beyond current `stdClass` public slot materialization,
-cloning, destructors, serialization hooks, broader visibility enforcement,
+cloning beyond the current shallow clone/no-`__clone` slice, serialization hooks, broader visibility enforcement,
 `self`/`parent`/`static` beyond the current explicit self/parent method-call,
 class-constant, and static-property slices, constructor behavior beyond public/inherited public
 instance `__construct` and explicit parent calls, constructor arguments for classes without constructors,

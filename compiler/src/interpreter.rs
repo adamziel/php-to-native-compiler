@@ -129,6 +129,7 @@ struct Interpreter {
     execution_steps: usize,
     call_depth: usize,
     next_object_id: i64,
+    allocated_objects: Vec<PhpObject>,
     next_closure_id: i64,
     next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
@@ -184,8 +185,8 @@ struct ActiveForeachReference {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ForeachArrayRoot {
-    Static(String),
-    Global(String),
+    Static { name: String, keys: Vec<ArrayKey> },
+    Global { name: String, keys: Vec<ArrayKey> },
 }
 
 #[derive(Clone)]
@@ -890,24 +891,6 @@ impl SymbolTable {
         Ok(())
     }
 
-    fn bind_static_to_existing_global_array_offset(
-        &mut self,
-        target: &str,
-        global_name: &str,
-        key: ArrayKey,
-        span: Span,
-    ) -> CompileResult<()> {
-        let alias = ArrayOffsetAlias {
-            root: ArrayOffsetAliasRoot::GlobalArray {
-                name: global_name.to_string(),
-            },
-            keys: vec![key],
-        };
-        self.materialize_array_offset_alias(&alias, span)?;
-        self.bind_static_to_array_offset_alias(target, alias);
-        Ok(())
-    }
-
     fn bind_static_to_existing_nested_array_offset(
         &mut self,
         target: &str,
@@ -918,6 +901,24 @@ impl SymbolTable {
         let alias = ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::StaticArray {
                 name: array_name.to_string(),
+            },
+            keys,
+        };
+        self.materialize_array_offset_alias(&alias, span)?;
+        self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
+    fn bind_static_to_existing_global_nested_array_offset(
+        &mut self,
+        target: &str,
+        global_name: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::GlobalArray {
+                name: global_name.to_string(),
             },
             keys,
         };
@@ -1094,23 +1095,32 @@ impl SymbolTable {
         array_name: &str,
         key: &ArrayKey,
     ) -> bool {
+        self.is_static_bound_to_array_offset_path(target, array_name, std::slice::from_ref(key))
+    }
+
+    fn is_static_bound_to_array_offset_path(
+        &self,
+        target: &str,
+        array_name: &str,
+        keys: &[ArrayKey],
+    ) -> bool {
         matches!(
             self.array_offset_aliases.get(target),
             Some(aliases) if aliases.iter().any(|alias| matches!(
                 alias,
                 ArrayOffsetAlias {
                     root: ArrayOffsetAliasRoot::StaticArray { name },
-                    keys,
-                } if name == array_name && keys.as_slice() == std::slice::from_ref(key)
+                    keys: alias_keys,
+                } if name == array_name && alias_keys.as_slice() == keys
             ))
         )
     }
 
-    fn is_static_bound_to_global_array_offset(
+    fn is_static_bound_to_global_array_offset_path(
         &self,
         target: &str,
         global_name: &str,
-        key: &ArrayKey,
+        keys: &[ArrayKey],
     ) -> bool {
         matches!(
             self.array_offset_aliases.get(target),
@@ -1118,8 +1128,8 @@ impl SymbolTable {
                 alias,
                 ArrayOffsetAlias {
                     root: ArrayOffsetAliasRoot::GlobalArray { name },
-                    keys,
-                } if name == global_name && keys.as_slice() == std::slice::from_ref(key)
+                    keys: alias_keys,
+                } if name == global_name && alias_keys.as_slice() == keys
             ))
         )
     }
@@ -2209,11 +2219,17 @@ fn bind_foreach_lingering_reference(
 ) -> CompileResult<()> {
     if let Some(key) = key {
         match root {
-            ForeachArrayRoot::Static(array_name) => {
-                scope.bind_static_to_existing_array_offset(value, array_name, key, span)?;
+            ForeachArrayRoot::Static { name, keys } => {
+                let mut alias_keys = keys.clone();
+                alias_keys.push(key);
+                scope.bind_static_to_existing_nested_array_offset(value, name, alias_keys, span)?;
             }
-            ForeachArrayRoot::Global(global_name) => {
-                scope.bind_static_to_existing_global_array_offset(value, global_name, key, span)?;
+            ForeachArrayRoot::Global { name, keys } => {
+                let mut alias_keys = keys.clone();
+                alias_keys.push(key);
+                scope.bind_static_to_existing_global_nested_array_offset(
+                    value, name, alias_keys, span,
+                )?;
             }
         }
     }
@@ -2452,6 +2468,7 @@ impl Interpreter {
             execution_steps: 0,
             call_depth: 0,
             next_object_id: 1,
+            allocated_objects: Vec::new(),
             next_closure_id: 1,
             next_foreach_temp_id: 1,
             active_foreach_references: Vec::new(),
@@ -2495,6 +2512,120 @@ impl Interpreter {
                 _ => true,
             },
             _ => false,
+        }
+    }
+
+    fn by_reference_foreach_root(
+        &mut self,
+        iterable: &Expr,
+        scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<ForeachArrayRoot> {
+        match iterable {
+            Expr::Variable(name, _) => Ok(ForeachArrayRoot::Static {
+                name: name.clone(),
+                keys: Vec::new(),
+            }),
+            Expr::Index { target, index, .. } => {
+                if let Some((name, indices)) =
+                    Self::collect_direct_variable_array_index_path(target, index)
+                {
+                    let mut keys = Vec::with_capacity(indices.len());
+                    for index in indices {
+                        keys.push(self.evaluate_array_key(index, scope)?);
+                    }
+
+                    if name == "GLOBALS" {
+                        let (global_name, keys) =
+                            SymbolTable::split_globals_reference_path(keys, span)?;
+                        return Ok(ForeachArrayRoot::Global {
+                            name: global_name,
+                            keys,
+                        });
+                    }
+
+                    return Ok(ForeachArrayRoot::Static {
+                        name: name.to_string(),
+                        keys,
+                    });
+                }
+
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "foreach",
+                        "by-reference iteration currently requires a direct array variable, direct array-offset path, string-keyed $GLOBALS path, or temporary array expression",
+                    ),
+                ))
+            }
+            expr if self.is_temporary_by_reference_foreach_iterable(expr) => {
+                let value = self.evaluate(expr, scope)?;
+                let Value::Array(array) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_foreach(format!(
+                            "can only iterate arrays in the current subset, got {}",
+                            value.type_name()
+                        )),
+                    ));
+                };
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Array(array));
+                Ok(ForeachArrayRoot::Static {
+                    name: temp_name,
+                    keys: Vec::new(),
+                })
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "foreach",
+                    "by-reference iteration currently requires a direct array variable, direct array-offset path, string-keyed $GLOBALS path, or temporary array expression",
+                ),
+            )),
+        }
+    }
+
+    fn read_foreach_root_array(
+        root: &ForeachArrayRoot,
+        scope: &SymbolTable,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let (_name, keys, value) = match root {
+            ForeachArrayRoot::Static { name, keys } => {
+                let value = scope.read_static(name, span)?;
+                (name.as_str(), keys.as_slice(), value)
+            }
+            ForeachArrayRoot::Global { name, keys } => {
+                let Some(value) = scope.read_global_name(name) else {
+                    return Err(runtime_error(span, RuntimeError::undefined_variable(name)));
+                };
+                (name.as_str(), keys.as_slice(), value)
+            }
+        };
+
+        let value = if keys.is_empty() {
+            value
+        } else {
+            Self::array_path_value(&value, keys).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::invalid_foreach(
+                        "can only iterate arrays in the current subset, got null".to_string(),
+                    ),
+                )
+            })?
+        };
+
+        match value {
+            Value::Array(array) => Ok(array),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_foreach(format!(
+                    "can only iterate arrays in the current subset, got {}",
+                    other.type_name()
+                )),
+            )),
         }
     }
 
@@ -2869,6 +3000,7 @@ impl Interpreter {
         let mut scope = SymbolTable::from_root(self.global_symbols.clone());
         match self.execute_statements(&program.statements, &mut scope)? {
             Flow::Normal | Flow::Return(_) => {
+                self.run_shutdown_destructors()?;
                 self.flush_output_buffers();
                 Ok(Execution {
                     stdout: self.stdout.clone(),
@@ -2877,6 +3009,7 @@ impl Interpreter {
                 })
             }
             Flow::Exit(code) => {
+                self.run_shutdown_destructors()?;
                 self.flush_output_buffers();
                 Ok(Execution {
                     stdout: self.stdout.clone(),
@@ -3171,157 +3304,35 @@ impl Interpreter {
                 span,
             } => {
                 if *by_reference {
-                    let root = match iterable {
-                        Expr::Variable(name, _) => ForeachArrayRoot::Static(name.clone()),
-                        Expr::Index {
-                            target,
-                            index,
-                            span: index_span,
-                        } if matches!(target.as_ref(), Expr::Variable(name, _) if name == "GLOBALS") =>
-                        {
-                            let key = self.evaluate_array_key(index, scope)?;
-                            let Some(global_name) = globals_offset_name(&key) else {
-                                return Err(runtime_error(
-                                    *index_span,
-                                    RuntimeError::unsupported_call(
-                                        "$GLOBALS",
-                                        "by-reference foreach currently requires a string-keyed direct $GLOBALS root",
-                                    ),
-                                ));
-                            };
-                            ForeachArrayRoot::Global(global_name.to_string())
-                        }
-                        expr if self.is_temporary_by_reference_foreach_iterable(expr) => {
-                            let value = self.evaluate(expr, scope)?;
-                            let Value::Array(array) = value else {
-                                return Err(runtime_error(
-                                    *span,
-                                    RuntimeError::invalid_foreach(format!(
-                                        "can only iterate arrays in the current subset, got {}",
-                                        value.type_name()
-                                    )),
-                                ));
-                            };
-                            let temp_name = self.next_foreach_temporary_array_name();
-                            scope.write_static(&temp_name, Value::Array(array));
-                            ForeachArrayRoot::Static(temp_name)
-                        }
-                        _ => {
-                            return Err(runtime_error(
-                                *span,
-                                RuntimeError::unsupported_call(
-                                    "foreach",
-                                    "by-reference iteration currently requires a direct array variable, string-keyed $GLOBALS root, or temporary array expression",
-                                ),
-                            ));
-                        }
-                    };
-                    match &root {
-                        ForeachArrayRoot::Static(array_name) => {
-                            match scope.read_static(array_name, *span)? {
-                                Value::Array(_) => {}
-                                other => {
-                                    return Err(runtime_error(
-                                        *span,
-                                        RuntimeError::invalid_foreach(format!(
-                                            "can only iterate arrays in the current subset, got {}",
-                                            other.type_name()
-                                        )),
-                                    ));
-                                }
-                            }
-                        }
-                        ForeachArrayRoot::Global(global_name) => {
-                            match scope.read_global_name(global_name) {
-                                Some(Value::Array(_)) => {}
-                                Some(other) => {
-                                    return Err(runtime_error(
-                                        *span,
-                                        RuntimeError::invalid_foreach(format!(
-                                            "can only iterate arrays in the current subset, got {}",
-                                            other.type_name()
-                                        )),
-                                    ));
-                                }
-                                None => {
-                                    return Err(runtime_error(
-                                        *span,
-                                        RuntimeError::undefined_variable(global_name),
-                                    ));
-                                }
-                            }
-                        }
-                    }
+                    let root = self.by_reference_foreach_root(iterable, scope, *span)?;
+                    Self::read_foreach_root_array(&root, scope, *span)?;
                     let mut position = 0usize;
                     let mut lingering_reference_key = None;
 
                     loop {
-                        let entry_key = match &root {
-                            ForeachArrayRoot::Static(array_name) => {
-                                match scope.read_static(array_name, *span)? {
-                                    Value::Array(array) => {
-                                        let Some(entry) = array.entries().get(position) else {
-                                            break;
-                                        };
-                                        entry.key.clone()
-                                    }
-                                    other => {
-                                        return Err(runtime_error(
-                                            *span,
-                                            RuntimeError::invalid_foreach(format!(
-                                            "can only iterate arrays in the current subset, got {}",
-                                            other.type_name()
-                                        )),
-                                        ));
-                                    }
-                                }
-                            }
-                            ForeachArrayRoot::Global(global_name) => {
-                                match scope.read_global_name(global_name) {
-                                    Some(Value::Array(array)) => {
-                                        let Some(entry) = array.entries().get(position) else {
-                                            break;
-                                        };
-                                        entry.key.clone()
-                                    }
-                                    Some(other) => {
-                                        return Err(runtime_error(
-                                            *span,
-                                            RuntimeError::invalid_foreach(format!(
-                                            "can only iterate arrays in the current subset, got {}",
-                                            other.type_name()
-                                        )),
-                                        ));
-                                    }
-                                    None => {
-                                        return Err(runtime_error(
-                                            *span,
-                                            RuntimeError::undefined_variable(global_name),
-                                        ));
-                                    }
-                                }
-                            }
+                        let array = Self::read_foreach_root_array(&root, scope, *span)?;
+                        let Some(entry) = array.entries().get(position) else {
+                            break;
                         };
+                        let entry_key = entry.key.clone();
                         self.tick(*span)?;
 
                         if let Some(key) = key {
                             scope.write_static(key, value_from_array_key(&entry_key));
                         }
                         match &root {
-                            ForeachArrayRoot::Static(array_name) => {
-                                scope.bind_static_to_existing_array_offset(
-                                    value,
-                                    array_name,
-                                    entry_key.clone(),
-                                    *span,
+                            ForeachArrayRoot::Static { name, keys } => {
+                                let mut alias_keys = keys.clone();
+                                alias_keys.push(entry_key.clone());
+                                scope.bind_static_to_existing_nested_array_offset(
+                                    value, name, alias_keys, *span,
                                 )?;
                             }
-                            ForeachArrayRoot::Global(global_name) => {
-                                scope.bind_static_to_existing_global_array_offset(
-                                    value,
-                                    global_name,
-                                    entry_key.clone(),
-                                    *span,
+                            ForeachArrayRoot::Global { name, keys } => {
+                                let mut alias_keys = keys.clone();
+                                alias_keys.push(entry_key.clone());
+                                scope.bind_static_to_existing_global_nested_array_offset(
+                                    value, name, alias_keys, *span,
                                 )?;
                             }
                         }
@@ -3335,93 +3346,39 @@ impl Interpreter {
                         let flow = flow_result?;
 
                         let value_still_bound = match &root {
-                            ForeachArrayRoot::Static(array_name) => {
-                                scope.is_static_bound_to_array_offset(value, array_name, &entry_key)
+                            ForeachArrayRoot::Static { name, keys } => {
+                                let mut alias_keys = keys.clone();
+                                alias_keys.push(entry_key.clone());
+                                scope.is_static_bound_to_array_offset_path(value, name, &alias_keys)
                             }
-                            ForeachArrayRoot::Global(global_name) => scope
-                                .is_static_bound_to_global_array_offset(
+                            ForeachArrayRoot::Global { name, keys } => {
+                                let mut alias_keys = keys.clone();
+                                alias_keys.push(entry_key.clone());
+                                scope.is_static_bound_to_global_array_offset_path(
                                     value,
-                                    global_name,
-                                    &entry_key,
-                                ),
+                                    name,
+                                    &alias_keys,
+                                )
+                            }
                         };
-                        let next_position = match &root {
-                            ForeachArrayRoot::Static(array_name) => match scope
-                                .read_static(array_name, *span)?
-                            {
-                                Value::Array(array) => {
-                                    let current_position = array
-                                        .entries()
-                                        .iter()
-                                        .position(|entry| entry.key == entry_key);
-                                    lingering_reference_key =
-                                        if value_still_bound && current_position.is_some() {
-                                            Some(entry_key.clone())
-                                        } else {
-                                            None
-                                        };
-                                    match current_position {
-                                        Some(current_position) if current_position > position => {
-                                            position
-                                        }
-                                        Some(current_position) => current_position + 1,
-                                        None => {
-                                            lingering_reference_key = None;
-                                            position
-                                        }
-                                    }
-                                }
-                                other => {
-                                    return Err(runtime_error(
-                                        *span,
-                                        RuntimeError::invalid_foreach(format!(
-                                            "can only iterate arrays in the current subset, got {}",
-                                            other.type_name()
-                                        )),
-                                    ));
-                                }
-                            },
-                            ForeachArrayRoot::Global(global_name) => match scope
-                                .read_global_name(global_name)
-                            {
-                                Some(Value::Array(array)) => {
-                                    let current_position = array
-                                        .entries()
-                                        .iter()
-                                        .position(|entry| entry.key == entry_key);
-                                    lingering_reference_key =
-                                        if value_still_bound && current_position.is_some() {
-                                            Some(entry_key.clone())
-                                        } else {
-                                            None
-                                        };
-                                    match current_position {
-                                        Some(current_position) if current_position > position => {
-                                            position
-                                        }
-                                        Some(current_position) => current_position + 1,
-                                        None => {
-                                            lingering_reference_key = None;
-                                            position
-                                        }
-                                    }
-                                }
-                                Some(other) => {
-                                    return Err(runtime_error(
-                                        *span,
-                                        RuntimeError::invalid_foreach(format!(
-                                            "can only iterate arrays in the current subset, got {}",
-                                            other.type_name()
-                                        )),
-                                    ));
-                                }
-                                None => {
-                                    return Err(runtime_error(
-                                        *span,
-                                        RuntimeError::undefined_variable(global_name),
-                                    ));
-                                }
-                            },
+                        let array = Self::read_foreach_root_array(&root, scope, *span)?;
+                        let current_position = array
+                            .entries()
+                            .iter()
+                            .position(|entry| entry.key == entry_key);
+                        lingering_reference_key = if value_still_bound && current_position.is_some()
+                        {
+                            Some(entry_key.clone())
+                        } else {
+                            None
+                        };
+                        let next_position = match current_position {
+                            Some(current_position) if current_position > position => position,
+                            Some(current_position) => current_position + 1,
+                            None => {
+                                lingering_reference_key = None;
+                                position
+                            }
                         };
                         position = next_position;
 
@@ -4132,7 +4089,12 @@ impl Interpreter {
             .iter()
             .rev()
             .find(|active| {
-                active.root == ForeachArrayRoot::Static(name.to_string()) && active.key == key
+                active.root
+                    == (ForeachArrayRoot::Static {
+                        name: name.to_string(),
+                        keys: Vec::new(),
+                    })
+                    && active.key == key
             })
             .and_then(|active| {
                 scope
@@ -4727,6 +4689,7 @@ impl Interpreter {
                     ),
                 ));
             }
+            self.track_allocated_object(&object);
             return Ok(Value::Object(object));
         };
 
@@ -4781,6 +4744,7 @@ impl Interpreter {
             reference_bindings,
             Some(scope),
         )?;
+        self.track_allocated_object(&object);
         Ok(Value::Object(object))
     }
 
@@ -4881,6 +4845,69 @@ impl Interpreter {
         object_id
     }
 
+    fn track_allocated_object(&mut self, object: &PhpObject) {
+        if self
+            .resolve_instance_method(object.class_id(), "__destruct")
+            .is_some()
+        {
+            self.allocated_objects.push(object.clone());
+        }
+    }
+
+    fn run_shutdown_destructors(&mut self) -> CompileResult<()> {
+        let mut destructed = HashSet::new();
+        while let Some(object) = self.allocated_objects.pop() {
+            if !destructed.insert(object.id()) {
+                continue;
+            }
+
+            let Some((class_id, class_name, method_name, visibility, is_static)) =
+                self.resolve_instance_method(object.class_id(), "__destruct")
+            else {
+                continue;
+            };
+            let span = self
+                .methods
+                .get(&(class_id, method_name.to_ascii_lowercase()))
+                .map(|function| function.span)
+                .unwrap_or(Span::new(1, 1));
+
+            if is_static {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::{method_name}()"),
+                        "static destructors are not implemented",
+                    ),
+                ));
+            }
+
+            self.ensure_instance_method_visible(
+                class_id,
+                &class_name,
+                &method_name,
+                visibility,
+                span,
+            )?;
+            let function = self.method_function(class_id, &class_name, &method_name, span)?;
+            let function = function.as_ref();
+            ensure_user_function_arity(function, 0, span)?;
+            ensure_supported_function_signature(function, 0, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            self.call_user_function_with_checked_values(
+                function,
+                Vec::new(),
+                Some(object),
+                Some(class_id),
+                Some(class_id),
+                Vec::new(),
+                None,
+            )?;
+        }
+
+        Ok(())
+    }
+
     fn evaluate_clone_expression(
         &mut self,
         expr: &Expr,
@@ -4912,7 +4939,9 @@ impl Interpreter {
         }
 
         let object_id = self.allocate_object_id();
-        Ok(Value::Object(object.shallow_clone_with_id(object_id)))
+        let clone = object.shallow_clone_with_id(object_id);
+        self.track_allocated_object(&clone);
+        Ok(Value::Object(clone))
     }
 
     fn inherited_instance_properties(
@@ -9485,6 +9514,14 @@ impl Interpreter {
             return Ok(Value::Bool(true));
         }
 
+        if let Some(option_names) = parse_wordpress_option_delete_names_query(&query) {
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = delete_wordpress_options_by_names(options, &option_names);
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
         if is_mysqli_mutation_query(&query) {
             return Err(runtime_error(
                 span,
@@ -10003,6 +10040,14 @@ impl Interpreter {
                 } else {
                     0
                 };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
+        if let Some(option_names) = parse_wordpress_option_delete_names_query(query) {
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = delete_wordpress_options_by_names(options, &option_names);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
                 return Ok(Value::Bool(true));
             }
@@ -19091,6 +19136,64 @@ impl Interpreter {
                     )),
                 }
             }
+            "filemtime" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(path) => {
+                        if path.contains("://") {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "filemtime()",
+                                    "stream wrappers are not supported in the current subset",
+                                ),
+                            ));
+                        }
+                        let metadata_path = local_filesystem_metadata_path(path);
+                        let Ok(metadata) = fs::metadata(&metadata_path) else {
+                            return Ok(Value::Bool(false));
+                        };
+                        let modified = metadata.modified().map_err(|error| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "filemtime()",
+                                    format!("filesystem modification-time lookup failed: {error}"),
+                                ),
+                            )
+                        })?;
+                        let timestamp = modified.duration_since(UNIX_EPOCH).map_err(|_| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "filemtime()",
+                                    "file modification time before the Unix epoch is not supported in the current subset",
+                                ),
+                            )
+                        })?;
+                        let seconds = i64::try_from(timestamp.as_secs()).map_err(|_| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "filemtime()",
+                                    "file modification time exceeds the current signed 64-bit integer subset",
+                                ),
+                            )
+                        })?;
+                        Ok(Value::Int(seconds))
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "filemtime()",
+                            format!(
+                                "path argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "realpath" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -24595,6 +24698,7 @@ fn is_builtin(name: &str) -> bool {
             | "file_exists"
             | "file_get_contents"
             | "filesize"
+            | "filemtime"
             | "realpath"
             | "getcwd"
             | "is_dir"
@@ -25359,6 +25463,15 @@ fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {
     Some(names[0].clone())
 }
 
+fn parse_wordpress_option_delete_names_query(query: &str) -> Option<Vec<String>> {
+    let query = query.trim();
+    let values = query
+        .strip_prefix("DELETE FROM wp_options WHERE option_name IN (")
+        .or_else(|| query.strip_prefix("DELETE FROM `wp_options` WHERE `option_name` IN ("))?
+        .strip_suffix(')')?;
+    parse_sql_single_quoted_list(values)
+}
+
 fn parse_wordpress_options_row_select_query(query: &str) -> Option<WordPressOptionsRowFilter> {
     let query = query.trim();
     let rest = query
@@ -25473,6 +25586,24 @@ fn wordpress_option_rows_for_filter(
             })
         })
         .collect()
+}
+
+fn delete_wordpress_options_by_names(
+    options: &mut HashMap<String, WordPressOptionState>,
+    option_names: &[String],
+) -> i64 {
+    let mut affected_rows = 0_i64;
+    let mut seen = Vec::new();
+    for option_name in option_names {
+        if seen.contains(option_name) {
+            continue;
+        }
+        seen.push(option_name.clone());
+        if options.remove(option_name).is_some() {
+            affected_rows += 1;
+        }
+    }
+    affected_rows
 }
 
 fn wordpress_option_name_value_autoload_rows_for_filter(

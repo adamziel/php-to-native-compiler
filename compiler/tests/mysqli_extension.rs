@@ -3812,6 +3812,43 @@ echo mysqli_affected_rows($handle);
 }
 
 #[test]
+fn mysqli_query_deletes_current_wordpress_option_name_lists_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_feed_mod', 'cached-feed', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_feed_mod', '123456', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+echo mysqli_query($handle, "DELETE FROM wp_options WHERE option_name IN ('_transient_feed_mod','_transient_timeout_feed_mod','missing','_transient_feed_mod')") ? "deleted" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+$transient = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name IN ('_transient_feed_mod','_transient_timeout_feed_mod','siteurl')");
+echo mysqli_num_rows($transient);
+echo "|";
+$row = mysqli_fetch_assoc($transient);
+echo $row["option_name"], "=", $row["option_value"];
+echo "|";
+mysqli_query($handle, "INSERT INTO `wp_options` (`option_name`, `option_value`, `autoload`) VALUES ('_transient_feed_mod', 'cached-again', 'no')");
+echo mysqli_execute_query($handle, "DELETE FROM `wp_options` WHERE `option_name` IN ('_transient_feed_mod','missing')") ? "execute-deleted" : "execute-failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+$again = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = '_transient_feed_mod' LIMIT 1");
+echo mysqli_num_rows($again);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "deleted|2|1|siteurl=https://example.test|execute-deleted|1|0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_reads_current_wordpress_option_rows_from_state() {
     let execution = run_source(
         r#"<?php

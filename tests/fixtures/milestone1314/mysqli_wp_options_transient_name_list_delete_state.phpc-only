@@ -1,0 +1,1 @@
+Uses the compiler's deterministic placeholder MySQLi wp_options state island rather than a real MySQL server.

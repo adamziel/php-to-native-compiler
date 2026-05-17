@@ -1,0 +1,12 @@
+run object_shutdown_destructors.php
+--- stdout begin ---
+construct:first
+construct:second
+body
+destruct:copy
+destruct:second
+destruct:first
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit 0

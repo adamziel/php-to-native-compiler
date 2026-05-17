@@ -31,8 +31,12 @@ assignment. Direct string-keyed `$GLOBALS['name'] =& $value` may also join the
 same bounded alias metadata used by covered direct array-offset references, so
 a selected root global, the source variable group, and the covered array slot
 observe the same value in the current top-level/root-symbol-table slice. This
-is still a materialized-symbol-table model, not PHP's full reference-backed
-alias, recursive `$GLOBALS` array, copy-on-write, dynamic global-name, or
+same alias metadata also backs the bounded by-reference `foreach` path for
+direct nested array-offset roots, request-bag roots such as
+`$_REQUEST["payload"]`, and string-keyed nested `$GLOBALS` paths such as
+`$GLOBALS["bag"]["child"]`. This is still a materialized-symbol-table model,
+not PHP's full reference-backed alias, recursive `$GLOBALS` array,
+copy-on-write, dynamic global-name, object-property/ArrayAccess iteration, or
 included-file scope model.
 `$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded in the
 same root symbol table and route direct function-scope reads and writes through
@@ -403,9 +407,10 @@ missing public-property names use the same magic route after the property
 expression resolves to a string or integer. Non-array roots, non-direct object
 expressions, inaccessible private/protected magic fallback fidelity, `__get()`
 returns of properties/offsets/expressions, dynamic non-public magic-property
-behavior, dynamic non-public append-source paths, `ArrayAccess` offsets, exact
-by-reference `foreach`, full reference containers, copy-on-write, and native
-lowering remain future work. Direct variable sources
+behavior, dynamic non-public append-source paths, `ArrayAccess` offsets,
+object-property by-reference `foreach` iterables, exact broad by-reference
+`foreach`, full reference containers, copy-on-write, and native lowering remain
+future work. Direct variable sources
 holding object values can also be assigned into direct array offsets under the
 existing object-handle value model. Direct free-function
 call sources have a narrow reference-return execution path when the function
@@ -1584,7 +1589,8 @@ integration. The interpreter has one narrow `wp_options` state island for exact
 WordPress-shaped option writes and reads, including direct option-value,
 autoload, option-name/option-value, exact value/autoload updates, and bounded
 full-row option-name/value/autoload result shapes with or without
-deterministic placeholder option IDs;
+deterministic placeholder option IDs, plus exact option-name equality and
+option-name-list deletes for current option/transient cleanup probes;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only no-op registration
@@ -1652,6 +1658,17 @@ non-UTF-8 paths, oversized file handling beyond the current signed 64-bit
 integer subset, and native filesystem lowering remain out of scope. Native
 function-table introspection recognizes the name, while direct native calls
 reject under the function-call boundary.
+`filemtime()` is interpreter-only for one string local path in the current
+runtime. It uses the same process-path-then-repo-root relative path policy as
+the other local metadata builtins, returns the host filesystem modification
+time as a Unix-timestamp integer for existing local entries, and returns
+`false` for missing paths. It rejects stream wrappers instead of modeling
+wrapper metadata. Include-path lookup, PHP stat-cache semantics,
+`open_basedir`, exact warnings, non-UTF-8 paths, pre-Unix-epoch timestamps,
+oversized timestamp handling beyond the current signed 64-bit integer subset,
+and native filesystem lowering remain out of scope. Native function-table
+introspection recognizes the name, while direct native calls reject under the
+function-call boundary.
 `realpath()` is interpreter-only for one string local path. It uses the same
 process-path-then-repo-root relative path policy as the metadata builtins,
 returns a UTF-8 resolved host path for existing local paths, and returns
@@ -1724,6 +1741,12 @@ Native function-table introspection still recognizes `filesize`, but native
 call execution still lacks filesystem metadata, warning plus `false` recovery,
 include_path/open_basedir/stat-cache policy, stream-wrapper handling,
 references/copy-on-write, and exact native diagnostics.
+Direct `filemtime(...)` calls reject through the native function-call
+boundary. Native function-table introspection still recognizes `filemtime`,
+but native call execution still lacks filesystem modification-time metadata,
+warning plus `false` recovery, include_path/open_basedir/stat-cache policy,
+stream-wrapper handling, references/copy-on-write, and exact native
+diagnostics.
 Direct `realpath(...)` calls reject through a dedicated native
 filesystem-canonicalization boundary before argument lowering or backend
 selection. Native function-table introspection still recognizes `realpath`, but
@@ -1978,6 +2001,10 @@ whose parameters/bodies use the existing function parser subset. `new
 ClassName(...)` can instantiate a declared class and execute a public or
 inherited public `__construct` method with `$this` bound to the new object
 handle. Classes without constructors still require no constructor arguments.
+Objects whose class declares or inherits a public non-static no-argument
+`__destruct` method are tracked after successful allocation and run during
+normal shutdown in reverse allocation order; current shallow clones are tracked
+as separate handles for that same destructor path.
 The allocated object stores class identity and `null` instance-property slots
 in inherited parent-to-child declaration order while skipping static
 properties. Compatible public/protected redeclarations share the inherited
@@ -2112,7 +2139,8 @@ visibility.
 Objects do not expose reflection, implement
 dynamic method/property names, broader `parent::`/`self::`/`static::`,
 typed/default property compatibility, broader inheritance/constructor
-semantics, `__clone` dispatch, destructor/reuse behavior, or exact PHP
+semantics, `__clone` dispatch, destructor behavior beyond the current normal
+shutdown public/no-argument slice, handle reuse behavior, or exact PHP
 lifecycle behavior.
 Named static method syntax through `ClassName::method(...)`,
 `$object::method(...)`, `$className::method(...)`, `self::method(...)`,

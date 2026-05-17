@@ -255,7 +255,9 @@ incorrect native code.
   `clone $object` for current object values without declared `__clone`
   methods, using fresh object handles, shallow-copied property slots, and
   bounded public-property plus context-aware non-public property reference-slot
-  mirroring for direct-variable clone assignments, plus bounded direct
+  mirroring for direct-variable clone assignments, shutdown execution of
+  public inherited or declared no-argument `__destruct` methods for allocated
+  and cloned objects in reverse allocation order, plus bounded direct
   object-property array-offset and append reference sources for named visible
   public, private `$this`, protected `$this`, and protected peer-object
   properties in valid method contexts,
@@ -392,11 +394,12 @@ receiver callback object-property array arguments, using
 broader aliasing, and full copy-on-write remain unsupported.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
-the loop. It also supports direct string-keyed `$GLOBALS["bag"]` roots, with
-loop-body mutation and post-loop lingering aliases to root global array slots.
-It is not exact PHP aliasing: broad mutation ordering, nested lvalue iterables,
-array slot cells, full reference containers, and copy-on-write remain
-unsupported.
+the loop. It also supports direct array-offset paths, request-bag paths such as
+`$_REQUEST["payload"]`, and string-keyed nested `$GLOBALS` paths such as
+`$GLOBALS["bag"]["child"]`, with loop-body mutation, appended tail visitation,
+and post-loop lingering aliases to selected array slots. It is not exact PHP
+aliasing: broad mutation ordering, object-property/ArrayAccess iterables, array
+slot cells, full reference containers, and copy-on-write remain unsupported.
 
 ### Native Path
 
@@ -429,6 +432,7 @@ direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
 direct `filesize(...)` local filesystem metadata calls,
+direct `filemtime(...)` local filesystem metadata calls,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
 direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_clean()`/

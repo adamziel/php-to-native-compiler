@@ -351,22 +351,48 @@ echo $GLOBALS["bag"]["one"], "|", $GLOBALS["bag"]["two"], "|", $GLOBALS["bag"]["
 }
 
 #[test]
-fn foreach_by_reference_rejects_nested_lvalue_iterables_as_stable_boundary() {
-    let error = runtime_error(
-        r#"<?php
-$items = [[1]];
-foreach ($items[0] as &$item) {
-    echo $item;
-}
-"#,
-    );
+fn foreach_by_reference_mutates_nested_array_and_global_request_paths() {
+    let source = r#"<?php
+$items = ["outer" => ["a" => "one", "b" => "two"]];
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
+foreach ($items["outer"] as $key => &$value) {
+    $value = $value . ":" . $key;
+    if ($key === "a") {
+        $items["outer"]["c"] = "three";
+    }
+}
+
+echo $items["outer"]["a"], "|", $items["outer"]["b"], "|", $items["outer"]["c"], "|", $value, "\n";
+$value = "tail";
+echo $items["outer"]["c"], "|", $value, "\n";
+unset($value);
+
+$GLOBALS["bag"] = ["child" => ["x" => "ex", "y" => "why"]];
+foreach ($GLOBALS["bag"]["child"] as $key => &$value) {
+    $value = $key . "=" . $value;
+}
+echo $GLOBALS["bag"]["child"]["x"], "|", $GLOBALS["bag"]["child"]["y"], "|", $value, "\n";
+unset($value);
+
+$_REQUEST["payload"] = ["first" => "alpha", "second" => "beta"];
+function mutate_request_payload() {
+    foreach ($_REQUEST["payload"] as $key => &$value) {
+        if ($key === "second") {
+            $value = "changed";
+        }
+    }
+    unset($value);
+}
+mutate_request_payload();
+echo $_REQUEST["payload"]["first"], "|", $_REQUEST["payload"]["second"];
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call foreach: by-reference iteration currently requires a direct array variable, string-keyed $GLOBALS root, or temporary array expression"
+        execution.stdout,
+        "one:a|two:b|three:c|three:c\ntail|tail\nx=ex|y=why|y=why\nalpha|changed"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -388,7 +414,7 @@ foreach (items() as &$item) {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call foreach: by-reference iteration currently requires a direct array variable, string-keyed $GLOBALS root, or temporary array expression"
+        "unsupported call foreach: by-reference iteration currently requires a direct array variable, direct array-offset path, string-keyed $GLOBALS path, or temporary array expression"
     );
 }
 

@@ -6950,6 +6950,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "file_exists"
             | "file_get_contents"
             | "filesize"
+            | "filemtime"
             | "realpath"
             | "getcwd"
             | "is_dir"

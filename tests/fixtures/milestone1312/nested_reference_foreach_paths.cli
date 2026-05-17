@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1312/nested_reference_foreach_paths.php

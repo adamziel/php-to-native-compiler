@@ -1,0 +1,6 @@
+construct:first
+construct:second
+body
+destruct:copy
+destruct:second
+destruct:first

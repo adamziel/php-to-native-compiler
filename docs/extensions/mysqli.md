@@ -319,6 +319,14 @@ affected-row behavior. A later exact
 `DELETE FROM wp_options WHERE option_name = ...` removes an existing recorded
 option with `mysqli_affected_rows($handle) === 1`; missing option names are
 successful zero-row deletes. A later exact
+`DELETE FROM wp_options WHERE option_name IN (...)` removes each distinct
+recorded option name in the single-quoted list, reports the number of removed
+rows through `mysqli_affected_rows($handle)`, skips missing names, and is also
+accepted by `mysqli_execute_query($handle, $query)` with no params. This gives
+the current transient-shaped cleanup probe a deterministic option-state path;
+it is not broad `DELETE` SQL, subquery support, arbitrary predicates, prepared
+name-list binding, real index/lock behavior, or host database execution. A
+later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
 helpers. A later exact
@@ -369,7 +377,8 @@ update shapes listed above, arbitrary
 projection beyond exact option id/name/value/autoload/name-value/full-row/full-row-with-id shapes,
 unique-index enforcement beyond exact plain option-insert duplicate-name
 rejection, no-op update affected-row fidelity, real
-`REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
+`REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond exact
+option-name equality and option-name-list shapes, real
 transaction isolation/locking/savepoint behavior, host database execution,
 PDO, broad prepared-statement mutation state, warning/error fidelity, or
 native lowering. The current transaction and savepoint helpers can snapshot
