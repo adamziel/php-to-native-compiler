@@ -62,11 +62,13 @@
   method, `self::` static method, `parent::` static method,
   `static::` late-static method, and dynamic static receiver reference-return
   assignment also accept the current bounded direct array-offset and direct
-  public object-property array-offset by-reference argument bridge when the
-  function or method returns that reached parameter directly, for example
+  visible named object-property array-offset by-reference argument bridge when
+  the function or method returns that reached parameter directly, for example
   `$alias =& identity($_REQUEST["payload"]["slot"]);` and
   `$alias =& $object->method($items["slot"]);`,
-  `$alias =& ClassName::method($object->items["slot"]);`. The assigned alias
+  `$alias =& ClassName::method($object->items["slot"]);`. Visible named
+  object-property roots include public properties and private/protected
+  properties reached from a valid method visibility context. The assigned alias
   binds back to the same covered slot group after the call. The same direct
   reference-return assignment path also covers the narrow non-direct return
   expression shape `return $param[$key];`, and explicit nested suffixes such
@@ -82,8 +84,9 @@
   accepts a direct variable argument already backed by covered array-offset
   alias metadata, such as
   `$payload =& $_REQUEST["payload"]; $alias =& pick($payload, "slot");`.
-  Nested-control-flow returns, non-public/dynamic object-property argument
-  roots, `ArrayAccess` argument roots, callback argument-array parents
+  Nested-control-flow returns, dynamic object-property argument roots,
+  non-public object-property roots outside valid method visibility contexts,
+  `ArrayAccess` argument roots, callback argument-array parents
   beyond the documented `call_user_func_array()` slices, arbitrary return
   expressions, real PHP reference containers, broader copy-on-write, and
   native lowering remain unsupported.
@@ -127,11 +130,14 @@
   direct array-offset elements such as
   `array(&$_REQUEST["payload"]["slot"], ...)`,
   `array(&$GLOBALS["bag"]["slot"], ...)`, and
-  `array(&$items["outer"]["slot"], ...)`, plus direct public
+  `array(&$items["outer"]["slot"], ...)`, plus direct visible named
   object-property array-offset elements such as
   `array(&$object->items[$group][$key], ...)` and
   `array(10 => &$object->items[$group][$key], ...)` as a bounded
-  copy-in/writeback path. If a direct variable element is already routed
+  copy-in/writeback path. Visible named object-property roots include public
+  properties and private/protected properties reached from a valid method
+  visibility context, such as `array(&$this->privateItems["slot"], ...)`.
+  If a direct variable element is already routed
   through the covered direct array-offset alias metadata, such as
   `$payload =& $_REQUEST["payload"]; call_user_func_array($callback,
   array(&$payload, ...));`, the callback parameter is copied from and written
@@ -155,8 +161,8 @@
   `["ClassName", "method"]` static callbacks declared as returning by
   reference when the argument array is a literal and each reached
   by-reference parameter is supplied by a direct-variable reference element, a
-  direct array-offset reference element, or a direct public object-property
-  array-offset reference element, for example
+  direct array-offset reference element, or a direct visible named
+  object-property array-offset reference element, for example
   `$alias =& call_user_func_array("tag", array(&$value));` or
   `$alias =& call_user_func_array("tag", array(&$_REQUEST["mode"]));` or
   `$alias =& call_user_func_array("tag", array(&$object->items[$key]));`.
@@ -178,10 +184,10 @@
   only the callee's local parameter name; later local writes do not mutate the
   caller variable or write back through the direct array-offset or
   object-property argument path.
-  Non-public, dynamic-property, append-offset, ArrayAccess, reference array
+  Dynamic-property, append-offset, ArrayAccess, reference array
   literals stored by value, direct stored arrays whose reached slots were not
   assigned by reference, non-direct stored array expressions, dynamic static
-  receiver, string-keyed named callback argument arrays, non-public, dynamic,
+  receiver, string-keyed named callback argument arrays, dynamic,
   append, `ArrayAccess`, or stored-array
   object-property bridges for `call_user_func_array()` reference-return alias
   binding, closure or builtin callbacks as reference-return sources, and
@@ -1118,7 +1124,7 @@
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
@@ -1185,7 +1191,7 @@
   `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
-  `property_exists`, `method_exists`, `class_implements`, `is_a`, `get_class_methods`, `get_class_vars`,
+  `property_exists`, `method_exists`, `class_implements`, `class_uses`, `is_a`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `is_subclass_of`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `spl_object_id`, `spl_object_hash`, `spl_autoload`,
@@ -1487,10 +1493,12 @@
   callbacks, and integer-keyed ordered arrays expanded as positional argument
   lists. For string user-function callbacks, public `[object, method]`
   instance callbacks, and public `[class, method]` static callbacks, literal
-  argument arrays may pass direct variables or direct public object-property
-  array offsets to reached by-reference parameters with unkeyed or
-  integer-keyed elements such as `array(&$value)` or
-  `array(10 => &$object->items[$key])`. Direct stored argument arrays may also
+  argument arrays may pass direct variables or direct visible named
+  object-property array offsets to reached by-reference parameters with
+  unkeyed or integer-keyed elements such as `array(&$value)` or
+  `array(10 => &$object->items[$key])`. The object-property slice includes
+  public properties and private/protected properties reached from valid method
+  visibility contexts. Direct stored argument arrays may also
   satisfy reached by-reference parameters when those slots were assigned by
   reference through the covered direct array-offset target path, such as
   `$args[0] =& $value`. Those stored argument arrays may themselves be direct
@@ -1503,7 +1511,8 @@
   direct arrays
   whose reached slots were not assigned by reference, string-keyed named
   reference argument arrays, reference elements that are not direct variables
-  or direct public object-property array offsets in the literal path, closure
+  or direct visible named object-property array offsets in the literal path,
+  closure
   and `__invoke` callbacks, non-public methods, other callable array shapes,
   exact PHP warning behavior, and native lowering remain unsupported.
   `implode($array)` and `implode($separator, $array)` support current arrays
@@ -1735,15 +1744,18 @@
   placeholder `mysqli` object, string query, and optional PHP list scalar/null
   params array for the same exact known placeholder SQL shapes. It returns a
   placeholder `mysqli_result` for deterministic SELECT placeholders and
-  `true` for current deterministic no-result shapes and for the exact
+  `true` for current deterministic no-result shapes, exact prepared
+  `wp_options` insert/update/replace/delete mutation shapes, and the exact
   `DELETE FROM wp_options WHERE option_name IN (...)` state island shapes,
   including no-placeholder single-quoted literal lists and prepared
-  `IN (?, ...)` lists whose params are all string option names, and rejects
-  params arrays whose length does not match the query `?` placeholder count.
+  `IN (?, ...)` lists whose params are all string option names. Plain prepared
+  duplicate inserts return `false` with zero affected rows, matching the
+  current statement path. It rejects params arrays whose length does not match
+  the query `?` placeholder count.
   This is not
   broad prepared SQL execution, named params-array support, hidden statement
-  status-copy fidelity, mutation SQL beyond that exact option-name-list
-  delete shape, host database state, PHP warning/error fidelity, mysqlnd
+  status-copy fidelity, mutation SQL beyond those exact `wp_options` state
+  island shapes, host database state, PHP warning/error fidelity, mysqlnd
   behavior, or native statement lowering.
   The same bounded prepared-result path includes exact `wp_options`
   autoload-list row reads for name/value, name/autoload, name/value/autoload,
@@ -1925,12 +1937,25 @@
   through `mysqli_stmt_execute()` and `mysqli_execute_query($handle, $query,
   array(...))` when all placeholders are string option names. Exact one-shot
   `mysqli_execute_query($handle, $query, array(...))` prepared
+  `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
+  option inserts also record string parameters on the same handle, reject
+  duplicate plain inserts with `false` and zero affected rows, advance
+  deterministic `mysqli_insert_id($handle)` for successful inserts, and expose
+  later exact reads through the same state island. Exact one-shot prepared
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)
   ON DUPLICATE KEY UPDATE ...` option upserts also record string parameters on
   the same handle, report affected rows as `2` when updating an existing
   recorded option and `1` when inserting a missing option, advance
   deterministic `mysqli_insert_id($handle)`, and expose later exact option
-  reads through the same state island. Exact
+  reads through the same state island. Exact one-shot prepared
+  `REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
+  option writes, exact one-shot prepared
+  `UPDATE wp_options SET option_value = ? WHERE option_name = ?`,
+  `UPDATE wp_options SET option_value = ?, autoload = ? WHERE option_name = ?`,
+  and `UPDATE wp_options SET autoload = ? WHERE option_name = ?` updates, and
+  exact one-shot prepared `DELETE FROM wp_options WHERE option_name = ?`
+  deletes share the same deterministic affected-row and later-read behavior as
+  the existing statement path. Exact
   `DELETE FROM wp_options WHERE option_name LIKE '<prefix>%'` and prepared
   `DELETE FROM wp_options WHERE option_name LIKE ?` shapes also remove
   transient-shaped prefix matches with deterministic affected-row metadata,
@@ -2119,11 +2144,7 @@
   reports affected rows as `2` when updating an existing recorded option and
   `1` when inserting a missing option, advances deterministic
   `mysqli_insert_id($handle)`, and exposes later exact option-value reads
-  through the same state island. The same exact upsert shape is also accepted
-  through one-shot `mysqli_execute_query($handle, $query, array(...))` for
-  string option-name, option-value, and autoload parameters; it updates
-  connection affected-row and insert-id metadata but does not create statement
-  metadata. The exact
+  through the same state island. The exact
   `REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
   prepared statement records string parameters on the same handle, reports
   affected rows as `2` when replacing an existing recorded option and `1` when
@@ -2144,7 +2165,12 @@
   `DELETE FROM wp_options WHERE option_name = ?` prepared statement removes an
   existing recorded option for a string option-name parameter on the same
   handle, updates statement and connection affected-row metadata, and treats
-  missing option names as successful zero-row deletes. Prepared mutation SQL
+  missing option names as successful zero-row deletes. The same exact prepared
+  insert, upsert, replace, value-only update, value/autoload update,
+  autoload-only update, and single-name delete shapes are also accepted through
+  one-shot `mysqli_execute_query($handle, $query, array(...))` for string
+  parameters; they update connection affected-row and insert-id metadata but
+  do not create statement metadata. Prepared mutation SQL
   without a prior state island remains unsupported. This does not add broad
   prepared SQL execution, arbitrary projections, real unique-index enforcement,
   no-op update affected-row fidelity, prepared mutation shapes beyond the exact
@@ -2301,15 +2327,24 @@
   seed and report bounded PHP/Input/`rb` metadata.
   `stream_context_create($options = null, $params = null)` creates an
   interpreter-owned stream-context resource when both arguments are arrays or
-  `null`; `stream_context_get_options($context)` returns the stored options
-  array. `stream_context_get_default($options = null)` returns a request-local
-  default context resource and merges optional string-keyed wrapper options
-  into it. `stream_context_set_default($options)` merges string-keyed wrapper
-  options into that same default context and returns it.
+  `null`; it stores string-keyed wrapper options and the bounded params slice
+  for `notification` plus `options`. `stream_context_get_options($context)`
+  returns the stored options array, while
+  `stream_context_get_params($context)` returns the stored bounded params plus
+  the current `options` entry. `stream_context_get_default($options = null)`
+  returns a request-local default context resource and merges optional
+  string-keyed wrapper options into it. `stream_context_set_default($options)`
+  merges string-keyed wrapper options into that same default context and
+  returns it.
   `stream_context_set_option($context, $options)` and
   `stream_context_set_option($context, $wrapper, $option, $value)` persist
   string-keyed wrapper/option entries on bounded context resources and return
-  `true`. Context params are validated only for shape and otherwise ignored.
+  `true`. `stream_context_set_params($context, $params)` stores the bounded
+  `notification` param, merges an `options` param into the same wrapper-option
+  table, and returns `true`. Other context params, notification callback
+  invocation, wrapper-specific side effects, context param effects beyond
+  option merging, exact warnings/TypeErrors, and native lowering remain
+  unsupported.
   `fwrite($stream, $data, $length = null)`
   writes string data at the current cursor, or at EOF for append mode, and
   returns the written byte count; `fread($stream, $length)` reads up to a
@@ -4240,7 +4275,7 @@
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `session_start`, `session_status`, `session_id`, `session_write_close`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
@@ -4614,7 +4649,7 @@
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
   `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -4666,7 +4701,7 @@
   `setcookie`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
-  `property_exists`, `method_exists`, `class_implements`, `get_class_methods`, `get_class_vars`,
+  `property_exists`, `method_exists`, `class_implements`, `class_uses`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`,
   `is_a`, `is_subclass_of`, `get_parent_class`, `get_declared_classes`,
   `get_declared_interfaces`, `get_declared_traits`, `get_called_class`,
@@ -4794,7 +4829,7 @@
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4850,7 +4885,7 @@
   `spl_autoload_unregister`, `spl_autoload_call`, `get_class`, `is_object`,
   `get_debug_type`, `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
-  `class_implements`, `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
+  `class_implements`, `class_uses`, `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `spl_object_id`, `spl_object_hash`, `var_dump`, and `print_r`
@@ -5282,7 +5317,7 @@
   recognizes the name.
   `call_user_func_array` accepts the same current string/array callable,
   integer-keyed positional argument-array, literal direct-variable or direct
-  public object-property array-offset by-reference argument, and direct stored
+  visible named object-property array-offset by-reference argument, and direct stored
   reference-array string/function, public object-method, or public class-string
   static-method callback argument subset as the builtin section above;
   direct native `call_user_func_array(...)` calls still reject under the
@@ -5313,8 +5348,9 @@
   behavior, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the name.
   `fopen`, `stream_context_create`, `stream_context_get_options`,
-  `stream_context_get_default`, `stream_context_set_default`,
-  `stream_context_set_option`, `fwrite`,
+  `stream_context_get_params`, `stream_context_get_default`,
+  `stream_context_set_default`, `stream_context_set_option`,
+  `stream_context_set_params`, `fwrite`,
   `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`,
   `fstat`, `stream_get_meta_data`, `fclose`, `opendir`,
   `readdir`, `rewinddir`, `closedir`, `is_uploaded_file`, and
@@ -5442,6 +5478,12 @@
   values are the recorded interface names. The current ordering follows
   system PHP for covered single-parent/user-interface metadata, including
   inherited parent-class interfaces before child-class interfaces.
+  `class_uses($object_or_class[, $autoload])` accepts current object values or
+  string class names, uses the current bool-like scalar autoload flag for
+  string class misses, and returns an associative array whose keys and values
+  are the direct trait names recorded on the resolved class. The current slice
+  matches PHP's non-recursive direct-class behavior for covered user traits;
+  parent-class traits are not included in the returned array.
   `get_declared_classes()` returns a zero-indexed array containing the current
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.
@@ -7034,6 +7076,11 @@
   folding
 - `class_implements` broad built-in/internal interface catalogs, exact warning
   behavior for missing string classes, namespace/import alias expansion,
+  reflection-object integration, exact PHP ordering for all engine metadata,
+  and native lowering
+- `class_uses` recursive parent-trait helper behavior, built-in/internal trait
+  catalogs, exact warning behavior for missing string classes,
+  namespace/import alias expansion beyond parsed class-like names,
   reflection-object integration, exact PHP ordering for all engine metadata,
   and native lowering
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,

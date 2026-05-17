@@ -267,6 +267,7 @@ enum StreamResource {
 #[derive(Debug, Clone)]
 struct StreamContextResource {
     options: PhpArray,
+    params: PhpArray,
 }
 
 #[derive(Debug)]
@@ -10926,6 +10927,112 @@ impl Interpreter {
             }
         }
 
+        if is_wordpress_option_prepared_value_autoload_update_query(&query) {
+            let [Value::String(option_value), Value::String(autoload), Value::String(option_name)] =
+                params.as_slice()
+            else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_execute_query()",
+                        "prepared wp_options value/autoload update requires string option value, autoload, and option name parameters in the current subset",
+                    ),
+                ));
+            };
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = if let Some(option) = options.get_mut(option_name) {
+                    option.value = option_value.clone();
+                    option.autoload = autoload.clone();
+                    1
+                } else {
+                    0
+                };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
+        if is_wordpress_option_prepared_update_query(&query) {
+            let [Value::String(option_value), Value::String(option_name)] = params.as_slice()
+            else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_execute_query()",
+                        "prepared wp_options update requires string option value and option name parameters in the current subset",
+                    ),
+                ));
+            };
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = if let Some(option) = options.get_mut(option_name) {
+                    option.value = option_value.clone();
+                    1
+                } else {
+                    0
+                };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
+        if is_wordpress_option_prepared_autoload_update_query(&query) {
+            let [Value::String(autoload), Value::String(option_name)] = params.as_slice() else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_execute_query()",
+                        "prepared wp_options autoload update requires string autoload and option name parameters in the current subset",
+                    ),
+                ));
+            };
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = if let Some(option) = options.get_mut(option_name) {
+                    option.autoload = autoload.clone();
+                    1
+                } else {
+                    0
+                };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
+        if is_wordpress_option_prepared_insert_query(&query) {
+            let [Value::String(option_name), Value::String(option_value), Value::String(autoload)] =
+                params.as_slice()
+            else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_execute_query()",
+                        "prepared wp_options insert requires string option name, option value, and autoload parameters in the current subset",
+                    ),
+                ));
+            };
+            let options = self.mysqli_wp_options.entry(handle_id).or_default();
+            if options.contains_key(option_name) {
+                self.mysqli_affected_rows.insert(handle_id, 0);
+                return Ok(Value::Bool(false));
+            }
+            let next_insert_id = self
+                .mysqli_insert_ids
+                .get(&handle_id)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1);
+            options.insert(
+                option_name.clone(),
+                WordPressOptionState {
+                    option_id: next_insert_id,
+                    value: option_value.clone(),
+                    autoload: autoload.clone(),
+                },
+            );
+            self.mysqli_affected_rows.insert(handle_id, 1);
+            self.mysqli_insert_ids.insert(handle_id, next_insert_id);
+            return Ok(Value::Bool(true));
+        }
+
         if is_wordpress_option_prepared_insert_on_duplicate_query(&query) {
             let [Value::String(option_name), Value::String(option_value), Value::String(autoload)] =
                 params.as_slice()
@@ -10961,6 +11068,59 @@ impl Interpreter {
             self.mysqli_affected_rows.insert(handle_id, affected_rows);
             self.mysqli_insert_ids.insert(handle_id, next_insert_id);
             return Ok(Value::Bool(true));
+        }
+
+        if is_wordpress_option_prepared_replace_query(&query) {
+            let [Value::String(option_name), Value::String(option_value), Value::String(autoload)] =
+                params.as_slice()
+            else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_execute_query()",
+                        "prepared wp_options replace requires string option name, option value, and autoload parameters in the current subset",
+                    ),
+                ));
+            };
+            let next_insert_id = self
+                .mysqli_insert_ids
+                .get(&handle_id)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1);
+            let previous = self.mysqli_wp_options.entry(handle_id).or_default().insert(
+                option_name.clone(),
+                WordPressOptionState {
+                    option_id: next_insert_id,
+                    value: option_value.clone(),
+                    autoload: autoload.clone(),
+                },
+            );
+            let affected_rows = if previous.is_some() { 2 } else { 1 };
+            self.mysqli_affected_rows.insert(handle_id, affected_rows);
+            self.mysqli_insert_ids.insert(handle_id, next_insert_id);
+            return Ok(Value::Bool(true));
+        }
+
+        if is_wordpress_option_prepared_delete_query(&query) {
+            let [Value::String(option_name)] = params.as_slice() else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_execute_query()",
+                        "prepared wp_options delete requires a string option name parameter in the current subset",
+                    ),
+                ));
+            };
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = if options.remove(option_name).is_some() {
+                    1
+                } else {
+                    0
+                };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
         }
 
         if is_mysqli_mutation_query(&query) {
@@ -15152,6 +15312,57 @@ impl Interpreter {
         Ok(Value::Array(interfaces))
     }
 
+    fn call_class_uses(
+        &mut self,
+        object_or_class: &Value,
+        autoload: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = match object_or_class {
+            Value::Object(object) => Some(object.class_id()),
+            Value::String(class_name) => {
+                if autoload {
+                    self.class_like_exists_with_autoload(
+                        class_name,
+                        AutoloadKind::Class,
+                        true,
+                        span,
+                    )?;
+                }
+                self.classes.lookup_class_id(class_name)
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "class_uses()",
+                        format!(
+                            "object_or_class argument must be object or string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let Some(class_id) = class_id else {
+            return Ok(Value::Bool(false));
+        };
+
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("class id should resolve to metadata");
+        let mut traits = PhpArray::new();
+        for trait_name in class.traits() {
+            traits.insert(
+                ArrayKey::String(trait_name.clone()),
+                Value::String(trait_name.clone()),
+            );
+        }
+        Ok(Value::Array(traits))
+    }
+
     fn class_implements_interface_names(&self, class_id: ClassId) -> Vec<String> {
         let mut class_chain = Vec::new();
         let mut current = Some(class_id);
@@ -16054,7 +16265,7 @@ impl Interpreter {
                         continue;
                     }
                     if let Some((alias, value)) = self
-                        .evaluate_public_object_property_array_reference_argument(
+                        .evaluate_visible_object_property_array_reference_argument(
                             &item.value,
                             caller_scope,
                         )?
@@ -16492,7 +16703,7 @@ impl Interpreter {
                         target: ReferenceBindingTarget::ArrayOffset(alias),
                     });
                 } else if let Some((alias, value)) = self
-                    .evaluate_public_object_property_array_reference_argument(
+                    .evaluate_visible_object_property_array_reference_argument(
                         &item.value,
                         caller_scope,
                     )?
@@ -19472,7 +19683,7 @@ impl Interpreter {
                         target: ReferenceBindingTarget::ArrayOffset(alias),
                     });
                 } else if let Some((alias, value)) = self
-                    .evaluate_public_object_property_array_reference_argument(arg, caller_scope)?
+                    .evaluate_visible_object_property_array_reference_argument(arg, caller_scope)?
                 {
                     if function.returns_by_reference && !allow_reference_return_array_bindings {
                         return Err(runtime_error(
@@ -19575,7 +19786,7 @@ impl Interpreter {
         Ok(Some((alias, value)))
     }
 
-    fn evaluate_public_object_property_array_reference_argument(
+    fn evaluate_visible_object_property_array_reference_argument(
         &mut self,
         arg: &Expr,
         caller_scope: &mut SymbolTable,
@@ -19589,10 +19800,34 @@ impl Interpreter {
             .iter()
             .map(|index| self.evaluate_array_key(index, caller_scope))
             .collect::<CompileResult<Vec<_>>>()?;
-        let alias = ArrayOffsetAlias {
-            root: ArrayOffsetAliasRoot::PublicObjectProperty { object, property },
-            keys,
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let object_value = caller_scope.read_static(&object, arg.span())?;
+        let object_handle = match object_value {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    arg.span(),
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
         };
+        let visibility = object_handle
+            .property_visibility_from_context(&property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(arg.span(), error))?;
+        let root = if visibility == Visibility::Public {
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+        } else {
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object,
+                property,
+                current_class_id,
+                protected_class_ids,
+            }
+        };
+        let alias = ArrayOffsetAlias { root, keys };
         caller_scope.materialize_array_offset_alias(&alias, arg.span())?;
         let value = caller_scope
             .read_array_offset_alias(&alias)
@@ -20156,7 +20391,7 @@ impl Interpreter {
                 ),
             ));
         }
-        let options = match args.first() {
+        let mut options = match args.first() {
             Some(Value::Array(options)) => options.clone(),
             Some(Value::Null) | None => PhpArray::new(),
             Some(other) => {
@@ -20172,8 +20407,15 @@ impl Interpreter {
                 ));
             }
         };
-        match args.get(1) {
-            Some(Value::Array(_)) | Some(Value::Null) | None => {}
+        let params = match args.get(1) {
+            Some(Value::Array(params)) => apply_stream_context_params(
+                &mut options,
+                &PhpArray::new(),
+                params,
+                "stream_context_create()",
+                span,
+            )?,
+            Some(Value::Null) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -20186,12 +20428,12 @@ impl Interpreter {
                     ),
                 ));
             }
-        }
+        };
 
         let id = self.next_resource_id;
         self.next_resource_id += 1;
         self.stream_contexts
-            .insert(id, StreamContextResource { options });
+            .insert(id, StreamContextResource { options, params });
         Ok(Value::Resource(id))
     }
 
@@ -20204,6 +20446,19 @@ impl Interpreter {
         let context =
             self.expect_stream_context_resource("stream_context_get_options", &args[0], span)?;
         Ok(Value::Array(context.options.clone()))
+    }
+
+    fn call_stream_context_get_params(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("stream_context_get_params", args, 1, span)?;
+        let context =
+            self.expect_stream_context_resource("stream_context_get_params", &args[0], span)?;
+        let mut params = context.params.clone();
+        params.insert("options", Value::Array(context.options.clone()));
+        Ok(Value::Array(params))
     }
 
     fn call_stream_context_get_default(
@@ -20481,10 +20736,51 @@ impl Interpreter {
             id,
             StreamContextResource {
                 options: PhpArray::new(),
+                params: PhpArray::new(),
             },
         );
         self.default_stream_context_id = Some(id);
         id
+    }
+
+    fn call_stream_context_set_params(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("stream_context_set_params", args, 2, span)?;
+        self.expect_stream_context_resource("stream_context_set_params", &args[0], span)?;
+        let Value::Resource(id) = args[0] else {
+            unreachable!("stream context resource shape checked above")
+        };
+        let params = match &args[1] {
+            Value::Array(params) => params,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_context_set_params()",
+                        format!(
+                            "params argument must be array in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let context = self
+            .stream_contexts
+            .get_mut(&id)
+            .expect("stream context resource is initialized");
+        let current_params = context.params.clone();
+        context.params = apply_stream_context_params(
+            &mut context.options,
+            &current_params,
+            params,
+            "stream_context_set_params()",
+            span,
+        )?;
+        Ok(Value::Bool(true))
     }
 
     fn expect_stream_context_resource(
@@ -23415,9 +23711,11 @@ impl Interpreter {
             "fopen" => self.call_fopen(&args, span),
             "stream_context_create" => self.call_stream_context_create(&args, span),
             "stream_context_get_options" => self.call_stream_context_get_options(&args, span),
+            "stream_context_get_params" => self.call_stream_context_get_params(&args, span),
             "stream_context_get_default" => self.call_stream_context_get_default(&args, span),
             "stream_context_set_default" => self.call_stream_context_set_default(&args, span),
             "stream_context_set_option" => self.call_stream_context_set_option(&args, span),
+            "stream_context_set_params" => self.call_stream_context_set_params(&args, span),
             "fwrite" => self.call_fwrite(&args, span),
             "fread" => self.call_fread(&args, span),
             "rewind" => self.call_rewind(&args, span),
@@ -24184,6 +24482,22 @@ impl Interpreter {
                     span,
                     RuntimeError::arity_mismatch(
                         "class_implements()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
+                )),
+            },
+            "class_uses" => match args.as_slice() {
+                [object_or_class] => self.call_class_uses(object_or_class, true, span),
+                [object_or_class, autoload] => {
+                    let autoload =
+                        metadata_exists_autoload_flag("class_uses()", autoload, span)?;
+                    self.call_class_uses(object_or_class, autoload, span)
+                }
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "class_uses()",
                         ArityExpectation::Between { min: 1, max: 2 },
                         args.len(),
                     ),
@@ -27342,6 +27656,10 @@ fn register_class_members(
     classes
         .set_interfaces(id, interfaces)
         .map_err(|error| runtime_error(class.span, error))?;
+    let traits = direct_class_trait_names(trait_lookup, class)?;
+    classes
+        .set_traits(id, traits)
+        .map_err(|error| runtime_error(class.span, error))?;
 
     for constant in composed_trait_constants(class, trait_lookup)? {
         let visibility = runtime_visibility(constant.visibility);
@@ -27596,6 +27914,28 @@ fn declared_class_method_names(class: &ClassDecl) -> HashSet<String> {
             Some(method.function.name.to_ascii_lowercase())
         })
         .collect()
+}
+
+fn direct_class_trait_names(
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    class: &ClassDecl,
+) -> CompileResult<Vec<String>> {
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+    for trait_use in &class.trait_uses {
+        let key = trait_use.name.to_ascii_lowercase();
+        let trait_decl = trait_lookup.get(&key).ok_or_else(|| {
+            runtime_error(
+                trait_use.span,
+                RuntimeError::undefined_class(&trait_use.name),
+            )
+        })?;
+        let canonical_key = trait_decl.name.to_ascii_lowercase();
+        if seen.insert(canonical_key) {
+            names.push(trait_decl.name.clone());
+        }
+    }
+    Ok(names)
 }
 
 fn trait_precedence_exclusions(
@@ -29301,9 +29641,11 @@ fn is_builtin(name: &str) -> bool {
             | "fopen"
             | "stream_context_create"
             | "stream_context_get_options"
+            | "stream_context_get_params"
             | "stream_context_get_default"
             | "stream_context_set_default"
             | "stream_context_set_option"
+            | "stream_context_set_params"
             | "fwrite"
             | "fread"
             | "rewind"
@@ -29364,6 +29706,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_declared_interfaces"
             | "get_declared_traits"
             | "class_implements"
+            | "class_uses"
             | "get_called_class"
             | "spl_object_id"
             | "spl_object_hash"
@@ -33511,6 +33854,40 @@ fn apply_stream_context_options(
         }
     }
     Ok(())
+}
+
+fn apply_stream_context_params(
+    options: &mut PhpArray,
+    current: &PhpArray,
+    params: &PhpArray,
+    callable: &'static str,
+    span: Span,
+) -> CompileResult<PhpArray> {
+    let mut stored = current.clone();
+    for entry in params.entries() {
+        let ArrayKey::String(key) = &entry.key else {
+            continue;
+        };
+        match key.as_str() {
+            "notification" => {
+                stored.insert("notification", entry.value().clone());
+            }
+            "options" => {
+                let Value::Array(param_options) = entry.value() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable,
+                            "options param must be array in the current subset",
+                        ),
+                    ));
+                };
+                apply_stream_context_options(options, param_options, callable, span)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(stored)
 }
 
 fn set_stream_context_option(target: &mut PhpArray, wrapper: &str, option: &str, value: Value) {

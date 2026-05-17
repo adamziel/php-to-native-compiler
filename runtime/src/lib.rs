@@ -2131,6 +2131,14 @@ impl PhpClassTable {
         Ok(())
     }
 
+    pub fn set_traits(&mut self, class_id: ClassId, traits: Vec<String>) -> RuntimeResult<()> {
+        let class = self
+            .get_mut(class_id)
+            .expect("declared class id should resolve to metadata");
+        class.traits = traits;
+        Ok(())
+    }
+
     pub fn is_subclass_of(&self, child_id: ClassId, ancestor_id: ClassId) -> bool {
         let mut current = self.get(child_id).and_then(|class| class.parent_id());
         let mut visited = HashSet::new();
@@ -2178,6 +2186,7 @@ pub struct PhpClassMetadata {
     properties: Vec<PhpPropertyMetadata>,
     property_lookup: HashMap<String, usize>,
     interfaces: Vec<String>,
+    traits: Vec<String>,
     constants: Vec<PhpClassConstantMetadata>,
     constant_lookup: HashMap<String, usize>,
     methods: Vec<PhpMethodMetadata>,
@@ -2193,6 +2202,7 @@ impl PhpClassMetadata {
             properties: Vec::new(),
             property_lookup: HashMap::new(),
             interfaces: Vec::new(),
+            traits: Vec::new(),
             constants: Vec::new(),
             constant_lookup: HashMap::new(),
             methods: Vec::new(),
@@ -2218,6 +2228,10 @@ impl PhpClassMetadata {
 
     pub fn interfaces(&self) -> &[String] {
         &self.interfaces
+    }
+
+    pub fn traits(&self) -> &[String] {
+        &self.traits
     }
 
     pub fn constants(&self) -> &[PhpClassConstantMetadata] {

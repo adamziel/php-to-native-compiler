@@ -729,6 +729,50 @@ echo $cache, "|", $box->store["args"][0], "|", $static_alias;
 }
 
 #[test]
+fn call_user_func_array_binds_visible_non_public_object_property_array_reference_arguments() {
+    let execution = run_source(
+        r#"<?php
+function wp_refcow_mark_non_public(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+}
+
+function &wp_refcow_pick_non_public(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+class WP_RefCow_Non_Public_Store {
+    private $privateStore = ["slot" => "private", "direct" => "direct"];
+    protected $protectedStore = ["slot" => "protected"];
+
+    public function probe($peer) {
+        wp_refcow_mark_non_public($this->privateStore["direct"], "call");
+
+        call_user_func_array("wp_refcow_mark_non_public", array(&$this->privateStore["slot"], "mark"));
+        $alias =& call_user_func_array("wp_refcow_pick_non_public", array(&$this->privateStore["slot"], "pick"));
+        $alias = $alias . ":alias";
+
+        call_user_func_array("wp_refcow_mark_non_public", array(&$peer->protectedStore["slot"], "peer"));
+
+        echo $this->privateStore["direct"], "|", $this->privateStore["slot"], "|", $alias, "|", $peer->protectedStore["slot"];
+    }
+}
+
+$left = new WP_RefCow_Non_Public_Store();
+$right = new WP_RefCow_Non_Public_Store();
+$left->probe($right);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "direct:call|private:mark:pick:alias|private:mark:pick:alias|protected:peer"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_is_available_through_function_metadata_builtins() {
     let execution = run_source(
         r#"<?php

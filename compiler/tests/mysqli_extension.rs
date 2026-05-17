@@ -1654,6 +1654,73 @@ mysqli_execute_query($handle, "INSERT INTO wp_options (option_name, option_value
 }
 
 #[test]
+fn mysqli_execute_query_mutates_current_wordpress_prepared_option_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo mysqli_execute_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)", array("blogname", "Before", "yes")) ? "inserted" : "insert-failed";
+echo ":";
+echo mysqli_affected_rows($handle), ":", mysqli_insert_id($handle);
+echo "|";
+echo mysqli_execute_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)", array("blogname", "Duplicate", "no")) ? "duplicate" : "duplicate-rejected";
+echo ":";
+echo mysqli_affected_rows($handle), ":", mysqli_insert_id($handle);
+echo "|";
+echo mysqli_execute_query($handle, "UPDATE `wp_options` SET `option_value` = ?, `autoload` = ? WHERE `option_name` = ?", array("After", "auto-on", "blogname")) ? "updated" : "update-failed";
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_execute_query($handle, "UPDATE wp_options SET option_value = ? WHERE option_name = ?", array("ValueOnly", "blogname")) ? "value-only" : "value-failed";
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_execute_query($handle, "UPDATE wp_options SET autoload = ? WHERE option_name = ?", array("no", "missing")) ? "missing-autoload" : "autoload-failed";
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+$row_result = mysqli_execute_query($handle, "SELECT option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1", array("blogname"));
+$row = mysqli_fetch_assoc($row_result);
+echo $row["option_value"], ":", $row["autoload"];
+echo "|";
+echo mysqli_execute_query($handle, "REPLACE INTO `wp_options` (`option_name`, `option_value`, `autoload`) VALUES (?, ?, ?)", array("blogname", "Replaced", "yes")) ? "replaced" : "replace-failed";
+echo ":";
+echo mysqli_affected_rows($handle), ":", mysqli_insert_id($handle);
+echo "|";
+echo mysqli_execute_query($handle, "DELETE FROM wp_options WHERE option_name = ?", array("blogname")) ? "deleted" : "delete-failed";
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+$missing = mysqli_execute_query($handle, "SELECT option_value FROM wp_options WHERE option_name = ? LIMIT 1", array("blogname"));
+echo mysqli_fetch_assoc($missing) ? "still-present" : "gone";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "inserted:1:1|duplicate-rejected:0:1|updated:1|value-only:1|missing-autoload:0|ValueOnly:auto-on|replaced:2:2|deleted:1|gone"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let type_error = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_execute_query($handle, "UPDATE wp_options SET option_value = ? WHERE option_name = ?", array(1, "blogname"));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(type_error.phase, Phase::Runtime);
+    assert_eq!(type_error.line, 3);
+    assert_eq!(type_error.column, 1);
+    assert_eq!(
+        type_error.message,
+        "unsupported call mysqli_execute_query(): prepared wp_options update requires string option value and option name parameters in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_statement_updates_current_wordpress_option_state() {
     let execution = run_source(
         r#"<?php

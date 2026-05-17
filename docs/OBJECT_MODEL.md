@@ -94,7 +94,9 @@ rechecking metadata. `enum_exists()` checks declared unit-enum metadata without
 triggering autoloading. `class_exists()` reports true for declared enums in the
 current class-like metadata slice.
 `get_declared_interfaces()` and `get_declared_traits()` list declared user
-interfaces and top-level traits in declaration order. A declared interface may
+interfaces and top-level traits in declaration order. `class_uses()` reports
+the direct user traits recorded on a current object value or declared string
+class name, without recursing into parent classes. A declared interface may
 extend one or more user interfaces declared before or after the child
 interface; concrete implementors of the child interface must expose the child
 and all parent public method names with matching static/non-static shape, and
@@ -527,5 +529,7 @@ implementation relationships,
 `enum_exists` true results for built-in/internal enums,
 `get_declared_interfaces` built-in/internal interface entries,
 `get_declared_traits` built-in/internal trait entries,
+`class_uses` parent-recursive trait helpers, built-in/internal trait entries,
+exact missing-class warning behavior, broader Reflection integration,
 interfaces, traits, aliases/imports, namespace-aware class names, autoloading,
 exact native `TypeError` behavior, and native lowering.

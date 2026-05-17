@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T19:00:00Z
+
+- Checkpoint before this task:
+  `92984b3c runtime: advance WordPress metadata refs buffers and db lanes`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1401-1405, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger
+  and focused on large missing subsystems.
+- Files changed so far: bounded `class_uses()` direct trait metadata;
+  visible non-public object-property array callback reference roots; bounded
+  `stream_context_get_params()`/`stream_context_set_params()` over existing
+  stream context resources; one-shot prepared `mysqli_execute_query()` option
+  mutations over the deterministic MySQLi `wp_options` placeholder state
+  island; milestone fixtures 1401-1404; support, architecture, object model,
+  README, queue, progress, lane-worker, loop-memory, and goal docs.
+- Tests run and result: focused integration checks passed for `class_uses()`,
+  non-public object-property callback reference roots, stream-context params,
+  MySQLi prepared option mutations, milestone fixtures, and system PHP
+  comparisons where applicable. Manual full gate passed before checkpoint:
+  `cargo test` completed successfully, `phpc test` reported `1499` fixture
+  tests passed with `0` failures, and `phpc test --compare-php` reported
+  `1499` fixture tests passed with `0` failures, `872` system PHP
+  comparisons, and `627` skipped `phpc-only` fixtures.
+- Remaining semantic gaps: broad object/interface/trait compatibility, full
+  PHP reference containers, broad copy-on-write, dynamic lookup and magic
+  methods, complete SAPI/request/session/upload/filesystem/stream behavior,
+  real database behavior, WordPress plugin/theme/admin/REST flows, and native
+  runtime integration remain explicit project blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean dedicated target directories, close completed workers,
+  then start Milestones 1406-1409 in separate worktrees.
+
 ## Loop Event 2026-05-17T18:00:00Z
 
 - Checkpoint before this task:

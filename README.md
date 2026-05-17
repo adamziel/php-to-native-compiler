@@ -70,15 +70,18 @@ flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
 `feof()`, `ftell()`, `fseek()`, `fstat()`, `stream_get_meta_data()`, and
 `fclose()`. `php://input` handles read the deterministic
 `PHPC_REQUEST_BODY` seed and stay non-writable. Bounded
-`stream_context_create()` resources store array options for
-`stream_context_get_options()`, `stream_context_get_default()` returns a
-request-local default context, and `stream_context_set_default()` plus
-`stream_context_set_option()` persist string-keyed wrapper options on those
-contexts. Context resources may be passed to the current
+`stream_context_create()` resources store array options and bounded params
+(`notification` plus `options`), expose them through
+`stream_context_get_options()` and `stream_context_get_params()`,
+`stream_context_get_default()` returns a request-local default context, and
+`stream_context_set_default()`, `stream_context_set_option()`, plus
+`stream_context_set_params()` persist string-keyed wrapper options and bounded
+params on those contexts. Context resources may be passed to the current
 `file_get_contents()`/`fopen()` local and `php://input` paths without applying
 wrapper-specific behavior. `opendir()`, `readdir()`, `rewinddir()`, and
 `closedir()` cover bounded local UTF-8 directory handles. Unsupported wrappers,
-filters, context option effects, context params, broader wrapper metadata,
+filters, context option effects, context param effects beyond option merging,
+broader wrapper metadata,
 binary byte fidelity, directory entry ordering fidelity, multipart upload
 parsing, runtime temporary upload creation, host upload validation,
 permissions/locking, stat-cache behavior, warning recovery, temp-file
@@ -177,8 +180,11 @@ incorrect native code.
   detachment for ordinary arrays and request bags, plus bounded
   direct free-function, visible object-method, and current static dispatch
   reference-return assignment that binds a returned by-reference parameter
-  back to covered direct array-offset and public object-property array-offset
-  arguments, including the narrow `return $param[$key]` and
+  back to covered direct array-offset and visible named object-property
+  array-offset arguments, including public slots and private/protected slots
+  reached from valid method visibility contexts in the current named-property
+  array-offset slice, plus the narrow
+  `return $param[$key]` and
   `return $param[$key][$subkey]` child-slot shapes when `$param` was supplied
   by a direct variable parent array, by a direct variable already backed by a
   covered array-offset alias, or by a covered parent array/property slot,
@@ -222,8 +228,8 @@ incorrect native code.
   including exact option-name equality with and without `LIMIT 1`,
   name/autoload-list, autoload-only option-name equality for
   `update_option()`-shaped probes, and autoload-list/equality result sets,
-  plus one-shot `mysqli_execute_query()` prepared option upserts for
-  transient-shaped state probes,
+  plus one-shot `mysqli_execute_query()` prepared option insert/update/replace/delete
+  mutations for option/transient-shaped state probes,
   plus bounded direct and prepared transient-shaped option-name prefix result
   scans and deletes;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
@@ -352,7 +358,9 @@ incorrect native code.
   already declared, object `isset` and `empty`, and selected metadata builtins,
   including declared interface metadata with concrete-class public method
   presence checks and bounded `class_implements()` interface-name arrays for
-  current object values or declared string class names, declared trait metadata for empty traits, public trait
+  current object values or declared string class names, bounded
+  `class_uses()` direct trait-name arrays for current object values or
+  declared string class names, declared trait metadata for empty traits, public trait
   constants, and simple public instance trait methods, simple class-body
   `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
   traits, plus simple public trait method alias adaptations such as
@@ -452,7 +460,7 @@ magic methods beyond direct missing-property
 `__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
 direct object-to-string `__toString` including current interpolation, bounded
 core interface metadata, broad reflection metadata and exact engine ordering
-beyond the current `class_implements()` class/interface table slice, and
+beyond the current `class_implements()`/`class_uses()` metadata table slices, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
@@ -481,19 +489,22 @@ unsupported diagnostic.
 Omitted optional by-reference parameters can use their defaults without alias
 binding; direct-variable by-reference arguments use a bounded direct cell path
 for output-parameter style calls. Direct array-offset arguments, including
-request-bag paths, and direct public object-property array offset arguments now
-have bounded output-parameter writeback for user functions,
+request-bag paths, and direct visible named object-property array offset
+arguments now have bounded output-parameter writeback for user functions,
 instance methods, named static method calls, `self::` static method calls, and
 `parent::` instance/static method calls, and late-bound `static::` static
-method calls. Mutations before `unset($param)` are written back; later writes
-to the detached local parameter are not.
+method calls. The object-property slice includes public properties and
+private/protected properties reached from valid method visibility contexts.
+Mutations before `unset($param)` are written back; later writes to the
+detached local parameter are not.
 `call_user_func_array()` also has a bounded string user-callback, public
 object-method callback, and public class-string static-method callback slice
 for unkeyed or integer-keyed literal argument arrays containing direct-variable
 reference elements such as `array(&$value)` and `array(10 => &$value)`, plus
 direct array-offset reference elements such as
-`array(&$_REQUEST["payload"]["slot"])` and direct public object-property
-array-offset elements such as `array(&$object->items[$key])` through
+`array(&$_REQUEST["payload"]["slot"])` and direct visible named
+object-property array-offset elements such as `array(&$object->items[$key])`
+through
 copy-in/writeback. Direct stored
 argument arrays whose reached by-reference slots were assigned by reference,
 such as `$args[0] =& $value; call_user_func_array($callback, $args);`, are
@@ -553,7 +564,8 @@ direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
 direct `fopen()`/`stream_context_create()`/`stream_context_get_options()`/
-`fwrite()`/`fread()`/`rewind()`/`stream_get_contents()`/`feof()`/`ftell()`/
+`stream_context_get_params()`/`stream_context_set_params()`/`fwrite()`/
+`fread()`/`rewind()`/`stream_get_contents()`/`feof()`/`ftell()`/
 `fseek()`/`fstat()`/`stream_get_meta_data()`/`fclose()`/`opendir()`/
 `readdir()`/`rewinddir()`/`closedir()` stream-resource and directory-handle
 calls,

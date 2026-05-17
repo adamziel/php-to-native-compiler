@@ -5,7 +5,7 @@ use php_compiler::error::Phase;
 use php_compiler::interpreter::{run_program_with_options, RunOptions};
 use php_compiler::{emit_asm_source, emit_ir_source, parse, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), fclose(), opendir(), readdir(), rewinddir(), closedir(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, directory handle state, upload provenance state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream context resources, local directory handles, and PHPC_FILES upload provenance";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), fclose(), opendir(), readdir(), rewinddir(), closedir(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, directory handle state, upload provenance state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream context resources, local directory handles, and PHPC_FILES upload provenance";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -432,6 +432,65 @@ echo file_get_contents("{}", false, $replacement);
 }
 
 #[test]
+fn stream_context_params_persist_notification_and_merge_option_params() {
+    let execution = run_source(
+        r#"<?php
+$context = stream_context_create(
+    array(
+        "http" => array("method" => "GET", "header" => "X-Seed: one"),
+        "ssl" => array("verify_peer" => true),
+    ),
+    array(
+        "notification" => "initial",
+        "options" => array("http" => array("method" => "POST")),
+        "ignored" => "value",
+    )
+);
+$params = stream_context_get_params($context);
+$options = stream_context_get_options($context);
+echo $params["notification"];
+echo ":";
+echo $params["options"]["http"]["method"];
+echo ":";
+echo $params["options"]["http"]["header"];
+echo ":";
+echo $options["http"]["method"];
+echo ":";
+echo $params["options"]["ssl"]["verify_peer"] ? "verify" : "skip";
+echo ":";
+echo isset($params["ignored"]) ? "kept" : "ignored";
+echo "|";
+echo stream_context_set_params($context, array(
+    "notification" => "updated",
+    "options" => array("ssl" => array("verify_peer" => false)),
+)) ? "set" : "failed";
+$updated = stream_context_get_params($context);
+echo "|";
+echo $updated["notification"];
+echo ":";
+echo $updated["options"]["http"]["method"];
+echo ":";
+echo $updated["options"]["ssl"]["verify_peer"] ? "verify" : "skip";
+stream_context_set_params($context, array(
+    "options" => array("http" => array("header" => "X-Only: options")),
+));
+$preserved = stream_context_get_params($context);
+echo "|";
+echo $preserved["notification"];
+echo ":";
+echo $preserved["options"]["http"]["header"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "initial:POST:X-Seed: one:POST:verify:ignored|set|updated:POST:skip|updated:X-Only: options"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn local_directory_handle_builtins_iterate_rewind_and_close_entries() {
     let root = temp_stream_path("phpc-directory-handle-root");
     let nested = root.join("nested");
@@ -521,6 +580,49 @@ fn stream_resource_builtins_reject_forms_outside_current_subset() {
         "unsupported call stream_context_create(): options argument must be array or null in the current subset, got string"
     );
 
+    let bad_context_params =
+        run_source("<?php\nstream_context_create(null, 'params');\n").unwrap_err();
+    assert_eq!(bad_context_params.phase, Phase::Runtime);
+    assert_eq!(bad_context_params.line, 2);
+    assert_eq!(bad_context_params.column, 1);
+    assert_eq!(
+        bad_context_params.message,
+        "unsupported call stream_context_create(): params argument must be array or null in the current subset, got string"
+    );
+
+    let bad_get_params = run_source("<?php\nstream_context_get_params('ctx');\n").unwrap_err();
+    assert_eq!(bad_get_params.phase, Phase::Runtime);
+    assert_eq!(bad_get_params.line, 2);
+    assert_eq!(bad_get_params.column, 1);
+    assert_eq!(
+        bad_get_params.message,
+        "unsupported call stream_context_get_params(): context argument must be stream context resource in the current subset, got string"
+    );
+
+    let bad_set_params = run_source(
+        "<?php\n$ctx = stream_context_create(); stream_context_set_params($ctx, 'params');\n",
+    )
+    .unwrap_err();
+    assert_eq!(bad_set_params.phase, Phase::Runtime);
+    assert_eq!(bad_set_params.line, 2);
+    assert_eq!(bad_set_params.column, 33);
+    assert_eq!(
+        bad_set_params.message,
+        "unsupported call stream_context_set_params(): params argument must be array in the current subset, got string"
+    );
+
+    let bad_param_options = run_source(
+        "<?php\n$ctx = stream_context_create(); stream_context_set_params($ctx, array('options' => 'bad'));\n",
+    )
+    .unwrap_err();
+    assert_eq!(bad_param_options.phase, Phase::Runtime);
+    assert_eq!(bad_param_options.line, 2);
+    assert_eq!(bad_param_options.column, 33);
+    assert_eq!(
+        bad_param_options.message,
+        "unsupported call stream_context_set_params(): options param must be array in the current subset"
+    );
+
     let bad_stream = run_source("<?php\nfwrite('not-resource', 'x');\n").unwrap_err();
     assert_eq!(bad_stream.phase, Phase::Runtime);
     assert_eq!(bad_stream.line, 2);
@@ -604,9 +706,11 @@ fn emit_ir_folds_stream_metadata_but_rejects_direct_calls() {
 echo function_exists("fopen") ? "1" : "0";
 echo function_exists("stream_context_create") ? "1" : "0";
 echo is_callable("stream_context_get_options") ? "1" : "0";
+echo function_exists("stream_context_get_params") ? "1" : "0";
 echo function_exists("stream_context_get_default") ? "1" : "0";
 echo is_callable("stream_context_set_default") ? "1" : "0";
 echo function_exists("stream_context_set_option") ? "1" : "0";
+echo is_callable("stream_context_set_params") ? "1" : "0";
 echo is_callable("stream_get_contents") ? "1" : "0";
 echo defined("SEEK_END") ? "1" : "0";
 echo function_exists("fstat") ? "1" : "0";
@@ -619,7 +723,7 @@ echo is_callable("move_uploaded_file") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 14, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 16, "{ir}");
 
     let error = emit_ir_source("<?php\nis_uploaded_file('/tmp/phpc-upload');\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);

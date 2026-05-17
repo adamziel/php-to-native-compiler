@@ -97,16 +97,19 @@ such as `$_REQUEST["payload"]`, also mirrors covered reference slots below the
 copied path into the destination direct array variable. Variable, dynamic,
 append, and side-effecting copied path keys remain outside this bounded mirror
 and still require the future reference/COW value model. When an
-array-offset or public object-property array-offset reference target is bound
-from a direct variable that already shares a direct variable-to-variable cell,
-the interpreter rewires every direct name in that small source cell group to
-the selected slot alias. By-reference user-function, instance-method, named
-static method, `self::` static method, and late-bound `static::` static method
-parameters can also accept a direct public object-property array-offset
-argument through a narrower output-parameter bridge: the caller slot is
-materialized and copied into the callee parameter, then the final parameter
-value is written back to the public property slot after normal return. That
-bridge intentionally does not provide in-call reference-container identity.
+array-offset or visible named object-property array-offset reference target is
+bound from a direct variable that already shares a direct variable-to-variable
+cell, the interpreter rewires every direct name in that small source cell
+group to the selected slot alias. By-reference user-function, instance-method,
+named static method, `self::` static method, and late-bound `static::` static
+method parameters can also accept a direct visible named object-property
+array-offset argument through a narrower output-parameter bridge: the caller
+slot is materialized and copied into the callee parameter, then the final
+parameter value is written back to the visible property slot after normal
+return. Public slots use public alias metadata; private/protected slots use
+context-aware alias metadata when reached from a valid method visibility
+context. That bridge intentionally does not provide in-call
+reference-container identity.
 Direct object-variable clone assignments also mirror public object-property
 alias metadata and context-aware non-public
 object-property alias metadata from the cloned source variable to the target
@@ -120,8 +123,9 @@ element slice. Direct reference-returning free-function, visible
 object-method, named-static-method, method-context `self::`/`parent::`/
 `static::`, and dynamic-static-receiver assignment now also use the
 array-offset writeback/alias result path when a reached by-reference parameter
-is supplied by a direct array-offset or public object-property array-offset
-argument and the function or method returns that parameter directly. The same
+is supplied by a direct array-offset or visible named object-property
+array-offset argument and the function or method returns that parameter
+directly. The same
 assignment-only path can bind a returned direct array-offset expression such
 as `return $param[$key];` or `return $param[$key][$subkey];` when `$param` is
 one of those copied-in covered parent array-slot arguments or a direct caller
@@ -556,12 +560,14 @@ integer name, and the selected property is public; allowed dynamic-property
 objects such as `stdClass` materialize a missing selected property as `null`
 before binding. Dynamic whole-property writes also detach narrower
 property-array aliases before replacing the selected public property value.
-Direct public object-property array-offset sources
-follow the same bounded root route for named declared public properties:
+Direct visible named object-property array-offset sources
+follow the same bounded root route for named visible properties:
 `$alias =& $object->items[$key];`,
 `$alias =& $object->items[$outer][$inner];`,
 `$alias =& $object->items[];`, and
-`$alias =& $object->items[$outer][];`. String-keyed `$GLOBALS` append
+`$alias =& $object->items[$outer][];`. Public properties use public alias
+metadata, while private/protected properties use context-aware alias metadata
+from valid method visibility contexts. String-keyed `$GLOBALS` append
 reference sources such as `$alias =& $GLOBALS["bag"][];` and
 `$alias =& $GLOBALS["bag"]["outer"][];` bind a direct alias variable to the
 selected slot under the real global symbol table. `$GLOBALS[]` append
@@ -605,10 +611,11 @@ instance-method, constructor, named static method, `self::` static method, and
 method calls. Writes through the parameter are visible before the call returns,
 and `unset($param)` detaches only the callee's local name from the shared cell.
 Direct array-offset arguments, including request-bag paths such as
-`$_REQUEST["payload"]["slot"]`, and direct public object-property array-offset
-arguments use a narrower copy-in/writeback bridge on the user-function,
-instance-method, named static method, `self::` static method, `parent::`
-instance/static method, and late-bound `static::` static method dispatch paths.
+`$_REQUEST["payload"]["slot"]`, and direct visible named object-property
+array-offset arguments use a narrower copy-in/writeback bridge on the
+user-function, instance-method, named static method, `self::` static method,
+`parent::` instance/static method, and late-bound `static::` static method
+dispatch paths.
 The bridge keeps the local parameter's original cell so mutations before
 `unset($param)` are written back at return, while later writes to a detached
 local name are not. It still does not expose in-call PHP reference-container
@@ -620,18 +627,21 @@ the argument array is an unkeyed or integer-keyed literal containing
 `&$directVariable` elements for reached by-reference parameters. The same
 callback path can also copy in and write back direct array-offset elements,
 including request/global bag paths such as `&$_REQUEST["payload"]["slot"]`
-and `&$GLOBALS["bag"]["slot"]`, plus direct public object-property
+and `&$GLOBALS["bag"]["slot"]`, plus direct visible named object-property
 array-offset elements such as `&$object->items[$group][$key]`, using the
 bounded output-parameter bridge rather than in-call reference-container
-identity. Literal reference elements whose direct variable is already backed
+identity. Visible named object-property callback roots use public alias
+metadata for public slots and context-aware alias metadata for
+private/protected slots reached from a valid method visibility context.
+Literal reference elements whose direct variable is already backed
 by covered array-offset alias metadata, such as
 `array(&$payload, ...)` after `$payload =& $_REQUEST["payload"];`, reuse the
 same alias group for copy-in/writeback instead of requiring a normal caller
 variable cell. Statement-form reference assignment from a reference-returning
 `call_user_func_array()` source can now return the same bounded direct
-array-offset or public object-property array-offset route when the callback
-returns that reached parameter, so the assigned alias is represented in
-symbol-table alias metadata instead of as a general runtime reference
+array-offset or visible named object-property array-offset route when the
+callback returns that reached parameter, so the assigned alias is represented
+in symbol-table alias metadata instead of as a general runtime reference
 container. If the callback returns a child slot below that alias-backed
 literal direct-variable parameter, the returned suffix is appended to the
 underlying alias group. Direct stored argument
@@ -656,8 +666,9 @@ integer key before binding or writing back.
 This deliberately does not model full PHP reference containers, reference
 array literals stored by value, stored arrays whose reached slots were not
 assigned by reference, non-direct stored array expressions, string-keyed named
-reference argument arrays, non-public, dynamic, append, or ArrayAccess
-reference roots, dynamic static receiver callback object-property array
+reference argument arrays, dynamic, append, or ArrayAccess reference roots,
+non-public property roots outside the current valid method-context
+named-property slice, dynamic static receiver callback object-property array
 arguments, broader reference-return binding, exact by-reference `foreach`, or
 copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
@@ -1692,8 +1703,8 @@ direct/prepared autoload equality reads for alloptions-shaped probes, plus
 prepared autoload-only option-name equality reads for the current
 `update_option()` autoload reevaluation probe, plus prepared option-value
 equality reads with `LIMIT 1` for transient-shaped `wpdb::get_var()` probes,
-plus one-shot `mysqli_execute_query()` prepared option upserts for
-transient-shaped set/update probes,
+plus one-shot `mysqli_execute_query()` prepared option insert/update/replace/delete
+mutations for option/transient-shaped state probes,
 plus exact explicit full-row-with-id and
 star-projection option-name equality reads with and without `LIMIT 1` for
 object-row/result/column `wpdb` probes, plus
@@ -1905,13 +1916,19 @@ $use_include_path = false, $context = null)` uses a host local file handle for
 the same simple mode grammar, optionally resolves through the existing bounded
 include-path candidate order, and accepts a bounded stream-context resource
 without applying wrapper-specific context behavior. `stream_context_create()`
-allocates a request-local context resource that stores array options, and
-`stream_context_get_options()` returns those stored options.
+allocates a request-local context resource that stores array options and the
+bounded params slice for `notification` plus `options`.
+`stream_context_get_options()` returns those stored options, and
+`stream_context_get_params()` returns the stored bounded params plus the
+current `options` entry.
 `stream_context_get_default()` lazily allocates and returns one request-local
 default context resource, while `stream_context_set_default()` and
 `stream_context_set_option()` merge string-keyed wrapper/option entries into
-that same bounded context table. Context params are shape-validated and
-ignored. `fwrite()`,
+that same bounded context table. `stream_context_set_params()` updates the
+stored bounded params and merges an `options` param into the same option table,
+preserving the previous `notification` value when only options are supplied.
+Unknown params, notification callback invocation, wrapper-specific effects, and
+native lowering remain unsupported. `fwrite()`,
 `fread()`, `rewind()`, `stream_get_contents()`, `feof()`, `ftell()`,
 `fseek()`, `fstat()`, `stream_get_meta_data()`, and `fclose()` mutate, consume,
 or inspect the resource cursor or bounded metadata; append-mode writes are
@@ -2325,6 +2342,11 @@ class autoload path for string misses, and returns an associative
 interface-name array. The collection follows system PHP for the covered
 single-parent/user-interface cases, including parent-class interfaces before
 child-class interfaces.
+`class_uses($object_or_class[, $autoload])` is the matching bounded
+class/trait metadata builtin. It accepts object values or string class names,
+optionally invokes the existing class autoload path for string misses, and
+returns an associative array of the resolved class's direct trait names. It
+does not recurse into parent classes or synthesize broader Reflection metadata.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

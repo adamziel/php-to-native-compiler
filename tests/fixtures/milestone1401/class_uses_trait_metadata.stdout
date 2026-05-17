@@ -1,0 +1,13 @@
+Array
+(
+    [App\RegistersHooks] => App\RegistersHooks
+    [App\AddsFilters] => App\AddsFilters
+)
+Array
+(
+    [App\RegistersHooks] => App\RegistersHooks
+    [App\AddsFilters] => App\AddsFilters
+)
+2
+registers
+parent-not-listed

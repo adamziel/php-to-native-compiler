@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state and one-shot mysqli_execute_query() prepared insert/update/replace/delete option mutations rather than a real MySQL database, arbitrary SQL, full WordPress option APIs, persistent object cache, or native DB lowering.

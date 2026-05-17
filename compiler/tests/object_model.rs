@@ -4459,6 +4459,64 @@ fn class_implements_requires_object_or_string_and_bool_autoload_arguments() {
 }
 
 #[test]
+fn class_uses_reports_direct_trait_metadata() {
+    let source = r#"<?php
+namespace App;
+
+trait RegistersHooks {}
+trait AddsFilters {}
+trait ParentOnly {}
+
+class BasePlugin {
+    use ParentOnly;
+}
+
+class Plugin extends BasePlugin {
+    use RegistersHooks, AddsFilters;
+}
+
+$plugin = new Plugin();
+print_r(class_uses($plugin));
+print_r(class_uses("App\\Plugin", false));
+
+$call = "class_uses";
+$dynamic = $call("App\\Plugin");
+echo count($dynamic), "\n";
+echo isset($dynamic["App\\RegistersHooks"]) ? "registers\n" : "missing\n";
+echo isset($dynamic["App\\ParentOnly"]) ? "parent-present\n" : "parent-not-listed\n";
+echo class_uses("App\\Missing", false) ? "missing-true" : "missing-false";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [App\\RegistersHooks] => App\\RegistersHooks\n    [App\\AddsFilters] => App\\AddsFilters\n)\nArray\n(\n    [App\\RegistersHooks] => App\\RegistersHooks\n    [App\\AddsFilters] => App\\AddsFilters\n)\n2\nregisters\nparent-not-listed\nmissing-false"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn class_uses_requires_object_or_string_and_bool_autoload_arguments() {
+    let name_error = runtime_error("<?php\nvar_dump(class_uses(42));\n");
+
+    assert_eq!(name_error.line, 2);
+    assert_eq!(name_error.column, 10);
+    assert_eq!(
+        name_error.message,
+        "unsupported call class_uses(): object_or_class argument must be object or string, got int"
+    );
+
+    let autoload_error = runtime_error("<?php\nvar_dump(class_uses(\"Box\", []));\n");
+
+    assert_eq!(autoload_error.line, 2);
+    assert_eq!(autoload_error.column, 10);
+    assert_eq!(
+        autoload_error.message,
+        "unsupported call class_uses(): autoload argument must be bool-like scalar in the current subset, got array"
+    );
+}
+
+#[test]
 fn get_declared_traits_reports_declared_trait_metadata() {
     let source = r#"<?php
 namespace App;
@@ -5657,6 +5715,18 @@ fn emit_ir_rejects_get_declared_interfaces_until_native_object_lowering_exists()
 fn emit_ir_rejects_class_implements_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\necho class_implements(\"Box\");\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("object-metadata lowering rejects"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_class_uses_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\necho class_uses(\"Box\");\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

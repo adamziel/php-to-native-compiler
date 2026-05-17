@@ -14428,32 +14428,88 @@ handled.
 
 ## Milestone 1401: Object/Interface WordPress Blocker
 
-- [ ] Parser/runtime lane: continue attacking object/interface compatibility
-  from `GOAL.MD`, such as trait method alias/conflict rules,
-  constructor/destructor fidelity, magic hooks reached by WordPress,
-  reflection metadata beyond `class_implements()`, static member lookup
-  interactions, class/interface diagnostics, or autoload/class-alias lifecycle
-  parity.
+- [x] Parser/runtime lane: added a bounded `class_uses()` metadata slice over
+  the current class/trait table. It accepts current object values or string
+  class names, honors the existing bool-like scalar autoload flag for string
+  class misses, returns associative direct-trait-name arrays, supports dynamic
+  string calls, and rejects native lowering through the existing
+  object-metadata boundary. Parent-recursive trait helper behavior,
+  built-in/internal trait catalogs, exact warning behavior for missing string
+  classes, namespace/import alias expansion beyond parsed class-like names,
+  reflection-object integration, exact PHP ordering for all engine metadata,
+  and native lowering remain unsupported.
 
 ## Milestone 1402: Reference/COW WordPress Blocker
 
-- [ ] Runtime lane: continue attacking reference/COW compatibility from
-  `GOAL.MD`, such as real reference containers, ArrayAccess reference roots,
-  alias-backed stored slots beyond direct assigned references, alias lifetime
-  cleanup across function/include boundaries, broader array/object
-  copy-on-write, non-public/dynamic property reference roots,
-  request/session alias behavior, or native rejection/coverage.
+- [x] Runtime lane: added visible non-public object-property array reference
+  roots for direct by-reference calls and literal `call_user_func_array()`
+  argument arrays in valid method visibility contexts. Private `$this` array
+  slots and protected peer-object array slots now route through context-aware
+  alias roots for the covered callback/reference-return shapes. Dynamic
+  property roots, ArrayAccess roots, append-offset callback roots, non-public
+  roots outside valid contexts, stored-array non-public property bridges, real
+  reference containers, broad COW, exact alias lifetime/destruction ordering,
+  and native lowering remain unsupported.
 
 ## Milestone 1403: Request/SAPI/Filesystem/Stream Blocker
+
+- [x] Runtime or IR/lowering lane: added bounded
+  `stream_context_get_params()` and `stream_context_set_params()` support over
+  existing stream context resources. The interpreter stores create-time
+  `notification` plus `options` params, exposes params through
+  `stream_context_get_params($context)`, merges `options` into wrapper
+  options through `stream_context_set_params($context, $params)`, and keeps
+  native stream-resource lowering rejected. Notification callback execution,
+  arbitrary params, wrapper-specific behavior, exact TypeErrors/warnings,
+  filters/wrappers, permissions/locking, stat-cache behavior, request-body
+  lifetime changes, and native stream-resource lowering remain unsupported.
+
+## Milestone 1404: WordPress DB/Bootstrap Evidence Blocker
+
+- [x] Compatibility/runtime lane: added one-shot
+  `mysqli_execute_query()` prepared `wp_options` insert/update/replace/delete
+  mutation support over the deterministic state island, with `wpdb`-shaped
+  option API fixture coverage, docs, and named unsupported database gaps.
+
+## Milestone 1405: WordPress-Focused Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1401-1404 land, refresh the
+  compatibility ledger, support docs, progress log, lane-worker queue, and
+  loop memory; record focused verification; run the serialized full gate; and
+  checkpoint the batch. Manual full gate passed before checkpoint: `cargo
+  test` completed successfully, `phpc test` reported `1499` fixture tests
+  passed with `0` failures, and `phpc test --compare-php` reported `1499`
+  fixture tests passed with `0` failures, `872` system PHP comparisons, and
+  `627` skipped `phpc-only` fixtures.
+
+## Milestone 1406: Object/Interface WordPress Blocker
+
+- [ ] Parser/runtime lane: continue attacking object/interface compatibility
+  from `GOAL.MD`, such as recursive `class_uses()` helper behavior,
+  trait alias/conflict rules, constructor/destructor fidelity, magic hooks
+  reached by WordPress, reflection metadata objects, static member lookup
+  interactions, class/interface diagnostics, or autoload/class-alias lifecycle
+  parity.
+
+## Milestone 1407: Reference/COW WordPress Blocker
+
+- [ ] Runtime lane: continue attacking reference/COW compatibility from
+  `GOAL.MD`, such as real reference containers, ArrayAccess reference roots,
+  append-offset callback roots, stored-array non-public property bridges,
+  alias lifetime cleanup across function/include boundaries, broader
+  array/object copy-on-write, request/session alias behavior, or native
+  rejection/coverage.
+
+## Milestone 1408: Request/SAPI/Filesystem/Stream Blocker
 
 - [ ] Runtime or IR/lowering lane: continue attacking request/SAPI,
   filesystem, and stream behavior from `GOAL.MD`, such as output-started and
   header fidelity, shutdown callback execution, session/cookie persistence,
-  include-path/stat-cache behavior, stream context params/effects, filters,
-  additional wrappers, request-body lifetime, upload edge cases beyond
+  include-path/stat-cache behavior, stream filters/wrappers, wrapper-specific
+  stream context behavior, request-body lifetime, upload edge cases beyond
   `PHPC_FILES`, or host filesystem semantics.
 
-## Milestone 1404: WordPress DB/Bootstrap Evidence Blocker
+## Milestone 1409: WordPress DB/Bootstrap Evidence Blocker
 
 - [ ] Compatibility/runtime lane: continue attacking executable WordPress
   database/bootstrap evidence from `GOAL.MD`, such as broader `wpdb`/MySQLi
@@ -14462,9 +14518,9 @@ handled.
   callback shapes, deterministic plugin/theme loading probes, or a
   bootstrap/request probe that moves past its next real blocker.
 
-## Milestone 1405: WordPress-Focused Queue Refresh
+## Milestone 1410: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1401-1404 land, refresh the
+- [ ] Tests/docs lane: after Milestones 1406-1409 land, refresh the
   compatibility ledger, support docs, progress log, lane-worker queue, and
   loop memory; record focused verification; run the serialized full gate; and
   checkpoint the batch.

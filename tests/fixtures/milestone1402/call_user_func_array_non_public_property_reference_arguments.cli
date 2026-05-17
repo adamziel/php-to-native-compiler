@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1402/call_user_func_array_non_public_property_reference_arguments.php
