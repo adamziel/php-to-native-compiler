@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone1583/realpath_cache_filename_invalidation.php
+exit: 0
+stdout:
+target-cached|source-cached|target-cleared|source-kept|stat-kept|empty-kept|all-cleared--- stdout end ---
+stderr:
+--- stderr end ---

@@ -348,9 +348,12 @@ backticked table/column spellings and an exact trailing single-character
 `ESCAPE '<char>'` clause, remove option names through the same bounded
 MySQL-like `LIKE` matcher used by prepared option-row scans, so `%`, `_`, and
 escaped wildcard literals such as `\_transient\_%` or `!_transient!_%` are
-distinguished. This gives the current transient-shaped cleanup probe a
-deterministic option-state path for literal/prepared name lists and prepared
-LIKE deletes. An exact WordPress-shaped
+distinguished. These prepared option-name `LIKE` deletes honor the placeholder
+handle's bounded `NO_BACKSLASH_ESCAPES` branch for the default backslash
+escape character, while explicit custom `ESCAPE '<char>'` clauses such as
+`ESCAPE '!'` keep using that custom escape character. This gives the current
+transient-shaped cleanup probe a deterministic option-state path for
+literal/prepared name lists and prepared LIKE deletes. An exact WordPress-shaped
 `DELETE a, b FROM wp_options a, wp_options b ...` transient cleanup shape
 also deletes payload rows and matching timeout rows when the supported
 payload prefix, timeout prefix, `CONCAT`/`SUBSTRING` timeout expression, and
@@ -361,10 +364,14 @@ and `mysqli_execute_query()` paths, including `%`, `_`, and backslash-escaped
 wildcard literals in the current prepared parameter slice. Prepared
 expired-timeout predicates also accept an exact single-character
 `ESCAPE '<char>'` clause after `LIKE ?` for the current plain/backticked
-table and column spellings. This is not broad
+table and column spellings, and use the same bounded
+`NO_BACKSLASH_ESCAPES` handling as other prepared option-name `LIKE` filters.
+This is not broad
 `DELETE` SQL, arbitrary multi-table deletes, subquery support, arbitrary
-predicates, SQL-mode behavior beyond the bounded direct option-name literal
-and schema metadata slices, non-string option-name params, real index/lock
+predicates, SQL-mode behavior beyond the bounded direct option-name literal,
+prepared option-name `LIKE`, and schema metadata slices, explicit
+`ESCAPE '\\'` parity under `NO_BACKSLASH_ESCAPES`, non-string option-name
+params, real index/lock
 behavior, or host database execution. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
@@ -506,12 +513,16 @@ backslash-escaped `%`, `_`, and `\` literals such as `\_transient\_%`.
 These prepared LIKE scans also accept an exact single-character
 `ESCAPE '<char>'` clause before the supported trailing `ORDER BY option_name`
 or ``ORDER BY `option_name` `` suffix, with optional `ASC`, and keep the
-existing deterministic ascending option-name row order. This prepared path is
-still bounded to the documented option-row projections and does not support
-SQL-mode-aware `NO_BACKSLASH_ESCAPES` prepared option pattern reads, prepared
-pattern lists, `DESC` ordering, arbitrary `ORDER BY` expressions, collation
-fidelity, or host database execution, except for the separate
-expired-timeout predicate slice documented above. The exact
+existing deterministic ascending option-name row order. The default backslash
+escape character in prepared option-name `LIKE` pattern parameters honors the
+placeholder handle's bounded `NO_BACKSLASH_ESCAPES` branch, while explicit
+custom single-character `ESCAPE '<char>'` clauses such as `ESCAPE '!'` keep
+using the declared escape character. This prepared path is still bounded to
+the documented option-row projections and does not support explicit
+`ESCAPE '\\'` parity under `NO_BACKSLASH_ESCAPES`, prepared pattern lists,
+`DESC` ordering, arbitrary `ORDER BY` expressions, collation fidelity, or host
+database execution, except for the separate expired-timeout predicate slice
+documented above. The exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
 returns a recorded option-name row for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

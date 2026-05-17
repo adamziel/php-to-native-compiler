@@ -151,8 +151,10 @@ with `restore_error_handler()` restoring the previous bounded handler.
 accepts the PHP-shaped zero-, one-, or two-argument forms and clears the
 bounded request-local successful metadata cache used by `filesize()` and
 `filemtime()`, either globally or for one local path. Successful `realpath()`
-calls populate bounded request-local `realpath_cache_get()` entries, and
-`clearstatcache(true)` clears those entries. Bounded
+calls populate bounded request-local `realpath_cache_get()` entries;
+one-argument `clearstatcache(true)` clears those entries, while
+`clearstatcache(true, $filename)` removes only a non-empty exact matching
+cached resolved-path key. Bounded
 `register_shutdown_function()` callbacks run supported string and public
 array-callable callbacks with by-value extra arguments during normal shutdown
 and after the bounded `exit()` path, before object destructors and final
@@ -330,7 +332,8 @@ incorrect native code.
   transient-shaped option-name prefix result scans with single-character
   `ESCAPE` clauses, SQL-mode-aware direct option-name equality reads and
   equality/`IN` deletes for the bounded `NO_BACKSLASH_ESCAPES` branch, and
-  prepared LIKE deletes, including exact
+  SQL-mode-aware prepared option-name `LIKE` scans/deletes for that same
+  bounded branch, including exact
   `ORDER BY option_name` suffixes on those scans and a bounded
   expired-transient-timeout
   `option_name LIKE ... AND option_value < timestamp` option-name scan,
@@ -491,7 +494,8 @@ incorrect native code.
   file/start/end/doc-comment source metadata, `hasProperty($name)`,
   `getProperty($name)`, and zero-argument `getProperties()`, bounded
   `ReflectionFunction` metadata objects for declared user functions, plus a
-  bounded internal `strlen`/`strtolower` slice, with name,
+  bounded internal slice for selected WordPress-relevant string, path,
+  formatting, and metadata builtins, with name,
   file/start/end/doc-comment, parameter-list, return-type, and
   by-reference-return inspection plus by-value `invoke()`/`invokeArgs()`,
   `ReflectionMethod`
@@ -632,7 +636,7 @@ bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionPar
 and trait method source-file persistence, exact `ReflectionClass::getMethod()`
 and `getMethods()` exception objects/text and broad trait-order parity,
 reflection invocation beyond the current by-value user function/user-class
-method and bounded `strlen`/`strtolower` internal function slices, non-public or dynamic
+method and named bounded internal function slice, non-public or dynamic
 `ReflectionProperty` value mutation, adapted recursive trait metadata edge
 cases, and
 direct/property-held `ArrayAccess` offsets and
@@ -671,9 +675,10 @@ execute the same direct-variable return shape and the same bounded
 by-value read after covered by-reference array-offset argument writeback.
 Direct named static method and dynamic static receiver reference-return calls
 also use the bounded magic-property array-offset bridge when visible public
-`__get()` returns a direct variable by reference. Inaccessible
-declared-property magic fallback, arbitrary reference-return expressions,
-mixed nested `ArrayAccess` chains, and general magic-property reference
+`__get()` returns a direct variable by reference, including missing or
+inaccessible declared properties reached by that bridge. Arbitrary
+reference-return expressions, mixed nested `ArrayAccess` chains, normal
+property-read magic fallback breadth, and general magic-property reference
 containers remain unsupported.
 Omitted optional by-reference parameters can use their defaults without alias
 binding; direct-variable by-reference arguments use a bounded direct cell path
@@ -689,16 +694,16 @@ object-property array-offset arguments such as
 `handler($holders["bag"]->items["outer"]["slot"])`, including dynamic selected
 visible properties, by evaluating the holder once and writing callee mutations
 back through the selected property array slot.
-Direct user-function calls also accept direct missing named and dynamic
-object-property arguments such as `handler($object->missing)` and
+Direct user-function calls also accept direct missing or inaccessible declared
+named and dynamic object-property arguments such as
+`handler($object->missing)`, `handler($object->private)`, and
 `handler($object->{$name})` when public `__get($name)` returns a direct
 variable by reference; the parameter binds to that returned cell. Array offsets
 below magic properties use the same bounded copy-in/writeback bridge for direct
 user-function by-reference parameters and for normal direct free-function or
 direct visible object-method reference-return calls that discard the returned
-reference. Inaccessible declared-property magic fallback, general
-magic-property reference containers, and arbitrary reference expressions remain
-unsupported.
+reference. General magic-property reference containers, normal property-read
+magic fallback breadth, and arbitrary reference expressions remain unsupported.
 Mutations before `unset($param)` are written back; later writes to the
 detached local parameter are not.
 `call_user_func_array()` also has a bounded string user-callback, public
@@ -832,12 +837,16 @@ The current native path is focused on straight-line scalar lowering:
   callability/function-existence checks, selected metadata-existence checks, and
   selected constant-existence checks
 
-The native runtime ABI has an early probe-only helper surface for scalar echo
-conversion, owned byte buffers, opaque copied PHP string handles, and a bounded
-valid-UTF-8 string-handle-to-runtime-value bridge. Normal generated LLVM for
-strings still uses the existing direct static-string `printf` path; linked
-native execution, binary PHP string value handles, diagnostics handles, and
-production runtime string-helper lowering are not implemented.
+The native runtime ABI has an early helper surface for scalar echo conversion,
+owned byte buffers, opaque copied PHP string handles, and a bounded valid-UTF-8
+string-handle-to-runtime-value bridge. Normal generated LLVM now uses that ABI
+for one narrow output path: statement-form `print` of a direct compile-time
+string value calls runtime string/value helpers and
+`phpc_native_value_echo_stdout`. Other string output, including `echo` and
+dynamic string expression output, still uses the existing direct static-string
+`printf` path. Linked native execution, binary PHP string value handles,
+diagnostics handles, and broad production runtime string-helper lowering are not
+implemented.
 
 Native lowering rejects arrays, array destructuring, objects, `instanceof`
 relationship checks, static class members, ArrayAccess object-offset dispatch,

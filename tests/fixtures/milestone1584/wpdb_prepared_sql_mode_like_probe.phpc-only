@@ -1,0 +1,1 @@
+Uses phpc's deterministic placeholder mysqli/wp_options state island and SQL-mode-aware prepared option_name LIKE filters; system PHP requires a real MySQL database connection.

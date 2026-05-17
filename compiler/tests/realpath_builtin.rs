@@ -102,6 +102,43 @@ echo array_key_exists($resolved, realpath_cache_get()) ? "kept" : "cleared";
 }
 
 #[test]
+fn clearstatcache_true_with_filename_invalidates_one_realpath_cache_entry() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$target = __DIR__ . "/realpath_target.txt";
+$resolved_target = realpath($target);
+$resolved_source = realpath(__FILE__);
+
+echo array_key_exists($resolved_target, realpath_cache_get()) ? "target-cached" : "target-missing";
+echo "|";
+echo array_key_exists($resolved_source, realpath_cache_get()) ? "source-cached" : "source-missing";
+
+clearstatcache(true, $resolved_target);
+echo "|";
+echo array_key_exists($resolved_target, realpath_cache_get()) ? "target-kept" : "target-cleared";
+echo "|";
+echo array_key_exists($resolved_source, realpath_cache_get()) ? "source-kept" : "source-cleared";
+
+clearstatcache(true, "");
+echo "|";
+echo array_key_exists($resolved_source, realpath_cache_get()) ? "empty-kept" : "empty-cleared";
+
+clearstatcache(true);
+echo "|";
+echo array_key_exists($resolved_source, realpath_cache_get()) ? "all-kept" : "all-cleared";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "target-cached|source-cached|target-cleared|source-kept|empty-kept|all-cleared"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn realpath_reports_current_argument_and_local_path_boundaries() {
     let non_string = run_source("<?php\necho realpath(42);\n").unwrap_err();
     assert_eq!(non_string.phase, Phase::Runtime);

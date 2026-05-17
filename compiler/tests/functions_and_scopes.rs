@@ -2964,6 +2964,67 @@ echo $dynamicStorage["created"];
 }
 
 #[test]
+fn reference_parameter_accepts_inaccessible_declared_property_magic_get_source() {
+    let execution = run_source(
+        r#"<?php
+$storage = "initial";
+$dynamicStorage = "dynamic";
+$items = ["slot" => "array"];
+
+class InaccessibleMagicBox {
+    private $secret = "hidden";
+
+    public function &__get($name) {
+        global $storage;
+        return $storage;
+    }
+}
+
+class InaccessibleDynamicMagicBox {
+    protected $secret = "hidden";
+
+    public function &__get($name) {
+        global $dynamicStorage;
+        return $dynamicStorage;
+    }
+}
+
+class InaccessibleMagicArrayBox {
+    private $items = [];
+
+    public function &__get($name) {
+        global $items;
+        return $items;
+    }
+}
+
+function mutate_inaccessible_magic(&$value, $suffix) {
+    $value = ($value === null ? "null" : $value) . ":" . $suffix;
+}
+
+$box = new InaccessibleMagicBox();
+mutate_inaccessible_magic($box->secret, "private");
+
+$property = "secret";
+$magicBox = new InaccessibleDynamicMagicBox();
+mutate_inaccessible_magic($magicBox->{$property}, "dynamic");
+
+$arrayBox = new InaccessibleMagicArrayBox();
+mutate_inaccessible_magic($arrayBox->items["slot"], "array");
+
+echo $storage, "\n", $dynamicStorage, "\n", $items["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "initial:private\ndynamic:dynamic\narray:array"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn normal_reference_return_call_accepts_magic_get_array_offset_argument() {
     let execution = run_source(
         r#"<?php
@@ -3275,6 +3336,36 @@ class MagicBox {
 $box = new MagicBox();
 $property = "missing";
 $alias =& $box->$property;
+$alias = "from-alias";
+echo $storage;
+echo "|";
+$storage = "from-global";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-global");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_inaccessible_declared_property_magic_get_source_aliases_cell() {
+    let execution = run_source(
+        r#"<?php
+$storage = "initial";
+
+class InaccessibleMagicAliasBox {
+    private $secret = "hidden";
+
+    public function &__get($name) {
+        global $storage;
+        return $storage;
+    }
+}
+
+$box = new InaccessibleMagicAliasBox();
+$alias =& $box->secret;
 $alias = "from-alias";
 echo $storage;
 echo "|";

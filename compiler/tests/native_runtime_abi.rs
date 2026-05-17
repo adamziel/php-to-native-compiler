@@ -3,8 +3,8 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use php_compiler::{
-    native_runtime_scalar_echo_probe_ir, native_runtime_scalar_echo_probe_ir_for_target,
-    NativeRuntimeIrTarget,
+    emit_ir_source, native_runtime_scalar_echo_probe_ir,
+    native_runtime_scalar_echo_probe_ir_for_target, NativeRuntimeIrTarget,
 };
 
 #[test]
@@ -94,6 +94,10 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("declare i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare void @phpc_native_value_free(%phpc.NativeValueHandle)"),
         "{ir}"
     );
@@ -111,6 +115,10 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     );
     assert!(
         ir.contains("define i64 @phpc_probe_string_handle_to_value_echo()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)"),
         "{ir}"
     );
     assert!(
@@ -197,13 +205,103 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
         "{ir}"
     );
     assert!(
+        ir.contains("declare i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("define i64 @phpc_probe_string_handle_to_value_echo()"),
         "{ir}"
     );
 }
 
 #[test]
-fn normal_string_emit_ir_cli_snapshot_keeps_runtime_string_helpers_probe_only() {
+fn normal_print_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
+    let ir = emit_ir_source("<?php\n$label = \"runtime helper\";\nprint $label;\necho \"\\n\";\n")
+        .unwrap();
+
+    assert!(
+        ir.contains("%phpc.NativeStringHandle = type { ptr }"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("%phpc.NativeValueHandle = type { ptr }"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.0, i64 14)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeValueHandle @phpc_native_value_from_string"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i64 @phpc_native_value_echo_stdout"),
+        "{ir}"
+    );
+    assert!(ir.contains("call void @phpc_native_value_free"), "{ir}");
+    assert!(ir.contains("call void @phpc_native_string_free"), "{ir}");
+    assert!(
+        !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.0)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.1)"),
+        "{ir}"
+    );
+}
+
+#[test]
+fn normal_print_string_emit_ir_cli_snapshot_uses_runtime_value_stdout_helper() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1585/native_print_string_runtime_helper_lowering.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone1585/native_print_string_runtime_helper_lowering.cli"),
+    )
+    .expect("native print runtime helper CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+    assert!(actual.contains("phpc_native_value_echo_stdout"), "{actual}");
+    assert!(actual.contains("phpc_native_string_from_bytes"), "{actual}");
+}
+
+#[test]
+fn normal_echo_string_emit_ir_cli_snapshot_keeps_runtime_string_helpers_out_of_echo_lowering() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()
@@ -238,7 +336,7 @@ fn normal_string_emit_ir_cli_snapshot_keeps_runtime_string_helpers_probe_only() 
 }
 
 #[test]
-fn normal_string_value_emit_ir_cli_snapshot_keeps_value_helpers_probe_only() {
+fn normal_echo_string_value_emit_ir_cli_snapshot_keeps_value_helpers_out_of_echo_lowering() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()

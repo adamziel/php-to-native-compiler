@@ -1,0 +1,17 @@
+strpos|strpos|3/2|ReflectionUnionType:int|false|3
+offset|offset|1|1|0|int
+substr|save|3/2
+trim|init|2/1
+ltrim|admin
+rtrim|hook
+contains|1|bool
+starts|1
+ends|1
+case|0
+path|wp-config|/var/www
+format|hook:init:10
+variadic|values|1|1|0
+implode|mu-plugin
+defined|1
+function|1
+sapi|0/0|cli

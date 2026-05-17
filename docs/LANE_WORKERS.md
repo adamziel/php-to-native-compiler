@@ -211,44 +211,47 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Object/interface lane: Milestone 1581 targets more internal
-  `ReflectionFunction` targets, closure reflection targets, interface/trait
+- Object/interface lane: Milestone 1587 targets arbitrary internal
+  `ReflectionFunction` breadth, closure reflection targets, interface/trait
   method reflection invocation, exact reflection exceptions, inherited
   interface compatibility, constructor/destructor fidelity, magic hooks reached
   by WordPress, class alias/autoload lifecycle, readonly/property hooks,
   adapted recursive trait ordering/conflicts, built-in/internal trait catalogs,
   or broader class/object semantics.
-- Reference/COW lane: Milestone 1582 targets real reference containers,
-  inaccessible declared-property magic fallback, magic-property reference
-  containers, arbitrary reference expressions, invisible selected dynamic
-  properties, mixed nested `ArrayAccess` chains, broader array/object
-  copy-on-write, exact alias destruction ordering, object/Traversable
-  by-reference iteration, superglobal reference lifetime, or native lowering
-  diagnostics.
-- Request/SAPI/filesystem/stream lane: Milestone 1583 targets real SAPI `Date`
+- Reference/COW lane: Milestone 1588 targets real reference containers,
+  general magic-property reference containers, arbitrary reference expressions,
+  invisible selected dynamic properties, mixed nested `ArrayAccess` chains,
+  broader array/object copy-on-write, exact alias destruction ordering,
+  object/Traversable by-reference iteration, superglobal reference lifetime,
+  normal property-read magic fallback breadth, or native lowering diagnostics.
+- Request/SAPI/filesystem/stream lane: Milestone 1589 targets real SAPI `Date`
   emission, realpath-cache entries from more filesystem operations,
-  `realpath_cache_size()`, per-filename realpath-cache invalidation, broader
-  stat-cache coverage, include_path/open_basedir policy, stream-wrapper cache
-  interaction, cookie-name encoding, exact `ValueError` parity, output
-  buffering, shutdown/fatal/destructor ordering, request-body lifetime,
-  uploads, host filesystem edge cases, real SAPI emission, or native lowering.
-- WordPress DB/bootstrap lane: Milestone 1584 targets arbitrary prepared SQL,
-  broader SQL-mode and MySQL wildcard parity, prepared option pattern
-  SQL-mode parity, dbDelta-relevant schema diffing, host database inspection,
-  arbitrary query/result behavior, charset/collation/error fidelity,
-  persistent object-cache/transients, hook callback breadth, plugin/theme
-  loading breadth, or REST/admin/front-controller bootstrap progress.
-- Native runtime ABI lane: Milestone 1585 targets helper-call lowering from
-  normal generated LLVM, linked execution probes, diagnostics handles, binary
-  PHP string value handles, array/object/resource/reference ABI shape,
-  request-state handles, or explicit native rejections where runtime ABI
-  coverage is still missing.
-- Tests/docs lane: Milestone 1586 is the next tests/docs slot after the next
+  `realpath_cache_size()`, broader stat-cache coverage,
+  include_path/open_basedir policy, stream-wrapper cache interaction,
+  cookie-name encoding, exact `ValueError` parity, output buffering,
+  shutdown/fatal/destructor ordering, request-body lifetime, uploads, host
+  filesystem edge cases, real SAPI emission, or native lowering.
+- WordPress DB/bootstrap lane: Milestone 1590 targets arbitrary prepared SQL,
+  broader SQL-mode and MySQL wildcard parity, explicit `ESCAPE '\\'` parity
+  under `NO_BACKSLASH_ESCAPES`, prepared pattern lists, dbDelta-relevant schema
+  diffing, host database inspection, arbitrary query/result behavior,
+  charset/collation/error fidelity, persistent object-cache/transients, hook
+  callback breadth, plugin/theme loading breadth, or REST/admin/front-
+  controller bootstrap progress.
+- Native runtime ABI lane: Milestone 1591 targets linked native execution,
+  `echo` helper-call lowering, diagnostics handles, binary PHP string value
+  handles, dynamic string expression lowering, array/object/resource/reference
+  ABI shape, request-state handles, WordPress host-state ABI, or explicit
+  native rejections where runtime ABI coverage is still missing.
+- Tests/docs lane: Milestone 1592 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
-Milestones 1575 through 1579 closed the latest WordPress-focused
-implementation and native lanes; Milestone 1580 is the integration/full-gate
-refresh slot for that batch.
+Milestones 1581 through 1585 closed the latest WordPress-focused
+implementation and native lanes; Milestone 1586 refreshed the queue and
+recorded the full-gate result.
+Milestones 1575 through 1579 closed the previous WordPress-focused
+implementation and native lanes; Milestone 1580 refreshed the queue and
+recorded the full-gate result.
 Milestones 1569 through 1573 closed the latest WordPress-focused
 implementation and native lanes; Milestone 1574 is the integration/full-gate
 refresh slot for that batch.

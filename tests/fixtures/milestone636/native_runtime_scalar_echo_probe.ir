@@ -19,6 +19,7 @@ declare %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStrin
 declare void @phpc_native_string_free(%phpc.NativeStringHandle)
 declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)
 declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)
+declare i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)
 declare void @phpc_native_value_free(%phpc.NativeValueHandle)
 
 define i64 @phpc_probe_scalar_echo_len() {
@@ -67,6 +68,7 @@ entry:
   %value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)
   %buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %value)
   %len = extractvalue %phpc.NativeByteBuffer %buffer, 1
+  %written = call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)
   call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)
   call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
   call void @phpc_native_string_free(%phpc.NativeStringHandle %string)

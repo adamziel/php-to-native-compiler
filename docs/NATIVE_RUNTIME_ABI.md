@@ -64,6 +64,7 @@ The first scalar output helper symbols are:
 - `phpc_native_string_free(NativeStringHandle)`
 - `phpc_native_value_from_string(NativeStringHandle) -> NativeValueHandle`
 - `phpc_native_value_echo_bytes(NativeValueHandle) -> NativeByteBuffer`
+- `phpc_native_value_echo_stdout(NativeValueHandle) -> usize`
 - `phpc_native_value_free(NativeValueHandle)`
 
 `phpc_native_scalar_echo_write` returns the total byte length required even when
@@ -101,7 +102,10 @@ owned by the caller and must still be freed separately. Null string handles and
 non-UTF-8 byte payloads return a null value handle until diagnostics handles and
 binary PHP string values have native ABI coverage. `phpc_native_value_echo_bytes`
 returns runtime-owned echo bytes for the current value handle, and
-`phpc_native_value_free` releases the value handle.
+`phpc_native_value_echo_stdout` writes the current value handle's PHP echo bytes
+to stdout and returns the number of bytes written. Null handles and host write
+failures return zero until diagnostics handles exist. `phpc_native_value_free`
+releases the value handle.
 
 The Rust runtime can convert this ABI value back into the current interpreter
 `Value` model with `NativeScalarValue::to_value()`.
@@ -167,12 +171,21 @@ while the Milestone 1579 CLI fixture pins that normal generated string output
 still uses the existing direct `printf` lowering path and does not call the
 value helpers.
 
-This is not production lowering. Normal `phpc compile --emit-ir` output remains
-unchanged and still does not link or execute runtime helper calls. The snapshot
-uses the selected target's `usize`/pointer-width shape; a real linked native
-backend still needs full target data layout, calling-convention validation, and
-runtime helper emission before helper calls can be emitted truthfully for all
-supported targets.
+Milestone 1585 adds the first normal generated LLVM helper-call lowering path:
+statement-form `print` of a direct compile-time string value is copied into a
+native string handle, cloned into a runtime value handle, written through
+`phpc_native_value_echo_stdout`, and then freed. The deterministic probe now
+declares and calls the stdout helper for host-width and explicit 32-bit
+snapshots.
+
+This is still not linked native execution. Normal `echo` string lowering,
+dynamic string expression output, binary PHP string value handles, diagnostics
+handles, request state, arrays, objects, resources, references, and WordPress
+host state remain outside this ABI slice. The snapshot uses the selected
+target's `usize`/pointer-width shape; a real linked native backend still needs
+full target data layout, calling-convention validation, runtime linking, and
+runtime helper emission before broader helper calls can execute truthfully for
+all supported targets.
 
 ## Verification
 
@@ -201,25 +214,30 @@ The tests pin:
   cloned owned-byte buffers, null non-empty inputs, and handle release.
 - opaque runtime-owned value handles converted from valid UTF-8 string handles,
   including embedded NUL bytes, independent source-handle lifetime, value
-  echo-byte cloning, null string handles, non-UTF-8 rejection, and value-handle
-  release.
+  echo-byte cloning, null string handles, non-UTF-8 rejection, null-handle
+  stdout echo behavior, and value-handle release.
 - the deterministic compiler-side IR probe that names the exported scalar echo
   helper declarations without claiming linked native execution.
 - explicit 32-bit and 64-bit `usize` IR rendering for scalar echo, owned
-  byte-buffer, string-handle, and value-handle helper declarations plus the
-  probe calls.
+  byte-buffer, string-handle, value-handle, and value stdout helper
+  declarations plus the probe calls.
+- the normal generated `--emit-ir` CLI path for statement-form `print` of a
+  direct compile-time string value through the runtime string/value stdout
+  helpers.
 
 ## Explicit Non-Support
 
 This ABI does not yet provide:
 
 - string interning, mutable string storage, binary PHP string value conversion,
-  diagnostics for failed handle conversion, or production lowering of PHP
-  strings through runtime helpers beyond the scalar echo owned-byte helper,
-  copied raw-byte buffer helper, opaque copied string-handle helper, and valid
-  UTF-8 string-handle-to-value helper;
+  diagnostics for failed handle conversion or stdout writes, or production
+  lowering of PHP strings through runtime helpers beyond the scalar echo
+  owned-byte helper, copied raw-byte buffer helper, opaque copied string-handle
+  helper, valid UTF-8 string-handle-to-value helper, and the narrow
+  statement-form string `print` stdout helper path;
 - arrays, objects, resources, references, or copy-on-write containers;
-- runtime helper calls from normal generated LLVM IR;
+- runtime helper calls from normal generated LLVM IR beyond direct
+  compile-time string `print` statements;
 - symbol tables, stack frames, call lookup, or diagnostics;
 - a link command or native executable `phpc` mode;
 - PHP request state, WordPress host state, or extension integration.

@@ -164,20 +164,19 @@ aliases, detaches aliases below that removed root by storing their last
 observed values into the remaining direct alias variables. This is still the
 same symbol-table alias metadata, not a reference container with destructor or
 copy-on-write ordering semantics.
-By-reference user-function parameters can also bind direct missing named or
-dynamic object-property arguments through the existing magic `__get()`
-reference-return cell path when visible public `__get($name)` returns a direct
-variable by reference. The argument binding shares that returned cell with the
-callee parameter for the duration of the call. Direct user-function
-by-reference parameters can also bind array offsets below that missing magic
-property, such as `$object->missing["slot"]`, by temporarily rooting the
-returned direct-variable cell and reusing the existing array-offset
-copy-in/writeback alias path. This is intentionally limited to the existing
-direct-variable reference-return body shape and direct user-function calls;
-reference-returning functions or methods with magic-property array-offset
-arguments, inaccessible declared-property magic fallback, magic container
-identity, arbitrary expressions, and copy-on-write semantics still belong to
-the future reference-container model.
+By-reference user-function parameters can also bind direct missing or
+inaccessible declared named and dynamic object-property arguments through the
+existing magic `__get()` reference-return cell path when visible public
+`__get($name)` returns a direct variable by reference. The argument binding
+shares that returned cell with the callee parameter for the duration of the
+call. Direct user-function by-reference parameters can also bind array offsets
+below that magic property, such as `$object->missing["slot"]` or
+`$object->private["slot"]`, by temporarily rooting the returned direct-variable
+cell and reusing the existing array-offset copy-in/writeback alias path. This
+is intentionally limited to the existing direct-variable reference-return body
+shape and direct user-function calls; general magic container identity, normal
+property-read magic fallback breadth, arbitrary expressions, and copy-on-write
+semantics still belong to the future reference-container model.
 Reference-returning `call_user_func_array()` sources use the same caller-cell
 binding path as direct reference-returning function and method calls for the
 current literal argument-array direct-variable and direct array-slot reference
@@ -742,12 +741,12 @@ reference-return calls can execute the same direct-variable return shape used
 by statement-form reference assignment and then expose a by-value snapshot of
 the returned cell. That path reuses the covered array-offset writeback
 machinery for by-reference parameters. Direct named static method and dynamic
-static receiver calls also use the bounded array-offset bridge below missing
-magic properties when visible public `__get()` returns a direct variable by
-reference. Inaccessible declared-property magic fallback, general
-magic-property containers, nested-control-flow returns, and arbitrary
-reference-return invocations still report stable runtime boundaries before any
-by-value return is produced.
+static receiver calls also use the bounded array-offset bridge below missing or
+inaccessible declared magic properties when visible public `__get()` returns a
+direct variable by reference. General magic-property containers, normal
+property-read magic fallback breadth, nested-control-flow returns, and
+arbitrary reference-return invocations still report stable runtime boundaries
+before any by-value return is produced.
 By-reference parameters are also metadata-first: omitted optional
 by-reference parameters can use their defaults as ordinary local values, while
 provided direct-variable by-reference arguments bind the callee parameter name
@@ -1262,20 +1261,22 @@ expressions, lowerable same-type `null`, boolean, integer, finite float, known
 ASCII nonnumeric NUL-free string loose/ordering comparisons, identical string
 pointer self-comparisons, empty-string concatenation identity for lowerable
 string operands, direct supported-string-name `defined($name)` checks against
-the current exact built-in constant-name set, and `echo`/`print` through
-static `printf` calls.
+the current exact built-in constant-name set, `echo`/non-string `print`
+through static `printf` calls, and statement-form `print` of direct
+compile-time string values through the native string/value stdout helper ABI.
 It does not
 model PHP zvals, symbol-table storage, PHP numeric coercion,
-references/copy-on-write, dynamic string allocation, locale/version-specific
-float formatting, integer overflow promotion, assembly linking/execution, or
-native PHP error objects.
+references/copy-on-write, broad dynamic string allocation,
+locale/version-specific float formatting, integer overflow promotion, assembly
+linking/execution, or native PHP error objects.
 Finite same-type float arithmetic and finite float unary-minus results are
 bounded and tracked only for later scalar folds such as strict identity when
 all possible results are proven. Float overflow, `INF`, and `NAN`
 result-tracking edges remain out of scope for this value-set tracker.
 A dedicated mixed `echo`/`print` assembly CLI snapshot pins that boundary with
 a deterministic fake backend and a lowerable scalar fixture; it is coverage of
-the existing static output path, not broader native runtime output support.
+the existing static output path plus the narrow direct string `print` runtime
+helper handoff, not broader native runtime output support.
 Native reads of variables that have not been statically assigned earlier in
 that same straight-line lowerer are rejected with a specific codegen
 diagnostic until native symbol-table storage, undefined-variable diagnostics,
@@ -2242,13 +2243,15 @@ returns a UTF-8 resolved host path for existing local paths, and returns
 `false` for unresolved local paths. Successful resolutions also populate a
 bounded request-local `realpath_cache_get()` table keyed by resolved path with
 the current PHP-shaped `key`, `is_dir`, `realpath`, and `expires` fields;
-`clearstatcache(false)` leaves that table intact, while
-`clearstatcache(true)` clears it. Stream wrappers are rejected instead of
-being modeled. Symlink policy differences, exact warning plus `false`
-fidelity, include-path lookup, `open_basedir`, non-UTF-8 paths, realpath-cache
-entries from other filesystem operations, exact realpath-cache key hashes and
-expiration policy, per-filename realpath-cache invalidation,
-`realpath_cache_size()`, and native filesystem lowering remain out of scope.
+`clearstatcache(false)` leaves that table intact,
+`clearstatcache(true, $filename)` removes only a non-empty exact matching
+cached resolved-path key, and one-argument `clearstatcache(true)` clears all
+bounded realpath entries. Stream wrappers are rejected instead of being
+modeled. Symlink policy differences, exact warning plus `false` fidelity,
+include-path lookup, `open_basedir`, non-UTF-8 paths, realpath-cache entries
+from other filesystem operations, exact realpath-cache key hashes and
+expiration policy, `realpath_cache_size()`, and native filesystem lowering
+remain out of scope.
 Native function-table introspection recognizes the names, while direct native
 `realpath(...)` calls stop at a dedicated filesystem-canonicalization codegen
 boundary before argument lowering or backend selection until generated code has
@@ -2802,12 +2805,15 @@ attach a directly preceding docblock to a function declaration.
 `ReflectionFunction::invoke()` and `invokeArgs()` re-enter the existing
 user-function call path with evaluated by-value arguments; `invokeArgs()` uses
 the current ordered PHP array entries as positional values, not PHP 8 named
-argument semantics for string keys. The function path
-intentionally rejects internal functions, closure targets, by-reference
-invocation, typed parameter/return declarations during invocation, and
-reference returns until those metadata and aliasing sources exist, and
-doc-comment association does not yet model attributes or every PHP trivia edge
-case.
+argument semantics for string keys. A named internal-function slice re-enters
+the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
+`rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
+`strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
+`function_exists`, and `php_sapi_name`. The function path intentionally
+rejects other internal functions, closure targets, by-reference invocation,
+typed parameter/return declarations during invocation, and reference returns
+until those metadata and aliasing sources exist, and doc-comment association
+does not yet model attributes or every PHP trivia edge case.
 `ReflectionMethod::invoke()` and `invokeArgs()` use the same request-local
 method metadata and re-enter the existing method call path for declared
 user-class methods, including public, protected, and private reflected

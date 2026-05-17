@@ -304,9 +304,12 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `spl_object_hash($object)` validates its one-argument call shape and returns a
   stable current-subset hash for object inputs;
 - `ReflectionFunction` accepts declared user-function strings and the bounded
-  internal string builtins `strlen` and `strtolower`; those internal targets
-  expose PHP-comparable name, false file/start/end/doc-comment metadata, one
-  required string parameter, return type, by-reference-return predicate, and
+  internal builtins `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`,
+  `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`,
+  `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
+  `function_exists`, and `php_sapi_name`; those internal targets expose
+  PHP-comparable name, false file/start/end/doc-comment metadata, current
+  parameter/default metadata, return type, by-reference-return predicate, and
   by-value `invoke()`/`invokeArgs()` execution through the existing builtin
   dispatcher;
 - duplicate class names, duplicate methods, and duplicate exact property names
@@ -457,8 +460,8 @@ class context lookup has native support.
 handle identity has native support.
 `spl_object_hash` is rejected through that function-call boundary until PHP
 object handle hash behavior has native support.
-`ReflectionFunction` construction and invocation, including the bounded
-internal `strlen`/`strtolower` slice, are rejected through the object/class and
+`ReflectionFunction` construction and invocation, including the named bounded
+internal function slice, are rejected through the object/class and
 function-call native boundaries until reflection objects and builtin dispatch
 have native runtime support.
 

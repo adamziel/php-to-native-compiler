@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1584/wpdb_prepared_sql_mode_like_probe.php

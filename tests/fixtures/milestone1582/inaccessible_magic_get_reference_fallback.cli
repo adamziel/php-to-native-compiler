@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone1582/inaccessible_magic_get_reference_fallback.php
+secret:private
+dynamic:dynamic
+array:slot
+alias|global
+0

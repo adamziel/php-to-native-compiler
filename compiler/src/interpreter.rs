@@ -8416,7 +8416,7 @@ impl Interpreter {
                 )?;
                 Ok(())
             }
-            Err(error) if Self::is_undefined_property_error(&error) => {
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
                 if let Some(cell) =
                     self.call_magic_get_reference_return_cell(object, property, span)?
                 {
@@ -8464,7 +8464,7 @@ impl Interpreter {
                 )?;
                 Ok(())
             }
-            Err(error) if Self::is_undefined_property_error(&error) => {
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
                 if let Some(cell) =
                     self.call_magic_get_reference_return_cell(object, property, span)?
                 {
@@ -13040,6 +13040,7 @@ impl Interpreter {
                         &query,
                         &bound_parameters,
                         span,
+                        self.mysqli_sql_mode_disables_backslash_escapes(handle_id),
                     )?;
                     let options = self
                         .mysqli_wp_options
@@ -13066,6 +13067,7 @@ impl Interpreter {
                             &query,
                             &bound_parameters,
                             span,
+                            self.mysqli_sql_mode_disables_backslash_escapes(handle_id),
                         )?;
                     let options = self
                         .mysqli_wp_options
@@ -13130,6 +13132,9 @@ impl Interpreter {
                 }
             }
         }
+
+        let no_backslash_escapes = connection_handle_id
+            .is_some_and(|handle_id| self.mysqli_sql_mode_disables_backslash_escapes(handle_id));
 
         if matches!(
             query,
@@ -13444,7 +13449,11 @@ impl Interpreter {
 
         if is_wordpress_option_prepared_name_value_select_prefix_query(query) {
             let filter = wordpress_option_name_like_filter_from_prepared_params(
-                function, query, params, span,
+                function,
+                query,
+                params,
+                span,
+                no_backslash_escapes,
             )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
@@ -13511,7 +13520,11 @@ impl Interpreter {
 
         if is_wordpress_option_prepared_value_select_prefix_query(query) {
             let filter = wordpress_option_name_like_filter_from_prepared_params(
-                function, query, params, span,
+                function,
+                query,
+                params,
+                span,
+                no_backslash_escapes,
             )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
@@ -13578,7 +13591,11 @@ impl Interpreter {
 
         if is_wordpress_option_prepared_name_autoload_select_prefix_query(query) {
             let filter = wordpress_option_name_like_filter_from_prepared_params(
-                function, query, params, span,
+                function,
+                query,
+                params,
+                span,
+                no_backslash_escapes,
             )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
@@ -13645,7 +13662,11 @@ impl Interpreter {
 
         if is_wordpress_option_prepared_name_select_prefix_query(query) {
             let filter = wordpress_option_name_like_filter_from_prepared_params(
-                function, query, params, span,
+                function,
+                query,
+                params,
+                span,
+                no_backslash_escapes,
             )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
@@ -13665,7 +13686,11 @@ impl Interpreter {
 
         if is_wordpress_option_prepared_name_select_expired_timeout_prefix_query(query) {
             let filter = wordpress_option_expired_timeout_prefix_filter_from_prepared_params(
-                function, query, params, span,
+                function,
+                query,
+                params,
+                span,
+                no_backslash_escapes,
             )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
@@ -13740,7 +13765,11 @@ impl Interpreter {
 
         if is_wordpress_option_prepared_name_value_autoload_select_prefix_query(query) {
             let filter = wordpress_option_name_like_filter_from_prepared_params(
-                function, query, params, span,
+                function,
+                query,
+                params,
+                span,
+                no_backslash_escapes,
             )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
@@ -13823,7 +13852,11 @@ impl Interpreter {
 
         if is_wordpress_option_prepared_id_name_value_autoload_select_prefix_query(query) {
             let filter = wordpress_option_name_like_filter_from_prepared_params(
-                function, query, params, span,
+                function,
+                query,
+                params,
+                span,
+                no_backslash_escapes,
             )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
@@ -13885,7 +13918,11 @@ impl Interpreter {
 
         if is_wordpress_option_prepared_star_select_prefix_query(query) {
             let filter = wordpress_option_name_like_filter_from_prepared_params(
-                function, query, params, span,
+                function,
+                query,
+                params,
+                span,
+                no_backslash_escapes,
             )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
@@ -14457,6 +14494,7 @@ impl Interpreter {
                 &query,
                 &params,
                 span,
+                no_backslash_escapes,
             )?;
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = delete_wordpress_options_by_filter(options, &filter);
@@ -14471,6 +14509,7 @@ impl Interpreter {
                 &query,
                 &params,
                 span,
+                no_backslash_escapes,
             )?;
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = delete_wordpress_options_by_filter(options, &filter);
@@ -17106,6 +17145,14 @@ impl Interpreter {
 
     fn is_undefined_property_error(error: &RuntimeError) -> bool {
         matches!(error.kind(), RuntimeErrorKind::UndefinedProperty { .. })
+    }
+
+    fn is_magic_get_fallback_property_error(error: &RuntimeError) -> bool {
+        matches!(
+            error.kind(),
+            RuntimeErrorKind::UndefinedProperty { .. }
+                | RuntimeErrorKind::UnsupportedPropertyAccess { .. }
+        )
     }
 
     fn evaluate_dynamic_property_read(
@@ -26553,7 +26600,7 @@ impl Interpreter {
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
         match object.read_property_from_context(&property, current_class_id, &protected_class_ids) {
             Ok(_) => Ok(None),
-            Err(error) if Self::is_undefined_property_error(&error) => {
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
                 if let Some(cell) =
                     self.call_magic_get_reference_return_cell(object, &property, arg.span())?
                 {
@@ -26626,7 +26673,7 @@ impl Interpreter {
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
         match object.read_property_from_context(&property, current_class_id, &protected_class_ids) {
             Ok(_) => Ok(None),
-            Err(error) if Self::is_undefined_property_error(&error) => {
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
                 let Some(cell) =
                     self.call_magic_get_reference_return_cell(object, &property, arg.span())?
                 else {
@@ -31603,7 +31650,15 @@ impl Interpreter {
                     None => self.stat_cache.clear(),
                 }
                 if clear_realpath_cache {
-                    self.realpath_cache.clear();
+                    match args.get(1) {
+                        Some(Value::String(filename)) => {
+                            if !filename.is_empty() {
+                                self.realpath_cache.remove(filename);
+                            }
+                        }
+                        None => self.realpath_cache.clear(),
+                        Some(_) => {}
+                    }
                 }
                 Ok(Value::Null)
             }
@@ -37113,26 +37168,85 @@ fn reflection_function_state_from_decl(
 
 fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionState> {
     let (return_type, params) = match name {
-        "strlen" => (
-            "int",
-            vec![ReflectionParameterMetadata {
-                name: "string".to_string(),
-                type_decl: Some("string".to_string()),
-                by_reference: false,
-                is_variadic: false,
-                default: None,
-            }],
-        ),
+        "strlen" => ("int", vec![reflection_internal_param("string", "string")]),
         "strtolower" => (
             "string",
-            vec![ReflectionParameterMetadata {
-                name: "string".to_string(),
-                type_decl: Some("string".to_string()),
-                by_reference: false,
-                is_variadic: false,
-                default: None,
-            }],
+            vec![reflection_internal_param("string", "string")],
         ),
+        "trim" | "ltrim" | "rtrim" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_string_param("characters", " \n\r\t\u{000B}\0"),
+            ],
+        ),
+        "strcasecmp" => (
+            "int",
+            vec![
+                reflection_internal_param("string1", "string"),
+                reflection_internal_param("string2", "string"),
+            ],
+        ),
+        "str_contains" | "str_starts_with" | "str_ends_with" => (
+            "bool",
+            vec![
+                reflection_internal_param("haystack", "string"),
+                reflection_internal_param("needle", "string"),
+            ],
+        ),
+        "strpos" => (
+            "int|false",
+            vec![
+                reflection_internal_param("haystack", "string"),
+                reflection_internal_param("needle", "string"),
+                reflection_internal_optional_int_param("offset", 0),
+            ],
+        ),
+        "substr" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_param("offset", "int"),
+                reflection_internal_optional_null_param("length", "int"),
+            ],
+        ),
+        "sprintf" => (
+            "string",
+            vec![
+                reflection_internal_param("format", "string"),
+                reflection_internal_variadic_param("values", "mixed"),
+            ],
+        ),
+        "implode" => (
+            "string",
+            vec![
+                reflection_internal_param("separator", "array|string"),
+                reflection_internal_optional_null_param("array", "array"),
+            ],
+        ),
+        "basename" => (
+            "string",
+            vec![
+                reflection_internal_param("path", "string"),
+                reflection_internal_optional_string_param("suffix", ""),
+            ],
+        ),
+        "dirname" => (
+            "string",
+            vec![
+                reflection_internal_param("path", "string"),
+                reflection_internal_optional_int_param("levels", 1),
+            ],
+        ),
+        "defined" => (
+            "bool",
+            vec![reflection_internal_param("constant_name", "string")],
+        ),
+        "function_exists" => (
+            "bool",
+            vec![reflection_internal_param("function", "string")],
+        ),
+        "php_sapi_name" => ("string", vec![]),
         _ => return None,
     };
 
@@ -37147,6 +37261,46 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         returns_by_reference: false,
         params,
     })
+}
+
+fn reflection_internal_param(name: &str, type_decl: &str) -> ReflectionParameterMetadata {
+    ReflectionParameterMetadata {
+        name: name.to_string(),
+        type_decl: Some(type_decl.to_string()),
+        by_reference: false,
+        is_variadic: false,
+        default: None,
+    }
+}
+
+fn reflection_internal_optional_int_param(name: &str, default: i64) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_param(name, "int");
+    param.default = Some(Expr::Int(default, Span::new(0, 0)));
+    param
+}
+
+fn reflection_internal_optional_string_param(
+    name: &str,
+    default: &str,
+) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_param(name, "string");
+    param.default = Some(Expr::String(default.to_string(), Span::new(0, 0)));
+    param
+}
+
+fn reflection_internal_optional_null_param(
+    name: &str,
+    type_decl: &str,
+) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_param(name, type_decl);
+    param.default = Some(Expr::Null(Span::new(0, 0)));
+    param
+}
+
+fn reflection_internal_variadic_param(name: &str, type_decl: &str) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_param(name, type_decl);
+    param.is_variadic = true;
+    param
 }
 
 fn reflection_declaring_params(
@@ -41687,6 +41841,7 @@ fn wordpress_option_name_like_filter_from_prepared_params(
     query: &str,
     params: &[Value],
     span: Span,
+    no_backslash_escapes: bool,
 ) -> CompileResult<WordPressOptionsRowFilter> {
     let [Value::String(pattern)] = params else {
         return Err(runtime_error(
@@ -41698,7 +41853,7 @@ fn wordpress_option_name_like_filter_from_prepared_params(
         ));
     };
     let escape_char = wordpress_option_prepared_option_name_like_escape_char(query).unwrap_or('\\');
-    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, false) else {
+    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, no_backslash_escapes) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -41721,6 +41876,7 @@ fn wordpress_option_name_delete_like_filter_from_prepared_params(
     query: &str,
     params: &[Value],
     span: Span,
+    no_backslash_escapes: bool,
 ) -> CompileResult<WordPressOptionsRowFilter> {
     let [Value::String(pattern)] = params else {
         return Err(runtime_error(
@@ -41732,7 +41888,7 @@ fn wordpress_option_name_delete_like_filter_from_prepared_params(
         ));
     };
     let escape_char = wordpress_option_prepared_delete_like_escape_char(query).unwrap_or('\\');
-    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, false) else {
+    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, no_backslash_escapes) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -41749,6 +41905,7 @@ fn wordpress_option_expired_timeout_prefix_filter_from_prepared_params(
     query: &str,
     params: &[Value],
     span: Span,
+    no_backslash_escapes: bool,
 ) -> CompileResult<WordPressOptionsRowFilter> {
     let [Value::String(pattern), threshold] = params else {
         return Err(runtime_error(
@@ -41770,7 +41927,7 @@ fn wordpress_option_expired_timeout_prefix_filter_from_prepared_params(
             ),
         ));
     };
-    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, false) else {
+    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, no_backslash_escapes) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -41790,6 +41947,7 @@ fn wordpress_option_expired_timeout_delete_filter_from_prepared_params(
     query: &str,
     params: &[Value],
     span: Span,
+    no_backslash_escapes: bool,
 ) -> CompileResult<WordPressOptionsRowFilter> {
     let [Value::String(pattern), threshold] = params else {
         return Err(runtime_error(
@@ -41811,7 +41969,7 @@ fn wordpress_option_expired_timeout_delete_filter_from_prepared_params(
             ),
         ));
     };
-    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, false) else {
+    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, no_backslash_escapes) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(

@@ -152,8 +152,9 @@
   by-reference `offsetGet($offset)` has the exact bounded body
   `return $this->property[$offset];`; writes route through the backing
   property array slot. Direct user-function by-reference calls also accept
-  direct missing named and dynamic object-property arguments such as
-  `handler($object->missing)` and `handler($object->{$name})` when a visible
+  direct missing or inaccessible declared named and dynamic object-property
+  arguments such as `handler($object->missing)`,
+  `handler($object->private)`, and `handler($object->{$name})` when a visible
   public `__get($name)` method returns by reference and that method's bounded
   reference-return body returns a direct variable; the callee parameter binds
   to the returned variable cell. The same direct user-function path also
@@ -164,9 +165,9 @@
   direct visible object-method, direct named static method, and dynamic static
   receiver calls that return by reference use that same bridge for normal
   invocation when the returned reference is discarded. This does not add
-  inaccessible declared-property magic fallback, mixed nested `ArrayAccess`
-  chains, general magic-property reference containers, arbitrary reference
-  expressions, or a general in-call PHP reference container. String
+  mixed nested `ArrayAccess` chains, general magic-property reference
+  containers, arbitrary reference expressions, normal property-read magic
+  fallback breadth, or a general in-call PHP reference container. String
   user-function callbacks,
   public
   `[object, method]` instance callbacks, and public
@@ -2363,14 +2364,18 @@
   `DELETE FROM wp_options WHERE option_name LIKE ?` shapes also remove
   transient-shaped prefix matches with deterministic affected-row metadata,
   including backticked table/column spellings and escaped prefixes such as
-  `\_transient\_%`. Exact
+  `\_transient\_%`. Prepared option-name `LIKE` deletes honor the placeholder
+  handle's bounded `NO_BACKSLASH_ESCAPES` branch for the default backslash
+  escape character, while explicit custom `ESCAPE '<char>'` clauses such as
+  `ESCAPE '!'` keep using that custom escape character. Exact
   `DELETE FROM wp_options WHERE option_name LIKE '<prefix>%' AND option_value < <decimal timestamp>`
   and prepared
   `DELETE FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
   shapes also remove recorded expired transient-timeout rows whose option
   names match one trailing-percent prefix and whose recorded option value
   parses as a decimal integer below the threshold, including current
-  backticked table/column spellings and escaped transient prefixes. An exact
+  backticked table/column spellings, escaped transient prefixes, and the same
+  bounded `NO_BACKSLASH_ESCAPES` prepared-pattern handling. An exact
   `DELETE a, b FROM wp_options a, wp_options b ...` transient pair cleanup
   shape also removes payload rows plus matching timeout rows when the payload
   pattern, timeout `NOT LIKE` pattern, supported `CONCAT`/`SUBSTRING` timeout
@@ -2554,11 +2559,15 @@
   single-character `ESCAPE '<char>'` clause before the supported trailing
   `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with optional
   `ASC`, and return rows in the existing deterministic ascending option-name
-  order. This prepared path remains bounded to the documented option-row
-  projections and does not support SQL-mode-aware
-  `NO_BACKSLASH_ESCAPES` prepared option pattern reads, prepared pattern lists, `DESC`
-  ordering, arbitrary `ORDER BY` expressions, collation fidelity, or host
-  database execution. The
+  order. The default backslash escape character in prepared option-name
+  `LIKE` pattern parameters honors the placeholder handle's bounded
+  `NO_BACKSLASH_ESCAPES` branch, while explicit custom single-character
+  `ESCAPE '<char>'` clauses such as `ESCAPE '!'` keep using the declared
+  escape character. This prepared path remains bounded to the documented
+  option-row projections and does not support explicit `ESCAPE '\\'` parity
+  under `NO_BACKSLASH_ESCAPES`, prepared pattern lists, `DESC` ordering,
+  arbitrary `ORDER BY` expressions, collation fidelity, or host database
+  execution. The
   exact prepared
   `SELECT option_name FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
   shape, including backticked table/column spellings and the same optional
@@ -2667,7 +2676,9 @@
   execution and one-shot `mysqli_execute_query()` for one string
   trailing-percent prefix pattern and an integer or decimal-integer-string
   threshold, removing only recorded timeout rows whose string values parse
-  below that threshold. Prepared mutation SQL
+  below that threshold. Its prepared pattern parsing uses the same bounded
+  `NO_BACKSLASH_ESCAPES` behavior as the other prepared option-name `LIKE`
+  filters. Prepared mutation SQL
   without a prior state island remains unsupported. This does not add broad
   prepared SQL execution, arbitrary projections, real unique-index enforcement,
   no-op update affected-row fidelity, prepared mutation shapes beyond the exact
@@ -2925,13 +2936,16 @@
   The current request-local stat cache stores successful host metadata reads
   for `filesize()` and `filemtime()` by resolved local path; no-argument
   `clearstatcache()` clears that bounded cache, and the filename form removes
-  the matching local-path entry. When `clear_realpath_cache` is `true`, the
-  bounded request-local realpath cache is cleared. This is a small WordPress
-  filesystem compatibility slice, not full PHP stat-cache support: cached metadata for
+  the matching local-path entry. One-argument `clearstatcache(true)` clears the
+  bounded request-local realpath cache, while
+  `clearstatcache(true, $filename)` removes only a non-empty exact matching
+  realpath-cache key and `clearstatcache(true, "")` leaves bounded realpath
+  entries intact. This is a small WordPress filesystem compatibility slice, not
+  full PHP stat-cache support: cached metadata for
   `file_exists()`, `is_file()`, `is_dir()`, `is_readable()`, `is_writable()`,
   `is_link()`, `fstat()`, and directory/stream wrappers, realpath-cache
   entries from filesystem operations other than successful `realpath()`,
-  per-filename realpath-cache invalidation, broader scalar coercions, exact
+  broader scalar coercions, exact
   `ValueError`/`TypeError`/deprecation text, include_path/open_basedir policy,
   stream-wrapper cache interaction, cross-request cache state, partial-output
   behavior, and native lowering remain unsupported.
@@ -2940,17 +2954,19 @@
   and returns the resolved path as a UTF-8 string. Missing or otherwise
   unresolved local paths return `false`. Successful resolutions populate a
   bounded request-local `realpath_cache_get()` entry keyed by the resolved path
-  with `key`, `is_dir`, `realpath`, and `expires` fields; `clearstatcache(false)`
-  leaves those entries intact, while `clearstatcache(true)` clears them.
+  with `key`, `is_dir`, `realpath`, and `expires` fields. `clearstatcache(false)`
+  leaves those entries intact, `clearstatcache(true, $filename)` removes only
+  the non-empty exact matching cached resolved-path key, and
+  `clearstatcache(true)` clears all bounded realpath entries.
   Relative paths share the same current process-path-then-repository-root
   policy as `file_exists`. This is a bounded local path slice, not full PHP
   filesystem support: symlink policy can differ from PHP/host combinations,
   exact warning plus `false` fidelity, include-path lookup, `open_basedir`,
   stream wrappers, non-UTF-8 paths, realpath cache entries from other
   filesystem operations, exact realpath-cache `key` hash values and expiration
-  policy, per-filename realpath-cache invalidation, `realpath_cache_size()`,
-  TOCTOU semantics, host filesystem coupling, partial-output behavior, and
-  native lowering remain unsupported. Native function-table introspection can
+  policy, `realpath_cache_size()`, TOCTOU semantics, host filesystem coupling,
+  partial-output behavior, and native lowering remain unsupported. Native
+  function-table introspection can
   see the known builtin names, while direct native `realpath(...)` calls stop
   at a dedicated
   filesystem-canonicalization codegen boundary before argument lowering or
@@ -4534,19 +4550,25 @@
   checks over the current static-variable map; and `echo`/`print`.
   Native echo conversion is limited to this static scalar path: `null` and
   `false` emit nothing, `true` emits `1`, integers use `%lld`, floats use
-  `%g`, and strings are emitted through generated static string constants.
+  `%g`, and most strings are emitted through generated static string
+  constants. Statement-form `print` of a direct compile-time string value is
+  the first normal generated runtime-helper output path: LLVM IR copies the
+  static string bytes into a native string handle, clones them into a runtime
+  value handle, writes them with `phpc_native_value_echo_stdout`, and frees the
+  handles. This does not yet cover `echo`, dynamic string expression output,
+  binary PHP string values, diagnostics handles for failed stdout writes, or
+  linked native execution.
   The compiler-side native runtime helper probe now renders `usize`-shaped
   helper signatures from an explicit pointer-width target, with committed
   32-bit and current host-width coverage. The probe includes scalar echo
   helpers, owned byte-buffer helpers, an opaque copied PHP string-handle
   helper surface, and a bounded valid-UTF-8 string-handle-to-runtime-value
-  bridge. Null string handles and non-UTF-8 payloads return null value handles
-  until diagnostics handles and binary PHP string values exist. This is still
-  a dependency sketch: normal
-  `phpc compile --emit-ir` output does not call those helpers, and linked
-  native execution, production string helper lowering, string interning,
-  arrays, objects, resources, references/copy-on-write, stack frames,
-  diagnostics, and WordPress host state remain unsupported in native lowering.
+  bridge plus the value stdout helper. Null string handles and non-UTF-8
+  payloads return null value handles until diagnostics handles and binary PHP
+  string values exist. This is still a bounded ABI slice: linked native
+  execution, broad production string helper lowering, string interning, arrays,
+  objects, resources, references/copy-on-write, stack frames, diagnostics, and
+  WordPress host state remain unsupported in native lowering.
   Statement-form reference assignment is an explicit native codegen boundary:
   `phpc compile --emit-ir` and `--emit-asm` reject direct variable,
   array-offset, object-property, function-call, method-call, static-call,
@@ -6274,14 +6296,18 @@
   `false` when none was captured. Function return type objects use the same
   simple named, bounded union, and pure intersection reflection type objects
   as the method path. The bounded internal target slice also accepts
-  `new ReflectionFunction("strlen")` and
-  `new ReflectionFunction("strtolower")`, exposes their name, false
-  file/start/end/doc-comment metadata, one required string parameter, return
-  type, and by-reference-return predicate, and executes them through
+  `new ReflectionFunction(...)` for `strlen`, `strtolower`, `trim`, `ltrim`,
+  `rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
+  `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
+  `function_exists`, and `php_sapi_name`, exposes their name, false
+  file/start/end/doc-comment metadata, current parameter/default metadata,
+  return type, and by-reference-return predicate, and executes them through
   `invoke()`/`invokeArgs()`. `ReflectionFunction::invoke(...$args)` and
   `ReflectionFunction::invokeArgs($args)` execute declared user functions and
-  those two internal string builtins over the current by-value argument
-  subset. Other internal functions, closure targets,
+  those internal builtins over the current by-value argument subset. Other
+  internal functions, closure targets, exact internal default metadata beyond
+  that named slice, builtin argument shapes not supported by direct calls
+  such as `trim()` custom masks and `substr()` `null` lengths,
   by-reference parameters, typed parameter/return declarations at invocation
   time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader
   argument/reference/COW behavior remain unsupported for reflection
@@ -7994,8 +8020,11 @@
   methods documented above, plus public non-static user-class by-value
   invocation through `invoke()` and `invokeArgs()`. Interface and trait method source-file paths
   remain unsupported. `ReflectionFunction` currently supports declared
-  user-function metadata named by string, plus bounded internal
-  `strlen`/`strtolower` metadata and by-value invocation. The supported
+  user-function metadata named by string, plus bounded internal metadata and
+  by-value invocation for `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`,
+  `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`,
+  `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
+  `function_exists`, and `php_sapi_name`. The supported
   metadata methods are the name, file/start/end/doc-comment, parameter-list,
   return-type, and by-reference-return methods documented above.
   `ReflectionParameter` currently supports only method parameters from that
@@ -8022,11 +8051,11 @@
   PHP edge cases beyond the current parsed-name metadata, attributes,
   exact parameter/property docblock association across attributes and unusual trivia,
   extension/internal function/method/property/parameter metadata beyond
-  bounded `strlen`/`strtolower` `ReflectionFunction` targets, parameter and
+  the named bounded internal `ReflectionFunction` targets, parameter and
   property attributes, default constant-name introspection, closure
   `ReflectionFunction`/`ReflectionParameter` targets, reflection invocation beyond declared
-  user functions, user-class methods, and the bounded `strlen`/`strtolower`
-  internal function slice, typed declaration
+  user functions, user-class methods, and the named bounded internal function
+  slice, typed declaration
   enforcement during reflection invocation, `invokeArgs()` named-argument
   semantics, non-public or dynamic `ReflectionProperty` value mutation,
   `ReflectionClass::getProperties()` filter masks, exact

@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::io::{self, Write};
 use std::ptr;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering as AtomicOrdering};
@@ -353,6 +354,25 @@ pub unsafe extern "C" fn phpc_native_value_echo_bytes(
     unsafe { handle.as_ref() }
         .map(|value| NativeByteBuffer::from_vec(value.echo_string().into_bytes()))
         .unwrap_or_else(NativeByteBuffer::empty)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. The helper writes the current PHP echo bytes for the
+/// value to stdout and returns the number of bytes written. Null handles and
+/// host write failures return zero until diagnostics handles exist.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_echo_stdout(handle: NativeValueHandle) -> usize {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return 0;
+    };
+
+    let output = value.echo_string();
+    match io::stdout().write_all(output.as_bytes()) {
+        Ok(()) => output.len(),
+        Err(_) => 0,
+    }
 }
 
 /// # Safety
@@ -4914,6 +4934,13 @@ mod tests {
 
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
+    }
+
+    #[test]
+    fn native_string_value_echo_stdout_handles_null_values_without_output() {
+        let written = unsafe { phpc_native_value_echo_stdout(NativeValueHandle::null()) };
+
+        assert_eq!(written, 0);
     }
 
     #[test]

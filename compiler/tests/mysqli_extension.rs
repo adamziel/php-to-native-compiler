@@ -5940,6 +5940,45 @@ echo "|left=", mysqli_num_rows($remaining), ":", $remaining_row["option_value"];
 }
 
 #[test]
+fn mysqli_prepared_option_like_filters_apply_bounded_no_backslash_escapes() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_mode_target', 'payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('xtransient-mode-target', 'wildcard', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$default = mysqli_execute_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE ?", array("\\_transient\\_%"));
+$default_row = mysqli_fetch_assoc($default);
+echo "default=", mysqli_num_rows($default), ":", $default_row["option_name"];
+mysqli_query($handle, "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'");
+$mode = mysqli_execute_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE ?", array("\\_transient\\_%"));
+echo "|mode=", mysqli_num_rows($mode);
+$explicit = mysqli_execute_query($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name LIKE ? ESCAPE '!'", array("!_transient!_%"));
+$explicit_row = mysqli_fetch_assoc($explicit);
+echo "|explicit=", mysqli_num_rows($explicit), ":", $explicit_row["option_name"], "=", $explicit_row["option_value"];
+$stmt = mysqli_prepare($handle, "DELETE FROM wp_options WHERE option_name LIKE ?");
+mysqli_stmt_execute($stmt, array("\\_transient\\_%"));
+echo "|delete-mode=", mysqli_stmt_affected_rows($stmt), ":", mysqli_affected_rows($handle);
+echo "|delete-explicit=", mysqli_execute_query($handle, "DELETE FROM `wp_options` WHERE `option_name` LIKE ? ESCAPE '!'", array("!_transient!_%")) ? "ok" : "failed";
+echo ":", mysqli_affected_rows($handle);
+$left = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options");
+echo "|left=";
+while ($row = mysqli_fetch_assoc($left)) {
+    echo $row["option_name"], "=", $row["option_value"], ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "default=1:_transient_mode_target|mode=0|explicit=1:_transient_mode_target=payload|delete-mode=0:0|delete-explicit=ok:1|left=siteurl=https://example.test;xtransient-mode-target=wildcard;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_prepared_queries_filter_bounded_wordpress_schema_metadata() {
     let execution = run_source(
         r#"<?php
