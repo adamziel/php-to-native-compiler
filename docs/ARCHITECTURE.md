@@ -44,11 +44,13 @@ and bracketed URL-encoded query pairs into `$_GET`, and
 seeds flat and bracketed URL-encoded body pairs into `$_POST`. Repeated scalar
 keys use last-write-wins, `[]` bracket segments append in order, and keyed
 bracket segments materialize nested arrays under the current ordered-array
-model. `$_REQUEST` starts as GET merged with POST at the top-level key. This
-is deterministic request-state scaffolding only: it does not parse browser
-cookie headers, malformed PHP request names with exact `parse_str()` behavior,
-multipart uploads, or host SAPI state, import file-upload metadata, emit
-cookies, or model `variables_order`/`request_order`.
+model. Dots and spaces in top-level request names are normalized to underscores
+before insertion, while bracket segment keys keep their current literal decoded
+text. `$_REQUEST` starts as GET merged with POST at the top-level key. This is
+deterministic request-state scaffolding only: it does not parse browser cookie
+headers, malformed or edge-case PHP request names with exact `parse_str()`
+behavior, multipart uploads, or host SAPI state, import file-upload metadata,
+emit cookies, or model `variables_order`/`request_order`.
 
 Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
@@ -172,9 +174,13 @@ the composed public instance method under the alias name while leaving the
 original method available. The same alias path accepts an explicit `public`
 marker with a same-use qualified trait target, such as
 `use TraitA, TraitB { TraitA::method as public alias; }`, while still treating
-the alias as an ordinary public method. A bounded trait conflict adaptation
-such as `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is accepted
-for public instance methods from traits in the same class-body `use`
+the alias as an ordinary public method. Alias adaptations may also mark the new
+alias `protected` or `private`; the original public trait method remains
+available, and the non-public alias uses the existing method visibility checks
+for dispatch, `method_exists()`, and `get_class_methods()`. A bounded trait
+conflict adaptation such as
+`use TraitA, TraitB { TraitA::method insteadof TraitB; }` is accepted for
+public instance methods from traits in the same class-body `use`
 declaration; composition registers the winner and skips the named loser method.
 The current executable interaction slice also allows that selected winning
 method to be exposed through a same-block explicit-public alias, such as
@@ -192,8 +198,9 @@ properties, non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, static/abstract/final or non-public trait methods,
 broad conflict resolution beyond class-method precedence and the current
-single-loser `insteadof` slice, protected/private visibility changes,
-visibility-only adaptations, unqualified or multi-loser `insteadof`,
+single-loser `insteadof` slice, visibility-only adaptations,
+original-method visibility changes without an alias, unqualified or
+multi-loser `insteadof`,
 qualified or multi-trait alias edge cases beyond the current winner-alias slice,
 `__TRAIT__` context, references/copy-on-write, nested or conditional trait
 declarations, and native trait lowering remain explicit boundaries.
@@ -528,12 +535,16 @@ through the covered direct array-offset target path. That path finds the
 stored slot in the existing alias metadata, copies the current slot value into
 the callee parameter, and writes the final parameter value back through the
 same alias, which also syncs covered direct-variable, copied-array,
-request-bag/global, and public object-property alias groups. This deliberately
-does not model full PHP reference containers, reference array literals stored
-by value, stored arrays whose reached slots were not assigned by reference,
-string-keyed named reference argument arrays, non-public or dynamic property
-callback arguments, dynamic static receiver callback object-property array
-arguments, broader reference returns, exact by-reference `foreach`, or
+request-bag/global, and public object-property alias groups. Normal
+`call_user_func_array()` invocation can use the same copy-in/writeback bridge
+when the callback function or public array-callable method is declared as
+returning by reference, but the callback call itself still returns a value and
+is not a statement-form reference-return source. This deliberately does not
+model full PHP reference containers, reference array literals stored by value,
+stored arrays whose reached slots were not assigned by reference, string-keyed
+named reference argument arrays, non-public or dynamic property callback
+arguments, dynamic static receiver callback object-property array arguments,
+broader reference-return binding, exact by-reference `foreach`, or
 copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
@@ -1435,11 +1446,14 @@ by-reference user-function and method calls. Direct public object-property
 array-offset reference elements use the current copy-in/writeback bridge for
 that callback path. Direct stored argument arrays whose reached slots were
 assigned by reference through the covered direct array-offset target path use
-the existing alias metadata as a copy-in/writeback bridge. Reference array
-literals stored by value, stored arrays without covered reference-assigned
-slots, string-keyed named reference argument arrays, closure invocation,
-`__invoke`, named arguments, exact warning behavior, and native lowering remain
-unsupported.
+the existing alias metadata as a copy-in/writeback bridge, including for
+normal callback invocations of reference-returning user functions or public
+array-callable methods that mutate reached by-reference parameters.
+Reference array literals stored by value, stored arrays without covered
+reference-assigned slots, string-keyed named reference argument arrays, using
+`call_user_func_array()` itself as a statement-form reference-return source,
+closure invocation, `__invoke`, named arguments, exact warning behavior, and
+native lowering remain unsupported.
 `implode()` is an interpreter-only bounded array-to-string builtin for current
 WordPress bootstrap message paths. It joins scalar/null array values in
 insertion order with either an empty default separator or a string separator.
@@ -1535,8 +1549,9 @@ reached SQL-mode probe, `mysqli_select_db()`, and
 the placeholder handle. These calls are compatibility probes, not host DB
 integration. The interpreter has one narrow `wp_options` state island for exact
 WordPress-shaped option writes and reads, including direct option-value,
-autoload, option-name/option-value, and bounded full-row option-name/value/
-autoload result shapes with or without deterministic placeholder option IDs;
+autoload, option-name/option-value, exact value/autoload updates, and bounded
+full-row option-name/value/autoload result shapes with or without
+deterministic placeholder option IDs;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only no-op registration

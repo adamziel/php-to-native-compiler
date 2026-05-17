@@ -4,6 +4,174 @@
 
 Implemented:
 
+- Added Milestone 1290, the WordPress-focused queue refresh after the
+  integrated Milestones 1286-1289 batch. `GOAL.MD` now records the current
+  parallel focus after the latest visibility-changing trait alias,
+  reference-returning callback invocation, dotted/spaced request-name
+  normalization, and `wp_options` value/autoload update slices.
+  `docs/NEXT_TASKS.md` opens the next four implementation lanes as Milestones
+  1291-1294, and `docs/LANE_WORKERS.md` points active workers at larger
+  object/interface semantics, real reference/COW behavior, request/SAPI,
+  filesystem, and stream breadth, and executable WordPress
+  database/bootstrap evidence. Focused integration checks passed for the new
+  object/trait, callback-reference, request input, and option update slices.
+  Manual full gate passed before checkpoint: `cargo test` completed
+  successfully, `phpc test` reported `1408` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1408` fixture tests passed
+  with `0` failures, `808` system PHP comparisons, and `600` skipped
+  `phpc-only` fixtures.
+
+- Added Milestone 1288, a bounded request/SAPI parser slice for
+  WordPress-shaped URL-encoded request names. `PHPC_QUERY_STRING` and form POST
+  `PHPC_REQUEST_BODY` now normalize dots and spaces in top-level request names
+  to underscores before seeding `$_GET`, `$_POST`, and top-level merged
+  `$_REQUEST`, so names such as `user.login`, `remember me`, and
+  `nested.key[child space]` become `user_login`, `remember_me`, and
+  `nested_key["child space"]`. Bracket segment keys intentionally keep their
+  decoded literal text in this slice, and native request-superglobal plus
+  `file_get_contents(...)` lowering boundaries remain rejected. This does not
+  implement browser cookie parsing, sessions, multipart upload metadata,
+  max-input-vars limits, exact malformed/edge-case `parse_str()` behavior such
+  as leading/trailing/all-space names, bracket segment normalization,
+  `variables_order` or `request_order`, host SAPI imports, `$GLOBALS` aliasing,
+  references/COW, or native request-state lowering. Focused verification
+  passed with `CARGO_TARGET_DIR=target/focused-1288-request CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  superglobals request_bag_superglobals_normalize_dotted_and_spaced_root_names
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  superglobals normalized_request_input_env_cli_snapshot_matches_current_sapi_seed
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  superglobals -- --test-threads=1` passed with `27` tests; `cargo test -p
+  phpc --test file_get_contents_builtin -- --test-threads=1` passed with `9`
+  tests; direct default `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1288/normalized_request_input.php` printed
+  `empty|empty|empty|empty|empty|empty`; direct seeded
+  `PHPC_QUERY_STRING='user.login=admin&remember+me=1&nested.key[child space]=query&dup.key=get'
+  PHPC_REQUEST_METHOD=POST PHPC_CONTENT_TYPE='application/x-www-form-urlencoded'
+  PHPC_REQUEST_BODY='action.name=save&form+name[inner.dot]=body&dup.key=post'
+  cargo run -q -p phpc -- run
+  tests/fixtures/milestone1288/normalized_request_input.php` printed
+  `admin|1|query|save|body|post`; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1288` passed with `1` fixture; `cargo run -q -p phpc
+  -- test --compare-php-json tests/fixtures/milestone1288` reported `1`
+  passed fixture, `0` PHP comparisons, and `1` `.phpc-only` skip; `cargo run
+  -q -p phpc -- test --list-fixtures tests/fixtures/milestone1288` reported
+  `1` fixture, `1` CLI exercise, `0` missing expectation sidecars, `0`
+  unrecognized sidecars, and `0` `.phpc-only` reason gaps; `cargo fmt --check`
+  passed; and `git diff --check` passed. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1286, a bounded object/interface trait-adaptation slice for
+  visibility-changing aliases. Public instance trait methods can now be
+  composed under explicit `protected` or `private` alias names, while the
+  original public trait method remains available. The alias metadata drives
+  ordinary method dispatch from valid class context, `method_exists()`, and
+  global-context `get_class_methods()` filtering. This does not implement
+  visibility-only adaptations, original-method visibility changes without an
+  alias, non-public/static/abstract/final trait methods, trait properties,
+  broad conflict resolution, unqualified or multi-loser `insteadof`, exact PHP
+  diagnostics, autoloading, references/copy-on-write, or native trait lowering.
+  Focused verification passed with
+  `CARGO_TARGET_DIR=target/focused-1286-traits CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  object_model trait_alias_visibility_adaptations_are_callable_from_class_context
+  -- --test-threads=1` passed with `1` test before removing a stale dead-code
+  warning; `cargo test -p phpc --test object_model trait -- --test-threads=1`
+  passed with `18` tests; after formatting, `cargo test -p phpc --test
+  object_model -- --test-threads=1` passed with `226` tests; direct `cargo run
+  -q -p phpc -- run
+  tests/fixtures/milestone1286/trait_alias_visibility_adaptation.php` printed
+  `boot:Plugin|secret:Plugin|boot:Plugin|secret:Plugin|protected-exists|private-exists|4:boot,secret,callProtected,callPrivate`;
+  direct system PHP produced the same output after the fixture asserted
+  `get_class_methods()` membership instead of engine-specific order; `cargo run
+  -q -p phpc -- test tests/fixtures/milestone1286` passed with `1` fixture;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1286`
+  passed with `1` system PHP comparison; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1286` reported `1` passed fixture,
+  `1` comparison, and `0` skips; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1286` reported `1` fixture, `1` CLI
+  exercise, `0` missing expectation sidecars, `0` unrecognized sidecars, and
+  `0` `.phpc-only` reason gaps; `cargo fmt --check` passed; and `git diff
+  --check` passed. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1287, a bounded reference/COW callback blocker slice.
+  Normal `call_user_func_array()` invocation now accepts user-function
+  callbacks, public `[object, method]` callbacks, and public
+  `["ClassName", "method"]` static callbacks declared as returning by
+  reference when reached by-reference argument slots are covered by the
+  existing direct stored-array alias metadata or direct public object-property
+  array-offset copy-in/writeback bridge. This covers stored direct-variable
+  slots, copied stored reference arrays, request-bag/global alias slots, public
+  object-property array slots, and literal public object-property array
+  reference elements while keeping the callback result value-based. This does
+  not implement using `call_user_func_array()` itself as a statement-form
+  reference-return source, reference-return alias binding for array-offset
+  argument bridges, closure or `__invoke` callbacks, dynamic static receiver
+  callback shapes, non-public/dynamic/append/ArrayAccess property arguments,
+  reference array literals stored by value, stored arrays whose reached slots
+  were not assigned by reference, string-keyed named reference arguments, full
+  PHP reference containers, broad copy-on-write, exact warnings, or native
+  lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=target/focused-1287-refcow CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  call_user_func_builtin
+  call_user_func_array_allows_reference_returning_callbacks_with_array_offset_bindings
+  -- --test-threads=1` passed with `1` test after an initial metadata-boundary
+  failure exposed that ordinary callback invocation still rejected
+  reference-return declarations; `cargo test -p phpc --test
+  call_user_func_builtin -- --test-threads=1` passed with `13` tests; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1287/call_user_func_array_reference_returning_stored_args.php`
+  printed the expected five-line stored/reference-return callback output;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1287` passed with `1`
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1287` passed with `1` system PHP comparison and `0`
+  skips; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1287` reported `1` passed fixture, `1` comparison,
+  and `0` skips; and `cargo run -q -p phpc -- test --list-fixtures
+  tests/fixtures/milestone1287` reported `1` fixture, `1` CLI exercise, `0`
+  missing expectation sidecars, `0` unrecognized sidecars, and `0`
+  `.phpc-only` reason gaps. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1289, a bounded WordPress database/bootstrap evidence slice.
+  The placeholder MySQLi `wp_options` state island now supports exact direct
+  and prepared value/autoload updates:
+  `UPDATE wp_options SET option_value = ..., autoload = ... WHERE option_name = ...`
+  and
+  `UPDATE wp_options SET option_value = ?, autoload = ? WHERE option_name = ?`.
+  Existing recorded options update both the string option value and autoload
+  flag with affected rows `1`; missing option names remain successful zero-row
+  updates. The synthetic WordPress add-option inventory probe now updates the
+  reinserted `blogdescription` autoload flag to `auto-on` after duplicate
+  rejection and proves the database-backed value/autoload read plus full
+  option-id row set observe that change, raising normalized probe stdout bytes
+  from `250` to `328`. This does not add real MySQL connectivity, arbitrary
+  SQL, broad update expressions or WHERE clauses, non-string prepared parameter
+  coercion, persistent object cache, full WordPress option APIs, plugins/themes,
+  request/SAPI fidelity, references/copy-on-write, or native lowering. Focused
+  verification passed with `CARGO_TARGET_DIR=target/focused-1289-wpdb
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p
+  phpc --test mysqli_extension
+  mysqli_query_records_current_wordpress_option_value_and_autoload_update_state
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  mysqli_extension
+  mysqli_statement_updates_current_wordpress_option_value_and_autoload_state
+  -- --test-threads=1` passed with `1` test; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1289/mysqli_wp_options_value_autoload_update_state.php`
+  printed
+  `updated:1|after:auto-on|2:1:blogdescription:auto-on,2:siteurl:yes|prepared:1|1:blogdescription:prepared-after:auto`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1289` passed with `1`
+  fixture; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1289` reported `1` passed fixture, `0` PHP
+  comparisons, and `1` `.phpc-only` skip; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1289` reported `1` fixture, `1` CLI
+  exercise, `0` missing expectation sidecars, `0` unrecognized sidecars, and
+  `0` `.phpc-only` reason gaps; `cargo test -p phpc --test mysqli_extension
+  wordpress_option -- --test-threads=1` passed with `27` tests; and `cargo
+  test -p phpc --test wordpress_inventory_cli -- --test-threads=1` passed with
+  `9` tests. `cargo fmt --check` and `git diff --check` passed. Full
+  gate/checkpoint deferred until integration.
+
 - Added Milestone 1285, the WordPress-focused queue refresh after the
   integrated Milestones 1281-1284 batch. `GOAL.MD` now records the current
   parallel focus after the latest class-over-trait precedence, stored

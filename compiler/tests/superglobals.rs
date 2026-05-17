@@ -332,6 +332,46 @@ echo $_REQUEST["submit"];
 }
 
 #[test]
+fn request_bag_superglobals_normalize_dotted_and_spaced_root_names() {
+    let program = parse(
+        r#"<?php
+echo $_GET["user_login"];
+echo "|";
+echo $_GET["remember_me"];
+echo "|";
+echo $_GET["nested_key"]["child space"];
+echo "|";
+echo $_POST["action_name"];
+echo "|";
+echo $_POST["form_name"]["inner.dot"];
+echo "|";
+echo $_REQUEST["dup_key"];
+"#,
+    )
+    .unwrap();
+
+    let execution = run_program_with_options(
+        &program,
+        RunOptions {
+            query_string: Some(
+                "user.login=admin&remember+me=1&nested.key[child space]=query&dup.key=get"
+                    .to_string(),
+            ),
+            request_body: Some(
+                "action.name=save&form+name[inner.dot]=body&dup.key=post".to_string(),
+            ),
+            request_method: Some("POST".to_string()),
+            content_type: Some("application/x-www-form-urlencoded".to_string()),
+            ..RunOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "admin|1|query|save|body|post");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn request_input_env_cli_snapshot_matches_current_sapi_seed() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
@@ -379,6 +419,35 @@ fn bracketed_request_input_env_cli_snapshot_matches_current_sapi_seed() {
 
     let actual = render_cli_snapshot(&output);
     let expected = "exit: 0\nstdout:\npublish|10,11|empty|new|token+plus|20,21|post|Save Draft--- stdout end ---\nstderr:\n--- stderr end ---\n";
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn normalized_request_input_env_cli_snapshot_matches_current_sapi_seed() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = "tests/fixtures/milestone1288/normalized_request_input.php";
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env(
+            "PHPC_QUERY_STRING",
+            "user.login=admin&remember+me=1&nested.key[child space]=query&dup.key=get",
+        )
+        .env("PHPC_REQUEST_METHOD", "POST")
+        .env("PHPC_CONTENT_TYPE", "application/x-www-form-urlencoded")
+        .env(
+            "PHPC_REQUEST_BODY",
+            "action.name=save&form+name[inner.dot]=body&dup.key=post",
+        )
+        .args(["run", fixture])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run phpc for {fixture}: {error}"));
+
+    let actual = render_cli_snapshot(&output);
+    let expected = "exit: 0\nstdout:\nadmin|1|query|save|body|post--- stdout end ---\nstderr:\n--- stderr end ---\n";
 
     assert_eq!(actual, expected);
 }

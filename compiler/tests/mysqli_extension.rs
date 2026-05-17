@@ -1328,6 +1328,62 @@ mysqli_stmt_execute($stmt, array("1", "blog_public"));
 }
 
 #[test]
+fn mysqli_statement_updates_current_wordpress_option_value_and_autoload_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('blogdescription', 'before', 'no')");
+$stmt = mysqli_prepare($handle, "UPDATE `wp_options` SET `option_value` = ?, `autoload` = ? WHERE `option_name` = ?");
+$value = "after";
+$autoload = "auto-on";
+$name = "blogdescription";
+mysqli_stmt_bind_param($stmt, "sss", $value, $autoload, $name);
+echo mysqli_stmt_execute($stmt) ? "updated" : "failed";
+echo "|";
+echo mysqli_stmt_affected_rows($stmt);
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value, autoload FROM wp_options WHERE option_name = 'blogdescription' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"], ":", $row["autoload"];
+echo "|";
+$name = "missing";
+echo mysqli_stmt_execute($stmt) ? "missing-updated" : "failed";
+echo "|";
+echo mysqli_stmt_affected_rows($stmt);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "updated|1|1|after:auto-on|missing-updated|0"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let type_error = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('blogdescription', 'before', 'no')");
+$stmt = mysqli_prepare($handle, "UPDATE wp_options SET option_value = ?, autoload = ? WHERE option_name = ?");
+mysqli_stmt_execute($stmt, array("after", 1, "blogdescription"));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(type_error.phase, Phase::Runtime);
+    assert_eq!(type_error.line, 6);
+    assert_eq!(type_error.column, 1);
+    assert_eq!(
+        type_error.message,
+        "unsupported call mysqli_stmt_execute(): prepared wp_options value/autoload update requires string option value, autoload, and option name parameters in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_statement_deletes_current_wordpress_option_state() {
     let execution = run_source(
         r#"<?php
@@ -3489,6 +3545,32 @@ echo mysqli_affected_rows($handle);
         execution.stdout,
         "updated|1|https://updated.test|missing-update|0"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mysqli_query_records_current_wordpress_option_value_and_autoload_update_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('blogdescription', 'before', 'no')");
+echo mysqli_query($handle, "UPDATE wp_options SET option_value = 'after', autoload = 'auto-on' WHERE option_name = 'blogdescription'") ? "updated" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value, autoload FROM wp_options WHERE option_name = 'blogdescription' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"], ":", $row["autoload"];
+echo "|";
+echo mysqli_query($handle, "UPDATE `wp_options` SET `option_value` = 'missing-value', `autoload` = 'yes' WHERE `option_name` = 'missing'") ? "missing-update" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "updated|1|after:auto-on|missing-update|0");
     assert_eq!(execution.exit_code, 0);
 }
 

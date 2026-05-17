@@ -3290,6 +3290,65 @@ print_r($methods);
 }
 
 #[test]
+fn trait_alias_visibility_adaptations_are_callable_from_class_context() {
+    let source = r#"<?php
+trait HookTools {
+    public function boot() {
+        return "boot:" . get_class($this);
+    }
+
+    public function secret() {
+        return "secret:" . get_class($this);
+    }
+}
+
+class Plugin {
+    use HookTools {
+        boot as protected protected_boot;
+        secret as private private_secret;
+    }
+
+    public function callProtected() {
+        return $this->protected_boot();
+    }
+
+    public function callPrivate() {
+        return $this->private_secret();
+    }
+}
+
+$plugin = new Plugin();
+echo $plugin->boot(), "\n";
+echo $plugin->secret(), "\n";
+echo $plugin->callProtected(), "\n";
+echo $plugin->callPrivate(), "\n";
+echo method_exists($plugin, "protected_boot") ? "protected-exists\n" : "missing\n";
+echo method_exists($plugin, "private_secret") ? "private-exists\n" : "missing\n";
+
+$methods = get_class_methods($plugin);
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "boot:Plugin\nsecret:Plugin\nboot:Plugin\nsecret:Plugin\nprotected-exists\nprivate-exists\nArray\n(\n    [0] => boot\n    [1] => secret\n    [2] => callProtected\n    [3] => callPrivate\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    assert_eq!(
+        class.method("protected_boot").unwrap().visibility(),
+        Visibility::Protected
+    );
+    assert_eq!(
+        class.method("private_secret").unwrap().visibility(),
+        Visibility::Private
+    );
+}
+
+#[test]
 fn class_trait_use_insteadof_winner_can_be_public_aliased() {
     let source = r#"<?php
 interface NamedPlugin {

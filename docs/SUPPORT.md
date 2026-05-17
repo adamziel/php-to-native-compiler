@@ -97,13 +97,18 @@
   `$args[0] =& $value; call_user_func_array($callback, $args);`. This stored
   array path preserves covered aliases to direct variables, copied reference
   arrays, request bags such as `$_REQUEST`, and public object-property array
-  slots through the existing alias metadata. `unset($param)` detaches only the
-  callee's local parameter name; later local writes do not mutate the caller
-  variable or write back through the object-property argument path.
+  slots through the existing alias metadata. It also covers normal
+  `call_user_func_array()` invocation of user functions and public array
+  callables declared as returning by reference when the callback writes through
+  reached by-reference parameters; the callback result is still returned by
+  value. `unset($param)` detaches only the callee's local parameter name;
+  later local writes do not mutate the caller variable or write back through
+  the object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, reference array
   literals stored by value, direct stored arrays whose reached slots were not
   assigned by reference, dynamic static receiver, string-keyed named callback
-  argument arrays, and reference-returning function or method forms remain
+  argument arrays, using `call_user_func_array()` itself as a statement-form
+  reference-return source, and broader reference-return binding forms remain
   unsupported for object-property and stored-array reference arguments. This is
   still a bounded
   direct-variable alias and public object-property output path, not full PHP
@@ -613,7 +618,10 @@
   `PHPC_QUERY_STRING` is set, the runtime parses URL-encoded query pairs into
   `$_GET`, including bracketed names such as `filter[post_status]=publish`,
   repeated `ids[]=10&ids[]=11` append collection, and duplicate scalar keys
-  with last-write-wins behavior. When `PHPC_REQUEST_METHOD=POST`,
+  with last-write-wins behavior. Dots and spaces in top-level request names
+  are normalized to underscores, so `user.login` and `remember me` seed
+  `$_GET["user_login"]` and `$_GET["remember_me"]`; bracket segment keys keep
+  their current literal decoded text. When `PHPC_REQUEST_METHOD=POST`,
   `PHPC_CONTENT_TYPE` is `application/x-www-form-urlencoded` (parameters such
   as `; charset=UTF-8` are accepted), and `PHPC_REQUEST_BODY` is set, it parses
   the same bounded URL-encoded forms into `$_POST`. `$_REQUEST` is initialized
@@ -621,7 +629,7 @@
   keys, with later POST keys replacing earlier GET keys. Direct function-scope
   reads and writes route through the root symbol table without `global`
   declarations. Exact `parse_str()` handling for malformed bracket names,
-  max-input-vars limits, dotted/spaced name normalization, cookie merging,
+  leading/trailing/all-space names, max-input-vars limits, cookie merging,
   multipart uploads, `variables_order`, `request_order`, host SAPI imports,
   `$GLOBALS` aliasing, references, copy-on-write, exact warning behavior, and
   native lowering remain unsupported.
@@ -1294,8 +1302,9 @@
   or direct public object-property array offsets in the literal path, variables
   already routed through array-offset alias metadata in literal reference
   elements, closure and `__invoke` callbacks, non-public methods, other
-  callable array shapes, reference-returning callbacks through stored array
-  slots, exact PHP warning behavior, and native lowering remain unsupported.
+  callable array shapes, using `call_user_func_array()` itself as a
+  statement-form reference-return source, exact PHP warning behavior, and
+  native lowering remain unsupported.
   `implode($array)` and `implode($separator, $array)` support current arrays
   containing only `null`, bool, int, float, and string values, preserve
   insertion order, ignore keys, and join values using PHP-shaped echo string
@@ -1679,6 +1688,10 @@
   `UPDATE wp_options SET option_value = ... WHERE option_name = ...` for
   existing recorded options with `mysqli_affected_rows($handle) === 1`,
   treats missing option names as successful zero-row updates, accepts a later
+  exact
+  `UPDATE wp_options SET option_value = ..., autoload = ... WHERE option_name = ...`
+  for updating both the recorded option value and autoload flag with the same
+  affected-row behavior, accepts a later
   exact `DELETE FROM wp_options WHERE option_name = ...` by removing existing
   recorded options with `mysqli_affected_rows($handle) === 1` and treating
   missing option names as successful zero-row deletes, and lets a later
@@ -1728,7 +1741,8 @@
   doubled single quotes.
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, schema or index behavior,
-  ordering/collation fidelity, autoload mutation beyond exact inserts,
+  ordering/collation fidelity, autoload mutation beyond exact inserts and the
+  exact option value/autoload update shape,
   arbitrary projection beyond exact option id/name/value/autoload/name-value/full-row/full-row-with-id shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
@@ -1799,6 +1813,10 @@
   statement updates an existing recorded option value for string parameters on
   the same handle, updates statement and connection affected-row metadata, and
   treats missing option names as successful zero-row updates. The exact
+  `UPDATE wp_options SET option_value = ?, autoload = ? WHERE option_name = ?`
+  prepared statement updates both the recorded option value and autoload flag
+  for string parameters on the same handle with the same affected-row metadata.
+  The exact
   `DELETE FROM wp_options WHERE option_name = ?` prepared statement removes an
   existing recorded option for a string option-name parameter on the same
   handle, updates statement and connection affected-row metadata, and treats
@@ -4822,7 +4840,13 @@
   `use TraitA, TraitB { TraitA::method as public alias; }` are also supported
   for public instance trait methods; the original method remains available,
   and the alias is registered as an ordinary public instance method that can
-  satisfy the current interface method-presence checks. A bounded conflict
+  satisfy the current interface method-presence checks. Alias adaptations may
+  also use `protected` or `private`, such as
+  `use TraitName { method as protected helper; }`; those aliases are composed
+  as non-public instance methods, dispatch through the existing method
+  visibility checks, are visible to `method_exists()`, and are omitted from
+  global-context `get_class_methods()`. Visibility-only adaptations without an
+  alias remain unsupported. A bounded conflict
   resolution shape such as
   `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is supported for
   public instance methods from traits in the same class-body `use`
@@ -5366,10 +5390,10 @@
   trait/class constants, static/abstract/final and non-public trait methods,
   conflicting trait composition outside class-method precedence and the
   bounded single-loser `insteadof` shape,
-  trait aliases beyond the current simple public, qualified public-alias, and
-  same-block winner public-alias slices, visibility changes other than
-  explicit `public` on an alias,
-  visibility-only adaptations, unqualified `insteadof`, multi-loser
+  trait aliases beyond the current simple public, qualified public-alias,
+  same-block winner public-alias, and protected/private alias slices,
+  visibility-only adaptations and original-method visibility changes without
+  an alias, unqualified `insteadof`, multi-loser
   `insteadof`, `__TRAIT__`,
   conditional/nested trait registration, exact trait diagnostics,
   backed enum declarations, enum case objects, backed enum values, enum

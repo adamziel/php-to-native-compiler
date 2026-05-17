@@ -310,6 +310,9 @@ option writes replace existing recorded options with
 `UPDATE wp_options SET option_value = ... WHERE option_name = ...` updates an
 existing recorded option with `mysqli_affected_rows($handle) === 1`; missing
 option names are successful zero-row updates. A later exact
+`UPDATE wp_options SET option_value = ..., autoload = ... WHERE option_name = ...`
+updates both the recorded option value and autoload flag with the same
+affected-row behavior. A later exact
 `DELETE FROM wp_options WHERE option_name = ...` removes an existing recorded
 option with `mysqli_affected_rows($handle) === 1`; missing option names are
 successful zero-row deletes. A later exact
@@ -358,7 +361,8 @@ current MySQL-style backslash escapes used by `mysqli_real_escape_string()`
 for quotes, double quotes, backslashes, newlines, and carriage returns, plus
 doubled single quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
-ordering/collation fidelity, autoload mutation beyond exact writes, arbitrary
+ordering/collation fidelity, autoload mutation beyond exact inserts and the
+exact option value/autoload update shape, arbitrary
 projection beyond exact option id/name/value/autoload/name-value/full-row/full-row-with-id shapes,
 unique-index enforcement beyond exact plain option-insert duplicate-name
 rejection, no-op update affected-row fidelity, real
@@ -428,6 +432,10 @@ and exposes later exact option-value reads through the same state island. The ex
 statement updates an existing recorded option value for string parameters on
 the same handle, updates statement and connection affected-row metadata, and
 treats missing option names as successful zero-row updates. The exact
+`UPDATE wp_options SET option_value = ?, autoload = ? WHERE option_name = ?`
+prepared statement updates both the recorded option value and autoload flag for
+string parameters on the same handle with the same affected-row metadata. The
+exact
 `DELETE FROM wp_options WHERE option_name = ?` prepared statement removes an
 existing recorded option for a string option-name parameter on the same
 handle, updates statement and connection affected-row metadata, and treats

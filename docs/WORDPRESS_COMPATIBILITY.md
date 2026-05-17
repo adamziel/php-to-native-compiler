@@ -290,6 +290,20 @@ object-cache behavior, arbitrary projections, broad SQL, real database
 connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
 request/SAPI fidelity, references/copy-on-write, or native support.
 
+After Milestone 1289, that synthetic add-option smoke also updates the
+reinserted option with the exact
+`UPDATE wp_options SET option_value = ..., autoload = ... WHERE option_name = ...`
+shape. The generated bootstrap shim and front-controller path prove the
+bounded in-memory cache still returns `added-db`, while a database-backed
+value/autoload read and the full option-row-with-id set observe the changed
+autoload flag, adding
+`autoload-updated|added-db:auto-on|ids=3:blogdescription:auto-on,2:siteurl:yes`
+(`stdout_bytes: 328` in normalized output). This is executable evidence for
+one bounded option value/autoload update only; it does not claim persistent
+object-cache behavior, arbitrary update SQL, broad projections, real database
+connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
+request/SAPI fidelity, references/copy-on-write, or native support.
+
 After Milestone 1273, `phpc run` tracks whether response headers are still open
 or whether bytes have reached unbuffered stdout. The current
 `headers_sent($file, $line)` slice writes direct-variable filename and line

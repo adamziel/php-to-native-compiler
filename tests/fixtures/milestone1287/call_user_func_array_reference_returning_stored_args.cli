@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1287/call_user_func_array_reference_returning_stored_args.php

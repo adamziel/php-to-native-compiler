@@ -138,16 +138,16 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed small slices of class-method
-precedence over trait fallback methods, stored reference arrays for
-`call_user_func_array()` by-reference callbacks, bracketed URL-encoded request
-input parsing, and full option rows with deterministic option IDs over the
-placeholder MySQLi state island. Those are useful compatibility steps, but
-they do not change the larger project shape: the next lanes should keep
-attacking broad object/interface semantics, real reference/COW behavior,
-request/SAPI/filesystem/stream breadth, and executable WordPress
-database/bootstrap evidence until those areas become coherent subsystems
-instead of reached slices.
+The latest WordPress-focused batch closed small slices of visibility-changing
+trait aliases, `call_user_func_array()` reference-returning callback invocation
+over covered by-reference array slots, dotted/spaced top-level request-name
+normalization for explicit CLI request seeds, and `wp_options` value/autoload
+updates over the placeholder MySQLi state island. Those are useful
+compatibility steps, but they do not change the larger project shape: the next
+lanes should keep attacking broad object/interface semantics, real
+reference/COW behavior, request/SAPI/filesystem/stream breadth, and executable
+WordPress database/bootstrap evidence until those areas become coherent
+subsystems instead of reached slices.
 
 ## What We Have Been Doing
 

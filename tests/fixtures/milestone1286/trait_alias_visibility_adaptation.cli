@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1286/trait_alias_visibility_adaptation.php
+exit: 0
+stdout:
+boot:Plugin|secret:Plugin|boot:Plugin|secret:Plugin|protected-exists|private-exists|4:boot,secret,callProtected,callPrivate
+--- stdout end ---
+stderr:
+--- stderr end ---

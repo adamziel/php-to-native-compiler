@@ -350,7 +350,7 @@ enum RequestKeySegment {
 
 fn parse_request_key_segments(key: &str) -> Option<(String, Vec<RequestKeySegment>)> {
     let Some(bracket_start) = key.find('[') else {
-        return Some((key.to_string(), Vec::new()));
+        return Some((normalize_request_root_key(key), Vec::new()));
     };
     let root = &key[..bracket_start];
     if root.is_empty() {
@@ -375,7 +375,16 @@ fn parse_request_key_segments(key: &str) -> Option<(String, Vec<RequestKeySegmen
         rest = &rest[close_index + 1..];
     }
 
-    Some((root.to_string(), segments))
+    Some((normalize_request_root_key(root), segments))
+}
+
+fn normalize_request_root_key(key: &str) -> String {
+    key.chars()
+        .map(|character| match character {
+            '.' | ' ' => '_',
+            other => other,
+        })
+        .collect()
 }
 
 fn insert_request_segments(
@@ -8211,6 +8220,42 @@ impl Interpreter {
             return Ok(Value::Bool(false));
         };
 
+        if is_wordpress_option_prepared_value_autoload_update_query(&query) {
+            if let Some(handle_id) = connection_handle_id {
+                if self.mysqli_wp_options.contains_key(&handle_id) {
+                    let [Value::String(option_value), Value::String(autoload), Value::String(option_name)] =
+                        bound_parameters.as_slice()
+                    else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                function,
+                                "prepared wp_options value/autoload update requires string option value, autoload, and option name parameters in the current subset",
+                            ),
+                        ));
+                    };
+                    let options = self
+                        .mysqli_wp_options
+                        .get_mut(&handle_id)
+                        .expect("checked wp_options state should exist");
+                    let affected_rows = if let Some(option) = options.get_mut(option_name) {
+                        option.value = option_value.clone();
+                        option.autoload = autoload.clone();
+                        1
+                    } else {
+                        0
+                    };
+                    self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                    let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
+                    state.executed_result = None;
+                    state.affected_rows = affected_rows;
+                    state.buffered_result = None;
+                    state.buffered_result_cursor = 0;
+                    return Ok(Value::Bool(true));
+                }
+            }
+        }
+
         if is_wordpress_option_prepared_update_query(&query) {
             if let Some(handle_id) = connection_handle_id {
                 if self.mysqli_wp_options.contains_key(&handle_id) {
@@ -9441,6 +9486,22 @@ impl Interpreter {
             self.mysqli_affected_rows.insert(handle_id, 1);
             self.mysqli_insert_ids.insert(handle_id, next_insert_id);
             return Ok(Value::Bool(true));
+        }
+
+        if let Some((option_name, option_value, autoload)) =
+            parse_wordpress_option_value_autoload_update_query(query)
+        {
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = if let Some(option) = options.get_mut(&option_name) {
+                    option.value = option_value;
+                    option.autoload = autoload;
+                    1
+                } else {
+                    0
+                };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
         }
 
         if let Some((option_name, option_value)) = parse_wordpress_option_update_query(query) {
@@ -13573,16 +13634,21 @@ impl Interpreter {
                 ));
             };
             ensure_user_function_arity(function, argument_array.len(), span)?;
-            ensure_supported_function_metadata(function, span)?;
             let has_reached_reference_param = function
                 .params
                 .iter()
                 .enumerate()
                 .any(|(index, param)| param.by_reference && index < argument_array.len());
             if !has_reached_reference_param {
+                ensure_supported_function_metadata(function, span)?;
                 let positional_args =
                     Self::call_user_func_array_positional_values(argument_array, span)?;
                 return Ok((positional_args, Vec::new()));
+            }
+            if function.returns_by_reference {
+                ensure_supported_reference_return_function_metadata(function, span)?;
+            } else {
+                ensure_supported_function_metadata(function, span)?;
             }
 
             if function.params.iter().enumerate().any(|(index, param)| {
@@ -13635,15 +13701,6 @@ impl Interpreter {
                 };
 
                 if param.by_reference {
-                    if function.returns_by_reference {
-                        return Err(runtime_error(
-                            argument_expr.span(),
-                            RuntimeError::unsupported_call(
-                                callable_name(&function.name),
-                                "stored array reference arguments are not implemented for reference-returning functions in the current subset",
-                            ),
-                        ));
-                    }
                     let alias = caller_scope
                         .array_offset_alias_for_direct_array_slot(array_name, &entry.key)
                         .ok_or_else(|| {
@@ -13680,16 +13737,21 @@ impl Interpreter {
         };
 
         ensure_user_function_arity(function, items.len(), span)?;
-        ensure_supported_function_metadata(function, span)?;
         if !function
             .params
             .iter()
             .enumerate()
             .any(|(index, param)| param.by_reference && index < items.len())
         {
+            ensure_supported_function_metadata(function, span)?;
             let positional_args =
                 self.evaluate_call_user_func_array_arguments(argument_expr, span, caller_scope)?;
             return Ok((positional_args, Vec::new()));
+        }
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+        } else {
+            ensure_supported_function_metadata(function, span)?;
         }
         if function
             .params
@@ -13766,15 +13828,6 @@ impl Interpreter {
                         caller_scope,
                     )?
                 {
-                    if function.returns_by_reference {
-                        return Err(runtime_error(
-                            item.value.span(),
-                            RuntimeError::unsupported_call(
-                                callable_name(&function.name),
-                                "object-property array reference arguments are not implemented for reference-returning functions in the current subset",
-                            ),
-                        ));
-                    }
                     values.push(value);
                     reference_bindings.push(ReferenceBinding {
                         param_name: param.name.clone(),
@@ -21624,6 +21677,7 @@ fn composed_trait_methods(
             };
             let mut aliased = method.clone();
             aliased.function.name = alias.alias.clone();
+            aliased.visibility = alias.visibility;
             aliased.span = alias.span;
             if class_method_names.contains(&aliased.function.name.to_ascii_lowercase()) {
                 continue;
@@ -23684,6 +23738,35 @@ fn parse_wordpress_option_update_query(query: &str) -> Option<(String, String)> 
         return None;
     }
     Some((names[0].clone(), values[0].clone()))
+}
+
+fn parse_wordpress_option_value_autoload_update_query(
+    query: &str,
+) -> Option<(String, String, String)> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("UPDATE wp_options SET option_value = ")
+        .or_else(|| query.strip_prefix("UPDATE `wp_options` SET `option_value` = "))?;
+    let (value_sql, rest) = rest
+        .split_once(", autoload = ")
+        .or_else(|| rest.split_once(", `autoload` = "))?;
+    let (autoload_sql, where_sql) = rest
+        .split_once(" WHERE option_name = ")
+        .or_else(|| rest.split_once(" WHERE `option_name` = "))?;
+    let values = parse_sql_single_quoted_list(value_sql)?;
+    let autoloads = parse_sql_single_quoted_list(autoload_sql)?;
+    let names = parse_sql_single_quoted_list(where_sql)?;
+    if values.len() != 1 || autoloads.len() != 1 || names.len() != 1 {
+        return None;
+    }
+    Some((names[0].clone(), values[0].clone(), autoloads[0].clone()))
+}
+
+fn is_wordpress_option_prepared_value_autoload_update_query(query: &str) -> bool {
+    let query = query.trim();
+    query == "UPDATE wp_options SET option_value = ?, autoload = ? WHERE option_name = ?"
+        || query
+            == "UPDATE `wp_options` SET `option_value` = ?, `autoload` = ? WHERE `option_name` = ?"
 }
 
 fn is_wordpress_option_prepared_update_query(query: &str) -> bool {

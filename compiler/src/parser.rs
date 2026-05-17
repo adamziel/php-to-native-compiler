@@ -676,19 +676,18 @@ impl Parser {
                 continue;
             }
             self.consume_trait_adaptation_as()?;
-            if self.match_trait_public_visibility_adaptation() {
-                if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        unsupported_trait_visibility_only_adaptation_message(),
-                    ));
-                }
-            } else if self.check_trait_visibility_adaptation() {
-                return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_trait_visibility_adaptation_message(),
-                ));
-            }
+            let alias_visibility =
+                if let Some(visibility) = self.match_trait_visibility_adaptation() {
+                    if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            unsupported_trait_visibility_only_adaptation_message(),
+                        ));
+                    }
+                    visibility
+                } else {
+                    ClassVisibility::Public
+                };
             let alias = self.consume_identifier("expected trait method alias after 'as'")?;
             self.consume_keyword(
                 TokenKind::Semicolon,
@@ -718,6 +717,7 @@ impl Parser {
                 trait_name,
                 method_name,
                 alias,
+                visibility: alias_visibility,
                 span,
             });
         }
@@ -6606,10 +6606,6 @@ fn unsupported_trait_use_message() -> &'static str {
     "unsupported trait use: class-body trait use is implemented only for already-declared traits with public instance methods and simple method aliases"
 }
 
-fn unsupported_trait_visibility_adaptation_message() -> &'static str {
-    "unsupported trait use adaptation: trait visibility changes are not implemented"
-}
-
 fn unsupported_trait_visibility_only_adaptation_message() -> &'static str {
     "unsupported trait use adaptation: trait visibility-only adaptations are not implemented"
 }
@@ -6657,22 +6653,24 @@ impl Parser {
         false
     }
 
-    fn check_trait_visibility_adaptation(&self) -> bool {
-        matches!(
-            self.peek().kind,
-            TokenKind::Public | TokenKind::Protected | TokenKind::Private
-        ) || matches!(
-            &self.peek().kind,
-            TokenKind::Identifier(name)
-                if name.eq_ignore_ascii_case("public")
-                    || name.eq_ignore_ascii_case("protected")
-                    || name.eq_ignore_ascii_case("private")
-        )
-    }
-
-    fn match_trait_public_visibility_adaptation(&mut self) -> bool {
-        self.match_token(|kind| matches!(kind, TokenKind::Public))
-            || self.match_identifier("public")
+    fn match_trait_visibility_adaptation(&mut self) -> Option<ClassVisibility> {
+        let visibility = match &self.peek().kind {
+            TokenKind::Public => ClassVisibility::Public,
+            TokenKind::Protected => ClassVisibility::Protected,
+            TokenKind::Private => ClassVisibility::Private,
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("public") => {
+                ClassVisibility::Public
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("protected") => {
+                ClassVisibility::Protected
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("private") => {
+                ClassVisibility::Private
+            }
+            _ => return None,
+        };
+        self.advance();
+        Some(visibility)
     }
 
     fn check_asymmetric_property_visibility_modifier(&self) -> bool {

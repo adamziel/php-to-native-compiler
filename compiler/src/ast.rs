@@ -559,6 +559,7 @@ pub struct TraitMethodAliasDecl {
     pub trait_name: Option<String>,
     pub method_name: String,
     pub alias: String,
+    pub visibility: ClassVisibility,
     pub span: Span,
 }
 

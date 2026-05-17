@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T02:33:00Z
+
+- Checkpoint before this task:
+  `32f8cdec runtime: advance WordPress trait refs request and db evidence`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1286-1290, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger.
+- Files changed so far: bounded visibility-changing trait aliases; bounded
+  `call_user_func_array()` invocation of reference-returning callbacks over
+  covered by-reference array slots; dotted/spaced top-level request-name
+  normalization for explicit CLI request seeds; exact direct and prepared
+  `wp_options` value/autoload updates over the placeholder MySQLi state island;
+  milestone fixtures 1286-1289; support, architecture, WordPress
+  compatibility, MySQLi extension, README, queue, progress, lane-worker, and
+  goal docs.
+- Tests run and result: focused integration checks passed for trait/object
+  model behavior, callback dispatch/reference arguments, request superglobals,
+  `file_get_contents`, MySQLi WordPress option updates, the updated WordPress
+  inventory add-option probe, and milestone fixture comparisons/manifests.
+  Manual full gate passed before checkpoint: `cargo test` completed
+  successfully, `phpc test` reported `1408` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1408` fixture tests passed
+  with `0` failures, `808` system PHP comparisons, and `600` skipped
+  `phpc-only` fixtures.
+- Remaining semantic gaps: broad object/interface/trait compatibility, full
+  PHP reference containers, broad copy-on-write, dynamic lookup and magic
+  methods, stream/resource handling, real web-server SAPI state, filesystem
+  fidelity, real database behavior, WordPress plugin/theme/admin/REST flows,
+  and native runtime integration remain explicit project blockers.
+- Next concrete task: run the serialized checkpoint gate, push the checkpoint,
+  clean dedicated target directories, close completed workers, then start
+  Milestones 1291-1294 in separate worktrees.
+
 ## Loop Event 2026-05-17T02:03:27Z
 
 - Checkpoint before this task:
