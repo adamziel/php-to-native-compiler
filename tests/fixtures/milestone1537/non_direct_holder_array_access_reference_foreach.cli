@@ -1,0 +1,1 @@
+phpc run non_direct_holder_array_access_reference_foreach.php

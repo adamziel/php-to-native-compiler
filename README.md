@@ -125,7 +125,10 @@ current slice can route those warnings through the top registered string or
 public array-callable `set_error_handler()` handler before the stderr fallback,
 with `restore_error_handler()` restoring the previous bounded handler.
 `opendir()`, `readdir()`, `rewinddir()`, and
-`closedir()` cover bounded local UTF-8 directory handles. Bounded
+`closedir()` cover bounded local UTF-8 directory handles. `clearstatcache()`
+accepts the PHP-shaped zero-, one-, or two-argument forms as a bounded no-op
+because the current interpreter performs direct host metadata lookups instead
+of maintaining a PHP stat cache. Bounded
 `register_shutdown_function()` callbacks run supported string and public
 array-callable callbacks with by-value extra arguments during normal shutdown
 and after the bounded `exit()` path, before object destructors and final
@@ -135,7 +138,7 @@ filters, context option effects, context param effects beyond option merging,
 broader wrapper metadata,
 binary byte fidelity, directory entry ordering fidelity, multipart upload
 parsing, runtime temporary upload creation, host upload validation,
-permissions/locking, stat-cache behavior, closure shutdown callback execution,
+permissions/locking, actual stat-cache/realpath-cache state, closure shutdown callback execution,
 invokable-object shutdown callbacks, exact warning text and error-handler
 integration beyond that `file_get_contents()` recovery stack slice, temp-file spillover,
 and native stream resources remain unsupported. Native lowering
@@ -226,8 +229,9 @@ incorrect native code.
   superglobal/request-bag, string-keyed `$GLOBALS`, and visible
   named, direct dynamic, and bounded object-result non-direct named/dynamic
   object-property array roots, direct and visible property-held `ArrayAccess`
-  offset-array roots backed by the exact bounded by-reference `offsetGet()`
-  bridge, plus direct
+  offset-array roots, and bounded non-direct holder property-held
+  `ArrayAccess` offset-array roots backed by the exact bounded by-reference
+  `offsetGet()` bridge, plus direct
   free-function, direct visible
   instance-method, direct named-static-method, method-context
   `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
@@ -297,9 +301,11 @@ incorrect native code.
   `mysqli_stmt_fetch()` can consume the deterministic executed placeholder row
   without `mysqli_stmt_store_result()` while `mysqli_stmt_num_rows()` remains
   buffered-only,
-  plus bounded direct and prepared transient-shaped option-name prefix result
-  scans and deletes, including exact `ORDER BY option_name` suffixes on prefix
-  scans and a bounded expired-transient-timeout
+  plus bounded direct option-name `LIKE` result scans with `%`, `_`,
+  backslash escapes, and single-character `ESCAPE` clauses, bounded prepared
+  transient-shaped option-name prefix result scans, and prefix deletes,
+  including exact `ORDER BY option_name` suffixes on those scans and a bounded
+  expired-transient-timeout
   `option_name LIKE ... AND option_value < timestamp` option-name scan,
   timeout-row delete shape, and exact WordPress-shaped transient payload plus
   timeout pair delete shape, plus deterministic `SHOW TABLES LIKE
@@ -459,11 +465,12 @@ incorrect native code.
   `getProperty($name)`, and zero-argument `getProperties()`, bounded
   `ReflectionFunction` metadata objects for declared user functions with
   name, file/start/end/doc-comment, parameter-list, return-type, and
-  by-reference-return inspection,
+  by-reference-return inspection plus by-value `invoke()`/`invokeArgs()`,
   `ReflectionMethod`
   metadata objects with declaring-class, visibility, static, final, abstract,
   constructor, modifier-mask, class-method file/start/end/doc-comment source
-  metadata, parameter-list, and return-type inspection,
+  metadata, parameter-list, return-type inspection, and public non-static
+  user-class by-value `invoke()`/`invokeArgs()`,
   bounded
   `ReflectionParameter` function/method-parameter metadata with name, position,
   declaring class/function, optional/default, by-reference, variadic, and
@@ -593,7 +600,8 @@ core interface metadata, broad reflection metadata and exact engine ordering
 beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
 bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionParameter`/
 `ReflectionNamedType`/`ReflectionProperty` metadata table slices, interface
-and trait method source-file persistence, recursive trait metadata reflection, and
+and trait method source-file persistence, reflection invocation beyond the
+current by-value user function/public method slice, recursive trait metadata reflection, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
@@ -727,12 +735,17 @@ By-reference `foreach` can also consume direct and visible property-held
 ArrayAccess offset-array roots such as `foreach ($bag["outer"] as &$value)`
 and `foreach ($holder->{$name}["outer"] as &$value)` through that same exact
 by-reference `offsetGet()` bridge when the selected backing slot is an array.
+Bounded non-direct holder property-held roots such as
+`foreach ($holders["bag"]->store["outer"] as &$value)` and
+`foreach ($holders["bag"]->{$name}["outer"] as &$value)` are also covered when
+the holder expression evaluates once to an object, the selected property is
+visible, and that property holds the same bounded `ArrayAccess` object shape.
 Real reference containers, magic-property references, arbitrary expressions,
-non-direct holder expressions outside the slice, mixed nested `ArrayAccess`
-chains, alias cleanup outside covered unset root/property/slot paths, broad
-copy-on-write, exact alias destruction ordering, broader by-reference `foreach`
-expansion, native lowering, and alias lifetime after replacing the containing
-property remain outside that bounded slice.
+invisible selected properties, mixed nested `ArrayAccess` chains, alias cleanup
+outside covered unset root/property/slot paths, broad copy-on-write, exact
+alias destruction ordering, broader by-reference `foreach` expansion, native
+lowering, and alias lifetime after replacing the containing property remain
+outside that bounded slice.
 By-reference `foreach` has a bounded copy-back interpreter path for common
 array-walk code that unsets the loop variable after the loop. It supports
 direct array-offset paths, request-bag paths such as `$_REQUEST["payload"]`,
@@ -783,6 +796,7 @@ direct `fopen()`/`stream_context_create()`/`stream_context_get_options()`/
 calls,
 direct `filesize(...)` local filesystem metadata calls,
 direct `filemtime(...)` local filesystem metadata calls,
+direct `clearstatcache(...)` stat-cache mutation calls,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
 direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/

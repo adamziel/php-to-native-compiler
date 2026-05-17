@@ -175,10 +175,10 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed nested trait-body method adaptations,
-by-reference `foreach` over covered `ArrayAccess` offset-array roots,
-cookie-name validation before header mutation, and unbuffered deterministic
-prepared-statement fetches without `mysqli_stmt_store_result()`.
+The latest WordPress-focused batch closed bounded reflection invocation for
+declared functions and public methods, by-reference `foreach` over
+non-direct holder `ArrayAccess` offset roots, bounded `clearstatcache()`, and
+direct `wp_options` option-name `LIKE` wildcard matching.
 Those are useful compatibility steps, but they do not change the larger
 project shape: the next lanes should keep attacking broad object/interface
 semantics, real reference/COW behavior, request/SAPI/filesystem/stream

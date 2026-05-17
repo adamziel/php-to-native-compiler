@@ -3478,6 +3478,49 @@ impl Interpreter {
         self.foreach_object_property_alias_root(&temp_name, property, scope, span)
     }
 
+    fn non_direct_foreach_object_property_array_root(
+        &mut self,
+        target: &Expr,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<ForeachArrayRoot> {
+        let target_value = self.evaluate(target, scope)?;
+        let object = match target_value {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let temp_name = self.next_foreach_temporary_array_name();
+        scope.write_static(&temp_name, Value::Object(object));
+        if let Some((alias, _)) = self
+            .evaluate_object_property_array_access_reference_source_alias(
+                &temp_name,
+                property,
+                keys.clone(),
+                span,
+                scope,
+            )?
+        {
+            return Ok(ForeachArrayRoot::Alias {
+                root: alias.root,
+                keys: alias.keys,
+            });
+        }
+
+        let root = self.foreach_object_property_alias_root(&temp_name, property, scope, span)?;
+        Ok(ForeachArrayRoot::Alias { root, keys })
+    }
+
     fn by_reference_foreach_root(
         &mut self,
         iterable: &Expr,
@@ -3591,10 +3634,9 @@ impl Interpreter {
                     for index in indices {
                         keys.push(self.evaluate_array_key(index, scope)?);
                     }
-                    let root = self.non_direct_foreach_object_property_alias_root(
-                        holder, property, scope, span,
-                    )?;
-                    return Ok(ForeachArrayRoot::Alias { root, keys });
+                    return self.non_direct_foreach_object_property_array_root(
+                        holder, property, keys, scope, span,
+                    );
                 }
 
                 if let Some((holder, property, indices)) =
@@ -3605,10 +3647,9 @@ impl Interpreter {
                     for index in indices {
                         keys.push(self.evaluate_array_key(index, scope)?);
                     }
-                    let root = self.non_direct_foreach_object_property_alias_root(
-                        holder, &property, scope, span,
-                    )?;
-                    return Ok(ForeachArrayRoot::Alias { root, keys });
+                    return self.non_direct_foreach_object_property_array_root(
+                        holder, &property, keys, scope, span,
+                    );
                 }
 
                 Err(runtime_error(
@@ -17008,10 +17049,22 @@ impl Interpreter {
             .class_name()
             .eq_ignore_ascii_case("ReflectionFunction")
         {
-            return self.call_reflection_function_method(object, method_name, args, span);
+            return self.call_reflection_function_method(
+                object,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            );
         }
         if object.class_name().eq_ignore_ascii_case("ReflectionMethod") {
-            return self.call_reflection_method_method(object, method_name, args, span);
+            return self.call_reflection_method_method(
+                object,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            );
         }
         if object
             .class_name()
@@ -17492,6 +17545,7 @@ impl Interpreter {
         method_name: &str,
         args: &[Expr],
         span: Span,
+        caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let state = self
             .reflection_functions
@@ -17607,6 +17661,16 @@ impl Interpreter {
                 expect_expr_arity("ReflectionFunction::returnsReference", args.len(), 0, span)?;
                 Ok(Value::Bool(state.returns_by_reference))
             }
+            "invoke" => {
+                let values = self.evaluate_reflection_invocation_exprs(args, caller_scope)?;
+                self.invoke_reflection_function(state, values, span)
+            }
+            "invokeargs" => {
+                expect_expr_arity("ReflectionFunction::invokeArgs", args.len(), 1, span)?;
+                let values =
+                    self.evaluate_reflection_invocation_args_array(&args[0], caller_scope, span)?;
+                self.invoke_reflection_function(state, values, span)
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("ReflectionFunction::{method_name}()")),
@@ -17620,6 +17684,7 @@ impl Interpreter {
         method_name: &str,
         args: &[Expr],
         span: Span,
+        caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let state = self
             .reflection_methods
@@ -17774,11 +17839,207 @@ impl Interpreter {
                 expect_expr_arity("ReflectionMethod::isConstructor", args.len(), 0, span)?;
                 Ok(Value::Bool(state.name.eq_ignore_ascii_case("__construct")))
             }
+            "invoke" => {
+                if args.is_empty() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "ReflectionMethod::invoke()",
+                            ArityExpectation::AtLeast(1),
+                            args.len(),
+                        ),
+                    ));
+                }
+                let target = self.evaluate(&args[0], caller_scope)?;
+                let values = self.evaluate_reflection_invocation_exprs(&args[1..], caller_scope)?;
+                self.invoke_reflection_method(state, target, values, span)
+            }
+            "invokeargs" => {
+                expect_expr_arity("ReflectionMethod::invokeArgs", args.len(), 2, span)?;
+                let target = self.evaluate(&args[0], caller_scope)?;
+                let values =
+                    self.evaluate_reflection_invocation_args_array(&args[1], caller_scope, span)?;
+                self.invoke_reflection_method(state, target, values, span)
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("ReflectionMethod::{method_name}()")),
             )),
         }
+    }
+
+    fn evaluate_reflection_invocation_exprs(
+        &mut self,
+        args: &[Expr],
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Vec<Value>> {
+        args.iter()
+            .map(|arg| self.evaluate(arg, caller_scope))
+            .collect()
+    }
+
+    fn evaluate_reflection_invocation_args_array(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<Vec<Value>> {
+        let value = self.evaluate(arg, caller_scope)?;
+        let Value::Array(array) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reflection invocation",
+                    format!(
+                        "invokeArgs argument list must be array in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            ));
+        };
+        Ok(array
+            .entries()
+            .iter()
+            .map(|entry| entry.value_cloned())
+            .collect())
+    }
+
+    fn invoke_reflection_function(
+        &mut self,
+        state: ReflectionFunctionState,
+        values: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let function = match self.lookup_function(&state.name) {
+            Some(Callable::User(function)) => function,
+            Some(Callable::Builtin(_)) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ReflectionFunction::invoke",
+                        format!(
+                            "internal function {} reflection invocation is not implemented",
+                            state.name
+                        ),
+                    ),
+                ));
+            }
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!("{}()", state.name)),
+                ));
+            }
+        };
+        let function = function.as_ref();
+        ensure_user_function_arity(function, values.len(), span)?;
+        ensure_supported_function_signature(function, values.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        self.call_user_function_with_checked_values(
+            function,
+            values,
+            None,
+            None,
+            None,
+            Vec::new(),
+            None,
+        )
+    }
+
+    fn invoke_reflection_method(
+        &mut self,
+        state: ReflectionMethodState,
+        target: Value,
+        values: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let ReflectionClassKind::Class = state.declaring_kind else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionMethod::invoke",
+                    "interface and trait method reflection invocation is not implemented",
+                ),
+            ));
+        };
+        let Some(declaring_class_id) = state.declaring_class_id else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionMethod::invoke",
+                    "method reflection invocation requires a declared user class target",
+                ),
+            ));
+        };
+        if state.is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionMethod::invoke",
+                    "static method reflection invocation is not implemented",
+                ),
+            ));
+        }
+        if state.visibility != Visibility::Public {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionMethod::invoke",
+                    "non-public method reflection invocation is not implemented",
+                ),
+            ));
+        }
+
+        let Value::Object(object) = target else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionMethod::invoke",
+                    format!(
+                        "target must be object for non-static method invocation in the current subset, got {}",
+                        target.type_name()
+                    ),
+                ),
+            ));
+        };
+        if object.class_id() != declaring_class_id
+            && !self
+                .classes
+                .is_subclass_of(object.class_id(), declaring_class_id)
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionMethod::invoke",
+                    format!(
+                        "target object of class {} is not an instance of {}",
+                        object.class_name(),
+                        state.declaring_class_name
+                    ),
+                ),
+            ));
+        }
+
+        let function = self.method_function(
+            declaring_class_id,
+            &state.declaring_class_name,
+            &state.name,
+            span,
+        )?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, values.len(), span)?;
+        ensure_supported_function_signature(function, values.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        let called_class_id = object.class_id();
+        self.call_user_function_with_checked_values(
+            function,
+            values,
+            Some(object),
+            Some(declaring_class_id),
+            Some(called_class_id),
+            Vec::new(),
+            None,
+        )
     }
 
     fn call_reflection_parameter_method(
@@ -29925,6 +30186,47 @@ impl Interpreter {
                     )),
                 }
             }
+            "clearstatcache" => {
+                if args.len() > 2 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "clearstatcache()",
+                            ArityExpectation::Between { min: 0, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                if let Some(clear_realpath_cache) = args.first() {
+                    if !matches!(clear_realpath_cache, Value::Bool(_)) {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "clearstatcache()",
+                                format!(
+                                    "clear_realpath_cache argument must be bool in the current subset, got {}",
+                                    clear_realpath_cache.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                }
+                if let Some(filename) = args.get(1) {
+                    if !matches!(filename, Value::String(_)) {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "clearstatcache()",
+                                format!(
+                                    "filename argument must be string in the current subset, got {}",
+                                    filename.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                }
+                Ok(Value::Null)
+            }
             "realpath" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -36623,6 +36925,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_readable"
             | "is_writable"
             | "is_link"
+            | "clearstatcache"
             | "register_shutdown_function"
             | "set_error_handler"
             | "restore_error_handler"
@@ -37106,6 +37409,7 @@ enum WordPressOptionsRowFilter {
     Autoload,
     AutoloadValues(Vec<String>),
     OptionNamePrefix(String),
+    OptionNameLike(WordPressSchemaNameFilter),
     OptionNamePrefixValueLessThan(String, i64),
     Names(Vec<String>),
 }
@@ -40281,12 +40585,8 @@ fn parse_wordpress_options_option_name_like_filter(
     let pattern_sql = rest
         .strip_prefix("WHERE option_name LIKE ")
         .or_else(|| rest.strip_prefix("WHERE `option_name` LIKE "))?;
-    let values = parse_sql_single_quoted_list(pattern_sql)?;
-    if values.len() != 1 {
-        return None;
-    }
-    let prefix = parse_wordpress_option_name_prefix_like_pattern(&values[0])?;
-    Some(WordPressOptionsRowFilter::OptionNamePrefix(prefix))
+    let filter = parse_sql_single_quoted_schema_like_filter(pattern_sql, false)?;
+    Some(WordPressOptionsRowFilter::OptionNameLike(filter))
 }
 
 fn parse_wordpress_options_expired_timeout_filter(rest: &str) -> Option<WordPressOptionsRowFilter> {
@@ -40609,6 +40909,15 @@ fn wordpress_option_names_for_filter(
             let mut names: Vec<_> = options
                 .keys()
                 .filter(|name| name.starts_with(prefix))
+                .cloned()
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::OptionNameLike(filter) => {
+            let mut names: Vec<_> = options
+                .keys()
+                .filter(|name| wordpress_schema_name_matches_filter(name, filter))
                 .cloned()
                 .collect();
             names.sort();

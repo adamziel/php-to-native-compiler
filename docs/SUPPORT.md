@@ -775,7 +775,13 @@
   `foreach ($holder->bag["outer"] as &$value)` and
   `foreach ($holder->{$name}["outer"] as &$value)` also route through the
   bounded by-reference `offsetGet($offset) { return $this->property[$offset]; }`
-  bridge when the selected offset resolves to an array. Direct
+  bridge when the selected offset resolves to an array. Bounded non-direct
+  holder property-held `ArrayAccess` roots such as
+  `foreach ($holders["bag"]->store["outer"] as &$value)` and
+  `foreach ($holders["bag"]->{$name}["outer"] as &$value)` are also covered
+  when the holder expression evaluates once to an object, the selected property
+  is visible from the current context, and that property holds the same exact
+  bounded `ArrayAccess` shape. Direct
   free-function call iterables such as `foreach (items($items) as &$value)`,
   direct visible instance-method call iterables such as
   `foreach ($bag->items($items) as &$value)`, direct named-static-method
@@ -794,9 +800,10 @@
   array iteration creates no lingering reference. This is still not full PHP
   by-reference iteration: broad array reordering/replacement semantics, full
   reference containers, copy-on-write, object/Traversable iteration,
-  ArrayAccess roots outside the exact direct/property-held `offsetGet()`
-  bridge, non-direct property holder expressions outside
-  the documented object-result named/dynamic property foreach slice,
+  ArrayAccess roots outside the exact direct/property-held/non-direct-holder
+  `offsetGet()` bridge, non-direct property holder expressions outside
+  the documented object-result named/dynamic property foreach slice and this
+  property-held `ArrayAccess` slice,
   invisible selected dynamic properties, magic-property reference containers,
   non-string-keyed `$GLOBALS` roots, reference-return iterables that return
   properties, array offsets, expressions, or nested-control-flow returns,
@@ -1337,7 +1344,7 @@
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
-  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
+  `clearstatcache`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
@@ -2345,11 +2352,15 @@
   projection, returning deterministic option-id, name, value, and autoload
   columns, and for exact `SELECT * FROM wp_options ...` star projections,
   returning the same deterministic option-id, name, value, and autoload
-  columns. These row-set projections also accept exact
-  `WHERE option_name LIKE '<prefix>%'` and backtick-quoted
-  ``WHERE `option_name` LIKE '<prefix>%'`` filters for deterministic
-  transient-shaped prefix scans such as `_transient_%` and escaped
-  `\_transient\_%`. Those bounded prefix scans also accept an exact trailing
+  columns. These row-set projections also accept direct
+  `WHERE option_name LIKE '<pattern>'` and backtick-quoted
+  ``WHERE `option_name` LIKE '<pattern>'`` filters for deterministic
+  option-name scans. The direct read path handles `%` wildcards, `_`
+  single-character wildcards, backslash-escaped `%`, `_`, and `\` literals,
+  and a bounded single-character `ESCAPE '<char>'` clause, so transient-shaped
+  scans such as `_transient_%`, escaped `\_transient\_%`, and custom-escape
+  patterns can be distinguished. Those bounded LIKE scans also accept an exact
+  trailing
   `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with optional
   `ASC`, and still use deterministic ascending option-name ordering. For the
   exact `SELECT option_name FROM wp_options ...` projection, direct queries
@@ -2359,7 +2370,7 @@
   backticked column/table spellings and the same optional trailing option-name
   `ORDER BY` suffix. That predicate filters rows whose recorded option value
   parses as a decimal integer below the threshold. All,
-  autoload-filtered, and prefix-filtered row reads use deterministic
+  autoload-filtered, and LIKE-filtered row reads use deterministic
   option-name ordering; explicit `IN (...)` reads preserve the requested name
   order and skip missing names.
   Missing option names still return an empty placeholder result. The exact
@@ -2465,8 +2476,8 @@
   such as `\_transient\_%`. These prepared prefix scans also accept an exact
   trailing `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with
   optional `ASC`, and return rows in the existing deterministic ascending
-  option-name order. This remains a bounded prefix matcher, not general SQL
-  `LIKE` wildcard semantics, prepared pattern lists, `ESCAPE` clauses,
+  option-name order. This prepared path remains a bounded prefix matcher, not
+  general SQL `LIKE` wildcard semantics, prepared pattern lists, `ESCAPE` clauses,
   `DESC` ordering, arbitrary `ORDER BY` expressions, collation fidelity, or
   host database execution. The exact prepared
   `SELECT option_name FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
@@ -2826,6 +2837,16 @@
   paths, pre-Unix-epoch timestamps, oversized timestamps beyond the current
   signed 64-bit integer subset, partial-output behavior, and native lowering
   remain unsupported.
+  `clearstatcache($clear_realpath_cache = false, $filename = "")` accepts no
+  arguments, one bool argument, or a bool plus string path. It returns `null`
+  and is a bounded no-op because the current `phpc run` filesystem metadata
+  builtins perform direct host lookups instead of maintaining a PHP stat cache
+  or realpath cache. This is a small WordPress filesystem compatibility slice,
+  not full PHP stat-cache support: actual stat-cache entries, realpath-cache
+  entries, per-path invalidation effects, broader scalar coercions, exact
+  `ValueError`/`TypeError`/deprecation text, include_path/open_basedir policy,
+  stream-wrapper cache interaction, cross-request cache state, partial-output
+  behavior, and native lowering remain unsupported.
   `realpath($path)` accepts exactly one string local path, rejects
   stream-wrapper paths, resolves existing paths through the host filesystem,
   and returns the resolved path as a UTF-8 string. Missing or otherwise
@@ -5178,7 +5199,7 @@
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
   `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `clearstatcache`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -5358,7 +5379,7 @@
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `clearstatcache`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -5915,6 +5936,13 @@
   behavior, include_path/open_basedir policy, stream-wrapper handling,
   references/copy-on-write, and exact native diagnostics exist, while native
   function-table introspection recognizes the name.
+  `clearstatcache` accepts the same bounded no-cache stat-cache mutation slice
+  as the builtin section above; direct native `clearstatcache(...)` calls stop
+  at a dedicated stat-cache mutation boundary until native filesystem metadata
+  caches, realpath cache state, per-path invalidation, include_path/open_basedir
+  policy, stream-wrapper handling, request-local filesystem state,
+  references/COW, and exact native diagnostics exist, while native
+  function-table introspection recognizes the name.
   `getcwd` accepts the same current no-argument UTF-8 process-current-dir slice
   as the builtin section above; direct native `getcwd()` calls reject under a
   dedicated current-directory boundary until native process/request cwd state,
@@ -6068,7 +6096,16 @@
   declaration and closing brace, and `getDocComment()` returns the directly
   preceding `/** ... */` docblock or `false`. Interface and trait method
   reflection keeps parsed line/doc-comment metadata in the current request but
-  does not yet persist declaration source-file paths. `new ReflectionFunction($function)` creates a bounded metadata
+  does not yet persist declaration source-file paths.
+  `ReflectionMethod::invoke($object, ...$args)` and
+  `ReflectionMethod::invokeArgs($object, $args)` execute public non-static
+  declared user-class methods over the current by-value argument subset and
+  preserve object identity for `$this` mutations. Static methods, non-public
+  methods, interface and trait method targets, internal methods,
+  by-reference parameters, typed parameter/return declarations at invocation
+  time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader
+  argument/reference/COW behavior remain unsupported for reflection
+  invocation. `new ReflectionFunction($function)` creates a bounded metadata
   object for declared user functions named by string. It supports
   `getName()`, `getFileName()`, `getStartLine()`, `getEndLine()`,
   `getDocComment()`, `getParameters()`, `getNumberOfParameters()`,
@@ -6079,8 +6116,14 @@
   the parsed function declaration and closing brace. `getDocComment()` returns
   the directly preceding `/** ... */` docblock captured by the lexer, or
   `false` when none was captured. Function return type objects use the same
-  simple named, bounded union, and pure intersection reflection type objects as
-  the method path. `new ReflectionParameter($function,
+  simple named, bounded union, and pure intersection reflection type objects
+  as the method path. `ReflectionFunction::invoke(...$args)` and
+  `ReflectionFunction::invokeArgs($args)` execute declared user functions over
+  the current by-value argument subset. Internal functions, closure targets,
+  by-reference parameters, typed parameter/return declarations at invocation
+  time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader
+  argument/reference/COW behavior remain unsupported for reflection
+  invocation. `new ReflectionParameter($function,
   $parameter)` accepts a declared user function string with an integer position
   or string parameter name; `getDeclaringFunction()` returns a bounded
   `ReflectionFunction` object and `getDeclaringClass()` returns `null` for
@@ -7774,11 +7817,12 @@
   zero-argument `getProperties()`. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
   source metadata, modifier, predicate, parameter-list, and return-type
-  methods documented above. Interface and trait method source-file paths
+  methods documented above, plus public non-static user-class by-value
+  invocation through `invoke()` and `invokeArgs()`. Interface and trait method source-file paths
   remain unsupported. `ReflectionFunction` currently supports only declared user-function
   metadata named by string, with the name, file/start/end/doc-comment,
   parameter-list, return-type, and by-reference-return methods documented
-  above.
+  above, plus by-value invocation through `invoke()` and `invokeArgs()`.
   `ReflectionParameter` currently supports only method parameters from that
   same metadata slice and declared user-function parameters named by string,
   scalar/array default expressions accepted by the parser,
@@ -7802,7 +7846,10 @@
   exact parameter/property docblock association across attributes and unusual trivia,
   extension/internal function/method/property/parameter metadata, parameter and property
   attributes, default constant-name introspection, closure
-  `ReflectionFunction`/`ReflectionParameter` targets, reflection invocation/value mutation,
+  `ReflectionFunction`/`ReflectionParameter` targets, reflection invocation beyond declared
+  user functions and public non-static user-class methods, typed declaration
+  enforcement during reflection invocation, `invokeArgs()` named-argument
+  semantics, `ReflectionProperty` value mutation,
   `ReflectionClass::getProperties()` filter masks, trait-use metadata inside
   trait declarations, exact `ReflectionException`
   behavior, namespace/import alias expansion beyond parsed class-like names,

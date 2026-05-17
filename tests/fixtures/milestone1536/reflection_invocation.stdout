@@ -1,0 +1,4 @@
+init:done
+save_post:later
+1|init:10
+2|init:10,save_post:20

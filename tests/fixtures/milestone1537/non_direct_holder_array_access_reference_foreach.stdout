@@ -1,0 +1,4 @@
+array:a|array:b|array:c
+array-direct|array-tail|array-tail
+dynamic:a|dynamic:b|dynamic:c
+dynamic-direct|dynamic-tail|dynamic-tail

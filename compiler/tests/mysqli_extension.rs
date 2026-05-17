@@ -4209,6 +4209,46 @@ echo $timeout["option_value"];
 }
 
 #[test]
+fn mysqli_query_applies_mysql_like_wildcards_to_wordpress_option_reads() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_plugins', 'plugin-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('xtransient-update-plugins', 'wildcard-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_update_plugins', 'site-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$wildcard = mysqli_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE '_transient_%'");
+$wildcard_first = mysqli_fetch_assoc($wildcard);
+$wildcard_second = mysqli_fetch_assoc($wildcard);
+echo mysqli_num_rows($wildcard);
+echo ":";
+echo $wildcard_first["option_name"], ",";
+echo $wildcard_second["option_name"];
+echo "|";
+$escaped = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name LIKE '\\_transient\\_%'");
+$escaped_row = mysqli_fetch_assoc($escaped);
+echo mysqli_num_rows($escaped);
+echo ":";
+echo $escaped_row["option_name"], "=", $escaped_row["option_value"];
+echo "|";
+$custom_escape = mysqli_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE '!_site!_transient!_%' ESCAPE '!'");
+$custom_row = mysqli_fetch_assoc($custom_escape);
+echo mysqli_num_rows($custom_escape);
+echo ":";
+echo $custom_row["option_name"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2:_transient_update_plugins,xtransient-update-plugins|1:_transient_update_plugins=plugin-payload|1:_site_transient_update_plugins"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_reads_current_wordpress_prepared_transient_prefix_option_rows_from_state() {
     let execution = run_source(
         r#"<?php

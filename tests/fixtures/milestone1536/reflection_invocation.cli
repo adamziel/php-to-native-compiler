@@ -1,0 +1,10 @@
+run tests/fixtures/milestone1536/reflection_invocation.php
+exit: 0
+stdout:
+init:done
+save_post:later
+1|init:10
+2|init:10,save_post:20
+--- stdout end ---
+stderr:
+--- stderr end ---

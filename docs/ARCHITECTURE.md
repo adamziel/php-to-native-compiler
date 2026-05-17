@@ -195,16 +195,21 @@ evaluate to objects, direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
 `call_user_func_array()` reference-return iterable roots from this machinery,
-plus direct and visible property-held `ArrayAccess` offset-array roots backed
-by the exact bounded by-reference `offsetGet()` bridge, including bounded
-direct caller-cell and direct static-local cell cases. When
+plus direct, visible property-held, and bounded non-direct holder
+property-held `ArrayAccess` offset-array roots backed by the exact bounded
+by-reference `offsetGet()` bridge, including bounded direct caller-cell and
+direct static-local cell cases. Non-direct holder `ArrayAccess` foreach roots
+evaluate the holder expression once into the existing private temporary object
+root, then reuse the same visible property-held `ArrayAccess` bridge before
+falling back to ordinary property-array iteration. When
 the reference-return call maps a returned child array such as
 `return $param[$key];` to multiple covered aliases for direct names sharing a
 caller cell, by-reference `foreach` binds each visited element through all of
 those aliases so loop writes and the lingering post-loop reference keep the
 current bounded alias group coherent.
 Non-direct property holders outside that object-result foreach slice,
-invisible selected properties, mixed nested `ArrayAccess` chains,
+non-direct holder `ArrayAccess` roots outside the exact visible property-held
+bridge, invisible selected properties, mixed nested `ArrayAccess` chains,
 magic-property containers, property-return, array-offset-return beyond that
 assignment-only covered parent-slot suffix shape, expression-return, magic
 `__callStatic`, and callback forms outside the bounded
@@ -1945,11 +1950,14 @@ plus exact explicit full-row-with-id and
 star-projection option-name equality reads with and without `LIMIT 1` for
 object-row/result/column `wpdb` probes, plus
 bounded direct
-`option_name LIKE '<prefix>%'` and prepared `option_name LIKE ?` result scans
-and deletes for transient-shaped option rows. The prefix scan result shapes
-also accept the exact trailing `ORDER BY option_name` / backticked
-`ORDER BY` suffix with optional `ASC`, while preserving the deterministic
-ascending option-name order already used by the state island. A further
+`option_name LIKE '<pattern>'` result scans with `%` wildcards, `_`
+single-character wildcards, backslash escapes, and a bounded
+single-character `ESCAPE '<char>'` clause, plus prepared `option_name LIKE ?`
+prefix result scans and deletes for transient-shaped option rows. Those scan
+result shapes also accept the exact trailing `ORDER BY option_name` /
+backticked `ORDER BY` suffix with optional `ASC`, while preserving the
+deterministic ascending option-name order already used by the state island. A
+further
 bounded transient-timeout scan accepts exact direct/prepared option-name
 projections with `option_name LIKE '<prefix>%' AND option_value < timestamp`
 or the prepared equivalent for rows whose recorded option value parses below a
@@ -2001,9 +2009,11 @@ charset/collation negotiation, locks, real index inspection
 beyond recorded schema-state rows, expression indexes, opclass/parser metadata,
 duplicate aliases, malformed `CONCAT`/`SUBSTRING`
 forms, SQL-mode behavior beyond the bounded schema metadata
-`NO_BACKSLASH_ESCAPES` parser branch, exact MySQL affected-row or insert-ID
-edge cases, prepared schema placeholders beyond the single string filter
-parameter on documented metadata probes, real transactional
+`NO_BACKSLASH_ESCAPES` parser branch, option-name `LIKE` wildcard semantics
+beyond direct read filters, prepared option-name prefix scans, and schema
+metadata filters, exact MySQL affected-row or insert-ID edge cases, prepared
+schema placeholders beyond the single string filter parameter on documented
+metadata probes, real transactional
 DDL/isolation/locking, or WordPress cleanup against tables outside the
 deterministic `wp_options` state island; it is not a general SQL engine,
 schema model, host database connection, PDO layer, or native database runtime.
@@ -2709,10 +2719,25 @@ docblock text, parameter counts, `getParameters()`, `hasReturnType()`,
 registered function declarations because the AST remains source-text scoped;
 included files record the include source path at declaration-registration time.
 The lexer preserves bounded `/** ... */` doc-comment tokens so the parser can
-attach a directly preceding docblock to a function declaration. The function
-path intentionally rejects internal functions and closure targets until those
-metadata sources exist, and doc-comment association does not yet model
-attributes or every PHP trivia edge case.
+attach a directly preceding docblock to a function declaration.
+`ReflectionFunction::invoke()` and `invokeArgs()` re-enter the existing
+user-function call path with evaluated by-value arguments; `invokeArgs()` uses
+the current ordered PHP array entries as positional values, not PHP 8 named
+argument semantics for string keys. The function path
+intentionally rejects internal functions, closure targets, by-reference
+invocation, typed parameter/return declarations during invocation, and
+reference returns until those metadata and aliasing sources exist, and
+doc-comment association does not yet model attributes or every PHP trivia edge
+case.
+`ReflectionMethod::invoke()` and `invokeArgs()` use the same request-local
+method metadata and re-enter the existing instance-method call path for public
+non-static declared user-class methods, preserving `$this` object identity for
+mutations. Static methods, non-public methods, interface and trait method
+reflection targets, internal methods, by-reference invocation, reference
+returns, typed parameter/return declarations during invocation, and native
+lowering remain outside this bounded reflection invocation path. Method
+`invokeArgs()` has the same positional-only array treatment as function
+`invokeArgs()`.
 `ReflectionParameter` follows the same request-local state pattern for
 parameters reached from `ReflectionMethod::getParameters()`,
 `ReflectionFunction::getParameters()`,
@@ -2729,7 +2754,7 @@ bounded union and pure intersection parameter types, and stores the copied
 type names, nullable flags, and builtin flags in the interpreter. Untyped
 parameters return `null`. It does not expose
 attributes, files, line numbers, doc comments, extension/internal metadata,
-closure parameter targets, method/function invocation, exact exception
+closure parameter targets, invocation-time reference binding, exact exception
 objects, DNF type objects, runtime argument/return type enforcement, or native
 lowering.
 `ReflectionProperty` uses a core placeholder class plus request-local state for

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1538/clearstatcache_metadata.php
+exit: 0
+stdout:
+known|callable|first-null|second-null|exists|mtime-int|size-positive
+--- stdout end ---
+stderr:
+--- stderr end ---

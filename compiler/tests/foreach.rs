@@ -907,6 +907,84 @@ echo $holder->bag["outer"]["c"], "|", $value;
 }
 
 #[test]
+fn foreach_by_reference_binds_non_direct_holder_array_access_reference_roots() {
+    let execution = run_source(
+        r#"<?php
+class RefCowForeachNonDirectArrayAccessBag implements ArrayAccess {
+    public $items = ["outer" => ["a" => "one", "b" => "two"]];
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        return isset($this->items[$offset]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function &offsetGet($offset) {
+        return $this->items[$offset];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        $this->items[$offset] = $value;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {
+        unset($this->items[$offset]);
+    }
+}
+
+class RefCowForeachNonDirectArrayAccessHolder {
+    public $bag;
+    public $dynamicBag;
+}
+
+$holders = [];
+$primary = new RefCowForeachNonDirectArrayAccessHolder();
+$primary->bag = new RefCowForeachNonDirectArrayAccessBag();
+$holders["primary"] = $primary;
+$bag = $holders["primary"]->bag;
+foreach ($holders["primary"]->bag["outer"] as $key => &$value) {
+    $value = "array:" . $key;
+    if ($key === "a") {
+        $bag->items["outer"]["c"] = "array-c";
+    }
+}
+echo $holders["primary"]->bag["outer"]["a"], "|", $holders["primary"]->bag["outer"]["b"], "|", $value, "\n";
+$bag->items["outer"]["c"] = "array-direct";
+echo $value, "|";
+$value = "array-tail";
+echo $holders["primary"]->bag["outer"]["c"], "|", $value, "\n";
+unset($value);
+
+$dynamic = new RefCowForeachNonDirectArrayAccessHolder();
+$dynamic->dynamicBag = new RefCowForeachNonDirectArrayAccessBag();
+$holders["dynamic"] = $dynamic;
+$dynamicBag = $holders["dynamic"]->dynamicBag;
+$property = "dynamicBag";
+foreach ($holders["dynamic"]->{$property}["outer"] as $key => &$value) {
+    $value = "dynamic:" . $key;
+    if ($key === "a") {
+        $dynamicBag->items["outer"]["c"] = "dynamic-c";
+    }
+}
+echo $holders["dynamic"]->dynamicBag["outer"]["a"], "|", $holders["dynamic"]->dynamicBag["outer"]["b"], "|", $value, "\n";
+$dynamicBag->items["outer"]["c"] = "dynamic-direct";
+echo $value, "|";
+$value = "dynamic-tail";
+echo $holders["dynamic"]->dynamicBag["outer"]["c"], "|", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array:a|array:b|array:c\narray-direct|array-tail|array-tail\ndynamic:a|dynamic:b|dynamic:c\ndynamic-direct|dynamic-tail|dynamic-tail"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_key_value_requires_array_iterable() {
     let error = runtime_error(
         r#"<?php

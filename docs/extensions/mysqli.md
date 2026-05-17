@@ -393,13 +393,16 @@ projection, returning deterministic option-id, name, value, and autoload
 columns, and for exact `SELECT * FROM wp_options ...` star projections,
 including exact option-name equality with or without `LIMIT 1`, returning the
 same deterministic option-id, name, value, and autoload columns.
-These row-set projections also accept exact
-`WHERE option_name LIKE '<prefix>%'` and backtick-quoted
-``WHERE `option_name` LIKE '<prefix>%'`` filters for deterministic
-transient-shaped prefix scans such as `_transient_%` and escaped
-`\_transient\_%`. All, autoload-filtered, and prefix-filtered row reads use
-deterministic option-name ordering; explicit `IN (...)` reads preserve the
-requested name order and skip missing names.
+These row-set projections also accept direct
+`WHERE option_name LIKE '<pattern>'` and backtick-quoted
+``WHERE `option_name` LIKE '<pattern>'`` filters for deterministic
+option-name scans. That direct read path now handles `%` wildcards, `_`
+single-character wildcards, backslash-escaped `%`, `_`, and `\` literals, and
+a bounded single-character `ESCAPE '<char>'` clause, so transient-shaped scans
+such as `_transient_%`, escaped `\_transient\_%`, and explicit custom-escape
+patterns can be distinguished. All, autoload-filtered, and LIKE-filtered row
+reads use deterministic option-name ordering; explicit `IN (...)` reads
+preserve the requested name order and skip missing names.
 Missing option names still return an empty placeholder result. The exact
 single-quoted literal parser for those direct option shapes accepts the
 current MySQL-style backslash escapes used by `mysqli_real_escape_string()`
@@ -407,8 +410,8 @@ for quotes, double quotes, backslashes, newlines, and carriage returns, plus
 doubled single quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
 ordering/collation fidelity, autoload mutation beyond the exact insert and
-update shapes listed above, SQL `LIKE` wildcard semantics beyond the bounded
-trailing-percent option-name prefix shape, arbitrary
+update shapes listed above, SQL `LIKE` wildcard semantics outside those direct
+option-name read filters and the bounded schema metadata filters, arbitrary
 projection beyond exact option id/name/value/autoload/value-only/name-only/name-value/name-autoload/full-row/full-row-with-id/star-projection shapes,
 unique-index enforcement beyond exact plain option-insert duplicate-name
 rejection, no-op update affected-row fidelity, real
@@ -482,8 +485,8 @@ including backticked table/column spellings and escaped transient prefixes
 such as `\_transient\_%`. These prepared prefix scans also accept an exact
 trailing `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with
 optional `ASC`, and keep the existing deterministic ascending option-name row
-order. This is still a bounded prefix matcher, not general SQL `LIKE`
-wildcard semantics, prepared pattern lists, `ESCAPE` clauses, `DESC`
+order. This prepared path is still a bounded prefix matcher, not general SQL
+`LIKE` wildcard semantics, prepared pattern lists, `ESCAPE` clauses, `DESC`
 ordering, arbitrary `ORDER BY` expressions, collation fidelity, or host
 database execution. The exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
