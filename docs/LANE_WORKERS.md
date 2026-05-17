@@ -194,29 +194,28 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Tests/docs lane: Milestone 1295 closes the 1291-1294 WordPress-focused
+- Tests/docs lane: Milestone 1300 closes the 1296-1299 WordPress-focused
   implementation-batch queue refresh and keeps the next split anchored in the
   `GOAL.MD` compatibility ledger.
-- Parser/runtime lane: Milestone 1296 targets a larger object/interface
+- Parser/runtime lane: Milestone 1301 targets a larger object/interface
   blocker, such as constructor/destructor behavior, inherited method
-  compatibility, trait conflict resolution beyond the current slices,
-  autoloadable class/interface lookup, magic object hooks, or reflection
-  metadata reached by WordPress.
-- Runtime lane: Milestone 1297 targets a larger reference/COW blocker, such as
+  compatibility, autoloadable class/interface lookup, magic object hooks, broad
+  trait/interface semantics, or reflection metadata reached by WordPress.
+- Runtime lane: Milestone 1302 targets a larger reference/COW blocker, such as
   request-bag or `$GLOBALS` alias mutation, reference-return alias binding
-  beyond literal direct-variable arguments, object-property or array-offset
-  alias lifetimes beyond the current metadata bridges, by-reference iteration,
-  or callback/property shapes reached by WordPress.
-- Runtime or IR/lowering lane: Milestone 1298 targets request/SAPI,
+  beyond literal property slots, stored argument arrays for reference-return
+  sources, by-reference iteration, or general alias lifetime cleanup.
+- Runtime or IR/lowering lane: Milestone 1303 targets request/SAPI,
   filesystem, and stream behavior that blocks real WordPress requests, such as
-  session request state, upload metadata, include-path or stream-wrapper
-  behavior, `php://temp`, stream resource handles, shutdown-time buffer
-  visibility, or host SAPI import scaffolding.
-- Compatibility/runtime lane: Milestone 1299 targets executable WordPress
+  session request state, header/output state, upload follow-up work,
+  include-path or stream-wrapper behavior, `php://input`, `php://temp`, stream
+  resource handles, shutdown-time buffer visibility, or host SAPI import
+  scaffolding.
+- Compatibility/runtime lane: Milestone 1304 targets executable WordPress
   database/bootstrap evidence: a broader `wpdb`/MySQLi/object-cache/option
   behavior or a deterministic WordPress bootstrap/request probe that moves
   past its next real blocker.
-- Tests/docs lane: Milestone 1300 is the next tests/docs slot after the next
+- Tests/docs lane: Milestone 1305 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
 Milestones 555-560 closed the first split-lane batch, Milestones 561, 571, 587,

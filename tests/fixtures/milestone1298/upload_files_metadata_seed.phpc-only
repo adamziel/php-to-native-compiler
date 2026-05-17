@@ -1,0 +1,1 @@
+System PHP CLI does not consume PHPC_FILES as SAPI uploaded-file metadata; this fixture documents phpc's explicit CLI upload metadata seed scaffold.

@@ -41,6 +41,7 @@ pub struct RunOptions {
     pub trace_includes: bool,
     pub query_string: Option<String>,
     pub cookie_header: Option<String>,
+    pub upload_files: Option<String>,
     pub request_body: Option<String>,
     pub request_method: Option<String>,
     pub content_type: Option<String>,
@@ -344,6 +345,45 @@ fn parse_cookie_header_pairs(input: &str) -> PhpArray {
         insert_request_value(&mut array, &key, value);
     }
     array
+}
+
+fn parse_upload_file_metadata_pairs(input: &str) -> PhpArray {
+    let mut array = PhpArray::new();
+    for pair in input.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (raw_key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = percent_decode_form_component(raw_key);
+        if key.is_empty() {
+            continue;
+        }
+        let decoded_value = percent_decode_form_component(raw_value);
+        let value = upload_file_metadata_value(&key, decoded_value);
+        insert_request_value(&mut array, &key, value);
+    }
+    array
+}
+
+fn upload_file_metadata_value(key: &str, decoded_value: String) -> Value {
+    if matches!(
+        request_key_leaf_segment(key).as_deref(),
+        Some("error" | "size")
+    ) {
+        if let Ok(value) = decoded_value.trim().parse::<i64>() {
+            return Value::Int(value);
+        }
+    }
+    Value::String(decoded_value)
+}
+
+fn request_key_leaf_segment(key: &str) -> Option<String> {
+    let (root, segments) = parse_request_key_segments(key)?;
+    match segments.last() {
+        Some(RequestKeySegment::Key(key)) => Some(key.clone()),
+        Some(RequestKeySegment::Append) => None,
+        None => Some(root),
+    }
 }
 
 fn insert_request_value(array: &mut PhpArray, key: &str, value: Value) {
@@ -2104,6 +2144,12 @@ enum ReferenceBindingTarget {
     ArrayOffset(ArrayOffsetAlias),
 }
 
+#[derive(Debug, Clone)]
+enum ReferenceReturnBinding {
+    Cell(VariableCell),
+    ArrayOffset(ArrayOffsetAlias),
+}
+
 #[derive(Debug, Clone, Default)]
 struct ConstantTable {
     values: HashMap<String, Value>,
@@ -2330,6 +2376,7 @@ impl Interpreter {
         interpreter.initialize_superglobals(
             options.query_string.as_deref().unwrap_or(""),
             options.cookie_header.as_deref().unwrap_or(""),
+            options.upload_files.as_deref().unwrap_or(""),
             options.request_method.as_deref().unwrap_or("GET"),
             options.content_type.as_deref().unwrap_or(""),
         );
@@ -2364,6 +2411,7 @@ impl Interpreter {
         &mut self,
         query_string: &str,
         cookie_header: &str,
+        upload_files: &str,
         request_method: &str,
         content_type: &str,
     ) {
@@ -2396,6 +2444,7 @@ impl Interpreter {
         };
         let mut request = get.clone();
         merge_request_array(&mut request, &post);
+        let files = parse_upload_file_metadata_pairs(upload_files);
 
         self.global_symbols
             .borrow_mut()
@@ -2412,10 +2461,9 @@ impl Interpreter {
         self.global_symbols
             .borrow_mut()
             .insert("_REQUEST".to_string(), value_cell(Value::Array(request)));
-        self.global_symbols.borrow_mut().insert(
-            "_FILES".to_string(),
-            value_cell(Value::Array(PhpArray::new())),
-        );
+        self.global_symbols
+            .borrow_mut()
+            .insert("_FILES".to_string(), value_cell(Value::Array(files)));
     }
 
     fn initialize_static_property_defaults(&mut self, program: &Program) -> CompileResult<()> {
@@ -4858,8 +4906,14 @@ impl Interpreter {
                         scope.write_static(name, value);
                     }
                 } else if let ReferenceSource::MethodCall { expr, .. } = source {
-                    let cell = self.evaluate_reference_return_call_cell(expr, span, scope)?;
-                    scope.bind_static_to_cell(name, cell);
+                    match self.evaluate_reference_return_call_binding(expr, span, scope)? {
+                        ReferenceReturnBinding::Cell(cell) => {
+                            scope.bind_static_to_cell(name, cell);
+                        }
+                        ReferenceReturnBinding::ArrayOffset(alias) => {
+                            scope.bind_static_to_array_offset_alias(name, alias);
+                        }
+                    }
                 } else {
                     let value =
                         self.evaluate_direct_variable_reference_source_value(source, span, scope)?;
@@ -5392,12 +5446,12 @@ impl Interpreter {
         }
     }
 
-    fn evaluate_reference_return_call_cell(
+    fn evaluate_reference_return_call_binding(
         &mut self,
         expr: &Expr,
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<VariableCell> {
+    ) -> CompileResult<ReferenceReturnBinding> {
         match expr {
             Expr::Call {
                 name,
@@ -5408,6 +5462,7 @@ impl Interpreter {
                     self.call_user_func_array_reference_return_source(args, *call_span, scope)
                 } else {
                     self.call_reference_return_function(name, args, *call_span, scope)
+                        .map(ReferenceReturnBinding::Cell)
                 }
             }
             Expr::MethodCall {
@@ -5415,30 +5470,41 @@ impl Interpreter {
                 method,
                 args,
                 span: call_span,
-            } => self.call_reference_return_instance_method(target, method, args, *call_span, scope),
+            } => self
+                .call_reference_return_instance_method(target, method, args, *call_span, scope)
+                .map(ReferenceReturnBinding::Cell),
             Expr::StaticMethodCall {
                 class_name,
                 method,
                 args,
                 span: call_span,
             } => {
-                self.call_reference_return_named_static_method(class_name, method, args, *call_span, scope)
+                self.call_reference_return_named_static_method(
+                    class_name, method, args, *call_span, scope,
+                )
+                .map(ReferenceReturnBinding::Cell)
             }
             Expr::SelfMethodCall {
                 method,
                 args,
                 span: call_span,
-            } => self.call_reference_return_self_method(method, args, *call_span, scope),
+            } => self
+                .call_reference_return_self_method(method, args, *call_span, scope)
+                .map(ReferenceReturnBinding::Cell),
             Expr::ParentMethodCall {
                 method,
                 args,
                 span: call_span,
-            } => self.call_reference_return_parent_method(method, args, *call_span, scope),
+            } => self
+                .call_reference_return_parent_method(method, args, *call_span, scope)
+                .map(ReferenceReturnBinding::Cell),
             Expr::LateStaticMethodCall {
                 method,
                 args,
                 span: call_span,
-            } => self.call_reference_return_late_static_method(method, args, *call_span, scope),
+            } => self
+                .call_reference_return_late_static_method(method, args, *call_span, scope)
+                .map(ReferenceReturnBinding::Cell),
             Expr::ObjectStaticMethodCall {
                 target,
                 method,
@@ -5446,7 +5512,8 @@ impl Interpreter {
                 span: call_span,
             } => self.call_reference_return_dynamic_static_method(
                 target, method, args, *call_span, scope,
-            ),
+            )
+            .map(ReferenceReturnBinding::Cell),
             _ => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -8304,6 +8371,41 @@ impl Interpreter {
                         .expect("checked wp_options state should exist");
                     let affected_rows = if let Some(option) = options.get_mut(option_name) {
                         option.value = option_value.clone();
+                        1
+                    } else {
+                        0
+                    };
+                    self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                    let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
+                    state.executed_result = None;
+                    state.affected_rows = affected_rows;
+                    state.buffered_result = None;
+                    state.buffered_result_cursor = 0;
+                    return Ok(Value::Bool(true));
+                }
+            }
+        }
+
+        if is_wordpress_option_prepared_autoload_update_query(&query) {
+            if let Some(handle_id) = connection_handle_id {
+                if self.mysqli_wp_options.contains_key(&handle_id) {
+                    let [Value::String(autoload), Value::String(option_name)] =
+                        bound_parameters.as_slice()
+                    else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                function,
+                                "prepared wp_options autoload update requires string autoload and option name parameters in the current subset",
+                            ),
+                        ));
+                    };
+                    let options = self
+                        .mysqli_wp_options
+                        .get_mut(&handle_id)
+                        .expect("checked wp_options state should exist");
+                    let affected_rows = if let Some(option) = options.get_mut(option_name) {
+                        option.autoload = autoload.clone();
                         1
                     } else {
                         0
@@ -13658,7 +13760,7 @@ impl Interpreter {
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<VariableCell> {
+    ) -> CompileResult<ReferenceReturnBinding> {
         if args.len() != 2 {
             return Err(runtime_error(
                 span,
@@ -13707,13 +13809,14 @@ impl Interpreter {
                         caller_scope,
                     )?;
                 self.ensure_user_function_call_depth(function, span)?;
-                self.call_reference_return_function_with_checked_values(
+                self.call_reference_return_function_with_checked_values_for_reference_assignment(
                     function,
                     values,
                     None,
                     None,
                     None,
                     reference_bindings,
+                    caller_scope,
                 )
             }
             Value::Array(callback) => self.call_user_func_array_reference_return_array_callable(
@@ -13776,7 +13879,7 @@ impl Interpreter {
                     argument_expr.span(),
                     RuntimeError::unsupported_call(
                         callable_name(&function.name),
-                        "call_user_func_array() reference-return alias binding requires an array literal with direct variable reference elements for reached by-reference parameters in the current subset",
+                        "call_user_func_array() reference-return alias binding requires an array literal with direct variable or direct public object-property array-offset reference elements for reached by-reference parameters in the current subset",
                     ),
                 ));
             }
@@ -13835,11 +13938,24 @@ impl Interpreter {
                     ));
                 }
                 let Expr::Variable(caller_name, _) = &item.value else {
+                    if let Some((alias, value)) = self
+                        .evaluate_public_object_property_array_reference_argument(
+                            &item.value,
+                            caller_scope,
+                        )?
+                    {
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target: ReferenceBindingTarget::ArrayOffset(alias),
+                        });
+                        continue;
+                    }
                     return Err(runtime_error(
                         item.value.span(),
                         RuntimeError::unsupported_call(
                             callable_name(&function.name),
-                            "call_user_func_array() reference-return alias binding is only implemented for direct variable reference arguments in the current subset",
+                            "call_user_func_array() reference-return alias binding is only implemented for direct variable and direct public object-property array-offset reference arguments in the current subset",
                         ),
                     ));
                 };
@@ -13877,7 +13993,7 @@ impl Interpreter {
         argument_expr: &Expr,
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<VariableCell> {
+    ) -> CompileResult<ReferenceReturnBinding> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
             return Err(runtime_error(
                 span,
@@ -13944,13 +14060,14 @@ impl Interpreter {
                         caller_scope,
                     )?;
                 self.ensure_user_function_call_depth(function, span)?;
-                self.call_reference_return_function_with_checked_values(
+                self.call_reference_return_function_with_checked_values_for_reference_assignment(
                     function,
                     values,
                     Some(object.clone()),
                     Some(class_id),
                     Some(object.class_id()),
                     reference_bindings,
+                    caller_scope,
                 )
             }
             Value::String(class_name) => {
@@ -14020,13 +14137,14 @@ impl Interpreter {
                         caller_scope,
                     )?;
                 self.ensure_user_function_call_depth(function, span)?;
-                self.call_reference_return_function_with_checked_values(
+                self.call_reference_return_function_with_checked_values_for_reference_assignment(
                     function,
                     values,
                     None,
                     Some(declaring_class_id),
                     Some(class_id),
                     reference_bindings,
+                    caller_scope,
                 )
             }
             _ => unreachable!("array_callable_parts restricts callback targets"),
@@ -15823,6 +15941,169 @@ impl Interpreter {
         }
 
         Ok(())
+    }
+
+    fn call_reference_return_function_with_checked_values_for_reference_assignment(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        reference_bindings: Vec<ReferenceBinding>,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnBinding> {
+        self.function_context.push(function.name.clone());
+        if let Some(class_context) = class_context {
+            self.class_context.push(class_context);
+        }
+        if let Some(called_class_context) = called_class_context {
+            self.called_class_context.push(called_class_context);
+        }
+        let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
+        if let Some(this_object) = this_object {
+            local_scope.write_static("this", Value::Object(this_object));
+        }
+        let mut array_offset_binding_cells = Vec::new();
+        for (index, param) in function.params.iter().enumerate() {
+            if param.is_variadic {
+                let mut rest = PhpArray::new();
+                for arg in args.iter().skip(index) {
+                    rest.append(arg.clone())
+                        .map_err(|error| runtime_error(param.span, error))?;
+                }
+                local_scope.write_static(&param.name, Value::Array(rest));
+                break;
+            }
+
+            if let Some(binding) = reference_bindings
+                .iter()
+                .find(|binding| binding.param_name == param.name)
+            {
+                match &binding.target {
+                    ReferenceBindingTarget::CallerCell(caller_cell) => {
+                        local_scope.bind_static_to_cell(&param.name, caller_cell.clone());
+                    }
+                    ReferenceBindingTarget::ArrayOffset(alias) => {
+                        if let Some(arg) = args.get(index) {
+                            local_scope.write_static(&param.name, arg.clone());
+                            if let Some(cell) = local_scope.read_cell(&param.name) {
+                                array_offset_binding_cells.push((
+                                    param.name.clone(),
+                                    alias.clone(),
+                                    cell,
+                                ));
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
+            let value = if let Some(arg) = args.get(index) {
+                arg.clone()
+            } else {
+                let default = param
+                    .default
+                    .as_ref()
+                    .expect("arity check ensures missing params have defaults");
+                let mut default_scope = SymbolTable::new();
+                match self.evaluate(default, &mut default_scope) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.function_context.pop();
+                        if class_context.is_some() {
+                            self.class_context.pop();
+                        }
+                        if called_class_context.is_some() {
+                            self.called_class_context.pop();
+                        }
+                        return Err(error);
+                    }
+                }
+            };
+            local_scope.write_static(&param.name, value);
+        }
+
+        self.call_depth += 1;
+        self.active_static_locals.push(Vec::new());
+        let result = self.execute_reference_return_statements(function, &mut local_scope);
+        let returned_array_offset = result.as_ref().ok().and_then(|returned_cell| {
+            array_offset_binding_cells
+                .iter()
+                .find_map(|(_, alias, original_cell)| {
+                    if Rc::ptr_eq(returned_cell, original_cell) {
+                        Some(alias.clone())
+                    } else {
+                        None
+                    }
+                })
+        });
+        let writeback_result = if result.is_ok() {
+            let mut writeback_result = Ok(());
+            for (param_name, alias, original_cell) in &array_offset_binding_cells {
+                let Some(local_cell) = local_scope.read_cell(param_name) else {
+                    continue;
+                };
+                if !Rc::ptr_eq(&local_cell, original_cell) {
+                    continue;
+                }
+                let Some(value) = local_scope.read_named(param_name) else {
+                    continue;
+                };
+                if !caller_scope.write_array_offset_alias(alias, value) {
+                    writeback_result = Err(runtime_error(
+                        function.span,
+                        RuntimeError::invalid_array_access(
+                            "cannot write array reference argument".to_string(),
+                        ),
+                    ));
+                    break;
+                }
+                match &alias.root {
+                    ArrayOffsetAliasRoot::StaticArray { name } => {
+                        caller_scope.sync_array_offset_aliases_for_static_root(name);
+                    }
+                    ArrayOffsetAliasRoot::GlobalArray { name } => {
+                        caller_scope.sync_array_offset_aliases_for_global_root(name);
+                    }
+                    ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                    | ArrayOffsetAliasRoot::ContextObjectProperty {
+                        object, property, ..
+                    } => {
+                        caller_scope
+                            .sync_array_offset_aliases_for_object_property_root(object, property);
+                    }
+                }
+            }
+            writeback_result
+        } else {
+            Ok(())
+        };
+        let static_names = self.active_static_locals.pop().unwrap_or_default();
+        let function_key = function.name.to_ascii_lowercase();
+        for name in static_names {
+            if let Some(value) = local_scope.read_named(&name) {
+                self.static_locals
+                    .insert((function_key.clone(), name), value.clone());
+            }
+        }
+        self.call_depth -= 1;
+        self.function_context.pop();
+        if class_context.is_some() {
+            self.class_context.pop();
+        }
+        if called_class_context.is_some() {
+            self.called_class_context.pop();
+        }
+
+        writeback_result?;
+        let cell = result?;
+        if let Some(alias) = returned_array_offset {
+            Ok(ReferenceReturnBinding::ArrayOffset(alias))
+        } else {
+            Ok(ReferenceReturnBinding::Cell(cell))
+        }
     }
 
     fn call_reference_return_function_with_checked_values(
@@ -24245,6 +24526,12 @@ fn is_wordpress_option_prepared_update_query(query: &str) -> bool {
     let query = query.trim();
     query == "UPDATE wp_options SET option_value = ? WHERE option_name = ?"
         || query == "UPDATE `wp_options` SET `option_value` = ? WHERE `option_name` = ?"
+}
+
+fn is_wordpress_option_prepared_autoload_update_query(query: &str) -> bool {
+    let query = query.trim();
+    query == "UPDATE wp_options SET autoload = ? WHERE option_name = ?"
+        || query == "UPDATE `wp_options` SET `autoload` = ? WHERE `option_name` = ?"
 }
 
 fn is_wordpress_option_prepared_insert_query(query: &str) -> bool {

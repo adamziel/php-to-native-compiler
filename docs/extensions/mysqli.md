@@ -364,9 +364,8 @@ current MySQL-style backslash escapes used by `mysqli_real_escape_string()`
 for quotes, double quotes, backslashes, newlines, and carriage returns, plus
 doubled single quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
-ordering/collation fidelity, autoload mutation beyond exact inserts, the
-exact option value/autoload update shape, and the exact direct autoload-only
-update shape, arbitrary
+ordering/collation fidelity, autoload mutation beyond the exact insert and
+update shapes listed above, arbitrary
 projection beyond exact option id/name/value/autoload/name-value/full-row/full-row-with-id shapes,
 unique-index enforcement beyond exact plain option-insert duplicate-name
 rejection, no-op update affected-row fidelity, real
@@ -440,15 +439,21 @@ treats missing option names as successful zero-row updates. The exact
 prepared statement updates both the recorded option value and autoload flag for
 string parameters on the same handle with the same affected-row metadata. The
 exact
+`UPDATE wp_options SET autoload = ? WHERE option_name = ?` prepared statement
+updates only the recorded autoload flag for string parameters on the same
+handle while preserving the option value, with the same affected-row metadata.
+The exact
 `DELETE FROM wp_options WHERE option_name = ?` prepared statement removes an
 existing recorded option for a string option-name parameter on the same
 handle, updates statement and connection affected-row metadata, and treats
 missing option names as successful zero-row deletes. Prepared mutation SQL
 without a prior state island remains unsupported. This does not add broad
 prepared SQL execution, real unique-index enforcement, no-op update
-affected-row fidelity, prepared autoload-only updates, non-string parameter
-coercion, result binding fidelity beyond exact metadata, real auto-increment
-fidelity, host database execution, PDO, or native lowering.
+affected-row fidelity, prepared mutation shapes beyond the exact option value,
+value/autoload, autoload-only, insert, replace, upsert, and delete forms listed
+above, non-string parameter coercion, result binding fidelity beyond exact
+metadata, real auto-increment fidelity, host database execution, PDO, or native
+lowering.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
 scalar/null variable snapshots for active statements using `s`, `i`, `d`, or

@@ -313,10 +313,24 @@ full option-row-with-id set observes that flag, adding
 `autoload-only|added-db:auto-off|ids=3:blogdescription:auto-off,2:siteurl:yes`
 (`stdout_bytes: 405` in normalized output). This is executable evidence for
 one bounded option autoload-only update only; it does not claim persistent
-object-cache behavior, arbitrary update SQL, prepared autoload-only updates,
+object-cache behavior, arbitrary update SQL, broad prepared mutation SQL,
 broad projections, real database connectivity, broad `wpdb`, full WordPress
 option APIs, plugins/themes, request/SAPI fidelity, references/copy-on-write,
 or native support.
+
+After Milestone 1299, that synthetic add-option smoke also updates only the
+reinserted option's autoload flag through the exact prepared
+`UPDATE wp_options SET autoload = ? WHERE option_name = ?` shape. The generated
+bootstrap shim and front-controller path prove the database-backed option value
+still remains `added-db` while autoload changes back to `auto-on`, and the full
+option-row-with-id set observes that flag, adding
+`prepared-autoload-only|added-db:auto-on|ids=3:blogdescription:auto-on,2:siteurl:yes`
+(`stdout_bytes: 489` in normalized output). This is executable evidence for
+one bounded prepared option autoload-only update only; it does not claim
+persistent object-cache behavior, arbitrary update SQL, broad prepared
+mutation SQL, broad projections, real database connectivity, broad `wpdb`,
+full WordPress option APIs, plugins/themes, request/SAPI fidelity,
+references/copy-on-write, or native support.
 
 After Milestone 1273, `phpc run` tracks whether response headers are still open
 or whether bytes have reached unbuffered stdout. The current
@@ -351,6 +365,18 @@ guards such as seeded `wordpress_test_cookie` checks in the current request
 scaffold only; it does not import host SAPI cookies, implement exact
 browser/raw cookie parsing, merge cookies into `$_REQUEST`, send cookies, or
 claim request fidelity.
+
+After Milestone 1298, `phpc run` can seed deterministic `$_FILES` upload
+metadata from an explicit URL-encoded `PHPC_FILES` value, using keys such as
+`async-upload[name]`, `async-upload[type]`, `async-upload[tmp_name]`,
+`async-upload[error]`, and `async-upload[size]`. The `error` and `size` leaf
+values parse as integers when possible, and direct function-scope reads route
+through the root auto-global. This supports WordPress-shaped upload guard code
+that inspects a seeded upload bag in CLI fixtures only; it does not parse
+multipart requests, create temporary uploaded files, validate host upload
+state, implement `is_uploaded_file()` or `move_uploaded_file()`, import host
+SAPI request state, enforce `variables_order`, or claim upload/request
+fidelity.
 
 After Milestone 1233, `phpc run` also seeds `$_GET`, `$_POST`, and
 `$_REQUEST` as deterministic empty auto-global arrays routed through the root
@@ -443,7 +469,10 @@ later full-row-set byte count after exercising the exact
 minimal `wpdb::get_results()` wrapper. The Milestone 1294 add-option smoke
 records a later value-preserving autoload-only update byte count after
 exercising the exact direct
-`UPDATE wp_options SET autoload = ... WHERE option_name = ...` shape. Known
+`UPDATE wp_options SET autoload = ... WHERE option_name = ...` shape. The
+Milestone 1299 add-option smoke records a later prepared autoload-only update
+byte count after exercising the exact prepared
+`UPDATE wp_options SET autoload = ? WHERE option_name = ?` shape. Known
 historical blockers and remaining full-support gaps include:
 
 - include/require breadth beyond the first local

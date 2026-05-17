@@ -43,7 +43,11 @@ and bracketed URL-encoded query pairs into `$_GET`, and
 `PHPC_CONTENT_TYPE=application/x-www-form-urlencoded` and `PHPC_REQUEST_BODY`
 seeds flat and bracketed URL-encoded body pairs into `$_POST`. `PHPC_COOKIE`
 is treated as an explicit semicolon-delimited cookie header seed for
-`$_COOKIE` and `$_SERVER["HTTP_COOKIE"]`. Repeated scalar keys use
+`$_COOKIE` and `$_SERVER["HTTP_COOKIE"]`. `PHPC_FILES` is treated as an
+explicit URL-encoded upload metadata seed for `$_FILES` using PHP-shaped keys
+such as `async-upload[name]`, `async-upload[tmp_name]`,
+`async-upload[error]`, and `async-upload[size]`; `error` and `size` leaf
+values parse as decimal integers when possible. Repeated scalar keys use
 last-write-wins, `[]` bracket segments append in order, and keyed bracket
 segments materialize nested arrays under the current ordered-array model. Dots
 and spaces in top-level request names are normalized to underscores before
@@ -52,8 +56,8 @@ insertion, while bracket segment keys keep their current literal decoded text.
 deterministic request-state scaffolding only: it does not import browser
 cookie headers from the host SAPI, merge cookies into `$_REQUEST`, handle
 malformed or edge-case PHP request names with exact `parse_str()` behavior,
-multipart uploads, or host SAPI state, import file-upload metadata, emit
-cookies, or model `variables_order`/`request_order`.
+parse multipart uploads, create temporary upload files, validate host upload
+state, emit cookies, or model `variables_order`/`request_order`.
 
 Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
@@ -193,6 +197,9 @@ conflict adaptation such as
 `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is accepted for
 public instance methods from traits in the same class-body `use`
 declaration; composition registers the winner and skips the named loser method.
+The same current slice accepts comma-separated loser lists such as
+`TraitA::method insteadof TraitB, TraitC` when every loser trait appears in
+the same class-body `use` declaration.
 The current executable interaction slice also allows that selected winning
 method to be exposed through a same-block explicit-public alias, such as
 `use TraitA, TraitB { TraitA::method insteadof TraitB; TraitA::method as public alias; }`.
@@ -209,8 +216,8 @@ properties, non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, static/abstract/final or non-public trait methods,
 broad conflict resolution beyond class-method precedence and the current
-single-loser `insteadof` slice, unqualified visibility-only adaptations across
-multiple used traits, unqualified or multi-loser `insteadof`,
+bounded `insteadof` slice, unqualified visibility-only adaptations across
+multiple used traits, unqualified `insteadof`,
 qualified or multi-trait alias edge cases beyond the current winner-alias slice,
 `__TRAIT__` context, references/copy-on-write, nested or conditional trait
 declarations, and native trait lowering remain explicit boundaries.
@@ -539,7 +546,12 @@ the argument array is an unkeyed or integer-keyed literal containing
 callback path can also copy in and write back direct public object-property
 array-offset elements such as `&$object->items[$group][$key]`, using the
 bounded output-parameter bridge rather than in-call reference-container
-identity. Direct stored argument arrays can satisfy reached by-reference
+identity. Statement-form reference assignment from a reference-returning
+`call_user_func_array()` source can now return the same bounded public
+object-property array-offset route when the callback returns that reached
+parameter, so the assigned alias is represented in symbol-table alias metadata
+instead of as a general runtime reference container. Direct stored argument
+arrays can satisfy reached by-reference
 parameters when the selected slots were previously assigned by reference
 through the covered direct array-offset target path. That path finds the
 stored slot in the existing alias metadata, copies the current slot value into
@@ -552,10 +564,10 @@ returning by reference, but the callback call itself still returns a value and
 is not a statement-form reference-return source. This deliberately does not
 model full PHP reference containers, reference array literals stored by value,
 stored arrays whose reached slots were not assigned by reference, string-keyed
-named reference argument arrays, non-public or dynamic property callback
-arguments, dynamic static receiver callback object-property array arguments,
-broader reference-return binding, exact by-reference `foreach`, or
-copy-on-write.
+named reference argument arrays, non-public, dynamic, append, or stored-array
+object-property reference-return bridges, dynamic static receiver callback
+object-property array arguments, broader reference-return binding, exact
+by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
 ordered array, writes the key variable by value, routes the value variable to

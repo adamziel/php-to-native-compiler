@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1296/trait_multi_loser_insteadof_adaptation.php
+exit: 0
+stdout:
+primary:Plugin|hooks:Plugin|label-method
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -1384,6 +1384,77 @@ mysqli_stmt_execute($stmt, array("after", 1, "blogdescription"));
 }
 
 #[test]
+fn mysqli_statement_updates_current_wordpress_option_autoload_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('blogdescription', 'value-kept', 'no')");
+$stmt = mysqli_prepare($handle, "UPDATE `wp_options` SET `autoload` = ? WHERE `option_name` = ?");
+$autoload = "auto-on";
+$name = "blogdescription";
+mysqli_stmt_bind_param($stmt, "ss", $autoload, $name);
+echo mysqli_stmt_execute($stmt) ? "updated" : "failed";
+echo "|";
+echo mysqli_stmt_affected_rows($stmt);
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value, autoload FROM wp_options WHERE option_name = 'blogdescription' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"], ":", $row["autoload"];
+echo "|";
+$name = "missing";
+echo mysqli_stmt_execute($stmt) ? "missing-updated" : "failed";
+echo "|";
+echo mysqli_stmt_affected_rows($stmt);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "updated|1|1|value-kept:auto-on|missing-updated|0"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let type_error = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('blogdescription', 'before', 'no')");
+$stmt = mysqli_prepare($handle, "UPDATE wp_options SET autoload = ? WHERE option_name = ?");
+mysqli_stmt_execute($stmt, array(1, "blogdescription"));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(type_error.phase, Phase::Runtime);
+    assert_eq!(type_error.line, 6);
+    assert_eq!(type_error.column, 1);
+    assert_eq!(
+        type_error.message,
+        "unsupported call mysqli_stmt_execute(): prepared wp_options autoload update requires string autoload and option name parameters in the current subset"
+    );
+
+    let no_state = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "UPDATE wp_options SET autoload = ? WHERE option_name = ?");
+mysqli_stmt_execute($stmt, array("yes", "blog_public"));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(no_state.phase, Phase::Runtime);
+    assert_eq!(no_state.line, 3);
+    assert_eq!(no_state.column, 1);
+    assert_eq!(
+        no_state.message,
+        "unsupported call mysqli_stmt_execute(): statement mutation execution and host database state are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_statement_deletes_current_wordpress_option_state() {
     let execution = run_source(
         r#"<?php

@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_trait_use.php:4:44: unsupported trait use adaptation: multiple insteadof loser traits are not implemented
+parse error at tests/fixtures/unsupported_object_features/unsupported_trait_use.php:4:9: unsupported trait use adaptation: unqualified insteadof adaptations are not implemented
 --- stderr end ---

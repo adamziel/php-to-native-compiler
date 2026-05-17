@@ -539,6 +539,74 @@ echo $_FILES["async-upload"]["error"];
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn files_superglobal_parses_explicit_cli_upload_metadata_seed() {
+    let program = parse(
+        r#"<?php
+echo $_FILES["async-upload"]["name"];
+echo "|";
+echo $_FILES["async-upload"]["type"];
+echo "|";
+echo $_FILES["async-upload"]["tmp_name"];
+echo "|";
+echo $_FILES["async-upload"]["error"];
+echo "|";
+echo $_FILES["async-upload"]["size"];
+echo "|";
+echo $_FILES["async-upload"]["full_path"];
+echo "|";
+
+function upload_summary() {
+    return $_FILES["async-upload"]["name"] . ":" . $_FILES["async-upload"]["size"];
+}
+
+echo upload_summary();
+"#,
+    )
+    .unwrap();
+
+    let execution = run_program_with_options(
+        &program,
+        RunOptions {
+            upload_files: Some(
+                "async-upload[name]=plugin.zip&async-upload[type]=application%2Fzip&async-upload[tmp_name]=%2Ftmp%2Fphpc-upload&async-upload[error]=0&async-upload[size]=12345&async-upload[full_path]=plugin.zip"
+                    .to_string(),
+            ),
+            ..RunOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "plugin.zip|application/zip|/tmp/phpc-upload|0|12345|plugin.zip|plugin.zip:12345"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn upload_files_env_cli_snapshot_matches_current_sapi_seed() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = "tests/fixtures/milestone1298/upload_files_metadata_seed.php";
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env(
+            "PHPC_FILES",
+            "async-upload[name]=plugin.zip&async-upload[type]=application%2Fzip&async-upload[tmp_name]=%2Ftmp%2Fphpc-upload&async-upload[error]=0&async-upload[size]=12345&async-upload[full_path]=plugin.zip",
+        )
+        .args(["run", fixture])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run phpc for {fixture}: {error}"));
+
+    let actual = render_cli_snapshot(&output);
+    let expected = "exit: 0\nstdout:\nplugin.zip|application/zip|/tmp/phpc-upload|0|12345|plugin.zip|plugin.zip:12345--- stdout end ---\nstderr:\n--- stderr end ---\n";
+
+    assert_eq!(actual, expected);
+}
+
 fn render_cli_snapshot(output: &Output) -> String {
     let exit_code = output.status.code().unwrap_or(1);
     let stdout = String::from_utf8_lossy(&output.stdout);

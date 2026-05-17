@@ -3230,6 +3230,67 @@ print_r($methods);
 }
 
 #[test]
+fn class_trait_use_insteadof_selects_winner_over_multiple_losers() {
+    let source = r#"<?php
+interface NamedPlugin {
+    public function label();
+    public function hooks();
+}
+
+trait PrimaryLabel {
+    public function label() {
+        return "primary:" . get_class($this);
+    }
+}
+
+trait FallbackLabel {
+    public function label() {
+        return "fallback:" . get_class($this);
+    }
+}
+
+trait LegacyLabel {
+    public function label() {
+        return "legacy:" . get_class($this);
+    }
+}
+
+trait HasHooks {
+    public function hooks() {
+        return "hooks:" . get_class($this);
+    }
+}
+
+class Plugin implements NamedPlugin {
+    use PrimaryLabel, FallbackLabel, LegacyLabel, HasHooks {
+        PrimaryLabel::label insteadof FallbackLabel, LegacyLabel;
+    }
+}
+
+$plugin = new Plugin();
+echo $plugin->label(), "\n";
+echo $plugin->hooks(), "\n";
+echo method_exists($plugin, "label") ? "label-method\n" : "missing\n";
+
+$methods = get_class_methods($plugin);
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "primary:Plugin\nhooks:Plugin\nlabel-method\nArray\n(\n    [0] => label\n    [1] => hooks\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    assert!(class.method("label").is_some());
+    assert!(class.method("hooks").is_some());
+    assert_eq!(class.methods().len(), 2);
+}
+
+#[test]
 fn class_methods_override_trait_methods_and_satisfy_interfaces() {
     let source = r#"<?php
 interface HookContract {
@@ -8150,13 +8211,13 @@ class Box {
             r#"<?php
 class Box {
     use Labels, OtherLabels, ThirdLabels {
-        Labels::label insteadof OtherLabels, ThirdLabels;
+        label insteadof OtherLabels;
     }
 }
 "#,
             4,
-            44,
-            "unsupported trait use adaptation: multiple insteadof loser traits are not implemented",
+            9,
+            "unsupported trait use adaptation: unqualified insteadof adaptations are not implemented",
         ),
         (
             r#"<?php

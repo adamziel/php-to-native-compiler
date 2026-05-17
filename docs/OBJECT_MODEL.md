@@ -89,11 +89,13 @@ aliases and visibility-only adaptations such as
 `TraitA::method as protected helper` and `TraitA::method as protected` use the
 current method visibility metadata, so they are visible to `method_exists()`
 but omitted from global-context `get_class_methods()` when non-public.
-Single-loser
-public instance conflict adaptations such as
+Bounded public instance conflict adaptations such as
 `TraitA::method insteadof TraitB` select the winner from traits listed in the
 same class-body `use` declaration and skip the loser method during
-composition. That selected public instance winner can also be exposed through
+composition. Comma-separated loser lists such as
+`TraitA::method insteadof TraitB, TraitC` are accepted for the same public
+instance method shape when every loser is listed in the same class-body `use`
+declaration. That selected public instance winner can also be exposed through
 a same-block explicit-public alias, such as
 `TraitA::method insteadof TraitB; TraitA::method as public alias;`; the
 original method and alias are both ordinary public methods for dispatch,
@@ -420,12 +422,12 @@ full interface signature enforcement,
 trait properties, non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, static/abstract/final or non-public trait methods,
-conflicting trait use beyond the bounded single-loser `insteadof` shape,
+conflicting trait use beyond the bounded `insteadof` shape,
 trait alias/adaptation edge cases beyond the current simple public, qualified
 public-alias, same-block winner public-alias, protected/private alias, and
 single-trait visibility-only slices,
 unqualified visibility-only adaptations across multiple used traits,
-unqualified or multi-loser `insteadof`, `__TRAIT__`, nested/conditional trait
+unqualified `insteadof`, `__TRAIT__`, nested/conditional trait
 registration, backed enum
 declarations, enum case objects, enum methods/constants/properties, enum interface implementation,
 abstract-method enforcement, method visibility compatibility enforcement,

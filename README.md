@@ -48,13 +48,17 @@ of silently pretending to work.
 
 For bounded request/SAPI exercises, `phpc run` accepts explicit environment
 seeds: `PHPC_QUERY_STRING`, `PHPC_REQUEST_METHOD`, `PHPC_CONTENT_TYPE`,
-`PHPC_REQUEST_BODY`, and `PHPC_COOKIE`. These populate bounded URL-encoded
-`$_GET`/`$_POST`/`$_REQUEST` data, including bracketed names, repeated `[]`
-values, and top-level dotted/spaced request names normalized to underscores.
-`PHPC_COOKIE` seeds `$_COOKIE` from a semicolon-delimited cookie header string
-and exposes the raw value through `$_SERVER["HTTP_COOKIE"]`; cookies are not
-merged into `$_REQUEST`. They also seed `php://input` for the interpreter only;
-native lowering still rejects request state until a native runtime ABI exists.
+`PHPC_REQUEST_BODY`, `PHPC_COOKIE`, and `PHPC_FILES`. These populate bounded
+URL-encoded `$_GET`/`$_POST`/`$_REQUEST` data, including bracketed names,
+repeated `[]` values, and top-level dotted/spaced request names normalized to
+underscores. `PHPC_COOKIE` seeds `$_COOKIE` from a semicolon-delimited cookie
+header string and exposes the raw value through `$_SERVER["HTTP_COOKIE"]`;
+cookies are not merged into `$_REQUEST`. `PHPC_FILES` seeds explicit
+`$_FILES` upload metadata from URL-encoded keys such as
+`async-upload[name]=plugin.zip&async-upload[error]=0`; it does not parse
+multipart bodies or create temporary upload files. `PHPC_REQUEST_BODY` also
+seeds `php://input` for the interpreter only; native lowering still rejects
+request state until a native runtime ABI exists.
 
 ### `phpc compile --emit-ir`
 
@@ -261,10 +265,11 @@ incorrect native code.
   `use TraitName { method as protected; }`, and
   bounded
   public instance conflict resolution such as
-  `use TraitA, TraitB { TraitA::method insteadof TraitB; }`, including the
-  same-block winning-method public alias interaction and class-declared
-  public instance methods taking precedence over same-named composed trait
-  methods or aliases,
+  `use TraitA, TraitB { TraitA::method insteadof TraitB; }`, including
+  comma-separated loser lists in that same public instance method shape, the
+  same-block winning-method public alias interaction, and class-declared public
+  instance methods taking precedence over same-named composed trait methods or
+  aliases,
   declared unit-enum metadata, bounded `is_countable()`/`count()` for
   `Countable` implementors that pass the current method-shape check, and
   bounded `is_iterable()` metadata for `Iterator`/`IteratorAggregate`
@@ -295,11 +300,11 @@ checks, trait properties, non-public/typed/abstract/final/static trait
 constants, multi-constant trait declarations, trait constant adaptations,
 conflicting trait/class constants, static/abstract/final or non-public trait
 methods, conflicting trait composition outside class-method precedence and the
-bounded single-loser `insteadof` shape, aliases
+bounded `insteadof` shape, aliases
 beyond the current simple public, qualified public-alias, same-block
 winner public-alias, and protected/private alias slices,
 unqualified visibility-only adaptations across multiple used traits,
-unqualified or multi-loser `insteadof`, `__TRAIT__`,
+unqualified `insteadof`, `__TRAIT__`,
 conditional/nested trait registration, enum case objects/backed
 values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,

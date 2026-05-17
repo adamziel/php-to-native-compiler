@@ -105,25 +105,28 @@
   callbacks, public `[object, method]` instance callbacks, and public
   `["ClassName", "method"]` static callbacks declared as returning by
   reference when the argument array is a literal and each reached
-  by-reference parameter is supplied by a direct-variable reference element,
-  for example `$alias =& call_user_func_array("tag", array(&$value));`. The
-  assigned alias binds to the callback's returned direct variable cell, so a
-  reference-returning callback that returns the referenced parameter aliases
-  the caller's direct variable. `unset($param)` detaches only the callee's
-  local parameter name;
-  later local writes do not mutate the caller variable or write back through
-  the object-property argument path.
+  by-reference parameter is supplied by a direct-variable reference element or
+  a direct public object-property array-offset reference element, for example
+  `$alias =& call_user_func_array("tag", array(&$value));` or
+  `$alias =& call_user_func_array("tag", array(&$object->items[$key]));`. The
+  assigned alias binds to the callback's returned direct variable cell or, when
+  the callback returns the reached object-property array-offset parameter, to
+  the same bounded public object-property slot route, so later writes through
+  the alias and slot observe the same value. `unset($param)` detaches only the
+  callee's local parameter name; later local writes do not mutate the caller
+  variable or write back through the object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, reference array
   literals stored by value, direct stored arrays whose reached slots were not
   assigned by reference, dynamic static receiver, string-keyed named callback
   argument arrays, stored argument arrays with reached by-reference parameters
-  for `call_user_func_array()` reference-return alias binding, object-property
-  or array-offset argument bridges for `call_user_func_array()` reference-return
-  alias binding, closure or builtin callbacks as reference-return sources, and
-  broader reference-return binding forms remain unsupported for object-property
-  and stored-array reference arguments. This is still a bounded
-  direct-variable alias and public object-property output path, not full PHP
-  reference containers or copy-on-write.
+  for `call_user_func_array()` reference-return alias binding, non-public,
+  dynamic, append, `ArrayAccess`, or stored-array object-property bridges for
+  `call_user_func_array()` reference-return alias binding, closure or builtin
+  callbacks as reference-return sources, and broader reference-return binding
+  forms remain unsupported for object-property and stored-array reference
+  arguments. This is still a bounded direct-variable alias and public
+  object-property slot route, not full PHP reference containers or
+  copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& identity($value);`,
   `$alias =& $object->method();`, and direct object-property array-offset
@@ -609,10 +612,11 @@
   deterministic CLI request defaults for `SERVER_SOFTWARE`, `REQUEST_URI`,
   `HTTP_HOST`, `PHP_SELF`, `SCRIPT_NAME`, `SCRIPT_FILENAME`, and
   `QUERY_STRING`. `PHPC_QUERY_STRING`, `PHPC_REQUEST_METHOD`,
-  `PHPC_CONTENT_TYPE`, `PHPC_REQUEST_BODY`, and `PHPC_COOKIE` can seed bounded
-  CLI request values for `QUERY_STRING`, `REQUEST_METHOD`, `CONTENT_TYPE`,
-  `CONTENT_LENGTH`, and `HTTP_COOKIE`. Direct function-scope reads and writes
-  of `$_SERVER` route through the root symbol table without a
+  `PHPC_CONTENT_TYPE`, `PHPC_REQUEST_BODY`, `PHPC_COOKIE`, and `PHPC_FILES`
+  can seed bounded CLI request values for `QUERY_STRING`, `REQUEST_METHOD`,
+  `CONTENT_TYPE`, `CONTENT_LENGTH`, `HTTP_COOKIE`, and upload metadata in
+  `$_FILES`. Direct function-scope reads and writes of `$_SERVER` route
+  through the root symbol table without a
   `global $_SERVER` declaration. Real SAPI request population, environment
   imports, complete server key catalogs, `$GLOBALS` aliasing, references,
   copy-on-write, mutation-ordering fidelity, `variables_order`, uploads,
@@ -652,15 +656,24 @@
   multipart uploads, `variables_order`, `request_order`, host SAPI imports,
   `$GLOBALS` aliasing, references, copy-on-write, exact warning behavior, and
   native lowering remain unsupported.
-- `$_FILES` is seeded as a bounded root superglobal for `phpc run` with an
-  empty ordered array. Direct function-scope reads and writes of `$_FILES`
-  route through the root symbol table without a `global $_FILES` declaration,
-  matching the current deterministic CLI upload-bag scaffold. Multipart/form
-  upload parsing, temporary uploaded files, upload error metadata population,
-  request method/content-type handling, `is_uploaded_file()`/
-  `move_uploaded_file()`, `variables_order`, host SAPI imports, `$GLOBALS`
-  aliasing, references, copy-on-write, exact warning behavior, and native
-  lowering remain unsupported.
+- `$_FILES` is seeded as a bounded root superglobal for `phpc run`. By default
+  it is an empty ordered array. When `PHPC_FILES` is set, the runtime treats it
+  as an explicit URL-encoded upload metadata seed with `$_FILES`-style keys
+  such as `async-upload[name]=plugin.zip`,
+  `async-upload[tmp_name]=/tmp/phpc-upload`,
+  `async-upload[error]=0`, and `async-upload[size]=12345`. The current parser
+  uses the same bracketed-name insertion and top-level dotted/spaced
+  normalization policy as request bags; `error` and `size` leaf values parse
+  as decimal integers when possible, while other metadata values remain
+  strings. Direct function-scope reads and writes of `$_FILES` route through
+  the root symbol table without a `global $_FILES` declaration. Multipart/form
+  upload parsing, temporary uploaded files, host-upload validation,
+  malformed upload metadata diagnostics, nested multi-file upload arrays
+  beyond the current bracket insertion slice, `is_uploaded_file()`/
+  `move_uploaded_file()`, request method/content-type enforcement,
+  `variables_order`, host SAPI imports, `$GLOBALS` aliasing, references,
+  copy-on-write, exact warning behavior, and native lowering remain
+  unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
   and `class Child extends Parent { ... }` with
@@ -1763,9 +1776,8 @@
   doubled single quotes.
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, schema or index behavior,
-  ordering/collation fidelity, autoload mutation beyond exact inserts, the
-  exact option value/autoload update shape, and the exact direct autoload-only
-  update shape,
+  ordering/collation fidelity, autoload mutation beyond the exact insert and
+  update shapes listed above,
   arbitrary projection beyond exact option id/name/value/autoload/name-value/full-row/full-row-with-id shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
@@ -1840,15 +1852,21 @@
   prepared statement updates both the recorded option value and autoload flag
   for string parameters on the same handle with the same affected-row metadata.
   The exact
+  `UPDATE wp_options SET autoload = ? WHERE option_name = ?` prepared
+  statement updates only the recorded autoload flag for string parameters on
+  the same handle while preserving the option value, with the same affected-row
+  metadata. The exact
   `DELETE FROM wp_options WHERE option_name = ?` prepared statement removes an
   existing recorded option for a string option-name parameter on the same
   handle, updates statement and connection affected-row metadata, and treats
   missing option names as successful zero-row deletes. Prepared mutation SQL
   without a prior state island remains unsupported. This does not add broad
   prepared SQL execution, real unique-index enforcement, no-op update
-  affected-row fidelity, prepared autoload-only updates, non-string parameter
-  coercion, result binding fidelity beyond exact metadata, real auto-increment
-  fidelity, host database execution, PDO, or native lowering. For the
+  affected-row fidelity, prepared mutation shapes beyond the exact option
+  value, value/autoload, autoload-only, insert, replace, upsert, and delete
+  forms listed above, non-string parameter coercion, result binding fidelity
+  beyond exact metadata, real auto-increment fidelity, host database execution,
+  PDO, or native lowering. For the
   exact synthetic empty result query
   `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
@@ -2385,9 +2403,9 @@
   declarations, non-public or static interface methods, trait properties,
   non-public/typed/abstract/final/static trait constants, multi-constant trait
   declarations, trait constant adaptations, conflicting trait/class constants,
-  static/abstract/final or non-public trait methods, adaptation blocks beyond the current simple
-  method alias and single-loser `insteadof` shapes, broad conflict
-  resolution, visibility adaptations,
+  static/abstract/final or non-public trait methods, adaptation blocks beyond
+  the current simple method alias, visibility-adaptation, and bounded
+  `insteadof` shapes, broad conflict resolution,
   `__TRAIT__` context,
   references/copy-on-write, and native trait lowering, backed enum declarations
   and enum members beyond
@@ -4878,7 +4896,10 @@
   `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is supported for
   public instance methods from traits in the same class-body `use`
   declaration; the winning method is registered as the ordinary public method
-  and the named loser trait's method is skipped. The selected winning method
+  and the named loser trait's method is skipped. The same public instance
+  method shape accepts comma-separated loser lists such as
+  `TraitA::method insteadof TraitB, TraitC` when every loser trait is listed
+  in the same class-body `use` declaration. The selected winning method
   can also be exposed through an explicit-public alias in the same adaptation
   block, such as
   `use TraitA, TraitB { TraitA::method insteadof TraitB; TraitA::method as public alias; }`;
@@ -5416,12 +5437,11 @@
   multi-constant trait declarations, trait constant adaptations, conflicting
   trait/class constants, static/abstract/final and non-public trait methods,
   conflicting trait composition outside class-method precedence and the
-  bounded single-loser `insteadof` shape,
+  bounded `insteadof` shape,
   trait aliases beyond the current simple public, qualified public-alias,
   same-block winner public-alias, and protected/private alias slices,
   unqualified visibility-only adaptations across multiple used traits,
-  unqualified `insteadof`, multi-loser
-  `insteadof`, `__TRAIT__`,
+  unqualified `insteadof`, `__TRAIT__`,
   conditional/nested trait registration, exact trait diagnostics,
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
@@ -6775,13 +6795,14 @@
   `request_order`, cookie merging into `$_REQUEST`, host environment imports,
   `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
   exact warning behavior, and native lowering
-- `$_FILES` behavior beyond the current deterministic empty array seed and
-  direct root-symbol routing: multipart/form upload parsing, temporary upload
-  file state, upload error metadata population, `is_uploaded_file()`/
-  `move_uploaded_file()`, request method/content-type handling,
-  `variables_order`, host SAPI imports, `$GLOBALS` aliasing,
-  references/copy-on-write, mutation-ordering fidelity, exact warning
-  behavior, and native lowering
+- `$_FILES` behavior beyond the current explicit `PHPC_FILES` upload metadata
+  seed and direct root-symbol routing: multipart/form upload parsing,
+  temporary upload file state, host-upload validation, broad malformed
+  metadata diagnostics, nested multi-file upload arrays beyond the current
+  bracket insertion slice, `is_uploaded_file()`/`move_uploaded_file()`,
+  request method/content-type enforcement, `variables_order`, host SAPI
+  imports, `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering
+  fidelity, exact warning behavior, and native lowering
 - other superglobals such as `$_ENV`, `$_SESSION`, and `$GLOBALS`
 - `exit()`/`die()` behavior beyond the current direct-call termination subset:
   callable/dynamic invocation, boolean/float/array/object argument handling,

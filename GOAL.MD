@@ -139,12 +139,13 @@ gate above is satisfied.
 ### Current Parallel Focus
 
 The latest WordPress-focused batch closed small slices of visibility-only
-trait adaptations, `call_user_func_array()` reference-return alias binding over
-literal direct-variable reference arguments, explicit CLI cookie request
-seeding, and value-preserving `wp_options` autoload-only updates over the
-placeholder MySQLi state island. Those are useful compatibility steps, but
-they do not change the larger project shape: the next lanes should keep
-attacking broad object/interface semantics, real reference/COW behavior,
+multi-loser trait conflict adaptations, `call_user_func_array()`
+reference-return alias binding over literal public object-property array-offset
+reference arguments, explicit CLI uploaded-file metadata seeding into
+`$_FILES`, and prepared `wp_options` autoload-only updates over the placeholder
+MySQLi state island. Those are useful compatibility steps, but they do not
+change the larger project shape: the next lanes should keep attacking broad
+object/interface semantics, real reference/COW behavior,
 request/SAPI/filesystem/stream breadth, and executable WordPress
 database/bootstrap evidence until those areas become coherent subsystems
 instead of reached slices.

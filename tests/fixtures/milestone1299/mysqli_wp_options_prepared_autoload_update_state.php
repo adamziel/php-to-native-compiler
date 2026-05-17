@@ -1,0 +1,24 @@
+<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, 'localhost', 'user', 'pass', null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('blogdescription', 'value-kept', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'autoload-db', 'yes')");
+$stmt = mysqli_prepare($handle, 'UPDATE `wp_options` SET `autoload` = ? WHERE `option_name` = ?');
+$autoload = 'auto-on';
+$name = 'blogdescription';
+mysqli_stmt_bind_param($stmt, 'ss', $autoload, $name);
+echo mysqli_stmt_execute($stmt) ? 'updated' : 'failed';
+echo ':', mysqli_stmt_affected_rows($stmt), ':', mysqli_affected_rows($handle), '|';
+$row_result = mysqli_query($handle, "SELECT option_value, autoload FROM wp_options WHERE option_name = 'blogdescription' LIMIT 1");
+$row = mysqli_fetch_assoc($row_result);
+echo $row['option_value'], ':', $row['autoload'], '|';
+$autoload_rows = mysqli_query($handle, "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )");
+$autoload_first = mysqli_fetch_assoc($autoload_rows);
+$autoload_second = mysqli_fetch_assoc($autoload_rows);
+echo mysqli_num_rows($autoload_rows), ':';
+echo $autoload_first['option_id'], ':', $autoload_first['option_name'], ':', $autoload_first['autoload'], ',';
+echo $autoload_second['option_id'], ':', $autoload_second['option_name'], ':', $autoload_second['autoload'];
+echo '|';
+$name = 'missing';
+echo mysqli_stmt_execute($stmt) ? 'missing-update' : 'failed';
+echo ':', mysqli_stmt_affected_rows($stmt);

@@ -636,13 +636,13 @@ impl Parser {
                         "unsupported trait use adaptation: unqualified insteadof adaptations are not implemented",
                     ));
                 };
-                let loser_trait_name =
-                    self.consume_class_like_name("expected trait name after 'insteadof'")?;
-                if self.check(|kind| matches!(kind, TokenKind::Comma)) {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        "unsupported trait use adaptation: multiple insteadof loser traits are not implemented",
-                    ));
+                let mut loser_trait_names = Vec::new();
+                loser_trait_names
+                    .push(self.consume_class_like_name("expected trait name after 'insteadof'")?);
+                while self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                    loser_trait_names.push(self.consume_class_like_name(
+                        "expected trait name after ',' in insteadof adaptation",
+                    )?);
                 }
                 self.consume_keyword(
                     TokenKind::Semicolon,
@@ -657,23 +657,25 @@ impl Parser {
                             "unsupported trait use adaptation: trait-qualified insteadof adaptations must target a trait in the same use declaration",
                         )
                     })?;
-                if !trait_uses
-                    .iter()
-                    .any(|trait_use| trait_use.name.eq_ignore_ascii_case(&loser_trait_name))
-                {
-                    return Err(self.error_at(
-                        span,
-                        "unsupported trait use adaptation: insteadof loser traits must be in the same use declaration",
-                    ));
+                for loser_trait_name in loser_trait_names {
+                    if !trait_uses
+                        .iter()
+                        .any(|trait_use| trait_use.name.eq_ignore_ascii_case(&loser_trait_name))
+                    {
+                        return Err(self.error_at(
+                            span,
+                            "unsupported trait use adaptation: insteadof loser traits must be in the same use declaration",
+                        ));
+                    }
+                    trait_uses[target_index]
+                        .precedences
+                        .push(TraitMethodPrecedenceDecl {
+                            trait_name: winner_trait_name.clone(),
+                            method_name: method_name.clone(),
+                            loser_trait_name,
+                            span,
+                        });
                 }
-                trait_uses[target_index]
-                    .precedences
-                    .push(TraitMethodPrecedenceDecl {
-                        trait_name: winner_trait_name,
-                        method_name,
-                        loser_trait_name,
-                        span,
-                    });
                 continue;
             }
             self.consume_trait_adaptation_as()?;
