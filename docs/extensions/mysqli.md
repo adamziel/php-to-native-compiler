@@ -363,9 +363,10 @@ The exact
 shape can return the recorded option name, value, and autoload columns
 together through the same placeholder result/fetch path.
 The exact
-`SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
-shape can return the deterministic option id plus recorded name, value, and
-autoload columns together through the same placeholder result/fetch path.
+`SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ...`
+shape, with or without `LIMIT 1`, can return the deterministic option id plus
+recorded name, value, and autoload columns together through the same
+placeholder result/fetch path.
 Exact option-row reads for
 `SELECT option_name, option_value FROM wp_options`,
 `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
@@ -491,10 +492,11 @@ empty zero-field placeholder result. The exact
 query returns recorded option-name/value/autoload rows for string option-name
 parameters on the same handle through the same prepared result paths; missing
 names return an empty zero-field placeholder result. The exact
-`SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1`
-query returns deterministic option-id/name/value/autoload rows for string
-option-name parameters on the same handle through the same prepared result
-paths; missing names return an empty zero-field placeholder result. The exact
+`SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ?`
+query, with or without `LIMIT 1`, returns deterministic
+option-id/name/value/autoload rows for string option-name parameters on the
+same handle through the same prepared result paths; missing names return an
+empty zero-field placeholder result. The exact
 `SELECT * FROM wp_options WHERE option_name = ?` query, with or without
 `LIMIT 1`, returns the same recorded full option row for string option-name
 parameters. The exact

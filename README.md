@@ -180,7 +180,8 @@ incorrect native code.
   back to covered direct array-offset and public object-property array-offset
   arguments, including the narrow `return $param[$key]` and
   `return $param[$key][$subkey]` child-slot shapes when `$param` was supplied
-  by a direct variable parent array or a covered parent array/property slot,
+  by a direct variable parent array, by a direct variable already backed by a
+  covered array-offset alias, or by a covered parent array/property slot,
   plus bounded
   direct array-offset reference elements in literal `call_user_func_array()`
   argument arrays for request bags, `$GLOBALS`, and nested arrays,
@@ -216,7 +217,8 @@ incorrect native code.
 - bounded deterministic `mysqli`/`wp_options` state-island behavior for
   WordPress bootstrap probes, including exact option insert/update/delete/read
   shapes and selected prepared option-value-only equality reads including
-  `LIMIT 1`, option-name-only, option-name-list, full-row, star-projection
+  `LIMIT 1`, option-name-only, option-name-list, full-row, explicit
+  full-row-with-id equality with and without `LIMIT 1`, star-projection
   including exact option-name equality with and without `LIMIT 1`,
   name/autoload-list, and autoload-list/equality result sets, plus bounded
   direct and prepared transient-shaped option-name prefix result scans and
@@ -308,6 +310,9 @@ incorrect native code.
   string used by PHP's default SPL autoload surface, and bounded
   `spl_autoload($class)` probes local lowercased class/interface/trait file
   names through that extension registry and the current include resolver,
+  `class_alias($class, $alias, $autoload = true)` can autoload a missing
+  source class and register a bounded class-metadata alias for lookup,
+  instantiation, and `is_a()` checks,
   while parenthesized dynamic class-name expressions such as `new ($class)()`
   remain a dedicated parse boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
@@ -543,8 +548,8 @@ direct `filemtime(...)` local filesystem metadata calls,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
 direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
-`ob_get_clean()`/`ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` output-buffer
-calls,
+`ob_list_handlers()`/`ob_get_clean()`/`ob_clean()`/`ob_flush()`/
+`ob_end_clean()`/`ob_end_flush()` output-buffer calls,
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/
 `http_response_code()`/`setcookie()` response header-state calls, including
 interpreter-only `headers_sent()` output-started tracking, direct-variable

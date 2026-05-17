@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1387/reference_return_alias_backed_direct_argument_parent.php

@@ -1328,6 +1328,10 @@ impl SymbolTable {
         self.array_offset_aliases.contains_key(name)
     }
 
+    fn array_offset_aliases_for_name(&self, name: &str) -> Option<Vec<ArrayOffsetAlias>> {
+        self.array_offset_aliases.get(name).cloned()
+    }
+
     fn array_offset_alias_for_direct_array_slot(
         &self,
         array_name: &str,
@@ -9683,7 +9687,9 @@ impl Interpreter {
 
         if matches!(
             query,
-            "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1"
+            "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ?"
+                | "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` = ?"
+                | "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1"
                 | "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
                 | "SELECT * FROM wp_options WHERE option_name = ?"
                 | "SELECT * FROM wp_options WHERE option_name = ? LIMIT 1"
@@ -16586,6 +16592,47 @@ impl Interpreter {
         Ok(self.class_like_exists(name, kind))
     }
 
+    fn call_class_alias(
+        &mut self,
+        source_name: &str,
+        alias_name: &str,
+        autoload: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if self.classes.lookup_class(source_name).is_none() && autoload {
+            self.run_autoload_callbacks(source_name, AutoloadKind::Class, span)?;
+        }
+
+        if self.classes.lookup_class(source_name).is_none() {
+            if self.class_like_exists(source_name, AutoloadKind::Interface)
+                || self.class_like_exists(source_name, AutoloadKind::Trait)
+            {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "class_alias()",
+                        "interface and trait aliasing are not implemented; only declared class aliases are supported in the current subset",
+                    ),
+                ));
+            }
+            return Ok(Value::Bool(false));
+        }
+
+        if self.class_like_exists(alias_name, AutoloadKind::Any)
+            || self
+                .enum_lookup
+                .contains_key(&alias_name.to_ascii_lowercase())
+        {
+            return Ok(Value::Bool(false));
+        }
+
+        let aliased = self
+            .classes
+            .declare_class_alias(source_name, alias_name.to_string())
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Bool(aliased))
+    }
+
     fn class_like_exists(&self, name: &str, kind: AutoloadKind) -> bool {
         match kind {
             AutoloadKind::Class => {
@@ -19069,6 +19116,17 @@ impl Interpreter {
 
             if param.by_reference {
                 if let Expr::Variable(caller_name, _) = arg {
+                    if let Some(aliases) = caller_scope.array_offset_aliases_for_name(caller_name) {
+                        let value = caller_scope.read_named(caller_name).ok_or_else(|| {
+                            runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
+                        })?;
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target: ReferenceBindingTarget::ArrayOffsets(aliases),
+                        });
+                        continue;
+                    }
                     let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
                         runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
                     })?;
@@ -20863,6 +20921,17 @@ impl Interpreter {
             .last()
             .map(|buffer| Value::Int(buffer.len() as i64))
             .unwrap_or(Value::Bool(false)))
+    }
+
+    fn call_ob_list_handlers(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ob_list_handlers", args, 0, span)?;
+        let mut handlers = PhpArray::new();
+        for _ in &self.output_buffers {
+            handlers
+                .append(Value::String("default output handler".to_string()))
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(Value::Array(handlers))
     }
 
     fn call_ob_get_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -23353,6 +23422,7 @@ impl Interpreter {
             "ob_get_level" => self.call_ob_get_level(&args, span),
             "ob_get_contents" => self.call_ob_get_contents(&args, span),
             "ob_get_length" => self.call_ob_get_length(&args, span),
+            "ob_list_handlers" => self.call_ob_list_handlers(&args, span),
             "ob_get_clean" => self.call_ob_get_clean(&args, span),
             "ob_clean" => self.call_ob_clean(&args, span),
             "ob_flush" => self.call_ob_flush(&args, span),
@@ -23489,6 +23559,57 @@ impl Interpreter {
                     )),
                 }
             }
+            "class_alias" => match args.as_slice() {
+                [Value::String(source_name), Value::String(alias_name)] => {
+                    self.call_class_alias(source_name, alias_name, true, span)
+                }
+                [Value::String(source_name), Value::String(alias_name), autoload] => {
+                    let autoload = metadata_exists_autoload_flag("class_alias()", autoload, span)?;
+                    self.call_class_alias(source_name, alias_name, autoload, span)
+                }
+                [source_name, Value::String(_)] | [source_name, Value::String(_), _] => {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "class_alias()",
+                            format!(
+                                "class name argument must be string, got {}",
+                                source_name.type_name()
+                            ),
+                        ),
+                    ))
+                }
+                [Value::String(_), alias_name] | [Value::String(_), alias_name, _] => {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "class_alias()",
+                            format!(
+                                "alias argument must be string, got {}",
+                                alias_name.type_name()
+                            ),
+                        ),
+                    ))
+                }
+                [_, _, autoload] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "class_alias()",
+                        format!(
+                            "autoload argument must be bool-like scalar in the current subset, got {}",
+                            autoload.type_name()
+                        ),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "class_alias()",
+                        ArityExpectation::Between { min: 2, max: 3 },
+                        args.len(),
+                    ),
+                )),
+            },
             "interface_exists" => match args.as_slice() {
                 [Value::String(interface_name)] => Ok(Value::Bool(
                     self.class_like_exists_with_autoload(
@@ -28654,6 +28775,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_callable"
             | "function_exists"
             | "extension_loaded"
+            | "class_alias"
             | "mysqli_connect"
             | "mysqli_real_connect"
             | "mysqli_get_server_info"
@@ -28801,6 +28923,7 @@ fn is_builtin(name: &str) -> bool {
             | "ob_get_level"
             | "ob_get_contents"
             | "ob_get_length"
+            | "ob_list_handlers"
             | "ob_get_clean"
             | "ob_clean"
             | "ob_flush"
@@ -29450,7 +29573,7 @@ fn parse_wordpress_option_id_name_value_autoload_select_query(query: &str) -> Op
                 "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` = ",
             )
         })?;
-    let rest = rest.strip_suffix(" LIMIT 1")?;
+    let rest = rest.strip_suffix(" LIMIT 1").unwrap_or(rest);
     let values = parse_sql_single_quoted_list(rest)?;
     if values.len() != 1 {
         return None;

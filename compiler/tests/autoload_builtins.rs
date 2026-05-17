@@ -223,6 +223,48 @@ echo $registered->name;
 }
 
 #[test]
+fn class_alias_autoloads_source_class_and_registers_alias_lookup() {
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-class-alias-autoload-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let include_path = fixture_dir.join("wp_original.class.inc");
+    fs::write(
+        &include_path,
+        r#"<?php
+class Wp_Original {
+    public $name = "aliased";
+}
+"#,
+    )
+    .unwrap();
+
+    let source = r#"<?php
+spl_autoload_extensions(".class.inc");
+spl_autoload_register("spl_autoload");
+
+echo class_exists("Wp_Alias", false) ? "pre-alias\n" : "pre-missing\n";
+echo class_alias("Wp_Original", "Wp_Alias") ? "alias-ok\n" : "alias-fail\n";
+echo class_exists("Wp_Alias", false) ? "alias-exists\n" : "alias-missing\n";
+$box = new Wp_Alias();
+echo get_class($box), ":", $box->name, "\n";
+echo is_a($box, "Wp_Alias") ? "is-a-alias\n" : "not-alias\n";
+echo class_alias("Wp_Original", "Wp_Alias") ? "duplicate-ok" : "duplicate-false";
+"#;
+
+    let execution =
+        run_source_with_source_file(source, fixture_dir.join("main.php").display().to_string())
+            .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "pre-missing\nalias-ok\nalias-exists\nWp_Original:aliased\nis-a-alias\nduplicate-false"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(include_path);
+    let _ = fs::remove_dir(fixture_dir);
+}
+
+#[test]
 fn class_and_interface_exists_invoke_string_autoload_callbacks() {
     let fixture_dir =
         std::env::temp_dir().join(format!("phpc-autoload-metadata-{}", std::process::id()));
@@ -937,4 +979,8 @@ fn emit_ir_rejects_direct_spl_autoload_register_until_native_autoloading_exists(
         emit_ir_source("<?php\nspl_autoload_unregister('MissingAutoloader');\n").unwrap_err();
     assert_eq!(unregister_error.phase, Phase::Codegen);
     assert_eq!(unregister_error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let class_alias_error = emit_ir_source("<?php\nclass_alias('Source', 'Alias');\n").unwrap_err();
+    assert_eq!(class_alias_error.phase, Phase::Codegen);
+    assert_eq!(class_alias_error.message, LLVM_FUNCTION_CALL_REJECTION);
 }

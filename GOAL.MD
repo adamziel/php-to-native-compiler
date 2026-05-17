@@ -138,16 +138,15 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded default `spl_autoload()` local
-file probing through the SPL extension registry, nested direct-parent
-child-slot reference-return evidence, `ob_get_length()` over the
-interpreter-owned output-buffer stack, and no-`LIMIT` full-row option lookups
-over the placeholder MySQLi state island. Those are useful compatibility steps,
-but they do not change the larger project shape: the next lanes should keep
-attacking broad object/interface semantics, real reference/COW behavior,
-request/SAPI/filesystem/stream breadth, and executable WordPress
-database/bootstrap evidence until those areas become coherent subsystems
-instead of reached slices.
+The latest WordPress-focused batch closed bounded `class_alias()` with source
+autoload and alias lookup, alias-backed direct-call reference-return parents,
+`ob_list_handlers()` over the interpreter-owned output-buffer stack, and
+explicit option-row projection reads over the placeholder MySQLi state island.
+Those are useful compatibility steps, but they do not change the larger project
+shape: the next lanes should keep attacking broad object/interface semantics,
+real reference/COW behavior, request/SAPI/filesystem/stream breadth, and
+executable WordPress database/bootstrap evidence until those areas become
+coherent subsystems instead of reached slices.
 
 ### Near-Term Compatibility Roadmap
 

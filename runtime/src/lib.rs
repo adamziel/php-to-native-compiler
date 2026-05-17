@@ -2067,6 +2067,24 @@ impl PhpClassTable {
         self.lookup.get(&normalize_class_lookup_name(name)).copied()
     }
 
+    pub fn declare_class_alias(
+        &mut self,
+        source_name: &str,
+        alias_name: impl Into<String>,
+    ) -> RuntimeResult<bool> {
+        let Some(source_id) = self.lookup_class_id(source_name) else {
+            return Ok(false);
+        };
+        let alias_name = alias_name.into();
+        let lookup_name = normalize_class_lookup_name(&alias_name);
+        if self.lookup.contains_key(&lookup_name) {
+            return Ok(false);
+        }
+
+        self.lookup.insert(lookup_name, source_id);
+        Ok(true)
+    }
+
     pub fn classes(&self) -> &[PhpClassMetadata] {
         &self.classes
     }

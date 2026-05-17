@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1386/class_alias_autoload_source.php

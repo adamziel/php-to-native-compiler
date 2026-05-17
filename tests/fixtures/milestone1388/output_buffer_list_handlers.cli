@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1388/output_buffer_list_handlers.php

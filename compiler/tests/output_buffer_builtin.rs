@@ -2,7 +2,7 @@ use php_compiler::error::Phase;
 use php_compiler::run_source;
 use php_compiler::{emit_asm_source, emit_ir_source};
 
-const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_length(), ob_get_clean(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
+const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_length(), ob_list_handlers(), ob_get_clean(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -133,6 +133,38 @@ echo "|final=" . (ob_get_length() === false ? "false" : "true");
 }
 
 #[test]
+fn ob_list_handlers_reports_default_handlers_for_active_buffers() {
+    let execution = run_source(
+        r#"<?php
+echo count(ob_list_handlers());
+ob_start();
+$outer = ob_list_handlers();
+echo "outer";
+ob_start();
+$inner = ob_list_handlers();
+echo "|inner";
+$inner_capture = ob_get_clean();
+echo "|after-inner=" . count(ob_list_handlers());
+$outer_capture = ob_get_clean();
+echo "outer-count=" . count($outer);
+echo "|outer-handler=" . $outer[0];
+echo "|inner-count=" . count($inner);
+echo "|inner-handlers=" . $inner[0] . "," . $inner[1];
+echo "|outer-capture=[" . $outer_capture . "]";
+echo "|inner-capture=[" . $inner_capture . "]";
+echo "|final=" . count(ob_list_handlers());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0outer-count=1|outer-handler=default output handler|inner-count=2|inner-handlers=default output handler,default output handler|outer-capture=[outer|after-inner=1]|inner-capture=[|inner]|final=0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ob_flush_and_ob_end_flush_move_nested_buffer_output_outward() {
     let execution = run_source(
         r#"<?php
@@ -217,6 +249,7 @@ $start = "ob_start";
 $level = "ob_get_level";
 $contents = "ob_get_contents";
 $length = "ob_get_length";
+$handlers = "ob_list_handlers";
 $flush = "ob_flush";
 $end_flush = "ob_end_flush";
 $clean = "ob_get_clean";
@@ -234,6 +267,7 @@ $ended = $end_flush();
 echo "|";
 echo $level();
 echo "|len=" . $length();
+echo "|handlers=" . count($handlers());
 $peek = $contents();
 $captured = $clean();
 echo "clean=";
@@ -247,7 +281,7 @@ echo "|ended=" . ($ended ? "true" : "false");
 
     assert_eq!(
         execution.stdout,
-        "yes|callable|clean=captured|inner|after-flush|1|len=28|peek=captured|inner|after-flush|1|len=28|ended=true"
+        "yes|callable|clean=captured|inner|after-flush|1|len=28|handlers=1|peek=captured|inner|after-flush|1|len=28|handlers=1|ended=true"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -314,6 +348,18 @@ echo ob_get_length(1);
         "arity mismatch for ob_get_length(): expected 0 argument(s), got 1"
     );
 
+    let list_handlers_arg = runtime_error(
+        r#"<?php
+echo ob_list_handlers(1);
+"#,
+    );
+    assert_eq!(list_handlers_arg.line, 2);
+    assert_eq!(list_handlers_arg.column, 6);
+    assert_eq!(
+        list_handlers_arg.message,
+        "arity mismatch for ob_list_handlers(): expected 0 argument(s), got 1"
+    );
+
     let clean_buffer_arg = runtime_error(
         r#"<?php
 echo ob_clean(1);
@@ -378,6 +424,13 @@ fn emit_ir_rejects_output_buffer_builtins_until_native_state_exists() {
     assert_eq!(length_error.line, 2);
     assert_eq!(length_error.column, 6);
     assert_eq!(length_error.message, LLVM_OUTPUT_BUFFER_REJECTION);
+
+    let handlers_error = emit_ir_source("<?php\necho ob_list_handlers();\n").unwrap_err();
+
+    assert_eq!(handlers_error.phase, Phase::Codegen);
+    assert_eq!(handlers_error.line, 2);
+    assert_eq!(handlers_error.column, 6);
+    assert_eq!(handlers_error.message, LLVM_OUTPUT_BUFFER_REJECTION);
 }
 
 #[test]
@@ -402,6 +455,8 @@ echo function_exists("ob_get_contents") ? "1" : "0";
 echo is_callable("ob_get_contents") ? "1" : "0";
 echo function_exists("ob_get_length") ? "1" : "0";
 echo is_callable("ob_get_length") ? "1" : "0";
+echo function_exists("ob_list_handlers") ? "1" : "0";
+echo is_callable("ob_list_handlers") ? "1" : "0";
 echo function_exists("ob_get_clean") ? "1" : "0";
 echo is_callable("ob_get_clean") ? "1" : "0";
 echo function_exists("ob_clean") ? "1" : "0";
@@ -416,7 +471,7 @@ echo is_callable("ob_end_flush") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 18, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 20, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }
