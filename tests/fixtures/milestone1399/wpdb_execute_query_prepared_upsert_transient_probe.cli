@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1399/wpdb_execute_query_prepared_upsert_transient_probe.php

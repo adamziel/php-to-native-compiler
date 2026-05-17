@@ -4,6 +4,171 @@
 
 Implemented:
 
+- Added Milestone 1400, the WordPress-focused queue refresh for the 1396-1399
+  implementation batch. The batch closed bounded `class_implements()`
+  metadata, alias-backed stored `call_user_func_array()` argument arrays,
+  `ob_get_flush()` over the interpreter-owned output-buffer stack, and
+  one-shot prepared `mysqli_execute_query()` option upserts over the
+  deterministic MySQLi `wp_options` placeholder state island. Focused
+  integrated checks passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-integrated-1396-1399
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: targeted Rust tests passed for the
+  four lane features; milestone fixtures 1396-1399 each passed; system PHP
+  comparisons passed for 1396, 1397, and 1398 with `1` comparison and `0`
+  skips each, while the MySQLi state-island fixture 1399 passed with `0`
+  comparisons and `1` documented `phpc-only` skip; `cargo fmt --check`,
+  `cargo check -p phpc`, and `git diff --check` passed. Manual full gate
+  passed before checkpoint with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1396-1400 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1495` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1495` fixture tests
+  passed with `0` failures, `869` system PHP comparisons, and `626` skipped
+  `phpc-only` fixtures.
+
+- Added Milestone 1396, a bounded object/interface WordPress blocker slice for
+  `class_implements()` over the current class/interface metadata table.
+  `phpc run` now accepts current object values and string class names, honors
+  the existing bool-like scalar autoload flag for string class misses, returns
+  PHP-shaped associative interface-name arrays, supports dynamic string calls,
+  and rejects native lowering through the existing object-metadata boundary.
+  The collection matches system PHP for the covered single-parent/user-interface
+  fixture, including inherited parent-class interfaces before child-class
+  interfaces and the target class's direct interface before its declared parent
+  interface. This does not add broad built-in/internal interface catalogs,
+  exact warning behavior for missing string classes, namespace/import alias
+  expansion, reflection-object integration, `class_uses()`, broad Reflection
+  API objects, exact PHP ordering for every engine metadata edge case, or
+  native object-metadata lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-object-1396 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test object_model
+  class_implements -- --test-threads=1` passed with `3` tests; `cargo test -p
+  phpc --test object_model interface -- --test-threads=1` passed with `26`
+  interface-named tests; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1396/class_implements_interface_metadata.php`
+  printed the expected interface metadata probe; system `php
+  tests/fixtures/milestone1396/class_implements_interface_metadata.php`
+  printed matching output; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1396` passed with `1` fixture; `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone1396` passed with `1`
+  system PHP comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1396` reported `1` passed
+  fixture, `1` comparison, and `0` skips; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1396` reported `1` fixture, `1`
+  CLI exercise, `0` missing expectation sidecars, `0` unrecognized sidecars,
+  and `0` `.phpc-only` reason gaps; `cargo fmt --check` passed; `cargo check
+  -p phpc` passed; and scoped `git diff --check` passed after `git add -N`
+  exposed the new fixture files. The expensive full gate, checkpoint, commit,
+  and push were deferred per lane instructions.
+
+- Added Milestone 1397, a bounded reference/COW WordPress blocker slice for
+  alias-backed stored `call_user_func_array()` argument arrays. Direct stored
+  argument-array variables routed through covered array-offset alias metadata,
+  including ordinary array roots, `$_REQUEST` roots, and public
+  object-property array roots, now route integer slot writes and
+  by-reference slot assignments through the underlying alias root. Reached
+  by-reference callback parameters and statement-form reference assignment
+  from reference-returning callbacks compose that stored argument-array root
+  with the selected positional key, so the callback parameter, returned alias,
+  stored argument slot, and covered source slot observe the same value. This
+  does not add real PHP reference containers, broad copy-on-write,
+  ArrayAccess reference roots, non-public/dynamic property reference roots,
+  slots not assigned by reference, non-direct stored argument-array
+  expressions, string-keyed named reference arguments, exact alias destruction
+  ordering, or native lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-refcow-1397 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test call_user_func_builtin
+  call_user_func_array_binds_alias_backed_stored_reference_argument_arrays --
+  --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  call_user_func_builtin -- --test-threads=1` passed with `20` tests; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1397/call_user_func_array_alias_backed_stored_reference_arguments.php`
+  printed the expected four-line alias-backed stored callback output; direct
+  system `php
+  tests/fixtures/milestone1397/call_user_func_array_alias_backed_stored_reference_arguments.php`
+  printed matching output; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1397` passed with `1` fixture; `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone1397` passed with `1`
+  fixture, `1` system PHP comparison, and `0` skips; `cargo run -q -p phpc
+  -- test --compare-php-json tests/fixtures/milestone1397` reported `1`
+  passed fixture, `1` comparison, and `0` skips; `cargo run -q -p phpc --
+  test --list-fixtures tests/fixtures/milestone1397` reported `1` fixture,
+  `1` CLI exercise, `0` missing expectation sidecars, `0` unrecognized
+  sidecars, and `0` `.phpc-only` reason gaps; `cargo fmt --check` passed
+  after running `cargo fmt`; `cargo check -p phpc` passed; and scoped `git
+  diff --check` passed after `git add -N` exposed the new fixture files. Full
+  expensive `tools/run-tests.sh`, checkpoint, commit, and push were deferred
+  per lane instructions.
+
+- Added Milestone 1398, a bounded request/SAPI/output-buffer WordPress blocker
+  slice for `ob_get_flush()` over the interpreter-owned output-buffer stack.
+  `phpc run` now accepts no-argument `ob_get_flush()`, closes the innermost
+  active buffer, flushes its captured string to the next outer buffer or
+  stdout, returns that captured string, and returns `false` when no buffer is
+  active. Dynamic string calls, function-table introspection, and native
+  function-call rejection now recognize the builtin. The `milestone1398`
+  fixture proves nested flush/return ordering against system PHP. This does
+  not add custom output handlers, callback/chunk/flag behavior, exact PHP
+  warning text, fatal-error cleanup, broader output-started/header fidelity,
+  shutdown callback execution, or native output-buffer lowering. Focused
+  verification passed with `CARGO_TARGET_DIR=/tmp/phpc-target-sapi-1398
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo fmt --check` passed;
+  `cargo test -p phpc --test output_buffer_builtin ob_get_flush --
+  --test-threads=1` passed with `2` tests; `cargo test -p phpc --test
+  output_buffer_builtin -- --test-threads=1` passed with `18` tests; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1398/output_buffer_get_flush.php` printed the
+  expected nested output-buffer line; direct system `php
+  tests/fixtures/milestone1398/output_buffer_get_flush.php` printed the same
+  line; `cargo run -q -p phpc -- test tests/fixtures/milestone1398` passed
+  with `1` fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1398` passed with `1` system PHP comparison and `0`
+  skips; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1398` reported `1` passed fixture, `1`
+  comparison, and `0` skips; `cargo run -q -p phpc -- test --list-fixtures
+  tests/fixtures/milestone1398` reported `1` fixture, `1` CLI exercise, `0`
+  missing expectation sidecars, `0` unrecognized sidecars, and `0`
+  `.phpc-only` reason gaps; `cargo check -p phpc` passed; and `git diff
+  --check` passed. Full expensive `tools/run-tests.sh`, checkpoint, commit,
+  and push were deferred per lane instructions.
+
+- Added Milestone 1399, a bounded WordPress DB/bootstrap evidence slice for
+  one-shot prepared option upserts through `mysqli_execute_query()`.
+  `mysqli_execute_query($handle, $query, array(...))` now accepts the exact
+  `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)
+  ON DUPLICATE KEY UPDATE ...` shapes already supported by statement
+  execution, including the current backticked WordPress table/column spelling.
+  String option-name, option-value, and autoload parameters are recorded in
+  the deterministic per-handle `wp_options` state island, existing rows report
+  affected rows `2`, new rows report affected rows `1`, deterministic insert
+  ids advance, and later exact option reads observe the updated state. The
+  committed `milestone1399` fixture proves a `wpdb`-shaped transient
+  value/timeout set-then-update flow using one-shot prepared upserts and
+  prepared reads. This does not add real MySQL connectivity, arbitrary SQL,
+  full WordPress transient APIs, persistent object cache, non-string prepared
+  parameter coercion, general `mysqli_execute_query()` mutation support, exact
+  MySQL auto-increment/no-op affected-row fidelity, or native DB lowering.
+  Focused verification passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-wpdb-1399 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test mysqli_extension
+  mysqli_execute_query_upserts_current_wordpress_option_state --
+  --test-threads=1` passed with `1` test; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1399/wpdb_execute_query_prepared_upsert_transient_probe.php`
+  printed the expected
+  `first=ok:1:1|second=ok:2:2|value=plugin-v2|timeout=222|rows=_transient_update_plugins=plugin-v2,_transient_timeout_update_plugins=222`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1399` passed with
+  `1` fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1399` passed with `1` fixture, `0` system PHP
+  comparisons, and `1` `.phpc-only` skip; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1399` reported `1` fixture, `1` CLI
+  exercise, `0` missing expectation sidecars, `0` unrecognized sidecars, and
+  `0` `.phpc-only` reason gaps; `cargo fmt --check` passed; `cargo test -p
+  phpc --test mysqli_extension -- --test-threads=1` passed with `153` tests;
+  `cargo check -p phpc` passed; and scoped `git diff --check` passed after
+  `git add -N` exposed the new fixture files. Full expensive
+  `tools/run-tests.sh`, checkpoint, commit, and push were deferred per lane
+  instructions.
+
 - Added Milestone 1395, the WordPress-focused queue refresh for the 1391-1394
   implementation batch. The batch closed bounded `class_alias()` support for
   declared interfaces, alias-backed literal `call_user_func_array()` reference

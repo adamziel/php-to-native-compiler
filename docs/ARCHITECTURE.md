@@ -648,14 +648,18 @@ alias group rather than only to the stored argument array slot. Normal
 `call_user_func_array()` invocation can use the same copy-in/writeback bridge
 when the callback function or public array-callable method is declared as
 returning by reference, but the callback call itself still returns a value.
+The stored argument-array variable may itself be routed through covered
+array-offset alias metadata, including ordinary array roots,
+request/global roots, and public object-property array roots; slot writes and
+stored-slot lookups compose the argument-array root alias with the selected
+integer key before binding or writing back.
 This deliberately does not model full PHP reference containers, reference
 array literals stored by value, stored arrays whose reached slots were not
-assigned by reference, stored argument-array variables that are themselves
-routed through array-offset alias metadata, non-direct stored array
-expressions, string-keyed named reference argument arrays, non-public,
-dynamic, append, or stored-array object-property reference-return bridges,
-dynamic static receiver callback object-property array arguments, broader
-reference-return binding, exact by-reference `foreach`, or copy-on-write.
+assigned by reference, non-direct stored array expressions, string-keyed named
+reference argument arrays, non-public, dynamic, append, or ArrayAccess
+reference roots, dynamic static receiver callback object-property array
+arguments, broader reference-return binding, exact by-reference `foreach`, or
+copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
 ordered array, writes the key variable by value, routes the value variable to
@@ -1575,8 +1579,8 @@ Native function-table introspection recognizes the name, while direct native
 calls reject until array iteration, string allocation, and conversion
 diagnostics have a lowered runtime model.
 `ob_start()`, `ob_get_level()`, `ob_get_contents()`, `ob_get_length()`,
-`ob_list_handlers()`, `ob_get_status()`, `ob_get_clean()`, `ob_clean()`,
-`ob_flush()`, `ob_end_clean()`, and `ob_end_flush()` are
+`ob_list_handlers()`, `ob_get_status()`, `ob_get_clean()`, `ob_get_flush()`,
+`ob_clean()`, `ob_flush()`, `ob_end_clean()`, and `ob_end_flush()` are
 interpreter-only output-buffer boundaries for the current WordPress
 request/rendering path. The interpreter keeps a stack of string buffers;
 PHP-visible output appends to the innermost active buffer, `ob_get_contents()`
@@ -1584,9 +1588,11 @@ peeks at that buffer without closing it, `ob_get_length()` reports its current
 byte length, `ob_list_handlers()` reports one default handler name per active
 buffer, `ob_get_status()` reports bounded default-handler status arrays for
 the innermost buffer or for the full active stack, `ob_get_clean()` pops and
-returns that buffer, `ob_clean()` clears the innermost buffer, `ob_flush()` moves its
-contents outward while keeping it active, `ob_end_clean()` closes and discards
-it, `ob_end_flush()` closes it and flushes its contents outward, and remaining
+returns that buffer, `ob_get_flush()` closes the innermost buffer while
+returning and flushing its contents outward, `ob_clean()` clears the innermost
+buffer, `ob_flush()` moves its contents outward while keeping it active,
+`ob_end_clean()` closes and discards it, `ob_end_flush()` closes it and
+flushes its contents outward, and remaining
 buffers flush outward to stdout when execution completes or the bounded
 `exit()` path returns. Native function-table introspection recognizes the
 names, while direct native calls reject until generated code has stdout capture
@@ -1626,7 +1632,7 @@ the model.
 `headers_sent()` is an interpreter-only web/SAPI boundary. The current
 slice tracks the first non-empty write that reaches unbuffered stdout. Echo,
 print, `exit("message")`, `var_dump()`, `print_r()`, and outermost
-`ob_flush()`/`ob_end_flush()` stamp that state with the current source filename
+`ob_get_flush()`/`ob_flush()`/`ob_end_flush()` stamp that state with the current source filename
 and source line; output held only inside active output buffers does not. Direct
 variable filename/line output arguments are written with `""`/`0` before output
 starts and the stamped file/line after it starts. Non-variable output
@@ -1686,6 +1692,8 @@ direct/prepared autoload equality reads for alloptions-shaped probes, plus
 prepared autoload-only option-name equality reads for the current
 `update_option()` autoload reevaluation probe, plus prepared option-value
 equality reads with `LIMIT 1` for transient-shaped `wpdb::get_var()` probes,
+plus one-shot `mysqli_execute_query()` prepared option upserts for
+transient-shaped set/update probes,
 plus exact explicit full-row-with-id and
 star-projection option-name equality reads with and without `LIMIT 1` for
 object-row/result/column `wpdb` probes, plus
@@ -2310,6 +2318,13 @@ separate runtime work.
 `get_parent_class($object_or_class)` accepts current object values or declared
 string class names and returns the immediate parent class name when one is
 recorded, otherwise false.
+`class_implements($object_or_class[, $autoload])` is a bounded
+reflection-style metadata builtin over the current class/interface table. It
+accepts object values or string class names, optionally invokes the existing
+class autoload path for string misses, and returns an associative
+interface-name array. The collection follows system PHP for the covered
+single-parent/user-interface cases, including parent-class interfaces before
+child-class interfaces.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

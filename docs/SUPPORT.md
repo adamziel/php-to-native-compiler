@@ -142,7 +142,11 @@
   `$args[0] =& $value; call_user_func_array($callback, $args);`. This stored
   array path preserves covered aliases to direct variables, copied reference
   arrays, request bags such as `$_REQUEST`, and public object-property array
-  slots through the existing alias metadata. It also covers normal
+  slots through the existing alias metadata. The stored argument-array
+  variable may itself be routed through the same covered alias metadata, such
+  as `$args =& $registry["args"]`, `$args =& $_REQUEST["callback_args"]`, or
+  `$args =& $object->store["args"]`, before its reached slots are assigned by
+  reference. It also covers normal
   `call_user_func_array()` invocation of user functions and public array
   callables declared as returning by reference when the callback writes through
   reached by-reference parameters. Statement-form reference assignment from
@@ -176,10 +180,9 @@
   object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, reference array
   literals stored by value, direct stored arrays whose reached slots were not
-  assigned by reference, stored argument-array variables that are themselves
-  routed through array-offset alias metadata, non-direct stored array
-  expressions, dynamic static receiver, string-keyed named callback argument
-  arrays, non-public, dynamic, append, `ArrayAccess`, or stored-array
+  assigned by reference, non-direct stored array expressions, dynamic static
+  receiver, string-keyed named callback argument arrays, non-public, dynamic,
+  append, `ArrayAccess`, or stored-array
   object-property bridges for `call_user_func_array()` reference-return alias
   binding, closure or builtin callbacks as reference-return sources, and
   broader reference-return binding forms remain unsupported for direct
@@ -1116,7 +1119,7 @@
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
-  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
+  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
@@ -1175,14 +1178,14 @@
   `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`,
-  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
+  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
   `setcookie`,
   `session_start`, `session_status`, `session_id`, `session_write_close`,
   `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
-  `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
+  `property_exists`, `method_exists`, `class_implements`, `is_a`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `is_subclass_of`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `spl_object_id`, `spl_object_hash`, `spl_autoload`,
@@ -1490,18 +1493,19 @@
   `array(10 => &$object->items[$key])`. Direct stored argument arrays may also
   satisfy reached by-reference parameters when those slots were assigned by
   reference through the covered direct array-offset target path, such as
-  `$args[0] =& $value`. Writes through the callback parameter update the
-  covered caller variable, request-bag/global alias group, stored array slot,
-  or public object-property array slot through the bounded alias/writeback
-  metadata. Reference array literals stored by value, stored direct arrays
+  `$args[0] =& $value`. Those stored argument arrays may themselves be direct
+  variables already backed by covered array-offset alias metadata, such as
+  `$args =& $_REQUEST["callback_args"]` or
+  `$args =& $object->store["args"]`. Writes through the callback parameter
+  update the covered caller variable, request-bag/global alias group, stored
+  array slot, or public object-property array slot through the bounded
+  alias/writeback metadata. Reference array literals stored by value, stored
+  direct arrays
   whose reached slots were not assigned by reference, string-keyed named
   reference argument arrays, reference elements that are not direct variables
-  or direct public object-property array offsets in the literal path, variables
-  already routed through array-offset alias metadata in literal reference
-  elements, closure and `__invoke` callbacks, non-public methods, other
-  callable array shapes, using `call_user_func_array()` itself as a
-  statement-form reference-return source, exact PHP warning behavior, and
-  native lowering remain unsupported.
+  or direct public object-property array offsets in the literal path, closure
+  and `__invoke` callbacks, non-public methods, other callable array shapes,
+  exact PHP warning behavior, and native lowering remain unsupported.
   `implode($array)` and `implode($separator, $array)` support current arrays
   containing only `null`, bool, int, float, and string values, preserve
   insertion order, ignore keys, and join values using PHP-shaped echo string
@@ -1919,7 +1923,14 @@
   `mysqli_execute_query($handle, $query)` with no params, and accepts exact
   prepared `DELETE FROM wp_options WHERE option_name IN (?, ...)` statements
   through `mysqli_stmt_execute()` and `mysqli_execute_query($handle, $query,
-  array(...))` when all placeholders are string option names. Exact
+  array(...))` when all placeholders are string option names. Exact one-shot
+  `mysqli_execute_query($handle, $query, array(...))` prepared
+  `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)
+  ON DUPLICATE KEY UPDATE ...` option upserts also record string parameters on
+  the same handle, report affected rows as `2` when updating an existing
+  recorded option and `1` when inserting a missing option, advance
+  deterministic `mysqli_insert_id($handle)`, and expose later exact option
+  reads through the same state island. Exact
   `DELETE FROM wp_options WHERE option_name LIKE '<prefix>%'` and prepared
   `DELETE FROM wp_options WHERE option_name LIKE ?` shapes also remove
   transient-shaped prefix matches with deterministic affected-row metadata,
@@ -2108,7 +2119,11 @@
   reports affected rows as `2` when updating an existing recorded option and
   `1` when inserting a missing option, advances deterministic
   `mysqli_insert_id($handle)`, and exposes later exact option-value reads
-  through the same state island. The exact
+  through the same state island. The same exact upsert shape is also accepted
+  through one-shot `mysqli_execute_query($handle, $query, array(...))` for
+  string option-name, option-value, and autoload parameters; it updates
+  connection affected-row and insert-id metadata but does not create statement
+  metadata. The exact
   `REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
   prepared statement records string parameters on the same handle, reports
   affected rows as `2` when replacing an existing recorded option and `1` when
@@ -2507,7 +2522,10 @@
   arguments, pops the innermost buffer, and returns its captured string, or
   `false` when no buffer is active. `ob_clean()` accepts no arguments, clears
   the innermost active buffer, and returns `true`, or `false` when no buffer is
-  active. `ob_flush()` accepts no arguments, appends the innermost active
+  active. `ob_get_flush()` accepts no arguments, closes the innermost active
+  buffer, appends its contents to the next outer buffer or stdout, and returns
+  the captured string, or `false` when no buffer is active. `ob_flush()`
+  accepts no arguments, appends the innermost active
   buffer contents to the next outer buffer or stdout, clears that active
   buffer, and returns `true`, or `false` when no buffer is active.
   `ob_end_clean()` accepts no arguments, discards and closes the innermost
@@ -2523,7 +2541,7 @@
   still active at normal program completion or bounded `exit()` are flushed
   outward to stdout. Custom output callbacks, chunk sizes, non-default flags,
   exact handler status metadata beyond the bounded default-handler fields,
-  `ob_get_flush()`/`ob_list_handlers()` custom-handler names, output handler
+  `ob_list_handlers()` custom-handler names, output handler
   nesting semantics, output-started interaction with headers, fatal-error
   cleanup, exact warning behavior, and native lowering remain unsupported.
   `date_default_timezone_set($timezoneId)` accepts one string argument, returns
@@ -4610,7 +4628,7 @@
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `basename`, `dirname`, `extension_loaded`, `ob_start`,
   `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`,
-  `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `mysqli_connect`,
+  `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
@@ -4643,12 +4661,12 @@
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
-  `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
+  `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
   `setcookie`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
-  `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
+  `property_exists`, `method_exists`, `class_implements`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`,
   `is_a`, `is_subclass_of`, `get_parent_class`, `get_declared_classes`,
   `get_declared_interfaces`, `get_declared_traits`, `get_called_class`,
@@ -4776,7 +4794,7 @@
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4825,14 +4843,14 @@
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_report`, `mysqli_init`, `ob_start`,
   `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`,
-  `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
+  `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
   `setcookie`, `assert`,
   `spl_autoload`, `spl_autoload_register`, `spl_autoload_functions`,
   `spl_autoload_unregister`, `spl_autoload_call`, `get_class`, `is_object`,
   `get_debug_type`, `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
-  `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
+  `class_implements`, `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `spl_object_id`, `spl_object_hash`, `var_dump`, and `print_r`
@@ -5125,8 +5143,8 @@
   `mysqli_report(...)`/`mysqli_init(...)` calls
   still reject under the function-call boundary.
   `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`,
-  `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`,
-  `ob_end_clean`, and `ob_end_flush` accept the same current
+  `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`,
+  `ob_clean`, `ob_flush`, `ob_end_clean`, and `ob_end_flush` accept the same current
   output-buffer subset as the builtin section above; direct native calls reject
   under the output-buffer boundary, while native function-table introspection
   recognizes the names.
@@ -5418,6 +5436,12 @@
   `get_parent_class($object_or_class)` accepts current object values or
   declared string class names and returns the immediate parent class name when
   one is recorded, otherwise false.
+  `class_implements($object_or_class[, $autoload])` accepts current object
+  values or string class names, uses the current bool-like scalar autoload flag
+  for string class misses, and returns an associative array whose keys and
+  values are the recorded interface names. The current ordering follows
+  system PHP for covered single-parent/user-interface metadata, including
+  inherited parent-class interfaces before child-class interfaces.
   `get_declared_classes()` returns a zero-indexed array containing the current
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.
@@ -7008,6 +7032,10 @@
   namespaces/import aliases beyond parsed declarations, exact native
   `TypeError` behavior, and native lowering beyond direct string-name false
   folding
+- `class_implements` broad built-in/internal interface catalogs, exact warning
+  behavior for missing string classes, namespace/import alias expansion,
+  reflection-object integration, exact PHP ordering for all engine metadata,
+  and native lowering
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
   exact native ordering, and native lowering
 - `get_declared_traits` built-in/internal trait entries, autoloading,
@@ -7328,8 +7356,8 @@
   differences, shutdown-time buffer flushing visibility, and native lowering
   beyond function-table introspection
 - `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
-  `ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_clean()`/`ob_flush()`/
-  `ob_end_clean()`/`ob_end_flush()` behavior beyond the current no-argument
+  `ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_get_flush()`/
+  `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` behavior beyond the current no-argument
   interpreter-owned buffer stack: callbacks, chunk sizes, flags, exact handler
   status metadata, custom handler names, output handler nesting semantics,
   output-started/header interaction, fatal-error cleanup, exact warnings, and

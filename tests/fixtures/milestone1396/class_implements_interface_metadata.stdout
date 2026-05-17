@@ -1,0 +1,14 @@
+Array
+(
+    [ParentHook] => ParentHook
+    [ChildHook] => ChildHook
+    [RootHook] => RootHook
+)
+Array
+(
+    [ParentHook] => ParentHook
+    [ChildHook] => ChildHook
+    [RootHook] => RootHook
+)
+3
+root

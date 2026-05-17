@@ -222,6 +222,8 @@ incorrect native code.
   including exact option-name equality with and without `LIMIT 1`,
   name/autoload-list, autoload-only option-name equality for
   `update_option()`-shaped probes, and autoload-list/equality result sets,
+  plus one-shot `mysqli_execute_query()` prepared option upserts for
+  transient-shaped state probes,
   plus bounded direct and prepared transient-shaped option-name prefix result
   scans and deletes;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
@@ -349,7 +351,8 @@ incorrect native code.
   single-parent metadata including namespaced parent names when the parent is
   already declared, object `isset` and `empty`, and selected metadata builtins,
   including declared interface metadata with concrete-class public method
-  presence checks, declared trait metadata for empty traits, public trait
+  presence checks and bounded `class_implements()` interface-name arrays for
+  current object values or declared string class names, declared trait metadata for empty traits, public trait
   constants, and simple public instance trait methods, simple class-body
   `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
   traits, plus simple public trait method alias adaptations such as
@@ -448,7 +451,9 @@ backtick shell execution operators,
 magic methods beyond direct missing-property
 `__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
 direct object-to-string `__toString` including current interpolation, bounded
-core interface metadata, and direct/property-held `ArrayAccess` offsets and
+core interface metadata, broad reflection metadata and exact engine ordering
+beyond the current `class_implements()` class/interface table slice, and
+direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
 method-shape checks,
@@ -494,16 +499,20 @@ argument arrays whose reached by-reference slots were assigned by reference,
 such as `$args[0] =& $value; call_user_func_array($callback, $args);`, are
 also covered for those same callback shapes, including normal callback
 invocation of user functions and public array callables declared as returning
-by reference when they mutate reached by-reference parameters. Literal
-reference elements may also use a direct variable already backed by covered
-array-offset alias metadata, such as `array(&$payload)` after
-`$payload =& $_REQUEST["payload"];`, and reference-returning callbacks can
-bind the returned parameter or returned child slot back to that alias group.
+by reference when they mutate reached by-reference parameters. The stored
+argument-array variable itself may also be backed by covered array-offset
+alias metadata, such as `$args =& $_REQUEST["callback_args"]` or
+`$args =& $object->store["args"]`. Literal reference elements may also use a
+direct variable already backed by covered array-offset alias metadata, such as
+`array(&$payload)` after `$payload =& $_REQUEST["payload"];`, and
+reference-returning callbacks can bind the returned parameter or returned
+child slot back to that alias group.
 Reference array literals stored by value, string-keyed named reference
-argument arrays, stored argument-array variables that are themselves routed
-through alias metadata, non-public or dynamic callback object-property array
-arguments, dynamic static receiver callback object-property array arguments,
-broader aliasing, and full copy-on-write remain unsupported.
+argument arrays, stored arrays whose reached slots were not assigned by
+reference, non-direct stored array expressions, non-public or dynamic callback
+object-property array arguments, dynamic static receiver callback
+object-property array arguments, ArrayAccess reference roots, broader
+aliasing, and full copy-on-write remain unsupported.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It also supports direct array-offset paths, request-bag paths such as
@@ -553,8 +562,8 @@ direct `filemtime(...)` local filesystem metadata calls,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
 direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
-`ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_clean()`/`ob_flush()`/
-`ob_end_clean()`/`ob_end_flush()` output-buffer calls,
+`ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_get_flush()`/
+`ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` output-buffer calls,
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/
 `http_response_code()`/`setcookie()` response header-state calls, including
 interpreter-only `headers_sent()` output-started tracking, direct-variable

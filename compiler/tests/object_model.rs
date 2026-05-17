@@ -4409,6 +4409,56 @@ fn get_declared_interfaces_requires_no_arguments() {
 }
 
 #[test]
+fn class_implements_reports_ordered_interface_metadata() {
+    let source = r#"<?php
+interface RootHook {}
+interface ChildHook extends RootHook {}
+interface ParentHook {}
+
+class ParentService implements ParentHook {}
+class Service extends ParentService implements ChildHook {}
+
+$service = new Service();
+print_r(class_implements($service));
+print_r(class_implements("Service", false));
+
+$call = "class_implements";
+$dynamic = $call("Service");
+echo count($dynamic), "\n";
+echo isset($dynamic["RootHook"]) ? "root\n" : "missing\n";
+echo class_implements("Missing", false) ? "missing-true" : "missing-false";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [ParentHook] => ParentHook\n    [ChildHook] => ChildHook\n    [RootHook] => RootHook\n)\nArray\n(\n    [ParentHook] => ParentHook\n    [ChildHook] => ChildHook\n    [RootHook] => RootHook\n)\n3\nroot\nmissing-false"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn class_implements_requires_object_or_string_and_bool_autoload_arguments() {
+    let name_error = runtime_error("<?php\nvar_dump(class_implements(42));\n");
+
+    assert_eq!(name_error.line, 2);
+    assert_eq!(name_error.column, 10);
+    assert_eq!(
+        name_error.message,
+        "unsupported call class_implements(): object_or_class argument must be object or string, got int"
+    );
+
+    let autoload_error = runtime_error("<?php\nvar_dump(class_implements(\"Box\", []));\n");
+
+    assert_eq!(autoload_error.line, 2);
+    assert_eq!(autoload_error.column, 10);
+    assert_eq!(
+        autoload_error.message,
+        "unsupported call class_implements(): autoload argument must be bool-like scalar in the current subset, got array"
+    );
+}
+
+#[test]
 fn get_declared_traits_reports_declared_trait_metadata() {
     let source = r#"<?php
 namespace App;
@@ -5594,6 +5644,19 @@ fn emit_ir_rejects_get_declared_classes_until_native_object_lowering_exists() {
 fn emit_ir_rejects_get_declared_interfaces_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\necho get_declared_interfaces();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("object-metadata lowering rejects"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_class_implements_until_native_object_lowering_exists() {
+    let error =
+        php_compiler::emit_ir_source("<?php\necho class_implements(\"Box\");\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

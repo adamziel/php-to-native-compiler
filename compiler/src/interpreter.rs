@@ -1332,26 +1332,6 @@ impl SymbolTable {
         self.array_offset_aliases.get(name).cloned()
     }
 
-    fn array_offset_alias_for_direct_array_slot(
-        &self,
-        array_name: &str,
-        key: &ArrayKey,
-    ) -> Option<ArrayOffsetAlias> {
-        self.array_offset_aliases
-            .values()
-            .flat_map(|aliases| aliases.iter())
-            .find(|alias| {
-                matches!(
-                    alias,
-                    ArrayOffsetAlias {
-                        root: ArrayOffsetAliasRoot::StaticArray { name },
-                        keys,
-                    } if name == array_name && keys.as_slice() == std::slice::from_ref(key)
-                )
-            })
-            .cloned()
-    }
-
     fn array_offset_alias_group_for_direct_array_slot(
         &self,
         array_name: &str,
@@ -1371,6 +1351,28 @@ impl SymbolTable {
                 })
             })
             .cloned()
+    }
+
+    fn array_offset_alias_group_for_stored_array_slot(
+        &self,
+        array_name: &str,
+        key: &ArrayKey,
+    ) -> Option<Vec<ArrayOffsetAlias>> {
+        if let Some(aliases) = self.array_offset_alias_group_for_direct_array_slot(array_name, key)
+        {
+            return Some(aliases);
+        }
+        let candidates =
+            self.array_offset_aliases_for_name_with_suffix(array_name, std::slice::from_ref(key))?;
+        self.array_offset_aliases
+            .values()
+            .find(|aliases| {
+                candidates
+                    .iter()
+                    .any(|candidate| aliases.contains(candidate))
+            })
+            .cloned()
+            .or(Some(candidates))
     }
 
     fn remove_static_root_from_array_offset_aliases(&mut self, root_name: &str) {
@@ -1726,6 +1728,14 @@ impl SymbolTable {
         span: Span,
     ) -> CompileResult<()> {
         self.ensure_array_offset_reference_target_source(array_name, source_name, span)?;
+        if self.bind_alias_backed_array_offset_to_static_source(
+            array_name,
+            std::slice::from_ref(&key),
+            source_name,
+            span,
+        )? {
+            return Ok(());
+        }
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias {
@@ -1753,6 +1763,14 @@ impl SymbolTable {
         span: Span,
     ) -> CompileResult<()> {
         self.ensure_array_offset_reference_target_source(array_name, source_name, span)?;
+        if self.bind_alias_backed_array_offset_to_static_source(
+            array_name,
+            &keys,
+            source_name,
+            span,
+        )? {
+            return Ok(());
+        }
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias {
@@ -2037,10 +2055,20 @@ impl SymbolTable {
         source_name: &str,
         alias: ArrayOffsetAlias,
     ) {
+        self.bind_direct_alias_group_to_array_offset_aliases(source_name, vec![alias]);
+    }
+
+    fn bind_direct_alias_group_to_array_offset_aliases(
+        &mut self,
+        source_name: &str,
+        new_aliases: Vec<ArrayOffsetAlias>,
+    ) {
         if let Some(existing_aliases) = self.array_offset_aliases.get(source_name).cloned() {
             let mut aliases = existing_aliases.clone();
-            if !aliases.contains(&alias) {
-                aliases.push(alias);
+            for alias in new_aliases {
+                if !aliases.contains(&alias) {
+                    aliases.push(alias);
+                }
             }
 
             let names: Vec<String> = self
@@ -2069,8 +2097,26 @@ impl SymbolTable {
         };
 
         for name in names {
-            self.bind_static_to_array_offset_alias(&name, alias.clone());
+            self.bind_static_to_array_offset_aliases(&name, new_aliases.clone());
         }
+    }
+
+    fn array_offset_aliases_for_name_with_suffix(
+        &self,
+        name: &str,
+        keys: &[ArrayKey],
+    ) -> Option<Vec<ArrayOffsetAlias>> {
+        let aliases = self.array_offset_aliases.get(name)?;
+        Some(
+            aliases
+                .iter()
+                .map(|alias| {
+                    let mut alias = alias.clone();
+                    alias.keys.extend(keys.iter().cloned());
+                    alias
+                })
+                .collect(),
+        )
     }
 
     fn direct_names_sharing_cell(&self, name: &str) -> Vec<String> {
@@ -2160,6 +2206,77 @@ impl SymbolTable {
         aliases
             .iter()
             .all(|alias| self.write_array_offset_alias(alias, value.clone()))
+    }
+
+    fn write_alias_backed_array_offset(
+        &mut self,
+        array_name: &str,
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let Some(aliases) = self.array_offset_aliases_for_name_with_suffix(array_name, keys) else {
+            return Ok(false);
+        };
+        for alias in &aliases {
+            self.materialize_array_offset_alias(alias, span)?;
+        }
+        if !self.write_array_offset_aliases(&aliases, value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot write alias-backed array offset".to_string(),
+                ),
+            ));
+        }
+        self.sync_alias_roots(&aliases);
+        Ok(true)
+    }
+
+    fn bind_alias_backed_array_offset_to_static_source(
+        &mut self,
+        array_name: &str,
+        keys: &[ArrayKey],
+        source_name: &str,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let Some(aliases) = self.array_offset_aliases_for_name_with_suffix(array_name, keys) else {
+            return Ok(false);
+        };
+        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
+        for alias in &aliases {
+            self.materialize_array_offset_alias(alias, span)?;
+        }
+        if !self.write_array_offset_aliases(&aliases, source_value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind alias-backed array offset".to_string(),
+                ),
+            ));
+        }
+        self.bind_direct_alias_group_to_array_offset_aliases(source_name, aliases.clone());
+        self.sync_alias_roots(&aliases);
+        Ok(true)
+    }
+
+    fn sync_alias_roots(&mut self, aliases: &[ArrayOffsetAlias]) {
+        for alias in aliases {
+            match &alias.root {
+                ArrayOffsetAliasRoot::StaticArray { name } => {
+                    self.sync_array_offset_aliases_for_static_root(name);
+                }
+                ArrayOffsetAliasRoot::GlobalArray { name } => {
+                    self.sync_array_offset_aliases_for_global_root(name);
+                }
+                ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                | ArrayOffsetAliasRoot::ContextObjectProperty {
+                    object, property, ..
+                } => {
+                    self.sync_array_offset_aliases_for_object_property_root(object, property);
+                }
+            }
+        }
     }
 
     fn read_alias_root_value(
@@ -6577,6 +6694,16 @@ impl Interpreter {
                     scope.sync_array_offset_aliases_for_global_root(global_name);
                     return Ok(value);
                 }
+                if let Some(key) = key.as_ref() {
+                    if scope.write_alias_backed_array_offset(
+                        name,
+                        std::slice::from_ref(key),
+                        value.clone(),
+                        *span,
+                    )? {
+                        return Ok(value);
+                    }
+                }
                 let mut slot = scope
                     .read_named(name)
                     .unwrap_or_else(|| Value::Array(PhpArray::new()));
@@ -6633,6 +6760,9 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 if name == "GLOBALS" {
                     Self::write_global_nested_array_assignment(&keys, value.clone(), *span, scope)?;
+                    return Ok(value);
+                }
+                if scope.write_alias_backed_array_offset(name, &keys, value.clone(), *span)? {
                     return Ok(value);
                 }
                 Self::write_nested_array_assignment(name, &keys, value.clone(), *span, scope)?;
@@ -10796,6 +10926,43 @@ impl Interpreter {
             }
         }
 
+        if is_wordpress_option_prepared_insert_on_duplicate_query(&query) {
+            let [Value::String(option_name), Value::String(option_value), Value::String(autoload)] =
+                params.as_slice()
+            else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_execute_query()",
+                        "prepared wp_options insert-on-duplicate requires string option name, option value, and autoload parameters in the current subset",
+                    ),
+                ));
+            };
+            let next_insert_id = self
+                .mysqli_insert_ids
+                .get(&handle_id)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1);
+            let options = self.mysqli_wp_options.entry(handle_id).or_default();
+            let option_id = options
+                .get(option_name)
+                .map(|option| option.option_id)
+                .unwrap_or(next_insert_id);
+            let previous = options.insert(
+                option_name.clone(),
+                WordPressOptionState {
+                    option_id,
+                    value: option_value.clone(),
+                    autoload: autoload.clone(),
+                },
+            );
+            let affected_rows = if previous.is_some() { 2 } else { 1 };
+            self.mysqli_affected_rows.insert(handle_id, affected_rows);
+            self.mysqli_insert_ids.insert(handle_id, next_insert_id);
+            return Ok(Value::Bool(true));
+        }
+
         if is_mysqli_mutation_query(&query) {
             return Err(runtime_error(
                 span,
@@ -14938,6 +15105,119 @@ impl Interpreter {
         }
     }
 
+    fn call_class_implements(
+        &mut self,
+        object_or_class: &Value,
+        autoload: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = match object_or_class {
+            Value::Object(object) => Some(object.class_id()),
+            Value::String(class_name) => {
+                if autoload {
+                    self.class_like_exists_with_autoload(
+                        class_name,
+                        AutoloadKind::Class,
+                        true,
+                        span,
+                    )?;
+                }
+                self.classes.lookup_class_id(class_name)
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "class_implements()",
+                        format!(
+                            "object_or_class argument must be object or string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let Some(class_id) = class_id else {
+            return Ok(Value::Bool(false));
+        };
+
+        let mut interfaces = PhpArray::new();
+        for interface_name in self.class_implements_interface_names(class_id) {
+            interfaces.insert(
+                ArrayKey::String(interface_name.clone()),
+                Value::String(interface_name),
+            );
+        }
+        Ok(Value::Array(interfaces))
+    }
+
+    fn class_implements_interface_names(&self, class_id: ClassId) -> Vec<String> {
+        let mut class_chain = Vec::new();
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to metadata");
+            class_chain.push(current_id);
+            current = class.parent_id();
+        }
+        class_chain.reverse();
+
+        let mut names = Vec::new();
+        let mut seen = HashSet::new();
+        for current_id in class_chain {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to metadata");
+            for interface_name in class.interfaces() {
+                self.push_class_implements_interface_name(
+                    interface_name,
+                    current_id != class_id,
+                    &mut names,
+                    &mut seen,
+                );
+            }
+        }
+        names
+    }
+
+    fn push_class_implements_interface_name(
+        &self,
+        interface_name: &str,
+        parents_first: bool,
+        names: &mut Vec<String>,
+        seen: &mut HashSet<String>,
+    ) {
+        let declared_interface = self
+            .interface_lookup
+            .get(&interface_name.to_ascii_lowercase());
+        if let Some(interface) = declared_interface {
+            if parents_first {
+                for parent_name in &interface.parents {
+                    self.push_class_implements_interface_name(parent_name, true, names, seen);
+                }
+            }
+            let key = interface.name.to_ascii_lowercase();
+            if seen.insert(key) {
+                names.push(interface.name.clone());
+            }
+            if !parents_first {
+                for parent_name in &interface.parents {
+                    self.push_class_implements_interface_name(parent_name, false, names, seen);
+                }
+            }
+            return;
+        }
+
+        let key = interface_name.to_ascii_lowercase();
+        if seen.insert(key) {
+            names.push(interface_name.to_string());
+        }
+    }
+
     fn current_property_access_context(&self) -> (Option<ClassId>, Vec<ClassId>) {
         let Some(current_class_id) = self.class_context.last().copied() else {
             return (None, Vec::new());
@@ -15658,15 +15938,6 @@ impl Interpreter {
                     ),
                 ));
             };
-            if caller_scope.is_array_offset_alias_name(array_name) {
-                return Err(runtime_error(
-                    argument_expr.span(),
-                    RuntimeError::unsupported_call(
-                        callable_name(&function.name),
-                        "call_user_func_array() stored reference argument arrays routed through array-offset alias metadata are not implemented",
-                    ),
-                ));
-            }
 
             let mut values = Vec::with_capacity(argument_array.len());
             let mut reference_bindings = Vec::new();
@@ -15688,7 +15959,7 @@ impl Interpreter {
 
                 if param.by_reference {
                     let aliases = caller_scope
-                        .array_offset_alias_group_for_direct_array_slot(array_name, &entry.key)
+                        .array_offset_alias_group_for_stored_array_slot(array_name, &entry.key)
                         .ok_or_else(|| {
                             runtime_error(
                                 argument_expr.span(),
@@ -16063,15 +16334,6 @@ impl Interpreter {
                     ),
                 ));
             };
-            if caller_scope.is_array_offset_alias_name(array_name) {
-                return Err(runtime_error(
-                    argument_expr.span(),
-                    RuntimeError::unsupported_call(
-                        callable_name(&function.name),
-                        "call_user_func_array() stored reference argument arrays routed through array-offset alias metadata are not implemented",
-                    ),
-                ));
-            }
 
             let mut values = Vec::with_capacity(argument_array.len());
             let mut reference_bindings = Vec::new();
@@ -16092,8 +16354,8 @@ impl Interpreter {
                 };
 
                 if param.by_reference {
-                    let alias = caller_scope
-                        .array_offset_alias_for_direct_array_slot(array_name, &entry.key)
+                    let aliases = caller_scope
+                        .array_offset_alias_group_for_stored_array_slot(array_name, &entry.key)
                         .ok_or_else(|| {
                             runtime_error(
                                 argument_expr.span(),
@@ -16104,7 +16366,7 @@ impl Interpreter {
                             )
                         })?;
                     let value = caller_scope
-                        .read_array_offset_alias(&alias)
+                        .read_array_offset_alias(aliases.first().expect("alias group is non-empty"))
                         .ok_or_else(|| {
                             runtime_error(
                                 argument_expr.span(),
@@ -16117,7 +16379,7 @@ impl Interpreter {
                     values.push(value);
                     reference_bindings.push(ReferenceBinding {
                         param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                        target: ReferenceBindingTarget::ArrayOffsets(aliases),
                     });
                 } else {
                     values.push(entry.value_cloned());
@@ -21061,6 +21323,15 @@ impl Interpreter {
             .unwrap_or(Value::Bool(false)))
     }
 
+    fn call_ob_get_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ob_get_flush", args, 0, span)?;
+        let Some(output) = self.output_buffers.pop() else {
+            return Ok(Value::Bool(false));
+        };
+        self.append_output_at(&output, span);
+        Ok(Value::String(output))
+    }
+
     fn call_ob_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_clean", args, 0, span)?;
         let Some(buffer) = self.output_buffers.last_mut() else {
@@ -23543,6 +23814,7 @@ impl Interpreter {
             "ob_list_handlers" => self.call_ob_list_handlers(&args, span),
             "ob_get_status" => self.call_ob_get_status(&args, span),
             "ob_get_clean" => self.call_ob_get_clean(&args, span),
+            "ob_get_flush" => self.call_ob_get_flush(&args, span),
             "ob_clean" => self.call_ob_clean(&args, span),
             "ob_flush" => self.call_ob_flush(&args, span),
             "ob_end_clean" => self.call_ob_end_clean(&args, span),
@@ -23901,6 +24173,22 @@ impl Interpreter {
                 }
                 Ok(Value::Array(traits))
             }
+            "class_implements" => match args.as_slice() {
+                [object_or_class] => self.call_class_implements(object_or_class, true, span),
+                [object_or_class, autoload] => {
+                    let autoload =
+                        metadata_exists_autoload_flag("class_implements()", autoload, span)?;
+                    self.call_class_implements(object_or_class, autoload, span)
+                }
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "class_implements()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
+                )),
+            },
             "get_called_class" => {
                 expect_arity(name, &args, 0, span)?;
                 let Some(called_class_id) = self.called_class_context.last().copied() else {
@@ -29049,6 +29337,7 @@ fn is_builtin(name: &str) -> bool {
             | "ob_list_handlers"
             | "ob_get_status"
             | "ob_get_clean"
+            | "ob_get_flush"
             | "ob_clean"
             | "ob_flush"
             | "ob_end_clean"
@@ -29074,6 +29363,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_declared_classes"
             | "get_declared_interfaces"
             | "get_declared_traits"
+            | "class_implements"
             | "get_called_class"
             | "spl_object_id"
             | "spl_object_hash"

@@ -175,16 +175,16 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded `class_alias()` support for
-declared interfaces, alias-backed literal `call_user_func_array()` reference
-arguments, `ob_get_status($full_status = false)` over the interpreter-owned
-output-buffer stack, and prepared autoload-only option-name equality reads over
-the placeholder MySQLi `wp_options` state island. Those are useful
-compatibility steps, but they do not change the larger project shape: the next
-lanes should keep attacking broad object/interface semantics, real
-reference/COW behavior, request/SAPI/filesystem/stream breadth, and executable
-WordPress database/bootstrap evidence until those areas become coherent
-subsystems instead of reached slices.
+The latest WordPress-focused batch closed bounded `class_implements()`
+metadata, alias-backed stored `call_user_func_array()` argument arrays,
+`ob_get_flush()` over the interpreter-owned output-buffer stack, and one-shot
+prepared `mysqli_execute_query()` option upserts over the placeholder MySQLi
+`wp_options` state island. Those are useful compatibility steps, but they do
+not change the larger project shape: the next lanes should keep attacking
+broad object/interface semantics, real reference/COW behavior,
+request/SAPI/filesystem/stream breadth, and executable WordPress
+database/bootstrap evidence until those areas become coherent subsystems
+instead of reached slices.
 
 ### Near-Term Compatibility Roadmap
 

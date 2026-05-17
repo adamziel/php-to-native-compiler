@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state and one-shot mysqli_execute_query() prepared upserts for transient-shaped rows rather than a real MySQL database, arbitrary SQL, full WordPress transient APIs, persistent object cache, or native DB lowering.

@@ -289,8 +289,9 @@ returns a deterministic placeholder `mysqli_result`; for current deterministic
 no-result shapes it returns `true`. It rejects params arrays whose length does
 not match the query `?` placeholder count. This is not broad prepared SQL
 execution, named params-array support, hidden statement status-copy fidelity,
-mutation SQL, host database state, PHP warning/error fidelity, mysqlnd
-behavior, or native lowering.
+mutation SQL beyond the documented one-shot `wp_options` delete and upsert
+shapes, host database state, PHP warning/error fidelity, mysqlnd behavior, or
+native lowering.
 
 For direct `mysqli_query()`, the runtime has one bounded per-placeholder-handle
 state island for exact WordPress-shaped option writes and reads:
@@ -533,7 +534,11 @@ the same handle for the current exact WordPress-style option upsert shapes,
 reports affected rows as `2` when updating an existing recorded option and
 `1` when inserting a missing option, advances deterministic
 `mysqli_insert_id($handle)`, and exposes later exact option-value reads
-through the same state island. The exact
+through the same state island. The same exact upsert shape is also accepted
+through one-shot `mysqli_execute_query($handle, $query, array(...))` for
+string option-name, option-value, and autoload parameters; it updates
+connection affected-row and insert-id metadata but does not create statement
+metadata. The exact
 `REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
 prepared statement records string parameters on the same handle, reports
 affected rows as `2` when replacing an existing recorded option and `1` when
