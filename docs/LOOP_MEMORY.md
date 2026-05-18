@@ -18,6 +18,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T22:08:00+02:00
+
+- Checkpoint before this task: `a003e447 runtime: emit root false array
+  deprecations`, pushed to `origin/master`.
+- Task attempted: Lane 1762-C, extending handled false-to-array
+  `E_DEPRECATED` diagnostics to covered object-property array-offset and
+  append reference targets whose visible/context property root is provably
+  `false`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1762/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1762` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; focused
+  `root_false_array_writes_emit_deprecation_diagnostics` passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies,
+  non-literal/dynamic backing key variables, arbitrary closure capture roots,
+  broader scalar parent matrices and false-parent deprecation coverage in
+  magic/`ArrayAccess` paths, broader complex alias sinks, broader alias
+  lifetime/detach ordering, exact PHP stderr/fatal text, string COW identity,
+  and native reference lowering.
+- Next concrete task: run formatting, diff, check, adjacent scalar-parent and
+  reference-target regressions, then checkpoint with
+  `tools/checkpoint.sh "runtime: emit object false reference deprecations"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T21:53:57+02:00
 
 - Checkpoint before this task: `be6b8036 test: pin root false reference

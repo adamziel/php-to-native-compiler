@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1762-C for the object-property side of bounded false-to-array
+  reference-target diagnostics. Covered object-property array-offset and
+  append reference targets now emit PHP's `Automatic conversion of false to
+  array is deprecated` message through user `E_DEPRECATED` handlers when the
+  visible/context property root is provably `false`, then materialize the
+  array and keep the source reference cell live. Inaccessible/magic fallback
+  roots, arbitrary method bodies, exact PHP stderr formatting, string COW
+  identity, and native reference lowering remain unsupported. Focused
+  verification: `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1762` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; focused
+  `root_false_array_writes_emit_deprecation_diagnostics` passed.
+
 - Added Lane 1761-C for bounded false-to-array diagnostic parity. Covered
   root-level `false` array writes and direct reference-target materialization
   now emit PHP's `Automatic conversion of false to array is deprecated`

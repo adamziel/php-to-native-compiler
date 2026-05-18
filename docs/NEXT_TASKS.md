@@ -19851,6 +19851,16 @@ handled.
   every nested/magic/`ArrayAccess` path, string COW identity, and native
   reference lowering named as unsupported.
 
+## Lane 1762-C: Object-Property False Reference Deprecations
+
+- [x] Runtime/interpreter/tests/docs lane: emit the same false-to-array
+  `E_DEPRECATED` diagnostic for covered object-property array-offset and
+  append reference targets when the visible/context property root is provably
+  `false`. Preserve array materialization and the source reference cell after
+  the write. Keep inaccessible/magic fallback roots, arbitrary method bodies,
+  exact PHP stderr formatting, string COW identity, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

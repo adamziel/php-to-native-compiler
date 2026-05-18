@@ -4526,8 +4526,10 @@
   materialized. The covered root-level false-to-array materialization emits
   PHP's `Automatic conversion of false to array is deprecated` message as
   `E_DEPRECATED` through user error handlers for direct write and direct
-  reference-target paths. Adjacent `true`, numeric, and string roots remain
-  scalar write errors in this bounded path. By-value
+  reference-target paths, including covered object-property array-offset and
+  append reference targets whose visible/context property root is provably
+  `false`. Adjacent `true`, numeric, and string roots remain scalar write
+  errors in this bounded path. By-value
   terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's

@@ -10591,6 +10591,9 @@ impl Interpreter {
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, property, span, scope,
                     )?;
+                    self.emit_object_property_false_to_array_deprecation_if_needed(
+                        object, property, span, scope,
+                    )?;
                     let root =
                         self.context_object_property_alias_root(object, property, span, scope)?;
                     scope.bind_object_property_array_offset_alias_root_to_static_source(
@@ -10616,6 +10619,9 @@ impl Interpreter {
                         return Ok(());
                     }
                     self.reject_object_property_array_access_reference_target_if_needed(
+                        object, property, span, scope,
+                    )?;
+                    self.emit_object_property_false_to_array_deprecation_if_needed(
                         object, property, span, scope,
                     )?;
                     let root =
@@ -10660,6 +10666,9 @@ impl Interpreter {
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, &property, span, scope,
                     )?;
+                    self.emit_object_property_false_to_array_deprecation_if_needed(
+                        object, &property, span, scope,
+                    )?;
                     let root =
                         self.context_object_property_alias_root(object, &property, span, scope)?;
                     scope.bind_object_property_array_offset_alias_root_to_static_source(
@@ -10685,6 +10694,9 @@ impl Interpreter {
                         return Ok(());
                     }
                     self.reject_object_property_array_access_reference_target_if_needed(
+                        object, &property, span, scope,
+                    )?;
+                    self.emit_object_property_false_to_array_deprecation_if_needed(
                         object, &property, span, scope,
                     )?;
                     let root =
@@ -10860,6 +10872,9 @@ impl Interpreter {
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, &property, span, scope,
                     )?;
+                    self.emit_object_property_false_to_array_deprecation_if_needed(
+                        object, &property, span, scope,
+                    )?;
                     let root =
                         self.context_object_property_alias_root(object, &property, span, scope)?;
                     scope.append_object_property_array_offset_alias_root_to_static_source(
@@ -10887,6 +10902,9 @@ impl Interpreter {
                         return Ok(());
                     }
                     self.reject_object_property_array_access_reference_target_if_needed(
+                        object, &property, span, scope,
+                    )?;
+                    self.emit_object_property_false_to_array_deprecation_if_needed(
                         object, &property, span, scope,
                     )?;
                     let root =
@@ -10945,6 +10963,9 @@ impl Interpreter {
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, property, span, scope,
                     )?;
+                    self.emit_object_property_false_to_array_deprecation_if_needed(
+                        object, property, span, scope,
+                    )?;
                     let root =
                         self.context_object_property_alias_root(object, property, span, scope)?;
                     scope.append_object_property_array_offset_alias_root_to_static_source(
@@ -10972,6 +10993,9 @@ impl Interpreter {
                         return Ok(());
                     }
                     self.reject_object_property_array_access_reference_target_if_needed(
+                        object, property, span, scope,
+                    )?;
+                    self.emit_object_property_false_to_array_deprecation_if_needed(
                         object, property, span, scope,
                     )?;
                     let root =
@@ -11312,6 +11336,26 @@ impl Interpreter {
             object.read_property_from_context(property, current_class_id, &protected_class_ids)
         {
             self.reject_array_access_reference_target_value(&value, span)?;
+        }
+        Ok(())
+    }
+
+    fn emit_object_property_false_to_array_deprecation_if_needed(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let Some(Value::Object(object)) = scope.read_named(object_name) else {
+            return Ok(());
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        if matches!(
+            object.read_property_from_context(property, current_class_id, &protected_class_ids),
+            Ok(Value::Bool(false))
+        ) {
+            self.emit_false_to_array_deprecation(span)?;
         }
         Ok(())
     }
@@ -11695,7 +11739,7 @@ impl Interpreter {
     }
 
     fn bind_static_to_context_object_property_array_offset(
-        &self,
+        &mut self,
         target_name: &str,
         object_name: &str,
         property: &str,
@@ -11731,6 +11775,15 @@ impl Interpreter {
             }
             Err(error) => return Err(runtime_error(span, error)),
         };
+
+        if matches!(
+            object
+                .read_property_from_context(property, current_class_id, &protected_class_ids)
+                .map_err(|error| runtime_error(span, error))?,
+            Value::Bool(false)
+        ) {
+            self.emit_false_to_array_deprecation(span)?;
+        }
 
         let root = if visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
@@ -11752,7 +11805,7 @@ impl Interpreter {
     }
 
     fn bind_static_to_appended_context_object_property_array_offset(
-        &self,
+        &mut self,
         target_name: &str,
         object_name: &str,
         property: &str,
@@ -11789,6 +11842,15 @@ impl Interpreter {
             Err(error) => return Err(runtime_error(span, error)),
         };
 
+        let root_was_false = matches!(
+            object
+                .read_property_from_context(property, current_class_id, &protected_class_ids)
+                .map_err(|error| runtime_error(span, error))?,
+            Value::Bool(false)
+        );
+        if root_was_false {
+            self.emit_false_to_array_deprecation(span)?;
+        }
         let root = if visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
                 object: object_name.to_string(),
@@ -11808,7 +11870,13 @@ impl Interpreter {
         };
         let mut array = match scope.read_alias_root_value(&root_alias, span)? {
             Some(Value::Array(array)) => array,
-            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
+            Some(Value::Bool(false)) => {
+                if !root_was_false {
+                    self.emit_false_to_array_deprecation(span)?;
+                }
+                PhpArray::new()
+            }
+            Some(Value::Null) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,

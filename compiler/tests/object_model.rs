@@ -7693,6 +7693,8 @@ set_error_handler("deprecated_handler", E_DEPRECATED);
 
 class Holder {
     public $items = false;
+    public $referenceItems = false;
+    public $appendReferenceItems = false;
 }
 
 $direct = false;
@@ -7711,7 +7713,11 @@ $reference = false;
 $source = "source";
 $reference["leaf"] =& $source;
 
-echo $direct["leaf"], "|", $globalRoot["leaf"], "|", $holder->items["leaf"], "|", $append[0], "|", $reference["leaf"];
+$holder->referenceItems["leaf"] =& $source;
+
+$holder->appendReferenceItems[] =& $source;
+
+echo $direct["leaf"], "|", $globalRoot["leaf"], "|", $holder->items["leaf"], "|", $append[0], "|", $reference["leaf"], "|", $holder->referenceItems["leaf"], "|", $holder->appendReferenceItems[0];
 "#,
     )
     .unwrap();
@@ -7724,7 +7730,10 @@ echo $direct["leaf"], "|", $globalRoot["leaf"], "|", $holder->items["leaf"], "|"
             "deprecated:Automatic conversion of false to array is deprecated\n",
             "deprecated:Automatic conversion of false to array is deprecated\n",
             "deprecated:Automatic conversion of false to array is deprecated\n",
-            "direct|global|object|append|source"
+            "deprecated:Automatic conversion of false to array is deprecated\n",
+            "deprecated:Automatic conversion of false to array is deprecated\n",
+            "direct|global|object|append|source",
+            "|source|source"
         )
     );
     assert_eq!(execution.exit_code, 0);
