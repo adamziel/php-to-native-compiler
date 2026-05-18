@@ -2353,6 +2353,13 @@ impl ArraySlot {
         }
     }
 
+    pub fn reference_cell(&self) -> Option<PhpReferenceCell> {
+        match &self.storage {
+            ArraySlotStorage::Value(_) => None,
+            ArraySlotStorage::Reference(reference) => Some(reference.clone()),
+        }
+    }
+
     pub fn is_reference(&self) -> bool {
         matches!(self.storage, ArraySlotStorage::Reference(_))
     }
@@ -6508,6 +6515,15 @@ mod tests {
         assert_eq!(
             array.get_slot("named").unwrap().reference_cell_id(),
             Some(first.id())
+        );
+        assert_eq!(
+            array
+                .get_slot("named")
+                .unwrap()
+                .reference_cell()
+                .unwrap()
+                .id(),
+            first.id()
         );
         assert_eq!(
             array.get_slot(0).unwrap().reference_cell_id(),

@@ -358,6 +358,35 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: support dynamic reference property slots"` if
   the full gate passes.
 
+## Loop Event 2026-05-18T19:05:00+02:00
+
+- Checkpoint before this task: `a14dc8b0 runtime: support dynamic reference
+  property slots`, pushed to `origin/master`.
+- Task attempted: Lane 1733-C alias-backed source reuse for
+  reference-backed array slots.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1733/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new milestone1733
+  fixture; `cargo check -q -p phpc` passed; `cargo test -q -p php_runtime
+  arrays_can_store_reference_backed_slots_by_key_and_append` passed `1`
+  focused runtime test; `cargo test -q -p phpc
+  symbol_table_alias_backed_sources_reuse_reference_backed_slots` passed the
+  focused compiler unit test; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1733`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: when an alias-backed source variable points at a
+  reference-backed array slot, direct array, nested array, and direct
+  object-property array targets now reuse the original `PhpReferenceCell`.
+- Remaining semantic gaps: value-backed alias terminals, method-local `$this`
+  object-property targets, broader non-direct/magic/mixed roots, alias
+  side-table removal, complete PHP alias lifetime/detach parity, string COW
+  identity, and native reference lowering remain unsupported.
+- Next concrete task: run adjacent regression checks, `cargo fmt --check`,
+  `git diff --check`, and then one full checkpoint with
+  `tools/checkpoint.sh "runtime: reuse alias-backed reference slots"` if the
+  full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

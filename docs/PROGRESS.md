@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Lane 1733-C alias-backed source reuse for reference-backed array
+  slots. When a source variable is bound to an array-offset alias whose
+  terminal slot is already reference-backed, new direct array, nested array,
+  and direct object-property array reference targets reuse that underlying
+  `PhpReferenceCell` instead of copying only the current value. This reduces
+  one alias side-table dependency for shapes such as
+  `$alias =& $items["slot"]; $target["copy"] =& $alias;`. Alias-backed
+  sources whose terminal slot is still value-backed, method-local `$this`
+  object-property targets, broader non-direct/magic/mixed roots, complete
+  alias lifetime/detach behavior, string COW identity, and native reference
+  lowering remain unsupported. Focused verification: raw system PHP output
+  matched the new milestone1733 fixture; `cargo check -q -p phpc` passed;
+  `cargo test -q -p php_runtime
+  arrays_can_store_reference_backed_slots_by_key_and_append` passed `1` test;
+  `cargo test -q -p phpc
+  symbol_table_alias_backed_sources_reuse_reference_backed_slots` passed the
+  focused compiler unit test; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1733`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1732-C dynamic object-property array reference target wiring for
   direct variable sources. Reference assignment targets of the form
   `$object->{$name}["slot"] =& $var` and

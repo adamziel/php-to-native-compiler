@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1732:
+The current in-progress implementation frontier is Lane 1733:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -248,6 +248,11 @@ The current in-progress implementation frontier is Lane 1732:
   the property name is evaluated dynamically, such as
   `$object->{$name}["slot"] =& $var` and
   `$object->{$name}["outer"][] =& $var`.
+- Lane 1733 lets alias-backed source variables reuse a real reference-backed
+  array slot when one is statically visible, so bindings from
+  `$alias =& $items["slot"]` into direct array, nested array, and direct
+  object-property array targets reuse the original `PhpReferenceCell` instead
+  of copying only the current value.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

@@ -19505,6 +19505,18 @@ handled.
   non-direct/magic/mixed roots, complete alias lifetime/detach behavior,
   string COW identity, and native reference lowering named as unsupported.
 
+## Lane 1733-C: Alias-Backed Source Reference Slot Reuse
+
+- [x] Runtime/interpreter/tests/docs lane: expose reference cells from
+  reference-backed array slots and let alias-backed source variables reuse
+  those cells when binding into direct array, nested array, and direct
+  object-property array targets. Add a system-PHP comparison fixture proving
+  writes through any reached target update the original source, alias, and
+  all new targets. Keep value-backed alias terminals, method-local `$this`
+  object-property targets, broader non-direct/magic/mixed roots, complete
+  alias lifetime/detach behavior, string COW identity, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -4418,11 +4418,15 @@
   for broader paths. The same direct object-property target path also accepts
   dynamically evaluated property names such as
   `$object->{$name}["slot"] =& $var` and
-  `$object->{$name}["outer"][] =& $var`. These are substrate for later
+  `$object->{$name}["outer"][] =& $var`. When a source variable is already an
+  alias to a reference-backed array slot, the same direct array and direct
+  object-property target family can reuse that underlying reference cell
+  instead of copying only the current value. These are substrate for later
   PHP-visible reference containers and COW separation; method-local `$this`
-  object-property targets, alias-backed sources, broader non-direct, magic,
-  and mixed array element bindings, complete alias lifetime/detach parity,
-  string COW identity, and native reference lowering remain unsupported.
+  object-property targets, alias-backed sources whose terminal slot is still
+  value-backed, broader non-direct, magic, and mixed array element bindings,
+  complete alias lifetime/detach parity, string COW identity, and native
+  reference lowering remain unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

@@ -2726,7 +2726,7 @@ impl SymbolTable {
         }
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
-        let source_cell = self.direct_reference_cell_for_static_source(source_name);
+        let source_cell = self.reference_cell_for_static_source(source_name);
         let alias = ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::StaticArray {
                 name: array_name.to_string(),
@@ -2768,7 +2768,7 @@ impl SymbolTable {
         }
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
-        let source_cell = self.direct_reference_cell_for_static_source(source_name);
+        let source_cell = self.reference_cell_for_static_source(source_name);
         let alias = ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::StaticArray {
                 name: array_name.to_string(),
@@ -2802,7 +2802,7 @@ impl SymbolTable {
         let (global_name, keys) = Self::split_globals_reference_path(keys, span)?;
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
-        let source_cell = self.direct_reference_cell_for_static_source(source_name);
+        let source_cell = self.reference_cell_for_static_source(source_name);
         let alias = ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
             keys,
@@ -2833,7 +2833,7 @@ impl SymbolTable {
         self.ensure_array_offset_reference_target_source(array_name, source_name, span)?;
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
-        let source_cell = self.direct_reference_cell_for_static_source(source_name);
+        let source_cell = self.reference_cell_for_static_source(source_name);
         let mut array = match self.read_storage_named(array_name) {
             Some(Value::Array(array)) => array,
             Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
@@ -2885,7 +2885,7 @@ impl SymbolTable {
         let alias = ArrayOffsetAlias { root, keys };
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let source_cell = if Self::alias_root_allows_reference_slot_fast_path(&alias.root) {
-            self.direct_reference_cell_for_static_source(source_name)
+            self.reference_cell_for_static_source(source_name)
         } else {
             None
         };
@@ -3064,7 +3064,7 @@ impl SymbolTable {
             }
         };
         let alias_keys = if Self::alias_root_allows_reference_slot_fast_path(&root) {
-            if let Some(source_cell) = self.direct_reference_cell_for_static_source(source_name) {
+            if let Some(source_cell) = self.reference_cell_for_static_source(source_name) {
                 Self::append_nested_array_offset_alias_reference(
                     &mut array,
                     &keys,
@@ -3144,7 +3144,7 @@ impl SymbolTable {
             }
         };
         let alias_keys = if let Some(source_cell) =
-            self.direct_reference_cell_for_static_source(source_name)
+            self.reference_cell_for_static_source(source_name)
         {
             Self::append_nested_array_offset_alias_reference(&mut array, &keys, source_cell, span)?
         } else {
@@ -3192,7 +3192,7 @@ impl SymbolTable {
             }
         };
         let alias_keys = if let Some(source_cell) =
-            self.direct_reference_cell_for_static_source(source_name)
+            self.reference_cell_for_static_source(source_name)
         {
             Self::append_nested_array_offset_alias_reference(&mut array, &keys, source_cell, span)?
         } else {
@@ -3273,6 +3273,16 @@ impl SymbolTable {
             self.write_storage_named(source_name, Value::Null);
         }
         self.read_cell(source_name)
+    }
+
+    fn reference_cell_for_static_source(&mut self, source_name: &str) -> Option<VariableCell> {
+        if let Some(aliases) = self.array_offset_aliases.get(source_name).cloned() {
+            return aliases
+                .iter()
+                .find_map(|alias| self.read_array_offset_alias_reference_cell(alias));
+        }
+
+        self.direct_reference_cell_for_static_source(source_name)
     }
 
     fn bind_direct_alias_group_to_array_offset_alias(
@@ -3522,6 +3532,29 @@ impl SymbolTable {
 
         match self.read_alias_root_value(alias, Span::new(0, 0)).ok()? {
             Some(Value::Array(array)) => Self::read_nested_array_offset_alias(&array, &alias.keys),
+            _ => None,
+        }
+    }
+
+    fn read_array_offset_alias_reference_cell(
+        &self,
+        alias: &ArrayOffsetAlias,
+    ) -> Option<VariableCell> {
+        if alias.keys.is_empty() {
+            return match &alias.root {
+                ArrayOffsetAliasRoot::StaticArray { name } => self.read_cell(name),
+                ArrayOffsetAliasRoot::GlobalArray { name } => {
+                    self.global_storage().borrow().get(name).cloned()
+                }
+                ArrayOffsetAliasRoot::PublicObjectProperty { .. }
+                | ArrayOffsetAliasRoot::ContextObjectProperty { .. } => None,
+            };
+        }
+
+        match self.read_alias_root_value(alias, Span::new(0, 0)).ok()? {
+            Some(Value::Array(array)) => {
+                Self::read_nested_array_offset_alias_reference_cell(&array, &alias.keys)
+            }
             _ => None,
         }
     }
@@ -3895,6 +3928,24 @@ impl SymbolTable {
 
         match value {
             Value::Array(child) => Self::read_nested_array_offset_alias(&child, rest),
+            _ => None,
+        }
+    }
+
+    fn read_nested_array_offset_alias_reference_cell(
+        array: &PhpArray,
+        keys: &[ArrayKey],
+    ) -> Option<VariableCell> {
+        let (key, rest) = keys.split_first()?;
+        let slot = array.get_slot(key.clone())?;
+        if rest.is_empty() {
+            return slot.reference_cell();
+        }
+
+        match slot.value_cloned() {
+            Value::Array(child) => {
+                Self::read_nested_array_offset_alias_reference_cell(&child, rest)
+            }
             _ => None,
         }
     }
@@ -56374,6 +56425,72 @@ mod tests {
         assert_eq!(
             outer.get_slot(0).unwrap().reference_cell_id(),
             Some(property_append_cell.id())
+        );
+    }
+
+    #[test]
+    fn symbol_table_alias_backed_sources_reuse_reference_backed_slots() {
+        let mut symbols = SymbolTable::new();
+        let span = Span::new(7, 3);
+
+        symbols.write_static("source", Value::String("original".to_string()));
+        let source_cell = symbols.read_cell("source").unwrap();
+        symbols.write_static("items", Value::Array(PhpArray::new()));
+        symbols
+            .bind_array_offset_to_static_source(
+                "items",
+                ArrayKey::String("slot".to_string()),
+                "source",
+                span,
+            )
+            .unwrap();
+        symbols
+            .bind_static_to_existing_array_offset(
+                "alias",
+                "items",
+                ArrayKey::String("slot".to_string()),
+                span,
+            )
+            .unwrap();
+
+        symbols.write_static("target", Value::Array(PhpArray::new()));
+        symbols
+            .bind_array_offset_to_static_source(
+                "target",
+                ArrayKey::String("copy".to_string()),
+                "alias",
+                span,
+            )
+            .unwrap();
+
+        let Value::Array(target) = symbols.read_static("target", span).unwrap() else {
+            panic!("expected target array");
+        };
+        assert_eq!(
+            target.get_slot("copy").unwrap().reference_cell_id(),
+            Some(source_cell.id())
+        );
+
+        symbols.write_static("source", Value::String("source-write".to_string()));
+        let Value::Array(target) = symbols.read_static("target", span).unwrap() else {
+            panic!("expected target array");
+        };
+        assert_eq!(
+            target.get_cloned("copy"),
+            Some(Value::String("source-write".to_string()))
+        );
+
+        let target_alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: "target".to_string(),
+            },
+            keys: vec![ArrayKey::String("copy".to_string())],
+        };
+        assert!(symbols
+            .write_array_offset_alias(&target_alias, Value::String("target-write".to_string())));
+        assert_eq!(
+            source_cell.value_cloned(),
+            Value::String("target-write".to_string())
         );
     }
 

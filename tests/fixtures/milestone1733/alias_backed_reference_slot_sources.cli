@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1733/alias_backed_reference_slot_sources.php
