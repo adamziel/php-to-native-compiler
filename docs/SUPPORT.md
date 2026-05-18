@@ -671,10 +671,12 @@
   object variable or a visible direct named or dynamic property-held object:
   it emits the indirect-modification `E_NOTICE`, initializes the target as a
   detached local value, and does not mutate the backing element when the
-  target is later written. Non-direct property-held by-value reference-source
-  roots, append-source by-value
-  `offsetGet(null)`, and `offsetGet()` bodies with side effects or broader
-  return
+  target is later written. Append source forms such as `$alias =& $bag[]`,
+  `$alias =& $holder->bag[]`, and `$alias =& $holder->{$name}[]` use the same
+  notice/no-op path through PHP's `offsetGet(null)` behavior and snapshot the
+  exact bridge's empty-string backing key as a detached value. Non-direct
+  property-held by-value reference-source roots and `offsetGet()` bodies with
+  side effects or broader return
   expressions, dynamic property-held sources on non-direct holder expressions
   or outside visible property access, broader property-held alias lifetime
   after replacing non-direct/dynamic containing properties, append

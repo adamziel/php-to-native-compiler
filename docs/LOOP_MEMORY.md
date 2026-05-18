@@ -26,6 +26,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T09:20:00+02:00
+
+- Checkpoint before this task: `c102a657 runtime: extend by-value ArrayAccess
+  no-op to holder roots`, pushed to `origin/master`.
+- Task attempted: Lane 1677 append-source by-value
+  `ArrayAccess::offsetGet(null)` reference-source notice/no-op behavior.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1677/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run and result with isolated
+  `CARGO_TARGET_DIR=/tmp/phpc-target-1677-local` and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: direct append and property-held
+  append `functions_and_scopes` filters passed; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1677` passed `1` fixture with `1`
+  system PHP comparison and `0` skips; `cargo fmt --check` passed.
+- Semantic gap reduced: direct, direct visible property-held, and direct
+  dynamic property-held append-source by-value exact-bridge `offsetGet(null)`
+  reference sources now emit the bounded indirect-modification notice,
+  initialize the target as a detached local value from the empty-string backing
+  key, and leave backing `ArrayAccess` storage unchanged.
+- Remaining semantic gaps: non-direct holder by-value reference-source roots,
+  side-effecting or broader `offsetGet()` bodies, arbitrary nested reference
+  slots stored inside `ArrayAccess` buckets, broader mixed `ArrayAccess`
+  chains, general PHP reference containers, broad COW identity, native
+  reference lowering, and exact alias destruction/destructor ordering.
+
 ## Loop Event 2026-05-18T06:17:06+02:00
 
 - Checkpoint before this task: `bf6cbc5d`.

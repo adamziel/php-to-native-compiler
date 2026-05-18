@@ -827,10 +827,14 @@ form reference assignment from a direct object root such as
 `$alias =& $bag[$key]`, a direct visible named or dynamic property-held root
 such as `$alias =& $holder->bag[$key]` or
 `$alias =& $holder->{$name}["outer"]["slot"]`, or another covered nested child
-suffix snapshots the selected value into a detached local variable, emits the
-bounded indirect-modification `E_NOTICE`, and leaves the backing `ArrayAccess`
-storage unchanged when the alias is later written. Non-direct property-held
-by-value roots remain outside that notice/no-op slice.
+suffix snapshots the selected value into a detached local variable. Append
+source forms such as `$alias =& $bag[]`, `$alias =& $holder->bag[]`, and
+`$alias =& $holder->{$name}[]` use PHP's `offsetGet(null)` path and snapshot
+the backing empty-string key value for the exact bridge. These by-value
+reference-source forms emit the bounded indirect-modification `E_NOTICE` and
+leave the backing `ArrayAccess` storage unchanged when the alias is later
+written. Non-direct property-held by-value roots remain outside that
+notice/no-op slice.
 Function-parameter propagation of copied bucket provenance is covered for the
 same direct-object, direct property-held, array-held, and expression-root
 holder paths when the copied bucket is passed as a direct variable to a

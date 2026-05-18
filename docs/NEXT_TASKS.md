@@ -18463,11 +18463,10 @@ handled.
   child sources such as `$alias =& $bag["outer"]["slot"]` against by-value
   exact-bridge `offsetGet()` now emit the bounded indirect-modification
   notice, initialize only a detached local alias/value, and leave backing
-  `ArrayAccess` storage unchanged. Keep append-source `offsetGet(null)`
-  behavior unless separately proven, side-effecting or broader `offsetGet()`
-  bodies, arbitrary nested reference slots stored inside `ArrayAccess`
-  buckets, broader mixed `ArrayAccess` chains, real reference containers,
-  broad COW identity, native reference lowering, and exact alias
+  `ArrayAccess` storage unchanged. Keep side-effecting or broader
+  `offsetGet()` bodies, arbitrary nested reference slots stored inside
+  `ArrayAccess` buckets, broader mixed `ArrayAccess` chains, real reference
+  containers, broad COW identity, native reference lowering, and exact alias
   destruction/destructor ordering named as unsupported.
 
 ## Lane 1676-C: Property-Held By-Value `offsetGet()` Reference-Source No-op
@@ -18480,12 +18479,27 @@ handled.
   `offsetGet()` now emit the bounded indirect-modification notice, initialize
   only a detached local alias/value, and leave backing `ArrayAccess` storage
   unchanged; the same direct visible dynamic property spelling is covered.
-  Keep non-direct property-held roots, append-source
-  `offsetGet(null)` behavior unless separately proven, side-effecting or
-  broader `offsetGet()` bodies, arbitrary nested reference slots stored inside
+  Keep non-direct property-held roots, side-effecting or broader
+  `offsetGet()` bodies, arbitrary nested reference slots stored inside
   `ArrayAccess` buckets, broader mixed `ArrayAccess` chains, real reference
   containers, full references/COW, native reference lowering, and exact alias
   destruction/destructor ordering named as unsupported.
+
+## Lane 1677: Append By-Value `offsetGet(null)` Reference-Source No-op
+
+- [x] Runtime/tests/docs lanes: extend the focused by-value
+  `ArrayAccess::offsetGet()` reference-source notice/no-op/detached-alias
+  slice to append source forms. `$alias =& $bag[]`,
+  `$alias =& $holder->bag[]`, and `$alias =& $holder->{$name}[]` against
+  by-value exact-bridge `offsetGet()` now emit the bounded
+  indirect-modification notice, initialize only a detached local alias/value
+  from the empty-string backing key used by `offsetGet(null)`, and leave
+  backing `ArrayAccess` storage unchanged. Keep non-direct holder roots,
+  side-effecting or broader `offsetGet()` bodies, arbitrary nested reference
+  slots stored inside `ArrayAccess` buckets, broader mixed `ArrayAccess`
+  chains, real reference containers, broad COW identity, native reference
+  lowering, and exact alias destruction/destructor ordering named as
+  unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

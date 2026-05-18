@@ -1252,6 +1252,31 @@ impl SymbolTable {
         self.write_named(name, value);
     }
 
+    fn write_detached_static(&mut self, name: &str, value: Value) {
+        let target_is_alias = self.array_offset_aliases.remove(name).is_some();
+        let replaces_copied_array_provenance = self.has_copied_array_provenance_path(name);
+        if replaces_copied_array_provenance {
+            self.detach_copied_array_provenance_for_root(name);
+        }
+        if !target_is_alias || replaces_copied_array_provenance {
+            let object_alias_fallbacks = self.public_object_roots_alias_fallbacks(name);
+            self.remove_static_root_from_array_offset_aliases(name);
+            self.remove_public_object_roots_from_array_offset_aliases(
+                name,
+                &object_alias_fallbacks,
+            );
+            if replaces_copied_array_provenance {
+                self.array_offset_aliases.remove(name);
+            }
+        }
+        self.routed_storage(name)
+            .borrow_mut()
+            .insert(name.to_string(), value_cell(value));
+        if self.name_routes_to_global_storage(name) {
+            self.sync_array_offset_aliases_for_global_root(name);
+        }
+    }
+
     fn is_set_static(&self, name: &str) -> bool {
         matches!(self.read_named(name), Some(value) if !matches!(value, Value::Null))
     }
@@ -8686,7 +8711,7 @@ impl Interpreter {
                             scope,
                         )?
                     {
-                        scope.write_static(name, value);
+                        scope.write_detached_static(name, value);
                         return Ok(());
                     }
                     if let Some((alias, _)) = self
@@ -8720,7 +8745,7 @@ impl Interpreter {
                             scope,
                         )?
                     {
-                        scope.write_static(name, value);
+                        scope.write_detached_static(name, value);
                         return Ok(());
                     }
                     if let Some((alias, _)) = self
@@ -8749,6 +8774,17 @@ impl Interpreter {
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
                     if keys.is_empty() {
+                        if let Some(value) = self
+                            .evaluate_direct_array_access_by_value_reference_source_value(
+                                array_name,
+                                vec![Self::array_access_append_reference_key()],
+                                span,
+                                scope,
+                            )?
+                        {
+                            scope.write_detached_static(name, value);
+                            return Ok(());
+                        }
                         if let Some((alias, _)) = self
                             .evaluate_direct_array_access_append_reference_source_alias(
                                 array_name, span, scope,
@@ -8777,7 +8813,7 @@ impl Interpreter {
                             scope,
                         )?
                     {
-                        scope.write_static(name, value);
+                        scope.write_detached_static(name, value);
                         return Ok(());
                     }
                     if let Some((alias, _)) = self
@@ -8831,7 +8867,7 @@ impl Interpreter {
                             scope,
                         )?
                     {
-                        scope.write_static(name, value);
+                        scope.write_detached_static(name, value);
                         return Ok(());
                     }
                     if let Some((alias, _)) = self
@@ -8887,7 +8923,7 @@ impl Interpreter {
                             scope,
                         )?
                     {
-                        scope.write_static(name, value);
+                        scope.write_detached_static(name, value);
                         return Ok(());
                     }
                     if let Some((alias, _)) = self
@@ -8939,7 +8975,7 @@ impl Interpreter {
                             scope,
                         )?
                     {
-                        scope.write_static(name, value);
+                        scope.write_detached_static(name, value);
                         return Ok(());
                     }
                     if let Some((alias, _)) = self
@@ -8982,6 +9018,18 @@ impl Interpreter {
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
                     if keys.is_empty() {
+                        if let Some(value) = self
+                            .evaluate_object_property_array_access_by_value_reference_source_value(
+                                object,
+                                property,
+                                vec![Self::array_access_append_reference_key()],
+                                span,
+                                scope,
+                            )?
+                        {
+                            scope.write_detached_static(name, value);
+                            return Ok(());
+                        }
                         if let Some((alias, _)) = self
                             .evaluate_object_property_array_access_append_reference_source_alias(
                                 object, property, span, scope,
@@ -9022,6 +9070,18 @@ impl Interpreter {
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
                     if keys.is_empty() {
+                        if let Some(value) = self
+                            .evaluate_object_property_array_access_by_value_reference_source_value(
+                                object,
+                                &property,
+                                vec![Self::array_access_append_reference_key()],
+                                span,
+                                scope,
+                            )?
+                        {
+                            scope.write_detached_static(name, value);
+                            return Ok(());
+                        }
                         if let Some((alias, _)) = self
                             .evaluate_object_property_array_access_append_reference_source_alias(
                                 object, &property, span, scope,
