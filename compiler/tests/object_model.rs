@@ -7635,6 +7635,53 @@ $holder->items["leaf"] = "x";
 }
 
 #[test]
+fn root_false_reference_targets_materialize_and_keep_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+error_reporting(0);
+
+class Box {
+    public int $id = 1;
+}
+
+class Holder {
+    public $items = false;
+}
+
+$box = new Box();
+$alias =& $box->id;
+
+$direct = false;
+$direct["leaf"] =& $alias;
+$direct["leaf"] = "2";
+echo gettype($box->id), ":", $box->id, "|", gettype($direct["leaf"]), ":", $direct["leaf"], "\n";
+
+$globalRoot = false;
+$GLOBALS["globalRoot"]["leaf"] =& $alias;
+$GLOBALS["globalRoot"]["leaf"] = "3";
+echo gettype($box->id), ":", $box->id, "|", gettype($globalRoot["leaf"]), ":", $globalRoot["leaf"], "\n";
+
+$holder = new Holder();
+$holder->items["leaf"] =& $alias;
+$holder->items["leaf"] = "4";
+echo gettype($box->id), ":", $box->id, "|", gettype($holder->items["leaf"]), ":", $holder->items["leaf"], "\n";
+
+$append = false;
+$append[] =& $alias;
+$append[0] = "5";
+echo gettype($box->id), ":", $box->id, "|", gettype($append[0]), ":", $append[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "integer:2|integer:2\ninteger:3|integer:3\ninteger:4|integer:4\ninteger:5|integer:5"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn arrayaccess_append_suffix_syntax_routes_to_backing_buckets() {
     let execution = run_source(
         r#"<?php

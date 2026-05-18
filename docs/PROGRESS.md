@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1760-C to pin the reference-target side of the root-level
+  `false` materialization work. Direct array-offset reference targets,
+  `$GLOBALS` nested reference targets, object-property array-offset reference
+  targets, and direct append reference targets now have PHP-comparison
+  evidence showing that `false` roots become arrays and keep typed-reference
+  cells live. Arbitrary complex reference roots, broader alias lifetime
+  ordering, exact PHP deprecation/fatal text, string COW identity, and native
+  reference lowering remain unsupported. Focused verification: raw system PHP
+  output matched the new `milestone1760` fixture; `cargo run -q -p phpc --
+  test --compare-php tests/fixtures/milestone1760` passed `1` fixture with
+  `1` system PHP comparison and `0` skips; focused
+  `root_false_reference_targets_materialize_and_keep_reference_slots` passed.
+
 - Added Lane 1759-C for root-level `false` scalar-parent materialization in
   direct variable, `$GLOBALS`, and object-property nested keyed/append writes.
   PHP converts these roots to arrays for write contexts, and the runtime now

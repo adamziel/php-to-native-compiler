@@ -19832,6 +19832,16 @@ handled.
   deprecation/fatal text, string COW identity, and native reference lowering
   named as unsupported.
 
+## Lane 1760-C: Root False Reference Targets
+
+- [x] Tests/docs lane: pin the matching root-level `false` materialization for
+  direct array-offset reference targets, `$GLOBALS` nested reference targets,
+  object-property array-offset reference targets, and direct append reference
+  targets. Covered targets keep typed-reference cells live after the root is
+  materialized as an array. Keep arbitrary complex reference roots, broader
+  alias lifetime ordering, exact PHP deprecation/fatal text, string COW
+  identity, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

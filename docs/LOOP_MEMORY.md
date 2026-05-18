@@ -18,6 +18,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T21:47:44+02:00
+
+- Checkpoint before this task: `ec114e1c runtime: materialize root false
+  array writes`, pushed to `origin/master`.
+- Task attempted: Lane 1760-C, adding PHP-comparison evidence for root-level
+  `false` materialization in direct, `$GLOBALS`, object-property, and append
+  reference targets that keep typed-reference cells live.
+- Files changed so far: `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone1760/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1760/root_false_reference_targets.php`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1760` passed `1`
+  fixture with `1` system PHP comparison and `0` skips; focused
+  `root_false_reference_targets_materialize_and_keep_reference_slots` passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies,
+  non-literal/dynamic backing key variables, arbitrary closure capture roots,
+  broader scalar parent matrices, broader complex alias sinks, broader alias
+  lifetime/detach ordering, exact PHP deprecation/fatal text, string COW
+  identity, and native reference lowering.
+- Next concrete task: run formatting, diff, check, adjacent scalar-parent and
+  reference-target regressions, then checkpoint with
+  `tools/checkpoint.sh "test: pin root false reference targets"` if the full
+  gate passes.
+
 ## Loop Event 2026-05-18T21:41:02+02:00
 
 - Checkpoint before this task: `6f280aed runtime: align magic false-parent

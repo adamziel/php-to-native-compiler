@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1759:
+The current in-progress implementation frontier is Lane 1760:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -395,6 +395,10 @@ The current in-progress implementation frontier is Lane 1759:
 - Lane 1759 extends root-level `false` materialization for direct variable,
   `$GLOBALS`, and object-property nested keyed/append writes, preserving
   copied typed-reference slots after those roots become arrays.
+- Lane 1760 pins the matching root-level `false` materialization for direct,
+  `$GLOBALS`, object-property, and append reference targets so reference
+  assignments into those newly materialized arrays keep typed-reference cells
+  live.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

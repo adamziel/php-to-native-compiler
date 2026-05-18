@@ -4519,8 +4519,12 @@
   variables, `$GLOBALS`, and object properties materialize root-level `false`
   values as arrays in the same write contexts where `null` roots are already
   materialized, and copied typed-reference slots remain attached after the
-  root becomes an array. Adjacent `true`, numeric, and string roots remain
-  scalar write errors in this bounded path. By-value
+  root becomes an array. Direct array-offset reference targets, `$GLOBALS`
+  nested reference targets, object-property array-offset reference targets,
+  and direct append reference targets do the same for covered direct variable
+  sources, preserving the source reference cell after the root is
+  materialized. Adjacent `true`, numeric, and string roots remain scalar write
+  errors in this bounded path. By-value
   terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's
