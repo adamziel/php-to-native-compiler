@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1708:
+The current in-progress implementation frontier is Lane 1709:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -111,6 +111,11 @@ The current in-progress implementation frontier is Lane 1708:
   directly to the object-property backing slot
   `$this->store["missing"]["outer"]`, so later same-class writes through that
   private backing array synchronize copied nested reference slots.
+- Lane 1709 pins that same statement-source machinery through a non-direct
+  dynamic holder root such as
+  `$alias =& $holders["box"]->{$property}["outer"];`, with the temporary
+  holder root canonicalized back to the same object-property backing slot for
+  later method-local synchronization.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

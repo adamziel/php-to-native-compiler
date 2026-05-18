@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1709/magic_get_this_property_offset_nondirect_dynamic_reference_source_alias_cow.php

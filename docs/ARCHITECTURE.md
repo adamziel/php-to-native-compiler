@@ -1019,6 +1019,11 @@ reference sources below the same analyzed backing-array `__get()` body, such
 as `$alias =& $box->missing["outer"];`, now reuse that object-property alias
 root and prefix-key analysis before binding the local alias, instead of
 executing the reference return body through the direct-variable-only fallback.
+Non-direct dynamic holder roots, such as
+`$alias =& $holders["box"]->{$property}["outer"];`, evaluate the holder once
+into a temporary object root and then follow the same magic source helper; the
+object-property alias root is canonicalized so later writes through the real
+holder object stay connected to aliases created through the temporary.
 The same
 object-property-root path is tested through a two-key parent append, so
 `$box->missing["outer"]["inner"][]` attaches metadata below

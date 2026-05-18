@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Lane 1709-C focused non-direct dynamic holder coverage for the
+  statement-form magic `__get()` backing-array offset reference-source path.
+  `$alias =& $holders["box"]->{$property}["outer"]; $alias[] = $array` now
+  has executable coverage when `__get($name)` has the bounded body
+  `return $this->store["bucket"][$name];`; the holder is evaluated once into
+  a temporary object root, the alias binds to the canonicalized private
+  backing slot `$this->store["bucket"]["missing"]["outer"]`, and later
+  same-class method writes resynchronize copied nested reference slots with
+  their original variables. This does not add append reference-source
+  variants for this exact body, broader non-direct holder expressions,
+  dynamic or repeated parameter keys, non-literal keys, broader backing-array
+  offset return expressions, dynamic property-return expressions beyond the
+  exact `__get()` parameter form, broader private/protected `$this` routes,
+  arbitrary `__get()` return expressions, broader method-local alias
+  lifetimes, arbitrary method-return/factory-root variants, by-value
+  terminal/plain-array mutation, arbitrary side-effecting or broader
+  `offsetGet()` bodies, scalar parent overwrite/error parity, full
+  references/COW, or native reference lowering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1709` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1709`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1708-C focused statement-form reference-source support for the
   magic `__get()` backing-array offset body
   `return $this->store[$name];`. Direct

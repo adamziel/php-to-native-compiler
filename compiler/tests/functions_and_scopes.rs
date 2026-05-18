@@ -4740,6 +4740,22 @@ fn milestone1708_magic_get_this_property_offset_reference_source_fixture_matches
 }
 
 #[test]
+fn milestone1709_system_php_magic_get_nondirect_dynamic_offset_reference_source_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1709/magic_get_this_property_offset_nondirect_dynamic_reference_source_alias_cow.php",
+        "../tests/fixtures/milestone1709/magic_get_this_property_offset_nondirect_dynamic_reference_source_alias_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1709_magic_get_nondirect_dynamic_offset_reference_source_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1709/magic_get_this_property_offset_nondirect_dynamic_reference_source_alias_cow.php",
+        "../tests/fixtures/milestone1709/magic_get_this_property_offset_nondirect_dynamic_reference_source_alias_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

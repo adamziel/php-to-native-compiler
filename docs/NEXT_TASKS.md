@@ -19141,6 +19141,27 @@ handled.
   or broader `offsetGet()` bodies, scalar parent overwrite/error parity, full
   references/COW, and native reference lowering named as unsupported.
 
+## Lane 1709-C: Non-Direct Dynamic Magic Backing Array Source Alias
+
+- [x] Runtime/tests/docs lane: pin the same selected statement-form
+  reference-source path through a non-direct dynamic holder root, such as
+  `$alias =& $holders["box"]->{$property}["outer"];`, when `__get($name)` has
+  the bounded body `return $this->store["bucket"][$name];`. The covered shape
+  evaluates the holder once into a temporary object root, binds the local
+  alias to the canonicalized object-property backing slot under private
+  `$store["bucket"]["missing"]["outer"]`, and later same-class method writes
+  through that path resynchronize copied nested reference slots with their
+  original variables. Keep append reference-source variants for this exact
+  body, broader non-direct holder expressions, dynamic or repeated parameter
+  keys, non-literal keys, broader backing-array offset return expressions,
+  dynamic property-return expressions beyond the exact `__get()` parameter
+  form, broader private/protected `$this` routes, arbitrary `__get()` return
+  expressions, broader method-local alias lifetimes, arbitrary
+  method-return/factory-root variants, by-value terminal/plain-array
+  mutation, arbitrary side-effecting or broader `offsetGet()` bodies, scalar
+  parent overwrite/error parity, full references/COW, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

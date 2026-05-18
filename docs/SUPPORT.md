@@ -957,7 +957,11 @@
   that same backing-array body are also covered for selected array offsets,
   such as `$alias =& $box->missing["outer"]; $alias[] = $array`; the alias
   binds directly to the analyzed object-property backing slot before later
-  method-local writes synchronize copied nested reference slots. Broader
+  method-local writes synchronize copied nested reference slots. The same
+  selected source path is pinned through non-direct dynamic holder roots such
+  as `$alias =& $holders["box"]->{$property}["outer"];`, using a temporary
+  object root that canonicalizes to the same backing object-property alias
+  group. Broader
   private/protected
   `$this` property routes, dynamic property-return expressions beyond that
   exact parameter form, backing-array offset return expressions beyond that
