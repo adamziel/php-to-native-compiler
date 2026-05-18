@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 1812-C through Lane 1814-C for direct dynamic-call
+  reference-assignment sources. The parser now accepts `$fn(...)` as a
+  reference-return source, and the existing runtime bridge binds returned
+  references for supported dynamic function strings, by-reference closures,
+  and `[object-or-class, method]` array callables. Covered fixtures include a
+  dynamic string helper, a by-reference closure, and a dynamic array callable
+  that exercises both an object method and class-string `__callStatic()`.
+  This does not claim arbitrary callable arrays, builtin callbacks as
+  reference-return sources, arbitrary PHP syntax or side effects outside the
+  executed interpreter subset, incompatible typed signatures, full exception
+  unwinding, exact PHP diagnostics, static-property reference roots, or native
+  reference lowering. Focused verification: raw system PHP output matched the
+  new `milestone1812`, `milestone1813`, and `milestone1814` fixtures; `cargo
+  run -q -p phpc -- test --compare-php` passed each new directory plus
+  adjacent `milestone1811` with `1` fixture, `1` system PHP comparison, and
+  `0` skips; adjacent syntax, magic-body, and callback tests passed.
+
 - Added Lane 1809-C through Lane 1811-C for bounded magic `__callStatic()`
   reference-return sources. Missing named static, `self::`, `static::`, and
   dynamic static receiver calls now dispatch to public static by-reference

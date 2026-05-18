@@ -20143,6 +20143,20 @@ handled.
   exception unwinding, exact PHP diagnostics, and native reference lowering
   named as unsupported.
 
+## Lane 1812-C through Lane 1814-C: Direct Dynamic Reference Calls
+
+- [x] Parser/runtime/tests/docs bundle: allow direct dynamic-call
+  reference-assignment sources such as `$fn(...)` when the callee evaluates to
+  a supported function string, by-reference closure, or
+  `[object-or-class, method]` array callable. Cover dynamic string helpers,
+  by-reference closures, object array callables, and class-string array
+  callables that route through bounded `__callStatic()`. Keep arbitrary
+  callable arrays, builtin callbacks as reference-return sources, arbitrary
+  PHP syntax and side effects outside the executed method-body subset,
+  incompatible typed signatures, full exception unwinding, exact PHP
+  diagnostics, static-property reference roots, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

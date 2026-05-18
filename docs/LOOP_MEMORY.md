@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T01:41:25+02:00
+
+- Checkpoint before this task: `40376732 runtime: support magic callstatic
+  reference returns`, pushed to `origin/master`.
+- Task attempted: Lane 1812-C through Lane 1814-C bundle, allowing direct
+  dynamic-call reference-assignment sources such as `$fn(...)` when the callee
+  evaluates to a supported function string, by-reference closure, or
+  `[object-or-class, method]` array callable.
+- Files changed so far: `compiler/src/parser.rs`,
+  `tests/fixtures/milestone1812/*`, `tests/fixtures/milestone1813/*`,
+  `tests/fixtures/milestone1814/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched the new `milestone1812`, `milestone1813`, and `milestone1814`
+  fixtures; `cargo run -q -p phpc -- test --compare-php` passed each new
+  fixture directory and adjacent `milestone1811` with `1` fixture, `1` system
+  PHP comparison, and `0` skips; adjacent syntax, magic-body, and callback
+  tests passed.
+- Remaining COW gaps: arbitrary callable arrays, builtin callbacks as
+  reference-return sources, unsupported PHP syntax and side effects outside
+  the executed method-body subset, static-property reference roots, arbitrary
+  type enforcement and incompatible typed reference-return signatures, full
+  exception unwinding and uncaught exception propagation, arbitrary Iterator
+  side effects, broader complex alias sinks and alias lifetime ordering, exact
+  PHP stderr/fatal text, binary/multibyte string offset behavior, and native
+  reference/string COW lowering.
+- Next concrete task: run formatting, diff, adjacent checks, then the full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T01:35:40+02:00
 
 - Checkpoint before this task: `5d1ca1ed runtime: support magic call reference

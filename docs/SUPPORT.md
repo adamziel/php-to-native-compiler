@@ -1194,9 +1194,9 @@
   object-property array-offset returns that can be remapped to a caller-visible
   root. Class-string array callables that miss a declared static method can
   dispatch through bounded public static by-reference `__callStatic()` in
-  `call_user_func($cb, ...)` and `call_user_func_array($cb, ...)`. Direct
-  `$cb(...)` reference-assignment parser support, arbitrary callable arrays,
-  and builtin callbacks remain unsupported for reference-return sources.
+  direct `$cb(...)` reference-assignment sources, `call_user_func($cb, ...)`,
+  and `call_user_func_array($cb, ...)`. Arbitrary callable arrays and builtin
+  callbacks remain unsupported for reference-return sources.
   Bounded magic
   `__call()` is supported for direct missing instance method calls and object
   array-callable paths when `__call()` is public, returns by reference, and

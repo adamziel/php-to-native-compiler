@@ -32,7 +32,18 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1811:
+The current in-progress implementation frontier is Lane 1814:
+
+- Lanes 1812 through 1814 parse and execute direct dynamic-call
+  reference-assignment sources. `$fn(...)` can now bind a returned reference
+  when `$fn` evaluates to a supported function string, by-reference closure,
+  or `[object-or-class, method]` array callable, including class-string array
+  callables that route through bounded `__callStatic()`. This still does not
+  claim arbitrary callable arrays, builtin callbacks as reference-return
+  sources, arbitrary PHP syntax or side effects outside the executed
+  interpreter subset, incompatible typed signatures, full exception unwinding,
+  exact PHP diagnostics, static-property reference roots, or native reference
+  lowering.
 
 - Lanes 1809 through 1811 add bounded magic `__callStatic()` reference-return
   sources. Missing named static, `self::`, `static::`, and dynamic static
