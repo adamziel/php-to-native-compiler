@@ -12927,59 +12927,56 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                if matches!(keys.len(), 0 | 1) {
-                    let holder_value = self.evaluate(holder, scope)?;
-                    let holder_object = match holder_value {
-                        Value::Object(object) => object,
-                        other => {
-                            return Err(runtime_error(
-                                *span,
-                                RuntimeError::invalid_property_access(format!(
-                                    "cannot read property ${property} on {}",
-                                    other.type_name()
-                                )),
-                            ));
-                        }
-                    };
-                    let temp_name = self.next_foreach_temporary_array_name();
-                    scope.write_static(&temp_name, Value::Object(holder_object));
-                    let (value, array_literal_references) = match expr {
-                        Expr::Array { items, span } => {
-                            let (value, references) =
-                                self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                            (value, references)
-                        }
-                        _ => (self.evaluate(expr, scope)?, Vec::new()),
-                    };
-                    if matches!(value, Value::Array(_))
-                        && keys.is_empty()
-                        && self
-                            .write_object_property_array_access_append_with_reference_propagation(
-                                &temp_name,
-                                property,
-                                value.clone(),
-                                expr,
-                                array_literal_references.clone(),
-                                *span,
-                                scope,
-                            )?
-                    {
-                        return Ok(value);
-                    }
-                    if matches!(value, Value::Array(_))
-                        && self.write_magic_get_array_access_append_with_reference_propagation(
-                            &temp_name,
-                            property,
-                            keys,
-                            value.clone(),
-                            expr,
-                            array_literal_references,
+                let holder_value = self.evaluate(holder, scope)?;
+                let holder_object = match holder_value {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
                             *span,
-                            scope,
-                        )?
-                    {
-                        return Ok(value);
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot read property ${property} on {}",
+                                other.type_name()
+                            )),
+                        ));
                     }
+                };
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Object(holder_object));
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
+                if matches!(value, Value::Array(_))
+                    && keys.is_empty()
+                    && self.write_object_property_array_access_append_with_reference_propagation(
+                        &temp_name,
+                        property,
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
+                if matches!(value, Value::Array(_))
+                    && self.write_magic_get_array_access_append_with_reference_propagation(
+                        &temp_name,
+                        property,
+                        keys,
+                        value.clone(),
+                        expr,
+                        array_literal_references,
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
                 }
                 Err(runtime_error(
                     *span,
@@ -12999,60 +12996,57 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                if matches!(keys.len(), 0 | 1) {
-                    let holder_value = self.evaluate(holder, scope)?;
-                    let holder_object = match holder_value {
-                        Value::Object(object) => object,
-                        other => {
-                            return Err(runtime_error(
-                                *span,
-                                RuntimeError::invalid_property_access(format!(
-                                    "cannot read dynamic property on {}",
-                                    other.type_name()
-                                )),
-                            ));
-                        }
-                    };
-                    let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
-                    let temp_name = self.next_foreach_temporary_array_name();
-                    scope.write_static(&temp_name, Value::Object(holder_object));
-                    let (value, array_literal_references) = match expr {
-                        Expr::Array { items, span } => {
-                            let (value, references) =
-                                self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                            (value, references)
-                        }
-                        _ => (self.evaluate(expr, scope)?, Vec::new()),
-                    };
-                    if matches!(value, Value::Array(_))
-                        && keys.is_empty()
-                        && self
-                            .write_object_property_array_access_append_with_reference_propagation(
-                                &temp_name,
-                                &property,
-                                value.clone(),
-                                expr,
-                                array_literal_references.clone(),
-                                *span,
-                                scope,
-                            )?
-                    {
-                        return Ok(value);
-                    }
-                    if matches!(value, Value::Array(_))
-                        && self.write_magic_get_array_access_append_with_reference_propagation(
-                            &temp_name,
-                            &property,
-                            keys,
-                            value.clone(),
-                            expr,
-                            array_literal_references,
+                let holder_value = self.evaluate(holder, scope)?;
+                let holder_object = match holder_value {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
                             *span,
-                            scope,
-                        )?
-                    {
-                        return Ok(value);
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot read dynamic property on {}",
+                                other.type_name()
+                            )),
+                        ));
                     }
+                };
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Object(holder_object));
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
+                if matches!(value, Value::Array(_))
+                    && keys.is_empty()
+                    && self.write_object_property_array_access_append_with_reference_propagation(
+                        &temp_name,
+                        &property,
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
+                if matches!(value, Value::Array(_))
+                    && self.write_magic_get_array_access_append_with_reference_propagation(
+                        &temp_name,
+                        &property,
+                        keys,
+                        value.clone(),
+                        expr,
+                        array_literal_references,
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
                 }
                 Err(runtime_error(
                     *span,
@@ -13094,23 +13088,7 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if keys.is_empty()
-                    && matches!(value, Value::Array(_))
-                    && self.write_magic_get_array_access_append_with_reference_propagation(
-                        object,
-                        property,
-                        keys.clone(),
-                        value.clone(),
-                        expr,
-                        array_literal_references.clone(),
-                        *span,
-                        scope,
-                    )?
-                {
-                    return Ok(value);
-                }
-                if matches!(keys.len(), 1)
-                    && matches!(value, Value::Array(_))
+                if matches!(value, Value::Array(_))
                     && self.write_magic_get_array_access_append_with_reference_propagation(
                         object,
                         property,
@@ -13189,23 +13167,7 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if keys.is_empty()
-                    && matches!(value, Value::Array(_))
-                    && self.write_magic_get_array_access_append_with_reference_propagation(
-                        object,
-                        &property,
-                        keys.clone(),
-                        value.clone(),
-                        expr,
-                        array_literal_references.clone(),
-                        *span,
-                        scope,
-                    )?
-                {
-                    return Ok(value);
-                }
-                if matches!(keys.len(), 1)
-                    && matches!(value, Value::Array(_))
+                if matches!(value, Value::Array(_))
                     && self.write_magic_get_array_access_append_with_reference_propagation(
                         object,
                         &property,

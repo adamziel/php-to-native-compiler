@@ -884,10 +884,16 @@
   `$box->{$name}["outer"][] = $array`,
   `$holders["box"]->missing["outer"][] = $array`, and
   `$holders["box"]->{$name}["outer"][] = $array`, materializing missing or
-  null array parents in the returned cell. By-value `__get()` returning a
-  plain array or `null` follows PHP's indirect-modification notice/no-op
-  behavior for the covered array RHS shapes and leaves backing storage
-  unchanged. Direct
+  null array parents in the returned cell. The same route now covers the
+  focused two-key parent path before the append, such as
+  `$box->missing["outer"]["inner"][] = $array`,
+  `$box->{$name}["outer"]["inner"][] = $array`,
+  `$holders["box"]->missing["outer"]["inner"][] = $array`, and
+  `$holders["box"]->{$name}["outer"]["inner"][] = $array`, with the same
+  returned-cell mutation and nested reference-slot propagation. By-value
+  `__get()` returning a plain array or `null` follows PHP's
+  indirect-modification notice/no-op behavior for the covered array RHS
+  shapes and leaves backing storage unchanged. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
   and writing the result back through `offsetSet($key, $value)`. Direct
@@ -897,7 +903,8 @@
   applying the update to PHP's current by-value temporary result without
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
   paths below plain arrays returned by magic `__get()` beyond the direct
-  empty append and focused one-key parent append shapes, dynamic non-direct
+  empty append and focused one-key and two-key parent append shapes,
+  dynamic non-direct
   whole-property setup assignment, method-return or factory holder roots for
   dynamic non-direct append stores, non-empty nested append paths below
   property-held or magic-property `ArrayAccess`, magic `__get()` bodies that

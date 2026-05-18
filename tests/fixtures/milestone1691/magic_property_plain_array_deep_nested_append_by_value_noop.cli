@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1691/magic_property_plain_array_deep_nested_append_by_value_noop.php
+stdout:
+notice:Indirect modification of overloaded property Milestone1691_ByValueMagicPlainArrayDeepNestedAppendBox::$missing has no effect
+no-op
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

@@ -938,11 +938,14 @@ append-alias machinery, then canonicalizes the alias root back to a visible
 static variable sharing that cell before attaching array-literal or copied
 array reference metadata. That keeps later reads such as `$storage[0]`
 connected to nested reference slots created through `$box->missing[]` or
-`$holders["box"]->missing[]`. For the focused one-key nested append shape,
-the same helper passes the parent key path into the array append-alias
-machinery, so `$box->missing["outer"][]` and
-`$holders["box"]->{$name}["outer"][]` attach metadata to the appended bucket
-under the returned cell's visible static root. By-value `__get()` returning a
+`$holders["box"]->missing[]`. For the focused nested append shapes, the same
+helper passes the complete parent key path into the array append-alias
+machinery, so one-key paths such as `$box->missing["outer"][]` and
+`$holders["box"]->{$name}["outer"][]`, plus the tested two-key paths such as
+`$box->missing["outer"]["inner"][]` and
+`$holders["box"]->{$name}["outer"]["inner"][]`, attach metadata to the
+appended bucket under the returned cell's visible static root. By-value
+`__get()` returning a
 plain array or `null` is intentionally a notice/no-op path for the covered
 array RHS shapes, matching PHP's indirect-modification behavior instead of
 mutating detached storage.

@@ -18732,12 +18732,13 @@ handled.
   exact by-value `offsetGet($offset) { return $this->property[$offset]; }`
   bucket copies preserve nested reference slots while ordinary copied fields
   remain detached. Lane 1689-C extends magic append stores to plain arrays
-  returned by-reference from `__get()`, and Lane 1690-C extends that
-  plain-array path to one-key nested append parents. Keep deeper nested append
-  paths, method-return or factory holder roots, side-effecting or broader
-  `__get()`/`offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess`
-  chains, full references/COW, native reference lowering, and exact alias
-  destruction/destructor ordering named as unsupported.
+  returned by-reference from `__get()`, Lane 1690-C extends that plain-array
+  path to one-key nested append parents, and Lane 1691-C extends it to the
+  focused two-key deeper parent path. Keep broader parent-path generalization
+  beyond tested shapes, method-return or factory holder roots, side-effecting
+  or broader `__get()`/`offsetSet()`/`offsetGet()` bodies, mixed nested
+  `ArrayAccess` chains, full references/COW, native reference lowering, and
+  exact alias destruction/destructor ordering named as unsupported.
 
 ## Lane 1689-C: Plain-Array Magic Append Mutation
 
@@ -18754,8 +18755,10 @@ handled.
   arrays carrying mirrored alias metadata. By-value `__get()` returning a
   plain array or `null` stays a PHP-compatible indirect-modification
   notice/no-op for the covered array RHS shape. Lane 1690-C extends this same
-  plain-array path to one-key nested append parents. Keep deeper nested append
-  paths, by-value plain-array mutation, arbitrary `__get()` return bodies
+  plain-array path to one-key nested append parents, and Lane 1691-C extends
+  it to the focused two-key deeper parent path. Keep broader parent-path
+  generalization beyond tested shapes, by-value plain-array mutation,
+  arbitrary `__get()` return bodies
   beyond direct-variable reference returns for mutation, method-return or
   factory holder roots, scalar by-value no-op coverage for non-array RHS
   values, mixed nested `ArrayAccess` chains, full references/COW, native
@@ -18777,8 +18780,34 @@ handled.
   nested reference slots for appended array literals and copied arrays
   carrying mirrored alias metadata. By-value `__get()` returning a plain
   array or `null` stays a PHP-compatible indirect-modification notice/no-op
-  for the covered nested array RHS shape. Keep deeper nested append paths,
-  magic `ArrayAccess` non-empty nested append stores, by-value plain-array
+  for the covered nested array RHS shape. Lane 1691-C extends this same
+  plain-array path to the focused two-key deeper parent shape. Keep broader
+  parent-path generalization beyond tested shapes, magic `ArrayAccess`
+  non-empty nested append stores, by-value plain-array mutation, arbitrary
+  `__get()` return bodies beyond direct-variable reference returns for
+  mutation, method-return or factory holder roots, scalar by-value no-op
+  coverage for non-array RHS values, mixed nested `ArrayAccess` chains, full
+  references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering named as unsupported.
+
+## Lane 1691-C: Deeper Plain-Array Magic Append Mutation
+
+- [x] Runtime/tests/docs lane: parse and execute focused two-key deeper append
+  stores below magic properties when visible public `__get($name)` returns a
+  direct variable by reference whose cell holds an array or `null`. Covered
+  forms are direct named `$box->missing["outer"]["inner"][] = $array`,
+  direct dynamic `$box->{$name}["outer"]["inner"][] = $array`, non-direct
+  named `$holders["box"]->missing["outer"]["inner"][] = $array`, and dynamic
+  non-direct `$holders["box"]->{$name}["outer"]["inner"][] = $array`. The
+  runtime appends below the complete parent-key path in the returned array
+  cell, materializes missing/null array parents, canonicalizes reference
+  metadata from the temporary magic root back to the visible static variable
+  sharing that cell, and preserves nested reference slots for appended array
+  literals and copied arrays carrying mirrored alias metadata. By-value
+  `__get()` returning a plain array or `null` stays a PHP-compatible
+  indirect-modification notice/no-op for the covered deeper array RHS shape.
+  Keep broader parent-path generalization beyond tested shapes, magic
+  `ArrayAccess` non-empty nested append stores, by-value plain-array
   mutation, arbitrary `__get()` return bodies beyond direct-variable
   reference returns for mutation, method-return or factory holder roots,
   scalar by-value no-op coverage for non-array RHS values, mixed nested

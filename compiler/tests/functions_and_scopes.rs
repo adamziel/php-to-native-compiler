@@ -4274,6 +4274,110 @@ fn by_value_magic_property_plain_array_nested_append_notices_and_does_not_mutate
 }
 
 #[test]
+fn system_php_mutates_by_reference_magic_get_plain_array_deep_nested_append_reference_slots() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1691/magic_property_plain_array_deep_nested_append_reference_slot_cow.php",
+        "../tests/fixtures/milestone1691/magic_property_plain_array_deep_nested_append_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn system_php_mutates_dynamic_by_reference_magic_get_plain_array_deep_nested_append_reference_slots(
+) {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1691/dynamic_magic_property_plain_array_deep_nested_append_reference_slot_cow.php",
+        "../tests/fixtures/milestone1691/dynamic_magic_property_plain_array_deep_nested_append_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn system_php_mutates_non_direct_by_reference_magic_get_plain_array_deep_nested_append_reference_slots(
+) {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1691/non_direct_magic_property_plain_array_deep_nested_append_reference_slot_cow.php",
+        "../tests/fixtures/milestone1691/non_direct_magic_property_plain_array_deep_nested_append_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn system_php_mutates_dynamic_non_direct_by_reference_magic_get_plain_array_deep_nested_append_reference_slots(
+) {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1691/dynamic_non_direct_magic_property_plain_array_deep_nested_append_reference_slot_cow.php",
+        "../tests/fixtures/milestone1691/dynamic_non_direct_magic_property_plain_array_deep_nested_append_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn system_php_by_value_magic_get_plain_array_deep_nested_append_notices_and_does_not_mutate() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1691/magic_property_plain_array_deep_nested_append_by_value_noop.php",
+        "../tests/fixtures/milestone1691/magic_property_plain_array_deep_nested_append_by_value_noop.stdout",
+    );
+}
+
+#[test]
+fn magic_property_plain_array_deep_nested_append_preserves_nested_reference_slots() {
+    assert_run_source_fixture_matches_stdout(
+        include_str!(
+            "../../tests/fixtures/milestone1691/magic_property_plain_array_deep_nested_append_reference_slot_cow.php"
+        ),
+        include_str!(
+            "../../tests/fixtures/milestone1691/magic_property_plain_array_deep_nested_append_reference_slot_cow.stdout"
+        ),
+    );
+}
+
+#[test]
+fn dynamic_magic_property_plain_array_deep_nested_append_preserves_nested_reference_slots() {
+    assert_run_source_fixture_matches_stdout(
+        include_str!(
+            "../../tests/fixtures/milestone1691/dynamic_magic_property_plain_array_deep_nested_append_reference_slot_cow.php"
+        ),
+        include_str!(
+            "../../tests/fixtures/milestone1691/dynamic_magic_property_plain_array_deep_nested_append_reference_slot_cow.stdout"
+        ),
+    );
+}
+
+#[test]
+fn non_direct_magic_property_plain_array_deep_nested_append_preserves_nested_reference_slots() {
+    assert_run_source_fixture_matches_stdout(
+        include_str!(
+            "../../tests/fixtures/milestone1691/non_direct_magic_property_plain_array_deep_nested_append_reference_slot_cow.php"
+        ),
+        include_str!(
+            "../../tests/fixtures/milestone1691/non_direct_magic_property_plain_array_deep_nested_append_reference_slot_cow.stdout"
+        ),
+    );
+}
+
+#[test]
+fn dynamic_non_direct_magic_property_plain_array_deep_nested_append_preserves_nested_reference_slots(
+) {
+    assert_run_source_fixture_matches_stdout(
+        include_str!(
+            "../../tests/fixtures/milestone1691/dynamic_non_direct_magic_property_plain_array_deep_nested_append_reference_slot_cow.php"
+        ),
+        include_str!(
+            "../../tests/fixtures/milestone1691/dynamic_non_direct_magic_property_plain_array_deep_nested_append_reference_slot_cow.stdout"
+        ),
+    );
+}
+
+#[test]
+fn by_value_magic_property_plain_array_deep_nested_append_notices_and_does_not_mutate() {
+    assert_run_source_fixture_matches_stdout(
+        include_str!(
+            "../../tests/fixtures/milestone1691/magic_property_plain_array_deep_nested_append_by_value_noop.php"
+        ),
+        include_str!(
+            "../../tests/fixtures/milestone1691/magic_property_plain_array_deep_nested_append_by_value_noop.stdout"
+        ),
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php
