@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1723:
+The current in-progress implementation frontier is Lane 1724:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -194,6 +194,13 @@ The current in-progress implementation frontier is Lane 1723:
   `__get()` nested stores, and property-held `ArrayAccess` nested keyed
   stores. `true`, `int`, and `string` parents remain explicit runtime-error
   boundaries for direct, magic, and property-held `ArrayAccess` shapes.
+- Lane 1724 extends property-held `ArrayAccess` nested append stores:
+  direct, non-direct, and dynamic holder forms such as
+  `$holder->bag["outer"][] = $array`,
+  `$holders["box"]->bag["outer"][] = $array`, and
+  `$holders["box"]->{$property}["outer"][] = $array` append into the
+  by-reference `offsetGet()` backing bucket and preserve copied nested
+  reference-slot metadata under the appended key.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

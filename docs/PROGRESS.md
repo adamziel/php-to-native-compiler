@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1724-C focused property-held `ArrayAccess` nested append COW
+  propagation. Direct `$holder->bag["outer"][] = $array`, non-direct
+  `$holders["box"]->bag["outer"][] = $array`, and dynamic
+  `$holders["box"]->{$property}["outer"][] = $array` now select the parent
+  bucket through exact public by-reference `offsetGet($offset)`, append into
+  that backing bucket, and preserve copied nested reference-slot metadata
+  under the actual appended key. This does not add suffix offsets after the
+  append, arbitrary mixed chains, unsupported `offsetGet()` bodies, full
+  references/COW, or native reference lowering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: the `milestone1724` `functions_and_scopes` filter
+  passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1724`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1723-C focused scalar-parent COW matrix coverage for the
   currently covered nested write/reference propagation paths. A new fixture
   proves system-PHP parity for `false`/`null` parent materialization while

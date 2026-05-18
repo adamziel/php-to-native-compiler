@@ -19401,6 +19401,18 @@ handled.
   `ArrayAccess`, arbitrary mixed chains, full references/COW, and native
   reference lowering named as unsupported.
 
+## Lane 1724-C: Property-Held ArrayAccess Nested Append COW
+
+- [x] Runtime/tests/docs lane: extend property-held `ArrayAccess` nested
+  append stores so direct, non-direct, and dynamic holder forms such as
+  `$holder->bag["outer"][] = $array`,
+  `$holders["box"]->bag["outer"][] = $array`, and
+  `$holders["box"]->{$property}["outer"][] = $array` append into the exact
+  public by-reference `offsetGet()` backing bucket and preserve copied nested
+  reference-slot metadata under the appended key. Keep suffix offsets after
+  the append, arbitrary mixed chains, unsupported `offsetGet()` bodies, full
+  references/COW, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

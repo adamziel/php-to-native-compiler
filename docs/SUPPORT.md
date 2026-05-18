@@ -1075,7 +1075,11 @@
   the focused magic-property mixed append route above, append paths below
   plain arrays returned by magic `__get()` beyond the direct
   empty append and focused one-key and two-key parent append shapes,
-  magic-property `ArrayAccess` nested append paths beyond the focused
+  property-held `ArrayAccess` nested append paths are covered for direct,
+  non-direct, and dynamic holder roots when the parent bucket is selected
+  through the exact public by-reference `offsetGet()` bridge and the append
+  has no suffix offsets after `[]`. Magic-property `ArrayAccess` nested
+  append paths beyond the focused
   by-reference or by-value-object intermediate `offsetGet()` bucket, tested
   plain-array suffix shapes, the one tested mixed nested `ArrayAccess` append
   chain, and the tested mixed nested by-reference/by-value magic

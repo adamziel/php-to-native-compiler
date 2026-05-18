@@ -117,6 +117,34 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: pin scalar parent COW matrix"` if the full
   gate passes.
 
+## Loop Event 2026-05-18T16:40:00+02:00
+
+- Checkpoint before this task: `1fc5cff1 runtime: pin scalar parent COW
+  matrix`, pushed to `origin/master`.
+- Task attempted: Lane 1724-C property-held `ArrayAccess` nested append COW
+  propagation for direct, non-direct, and dynamic holder roots.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1724/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: raw system PHP output was used
+  to seed the fixture expectation; the `milestone1724`
+  `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1724`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: direct, non-direct, and dynamic holder forms such as
+  `$holder->bag["outer"][] = $array` now append into the exact public
+  by-reference `offsetGet()` backing bucket and preserve copied nested
+  reference-slot metadata under the appended key.
+- Remaining semantic gaps: suffix offsets after the append, arbitrary mixed
+  chains, unsupported `offsetGet()` bodies, full references/COW, and native
+  reference lowering remain unsupported.
+- Next concrete task: run `cargo check`, `cargo fmt --check`,
+  `git diff --check`, adjacent regression checks, then checkpoint with
+  `tools/checkpoint.sh "runtime: support property-held ArrayAccess nested appends"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic
