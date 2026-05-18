@@ -19100,6 +19100,26 @@ handled.
   or broader `offsetGet()` bodies, scalar parent overwrite/error parity, full
   references/COW, and native reference lowering named as unsupported.
 
+## Lane 1707-C: Magic `$this->store["bucket"][$name]` Return
+
+- [x] Runtime/tests/docs lane: extend the focused backing-array offset
+  return body to literal prefix buckets before the `__get()` parameter, such
+  as `public function &__get($name) { return $this->store["bucket"][$name]; }`.
+  The covered shape prepends the literal prefix bucket and requested magic
+  property under private `$store`, appends through
+  `$box->missing["outer"][] = $array`, and later same-class method writes
+  through `$this->store["bucket"]["missing"]["outer"][0]...` resynchronize
+  copied nested reference slots with their original variables. Keep dynamic
+  or repeated parameter keys, non-literal keys, backing-array offset return
+  expressions beyond the exact single-parameter plus literal-key shape,
+  dynamic property-return expressions beyond the exact `__get()` parameter
+  form, broader private/protected `$this` routes, arbitrary `__get()` return
+  expressions, broader method-local alias lifetimes, arbitrary
+  method-return/factory-root variants, by-value terminal/plain-array mutation,
+  arbitrary side-effecting or broader `offsetGet()` bodies, scalar parent
+  overwrite/error parity, full references/COW, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

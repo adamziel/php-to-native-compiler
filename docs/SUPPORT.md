@@ -950,13 +950,14 @@
   `return $this->store[$name];` is also covered when `$name` is the
   `__get()` parameter; the requested magic property is prepended as a key
   under `$this->store` before appending into the returned bucket. Literal int
-  or string suffix keys after the `$name` parameter are also covered, such as
-  `return $this->store[$name]["bucket"];`, with those suffixes appended to the
-  backing-property prefix path. Broader
+  or string keys before or after the `$name` parameter are also covered, such
+  as `return $this->store["bucket"][$name];` and
+  `return $this->store[$name]["bucket"];`, with those literals preserved in
+  the backing-property prefix path. Broader
   private/protected
   `$this` property routes, dynamic property-return expressions beyond that
   exact parameter form, backing-array offset return expressions beyond that
-  exact parameter-key plus literal-suffix shape, and
+  exact single-parameter plus literal-key shape, and
   arbitrary method-local alias lifetimes remain outside that focused slice.
   The same
   focused route supports one

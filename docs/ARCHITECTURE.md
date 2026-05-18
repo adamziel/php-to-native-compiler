@@ -1008,9 +1008,11 @@ recognizes `return $this->{$name};` when `$name` is the `__get()` parameter,
 using the requested inaccessible property name as the backing property. It
 also recognizes the exact backing-array offset shape
 `return $this->property[$name];`, where `$name` is the `__get()` parameter,
-plus literal suffix keys such as `return $this->property[$name]["bucket"];`.
-The requested magic property and any literal suffix keys are prepended under
-that backing property before applying the append path. It appends into the corresponding
+plus literal keys before or after that parameter, such as
+`return $this->property["bucket"][$name];` and
+`return $this->property[$name]["bucket"];`. Those literal keys and the
+requested magic property are prepended under that backing property before
+applying the append path. It appends into the corresponding
 object-property alias root and mirrors copied reference-slot metadata there,
 without creating a general object-property cell model. The same
 object-property-root path is tested through a two-key parent append, so

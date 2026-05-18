@@ -13966,31 +13966,43 @@ impl Interpreter {
         let Some(param) = function.params.first() else {
             return Ok(None);
         };
-        let Some((first, suffix)) = indices.split_first() else {
-            return Ok(None);
-        };
-        if !matches!(*first, Expr::Variable(name, _) if name == &param.name) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    callable_name(&function.name),
-                    "reference-return $this property offset expressions require return $this->property[$name] where $name is the __get parameter in the current subset",
-                ),
-            ));
-        }
+        let mut prefix_keys = Vec::new();
+        let mut used_requested_property = false;
+        for index in indices {
+            if matches!(index, Expr::Variable(name, _) if name == &param.name) {
+                if used_requested_property {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "reference-return $this property offset expressions may use the __get parameter only once in the current subset",
+                        ),
+                    ));
+                }
+                prefix_keys.push(ArrayKey::String(requested_property.to_string()));
+                used_requested_property = true;
+                continue;
+            }
 
-        let mut prefix_keys = vec![ArrayKey::String(requested_property.to_string())];
-        for suffix_index in suffix {
-            let Some(key) = Self::literal_reference_return_array_key(suffix_index) else {
+            let Some(key) = Self::literal_reference_return_array_key(index) else {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         callable_name(&function.name),
-                        "reference-return $this property offset suffixes after $name must be literal int or string keys in the current subset",
+                        "reference-return $this property offset expressions require exactly one __get parameter index and otherwise literal int or string keys in the current subset",
                     ),
                 ));
             };
             prefix_keys.push(key);
+        }
+        if !used_requested_property {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "reference-return $this property offset expressions require one index to be the __get parameter in the current subset",
+                ),
+            ));
         }
 
         Ok(Some(ThisPropertyReferenceTarget {

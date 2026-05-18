@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Lane 1707-C focused `__get()` backing-array offset return support with
+  a literal prefix bucket before the magic property key. A by-reference
+  `__get($name)` body of `return $this->store["bucket"][$name];` is now
+  recognized when `$name` is the `__get()` parameter and all other keys are
+  literal ints or strings. The runtime prepends the literal prefix and the
+  requested magic property under private `$store`, appends through
+  `$box->missing["outer"][]`, stores copied nested reference-slot metadata
+  under `$this->store["bucket"]["missing"]["outer"]`, and later same-class
+  method writes through that path resynchronize the original referenced
+  variables. This does not add dynamic or repeated parameter keys, non-literal
+  keys, broader arbitrary `__get()` return expressions, broader method-local
+  alias lifetimes, full references/COW, or native reference lowering. Focused
+  verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1707` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1707`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1706-C focused `__get()` backing-array offset return support with
   a literal suffix bucket for the append/method-write COW shape. A
   by-reference `__get($name)` body of

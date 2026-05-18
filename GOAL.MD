@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1706:
+The current in-progress implementation frontier is Lane 1707:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -99,6 +99,12 @@ The current in-progress implementation frontier is Lane 1706:
   so the requested magic property and literal suffix become prefix keys before
   the append path and same-class method writes synchronize copied nested
   reference slots.
+- Lane 1707 generalizes the same exact backing-array path so literal prefix
+  buckets may appear before the `__get()` parameter, such as
+  `public function &__get($name) { return $this->store["bucket"][$name]; }`;
+  the literal prefix and requested magic property become prefix keys before
+  the append path and method-local backing writes synchronize copied nested
+  reference slots.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
@@ -142,7 +148,7 @@ Still missing:
 - Broader magic `__get()`/`__set()`/`__isset()`/`__unset()` behavior beyond
   the tested direct-variable, visible `$this->property`, private
   `$this->property`, `$this->{$name}`, and `$this->property[$name]`
-  plus literal-suffix method-write append slices.
+  plus literal-prefix/suffix method-write append slices.
 - Alias detach, destructor, shutdown, and error-ordering parity.
 - Reference/COW semantics across function calls, returns, includes,
   superglobals, iterators, and native lowering.
