@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 1757-C for another bounded `ArrayAccess::offsetSet()` backing
+  analyzer shape: local variables bound by reference to `$this->property` or
+  indexed `$this->property[...]` buckets may be used as the assignment root in
+  exact keyed stores and branchy null-append/keyed bodies. Covered examples
+  include `$items =& $this->items; $items[$offset]["leaf"] = $value;` and
+  `$bucket =& $this->items["bucket"]; $bucket[$offset]["leaf"] = $value;`.
+  Copied reference-slot metadata is attached to the real backing bucket, so
+  later backing writes preserve typed-reference slots. Arbitrary
+  `offsetSet()` bodies, non-literal/dynamic key variables, broader complex
+  alias sinks, exact PHP fatal text, string COW identity, and native reference
+  lowering remain unsupported. Focused verification: raw system PHP output
+  matched the new `milestone1757` fixture; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1757` passed `1` fixture with `1`
+  system PHP comparison and `0` skips; adjacent
+  `offset_set_local_property_aliases_preserve_reference_slots` passed.
+
 - Added Lane 1756-C for the matching local offset-parameter copy shape in the
   proven `ArrayAccess::offsetSet()` backing analyzer. Exact keyed stores and
   branchy null-append/keyed bodies may now use one local copy of the offset

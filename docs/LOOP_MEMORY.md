@@ -18,6 +18,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T21:20:11+02:00
+
+- Checkpoint before this task: `93f227bb runtime: accept local offsetSet
+  parameter copies`, pushed to `origin/master`.
+- Task attempted: Lane 1757-C, broadening the proven
+  `ArrayAccess::offsetSet()` backing-bucket bridge so locals bound by
+  reference to `$this->property` or indexed `$this->property[...]` buckets may
+  be used as exact keyed and branchy append/keyed assignment roots.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1757/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1757/offset_set_local_property_aliases.php`;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1757`
+  passed `1` fixture with `1` system PHP comparison and `0` skips;
+  `cargo check -q -p phpc` passed with isolated
+  `CARGO_TARGET_DIR=target/cow-1757-check`; focused
+  `offset_set_local_property_aliases_preserve_reference_slots` passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies,
+  non-literal/dynamic backing key variables, arbitrary closure capture roots,
+  broader complex alias sinks, broader alias lifetime/detach ordering, exact
+  PHP fatal text, string COW identity, and native reference lowering.
+- Next concrete task: run formatting, diff, adjacent object-model and recent
+  `offsetSet()` fixture regressions, then checkpoint with
+  `tools/checkpoint.sh "runtime: accept local offsetSet property aliases"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T21:11:34+02:00
 
 - Checkpoint before this task: `511af94b runtime: accept local literal

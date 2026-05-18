@@ -4667,6 +4667,7 @@ struct ReferenceReturnBodyAnalysis<'a> {
 struct OffsetSetBodyAnalysis<'a> {
     statements: &'a [Stmt],
     local_param_aliases: Vec<String>,
+    local_property_aliases: Vec<ThisPropertyLocalAlias>,
     local_literal_key_aliases: Vec<LocalLiteralKeyAlias>,
 }
 
@@ -13373,12 +13374,14 @@ impl Interpreter {
             Self::offset_set_body_analysis(function.body.as_slice(), &offset_param.name);
         let body = body_analysis.statements;
         let local_param_aliases = body_analysis.local_param_aliases;
+        let local_property_aliases = body_analysis.local_property_aliases;
         let local_literal_key_aliases = body_analysis.local_literal_key_aliases;
         let (property, keys) = if let Some(key) = key {
             let Some((property, indices)) = Self::offset_set_keyed_assignment_target(
                 body,
                 &offset_param.name,
                 &value_param.name,
+                &local_property_aliases,
             ) else {
                 return Ok(None);
             };
@@ -13392,24 +13395,14 @@ impl Interpreter {
                 return Ok(None);
             };
             (property, keys)
-        } else if let [Stmt::Assign {
-            target:
-                AssignTarget::ObjectPropertyArrayIndex {
-                    object: target_object,
-                    property,
-                    indices,
-                    ..
-                },
-            expr,
-            ..
-        }] = body
-        {
-            if target_object != "this" {
+        } else if let [assignment] = body {
+            let Some((property, indices)) = Self::offset_set_index_assignment_target(
+                assignment,
+                &value_param.name,
+                &local_property_aliases,
+            ) else {
                 return Ok(None);
-            }
-            if !matches!(expr, Expr::Variable(name, _) if name == &value_param.name) {
-                return Ok(None);
-            }
+            };
             let Some(keys) = Self::array_access_offset_parameter_keys_with_locals(
                 &indices,
                 &offset_param.name,
@@ -13419,28 +13412,29 @@ impl Interpreter {
             ) else {
                 return Ok(None);
             };
-            (property.clone(), keys)
+            (property, keys)
         } else {
             if !allow_append_branch {
                 return Ok(None);
             }
-            let (condition, then_branch, target_object, property, indices) = if let [Stmt::If {
+            let (condition, then_branch, property, indices) = if let [Stmt::If {
                 condition,
                 then_branch,
                 else_branch,
                 ..
-            }, keyed_assignment] =
-                body
+            }, keyed_assignment] = body
             {
                 if !else_branch.is_empty() {
                     return Ok(None);
                 }
-                let Some((target_object, property, indices)) =
-                    Self::offset_set_index_assignment_target(keyed_assignment, &value_param.name)
-                else {
+                let Some((property, indices)) = Self::offset_set_index_assignment_target(
+                    keyed_assignment,
+                    &value_param.name,
+                    &local_property_aliases,
+                ) else {
                     return Ok(None);
                 };
-                (condition, then_branch, target_object, property, indices)
+                (condition, then_branch, property, indices)
             } else if let [Stmt::If {
                 condition,
                 then_branch,
@@ -13451,18 +13445,18 @@ impl Interpreter {
                 let [keyed_assignment] = else_branch.as_slice() else {
                     return Ok(None);
                 };
-                let Some((target_object, property, indices)) =
-                    Self::offset_set_index_assignment_target(keyed_assignment, &value_param.name)
-                else {
+                let Some((property, indices)) = Self::offset_set_index_assignment_target(
+                    keyed_assignment,
+                    &value_param.name,
+                    &local_property_aliases,
+                ) else {
                     return Ok(None);
                 };
-                (condition, then_branch, target_object, property, indices)
+                (condition, then_branch, property, indices)
             } else {
                 return Ok(None);
             };
-            if !Self::is_null_offset_guard(&condition, &offset_param.name)
-                || target_object != "this"
-            {
+            if !Self::is_null_offset_guard(&condition, &offset_param.name) {
                 return Ok(None);
             };
             let Some((assign_prefix_keys, assign_suffix_keys)) =
@@ -13480,6 +13474,7 @@ impl Interpreter {
                 &then_branch,
                 &value_param.name,
                 require_return,
+                &local_property_aliases,
                 &local_literal_key_aliases,
             ) else {
                 return Ok(None);
@@ -13551,6 +13546,7 @@ impl Interpreter {
         offset_param: &str,
     ) -> OffsetSetBodyAnalysis<'a> {
         let mut local_param_aliases = Vec::new();
+        let mut local_property_aliases = Vec::new();
         let mut local_literal_key_aliases = Vec::new();
         let mut statements = body;
 
@@ -13564,6 +13560,67 @@ impl Interpreter {
                     if source == offset_param =>
                 {
                     local_param_aliases.push(name.clone());
+                    statements = rest;
+                }
+                [Stmt::ReferenceAssign {
+                    target: AssignTarget::Variable { name, .. },
+                    source:
+                        ReferenceSource::Property {
+                            expr:
+                                Expr::Property {
+                                    target, property, ..
+                                },
+                            ..
+                        },
+                    ..
+                }, rest @ ..]
+                    if matches!(target.as_ref(), Expr::Variable(object, _) if object == "this") =>
+                {
+                    local_property_aliases.push(ThisPropertyLocalAlias {
+                        local: name.clone(),
+                        property: property.clone(),
+                        prefix_indices: Vec::new(),
+                    });
+                    statements = rest;
+                }
+                [Stmt::ReferenceAssign {
+                    target: AssignTarget::Variable { name, .. },
+                    source:
+                        ReferenceSource::ObjectPropertyArrayIndex {
+                            object,
+                            property,
+                            index,
+                            ..
+                        },
+                    ..
+                }, rest @ ..]
+                    if object == "this" =>
+                {
+                    local_property_aliases.push(ThisPropertyLocalAlias {
+                        local: name.clone(),
+                        property: property.clone(),
+                        prefix_indices: vec![index.clone()],
+                    });
+                    statements = rest;
+                }
+                [Stmt::ReferenceAssign {
+                    target: AssignTarget::Variable { name, .. },
+                    source:
+                        ReferenceSource::ObjectPropertyNestedArrayIndex {
+                            object,
+                            property,
+                            indices,
+                            ..
+                        },
+                    ..
+                }, rest @ ..]
+                    if object == "this" =>
+                {
+                    local_property_aliases.push(ThisPropertyLocalAlias {
+                        local: name.clone(),
+                        property: property.clone(),
+                        prefix_indices: indices.clone(),
+                    });
                     statements = rest;
                 }
                 [Stmt::Assign {
@@ -13587,6 +13644,7 @@ impl Interpreter {
         OffsetSetBodyAnalysis {
             statements,
             local_param_aliases,
+            local_property_aliases,
             local_literal_key_aliases,
         }
     }
@@ -13595,6 +13653,7 @@ impl Interpreter {
         then_branch: &[Stmt],
         value_param: &str,
         require_return: bool,
+        local_property_aliases: &[ThisPropertyLocalAlias],
         local_literal_key_aliases: &[LocalLiteralKeyAlias],
     ) -> Option<ThisPropertyReferenceTarget> {
         let assignment = if require_return {
@@ -13616,19 +13675,51 @@ impl Interpreter {
             } => (target.as_ref(), expr.as_ref()),
             _ => return None,
         };
-        let AssignTarget::ObjectPropertyArrayAppend {
-            object,
-            property,
-            indices,
-            suffix_indices,
-            ..
-        } = target
-        else {
+        if !matches!(expr, Expr::Variable(name, _) if name == value_param) {
             return None;
+        }
+
+        let (property, indices, suffix_indices) = match target {
+            AssignTarget::ObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                suffix_indices,
+                ..
+            } if object == "this" => (property.clone(), indices.clone(), suffix_indices.clone()),
+            AssignTarget::ArrayIndex {
+                name, index: None, ..
+            } => {
+                let alias = local_property_aliases
+                    .iter()
+                    .find(|alias| alias.local == *name)?;
+                (
+                    alias.property.clone(),
+                    alias.prefix_indices.clone(),
+                    Vec::new(),
+                )
+            }
+            AssignTarget::NestedArrayAppend {
+                name,
+                indices,
+                suffix_indices,
+                ..
+            } => {
+                let alias = local_property_aliases
+                    .iter()
+                    .find(|alias| alias.local == *name)?;
+                let mut combined_indices = alias.prefix_indices.clone();
+                combined_indices.extend(indices.iter().cloned());
+                (
+                    alias.property.clone(),
+                    combined_indices,
+                    suffix_indices.clone(),
+                )
+            }
+            _ => return None,
         };
-        if object != "this" || !matches!(expr, Expr::Variable(name, _) if name == value_param) {
-            None
-        } else {
+
+        {
             let prefix_keys = indices
                 .iter()
                 .map(|index| {
@@ -13648,7 +13739,7 @@ impl Interpreter {
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(ThisPropertyReferenceTarget {
-                property: property.clone(),
+                property,
                 prefix_keys,
                 suffix_keys,
             })
@@ -13658,7 +13749,8 @@ impl Interpreter {
     fn offset_set_index_assignment_target(
         statement: &Stmt,
         value_param: &str,
-    ) -> Option<(String, String, Vec<Expr>)> {
+        local_property_aliases: &[ThisPropertyLocalAlias],
+    ) -> Option<(String, Vec<Expr>)> {
         let (target, expr) = match statement {
             Stmt::Assign { target, expr, .. } => (target, expr),
             Stmt::Expr {
@@ -13667,31 +13759,54 @@ impl Interpreter {
             } => (target.as_ref(), expr.as_ref()),
             _ => return None,
         };
-        let AssignTarget::ObjectPropertyArrayIndex {
-            object,
-            property,
-            indices,
-            ..
-        } = target
-        else {
-            return None;
-        };
         if !matches!(expr, Expr::Variable(name, _) if name == value_param) {
             return None;
         }
-        Some((object.clone(), property.clone(), indices.clone()))
+
+        match target {
+            AssignTarget::ObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } if object == "this" => Some((property.clone(), indices.clone())),
+            AssignTarget::ArrayIndex {
+                name,
+                index: Some(index),
+                ..
+            } => {
+                let alias = local_property_aliases
+                    .iter()
+                    .find(|alias| alias.local == *name)?;
+                let mut indices = alias.prefix_indices.clone();
+                indices.push(index.clone());
+                Some((alias.property.clone(), indices))
+            }
+            AssignTarget::NestedArrayIndex { name, indices, .. } => {
+                let alias = local_property_aliases
+                    .iter()
+                    .find(|alias| alias.local == *name)?;
+                let mut combined_indices = alias.prefix_indices.clone();
+                combined_indices.extend(indices.iter().cloned());
+                Some((alias.property.clone(), combined_indices))
+            }
+            _ => None,
+        }
     }
 
     fn offset_set_keyed_assignment_target(
         body: &[Stmt],
         offset_param: &str,
         value_param: &str,
+        local_property_aliases: &[ThisPropertyLocalAlias],
     ) -> Option<(String, Vec<Expr>)> {
         if let [assignment] = body {
-            if let Some((object, property, indices)) =
-                Self::offset_set_index_assignment_target(assignment, value_param)
-            {
-                return (object == "this").then_some((property, indices));
+            if let Some((property, indices)) = Self::offset_set_index_assignment_target(
+                assignment,
+                value_param,
+                local_property_aliases,
+            ) {
+                return Some((property, indices));
             }
         }
 
@@ -13705,9 +13820,11 @@ impl Interpreter {
             if !else_branch.is_empty() || !Self::is_null_offset_guard(condition, offset_param) {
                 return None;
             }
-            let (object, property, indices) =
-                Self::offset_set_index_assignment_target(keyed_assignment, value_param)?;
-            return (object == "this").then_some((property, indices));
+            return Self::offset_set_index_assignment_target(
+                keyed_assignment,
+                value_param,
+                local_property_aliases,
+            );
         }
 
         if let [Stmt::If {
@@ -13722,9 +13839,11 @@ impl Interpreter {
             let [keyed_assignment] = else_branch.as_slice() else {
                 return None;
             };
-            let (object, property, indices) =
-                Self::offset_set_index_assignment_target(keyed_assignment, value_param)?;
-            return (object == "this").then_some((property, indices));
+            return Self::offset_set_index_assignment_target(
+                keyed_assignment,
+                value_param,
+                local_property_aliases,
+            );
         }
 
         None

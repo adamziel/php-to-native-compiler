@@ -19794,6 +19794,21 @@ handled.
   variables, broader complex alias sinks, exact PHP fatal text, string COW
   identity, and native reference lowering named as unsupported.
 
+## Lane 1757-C: Local OffsetSet Property Aliases
+
+- [x] Runtime/interpreter/tests/docs lane: broaden the proven
+  `ArrayAccess::offsetSet()` backing-bucket analyzer so locals bound by
+  reference to `$this->property` or indexed `$this->property[...]` buckets may
+  be used as assignment roots in exact keyed store paths and branchy
+  null-append/keyed paths, for example
+  `$items =& $this->items; $items[$offset]["leaf"] = $value;`. Cover direct
+  local property aliases, indexed backing aliases, branch append, and branch
+  keyed stores preserving typed-reference slots with system-PHP fixture
+  comparison and an invalid typed-reference regression. Keep arbitrary
+  `offsetSet()` bodies, non-literal/dynamic key variables, broader complex
+  alias sinks, exact PHP fatal text, string COW identity, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

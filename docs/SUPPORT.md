@@ -870,9 +870,13 @@
   initialized from literal int/string keys, such as
   `$leaf = "leaf"; $this->property[$offset][$leaf] = $value;`, and one local
   copy of the offset parameter, such as
-  `$slot = $offset; $this->property[$slot]["leaf"] = $value;`. Later bucket
-  copies use the exact public `return $this->property[$offset];` `offsetGet()`
-  bridge.
+  `$slot = $offset; $this->property[$slot]["leaf"] = $value;`. A local
+  variable may also be bound by reference to `$this->property` or an indexed
+  `$this->property[...]` bucket and used as the assignment root, such as
+  `$items =& $this->property; $items[$offset]["leaf"] = $value;` or
+  `$bucket =& $this->property["bucket"]; $bucket[$offset] = $value;`. Later
+  bucket copies use the exact public `return $this->property[$offset];`
+  `offsetGet()` bridge.
   Direct
   append `$bag[] = $array` preserves the same nested reference slots for two
   focused public `offsetSet(null, $value)` shapes: the exact
@@ -897,6 +901,8 @@
   $this->property[$bucket][$offset][$leaf] = $value;`. One local copy of the
   offset parameter may also appear in the non-null branch, for example
   `$slot = $offset; ... $this->property[$bucket][$slot][$leaf] = $value;`.
+  Local variables bound by reference to `$this->property` may also be used as
+  the append and keyed assignment root in those same branch shapes.
   Keyed stores such as `$bag["leaf"] = $array` also preserve copied
   reference-slot metadata through that same `if/else` body by recognizing the
   non-null branch's keyed backing assignment. The same focused append
@@ -1135,7 +1141,8 @@
   fall-through append bodies without `else`/`return`, mismatched append/keyed
   paths, dynamic `offsetSet()` parameter keys beyond one local copy, repeated
   offset parameters in branchy append bridges, non-literal/dynamic local
-  `offsetSet()` path keys,
+  `offsetSet()` path keys, local `offsetSet()` assignment roots not bound by
+  reference to `$this->property[...]`,
   side-effecting or broader
   `offsetSet()`/`offsetGet()` bodies,
   built-in interface enforcement/signature validation, typed method
