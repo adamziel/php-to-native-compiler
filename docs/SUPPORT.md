@@ -663,8 +663,12 @@
   reference, can mirror covered nested public object-property reference-slot
   provenance into a copied direct array variable when the selected key is
   side-effect-free; this is copy provenance only, not by-reference source
-  support for by-value `offsetGet()`. By-value `offsetGet()` used as a
-  reference source, `offsetGet()` bodies with side effects or broader return
+  support for by-value `offsetGet()`. In system PHP, by-value `offsetGet()`
+  used as a reference source such as `$alias =& $bag[$key]` emits an
+  `E_NOTICE` that indirect modification has no effect, produces only a
+  detached local alias/value, and does not mutate the backing element; phpc
+  currently keeps this as a hard runtime boundary instead of modeling that
+  notice/no-op path. `offsetGet()` bodies with side effects or broader return
   expressions, dynamic property-held sources on non-direct holder expressions
   or outside visible property access, broader property-held alias lifetime
   after replacing non-direct/dynamic containing properties, append
@@ -785,8 +789,13 @@
   `return $this->property[$offset];`, covered nested reference slots below
   the returned public-property bucket are mirrored into the copied direct
   array variable for both by-value and by-reference `offsetGet()`
-  declarations. This covers the current WP_Hook-shaped bucket-copy case where
-  a copied callback bucket contains nested reference slots. Direct
+  declarations. The same copy provenance is mirrored when the `ArrayAccess`
+  object is reached through a visible object property, dynamic object
+  property, non-direct holder, method-return holder, or expression-root holder
+  such as `$holder->hook[10]`, `$holder->{$name}[10]`,
+  `$holders["box"]->hook[10]`, or `make_holder($hook)->hook[10]`. This covers
+  the current WP_Hook-shaped direct-object and holder bucket-copy cases where a
+  copied callback bucket contains nested reference slots. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
   and writing the result back through `offsetSet($key, $value)`. Direct
@@ -796,9 +805,9 @@
   applying the update to PHP's current by-value temporary result without
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
   compound assignment through object-property `ArrayAccess`, ArrayAccess
-  iteration, bucket-copy provenance for property-held or non-direct
-  `ArrayAccess` holders, non-public backing properties, side-effecting or
-  broader `offsetGet()` bodies, built-in interface enforcement/signature
+  iteration, function-parameter propagation for copied bucket provenance,
+  non-public backing properties, side-effecting or broader `offsetGet()` bodies, built-in
+  interface enforcement/signature
   validation, typed method invocation, broad references/copy-on-write, exact
   warning/visibility diagnostics, and native lowering remain unsupported.
   Direct `$object[$key] op= expr`

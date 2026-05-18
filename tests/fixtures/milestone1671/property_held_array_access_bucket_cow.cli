@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1671/property_held_array_access_bucket_cow.php
+--- stdout begin ---
+holder:copy|holder:copy|1|plain
+dynamic:copy|dynamic:copy|1|plain
+expr:copy|expr:copy|1|plain
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit code: 0

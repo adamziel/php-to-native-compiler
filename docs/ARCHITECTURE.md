@@ -340,9 +340,9 @@ slot so stored argument arrays remain usable by the current
 `call_user_func_array()` reference path. This is still path metadata for
 explicit keys, not PHP's general COW container graph; dynamic, magic,
 side-effecting, and mixed `ArrayAccess` source or target paths remain outside
-this mirror, except for the bounded direct `ArrayAccess` bucket-copy source
-whose public `offsetGet($offset)` body is exactly
-`return $this->property[$offset];`. Direct array-offset `unset(...)` paths, direct
+this mirror, except for bounded direct, visible property-held, and non-direct
+holder `ArrayAccess` bucket-copy sources whose public `offsetGet($offset)`
+body is exactly `return $this->property[$offset];`. Direct array-offset `unset(...)` paths, direct
 visible object-property array-offset `unset(...)` paths, and direct visible
 object-property `unset(...)` paths remove covered alias metadata for the
 removed slot/property, and for child aliases below a removed parent slot or
@@ -814,13 +814,22 @@ to the held `ArrayAccess` object if the holder property is later rebound.
 Direct by-value or by-reference `offsetGet()` bucket-copy reads can mirror
 covered nested public-property reference slots into a direct array variable
 only for the same exact public `return $this->property[$offset];` body shape
-and side-effect-free selected keys. Dynamic property-held ArrayAccess sources
-on non-direct holder expressions or outside visible property access, broader
-alias lifetime after replacing non-direct/dynamic containing properties,
-side-effecting or broader `offsetGet()` bodies, mixed nested ArrayAccess
-chains beyond the documented one-level bridge, append sources, arbitrary
-nested reference slots copied from ArrayAccess storage, and real reference
-containers remain future work.
+and side-effect-free selected keys. The metadata mirror also discovers that
+same bucket-copy source when the `ArrayAccess` object is reached through a
+direct visible holder property or dynamic holder property, such as
+`$holder->hook[10]` or `$holder->{$name}[10]`; the same evaluated-index
+provenance also covers non-direct holder and expression-root holder reads such
+as `$holders["box"]->hook[10]` and `make_holder($hook)->hook[10]` when the
+final selected object has the exact bridge shape. By-value `offsetGet()` used
+as a reference source is still a boundary: PHP emits an indirect-modification
+notice, creates only a detached local alias/value, and leaves the backing
+element unchanged, while phpc currently rejects the shape before execution.
+Function-parameter propagation of copied bucket provenance, broader alias
+lifetime after replacing non-direct containing properties, side-effecting or
+broader `offsetGet()` bodies, mixed nested ArrayAccess chains beyond the
+documented one-level bridge, append sources, arbitrary nested reference slots
+copied from ArrayAccess storage, and real reference containers remain future
+work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or

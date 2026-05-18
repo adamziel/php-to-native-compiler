@@ -2162,6 +2162,75 @@ impl SymbolTable {
         }
     }
 
+    fn import_static_array_offset_aliases_from_copy(
+        &mut self,
+        target_name: &str,
+        source_name: &str,
+        source_scope: &SymbolTable,
+    ) {
+        self.import_array_offset_aliases_from_path_copy(
+            target_name,
+            source_scope,
+            &ArrayOffsetAliasRoot::StaticArray {
+                name: source_name.to_string(),
+            },
+            &[],
+            true,
+        );
+
+        if let Some(source_aliases) = source_scope.array_offset_aliases.get(source_name).cloned() {
+            for source_alias in source_aliases {
+                self.import_array_offset_aliases_from_path_copy(
+                    target_name,
+                    source_scope,
+                    &source_alias.root,
+                    &source_alias.keys,
+                    false,
+                );
+            }
+        }
+    }
+
+    fn import_array_offset_aliases_from_path_copy(
+        &mut self,
+        target_name: &str,
+        source_scope: &SymbolTable,
+        source_root: &ArrayOffsetAliasRoot,
+        source_keys: &[ArrayKey],
+        include_exact_path: bool,
+    ) {
+        let additions: Vec<(String, ArrayOffsetAlias)> = source_scope
+            .array_offset_aliases
+            .iter()
+            .flat_map(|(alias_name, aliases)| {
+                aliases.iter().filter_map(move |alias| match &alias.root {
+                    root if root == source_root
+                        && alias.keys.starts_with(source_keys)
+                        && (include_exact_path || alias.keys.len() > source_keys.len()) =>
+                    {
+                        Some((
+                            alias_name.clone(),
+                            ArrayOffsetAlias {
+                                root: ArrayOffsetAliasRoot::StaticArray {
+                                    name: target_name.to_string(),
+                                },
+                                keys: alias.keys[source_keys.len()..].to_vec(),
+                            },
+                        ))
+                    }
+                    _ => None,
+                })
+            })
+            .collect();
+
+        for (alias_name, alias) in additions {
+            let aliases = self.array_offset_aliases.entry(alias_name).or_default();
+            if !aliases.contains(&alias) {
+                aliases.push(alias);
+            }
+        }
+    }
+
     fn mirror_public_object_property_aliases_from_array_copy(
         &mut self,
         target_name: &str,
@@ -5040,6 +5109,31 @@ impl Interpreter {
             return None;
         }
         let Value::Object(object) = scope.read_named(object_name)? else {
+            return None;
+        };
+        let key = Self::side_effect_free_array_key(indices[0], scope)?;
+        self.array_access_array_copy_source_for_object(object, key, span)
+    }
+
+    fn array_access_array_copy_source_for_object_property_index(
+        &self,
+        object_name: &str,
+        property: &str,
+        indices: &[&Expr],
+        span: Span,
+        scope: &SymbolTable,
+    ) -> Option<PublicObjectPropertyArrayCopySource> {
+        if indices.len() != 1 {
+            return None;
+        }
+        let Value::Object(holder) = scope.read_named(object_name)? else {
+            return None;
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let Value::Object(object) = holder
+            .read_property_from_context(property, current_class_id, &protected_class_ids)
+            .ok()?
+        else {
             return None;
         };
         let key = Self::side_effect_free_array_key(indices[0], scope)?;
@@ -10712,13 +10806,23 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         match target {
             AssignTarget::Variable { name, .. } => {
-                let (value, array_literal_references) = match expr {
+                let (value, array_literal_references, array_copy_source) = match expr {
                     Expr::Array { items, span } => {
                         let (value, references) =
                             self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
+                        (value, references, None)
                     }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                    Expr::Index {
+                        target,
+                        index,
+                        span,
+                    } => {
+                        let (value, source) = self.evaluate_array_index_with_array_copy_source(
+                            target, index, *span, scope,
+                        )?;
+                        (value, Vec::new(), source)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new(), None),
                 };
                 let target_is_alias = scope.is_array_offset_alias_name(name);
                 if !target_is_alias {
@@ -10785,7 +10889,23 @@ impl Interpreter {
                             } else if let Some((object_name, property, indices)) =
                                 Self::collect_direct_object_property_array_index_path(target, index)
                             {
-                                if let Some(keys) = Self::literal_array_key_path(&indices) {
+                                if let Some(source) = self
+                                    .array_access_array_copy_source_for_object_property_index(
+                                        object_name,
+                                        property,
+                                        &indices,
+                                        expr.span(),
+                                        scope,
+                                    )
+                                {
+                                    scope.mirror_public_object_property_aliases_from_array_copy(
+                                        name,
+                                        &source.object,
+                                        &source.property,
+                                        &source.keys,
+                                        source.include_exact_path,
+                                    );
+                                } else if let Some(keys) = Self::literal_array_key_path(&indices) {
                                     if let Ok(root) = self.foreach_object_property_alias_root(
                                         object_name,
                                         property,
@@ -10802,12 +10922,30 @@ impl Interpreter {
                                     target, index,
                                 )
                             {
-                                if let Some(keys) = Self::literal_array_key_path(&indices) {
-                                    if let Ok(property) = self.evaluate_dynamic_property_name(
-                                        property,
-                                        expr.span(),
-                                        scope,
-                                    ) {
+                                if let Ok(property) = self.evaluate_dynamic_property_name(
+                                    property,
+                                    expr.span(),
+                                    scope,
+                                ) {
+                                    if let Some(source) = self
+                                        .array_access_array_copy_source_for_object_property_index(
+                                            object_name,
+                                            &property,
+                                            &indices,
+                                            expr.span(),
+                                            scope,
+                                        )
+                                    {
+                                        scope.mirror_public_object_property_aliases_from_array_copy(
+                                            name,
+                                            &source.object,
+                                            &source.property,
+                                            &source.keys,
+                                            source.include_exact_path,
+                                        );
+                                    } else if let Some(keys) =
+                                        Self::literal_array_key_path(&indices)
+                                    {
                                         if let Ok(root) = self.foreach_object_property_alias_root(
                                             object_name,
                                             &property,
@@ -10867,6 +11005,15 @@ impl Interpreter {
                             }
                         }
                         _ => {}
+                    }
+                    if let Some(source) = array_copy_source {
+                        scope.mirror_public_object_property_aliases_from_array_copy(
+                            name,
+                            &source.object,
+                            &source.property,
+                            &source.keys,
+                            source.include_exact_path,
+                        );
                     }
                 }
                 for reference in array_literal_references {
@@ -19042,6 +19189,17 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        self.evaluate_array_index_with_array_copy_source(target, index, span, scope)
+            .map(|(value, _)| value)
+    }
+
+    fn evaluate_array_index_with_array_copy_source(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
         if let Expr::Variable(name, _) = target {
             if name == "GLOBALS" {
                 let key = self.evaluate_array_key(index, scope)?;
@@ -19054,9 +19212,12 @@ impl Interpreter {
                         ),
                     ));
                 };
-                return scope.read_global_name(global_name).ok_or_else(|| {
-                    runtime_error(span, RuntimeError::undefined_variable(global_name))
-                });
+                return scope
+                    .read_global_name(global_name)
+                    .map(|value| (value, None))
+                    .ok_or_else(|| {
+                        runtime_error(span, RuntimeError::undefined_variable(global_name))
+                    });
             }
         }
 
@@ -19064,18 +19225,30 @@ impl Interpreter {
         let key = self.evaluate_array_key(index, scope)?;
 
         match target_value {
-            Value::Array(array) => array.get(key.clone()).cloned().ok_or_else(|| {
-                runtime_error(
+            Value::Array(array) => array
+                .get(key.clone())
+                .cloned()
+                .map(|value| (value, None))
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_array_key(key.diagnostic_key()),
+                    )
+                }),
+            Value::Object(object) => {
+                let value = self.call_array_access_method(
+                    object.clone(),
+                    "offsetGet",
+                    vec![Self::array_key_value(Some(key.clone()))],
                     span,
-                    RuntimeError::undefined_array_key(key.diagnostic_key()),
-                )
-            }),
-            Value::Object(object) => self.call_array_access_method(
-                object,
-                "offsetGet",
-                vec![Self::array_key_value(Some(key))],
-                span,
-            ),
+                )?;
+                let source = if matches!(value, Value::Array(_)) {
+                    self.array_access_array_copy_source_for_object(object, key, span)
+                } else {
+                    None
+                };
+                Ok((value, source))
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access(format!(
@@ -20923,6 +21096,7 @@ impl Interpreter {
             Vec::new(),
             None,
             prebound_locals,
+            Vec::new(),
         )
     }
 
@@ -21071,6 +21245,7 @@ impl Interpreter {
             reference_bindings,
             Some(caller_scope),
             prebound_locals,
+            Vec::new(),
         )
     }
 
@@ -24770,6 +24945,7 @@ impl Interpreter {
             Vec::new(),
             None,
             prebound_locals,
+            Vec::new(),
         )
     }
 
@@ -24952,6 +25128,7 @@ impl Interpreter {
             reference_bindings,
             Some(caller_scope),
             prebound_locals,
+            Vec::new(),
         )
     }
 
@@ -28302,8 +28479,10 @@ impl Interpreter {
 
         let (values, reference_bindings) =
             self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call(function, args);
 
-        self.call_user_function_with_checked_values(
+        self.call_user_function_with_checked_values_and_locals(
             function,
             values,
             None,
@@ -28311,7 +28490,29 @@ impl Interpreter {
             None,
             reference_bindings,
             Some(caller_scope),
+            Vec::new(),
+            by_value_array_copy_bindings,
         )
+    }
+
+    fn by_value_array_copy_bindings_for_call(
+        function: &FunctionDecl,
+        args: &[Expr],
+    ) -> Vec<(String, String)> {
+        function
+            .params
+            .iter()
+            .zip(args.iter())
+            .filter_map(|(param, arg)| {
+                if param.by_reference || param.is_variadic {
+                    return None;
+                }
+                let Expr::Variable(source_name, _) = arg else {
+                    return None;
+                };
+                Some((param.name.clone(), source_name.clone()))
+            })
+            .collect()
     }
 
     fn call_reference_return_function_for_reference_assignment(
@@ -30544,6 +30745,7 @@ impl Interpreter {
             reference_bindings,
             reference_scope,
             Vec::new(),
+            Vec::new(),
         )
     }
 
@@ -30557,6 +30759,7 @@ impl Interpreter {
         reference_bindings: Vec<ReferenceBinding>,
         reference_scope: Option<&mut SymbolTable>,
         prebound_locals: Vec<PreboundLocal>,
+        by_value_array_copy_bindings: Vec<(String, String)>,
     ) -> CompileResult<Value> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
@@ -30700,6 +30903,16 @@ impl Interpreter {
             };
             local_scope.write_static(&param.name, value);
             if let Some(source_scope) = reference_scope.as_deref() {
+                if let Some((_, source_name)) = by_value_array_copy_bindings
+                    .iter()
+                    .find(|(param_name, _)| param_name == &param.name)
+                {
+                    local_scope.import_static_array_offset_aliases_from_copy(
+                        &param.name,
+                        source_name,
+                        source_scope,
+                    );
+                }
                 if let Some(Value::Object(object)) = local_scope.read_named(&param.name) {
                     local_scope.import_public_object_property_aliases_for_object_value(
                         &param.name,

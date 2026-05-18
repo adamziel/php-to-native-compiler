@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added Milestone 1671-A/1671-D coverage for remaining `ArrayAccess` COW
+  boundaries without implementing PHP-incompatible aliasing. System PHP probes
+  show that `$alias =& $bag[$key]` against by-value `offsetGet()` emits an
+  indirect-modification `E_NOTICE`, gives the alias only a detached local
+  value, and leaves the backing element unchanged; phpc continues to reject
+  that shape as a hard boundary until notice/no-op fidelity exists. System PHP
+  also preserves nested reference slots when a bucket is copied from a
+  property-held `ArrayAccess` object such as `$holder->hook[10]`, for both
+  by-value and by-reference `offsetGet()` declarations. Direct visible
+  property-held bucket copies such as `$bucket = $holder->hook[10]` and
+  `$bucket = $holder->{$name}[10]` now mirror covered nested public-property
+  reference slots when the held object implements `ArrayAccess` and public
+  `offsetGet($offset)` has the exact `return $this->property[$offset];` body.
+  Lane 1671-C extends that same provenance to non-direct holder reads such as
+  `$holders["box"]->hook[10]`, method-return holders, and expression-root
+  holders. This still does not add function-parameter propagation for copied
+  bucket provenance, side-effecting or broader `offsetGet()` bodies, by-value
+  `offsetGet()` notice/no-op fidelity, arbitrary nested reference slots stored
+  inside `ArrayAccess` buckets, broader mixed `ArrayAccess` chains, general
+  PHP reference containers, broad COW identity, native reference lowering, or
+  exact alias destruction/destructor ordering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test functions_and_scopes
+  -- --test-threads=1` passed `184` tests; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1671` passed `1` fixture with `1`
+  system PHP comparison and `0` skips; and manual system PHP execution of the
+  milestone fixture matched the expected output.
+
 - Added Milestone 1670, a focused `ArrayAccess` bucket-copy COW slice. Direct
   variable assignment from `$bag[$key]` now mirrors covered nested reference
   slots when the direct object implements `ArrayAccess`, the selected key is

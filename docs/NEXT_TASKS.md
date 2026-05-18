@@ -18413,12 +18413,19 @@ handled.
 ## Milestone 1671: ArrayAccess Remaining COW Frontiers
 
 - [ ] Reference/COW lane: keep all active lanes on the remaining `ArrayAccess`
-  COW gaps before moving to unrelated WordPress blockers: property-held and
-  non-direct bucket-copy provenance, non-public backing properties,
-  side-effecting or broader `offsetGet()` bodies, expression-root holders,
+  COW gaps before moving to unrelated WordPress blockers: function-parameter
+  propagation of copied bucket provenance, non-public backing properties,
+  side-effecting or broader `offsetGet()` bodies,
   by-value `offsetGet()` reference-source indirect-modification notice/no-op
   fidelity, arbitrary nested reference slots stored inside `ArrayAccess`
-  buckets, and broader mixed `ArrayAccess` chains.
+  buckets, and broader mixed `ArrayAccess` chains. PHP probes for Milestone
+  1671-D established that `$alias =& $bag[$key]` against by-value
+  `offsetGet()` raises an `E_NOTICE`, leaves the backing element unchanged,
+  and gives the alias only a detached local value. Direct visible
+  property-held bucket copies such as `$bucket = $holder->hook[10]`,
+  `$bucket = $holder->{$name}[10]`, `$holders["box"]->hook[10]`, and
+  `make_holder($hook)->hook[10]` now preserve covered nested public-property
+  reference slots when copied into a direct variable.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

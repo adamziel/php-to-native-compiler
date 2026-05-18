@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T05:35:00+02:00
+
+- Checkpoint before this task: `165dadc7 runtime: preserve ArrayAccess bucket
+  reference slots`, pushed to `origin/master`.
+- Task attempted: Milestone 1671 focused on the next `ArrayAccess`
+  bucket-copy COW frontier after direct-object reads.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1671/property_held_array_access_bucket_cow.*`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run and result with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test
+  functions_and_scopes -- --test-threads=1` passed `184` tests; `cargo run -q
+  -p phpc -- test --compare-php tests/fixtures/milestone1671` passed `1`
+  fixture with `1` system PHP comparison and `0` skips; `cargo fmt --check`
+  passed.
+- Semantic gap reduced: direct visible property-held, dynamic property-held,
+  non-direct holder, method-return holder, and expression-root holder
+  `ArrayAccess` bucket copies now mirror covered nested public-property
+  reference slots into copied direct variables when public `offsetGet($offset)`
+  has the exact `return $this->property[$offset];` body.
+- Remaining semantic gaps: function-parameter propagation of copied bucket
+  provenance, non-public backing properties, side-effecting or broader
+  `offsetGet()` bodies, by-value `offsetGet()` notice/no-op fidelity,
+  arbitrary nested reference slots stored inside `ArrayAccess` buckets,
+  broader mixed `ArrayAccess` chains, general PHP reference containers, broad
+  COW identity, native reference lowering, and exact alias destruction ordering.
+- Next concrete task: run `git diff --check`, then checkpoint and push
+  Milestone 1671 if no lane returns a conflicting patch.
+
 ## Loop Event 2026-05-18T05:05:00+02:00
 
 - Checkpoint before this task: `b90daa37 runtime: preserve COW iterator bucket

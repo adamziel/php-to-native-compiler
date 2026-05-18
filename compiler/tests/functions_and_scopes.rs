@@ -2991,6 +2991,202 @@ echo $target, "|", $bag->items["outer"]["id"]["function"], "|", $bag->items["out
 }
 
 #[test]
+fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = array();
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+class Holder {
+    public $bag;
+}
+
+$target = "seed";
+$bag = new Bag();
+$bag->items["outer"] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+    "plain" => array("function" => "plain", "accepted_args" => 1),
+);
+$bag->items["outer"]["id"]["function"] =& $target;
+
+$holder = new Holder();
+$holder->bag = $bag;
+
+$bucket = $holder->bag["outer"];
+foreach ($bucket as $id => &$node) {
+    if ($id === "id") {
+        $node["function"] = "via-holder";
+        $node["accepted_args"] = 2;
+    } else {
+        $node["function"] = "plain-copy";
+    }
+}
+unset($node);
+
+echo $target, "|", $bag->items["outer"]["id"]["function"], "|", $bag->items["outer"]["id"]["accepted_args"], "|", $bag->items["outer"]["plain"]["function"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "via-holder|via-holder|1|plain");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = array();
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+class Holder {
+    public $dynamicBag;
+}
+
+$target = "seed";
+$bag = new Bag();
+$bag->items["outer"] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+    "plain" => array("function" => "plain", "accepted_args" => 1),
+);
+$bag->items["outer"]["id"]["function"] =& $target;
+
+$holder = new Holder();
+$holder->dynamicBag = $bag;
+
+$property = "dynamicBag";
+$bucket = $holder->{$property}["outer"];
+foreach ($bucket as $id => &$node) {
+    if ($id === "id") {
+        $node["function"] = "via-dynamic";
+        $node["accepted_args"] = 2;
+    } else {
+        $node["function"] = "plain-copy";
+    }
+}
+unset($node);
+
+echo $target, "|", $bag->items["outer"]["id"]["function"], "|", $bag->items["outer"]["id"]["accepted_args"], "|", $bag->items["outer"]["plain"]["function"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "via-dynamic|via-dynamic|1|plain");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn non_direct_holder_array_access_bucket_copy_preserves_nested_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = array();
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+class Holder {
+    public $bag;
+    public function __construct($bag) {
+        $this->bag = $bag;
+    }
+}
+
+class Registry {
+    public $holder;
+    public function holder() {
+        return $this->holder;
+    }
+}
+
+function make_holder($bag) {
+    return new Holder($bag);
+}
+
+$key = "outer";
+$arrayTarget = "array-seed";
+$arrayBag = new Bag();
+$arrayBag->items["outer"] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+    "plain" => array("function" => "plain", "accepted_args" => 1),
+);
+$arrayBag->items["outer"]["id"]["function"] =& $arrayTarget;
+$holders = array("box" => new Holder($arrayBag));
+$bucket = $holders["box"]->bag[$key];
+foreach ($bucket as $id => &$node) {
+    if ($id === "id") {
+        $node["function"] = "via-array-holder";
+        $node["accepted_args"] = 2;
+    } else {
+        $node["function"] = "plain-copy";
+    }
+}
+unset($node);
+echo $arrayTarget, "|", $arrayBag->items["outer"]["id"]["function"], "|", $arrayBag->items["outer"]["id"]["accepted_args"], "|", $arrayBag->items["outer"]["plain"]["function"], "\n";
+
+$methodTarget = "method-seed";
+$methodBag = new Bag();
+$methodBag->items["outer"] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+    "plain" => array("function" => "plain", "accepted_args" => 1),
+);
+$methodBag->items["outer"]["id"]["function"] =& $methodTarget;
+$registry = new Registry();
+$registry->holder = new Holder($methodBag);
+$bucket = $registry->holder()->bag[$key];
+foreach ($bucket as $id => &$node) {
+    if ($id === "id") {
+        $node["function"] = "via-method-holder";
+        $node["accepted_args"] = 2;
+    } else {
+        $node["function"] = "plain-copy";
+    }
+}
+unset($node);
+echo $methodTarget, "|", $methodBag->items["outer"]["id"]["function"], "|", $methodBag->items["outer"]["id"]["accepted_args"], "|", $methodBag->items["outer"]["plain"]["function"], "\n";
+
+$exprTarget = "expr-seed";
+$exprBag = new Bag();
+$exprBag->items["outer"] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+    "plain" => array("function" => "plain", "accepted_args" => 1),
+);
+$exprBag->items["outer"]["id"]["function"] =& $exprTarget;
+$bucket = make_holder($exprBag)->bag[$key];
+foreach ($bucket as $id => &$node) {
+    if ($id === "id") {
+        $node["function"] = "via-expression-holder";
+        $node["accepted_args"] = 2;
+    } else {
+        $node["function"] = "plain-copy";
+    }
+}
+unset($node);
+echo $exprTarget, "|", $exprBag->items["outer"]["id"]["function"], "|", $exprBag->items["outer"]["id"]["accepted_args"], "|", $exprBag->items["outer"]["plain"]["function"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "via-array-holder|via-array-holder|1|plain\nvia-method-holder|via-method-holder|1|plain\nvia-expression-holder|via-expression-holder|1|plain"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_array_access_nested_offset_source_binds_bounded_offset_get_root() {
     let execution = run_source(
         r#"<?php
