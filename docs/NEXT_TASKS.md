@@ -19517,6 +19517,18 @@ handled.
   alias lifetime/detach behavior, string COW identity, and native reference
   lowering named as unsupported.
 
+## Lane 1734-C: Value-Backed Alias Terminal Promotion
+
+- [x] Runtime/interpreter/tests/docs lane: promote statically proven
+  value-backed alias terminals to real `PhpReferenceCell` slots when the
+  alias is used as the source for a new direct array, nested array, or direct
+  object-property array reference target. Cover direct static arrays, public
+  object-property arrays, and dynamically selected public property names with
+  a system-PHP comparison fixture. Keep `$GLOBALS` value-backed terminal
+  promotion, method-local `$this` object-property targets, broader
+  non-direct/magic/mixed roots, complete alias lifetime/detach behavior,
+  string COW identity, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

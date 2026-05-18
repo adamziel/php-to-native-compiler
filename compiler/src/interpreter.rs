@@ -3277,12 +3277,59 @@ impl SymbolTable {
 
     fn reference_cell_for_static_source(&mut self, source_name: &str) -> Option<VariableCell> {
         if let Some(aliases) = self.array_offset_aliases.get(source_name).cloned() {
-            return aliases
-                .iter()
-                .find_map(|alias| self.read_array_offset_alias_reference_cell(alias));
+            return self.reference_cell_for_array_offset_alias_group(&aliases);
         }
 
         self.direct_reference_cell_for_static_source(source_name)
+    }
+
+    fn reference_cell_for_array_offset_alias_group(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+    ) -> Option<VariableCell> {
+        if aliases.is_empty() {
+            return None;
+        }
+
+        if !aliases
+            .iter()
+            .all(|alias| self.array_offset_alias_allows_reference_cell_promotion(alias))
+        {
+            return None;
+        }
+
+        let reference = aliases
+            .iter()
+            .find_map(|alias| self.read_array_offset_alias_reference_cell(alias))
+            .or_else(|| {
+                aliases
+                    .iter()
+                    .find_map(|alias| self.read_array_offset_alias(alias))
+                    .map(PhpReferenceCell::new)
+            })?;
+
+        for alias in aliases {
+            if !self.promote_array_offset_alias_to_reference_cell(alias, reference.clone()) {
+                return None;
+            }
+        }
+
+        Some(reference)
+    }
+
+    fn array_offset_alias_allows_reference_cell_promotion(&self, alias: &ArrayOffsetAlias) -> bool {
+        if alias.keys.is_empty() {
+            return matches!(alias.root, ArrayOffsetAliasRoot::StaticArray { .. });
+        }
+
+        match &alias.root {
+            ArrayOffsetAliasRoot::StaticArray { .. } => true,
+            ArrayOffsetAliasRoot::GlobalArray { .. } => false,
+            ArrayOffsetAliasRoot::PublicObjectProperty { .. }
+            | ArrayOffsetAliasRoot::ContextObjectProperty { .. } => {
+                Self::alias_root_allows_reference_slot_fast_path(&alias.root)
+            }
+        }
     }
 
     fn bind_direct_alias_group_to_array_offset_alias(
@@ -3557,6 +3604,38 @@ impl SymbolTable {
             }
             _ => None,
         }
+    }
+
+    fn promote_array_offset_alias_to_reference_cell(
+        &mut self,
+        alias: &ArrayOffsetAlias,
+        reference: VariableCell,
+    ) -> bool {
+        if alias.keys.is_empty() {
+            return match &alias.root {
+                ArrayOffsetAliasRoot::StaticArray { name } => {
+                    self.routed_storage(name)
+                        .borrow_mut()
+                        .insert(name.clone(), reference);
+                    true
+                }
+                ArrayOffsetAliasRoot::GlobalArray { .. } => false,
+                ArrayOffsetAliasRoot::PublicObjectProperty { .. }
+                | ArrayOffsetAliasRoot::ContextObjectProperty { .. } => false,
+            };
+        }
+
+        let Ok(Some(Value::Array(mut array))) = self.read_alias_root_value(alias, Span::new(0, 0))
+        else {
+            return false;
+        };
+
+        if !Self::write_nested_array_offset_alias_reference(&mut array, &alias.keys, reference) {
+            return false;
+        }
+
+        self.write_alias_root_value(alias, Value::Array(array), Span::new(0, 0))
+            .is_ok()
     }
 
     fn write_array_offset_alias(&mut self, alias: &ArrayOffsetAlias, value: Value) -> bool {
@@ -56491,6 +56570,126 @@ mod tests {
         assert_eq!(
             source_cell.value_cloned(),
             Value::String("target-write".to_string())
+        );
+    }
+
+    #[test]
+    fn symbol_table_value_backed_alias_sources_promote_to_reference_slots() {
+        let mut symbols = SymbolTable::new();
+        let span = Span::new(7, 3);
+
+        let mut items = PhpArray::new();
+        items.insert("slot", Value::String("original".to_string()));
+        symbols.write_static("items", Value::Array(items));
+        symbols
+            .bind_static_to_existing_array_offset(
+                "alias",
+                "items",
+                ArrayKey::String("slot".to_string()),
+                span,
+            )
+            .unwrap();
+
+        symbols.write_static("target", Value::Array(PhpArray::new()));
+        symbols
+            .bind_array_offset_to_static_source(
+                "target",
+                ArrayKey::String("copy".to_string()),
+                "alias",
+                span,
+            )
+            .unwrap();
+
+        let Value::Array(items) = symbols.read_static("items", span).unwrap() else {
+            panic!("expected items array");
+        };
+        let source_cell = items
+            .get_slot("slot")
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected promoted source reference slot");
+
+        let Value::Array(target) = symbols.read_static("target", span).unwrap() else {
+            panic!("expected target array");
+        };
+        assert_eq!(
+            target.get_slot("copy").unwrap().reference_cell_id(),
+            Some(source_cell.id())
+        );
+
+        let target_alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: "target".to_string(),
+            },
+            keys: vec![ArrayKey::String("copy".to_string())],
+        };
+        assert!(symbols
+            .write_array_offset_alias(&target_alias, Value::String("target-write".to_string())));
+        assert_eq!(
+            source_cell.value_cloned(),
+            Value::String("target-write".to_string())
+        );
+        assert_eq!(
+            symbols.read_named("alias"),
+            Some(Value::String("target-write".to_string()))
+        );
+
+        symbols.write_named("alias", Value::String("alias-write".to_string()));
+        let Value::Array(target) = symbols.read_static("target", span).unwrap() else {
+            panic!("expected target array");
+        };
+        assert_eq!(
+            target.get_cloned("copy"),
+            Some(Value::String("alias-write".to_string()))
+        );
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        let mut property_items = PhpArray::new();
+        property_items.insert("slot", Value::String("property".to_string()));
+        object
+            .write_public_property("items", Value::Array(property_items))
+            .unwrap();
+        symbols.write_static("box", Value::Object(object));
+        symbols
+            .bind_static_to_existing_array_offset_alias_root(
+                "property_alias",
+                ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: "box".to_string(),
+                    property: "items".to_string(),
+                },
+                vec![ArrayKey::String("slot".to_string())],
+                span,
+            )
+            .unwrap();
+        symbols
+            .bind_array_offset_to_static_source(
+                "target",
+                ArrayKey::String("property".to_string()),
+                "property_alias",
+                span,
+            )
+            .unwrap();
+        let Value::Object(object) = symbols.read_static("box", span).unwrap() else {
+            panic!("expected object");
+        };
+        let Value::Array(property_array) = object.read_public_property("items").unwrap() else {
+            panic!("expected property array");
+        };
+        let property_slot_cell = property_array
+            .get_slot("slot")
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected promoted property reference slot");
+        let Value::Array(target) = symbols.read_static("target", span).unwrap() else {
+            panic!("expected target array");
+        };
+        assert_eq!(
+            target.get_slot("property").unwrap().reference_cell_id(),
+            Some(property_slot_cell.id())
         );
     }
 

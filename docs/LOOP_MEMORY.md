@@ -387,6 +387,34 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: reuse alias-backed reference slots"` if the
   full gate passes.
 
+## Loop Event 2026-05-18T19:35:00+02:00
+
+- Checkpoint before this task: `2d63b22c runtime: reuse alias-backed reference
+  slots`, pushed to `origin/master`.
+- Task attempted: Lane 1734-C value-backed alias-terminal promotion for the
+  real reference-cell value model.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1734/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new milestone1734
+  fixture; `cargo check -q -p phpc` passed; `cargo test -q -p phpc
+  symbol_table_value_backed_alias_sources_promote_to_reference_slots` passed
+  the focused compiler unit test; and `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1734` passed `1` fixture with `1`
+  system PHP comparison and `0` skips.
+- Semantic gap reduced: value-backed alias terminals under direct static
+  arrays and direct public object-property arrays, including dynamically
+  selected public property names, can now be promoted to a shared
+  `PhpReferenceCell` before the alias is reused as a reference source.
+- Remaining semantic gaps: `$GLOBALS` value-backed terminal promotion,
+  method-local `$this` object-property targets, broader non-direct/magic/mixed
+  roots, alias side-table removal, complete PHP alias lifetime/detach parity,
+  string COW identity, and native reference lowering remain unsupported.
+- Next concrete task: run adjacent regression checks, `cargo fmt --check`,
+  `git diff --check`, and then one full checkpoint with
+  `tools/checkpoint.sh "runtime: promote value-backed alias terminals"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

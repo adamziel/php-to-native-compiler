@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1733:
+The current in-progress implementation frontier is Lane 1734:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -253,6 +253,13 @@ The current in-progress implementation frontier is Lane 1733:
   `$alias =& $items["slot"]` into direct array, nested array, and direct
   object-property array targets reuse the original `PhpReferenceCell` instead
   of copying only the current value.
+- Lane 1734 promotes statically proven value-backed alias terminals to real
+  reference-backed array slots before reusing them as sources. Covered roots
+  are direct static arrays and direct public object-property arrays, including
+  dynamically selected public property names, so `$target["copy"] =& $alias`
+  can share the same `PhpReferenceCell` after `$alias =& $items["slot"]` or
+  `$alias =& $object->{$name}["slot"]` even when the original terminal was
+  not already reference-backed.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
