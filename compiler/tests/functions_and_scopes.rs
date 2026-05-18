@@ -5416,6 +5416,54 @@ fn milestone1787_nested_catch_reference_return_fixture_matches_runtime() {
 }
 
 #[test]
+fn milestone1788_system_php_subclass_catch_reference_return_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1788/subclass_catch_reference_return_cow.php",
+        "../tests/fixtures/milestone1788/subclass_catch_reference_return_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1788_subclass_catch_reference_return_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1788/subclass_catch_reference_return_cow.php",
+        "../tests/fixtures/milestone1788/subclass_catch_reference_return_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1789_system_php_typed_offsetget_reference_return_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1789/typed_offsetget_reference_return_cow.php",
+        "../tests/fixtures/milestone1789/typed_offsetget_reference_return_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1789_typed_offsetget_reference_return_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1789/typed_offsetget_reference_return_cow.php",
+        "../tests/fixtures/milestone1789/typed_offsetget_reference_return_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1790_system_php_typed_magic_get_reference_return_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1790/typed_magic_get_reference_return_cow.php",
+        "../tests/fixtures/milestone1790/typed_magic_get_reference_return_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1790_typed_magic_get_reference_return_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1790/typed_magic_get_reference_return_cow.php",
+        "../tests/fixtures/milestone1790/typed_magic_get_reference_return_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

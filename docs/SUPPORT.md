@@ -266,9 +266,14 @@
   body executor: a `try` body may throw an object, `catch` clauses match by
   supported class or subclass names, the catch variable is bound to the thrown
   object, catch statements execute, `finally` statements execute, and the
-  catch body may return a supported lvalue.
+  catch body may return a supported lvalue. Catch matching includes subclass
+  objects caught by a parent class catch clause in this bounded path.
   Public by-reference `__get()` uses the same assignment-capable return path
   for covered array-offset returns such as `return $this->store[$name];`.
+  In this reference-return body path, `offsetGet()` may declare
+  `mixed $offset` and `: mixed`, and `__get()` may declare `string $name` or
+  `mixed $name` plus `: mixed`; these are accepted as syntax-only compatible
+  metadata for the covered calls, not as general type enforcement.
   Covered return expressions may also use a dynamically selected `$this`
   backing property before the array-offset path, such as
   `$property = "items"; return $this->{$property}[$offset]["bucket"];`,
@@ -287,10 +292,11 @@
   such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
   This does not add magic property roots without an array offset, magic
   `__get()` roots beyond the covered direct variable/property/backing-offset
-  returns; full exception unwinding, uncaught exception propagation, non-object
-  throws, exact exception diagnostics, or global `throw` support outside this
-  method-body executor; arbitrary side-effect analysis or non-executed static
-  bridge inference for every dynamic backing-key shape; arbitrary
+  returns; incompatible typed reference-return signatures or arbitrary type
+  enforcement; full exception unwinding, uncaught exception propagation,
+  non-object throws, exact exception diagnostics, or global `throw` support
+  outside this method-body executor; arbitrary side-effect analysis or
+  non-executed static bridge inference for every dynamic backing-key shape; arbitrary
   Iterator side effects, arbitrary PHP syntax outside the interpreter subset;
   arbitrary mixed nested `ArrayAccess` object chains; broad same-container
   identity for

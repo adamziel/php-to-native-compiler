@@ -59102,22 +59102,47 @@ fn ensure_supported_reference_return_function_metadata(
     function: &FunctionDecl,
     span: Span,
 ) -> CompileResult<()> {
-    if function.return_type.is_some()
+    let unsupported_type_metadata = function
+        .return_type
+        .as_ref()
+        .is_some_and(|decl| !reference_return_type_decl_is_supported(function, decl))
         || function
             .params
             .iter()
-            .any(|param| param.type_decl.is_some())
-    {
+            .any(|param| !reference_return_param_type_decl_is_supported(function, param));
+    if unsupported_type_metadata {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 callable_name(&function.name),
-                "parameter and return type enforcement is not implemented",
+                "parameter and return type enforcement is not implemented for this reference-return signature",
             ),
         ));
     }
 
     Ok(())
+}
+
+fn reference_return_type_decl_is_supported(function: &FunctionDecl, decl: &TypeDecl) -> bool {
+    let supports_syntax_only_mixed_return = function.name.eq_ignore_ascii_case("offsetGet")
+        || function.name.eq_ignore_ascii_case("__get");
+    supports_syntax_only_mixed_return && decl.text.eq_ignore_ascii_case("mixed")
+}
+
+fn reference_return_param_type_decl_is_supported(
+    function: &FunctionDecl,
+    param: &FunctionParam,
+) -> bool {
+    let Some(decl) = param.type_decl.as_ref() else {
+        return true;
+    };
+    if function.name.eq_ignore_ascii_case("offsetGet") {
+        return decl.text.eq_ignore_ascii_case("mixed");
+    }
+    if function.name.eq_ignore_ascii_case("__get") {
+        return decl.text.eq_ignore_ascii_case("mixed") || decl.text.eq_ignore_ascii_case("string");
+    }
+    false
 }
 
 fn required_param_count(function: &FunctionDecl) -> usize {

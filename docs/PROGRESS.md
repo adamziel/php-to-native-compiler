@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1788-C through Lane 1790-C for two bounded real-code
+  reference-return body gaps. Subclass catch matching now has focused
+  system-PHP evidence inside the supported magic/`ArrayAccess`
+  reference-return body executor. Public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies also
+  accept syntax-only `mixed` return metadata plus safe covered parameter
+  metadata (`mixed $offset` for `offsetGet()`, and `string $name` or
+  `mixed $name` for `__get()`) so otherwise-covered COW bridges are not
+  rejected just because real code declares compatible signatures. This does
+  not implement arbitrary type enforcement, incompatible typed
+  reference-return signatures, full PHP exception unwinding, arbitrary
+  magic/`ArrayAccess` method bodies outside the interpreter subset, or native
+  reference lowering. Focused verification: raw system PHP output matched the
+  new `milestone1788`, `milestone1789`, and `milestone1790` fixtures; `cargo
+  run -q -p phpc -- test --compare-php` passed each new fixture directory
+  with `1` fixture, `1` system PHP comparison, and `0` skips; focused
+  `functions_and_scopes` milestone tests passed.
+
 - Added Lane 1785-C through Lane 1787-C for caught thrown-object paths inside
   the supported magic/`ArrayAccess` reference-return method-body executor.
   Public by-reference `ArrayAccess::offsetGet()` and covered by-reference

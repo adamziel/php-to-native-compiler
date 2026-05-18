@@ -20032,6 +20032,18 @@ handled.
   magic/`ArrayAccess` method bodies outside the interpreter subset, and native
   exception/reference lowering named as unsupported.
 
+## Lane 1788-C through Lane 1790-C: Typed Reference-Return Body Bridges
+
+- [x] Runtime/interpreter/tests/docs bundle: add subclass-catch evidence for
+  the caught thrown-object reference-return path, and accept syntax-only
+  compatible type metadata for covered public by-reference
+  `ArrayAccess::offsetGet()` and `__get()` COW bridges. Cover
+  `offsetGet(mixed $offset): mixed`, `__get(string $name): mixed`, and
+  subclass objects caught by a parent `Exception` clause. Keep arbitrary type
+  enforcement, incompatible typed signatures, full exception unwinding,
+  arbitrary magic/`ArrayAccess` method bodies outside the interpreter subset,
+  and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

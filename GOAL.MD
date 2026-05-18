@@ -32,7 +32,15 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1787:
+The current in-progress implementation frontier is Lane 1790:
+
+- Lanes 1788 through 1790 close two bounded real-code gaps in the same
+  magic/`ArrayAccess` reference-return body path. Catch matching now has
+  system-PHP evidence for subclass-thrown objects caught by a parent
+  `Exception` clause, and public by-reference `ArrayAccess::offsetGet()` /
+  covered by-reference `__get()` bodies accept syntax-only `mixed` return
+  metadata plus safe covered parameter metadata (`mixed $offset` and
+  `string`/`mixed $name`) without rejecting otherwise executable COW bridges.
 
 - Lanes 1785 through 1787 cover thrown-object catch paths inside the supported
   magic/`ArrayAccess` reference-return body executor. Public by-reference
