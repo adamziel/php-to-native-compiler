@@ -11938,7 +11938,21 @@ impl Interpreter {
         offset_param: &str,
         selected_key: ArrayKey,
     ) -> Option<Vec<ArrayKey>> {
+        let (prefix_keys, suffix_keys) =
+            Self::array_access_offset_parameter_key_parts(indices, offset_param)?;
         let mut keys = Vec::new();
+        keys.extend(prefix_keys);
+        keys.push(selected_key);
+        keys.extend(suffix_keys);
+        Some(keys)
+    }
+
+    fn array_access_offset_parameter_key_parts(
+        indices: &[Expr],
+        offset_param: &str,
+    ) -> Option<(Vec<ArrayKey>, Vec<ArrayKey>)> {
+        let mut prefix_keys = Vec::new();
+        let mut suffix_keys = Vec::new();
         let mut saw_offset_param = false;
         for index in indices {
             if matches!(index, Expr::Variable(name, _) if name == offset_param) {
@@ -11946,14 +11960,18 @@ impl Interpreter {
                     return None;
                 }
                 saw_offset_param = true;
-                keys.push(selected_key.clone());
                 continue;
             }
 
-            keys.push(Self::literal_reference_return_array_key(index)?);
+            let key = Self::literal_reference_return_array_key(index)?;
+            if saw_offset_param {
+                suffix_keys.push(key);
+            } else {
+                prefix_keys.push(key);
+            }
         }
         if saw_offset_param {
-            Some(keys)
+            Some((prefix_keys, suffix_keys))
         } else {
             None
         }
@@ -12064,23 +12082,42 @@ impl Interpreter {
             if !else_branch.is_empty()
                 || !Self::is_null_offset_guard(condition, &offset_param.name)
                 || target_object != "this"
-                || indices.len() != 1
-                || !matches!(&indices[0], Expr::Variable(name, _) if name == &offset_param.name)
                 || !matches!(expr, Expr::Variable(name, _) if name == &value_param.name)
             {
                 return Ok(None);
             }
-            let Some(append_property) =
-                Self::offset_set_append_property(then_branch, &value_param.name)
+            let Some((assign_prefix_keys, assign_suffix_keys)) =
+                Self::array_access_offset_parameter_key_parts(indices, &offset_param.name)
             else {
                 return Ok(None);
             };
-            if append_property != property {
+            if !assign_suffix_keys.is_empty() {
+                return Ok(None);
+            }
+            let Some(append_target) =
+                Self::offset_set_append_target(then_branch, &value_param.name)
+            else {
+                return Ok(None);
+            };
+            if &append_target.property != property
+                || append_target.prefix_keys != assign_prefix_keys
+            {
                 return Ok(None);
             }
             let keys = self
-                .last_array_access_backing_key(object_name, property, class_id, span, scope)?
-                .map(|key| vec![key])
+                .last_array_access_backing_key(
+                    object_name,
+                    property,
+                    &append_target.prefix_keys,
+                    class_id,
+                    span,
+                    scope,
+                )?
+                .map(|key| {
+                    let mut keys = append_target.prefix_keys.clone();
+                    keys.push(key);
+                    keys
+                })
                 .unwrap_or_default();
             if keys.is_empty() {
                 return Ok(None);
@@ -12122,10 +12159,10 @@ impl Interpreter {
                     && matches!(right.as_ref(), Expr::Variable(name, _) if name == offset_param)))
     }
 
-    fn offset_set_append_property<'a>(
-        then_branch: &'a [Stmt],
+    fn offset_set_append_target(
+        then_branch: &[Stmt],
         value_param: &str,
-    ) -> Option<&'a String> {
+    ) -> Option<ThisPropertyReferenceTarget> {
         let [Stmt::Assign {
             target:
                 AssignTarget::ObjectPropertyArrayAppend {
@@ -12140,13 +12177,17 @@ impl Interpreter {
         else {
             return None;
         };
-        if object == "this"
-            && indices.is_empty()
-            && matches!(expr, Expr::Variable(name, _) if name == value_param)
-        {
-            Some(property)
-        } else {
+        if object != "this" || !matches!(expr, Expr::Variable(name, _) if name == value_param) {
             None
+        } else {
+            let prefix_keys = indices
+                .iter()
+                .map(Self::literal_reference_return_array_key)
+                .collect::<Option<Vec<_>>>()?;
+            Some(ThisPropertyReferenceTarget {
+                property: property.clone(),
+                prefix_keys,
+            })
         }
     }
 
@@ -12154,6 +12195,7 @@ impl Interpreter {
         &self,
         object_name: &str,
         property: &str,
+        prefix_keys: &[ArrayKey],
         class_id: ClassId,
         _span: Span,
         scope: &SymbolTable,
@@ -12167,7 +12209,7 @@ impl Interpreter {
         };
         let root_alias = ArrayOffsetAlias {
             root,
-            keys: Vec::new(),
+            keys: prefix_keys.to_vec(),
         };
         let Some(Value::Array(array)) = scope.read_array_offset_alias(&root_alias) else {
             return Ok(None);

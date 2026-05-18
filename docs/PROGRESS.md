@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Lane 1712-C focused literal-prefix support for the branchy public
+  `ArrayAccess::offsetSet(null, $value)` append bridge. Direct
+  `$bag[] = $array` now preserves copied nested reference-slot metadata when
+  `offsetSet($offset, $value)` uses the shape
+  `if ($offset === null) { $this->items["bucket"][] = $value; return; }
+  $this->items["bucket"][$offset] = $value`, so later direct writes through
+  `$this->items["bucket"][0]...` resynchronize the original referenced
+  variables. This does not add suffix buckets after append offsets such as
+  `$this->items[]["bucket"]`, dynamic or repeated `offsetSet()` parameter
+  keys, non-literal `offsetSet()` path keys, arbitrary side-effecting or
+  broader `offsetSet()` bodies, broader mixed nested `ArrayAccess` chains,
+  broader `__get()` return expressions, by-value terminal/plain-array
+  mutation, scalar parent overwrite/error parity, full references/COW, or
+  native reference lowering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  PHP syntax checks passed for the new fixture, the `milestone1712`
+  `functions_and_scopes` filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1712`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1711-C focused literal-bucket support for the exact public
   `ArrayAccess::offsetSet()` backing-property write bridge. Direct
   `$bag["leaf"] = $array` now preserves copied nested reference-slot metadata

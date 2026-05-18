@@ -19199,6 +19199,24 @@ handled.
   terminal/plain-array mutation, scalar parent overwrite/error parity, full
   references/COW, and native reference lowering named as unsupported.
 
+## Lane 1712-C: ArrayAccess Literal Prefix Append Store
+
+- [x] Runtime/tests/docs lane: extend the branchy public
+  `ArrayAccess::offsetSet(null, $value)` append bridge to literal prefix
+  buckets, such as
+  `if ($offset === null) { $this->items["bucket"][] = $value; return; }
+  $this->items["bucket"][$offset] = $value;`. The covered direct
+  `$bag[] = $array` shape now stores copied nested reference-slot metadata
+  under the actual appended key inside the literal prefix bucket, so later
+  direct backing-property writes resynchronize the original referenced
+  variables. Keep suffix buckets after append offsets such as
+  `$this->items[]["bucket"]`, dynamic or repeated `offsetSet()` parameter
+  keys, non-literal `offsetSet()` path keys, side-effecting or broader
+  `offsetSet()` bodies, broader mixed nested `ArrayAccess` chains, broader
+  `__get()` return expressions, by-value terminal/plain-array mutation,
+  scalar parent overwrite/error parity, full references/COW, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
