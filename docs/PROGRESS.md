@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1730-C focused array element reference-slot wiring. `PhpArray`
+  now exposes cloned reads and reference-slot insertion/append helpers, and
+  the interpreter uses reference-backed `ArraySlot`s for direct
+  `$array[$key] =& $var` and `$array[] =& $var` bindings when the source is a
+  direct variable cell. Existing alias side-table synchronization remains in
+  place for compatibility with broader alias groups, while reads/writes
+  through covered array aliases use cloned slot values so reference-backed
+  slots do not require borrowed value access. This still does not wire all
+  nested/object-property/mixed array reference targets into reference-backed
+  slots, remove the alias side table, implement complete PHP alias
+  lifetime/detach behavior, string COW identity, or native reference lowering.
+  Focused verification: `cargo check -q -p phpc` passed;
+  `cargo test -q -p php_runtime
+  arrays_can_store_reference_backed_slots_by_key_and_append` passed `1` test;
+  and `cargo test -q -p phpc
+  symbol_table_array_reference_targets_use_reference_backed_slots` passed the
+  focused compiler unit test.
+
 - Added Lane 1729-C runtime/interpreter value-model substrate for direct
   variable reference cells and by-reference closure captures. The interpreter
   `SymbolTable` now stores direct variable cells as runtime

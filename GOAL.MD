@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1729:
+The current in-progress implementation frontier is Lane 1730:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -230,6 +230,11 @@ The current in-progress implementation frontier is Lane 1729:
   primitive. Direct variable aliases, by-reference parameters/returns, magic
   reference-return cells, and closure capture cells now share the runtime
   reference-cell identity instead of a compiler-local `Rc<RefCell<Value>>`.
+- Lane 1730 starts wiring array element reference bindings into the new slot
+  storage. Direct `$array[$key] =& $var` and `$array[] =& $var` store
+  reference-backed `ArraySlot`s for direct variable sources, while the
+  existing alias side table remains as scaffolding for broader nested,
+  object-property, and mixed alias groups.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

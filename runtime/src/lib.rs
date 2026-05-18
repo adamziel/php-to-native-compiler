@@ -1232,6 +1232,10 @@ impl PhpArray {
         self.get_slot(key).map(ArraySlot::value)
     }
 
+    pub fn get_cloned(&self, key: impl Into<ArrayKey>) -> Option<Value> {
+        self.get_slot(key).map(ArraySlot::value_cloned)
+    }
+
     pub fn get_slot(&self, key: impl Into<ArrayKey>) -> Option<&ArraySlot> {
         let key = key.into().normalized();
         self.entries
@@ -1276,7 +1280,36 @@ impl PhpArray {
         key
     }
 
+    pub fn insert_reference(
+        &mut self,
+        key: impl Into<ArrayKey>,
+        reference: PhpReferenceCell,
+    ) -> ArrayKey {
+        self.insert_slot(key, ArraySlot::from_reference_cell(reference))
+    }
+
+    pub fn insert_slot(&mut self, key: impl Into<ArrayKey>, slot: ArraySlot) -> ArrayKey {
+        let key = key.into().normalized();
+        self.bump_next_auto_index(&key);
+
+        if let Some(target) = self.get_slot_mut(key.clone()) {
+            *target = slot;
+            return key;
+        }
+
+        self.entries.push(ArrayEntry::from_slot(key.clone(), slot));
+        key
+    }
+
     pub fn append(&mut self, value: Value) -> RuntimeResult<ArrayKey> {
+        self.append_slot(ArraySlot::new(value))
+    }
+
+    pub fn append_reference(&mut self, reference: PhpReferenceCell) -> RuntimeResult<ArrayKey> {
+        self.append_slot(ArraySlot::from_reference_cell(reference))
+    }
+
+    pub fn append_slot(&mut self, slot: ArraySlot) -> RuntimeResult<ArrayKey> {
         if self.auto_index_exhausted {
             return Err(RuntimeError::invalid_array_key(
                 "cannot append after maximum integer key",
@@ -1284,7 +1317,7 @@ impl PhpArray {
         }
 
         let key = ArrayKey::Int(self.next_auto_index);
-        self.insert(key.clone(), value);
+        self.insert_slot(key.clone(), slot);
         Ok(key)
     }
 
@@ -2236,6 +2269,10 @@ impl ArrayEntry {
         }
     }
 
+    pub fn from_slot(key: ArrayKey, slot: ArraySlot) -> Self {
+        Self { key, slot }
+    }
+
     pub fn value(&self) -> &Value {
         self.slot.value()
     }
@@ -2594,7 +2631,7 @@ impl ArrayColumnKey {
 
 fn array_column_row_value(row: &Value, key: &ArrayColumnKey) -> Option<Value> {
     match row {
-        Value::Array(row) => row.get(key.array_key()).cloned(),
+        Value::Array(row) => row.get_cloned(key.array_key()),
         Value::Object(row) => key
             .property_name()
             .and_then(|name| row.read_current_public_property(name)),
@@ -6448,6 +6485,40 @@ mod tests {
 
         slot.set_value(Value::Int(42));
         assert_eq!(reference.value_cloned(), Value::Int(42));
+    }
+
+    #[test]
+    fn arrays_can_store_reference_backed_slots_by_key_and_append() {
+        let first = PhpReferenceCell::new(Value::String("first".to_string()));
+        let second = PhpReferenceCell::new(Value::String("second".to_string()));
+        let mut array = PhpArray::new();
+
+        array.insert_reference("named", first.clone());
+        let appended_key = array.append_reference(second.clone()).unwrap();
+
+        assert_eq!(appended_key, ArrayKey::Int(0));
+        assert_eq!(
+            array.get_cloned("named"),
+            Some(Value::String("first".to_string()))
+        );
+        assert_eq!(
+            array.get_cloned(0),
+            Some(Value::String("second".to_string()))
+        );
+        assert_eq!(
+            array.get_slot("named").unwrap().reference_cell_id(),
+            Some(first.id())
+        );
+        assert_eq!(
+            array.get_slot(0).unwrap().reference_cell_id(),
+            Some(second.id())
+        );
+
+        array.insert("named", Value::String("changed-through-array".to_string()));
+        assert_eq!(
+            first.value_cloned(),
+            Value::String("changed-through-array".to_string())
+        );
     }
 
     #[test]

@@ -274,6 +274,34 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: use reference cells for interpreter variables"`
   if the full gate passes.
 
+## Loop Event 2026-05-18T17:05:00+02:00
+
+- Checkpoint before this task: `712e1e91 runtime: use reference cells for
+  interpreter variables`, pushed to `origin/master`.
+- Task attempted: Lane 1730-C direct array reference-backed slot wiring.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed;
+  `cargo test -q -p php_runtime
+  arrays_can_store_reference_backed_slots_by_key_and_append` passed `1`
+  focused runtime test; and `cargo test -q -p phpc
+  symbol_table_array_reference_targets_use_reference_backed_slots` passed the
+  focused compiler unit test.
+- Semantic gap reduced: direct `$array[$key] =& $var` and
+  `$array[] =& $var` reference bindings for direct variable sources now store
+  reference-backed `ArraySlot`s carrying the source `PhpReferenceCell`
+  identity, while existing alias side-table synchronization still handles
+  broader paths.
+- Remaining semantic gaps: nested/object-property/mixed array element
+  reference-backed slot wiring, alias side-table removal, complete PHP alias
+  lifetime/detach parity, string COW identity, and native reference lowering
+  remain unsupported.
+- Next concrete task: run full runtime checks, `cargo fmt --check`,
+  `git diff --check`, and then one full checkpoint with
+  `tools/checkpoint.sh "runtime: use reference slots for direct array bindings"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

@@ -19471,6 +19471,18 @@ handled.
   alias lifetime/detach behavior, string COW identity, and native reference
   lowering named as unsupported.
 
+## Lane 1730-C: Direct Array Reference-Backed Slot Wiring
+
+- [x] Runtime/interpreter/tests/docs lane: add `PhpArray` helpers for cloned
+  reads plus reference-slot keyed insertion and append, then route direct
+  `$array[$key] =& $var` and `$array[] =& $var` bindings for direct variable
+  sources through reference-backed `ArraySlot`s. Prove stored slots carry the
+  source `PhpReferenceCell` identity and writes still flow through the
+  existing alias read/write paths. Keep nested/object-property/mixed array
+  element binding wiring, alias side-table removal, complete PHP alias
+  lifetime/detach behavior, string COW identity, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
