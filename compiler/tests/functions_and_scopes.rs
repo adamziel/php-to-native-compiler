@@ -7772,6 +7772,91 @@ echo $fn ? "truthy" : "missing";
 }
 
 #[test]
+fn closure_reference_captures_reuse_alias_backed_reference_cells() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public int $id = 1;
+}
+
+class MagicBox {
+    private $store = array();
+
+    public function seed(&$value) {
+        $this->store["missing"]["copy"] =& $value;
+    }
+
+    public function &__get($name) {
+        $bucket =& $this->store[$name];
+        return $bucket;
+    }
+
+    public function read($name, $key) {
+        return gettype($this->store[$name][$key]) . ":" . $this->store[$name][$key];
+    }
+}
+
+$box = new Box();
+$alias =& $box->id;
+$items = array();
+$items["slot"] =& $alias;
+$slot =& $items["slot"];
+$slot = "2";
+$magic = new MagicBox();
+$fn = function () use (&$slot, $magic) {
+    $magic->seed($slot);
+};
+$fn();
+$magic->missing["copy"] = "3";
+echo gettype($box->id), ":", $box->id, "|", $magic->read("missing", "copy"), "|", gettype($slot), ":", $slot;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "integer:3|integer:3|integer:3");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    public int $id = 1;
+}
+
+class MagicBox {
+    private $store = array();
+
+    public function seed(&$value) {
+        $this->store["missing"]["copy"] =& $value;
+    }
+
+    public function &__get($name) {
+        $bucket =& $this->store[$name];
+        return $bucket;
+    }
+}
+
+$box = new Box();
+$alias =& $box->id;
+$items = array();
+$items["slot"] =& $alias;
+$slot =& $items["slot"];
+$magic = new MagicBox();
+$fn = function () use (&$slot, $magic) {
+    $magic->seed($slot);
+};
+$fn();
+$magic->missing["copy"] = array("bad");
+"#,
+    );
+    assert_eq!(error.line, 29);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid property access: typed property Box::$id expects int, got array"
+    );
+}
+
+#[test]
 fn anonymous_closure_invocation_executes_current_body_subset() {
     let execution = run_source(
         r#"<?php

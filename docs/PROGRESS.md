@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1753-C for by-reference closure captures of alias-backed direct
+  variables. When `use (&$name)` captures a variable already routed through a
+  covered array-offset alias group, closure invocation now prebinds the local
+  capture to the promoted/reused `PhpReferenceCell` when that is statically
+  safe, instead of a temporary copy/writeback cell. This keeps references
+  stored from inside the closure connected to the original typed-property
+  reference after the closure returns. Arbitrary closure capture roots,
+  magic/`ArrayAccess` method bodies, dynamic/non-literal backing keys, broader
+  complex alias sinks, exact PHP fatal text, string COW identity, and native
+  reference lowering remain unsupported. Focused verification: raw system PHP
+  output matched the new `milestone1753` fixture; `cargo run -q -p phpc --
+  test --compare-php tests/fixtures/milestone1753` passed `1` fixture with
+  `1` system PHP comparison and `0` skips; adjacent
+  `closure_reference_captures_reuse_alias_backed_reference_cells` passed.
+
 - Added Lane 1752-C for alias-backed direct variables passed to
   by-reference parameters. When a direct variable is currently routed through
   covered array-offset alias metadata but that alias group can be promoted to

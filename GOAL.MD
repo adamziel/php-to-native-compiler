@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1752:
+The current in-progress implementation frontier is Lane 1753:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -367,6 +367,11 @@ The current in-progress implementation frontier is Lane 1752:
   instead of a temporary copy/writeback value, so references stored by the
   callee remain live after return and later magic backing-bucket writes still
   update the original typed-property reference.
+- Lane 1753 applies the same cell-preservation rule to by-reference closure
+  captures. If `use (&$name)` captures a variable routed through a covered
+  alias group, closure invocation prebinds the capture to the promoted
+  reference cell so references stored inside the closure remain connected to
+  the original typed-property reference after return.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

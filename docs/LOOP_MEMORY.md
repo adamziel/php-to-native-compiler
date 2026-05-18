@@ -18,6 +18,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T21:11:40+02:00
+
+- Checkpoint before this task: `c4fb0677 runtime: pass alias-backed reference
+  cells`, pushed to `origin/master`.
+- Task attempted: Lane 1753-C, preserving real reference-cell identity for
+  by-reference closure captures of direct variables routed through covered
+  array-offset alias metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1753/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1753/closure_alias_backed_reference_capture.php`;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1753`
+  passed `1` fixture with `1` system PHP comparison and `0` skips; focused
+  `closure_reference_captures_reuse_alias_backed_reference_cells` passed.
+- Remaining COW gaps: arbitrary closure capture roots, arbitrary
+  magic/`ArrayAccess` method bodies, dynamic/non-literal backing keys,
+  broader complex alias sinks, broader alias lifetime/detach ordering, exact
+  PHP fatal text, string COW identity, and native reference lowering.
+- Next concrete task: run `cargo check`, formatting, diff, adjacent
+  functions/closure and recent milestone fixture regressions, then checkpoint
+  with `tools/checkpoint.sh "runtime: capture alias-backed reference cells"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T20:56:30+02:00
 
 - Checkpoint before this task: `5b134974 runtime: accept local indexed

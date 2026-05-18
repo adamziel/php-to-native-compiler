@@ -19744,6 +19744,18 @@ handled.
   dynamic/non-literal keys, broader complex alias sinks, exact PHP fatal text,
   string COW identity, and native reference lowering named as unsupported.
 
+## Lane 1753-C: Closure Captures Keep Alias-Backed Reference Cells
+
+- [x] Runtime/interpreter/tests/docs lane: when `use (&$name)` captures a
+  direct variable routed through covered array-offset alias metadata,
+  promote/reuse the reached reference cell during closure invocation when
+  statically safe. Cover a closure that stores the capture by reference into a
+  magic `__get()` backing bucket, then mutates through that bucket with
+  system-PHP fixture comparison and an invalid typed-reference regression.
+  Keep arbitrary closure capture roots, dynamic/non-literal keys, broader
+  complex alias sinks, exact PHP fatal text, string COW identity, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

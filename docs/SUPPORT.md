@@ -6258,6 +6258,9 @@
   covered direct array-offset or visible object-property array-offset metadata,
   such as `$payload =& $_REQUEST["payload"]; function () use (&$payload) { ... }`
   and `$item =& $object->items["slot"]; function () use (&$item) { ... }`.
+  When that alias group can be promoted to a real reference cell, closure
+  invocation prebinds the captured local to that cell so references stored by
+  the closure body remain connected to the original slot after return.
   Writes inside direct `$closure(...)`, closure-valued `call_user_func()`,
   positional `call_user_func_array()`, and `ReflectionFunction::invoke()`
   invocations are copied back to those captured slots after supported closure

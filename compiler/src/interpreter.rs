@@ -36491,14 +36491,22 @@ impl Interpreter {
                 PreboundLocal::ArrayOffsets {
                     name,
                     aliases,
-                    source_scope,
+                    mut source_scope,
                 } => {
-                    let value = aliases
-                        .first()
-                        .and_then(|alias| source_scope.read_array_offset_alias(alias))
-                        .unwrap_or(Value::Null);
-                    local_scope.write_static(&name, value);
-                    if let Some(cell) = local_scope.read_cell(&name) {
+                    let cell = if let Some(cell) =
+                        source_scope.reference_cell_for_array_offset_alias_group(&aliases)
+                    {
+                        local_scope.bind_static_to_cell(&name, cell.clone());
+                        Some(cell)
+                    } else {
+                        let value = aliases
+                            .first()
+                            .and_then(|alias| source_scope.read_array_offset_alias(alias))
+                            .unwrap_or(Value::Null);
+                        local_scope.write_static(&name, value);
+                        local_scope.read_cell(&name)
+                    };
+                    if let Some(cell) = cell {
                         captured_array_offset_binding_cells.push((
                             name,
                             aliases,

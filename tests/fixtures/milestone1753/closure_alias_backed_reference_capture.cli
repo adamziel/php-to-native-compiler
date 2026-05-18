@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1753/closure_alias_backed_reference_capture.php
