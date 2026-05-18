@@ -26,6 +26,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T14:25:00+02:00
+
+- Checkpoint before this task: `3a4f5d3f runtime: preserve ArrayAccess append
+  offsetSet bucket references`, pushed to `origin/master`.
+- Task attempted: Lane 1683-C direct visible property-held `ArrayAccess`
+  append `offsetSet(null, $value)` stored-bucket reference-slot propagation
+  for the focused copied-bucket COW shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1683/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, the lane
+  review note, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: the exact empty-key and branchy
+  property-held append stored-bucket `functions_and_scopes` filters passed;
+  the direct append regression filter passed; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1683` passed `2` fixtures with `2`
+  system PHP comparisons and `0` skips. Broader verification passed `cargo
+  fmt --check`, `git diff --check`, full `functions_and_scopes` (`215`
+  tests), `foreach` (`39` tests), `call_user_func_builtin` (`41` tests), and
+  adjacent milestone fixture comparisons. The checkpoint full gate passed with
+  `1726` fixture tests, `1034` system PHP comparisons, and `692` phpc-only
+  skips before committing this lane.
+- Semantic gap reduced: direct `$holder->bag[] = $array` now preserves nested
+  reference slots when the visible named property holds an `ArrayAccess`
+  object storing through either the exact public
+  `$this->property[$offset] = $value;` bridge, mapping PHP's null offset to
+  the backing array's empty-string key, or the branchy
+  `if ($offset === null) { $this->property[] = $value; return; }
+  $this->property[$offset] = $value;` bridge, binding metadata to the actual
+  appended integer key after the method call. Later exact by-value
+  `offsetGet()` bucket copies preserve those nested reference slots.
+- Remaining semantic gaps: dynamic-property-held, non-direct, or
+  magic-property append `offsetSet(null)` stored-bucket receivers,
+  side-effecting or broader `offsetSet()`/`offsetGet()` bodies, mixed nested
+  `ArrayAccess` chains, full references/COW, native reference lowering, and
+  exact alias destruction/destructor ordering remain unsupported.
+- Next concrete task: continue the COW receiver ladder with the next largest
+  append stored-bucket gap, likely dynamic-property-held or non-direct holder
+  receivers, unless local verification exposes a regression first.
+
 ## Loop Event 2026-05-18T13:35:00+02:00
 
 - Checkpoint before this task: `7a4c8a68 runtime: preserve ArrayAccess offsetSet

@@ -4,6 +4,36 @@
 
 Implemented:
 
+- Added Lane 1683-C direct visible property-held `ArrayAccess` append
+  `offsetSet(null, $value)` stored-bucket reference-slot propagation for the
+  focused copied-bucket COW shape. Direct `$holder->bag[] = $array` now
+  preserves nested reference slots when the visible named property holds an
+  `ArrayAccess` object that stores through either the exact public
+  `offsetSet($offset, $value) { $this->property[$offset] = $value; }` bridge,
+  which maps PHP's null offset to the backing array's empty-string key, or
+  the branchy append bridge `if ($offset === null) { $this->property[] =
+  $value; return; } $this->property[$offset] = $value;`, which binds metadata
+  to the actual appended integer key after the user method call. Later exact
+  by-value `offsetGet($offset) { return $this->property[$offset]; }` bucket
+  copies preserve those nested reference slots while ordinary copied fields
+  remain detached. This does not add dynamic-property-held, non-direct, or
+  magic-property append `offsetSet(null)` stored-bucket receivers,
+  side-effecting or broader `offsetSet()`/`offsetGet()` bodies, mixed nested
+  `ArrayAccess` chains, full references/COW, native reference lowering, or
+  exact alias destruction/destructor ordering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: the branchy and exact property-held append
+  stored-bucket `functions_and_scopes` filters passed, the direct append
+  regression filter passed, and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1683` passed `2` fixtures with `2` system PHP
+  comparisons and `0` skips. Broader verification passed `cargo fmt
+  --check`, `git diff --check`, the full `functions_and_scopes` test file
+  with `215` tests, the `foreach` test file with `39` tests, the
+  `call_user_func_builtin` test file with `41` tests, and adjacent
+  `milestone1682`/`milestone1683` fixture comparisons. The checkpoint full
+  gate passed with `1726` fixture tests, `1034` system PHP comparisons, and
+  `692` phpc-only skips.
+
 - Added Lane 1682-C direct `ArrayAccess` append `offsetSet(null, $value)`
   stored-bucket reference-slot propagation for the focused copied-bucket COW
   shape. Direct `$bag[] = $array` now preserves nested reference slots when a

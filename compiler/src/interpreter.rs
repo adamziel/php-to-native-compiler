@@ -12879,6 +12879,21 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
+                if keys.is_empty()
+                    && matches!(value, Value::Array(_))
+                    && self
+                        .write_object_property_array_access_append_with_reference_propagation(
+                            object,
+                            property,
+                            value.clone(),
+                            expr,
+                            array_literal_references.clone(),
+                            *span,
+                            scope,
+                        )?
+                {
+                    return Ok(value);
+                }
                 if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, property, *span, scope,
@@ -13093,6 +13108,121 @@ impl Interpreter {
             }
             _ => {}
         }
+    }
+
+    fn bind_or_mirror_array_references_to_alias_root(
+        &mut self,
+        expr: &Expr,
+        root: ArrayOffsetAliasRoot,
+        keys: Vec<ArrayKey>,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        if array_literal_references.is_empty() {
+            self.mirror_copied_array_aliases_to_alias_root(expr, root, &keys, scope);
+        } else {
+            self.bind_array_literal_references_to_alias_root_with_prefix(
+                root,
+                keys,
+                array_literal_references,
+                expr.span(),
+                scope,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn write_object_property_array_access_append_with_reference_propagation(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some(Value::Object(holder)) = scope.read_named(object_name) else {
+            return Ok(false);
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let Value::Object(array_access_object) = (match holder.read_property_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(value) => value,
+            Err(_) => return Ok(false),
+        }) else {
+            return Ok(false);
+        };
+        if !self
+            .classes
+            .implements_interface(array_access_object.class_id(), "ArrayAccess")
+        {
+            return Ok(false);
+        }
+
+        let hidden_name = self.hidden_array_access_reference_object_name(&array_access_object);
+        scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
+
+        if let Some((root, reference_keys)) = self.array_access_offset_set_alias_for_object(
+            array_access_object.clone(),
+            &hidden_name,
+            None,
+            false,
+            span,
+            scope,
+        )? {
+            let alias = ArrayOffsetAlias {
+                root: root.clone(),
+                keys: reference_keys.clone(),
+            };
+            scope.materialize_array_offset_alias(&alias, span)?;
+            if !scope.write_array_offset_alias(&alias, value.clone()) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(
+                        "cannot write exact property-held ArrayAccess offsetSet() backing bucket"
+                            .to_string(),
+                    ),
+                ));
+            }
+            self.bind_or_mirror_array_references_to_alias_root(
+                expr,
+                root,
+                reference_keys,
+                array_literal_references,
+                scope,
+            )?;
+            return Ok(true);
+        }
+
+        self.call_array_access_method(
+            array_access_object.clone(),
+            "offsetSet",
+            vec![Self::array_key_value(None), value],
+            span,
+        )?;
+
+        if let Some((root, reference_keys)) = self.array_access_offset_set_alias_for_object(
+            array_access_object,
+            &hidden_name,
+            None,
+            true,
+            span,
+            scope,
+        )? {
+            self.bind_or_mirror_array_references_to_alias_root(
+                expr,
+                root,
+                reference_keys,
+                array_literal_references,
+                scope,
+            )?;
+        }
+
+        Ok(true)
     }
 
     fn write_nested_array_assignment(

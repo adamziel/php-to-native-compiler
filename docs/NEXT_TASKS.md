@@ -18582,11 +18582,30 @@ handled.
   return; } $this->property[$offset] = $value;`, where metadata attaches to
   the actual appended integer key after the method call. Later exact
   by-value `offsetGet($offset) { return $this->property[$offset]; }` bucket
-  copies preserve nested reference slots. Keep property-held and non-direct
-  append stores, side-effecting or broader `offsetSet()`/`offsetGet()` bodies,
-  mixed nested `ArrayAccess` chains, full references/COW, native reference
-  lowering, and exact alias destruction/destructor ordering named as
-  unsupported.
+  copies preserve nested reference slots. Lane 1683-C extends the same
+  append stored-bucket shape to direct visible named property-held receivers.
+  Keep dynamic-property-held, non-direct, and magic-property append stores,
+  side-effecting or broader `offsetSet()`/`offsetGet()` bodies, mixed nested
+  `ArrayAccess` chains, full references/COW, native reference lowering, and
+  exact alias destruction/destructor ordering named as unsupported.
+
+## Lane 1683-C: Property-Held ArrayAccess Append `offsetSet(null)` Stored-Bucket Reference Slots
+
+- [x] Runtime/tests/docs lane: preserve nested reference slots when direct
+  visible named property-held `$holder->bag[] = $array` stores an array
+  literal or copied array through the held `ArrayAccess` object's public
+  `offsetSet(null, $value)` path. The focused slice covers the exact
+  `$this->property[$offset] = $value;` bridge, where PHP's null offset stores
+  under the backing array's empty-string key, and the branchy append bridge
+  `if ($offset === null) { $this->property[] = $value; return; }
+  $this->property[$offset] = $value;`, where metadata attaches to the actual
+  appended integer key after the method call. Later exact by-value
+  `offsetGet($offset) { return $this->property[$offset]; }` bucket copies
+  preserve nested reference slots. Keep dynamic-property-held, non-direct,
+  and magic-property append stores, side-effecting or broader
+  `offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess` chains, full
+  references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
