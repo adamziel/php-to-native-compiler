@@ -36513,6 +36513,51 @@ impl Interpreter {
             }
         }
 
+        if let Stmt::Foreach {
+            iterable,
+            key,
+            value,
+            by_reference,
+            body,
+            span,
+        } = stmt
+        {
+            if !by_reference {
+                let iterable = self.evaluate(iterable, scope)?;
+                return match iterable {
+                    Value::Array(array) => self.execute_reference_return_assignment_foreach_array(
+                        function, array, key, value, body, *span, scope,
+                    ),
+                    other => match self
+                        .execute_foreach_by_value_iterable(other, key, value, body, *span, scope)?
+                    {
+                        Flow::Normal => Ok(ReferenceReturnBodyFlow::Normal),
+                        Flow::Return(_) => Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "reference returns through this foreach iterable form are not implemented",
+                            ),
+                        )),
+                        Flow::Break { depth, span } => {
+                            Ok(ReferenceReturnBodyFlow::Break { depth, span })
+                        }
+                        Flow::Continue { depth, span } => {
+                            Ok(ReferenceReturnBodyFlow::Continue { depth, span })
+                        }
+                        Flow::Exit(_) => Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "exit during reference-return evaluation is not implemented",
+                            ),
+                        )),
+                        Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
+                    },
+                };
+            }
+        }
+
         if let Stmt::Try {
             body, finally_body, ..
         } = stmt
@@ -36556,6 +36601,47 @@ impl Interpreter {
             )),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
+    }
+
+    fn execute_reference_return_assignment_foreach_array(
+        &mut self,
+        function: &FunctionDecl,
+        array: PhpArray,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnBodyFlow> {
+        for entry in array.entries() {
+            self.tick(span)?;
+            if let Some(key) = key {
+                scope.write_static(key, value_from_array_key(&entry.key));
+            }
+            scope.write_static(value, entry.value_cloned());
+            match self.execute_reference_return_assignment_statement_list(function, body, scope)? {
+                ReferenceReturnBodyFlow::Normal => {}
+                ReferenceReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                ReferenceReturnBodyFlow::Continue { depth, span } => {
+                    return Ok(ReferenceReturnBodyFlow::Continue {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                ReferenceReturnBodyFlow::Break { depth, .. } if depth <= 1 => {
+                    return Ok(ReferenceReturnBodyFlow::Normal);
+                }
+                ReferenceReturnBodyFlow::Break { depth, span } => {
+                    return Ok(ReferenceReturnBodyFlow::Break {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
+            }
+        }
+
+        Ok(ReferenceReturnBodyFlow::Normal)
     }
 
     fn execute_reference_return_assignment_switch(

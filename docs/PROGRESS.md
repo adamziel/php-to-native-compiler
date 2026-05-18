@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1772-C for by-value array `foreach` reference-return bodies in
+  the supported magic/`ArrayAccess` method-body subset. Public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies can now
+  select a covered return lvalue from inside a by-value array `foreach`,
+  including local `continue`, while preserving copied reference-slot
+  write-through for the returned backing bucket. By-reference `foreach`,
+  Iterator/object foreach reference returns, exception unwinding/catch
+  execution for thrown values, unsupported PHP syntax, broader dynamic backing
+  keys, and native reference lowering remain unsupported. Focused
+  verification: raw system PHP output matched the new `milestone1772`
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1772` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; focused `functions_and_scopes` milestone tests
+  passed.
+
 - Added Lane 1771-C for dynamically selected `$this->{$property}[...]`
   backing-property roots in the supported magic/`ArrayAccess` reference-return
   method-body subset. Public by-reference `ArrayAccess::offsetGet()` and

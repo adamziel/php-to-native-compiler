@@ -19960,6 +19960,17 @@ handled.
   execution for thrown values, arbitrary unsupported PHP syntax, broader magic
   roots, and native reference lowering named as unsupported.
 
+## Lane 1772-C: Foreach Reference-Return Bodies
+
+- [x] Runtime/interpreter/tests/docs lane: preserve reference-return lvalues
+  through by-value array `foreach` bodies in public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies,
+  including local `continue` before the selected backing bucket is returned.
+  Keep by-reference `foreach`, Iterator/object foreach reference returns,
+  exception unwinding/catch execution for thrown values, arbitrary unsupported
+  PHP syntax, broader dynamic backing keys, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -245,6 +245,9 @@
   covered for the same supported return lvalue shapes when no exception is
   thrown. `finally` side effects run before the returned bucket is bound, and
   a supported lvalue returned from `finally` overrides an earlier try return.
+  By-value array `foreach` bodies are covered for the same supported return
+  lvalue shapes, including local `continue` before the selected backing bucket
+  is returned.
   Public by-reference `__get()` uses the same assignment-capable return path
   for covered array-offset returns such as `return $this->store[$name];`.
   Covered return expressions may also use a dynamically selected `$this`
@@ -261,6 +264,7 @@
   `__get()` roots beyond the covered direct variable/property/backing-offset
   returns; exception unwinding or catch execution for thrown values inside
   reference-return bodies; arbitrary dynamic/non-literal backing-key analysis;
+  by-reference `foreach` or Iterator/object foreach reference returns;
   arbitrary PHP syntax outside the interpreter subset; arbitrary mixed nested
   `ArrayAccess` object chains; broad same-container identity for
   reference-returning function,

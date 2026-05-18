@@ -32,7 +32,12 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1771:
+The current in-progress implementation frontier is Lane 1772:
+
+- Lane 1772 preserves reference-return lvalues through by-value array
+  `foreach` bodies in public by-reference `ArrayAccess::offsetGet()` and
+  covered by-reference `__get()` bodies, including local `continue` before the
+  selected backing bucket is returned.
 
 - Lane 1771 allows covered reference-return expressions in public
   by-reference `ArrayAccess::offsetGet()` and `__get()` bodies to bind through
