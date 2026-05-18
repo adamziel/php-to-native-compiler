@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Lane 1718-C focused nested keyed-store support for visible
+  property-held `ArrayAccess` objects. Direct stores such as
+  `$holder->bag["outer"]["leaf"] = $array`, non-direct named holder stores
+  such as `$holders["box"]->bag["outer"]["leaf"] = $array`, and non-direct
+  dynamic holder stores such as `$holders["box"]->{$name}["outer"]["leaf"] =
+  $array` now select the parent bucket through exact public by-reference
+  `offsetGet($offset) { return $this->property[$offset]; }`, write the nested
+  plain-array leaf in that backing bucket, and attach array-literal reference
+  slots or copied-array alias metadata to the leaf path. This does not add
+  keyed stores through magic-property-provided containers,
+  by-value terminal/plain-array nested mutation, unsupported
+  `offsetSet()`/`offsetGet()` bodies, broader mixed nested `ArrayAccess`
+  chains, broader `__get()` return expressions, scalar parent
+  overwrite/error parity, full references/COW, or native reference lowering.
+  Focused verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax and system PHP output
+  checks passed for the new fixture, `cargo check -q -p phpc` passed, the
+  `milestone1718` `functions_and_scopes` filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1718`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1717-C focused keyed-store support for visible property-held
   `ArrayAccess` objects. Direct stores such as
   `$holder->bag["leaf"] = $array`, non-direct named holder stores such as

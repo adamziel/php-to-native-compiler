@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1717:
+The current in-progress implementation frontier is Lane 1718:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -155,6 +155,9 @@ The current in-progress implementation frontier is Lane 1717:
   `ArrayAccess` objects for covered one-key shapes such as
   `$holder->bag["leaf"] = $array`, `$holders["box"]->bag["leaf"] = $array`,
   and `$holders["box"]->{$name}["leaf"] = $array`.
+- Lane 1718 extends property-held keyed stores to nested plain-array leaves
+  below exact by-reference `offsetGet()` parent buckets, such as
+  `$holder->bag["outer"]["leaf"] = $array`.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

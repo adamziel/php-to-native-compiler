@@ -940,8 +940,16 @@ such as `$holders["box"]->bag["leaf"] = $array` or
 bucket recognizer for the concrete root and keys. When the exact non-branchy
 or `if/else` keyed recognizer succeeds, array-literal reference slots or
 copied-array alias metadata are attached to that backing bucket. Multi-key
-property-held keyed stores, magic-property-provided keyed containers,
-unsupported `offsetSet()` bodies, and native lowering remain outside this
+property-held keyed stores reuse the hidden root differently: the runtime asks
+the exact public by-reference `offsetGet($offset) { return
+$this->property[$offset]; }` bridge for the parent path, then writes the
+nested plain-array leaf through the returned backing alias. This covers
+direct, non-direct named-holder, and non-direct dynamic-holder paths such as
+`$holder->bag["outer"]["leaf"] = $array`,
+`$holders["box"]->bag["outer"]["leaf"] = $array`, and
+`$holders["box"]->{$name}["outer"]["leaf"] = $array`. Magic-property-provided
+keyed containers, by-value terminal/plain-array nested mutation, unsupported
+`offsetSet()`/`offsetGet()` bodies, and native lowering remain outside this
 path.
 Direct magic-property append stores such as `$box->missing[] = $array` and
 `$box->{$name}[] = $array` are a separate store path from magic append

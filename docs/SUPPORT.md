@@ -899,9 +899,18 @@
   `$holders["box"]->bag["leaf"] = $array` and
   `$holders["box"]->{$name}["leaf"] = $array` evaluate the holder and
   property name once before using that same keyed bridge. Multi-key
-  property-held keyed stores, keyed stores through magic-property-provided
-  containers, unsupported `offsetSet()` body shapes, and native lowering
-  remain outside this keyed COW slice. Direct magic-property append stores
+  property-held keyed stores such as
+  `$holder->bag["outer"]["leaf"] = $array`,
+  `$holders["box"]->bag["outer"]["leaf"] = $array`, and
+  `$holders["box"]->{$name}["outer"]["leaf"] = $array` are covered when the
+  held object exposes the exact public by-reference
+  `offsetGet($offset) { return $this->property[$offset]; }` bridge; the
+  parent bucket is selected through `offsetGet()`, the nested plain-array
+  leaf is written in that backing bucket, and the stored array's reference
+  metadata is attached to the leaf path. Keyed stores through
+  magic-property-provided containers, by-value terminal/plain-array nested
+  mutation, unsupported `offsetSet()`/`offsetGet()` body shapes, and native
+  lowering remain outside this keyed COW slice. Direct magic-property append stores
   such as `$box->missing[] = $array` and `$box->{$name}[] = $array` are also
   supported for this focused stored-bucket COW shape when visible public
   `__get($name)` returns an `ArrayAccess` object; `__get()` is called once

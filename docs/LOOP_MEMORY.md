@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T14:33:13+02:00
+
+- Checkpoint before this task: `e21877b0 runtime: support property-held
+  ArrayAccess keyed stores`, pushed to `origin/master`.
+- Task attempted: Lane 1718-C focused visible property-held `ArrayAccess`
+  nested keyed store COW propagation through exact by-reference `offsetGet()`
+  parent buckets.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1718/*`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc` passed;
+  PHP syntax and system PHP output checks passed for the new fixture; the
+  `milestone1718` `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1718`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: direct property-held, non-direct named holder, and
+  non-direct dynamic holder nested keyed stores now select the parent bucket
+  through exact public by-reference `offsetGet()`, write the nested
+  plain-array leaf in that backing bucket, and preserve copied nested
+  reference-slot metadata at the leaf.
+- Remaining semantic gaps: keyed stores through magic-property-provided
+  containers, by-value terminal/plain-array nested mutation, unsupported
+  `offsetSet()`/`offsetGet()` bodies, broader mixed nested `ArrayAccess`
+  chains, broader `__get()` return expressions, scalar parent overwrite/error
+  parity, full references/COW, and native reference lowering remain
+  unsupported.
+- Next concrete task: run adjacent milestone1717 checks, `cargo fmt --check`,
+  `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "runtime: support property-held ArrayAccess nested keyed stores"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T14:25:02+02:00
 
 - Checkpoint before this task: `94ebaf2e runtime: support ArrayAccess if else

@@ -13481,6 +13481,22 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
+                if matches!(value, Value::Array(_))
+                    && keys.len() > 1
+                    && self
+                        .write_object_property_array_access_nested_keyed_with_reference_propagation(
+                            object,
+                            property,
+                            keys.clone(),
+                            value.clone(),
+                            expr,
+                            array_literal_references.clone(),
+                            *span,
+                            scope,
+                        )?
+                {
+                    return Ok(value);
+                }
                 let root =
                     self.context_object_property_alias_root(object, property, *span, scope)?;
                 let root = scope.canonical_equivalent_object_property_alias_root(&root);
@@ -13555,6 +13571,22 @@ impl Interpreter {
                         *span,
                         scope,
                     )?
+                {
+                    return Ok(value);
+                }
+                if matches!(value, Value::Array(_))
+                    && keys.len() > 1
+                    && self
+                        .write_object_property_array_access_nested_keyed_with_reference_propagation(
+                            &temp_name,
+                            property,
+                            keys.clone(),
+                            value.clone(),
+                            expr,
+                            array_literal_references.clone(),
+                            *span,
+                            scope,
+                        )?
                 {
                     return Ok(value);
                 }
@@ -13640,6 +13672,22 @@ impl Interpreter {
                         *span,
                         scope,
                     )?
+                {
+                    return Ok(value);
+                }
+                if matches!(value, Value::Array(_))
+                    && keys.len() > 1
+                    && self
+                        .write_object_property_array_access_nested_keyed_with_reference_propagation(
+                            &temp_name,
+                            &property,
+                            keys.clone(),
+                            value.clone(),
+                            expr,
+                            array_literal_references.clone(),
+                            *span,
+                            scope,
+                        )?
                 {
                     return Ok(value);
                 }
@@ -14127,6 +14175,49 @@ impl Interpreter {
         self.write_array_access_object_keyed_with_reference_propagation(
             array_access_object,
             key,
+            value,
+            expr,
+            array_literal_references,
+            span,
+            scope,
+        )
+    }
+
+    fn write_object_property_array_access_nested_keyed_with_reference_propagation(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some(Value::Object(holder)) = scope.read_named(object_name) else {
+            return Ok(false);
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let Value::Object(array_access_object) = (match holder.read_property_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(value) => value,
+            Err(_) => return Ok(false),
+        }) else {
+            return Ok(false);
+        };
+        if !self
+            .classes
+            .implements_interface(array_access_object.class_id(), "ArrayAccess")
+        {
+            return Ok(false);
+        }
+
+        self.write_array_access_object_nested_keyed_with_reference_propagation(
+            array_access_object,
+            keys,
             value,
             expr,
             array_literal_references,
@@ -14701,6 +14792,61 @@ impl Interpreter {
                 scope,
             )?;
         }
+        Ok(true)
+    }
+
+    fn write_array_access_object_nested_keyed_with_reference_propagation(
+        &mut self,
+        array_access_object: PhpObject,
+        keys: Vec<ArrayKey>,
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        if keys.len() < 2 {
+            return Ok(false);
+        }
+
+        let hidden_name = self.hidden_array_access_reference_object_name(&array_access_object);
+        scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
+
+        if self
+            .evaluate_array_access_by_value_reference_source_value_for_object(
+                array_access_object.clone(),
+                hidden_name.clone(),
+                keys.clone(),
+                span,
+                scope,
+            )?
+            .is_some()
+        {
+            return Ok(true);
+        }
+
+        let (target_alias, _) = self.evaluate_array_access_reference_source_alias_for_object(
+            array_access_object,
+            hidden_name,
+            keys,
+            span,
+            scope,
+        )?;
+        if !scope.write_array_offset_alias(&target_alias, value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot write property-held ArrayAccess nested backing bucket".to_string(),
+                ),
+            ));
+        }
+        self.bind_or_mirror_array_references_to_alias_root(
+            expr,
+            target_alias.root,
+            target_alias.keys,
+            array_literal_references,
+            scope,
+        )?;
         Ok(true)
     }
 

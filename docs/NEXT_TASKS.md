@@ -19307,6 +19307,24 @@ handled.
   scalar parent overwrite/error parity, full references/COW, and native
   reference lowering named as unsupported.
 
+## Lane 1718-C: Property-Held ArrayAccess Nested Keyed Store COW
+
+- [x] Runtime/tests/docs lane: extend visible property-held `ArrayAccess`
+  keyed stores to nested plain-array leaf assignments below an exact
+  by-reference `offsetGet()` parent bucket, covering
+  `$holder->bag["outer"]["leaf"] = $array`,
+  `$holders["box"]->bag["outer"]["leaf"] = $array`, and
+  `$holders["box"]->{$name}["outer"]["leaf"] = $array`. The runtime
+  evaluates the holder/property once, selects the parent bucket through
+  `offsetGet($offset) { return $this->property[$offset]; }`, writes the leaf
+  in that backing bucket, and attaches array-literal reference slots or
+  copied-array alias metadata to the nested path. Keep keyed stores through
+  magic-property-provided containers, by-value terminal/plain-array nested
+  mutation, unsupported `offsetSet()`/`offsetGet()` bodies, broader mixed
+  nested `ArrayAccess` chains, broader `__get()` return expressions, scalar
+  parent overwrite/error parity, full references/COW, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
