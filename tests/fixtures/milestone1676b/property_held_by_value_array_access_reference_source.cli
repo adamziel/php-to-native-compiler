@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1676b/property_held_by_value_array_access_reference_source.php

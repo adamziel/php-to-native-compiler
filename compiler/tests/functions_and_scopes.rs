@@ -3473,6 +3473,122 @@ echo $alias, "|", $bag->items[$key]["slot"];
 }
 
 #[test]
+fn reference_assignment_property_held_array_access_offset_source_by_value_detaches_with_notice() {
+    let execution = run_source(
+        r#"<?php
+function notice_handler($errno, $message, $file, $line) {
+    echo "notice:", $message, "\n";
+    return true;
+}
+set_error_handler("notice_handler", E_NOTICE);
+
+class Bag implements ArrayAccess {
+    public $items = ["name" => "seed"];
+    public function offsetExists($offset) { return false; }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { }
+}
+class Holder {
+    public $bag;
+}
+$holder = new Holder();
+$holder->bag = new Bag();
+$key = "name";
+$alias =& $holder->bag[$key];
+$alias = "changed";
+echo $alias, "|", $holder->bag->items[$key];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "notice:Indirect modification of overloaded element of Bag has no effect\nchanged|seed"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_property_held_array_access_nested_offset_source_by_value_detaches_with_notice(
+) {
+    let execution = run_source(
+        r#"<?php
+function notice_handler($errno, $message, $file, $line) {
+    echo "notice:", $message, "\n";
+    return true;
+}
+set_error_handler("notice_handler", E_NOTICE);
+
+class Bag implements ArrayAccess {
+    public $items = ["outer" => ["slot" => "seed"]];
+    public function offsetExists($offset) { return false; }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { }
+}
+class Holder {
+    public $bag;
+}
+$holder = new Holder();
+$holder->bag = new Bag();
+$key = "outer";
+$alias =& $holder->bag[$key]["slot"];
+$alias = "changed";
+echo $alias, "|", $holder->bag->items[$key]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "notice:Indirect modification of overloaded element of Bag has no effect\nchanged|seed"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_dynamic_property_held_array_access_nested_source_by_value_detaches_with_notice(
+) {
+    let execution = run_source(
+        r#"<?php
+function notice_handler($errno, $message, $file, $line) {
+    echo "notice:", $message, "\n";
+    return true;
+}
+set_error_handler("notice_handler", E_NOTICE);
+
+class Bag implements ArrayAccess {
+    public $items = ["outer" => ["slot" => "seed"]];
+    public function offsetExists($offset) { return false; }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { }
+}
+class Holder {
+    public $dynamicBag;
+}
+$holder = new Holder();
+$holder->dynamicBag = new Bag();
+$property = "dynamicBag";
+$alias =& $holder->{$property}["outer"]["slot"];
+$alias = "changed";
+echo $alias, "|", $holder->dynamicBag->items["outer"]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "notice:Indirect modification of overloaded element of Bag has no effect\nchanged|seed"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_object_property_array_access_source_binds_bounded_offset_get_root() {
     let execution = run_source(
         r#"<?php

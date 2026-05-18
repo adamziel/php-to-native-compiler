@@ -18463,13 +18463,29 @@ handled.
   child sources such as `$alias =& $bag["outer"]["slot"]` against by-value
   exact-bridge `offsetGet()` now emit the bounded indirect-modification
   notice, initialize only a detached local alias/value, and leave backing
-  `ArrayAccess` storage unchanged. Keep property-held by-value
-  reference-source roots, append-source `offsetGet(null)` behavior unless
-  separately proven, side-effecting or broader `offsetGet()` bodies, arbitrary
-  nested reference slots stored inside `ArrayAccess` buckets, broader mixed
-  `ArrayAccess` chains, real reference containers, broad COW identity, native
-  reference lowering, and exact alias destruction/destructor ordering named
-  as unsupported.
+  `ArrayAccess` storage unchanged. Keep append-source `offsetGet(null)`
+  behavior unless separately proven, side-effecting or broader `offsetGet()`
+  bodies, arbitrary nested reference slots stored inside `ArrayAccess`
+  buckets, broader mixed `ArrayAccess` chains, real reference containers,
+  broad COW identity, native reference lowering, and exact alias
+  destruction/destructor ordering named as unsupported.
+
+## Lane 1676-C: Property-Held By-Value `offsetGet()` Reference-Source No-op
+
+- [x] Runtime/tests/docs lanes: extend the focused by-value
+  `ArrayAccess::offsetGet()` reference-source notice/no-op/detached-alias
+  slice to direct visible named and dynamic property-held roots.
+  `$alias =& $holder->bag[$key]` and covered nested child sources such as
+  `$alias =& $holder->bag["outer"]["slot"]` against by-value exact-bridge
+  `offsetGet()` now emit the bounded indirect-modification notice, initialize
+  only a detached local alias/value, and leave backing `ArrayAccess` storage
+  unchanged; the same direct visible dynamic property spelling is covered.
+  Keep non-direct property-held roots, append-source
+  `offsetGet(null)` behavior unless separately proven, side-effecting or
+  broader `offsetGet()` bodies, arbitrary nested reference slots stored inside
+  `ArrayAccess` buckets, broader mixed `ArrayAccess` chains, real reference
+  containers, full references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

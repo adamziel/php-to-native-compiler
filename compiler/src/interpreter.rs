@@ -8768,6 +8768,18 @@ impl Interpreter {
                 } = source
                 {
                     let key = self.evaluate_array_key(index, scope)?;
+                    if let Some(value) = self
+                        .evaluate_object_property_array_access_by_value_reference_source_value(
+                            object,
+                            property,
+                            vec![key.clone()],
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.write_static(name, value);
+                        return Ok(());
+                    }
                     if let Some((alias, _)) = self
                         .evaluate_object_property_array_access_reference_source_alias(
                             object,
@@ -8810,6 +8822,18 @@ impl Interpreter {
                 {
                     let property = self.evaluate_dynamic_property_name(property, span, scope)?;
                     let key = self.evaluate_array_key(index, scope)?;
+                    if let Some(value) = self
+                        .evaluate_object_property_array_access_by_value_reference_source_value(
+                            object,
+                            &property,
+                            vec![key.clone()],
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.write_static(name, value);
+                        return Ok(());
+                    }
                     if let Some((alias, _)) = self
                         .evaluate_object_property_array_access_reference_source_alias(
                             object,
@@ -8854,6 +8878,18 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if let Some(value) = self
+                        .evaluate_object_property_array_access_by_value_reference_source_value(
+                            object,
+                            property,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.write_static(name, value);
+                        return Ok(());
+                    }
                     if let Some((alias, _)) = self
                         .evaluate_object_property_array_access_reference_source_alias(
                             object,
@@ -8894,6 +8930,18 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if let Some(value) = self
+                        .evaluate_object_property_array_access_by_value_reference_source_value(
+                            object,
+                            &property,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.write_static(name, value);
+                        return Ok(());
+                    }
                     if let Some((alias, _)) = self
                         .evaluate_object_property_array_access_reference_source_alias(
                             object,
@@ -10265,6 +10313,51 @@ impl Interpreter {
             object_name,
             property,
             vec![Self::array_access_append_reference_key()],
+            span,
+            scope,
+        )
+    }
+
+    fn evaluate_object_property_array_access_by_value_reference_source_value(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        if keys.is_empty() {
+            return Ok(None);
+        }
+        let Some(Value::Object(holder)) = scope.read_named(object_name) else {
+            return Ok(None);
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let value = match holder.read_property_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(value) => value,
+            Err(_) => return Ok(None),
+        };
+        let Value::Object(object) = value else {
+            return Ok(None);
+        };
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return Ok(None);
+        }
+
+        let hidden_name = self.hidden_array_access_reference_object_name(&object);
+        scope.write_static(&hidden_name, Value::Object(object.clone()));
+        self.evaluate_array_access_by_value_reference_source_value_for_object(
+            object,
+            hidden_name,
+            keys,
             span,
             scope,
         )

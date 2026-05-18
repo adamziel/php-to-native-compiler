@@ -662,14 +662,19 @@
   `offsetGet()` bucket reads, whether the method returns by value or by
   reference, can mirror covered nested public object-property reference-slot
   provenance into a copied direct array variable when the selected key is
-  side-effect-free. Direct by-value `offsetGet()` used as a reference source
-  such as `$alias =& $bag[$key]` or `$alias =& $bag["outer"]["slot"]` follows
-  PHP's bounded notice/no-op path for that same exact direct-object bridge:
+  side-effect-free. By-value `offsetGet()` used as a reference source such as
+  `$alias =& $bag[$key]`, `$alias =& $bag["outer"]["slot"]`,
+  `$alias =& $holder->bag[$key]`,
+  `$alias =& $holder->bag["outer"]["slot"]`, or
+  `$alias =& $holder->{$name}["outer"]["slot"]` follows PHP's bounded
+  notice/no-op path for that same exact bridge when the root is a direct
+  object variable or a visible direct named or dynamic property-held object:
   it emits the indirect-modification `E_NOTICE`, initializes the target as a
   detached local value, and does not mutate the backing element when the
-  target is later written. Property-held by-value reference-source roots,
-  append-source by-value `offsetGet(null)`, and `offsetGet()` bodies with side
-  effects or broader return
+  target is later written. Non-direct property-held by-value reference-source
+  roots, append-source by-value
+  `offsetGet(null)`, and `offsetGet()` bodies with side effects or broader
+  return
   expressions, dynamic property-held sources on non-direct holder expressions
   or outside visible property access, broader property-held alias lifetime
   after replacing non-direct/dynamic containing properties, append

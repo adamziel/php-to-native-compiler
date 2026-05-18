@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Lane 1676-C property-held by-value `ArrayAccess::offsetGet()`
+  reference-source notice/no-op fidelity for the focused exact direct visible
+  property bridge. Statement-form reference assignment from visible
+  property-held sources such as `$alias =& $holder->bag[$key]`,
+  `$alias =& $holder->bag["outer"]["slot"]`, and
+  `$alias =& $holder->{$name}["outer"]["slot"]` now emits the bounded
+  indirect-modification `E_NOTICE`, initializes the target from the selected
+  value as a detached local variable, and leaves the backing `ArrayAccess`
+  storage unchanged when the target is later written. This does not add
+  non-direct holder roots, append-source by-value `offsetGet(null)`,
+  side-effecting or broader
+  `offsetGet()` bodies, arbitrary nested reference slots stored inside
+  `ArrayAccess` buckets, broader mixed `ArrayAccess` chains, general PHP
+  reference containers, broad COW identity, native reference lowering, or
+  exact alias destruction/destructor ordering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-1676c CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test functions_and_scopes
+  reference_assignment_property_held_array_access_offset_source_by_value_detaches_with_notice
+  -- --test-threads=1` passed `1` test; `cargo test -q -p phpc --test
+  functions_and_scopes
+  reference_assignment_property_held_array_access_nested_offset_source_by_value_detaches_with_notice
+  -- --test-threads=1` passed `1` test; `cargo test -q -p phpc --test
+  functions_and_scopes -- --test-threads=1` passed `192` tests; and `cargo
+  run -q -p phpc -- test --compare-php tests/fixtures/milestone1676c` passed
+  `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1675 by-value `ArrayAccess::offsetGet()` reference-source
   notice/no-op fidelity for the focused exact direct-object bridge. Statement
   form reference assignment from a by-value exact-bridge source such as
