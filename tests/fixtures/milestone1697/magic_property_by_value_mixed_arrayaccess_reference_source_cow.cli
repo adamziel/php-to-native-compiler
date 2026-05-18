@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1697/magic_property_by_value_mixed_arrayaccess_reference_source_cow.php
+stdout:
+via-by-value-magic-reference-source|via-by-value-magic-reference-label|via-by-value-magic-reference-source|via-by-value-magic-reference-label|1|plain|plain|2|0
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

@@ -968,6 +968,11 @@ reference. For a source such as
 intermediate object by value. Direct append writes through that bound variable
 use the alias-backed append helper, so `$alias[] = $array` mutates the inner
 bucket instead of materializing a detached local array.
+For the same focused object-handle root shape, by-value `__get()` can also
+return the outer `ArrayAccess` object and then use the same recursive resolver
+to bind the alias to the inner backing bucket. This is intentionally still an
+object-handle bridge, not broad by-value magic-property reference semantics
+for plain arrays or terminal by-value `offsetGet()` results.
 The same magic append-store helper also covers the focused plain-array route
 when visible public `__get($name)` returns a direct variable by reference and
 that returned cell currently holds an array or `null`. The runtime binds the

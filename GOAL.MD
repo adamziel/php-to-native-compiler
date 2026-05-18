@@ -57,6 +57,9 @@ The current in-progress implementation frontier is Lane 1695:
   `$alias =& $box->missing["outer"]["inner"]; $alias[] = $array;` binds and
   appends through the inner backing bucket when `__get()` returns a supported
   direct variable by reference.
+- Lane 1697 extends that focused reference-source shape when by-value
+  `__get()` returns the outer `ArrayAccess` object handle; the alias still
+  binds through the mixed chain to the inner by-reference backing bucket.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
@@ -212,8 +215,8 @@ reference/COW.
 Highest-value concrete candidates:
 
 - Broader mixed nested `ArrayAccess` chains below magic-property roots,
-  including by-value terminal/plain-array mutation, by-value `__get()`
-  reference-source binding, and longer/arbitrary chains.
+  including by-value terminal/plain-array mutation and longer/arbitrary
+  chains.
 - Broader but still proven `offsetGet()` and `__get()` return-body shapes.
 - Method-return or factory expression roots for covered reference/COW paths.
 - Explicit lifetime/detach tests for covered magic and `ArrayAccess` aliases.

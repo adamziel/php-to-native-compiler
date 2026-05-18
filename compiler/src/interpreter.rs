@@ -10783,6 +10783,67 @@ impl Interpreter {
         match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => Ok(None),
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), "__get")
+                else {
+                    return Ok(None);
+                };
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::__get()"),
+                            "static magic instance methods are not implemented in the current subset",
+                        ),
+                    ));
+                }
+                self.ensure_instance_method_visible(
+                    class_id,
+                    &class_name,
+                    "__get",
+                    visibility,
+                    span,
+                )?;
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+
+                if !function.returns_by_reference {
+                    match self.call_magic_get_property_value(object, property, span)? {
+                        Some(Value::Object(array_access_object))
+                            if self.classes.implements_interface(
+                                array_access_object.class_id(),
+                                "ArrayAccess",
+                            ) =>
+                        {
+                            let hidden_name = self
+                                .hidden_array_access_reference_object_name(&array_access_object);
+                            scope.write_static(
+                                &hidden_name,
+                                Value::Object(array_access_object.clone()),
+                            );
+                            return self
+                                .evaluate_array_access_reference_source_alias_for_object(
+                                    array_access_object,
+                                    hidden_name,
+                                    keys,
+                                    span,
+                                    scope,
+                                )
+                                .map(Some);
+                        }
+                        _ => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    format!("{class_name}::__get()"),
+                                    "magic __get reference sources require __get() to return by reference in the current subset",
+                                ),
+                            ));
+                        }
+                    }
+                }
+
                 let Some(cell) =
                     self.call_magic_get_reference_return_cell(object, property, span)?
                 else {

@@ -18922,6 +18922,25 @@ handled.
   reference lowering, and exact alias destruction/destructor ordering named as
   unsupported.
 
+## Lane 1697-C: By-Value Magic Mixed ArrayAccess Reference Source
+
+- [x] Runtime/tests/docs lane: parse and execute the focused statement-form
+  reference assignment source below a by-value magic property when visible
+  public `__get($name)` returns an outer `ArrayAccess` object handle, the
+  outer exact public by-value `offsetGet($offset)` returns an intermediate
+  inner `ArrayAccess` object handle, and the inner object uses the exact public
+  by-reference `offsetGet()` backing-property bridge. The covered direct shape
+  is `$alias =& $box->missing["outer"]["inner"]; $alias[] = $array;`; the
+  runtime follows the by-value magic object handle and by-value outer object
+  handle, binds the alias to the inner selected backing bucket, appends
+  through the alias-backed bucket, and preserves copied-bucket nested
+  reference-slot provenance. Keep by-value terminal/plain-array mutation,
+  arbitrary/longer mixed chains, side-effecting or broader `offsetGet()`
+  bodies, broader `__get()` return bodies, method-return or factory holder
+  roots, scalar parent overwrite/error parity, full references/COW, native
+  reference lowering, and exact alias destruction/destructor ordering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
