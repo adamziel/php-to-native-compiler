@@ -10294,7 +10294,7 @@ impl Interpreter {
                     .read_named(name)
                     .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-                if matches!(slot, Value::Null) {
+                if matches!(slot, Value::Null | Value::Bool(false)) {
                     slot = Value::Array(PhpArray::new());
                 }
 
@@ -14661,7 +14661,7 @@ impl Interpreter {
                     .read_named(name)
                     .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-                if matches!(slot, Value::Null) {
+                if matches!(slot, Value::Null | Value::Bool(false)) {
                     slot = Value::Array(PhpArray::new());
                 }
 
@@ -17315,7 +17315,7 @@ impl Interpreter {
             .read_named(name)
             .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-        if matches!(slot, Value::Null) {
+        if matches!(slot, Value::Null | Value::Bool(false)) {
             slot = Value::Array(PhpArray::new());
         }
 
@@ -17353,7 +17353,7 @@ impl Interpreter {
             .read_global_name(&global_name)
             .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-        if matches!(slot, Value::Null) {
+        if matches!(slot, Value::Null | Value::Bool(false)) {
             slot = Value::Array(PhpArray::new());
         }
 
@@ -17406,7 +17406,7 @@ impl Interpreter {
             .read_property_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(span, error))?;
 
-        if matches!(slot, Value::Null) {
+        if matches!(slot, Value::Null | Value::Bool(false)) {
             slot = Value::Array(PhpArray::new());
         }
 
@@ -17480,7 +17480,7 @@ impl Interpreter {
             .read_property_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(span, error))?;
 
-        if matches!(slot, Value::Null) {
+        if matches!(slot, Value::Null | Value::Bool(false)) {
             slot = Value::Array(PhpArray::new());
         }
 
@@ -17710,7 +17710,7 @@ impl Interpreter {
             .read_named(name)
             .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-        if matches!(slot, Value::Null) {
+        if matches!(slot, Value::Null | Value::Bool(false)) {
             slot = Value::Array(PhpArray::new());
         }
 
@@ -17741,7 +17741,7 @@ impl Interpreter {
             .read_global_name(&global_name)
             .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-        if matches!(slot, Value::Null) {
+        if matches!(slot, Value::Null | Value::Bool(false)) {
             slot = Value::Array(PhpArray::new());
         }
 

@@ -19821,6 +19821,17 @@ handled.
   bodies, exact PHP deprecation/fatal text, broader scalar parent matrices,
   string COW identity, and native reference lowering named as unsupported.
 
+## Lane 1759-C: Root False-Parent Array Write Parity
+
+- [x] Runtime/interpreter/tests/docs lane: convert root-level `false` values
+  to arrays for covered direct variable, `$GLOBALS`, and object-property
+  nested keyed/append writes, matching PHP's write-context behavior and
+  preserving copied typed-reference slots after materialization. Keep
+  adjacent `true`/string scalar roots as explicit errors, and keep arbitrary
+  magic/`ArrayAccess` method bodies, broader scalar parent matrices, exact PHP
+  deprecation/fatal text, string COW identity, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

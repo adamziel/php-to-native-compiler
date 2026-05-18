@@ -18,6 +18,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T21:41:02+02:00
+
+- Checkpoint before this task: `6f280aed runtime: align magic false-parent
+  COW`, pushed to `origin/master`.
+- Task attempted: Lane 1759-C, root-level `false` scalar-parent
+  materialization for direct variable, `$GLOBALS`, and object-property nested
+  keyed/append writes while preserving copied typed-reference slots.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1759/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1759/root_false_nested_array_cow.php`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1759` passed `1`
+  fixture with `1` system PHP comparison and `0` skips; focused
+  `root_false_nested_array_writes_materialize_and_keep_reference_slots`
+  passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies,
+  non-literal/dynamic backing key variables, arbitrary closure capture roots,
+  broader scalar parent matrices, broader complex alias sinks, broader alias
+  lifetime/detach ordering, exact PHP deprecation/fatal text, string COW
+  identity, and native reference lowering.
+- Next concrete task: run formatting, diff, check, adjacent scalar-parent
+  fixture regressions, and checkpoint gates, then checkpoint with
+  `tools/checkpoint.sh "runtime: materialize root false array writes"` if the
+  full gate passes.
+
 ## Loop Event 2026-05-18T21:32:12+02:00
 
 - Checkpoint before this task: `376a39c8 runtime: accept local offsetSet

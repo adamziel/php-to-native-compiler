@@ -4515,7 +4515,12 @@
   typed public, clone-shared public, and method-local private property aliases
   keep their old alias value; later alias writes do not resurrect the
   property, and detached typed aliases no longer enforce the old property
-  type constraint. By-value
+  type constraint. By-value nested keyed/append writes through direct
+  variables, `$GLOBALS`, and object properties materialize root-level `false`
+  values as arrays in the same write contexts where `null` roots are already
+  materialized, and copied typed-reference slots remain attached after the
+  root becomes an array. Adjacent `true`, numeric, and string roots remain
+  scalar write errors in this bounded path. By-value
   terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's

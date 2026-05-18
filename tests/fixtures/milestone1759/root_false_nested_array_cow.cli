@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1759/root_false_nested_array_cow.php

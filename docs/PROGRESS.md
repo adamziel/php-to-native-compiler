@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 1759-C for root-level `false` scalar-parent materialization in
+  direct variable, `$GLOBALS`, and object-property nested keyed/append writes.
+  PHP converts these roots to arrays for write contexts, and the runtime now
+  does the same while keeping copied typed-reference slots attached after the
+  write. Adjacent `true` and string roots remain explicit scalar write errors.
+  Arbitrary magic/`ArrayAccess` method bodies, broader scalar parent matrices,
+  exact PHP deprecation/fatal text, string COW identity, and native reference
+  lowering remain unsupported. Focused verification: raw system PHP output
+  matched the new `milestone1759` fixture; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1759` passed `1` fixture with `1`
+  system PHP comparison and `0` skips; focused
+  `root_false_nested_array_writes_materialize_and_keep_reference_slots`
+  passed.
+
 - Added Lane 1758-C for scalar-parent parity in the covered magic plain-array
   COW paths. By-value `__get()` returning `false` now emits the existing
   indirect-modification notice/no-op behavior for direct nested keyed, deeper

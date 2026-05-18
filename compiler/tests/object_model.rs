@@ -7558,6 +7558,83 @@ echo gettype($box->id), ":", $box->id, "|", gettype($store->store[0]["copy"]), "
 }
 
 #[test]
+fn root_false_nested_array_writes_materialize_and_keep_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+error_reporting(0);
+
+class Box {
+    public int $id = 1;
+}
+
+class Holder {
+    public $items = false;
+    public $appendItems = false;
+}
+
+$box = new Box();
+$alias =& $box->id;
+
+$direct = false;
+$direct["leaf"] = array("copy" => &$alias);
+$direct["leaf"]["copy"] = "2";
+echo gettype($box->id), ":", $box->id, "|", gettype($direct["leaf"]["copy"]), ":", $direct["leaf"]["copy"], "\n";
+
+$globalRoot = false;
+$GLOBALS["globalRoot"]["leaf"] = array("copy" => &$alias);
+$GLOBALS["globalRoot"]["leaf"]["copy"] = "3";
+echo gettype($box->id), ":", $box->id, "|", gettype($globalRoot["leaf"]["copy"]), ":", $globalRoot["leaf"]["copy"], "\n";
+
+$holder = new Holder();
+$holder->items["leaf"] = array("copy" => &$alias);
+$holder->items["leaf"]["copy"] = "4";
+echo gettype($box->id), ":", $box->id, "|", gettype($holder->items["leaf"]["copy"]), ":", $holder->items["leaf"]["copy"], "\n";
+
+$append = false;
+$append["bucket"][] = array("copy" => &$alias);
+$append["bucket"][0]["copy"] = "5";
+echo gettype($box->id), ":", $box->id, "|", gettype($append["bucket"][0]["copy"]), ":", $append["bucket"][0]["copy"], "\n";
+
+$holder->appendItems["bucket"][] = array("copy" => &$alias);
+$holder->appendItems["bucket"][0]["copy"] = "6";
+echo gettype($box->id), ":", $box->id, "|", gettype($holder->appendItems["bucket"][0]["copy"]), ":", $holder->appendItems["bucket"][0]["copy"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "integer:2|integer:2\ninteger:3|integer:3\ninteger:4|integer:4\ninteger:5|integer:5\ninteger:6|integer:6"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let root_string = runtime_error(
+        r#"<?php
+$items = "abc";
+$items["leaf"] = "x";
+"#,
+    );
+    assert_eq!(
+        root_string.message,
+        "invalid array access: cannot write offset on string"
+    );
+
+    let property_true = runtime_error(
+        r#"<?php
+class Holder {
+    public $items = true;
+}
+$holder = new Holder();
+$holder->items["leaf"] = "x";
+"#,
+    );
+    assert_eq!(
+        property_true.message,
+        "invalid array access: cannot write offset on bool"
+    );
+}
+
+#[test]
 fn arrayaccess_append_suffix_syntax_routes_to_backing_buckets() {
     let execution = run_source(
         r#"<?php
