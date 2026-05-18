@@ -1,1 +1,0 @@
-Documents current phpc mismatch for copied ArrayAccess bucket provenance: system PHP leaves the original callback slot at param:first after the by-value parameter is replaced, while phpc still routes the replacement through the old mirrored alias.

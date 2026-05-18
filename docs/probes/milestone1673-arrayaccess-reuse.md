@@ -31,20 +31,20 @@ This classifies three non-failing shapes:
   by assigning a new array still preserves the first nested reference write and
   does not overwrite the original callback slot.
 
-## Current phpc Mismatches
+## Former phpc Mismatch Fixed
 
 `tests/fixtures/milestone1673c/arrayaccess_bucket_parameter_reuse_alias_gap.php`
-is phpc-only. System PHP leaves the original callback slot at
+is now PHP-comparable. System PHP leaves the original callback slot at
 `param:first|param:first|param:first` after the by-value helper parameter is
-replaced, but current phpc prints:
+replaced, and phpc now matches that output:
 
 ```text
-param:reused|param:reused|param:reused
+param:first|param:first|param:first
 ```
 
-That means the mirrored copied-bucket alias survives replacement of the helper
-parameter variable and routes the replacement array's nested write through the
-old callback slot.
+That means the mirrored copied-bucket path writes through before replacement,
+then detaches when the helper parameter variable is replaced, so the
+replacement array's later nested write stays local to the helper.
 
 No mismatch was observed for the lingering foreach callback-variable reuse
 shape under the current source.

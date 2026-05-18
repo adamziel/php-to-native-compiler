@@ -4,6 +4,38 @@
 
 Implemented:
 
+- Fixed the helper-parameter replacement detachment gap for the focused
+  `ArrayAccess` copied-bucket COW shape. By-value helper parameters still
+  receive covered copied-bucket provenance and can write through mirrored
+  nested public-property reference slots before replacement, but assigning a
+  new array to that parameter name now snapshots the detached copied path
+  before later nested writes. The original callback slot remains at the
+  pre-replacement write while the replacement array stays local to the helper,
+  matching PHP. This does not add broader stored-array expression support,
+  untested string-keyed/named argument propagation, side-effecting or broader
+  `offsetGet()` bodies, by-value `offsetGet()` reference-source
+  indirect-modification notice/no-op fidelity, arbitrary nested reference
+  slots stored inside `ArrayAccess` buckets, broader mixed `ArrayAccess`
+  chains, general PHP reference containers, broad COW identity, native
+  reference lowering, or exact alias destruction/destructor ordering. Focused
+  verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-1674-a CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test functions_and_scopes
+  array_access_bucket_copy_helper_parameter_replacement_detaches_reference_slots
+  -- --test-threads=1` passed `1` test; `cargo test -q -p phpc --test
+  functions_and_scopes
+  array_access_bucket_copy_helper_parameter_preserves_nested_reference_slots
+  -- --test-threads=1` passed `1` test; `cargo test -q -p phpc --test
+  functions_and_scopes -- --test-threads=1` passed `188` tests; `cargo test
+  -q -p phpc --test foreach -- --test-threads=1` passed `39` tests; `cargo
+  test -q -p phpc --test call_user_func_builtin -- --test-threads=1` passed
+  `41` tests; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1673c` passed `4` fixtures with `4` system PHP
+  comparisons and `0` skips; and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1673` passed `2` fixtures with `2` system PHP
+  comparisons and `0` skips. `cargo fmt --check` and `git diff --check`
+  passed.
+
 - Added Milestone 1673 stored `call_user_func_array()` copied-bucket
   propagation for the focused `ArrayAccess` COW shape. Direct stored
   positional argument-array variables such as

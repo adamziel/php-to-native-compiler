@@ -835,15 +835,17 @@ provenance when the stored slot was populated from a direct copied-bucket
 variable, such as `$args = [$bucket, "label"]`; the callback parameter imports
 mirrored nested aliases from the stored argument slot and writes those nested
 reference-slot updates back through the original copied-bucket alias group.
-Lane 1673-C probes classify one remaining copied-bucket alias-lifetime gap:
-replacing a by-value helper parameter that carried copied bucket provenance can
-still leave its old nested reference slot attached. Replacing the outer copied
-bucket variable, unsetting and reusing the direct callback variable name,
-reusing a lingering by-reference foreach callback variable by assigning a new
-array after the copied bucket loop, and mutating two distinct nested reference
-slots in one copied bucket match the focused PHP probes. Broader alias
-lifetime after replacing non-direct containing properties, side-effecting or
-broader `offsetGet()` bodies, mixed nested
+By-value helper parameters that import copied-bucket provenance detach those
+mirrored static-array provenance paths when the parameter variable is replaced:
+writes through the copied bucket before replacement still write back to the
+original reference slot, while later nested writes through the replacement
+array remain local to the helper. Replacing the outer copied bucket variable,
+unsetting and reusing the direct callback variable name, reusing a lingering
+by-reference foreach callback variable by assigning a new array after the
+copied bucket loop, and mutating two distinct nested reference slots in one
+copied bucket match the focused PHP probes. Broader alias lifetime after
+replacing non-direct containing properties, side-effecting or broader
+`offsetGet()` bodies, mixed nested
 ArrayAccess chains beyond the documented one-level bridge, append sources,
 arbitrary nested reference slots copied from ArrayAccess storage, and real
 reference containers remain future work.

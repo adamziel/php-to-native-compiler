@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T07:35:00+02:00
+
+- Checkpoint before this task: `41bcfdf7`, pushed to `origin/master`.
+- Task attempted: Lane 1674-A, exact helper-parameter replacement detachment
+  for copied `ArrayAccess` bucket provenance.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1673c/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `docs/probes/milestone1673-arrayaccess-reuse.md`, and this memory file.
+- Semantic gap reduced: by-value helper parameters that import copied-bucket
+  provenance now snapshot covered copied paths when the parameter root is
+  replaced, so pre-replacement writes still reach the original callback slot
+  and later replacement-array writes stay local to the helper.
+- Tests run and result with isolated `CARGO_TARGET_DIR=/tmp/phpc-target-1674-a`
+  and `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: focused replacement and
+  preservation `functions_and_scopes` tests passed; full
+  `functions_and_scopes`, `foreach`, and `call_user_func_builtin` integration
+  tests passed; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1673c` passed `4` fixtures with `4` comparisons and
+  `0` skips; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1673` passed `2` fixtures with `2` comparisons and
+  `0` skips; `cargo fmt --check` and `git diff --check` passed.
+- Remaining semantic gaps: by-value `offsetGet()` reference-source notice/no-op
+  fidelity, non-public backing properties, side-effecting or broader
+  `offsetGet()` bodies, arbitrary nested reference slots stored inside
+  `ArrayAccess` buckets, broader stored-array expression/named-argument
+  propagation, broader mixed `ArrayAccess` chains, general PHP reference
+  containers, broad COW identity, native reference lowering, and exact alias
+  destruction/destructor ordering.
+
 ## Loop Event 2026-05-18T06:55:00+02:00
 
 - Checkpoint before this task: `ffa2b865 runtime: preserve ArrayAccess bucket

@@ -813,9 +813,8 @@
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
   compound assignment through object-property `ArrayAccess`, ArrayAccess
   iteration, broader stored-argument-array `call_user_func_array()`
-  propagation beyond direct positional copied-bucket variables, exact alias
-  detachment when a by-value helper parameter holding copied bucket provenance
-  is replaced, non-public backing properties, side-effecting or broader
+  propagation beyond direct positional copied-bucket variables, non-public
+  backing properties, side-effecting or broader
   `offsetGet()` bodies, built-in interface enforcement/signature
   validation, typed method invocation, broad references/copy-on-write, exact
   warning/visibility diagnostics, and native lowering remain unsupported.

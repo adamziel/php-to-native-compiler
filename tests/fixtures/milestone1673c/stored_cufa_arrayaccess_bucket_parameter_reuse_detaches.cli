@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1673c/stored_cufa_arrayaccess_bucket_parameter_reuse_detaches.php
+--- stdout begin ---
+stored:first|stored:first|stored:first
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit code: 0

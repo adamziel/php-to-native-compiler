@@ -3035,6 +3035,50 @@ echo $target, "|", $holder->hook[10]["id"]["function"], "|", $holder->hook[10]["
 }
 
 #[test]
+fn array_access_bucket_copy_helper_parameter_replacement_detaches_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class HookStore implements ArrayAccess {
+    public $hook = array();
+    public function offsetExists($offset) { return isset($this->hook[$offset]); }
+    public function offsetGet($offset) { return $this->hook[$offset]; }
+    public function offsetSet($offset, $value) { $this->hook[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->hook[$offset]); }
+}
+
+function helper($bucket) {
+    foreach ($bucket as $id => &$node) {
+        if ($id === "id") {
+            $node["function"] = "first";
+        }
+    }
+    unset($node);
+
+    $bucket = array("id" => array("function" => "local", "accepted_args" => 9));
+    $bucket["id"]["function"] = "reused";
+}
+
+$target = "seed";
+$holder = new HookStore();
+$holder->hook[10] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+    "plain" => array("function" => "plain", "accepted_args" => 1),
+);
+$holder->hook[10]["id"]["function"] =& $target;
+
+$bucket = $holder[10];
+helper($bucket);
+
+echo $target, "|", $holder->hook[10]["id"]["function"], "|", $bucket["id"]["function"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "first|first|first");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

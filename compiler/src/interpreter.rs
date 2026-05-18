@@ -1125,6 +1125,8 @@ struct SymbolTable {
     global_symbols: Option<SymbolStorage>,
     imported_globals: HashSet<String>,
     array_offset_aliases: HashMap<String, Vec<ArrayOffsetAlias>>,
+    detached_array_offset_values: Vec<(String, Vec<ArrayKey>, Value)>,
+    copied_array_provenance_paths: HashMap<String, Vec<Vec<ArrayKey>>>,
 }
 
 type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
@@ -1210,6 +1212,8 @@ impl SymbolTable {
             global_symbols: Some(global_symbols),
             imported_globals: HashSet::new(),
             array_offset_aliases: HashMap::new(),
+            detached_array_offset_values: Vec::new(),
+            copied_array_provenance_paths: HashMap::new(),
         }
     }
 
@@ -1219,6 +1223,8 @@ impl SymbolTable {
             global_symbols: None,
             imported_globals: HashSet::new(),
             array_offset_aliases: HashMap::new(),
+            detached_array_offset_values: Vec::new(),
+            copied_array_provenance_paths: HashMap::new(),
         }
     }
 
@@ -1709,6 +1715,12 @@ impl SymbolTable {
         self.array_offset_aliases.contains_key(name)
     }
 
+    fn has_copied_array_provenance_path(&self, name: &str) -> bool {
+        self.copied_array_provenance_paths
+            .get(name)
+            .is_some_and(|paths| !paths.is_empty())
+    }
+
     fn array_offset_aliases_for_name(&self, name: &str) -> Option<Vec<ArrayOffsetAlias>> {
         self.array_offset_aliases.get(name).cloned()
     }
@@ -1801,6 +1813,19 @@ impl SymbolTable {
                     )
                 })
                 .and_then(|alias| self.read_array_offset_alias(alias));
+            if let Some(value) = fallback_value.clone() {
+                for alias in &existing_aliases {
+                    if let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root {
+                        if name == root_name {
+                            self.record_detached_static_array_offset_value(
+                                root_name,
+                                &alias.keys,
+                                value.clone(),
+                            );
+                        }
+                    }
+                }
+            }
             let aliases: Vec<_> = existing_aliases
                 .into_iter()
                 .filter(|alias| {
@@ -1821,6 +1846,70 @@ impl SymbolTable {
                 );
             } else {
                 self.array_offset_aliases.insert(alias_name, aliases);
+            }
+        }
+    }
+
+    fn record_detached_static_array_offset_value(
+        &mut self,
+        root_name: &str,
+        keys: &[ArrayKey],
+        value: Value,
+    ) {
+        if let Some((_, _, existing)) =
+            self.detached_array_offset_values
+                .iter_mut()
+                .find(|(name, candidate_keys, _)| {
+                    name == root_name && candidate_keys.as_slice() == keys
+                })
+        {
+            *existing = value;
+            return;
+        }
+        self.detached_array_offset_values
+            .push((root_name.to_string(), keys.to_vec(), value));
+    }
+
+    fn detached_static_array_offset_value(
+        &self,
+        root_name: &str,
+        keys: &[ArrayKey],
+    ) -> Option<Value> {
+        self.detached_array_offset_values
+            .iter()
+            .rev()
+            .find(|(name, candidate_keys, _)| {
+                name == root_name && candidate_keys.as_slice() == keys
+            })
+            .map(|(_, _, value)| value.clone())
+    }
+
+    fn record_copied_array_provenance_path(&mut self, root_name: &str, keys: &[ArrayKey]) {
+        if keys.is_empty() {
+            return;
+        }
+        let paths = self
+            .copied_array_provenance_paths
+            .entry(root_name.to_string())
+            .or_default();
+        if !paths.iter().any(|candidate| candidate.as_slice() == keys) {
+            paths.push(keys.to_vec());
+        }
+    }
+
+    fn detach_copied_array_provenance_for_root(&mut self, root_name: &str) {
+        let Some(paths) = self.copied_array_provenance_paths.remove(root_name) else {
+            return;
+        };
+        let Some(Value::Array(array)) = self
+            .read_storage_named(root_name)
+            .or_else(|| self.read_named(root_name))
+        else {
+            return;
+        };
+        for keys in paths {
+            if let Some(value) = Self::read_nested_array_offset_alias(&array, &keys) {
+                self.record_detached_static_array_offset_value(root_name, &keys, value);
             }
         }
     }
@@ -2196,6 +2285,11 @@ impl SymbolTable {
         let mut unique_imports = Vec::new();
         for alias in imported {
             if !unique_imports.contains(&alias) {
+                if let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root {
+                    if name == target_name {
+                        self.record_copied_array_provenance_path(target_name, &alias.keys);
+                    }
+                }
                 unique_imports.push(alias);
             }
         }
@@ -10931,13 +11025,21 @@ impl Interpreter {
                     _ => (self.evaluate(expr, scope)?, Vec::new(), None),
                 };
                 let target_is_alias = scope.is_array_offset_alias_name(name);
-                if !target_is_alias {
+                let replaces_copied_array_provenance =
+                    scope.has_copied_array_provenance_path(name);
+                if replaces_copied_array_provenance {
+                    scope.detach_copied_array_provenance_for_root(name);
+                }
+                if !target_is_alias || replaces_copied_array_provenance {
                     let object_alias_fallbacks = scope.public_object_roots_alias_fallbacks(name);
                     scope.remove_static_root_from_array_offset_aliases(name);
                     scope.remove_public_object_roots_from_array_offset_aliases(
                         name,
                         &object_alias_fallbacks,
                     );
+                    if replaces_copied_array_provenance {
+                        scope.array_offset_aliases.remove(name);
+                    }
                 }
                 scope.write_static(name, value.clone());
                 if !target_is_alias && matches!(value, Value::Array(_)) {
@@ -30805,13 +30907,33 @@ impl Interpreter {
     ) -> CompileResult<()> {
         for (source_name, source_keys, local_aliases) in alias_writebacks {
             for local_alias in local_aliases {
-                let ArrayOffsetAliasRoot::StaticArray { .. } = &local_alias.root else {
+                let ArrayOffsetAliasRoot::StaticArray { name: local_name } = &local_alias.root
+                else {
                     continue;
                 };
                 if local_alias.keys.is_empty() {
                     continue;
                 }
-                let Some(value) = local_scope.read_array_offset_alias(local_alias) else {
+                let value = if let Some(value) =
+                    local_scope.detached_static_array_offset_value(local_name, &local_alias.keys)
+                {
+                    Some(value)
+                } else {
+                    match local_scope.array_offset_alias_group_for_stored_array_path(
+                        local_name,
+                        &local_alias.keys,
+                    ) {
+                        Some(active_local_aliases)
+                            if active_local_aliases.contains(local_alias) =>
+                        {
+                            local_scope.read_array_offset_alias(local_alias)
+                        }
+                        _ => local_scope
+                            .read_storage_named(local_name)
+                            .and_then(|value| Self::array_path_value(&value, &local_alias.keys)),
+                    }
+                };
+                let Some(value) = value else {
                     continue;
                 };
                 let mut caller_keys = source_keys.clone();
