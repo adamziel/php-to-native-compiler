@@ -181,6 +181,32 @@ The current in-progress implementation frontier is Lane 1721:
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
 
+## Fast-Track Build Plan
+
+The immediate goal is not one microscopic COW lane per checkpoint. The next
+1-2 hour build window should bundle related compatibility slices and run
+focused verification until the bundle is ready for one full checkpoint.
+
+Prioritize these COW gaps in order:
+
+1. By-value terminal/plain-array nested mutation parity for the currently
+   covered magic/`ArrayAccess` shapes.
+2. Scalar parent overwrite/error parity for covered append/keyed/reference
+   paths.
+3. Broader mixed nested `ArrayAccess` chains where the runtime can statically
+   prove the same backing-bucket bridge.
+4. One bounded broadening of `__get()` or `offsetGet()` return-body analysis
+   beyond the exact forms already supported, without claiming arbitrary
+   side-effecting method bodies.
+
+Verification discipline for this fast track:
+
+- Run targeted fixture and system-PHP comparisons while implementing.
+- Run adjacent regression checks for the affected lane family.
+- Run `cargo check`, `cargo fmt --check`, and `git diff --check` before the
+  bundle checkpoint.
+- Run `tools/checkpoint.sh` once for the bundle, not after every tiny case.
+
 ## Success Criteria
 
 Full PHP and WordPress compatibility is complete only when these gates are

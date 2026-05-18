@@ -23,8 +23,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Latest checkpoint before the forever loop script: `b27c3a0 runtime errors: add structured diagnostics`.
 - Full suite command: `tools/run-tests.sh`.
 - Current next task queue: `docs/NEXT_TASKS.md`.
-- Current rule: do not claim full PHP support; implement the next small tested
-  behavior and checkpoint only when tests pass.
+- Current rule: do not claim full PHP support; implement tested behavior and
+  checkpoint only when tests pass.
+
+## Fast-Track Directive 2026-05-18T15:15:00+02:00
+
+The previous loop was correct but too slow for the current 1-2 hour build
+window: it repeatedly spent a full checkpoint on one very narrow lane. For the
+next run, batch work aggressively:
+
+- Do not run `tools/checkpoint.sh` after every micro-lane. Use focused tests
+  while building and run one full checkpoint only after a coherent bundle is
+  ready.
+- Target 3-5 related COW compatibility slices per checkpoint when the write
+  set is in the same subsystem and focused tests are passing.
+- Prefer implementation over documentation churn while building. Update
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`, and `docs/NEXT_TASKS.md`
+  once per bundle, not once per small fixture.
+- Use isolated `CARGO_TARGET_DIR` values for focused checks. Avoid overlapping
+  full project test suites.
+- Prioritize broadening real missing COW areas over adding adjacent shape
+  permutations. Highest-value next bundle:
+  1. by-value terminal/plain-array nested mutation parity,
+  2. scalar parent overwrite/error parity for covered COW paths,
+  3. broader mixed nested `ArrayAccess` chains,
+  4. one step beyond exact `__get()`/`offsetGet()` return bodies where it can
+     be statically analyzed without pretending to support arbitrary side
+     effects.
+- Escalate only blockers that prevent all of the above. Otherwise keep coding.
 
 ## Loop Event 2026-05-18T15:06:17+02:00
 
