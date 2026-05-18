@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1779-C through Lane 1781-C for computed backing keys in the
+  executed magic/`ArrayAccess` reference-return body path. Public
+  by-reference `ArrayAccess::offsetGet()` and covered by-reference `__get()`
+  bodies can now preserve returned lvalues when the returned `$this` backing
+  array path uses supported runtime-evaluated key expressions, including
+  locals computed with concatenation, inline concatenation in the return
+  expression, and computed nested suffix keys below the selected backing
+  bucket. Returned backing buckets keep copied reference-slot write-through.
+  This does not claim arbitrary side-effect analysis or non-executed static
+  bridge inference for every dynamic key shape. Exception unwinding/catch
+  execution for thrown values, unsupported PHP syntax, arbitrary Iterator side
+  effects, and native reference lowering remain unsupported. Focused
+  verification: raw system PHP output matched the new `milestone1779`,
+  `milestone1780`, and `milestone1781` fixtures; `cargo run -q -p phpc --
+  test --compare-php` passed each new fixture directory with `1` fixture,
+  `1` system PHP comparison, and `0` skips; focused
+  `functions_and_scopes` milestone tests passed.
+
 - Added Lane 1776-C through Lane 1778-C for cross-block `goto`
   propagation in the supported magic/`ArrayAccess` reference-return
   method-body executor. Public by-reference `ArrayAccess::offsetGet()` and

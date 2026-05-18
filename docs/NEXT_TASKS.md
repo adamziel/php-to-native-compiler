@@ -19996,6 +19996,19 @@ handled.
   syntax, broader dynamic backing keys, arbitrary Iterator side effects, and
   native reference lowering named as unsupported.
 
+## Lane 1779-C through Lane 1781-C: Computed Backing Keys
+
+- [x] Runtime/interpreter/tests/docs bundle: preserve reference-return lvalues
+  when public by-reference `ArrayAccess::offsetGet()` and covered
+  by-reference `__get()` bodies return `$this` backing array paths with
+  supported runtime-evaluated key expressions. Cover locals computed with
+  concatenation, inline concatenation in the return expression, and computed
+  nested suffix keys below the selected backing bucket. Keep arbitrary
+  side-effect analysis, non-executed static bridge inference for every dynamic
+  key shape, exception unwinding/catch execution for thrown values, arbitrary
+  unsupported PHP syntax, arbitrary Iterator side effects, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -32,7 +32,14 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1778:
+The current in-progress implementation frontier is Lane 1781:
+
+- Lanes 1779 through 1781 cover computed backing keys in the executed
+  magic/`ArrayAccess` reference-return body path. Public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies now
+  preserve returned lvalues when the returned `$this` backing array path uses
+  supported runtime-evaluated key expressions, including concatenated local
+  keys, inline concatenated keys, and computed nested suffix keys.
 
 - Lanes 1776 through 1778 propagate `goto` across nested supported
   reference-return body lists. Public by-reference

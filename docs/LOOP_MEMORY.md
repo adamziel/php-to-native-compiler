@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T23:53:31+02:00
+
+- Checkpoint before this task: `89a05f30 runtime: propagate reference return
+  gotos`, pushed to `origin/master`.
+- Task attempted: Lane 1779-C through Lane 1781-C bundle, proving computed
+  backing keys in the executed magic/`ArrayAccess` reference-return body path.
+- Files changed so far: `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1779/*`, `tests/fixtures/milestone1780/*`,
+  `tests/fixtures/milestone1781/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched `tests/fixtures/milestone1779/computed_backing_key_reference_returns_cow.php`,
+  `tests/fixtures/milestone1780/inline_computed_backing_key_reference_returns_cow.php`,
+  and `tests/fixtures/milestone1781/computed_nested_backing_key_reference_returns_cow.php`;
+  `cargo run -q -p phpc -- test --compare-php` passed for each of
+  `tests/fixtures/milestone1779`, `tests/fixtures/milestone1780`, and
+  `tests/fixtures/milestone1781`; focused `cargo test -q -p phpc --test
+  functions_and_scopes milestone17` passed.
+- Remaining COW gaps: exception unwinding/catch execution for thrown values
+  inside magic/`ArrayAccess` reference-return bodies, unsupported PHP syntax
+  inside those bodies, arbitrary side-effect analysis or non-executed static
+  bridge inference for every dynamic backing-key shape, arbitrary Iterator
+  side effects, arbitrary closure capture roots, broader complex alias sinks
+  and alias lifetime ordering, exact PHP stderr/fatal text,
+  binary/multibyte string offset behavior, and native reference/string COW
+  lowering.
+- Next concrete task: run adjacent regressions, formatting/diff/check gates,
+  then the full `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-18T23:47:04+02:00
 
 - Checkpoint before this task: `86040a00 runtime: broaden reference return

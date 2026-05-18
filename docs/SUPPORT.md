@@ -268,6 +268,12 @@
   backing property before the array-offset path, such as
   `$property = "items"; return $this->{$property}[$offset]["bucket"];`,
   with the property name evaluated in the executing method body.
+  In the executed reference-return body path, returned `$this` backing array
+  paths may use supported runtime-evaluated int/string key expressions,
+  including locals computed by concatenation, inline concatenation in the
+  return expression, and computed nested suffix keys below the selected
+  backing bucket. These keys are evaluated by the interpreter before the
+  returned lvalue is bound.
   The bounded `__get()` and `offsetGet()` backing analyzers also accept one
   local variable bound by reference to an indexed `$this->property[...]`
   backing bucket, followed by returning that local or a literal child below
@@ -277,10 +283,11 @@
   This does not add magic property roots without an array offset, magic
   `__get()` roots beyond the covered direct variable/property/backing-offset
   returns; exception unwinding or catch execution for thrown values inside
-  reference-return bodies; arbitrary dynamic/non-literal backing-key analysis;
-  arbitrary Iterator side effects, arbitrary PHP syntax outside the
-  interpreter subset; arbitrary mixed nested `ArrayAccess` object chains;
-  broad same-container identity for
+  reference-return bodies; arbitrary side-effect analysis or non-executed
+  static bridge inference for every dynamic backing-key shape; arbitrary
+  Iterator side effects, arbitrary PHP syntax outside the interpreter subset;
+  arbitrary mixed nested `ArrayAccess` object chains; broad same-container
+  identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,
   arbitrary reference expressions,
