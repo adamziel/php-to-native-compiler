@@ -19937,6 +19937,17 @@ handled.
   PHP syntax, broader dynamic backing keys, and native reference lowering
   named as unsupported.
 
+## Lane 1770-C: Multi-Level Loop Reference-Return Control
+
+- [x] Runtime/interpreter/tests/docs lane: preserve reference-return lvalues
+  after multi-level `break N` and `continue N` through nested supported loops
+  in public by-reference `ArrayAccess::offsetGet()` and covered by-reference
+  `__get()` bodies. Include propagation through branch bodies, switch
+  break-depth handling, and `try`/`finally` cleanup before loop exit. Keep
+  exception unwinding/catch execution for thrown values, arbitrary unsupported
+  PHP syntax, broader dynamic backing keys, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

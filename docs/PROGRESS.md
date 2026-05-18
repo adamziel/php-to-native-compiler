@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1770-C for multi-level loop control in the supported
+  magic/`ArrayAccess` reference-return method-body subset. By-reference
+  `ArrayAccess::offsetGet()` and `__get()` bodies now propagate `break N` and
+  `continue N` through nested `while`/`do while`/`for` bodies, branch bodies,
+  switch break-depth handling, and `try`/`finally` cleanup before binding the
+  returned bucket. This removes the previous artificial local-only loop-control
+  boundary while preserving copied reference-slot write-through for the
+  selected bucket. Exception unwinding/catch execution for thrown values,
+  unsupported PHP syntax, broader dynamic backing keys, and native reference
+  lowering remain unsupported. Focused verification: raw system PHP output
+  matched the new `milestone1770` fixture; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1770` passed `1` fixture with `1`
+  system PHP comparison and `0` skips; focused `functions_and_scopes`
+  milestone tests passed.
+
 - Added Lane 1769-C for `try`/`finally` reference-return control flow in the
   supported magic/`ArrayAccess` method-body subset. By-reference
   `ArrayAccess::offsetGet()` and `__get()` bodies can now return covered

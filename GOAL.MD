@@ -32,7 +32,13 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1769:
+The current in-progress implementation frontier is Lane 1770:
+
+- Lane 1770 preserves reference-return lvalues after multi-level
+  `break`/`continue` control in nested loops inside public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies,
+  including propagation through `if`, `switch` break-depth handling, and
+  `try`/`finally` cleanup before a loop exits.
 
 - Lane 1769 preserves reference-return lvalues through `try` bodies, skipped
   catch clauses when no exception is thrown, and `finally` bodies in public

@@ -4737,10 +4737,10 @@ enum ReferenceReturnLocalBinding {
 }
 
 #[derive(Debug)]
-enum ReferenceReturnLoopBodyFlow {
+enum ReferenceReturnBodyFlow {
     Normal,
-    Break,
-    Continue,
+    Break { depth: usize, span: Span },
+    Continue { depth: usize, span: Span },
     Return(ReferenceReturnLocalBinding),
 }
 
@@ -36311,21 +36311,28 @@ impl Interpreter {
         function: &FunctionDecl,
         scope: &mut SymbolTable,
     ) -> CompileResult<ReferenceReturnLocalBinding> {
-        for stmt in &function.body {
-            if let Some(binding) =
-                self.execute_reference_return_assignment_statement(function, stmt, scope)?
-            {
-                return Ok(binding);
-            }
+        match self.execute_reference_return_assignment_statement_list(
+            function,
+            &function.body,
+            scope,
+        )? {
+            ReferenceReturnBodyFlow::Return(binding) => Ok(binding),
+            ReferenceReturnBodyFlow::Normal => Err(runtime_error(
+                function.span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "reference-return functions must return a direct variable or direct array offset in the current subset",
+                ),
+            )),
+            ReferenceReturnBodyFlow::Break { span, .. } => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+            )),
+            ReferenceReturnBodyFlow::Continue { span, .. } => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
+            )),
         }
-
-        Err(runtime_error(
-            function.span,
-            RuntimeError::unsupported_call(
-                callable_name(&function.name),
-                "reference-return functions must return a direct variable or direct array offset in the current subset",
-            ),
-        ))
     }
 
     fn execute_reference_return_assignment_statement(
@@ -36333,7 +36340,7 @@ impl Interpreter {
         function: &FunctionDecl,
         stmt: &Stmt,
         scope: &mut SymbolTable,
-    ) -> CompileResult<Option<ReferenceReturnLocalBinding>> {
+    ) -> CompileResult<ReferenceReturnBodyFlow> {
         self.tick(stmt.span())?;
         if let Stmt::Return { value, span } = stmt {
             let Some(value) = value else {
@@ -36345,9 +36352,23 @@ impl Interpreter {
                     ),
                 ));
             };
-            return self
-                .reference_return_local_binding_from_expr(function, value, *span, scope)
-                .map(Some);
+            let binding =
+                self.reference_return_local_binding_from_expr(function, value, *span, scope)?;
+            return Ok(ReferenceReturnBodyFlow::Return(binding));
+        }
+
+        if let Stmt::Break { depth, span } = stmt {
+            return Ok(ReferenceReturnBodyFlow::Break {
+                depth: *depth,
+                span: *span,
+            });
+        }
+
+        if let Stmt::Continue { depth, span } = stmt {
+            return Ok(ReferenceReturnBodyFlow::Continue {
+                depth: *depth,
+                span: *span,
+            });
         }
 
         if let Stmt::If {
@@ -36375,13 +36396,29 @@ impl Interpreter {
             loop {
                 self.tick(*span)?;
                 if !self.evaluate(condition, scope)?.is_truthy() {
-                    return Ok(None);
+                    return Ok(ReferenceReturnBodyFlow::Normal);
                 }
-                match self.execute_reference_return_assignment_loop_body(function, body, scope)? {
-                    ReferenceReturnLoopBodyFlow::Normal | ReferenceReturnLoopBodyFlow::Continue => {
+                match self
+                    .execute_reference_return_assignment_statement_list(function, body, scope)?
+                {
+                    ReferenceReturnBodyFlow::Normal => {}
+                    ReferenceReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                    ReferenceReturnBodyFlow::Continue { depth, span } => {
+                        return Ok(ReferenceReturnBodyFlow::Continue {
+                            depth: depth - 1,
+                            span,
+                        });
                     }
-                    ReferenceReturnLoopBodyFlow::Break => return Ok(None),
-                    ReferenceReturnLoopBodyFlow::Return(binding) => return Ok(Some(binding)),
+                    ReferenceReturnBodyFlow::Break { depth, .. } if depth <= 1 => {
+                        return Ok(ReferenceReturnBodyFlow::Normal);
+                    }
+                    ReferenceReturnBodyFlow::Break { depth, span } => {
+                        return Ok(ReferenceReturnBodyFlow::Break {
+                            depth: depth - 1,
+                            span,
+                        });
+                    }
+                    flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
                 }
             }
         }
@@ -36394,15 +36431,31 @@ impl Interpreter {
         {
             loop {
                 self.tick(*span)?;
-                match self.execute_reference_return_assignment_loop_body(function, body, scope)? {
-                    ReferenceReturnLoopBodyFlow::Normal | ReferenceReturnLoopBodyFlow::Continue => {
+                match self
+                    .execute_reference_return_assignment_statement_list(function, body, scope)?
+                {
+                    ReferenceReturnBodyFlow::Normal => {}
+                    ReferenceReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                    ReferenceReturnBodyFlow::Continue { depth, span } => {
+                        return Ok(ReferenceReturnBodyFlow::Continue {
+                            depth: depth - 1,
+                            span,
+                        });
                     }
-                    ReferenceReturnLoopBodyFlow::Break => return Ok(None),
-                    ReferenceReturnLoopBodyFlow::Return(binding) => return Ok(Some(binding)),
+                    ReferenceReturnBodyFlow::Break { depth, .. } if depth <= 1 => {
+                        return Ok(ReferenceReturnBodyFlow::Normal);
+                    }
+                    ReferenceReturnBodyFlow::Break { depth, span } => {
+                        return Ok(ReferenceReturnBodyFlow::Break {
+                            depth: depth - 1,
+                            span,
+                        });
+                    }
+                    flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
                 }
 
                 if !self.evaluate(condition, scope)?.is_truthy() {
-                    return Ok(None);
+                    return Ok(ReferenceReturnBodyFlow::Normal);
                 }
             }
         }
@@ -36427,15 +36480,31 @@ impl Interpreter {
                         keep_running = self.evaluate(condition, scope)?.is_truthy();
                     }
                     if !keep_running {
-                        return Ok(None);
+                        return Ok(ReferenceReturnBodyFlow::Normal);
                     }
                 }
 
-                match self.execute_reference_return_assignment_loop_body(function, body, scope)? {
-                    ReferenceReturnLoopBodyFlow::Normal | ReferenceReturnLoopBodyFlow::Continue => {
+                match self
+                    .execute_reference_return_assignment_statement_list(function, body, scope)?
+                {
+                    ReferenceReturnBodyFlow::Normal => {}
+                    ReferenceReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                    ReferenceReturnBodyFlow::Continue { depth, span } => {
+                        return Ok(ReferenceReturnBodyFlow::Continue {
+                            depth: depth - 1,
+                            span,
+                        });
                     }
-                    ReferenceReturnLoopBodyFlow::Break => return Ok(None),
-                    ReferenceReturnLoopBodyFlow::Return(binding) => return Ok(Some(binding)),
+                    ReferenceReturnBodyFlow::Break { depth, .. } if depth <= 1 => {
+                        return Ok(ReferenceReturnBodyFlow::Normal);
+                    }
+                    ReferenceReturnBodyFlow::Break { depth, span } => {
+                        return Ok(ReferenceReturnBodyFlow::Break {
+                            depth: depth - 1,
+                            span,
+                        });
+                    }
+                    flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
                 }
 
                 for increment in increments {
@@ -36448,20 +36517,19 @@ impl Interpreter {
             body, finally_body, ..
         } = stmt
         {
-            let try_binding =
+            let try_flow =
                 self.execute_reference_return_assignment_statement_list(function, body, scope)?;
             if let Some(finally_body) = finally_body {
-                if let Some(finally_binding) = self
-                    .execute_reference_return_assignment_statement_list(
-                        function,
-                        finally_body,
-                        scope,
-                    )?
-                {
-                    return Ok(Some(finally_binding));
+                let finally_flow = self.execute_reference_return_assignment_statement_list(
+                    function,
+                    finally_body,
+                    scope,
+                )?;
+                if !matches!(finally_flow, ReferenceReturnBodyFlow::Normal) {
+                    return Ok(finally_flow);
                 }
             }
-            return Ok(try_binding);
+            return Ok(try_flow);
         }
 
         if let Stmt::Switch { value, cases, .. } = stmt {
@@ -36469,7 +36537,7 @@ impl Interpreter {
         }
 
         match self.execute_statement(stmt, scope)? {
-            Flow::Normal => Ok(None),
+            Flow::Normal => Ok(ReferenceReturnBodyFlow::Normal),
             Flow::Return(_) => Err(runtime_error(
                 stmt.span(),
                 RuntimeError::unsupported_call(
@@ -36477,14 +36545,8 @@ impl Interpreter {
                     "reference returns through this control-flow form are not implemented",
                 ),
             )),
-            Flow::Break { span, .. } => Err(runtime_error(
-                span,
-                RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
-            )),
-            Flow::Continue { span, .. } => Err(runtime_error(
-                span,
-                RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
-            )),
+            Flow::Break { depth, span } => Ok(ReferenceReturnBodyFlow::Break { depth, span }),
+            Flow::Continue { depth, span } => Ok(ReferenceReturnBodyFlow::Continue { depth, span }),
             Flow::Exit(_) => Err(runtime_error(
                 stmt.span(),
                 RuntimeError::unsupported_call(
@@ -36496,62 +36558,13 @@ impl Interpreter {
         }
     }
 
-    fn execute_reference_return_assignment_loop_body(
-        &mut self,
-        function: &FunctionDecl,
-        body: &[Stmt],
-        scope: &mut SymbolTable,
-    ) -> CompileResult<ReferenceReturnLoopBodyFlow> {
-        for stmt in body {
-            match stmt {
-                Stmt::Break { depth, .. } if *depth <= 1 => {
-                    return Ok(ReferenceReturnLoopBodyFlow::Break);
-                }
-                Stmt::Break { depth, span } => {
-                    return Err(runtime_error(
-                        *span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            format!(
-                                "break {depth} inside loop reference-return bodies is not implemented"
-                            ),
-                        ),
-                    ));
-                }
-                Stmt::Continue { depth, .. } if *depth <= 1 => {
-                    return Ok(ReferenceReturnLoopBodyFlow::Continue);
-                }
-                Stmt::Continue { depth, span } => {
-                    return Err(runtime_error(
-                        *span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            format!(
-                                "continue {depth} inside loop reference-return bodies is not implemented"
-                            ),
-                        ),
-                    ));
-                }
-                _ => {
-                    if let Some(binding) =
-                        self.execute_reference_return_assignment_statement(function, stmt, scope)?
-                    {
-                        return Ok(ReferenceReturnLoopBodyFlow::Return(binding));
-                    }
-                }
-            }
-        }
-
-        Ok(ReferenceReturnLoopBodyFlow::Normal)
-    }
-
     fn execute_reference_return_assignment_switch(
         &mut self,
         function: &FunctionDecl,
         value: &Expr,
         cases: &[SwitchCase],
         scope: &mut SymbolTable,
-    ) -> CompileResult<Option<ReferenceReturnLocalBinding>> {
+    ) -> CompileResult<ReferenceReturnBodyFlow> {
         let switch_value = self.evaluate(value, scope)?;
         let mut default_index = None;
         let mut matched_index = None;
@@ -36575,45 +36588,37 @@ impl Interpreter {
         }
 
         let Some(mut index) = matched_index.or(default_index) else {
-            return Ok(None);
+            return Ok(ReferenceReturnBodyFlow::Normal);
         };
 
         while index < cases.len() {
             for stmt in &cases[index].body {
-                match stmt {
-                    Stmt::Break { depth, .. } if *depth <= 1 => return Ok(None),
-                    Stmt::Break { depth, span } => {
-                        return Err(runtime_error(
-                            *span,
-                            RuntimeError::unsupported_call(
-                                callable_name(&function.name),
-                                format!(
-                                    "break {depth} inside switch reference-return bodies is not implemented"
-                                ),
-                            ),
-                        ));
+                match self.execute_reference_return_assignment_statement(function, stmt, scope)? {
+                    ReferenceReturnBodyFlow::Normal => {}
+                    ReferenceReturnBodyFlow::Break { depth, .. } if depth <= 1 => {
+                        return Ok(ReferenceReturnBodyFlow::Normal);
                     }
-                    Stmt::Continue { span, .. } => {
+                    ReferenceReturnBodyFlow::Break { depth, span } => {
+                        return Ok(ReferenceReturnBodyFlow::Break {
+                            depth: depth - 1,
+                            span,
+                        });
+                    }
+                    ReferenceReturnBodyFlow::Continue { span, .. } => {
                         return Err(runtime_error(
-                            *span,
+                            span,
                             RuntimeError::invalid_loop_control(
                                 "continue inside switch is not implemented; use break for switch cases in the current subset",
                             ),
                         ));
                     }
-                    _ => {
-                        if let Some(binding) = self
-                            .execute_reference_return_assignment_statement(function, stmt, scope)?
-                        {
-                            return Ok(Some(binding));
-                        }
-                    }
+                    flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
                 }
             }
             index += 1;
         }
 
-        Ok(None)
+        Ok(ReferenceReturnBodyFlow::Normal)
     }
 
     fn execute_reference_return_assignment_statement_list(
@@ -36621,15 +36626,14 @@ impl Interpreter {
         function: &FunctionDecl,
         statements: &[Stmt],
         scope: &mut SymbolTable,
-    ) -> CompileResult<Option<ReferenceReturnLocalBinding>> {
+    ) -> CompileResult<ReferenceReturnBodyFlow> {
         for stmt in statements {
-            if let Some(binding) =
-                self.execute_reference_return_assignment_statement(function, stmt, scope)?
-            {
-                return Ok(Some(binding));
+            let flow = self.execute_reference_return_assignment_statement(function, stmt, scope)?;
+            if !matches!(flow, ReferenceReturnBodyFlow::Normal) {
+                return Ok(flow);
             }
         }
-        Ok(None)
+        Ok(ReferenceReturnBodyFlow::Normal)
     }
 
     fn reference_return_local_binding_from_expr(
