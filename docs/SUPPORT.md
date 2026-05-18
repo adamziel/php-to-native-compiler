@@ -1190,8 +1190,16 @@
   covers direct dynamic calls such as `$cb(...)` and `call_user_func($cb, ...)`
   for object/static array callables, including helper-local
   object-property array-offset returns that can be remapped to a caller-visible
-  root. Arbitrary callable arrays, magic `__call`/`__callStatic`, and builtin
-  callbacks remain unsupported for reference-return sources. The exact
+  root. Arbitrary callable arrays, magic `__callStatic`, and builtin
+  callbacks remain unsupported for reference-return sources. Bounded magic
+  `__call()` is supported for direct missing instance method calls and object
+  array-callable paths when `__call()` is public, returns by reference, and
+  returns a proven lvalue from the executed body. This covers
+  `$this->missing($key)`, `[$this, "missing"]($key)`, and
+  `call_user_func([$this, "missing"], $key)` inside supported
+  reference-return bodies. Magic `__callStatic`, arbitrary callable arrays,
+  builtin callbacks, and arbitrary `__call()` side effects beyond the executed
+  subset remain unsupported for reference-return sources. The exact
   `__get()`/`offsetGet()` backing
   analyzer accepts one local copy of the magic/offset parameter before the
   return, such as `$slot = $name; return $this->store[$slot];` or

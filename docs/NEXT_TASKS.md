@@ -20115,6 +20115,20 @@ handled.
   subset, incompatible typed signatures, full exception unwinding, exact PHP
   diagnostics, and native reference lowering named as unsupported.
 
+## Lane 1806-C through Lane 1808-C: Magic Call Reference Returns
+
+- [x] Runtime/interpreter/tests/docs bundle: allow supported
+  magic/`ArrayAccess` reference-return bodies to dispatch direct missing
+  instance method calls and object array-callable paths through public
+  by-reference `__call()` when the magic method returns a proven lvalue. Cover
+  magic `__get()` returning `$this->slot($name)`, `ArrayAccess::offsetGet()`
+  returning `$this->slot($offset)`, and `call_user_func([$this, "slot"],
+  $name)` through `__call()`. Keep magic `__callStatic`, arbitrary callable
+  arrays, builtin callbacks as reference-return sources, arbitrary PHP syntax
+  and side effects outside the executed method-body subset, incompatible
+  typed signatures, full exception unwinding, exact PHP diagnostics, and
+  native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

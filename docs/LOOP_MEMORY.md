@@ -18,6 +18,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T01:25:41+02:00
+
+- Checkpoint before this task: `a0aca177 runtime: support array callable
+  reference returns`, pushed to `origin/master`.
+- Task attempted: Lane 1806-C through Lane 1808-C bundle, allowing executed
+  magic/`ArrayAccess` reference-return bodies to dispatch direct missing
+  instance method calls and object array-callable paths through public
+  by-reference `__call()` when the magic method returns a proven lvalue.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1806/*`, `tests/fixtures/milestone1807/*`,
+  `tests/fixtures/milestone1808/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched the new `milestone1806`, `milestone1807`, and `milestone1808`
+  fixtures; `cargo run -q -p phpc -- test --compare-php` passed each new
+  fixture directory and adjacent `milestone1805` with `1` fixture, `1`
+  system PHP comparison, and `0` skips; focused `cargo test -q -p phpc
+  --test functions_and_scopes milestone180`, `cargo test -q -p phpc --test
+  call_user_func_builtin`, and `cargo test -q -p phpc --test
+  error_handler_builtin` passed.
+- Remaining COW gaps: magic `__callStatic` as a reference-return source,
+  arbitrary callable arrays, builtin callbacks as reference-return sources,
+  unsupported PHP syntax and side effects outside the executed method-body
+  subset, arbitrary type enforcement and incompatible typed reference-return
+  signatures, full exception unwinding and uncaught exception propagation,
+  arbitrary Iterator side effects, broader complex alias sinks and alias
+  lifetime ordering, exact PHP stderr/fatal text, binary/multibyte string
+  offset behavior, and native reference/string COW lowering.
+- Next concrete task: run formatting, diff, adjacent checks, then the full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T01:15:38+02:00
 
 - Checkpoint before this task: `9130d67c runtime: support closure reference

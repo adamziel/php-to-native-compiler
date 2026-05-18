@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Lane 1806-C through Lane 1808-C for bounded magic `__call()`
+  reference-return sources inside the executed magic/`ArrayAccess` COW
+  bridge. Supported direct missing instance method calls and object
+  array-callable paths can now dispatch to public by-reference `__call()`,
+  pass the method name and value argument array, and bind the proven returned
+  lvalue before caller suffix keys are applied. Covered fixtures exercise
+  magic `__get()` returning `$this->slot($name)` through `__call()`,
+  `ArrayAccess::offsetGet()` returning `$this->slot($offset)` through
+  `__call()`, and `call_user_func([$this, "slot"], $name)` through
+  `__call()`. This does not claim magic `__callStatic`, arbitrary callable
+  arrays, builtin callbacks as reference-return sources, arbitrary PHP syntax
+  or side effects outside the executed interpreter subset, incompatible typed
+  signatures, full exception unwinding, exact PHP diagnostics, or native
+  reference lowering. Focused verification: raw system PHP output matched the
+  new `milestone1806`, `milestone1807`, and `milestone1808` fixtures; `cargo
+  run -q -p phpc -- test --compare-php` passed each new fixture directory
+  with `1` fixture, `1` system PHP comparison, and `0` skips; focused
+  `functions_and_scopes` milestone and adjacent callback/error-handler tests
+  passed.
+
 - Added Lane 1803-C through Lane 1805-C for bounded array-callable
   reference-return sources inside the executed magic/`ArrayAccess` COW
   bridge. Supported bodies can now `return $cb(...)` when `$cb` is an

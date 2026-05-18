@@ -7231,18 +7231,19 @@ impl Interpreter {
 
         match target {
             Value::Object(object) => {
-                let receiver_class = self
+                let receiver_class_name = self
                     .classes
                     .get(object.class_id())
-                    .expect("object class id should resolve to class metadata");
+                    .expect("object class id should resolve to class metadata")
+                    .name()
+                    .to_string();
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
                     self.resolve_instance_method(object.class_id(), method_name)
                 else {
                     return Err(runtime_error(
                         span,
                         RuntimeError::undefined_function(format!(
-                            "{}::{method_name}()",
-                            receiver_class.name()
+                            "{receiver_class_name}::{method_name}()"
                         )),
                     ));
                 };
@@ -26202,6 +26203,60 @@ impl Interpreter {
         .map(Some)
     }
 
+    fn call_reference_return_magic_instance_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnBinding>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), method_name)
+        else {
+            return Ok(None);
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        if !function.returns_by_reference {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "function does not return by reference",
+                ),
+            ));
+        }
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let called_class_id = object.class_id();
+        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+            function,
+            args,
+            Some(object),
+            Some(class_id),
+            Some(called_class_id),
+            Vec::new(),
+            caller_scope,
+        )
+        .map(Some)
+    }
+
     fn is_undefined_property_error(error: &RuntimeError) -> bool {
         matches!(error.kind(), RuntimeErrorKind::UndefinedProperty { .. })
     }
@@ -28501,6 +28556,41 @@ impl Interpreter {
                 Value::Array(argument_array),
             ],
             span,
+        )
+    }
+
+    fn call_missing_instance_method_reference_return_via_magic(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnBinding>> {
+        if self
+            .resolve_instance_method(object.class_id(), "__call")
+            .is_none()
+        {
+            return Ok(None);
+        }
+
+        let mut argument_array = PhpArray::new();
+        for arg in args {
+            let value = self.evaluate(arg, caller_scope)?;
+            argument_array
+                .append(value)
+                .map_err(|error| runtime_error(arg.span(), error))?;
+        }
+
+        self.call_reference_return_magic_instance_method_with_values(
+            object,
+            "__call",
+            vec![
+                Value::String(method_name.to_string()),
+                Value::Array(argument_array),
+            ],
+            span,
+            caller_scope,
         )
     }
 
@@ -31211,18 +31301,19 @@ impl Interpreter {
 
         match target {
             Value::Object(object) => {
-                let receiver_class = self
+                let receiver_class_name = self
                     .classes
                     .get(object.class_id())
-                    .expect("object class id should resolve to class metadata");
+                    .expect("object class id should resolve to class metadata")
+                    .name()
+                    .to_string();
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
                     self.resolve_instance_method(object.class_id(), method_name)
                 else {
                     return Err(runtime_error(
                         span,
                         RuntimeError::undefined_function(format!(
-                            "{}::{method_name}()",
-                            receiver_class.name()
+                            "{receiver_class_name}::{method_name}()"
                         )),
                     ));
                 };
@@ -32092,20 +32183,30 @@ impl Interpreter {
 
         match target {
             Value::Object(object) => {
-                let receiver_class = self
+                let receiver_class_name = self
                     .classes
                     .get(object.class_id())
-                    .expect("object class id should resolve to class metadata");
+                    .expect("object class id should resolve to class metadata")
+                    .name()
+                    .to_string();
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
                     self.resolve_instance_method(object.class_id(), method_name)
                 else {
-                    return Err(runtime_error(
+                    return match self.call_missing_instance_method_reference_return_via_magic(
+                        object.clone(),
+                        method_name,
+                        args,
                         span,
-                        RuntimeError::undefined_function(format!(
-                            "{}::{method_name}()",
-                            receiver_class.name()
+                        caller_scope,
+                    )? {
+                        Some(binding) => Ok(binding),
+                        None => Err(runtime_error(
+                            span,
+                            RuntimeError::undefined_function(format!(
+                                "{receiver_class_name}::{method_name}()"
+                            )),
                         )),
-                    ));
+                    };
                 };
                 if is_static {
                     return Err(runtime_error(
@@ -35752,12 +35853,21 @@ impl Interpreter {
                 .name()
                 .to_string();
             let Some(method) = self.resolve_instance_method(object.class_id(), method_name) else {
-                return Err(runtime_error(
+                return match self.call_missing_instance_method_reference_return_via_magic(
+                    object,
+                    method_name,
+                    args,
                     span,
-                    RuntimeError::undefined_function(format!(
-                        "{receiver_class_name}::{method_name}()"
+                    caller_scope,
+                )? {
+                    Some(binding) => Ok(binding),
+                    None => Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{receiver_class_name}::{method_name}()"
+                        )),
                     )),
-                ));
+                };
             };
             method
         };

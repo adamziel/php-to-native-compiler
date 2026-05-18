@@ -32,7 +32,13 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1805:
+The current in-progress implementation frontier is Lane 1808:
+
+- Lanes 1806 through 1808 add bounded magic `__call()` reference-return
+  sources to the executed magic/`ArrayAccess` bridge. Covered direct missing
+  instance method calls and object array callables that resolve through
+  public by-reference `__call()` can now return proven backing buckets while
+  preserving caller-side suffix keys.
 
 - Lanes 1803 through 1805 add bounded array-callable reference-return sources
   to the same executed magic/`ArrayAccess` bridge. Covered bodies can now
