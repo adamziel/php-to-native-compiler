@@ -163,6 +163,7 @@ fn is_object_property_array_access_target(target: &AssignTarget) -> bool {
     matches!(
         target,
         AssignTarget::ObjectPropertyArrayIndex { .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -1585,6 +1586,7 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             AssignTarget::ObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { span, .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { span, .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { span, .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. }
@@ -4629,6 +4631,7 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             AssignTarget::ObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { span, .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { span, .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { span, .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. }

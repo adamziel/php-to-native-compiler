@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T15:06:17+02:00
+
+- Checkpoint before this task: `e4d5351a runtime: support non-direct magic
+  ArrayAccess keyed stores`, pushed to `origin/master`.
+- Task attempted: Lane 1721-C focused direct dynamic magic-property-provided
+  `ArrayAccess` keyed store COW propagation while preserving direct dynamic
+  append store routing.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/codegen.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1721/*`, `GOAL.MD`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc` passed;
+  PHP syntax and system PHP output checks passed for the new fixture; the
+  `milestone1721` `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1721`
+  passed `1` fixture with `1` system PHP comparison and `0` skips. Adjacent
+  `milestone1720` runtime and system-PHP comparison checks also passed.
+- Semantic gap reduced: direct dynamic magic `ArrayAccess` keyed stores now
+  have distinct assignment-target handling from direct dynamic append stores
+  and preserve copied nested reference-slot metadata through the covered
+  one-key `offsetSet()` and exact by-reference `offsetGet()` parent-bucket
+  bridges.
+- Remaining semantic gaps: by-value terminal/plain-array nested mutation,
+  unsupported `offsetSet()`/`offsetGet()`/`__get()` body shapes, broader mixed
+  nested `ArrayAccess` chains, scalar parent overwrite/error parity, full
+  references/COW, and native reference lowering remain unsupported.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, then
+  checkpoint with
+  `tools/checkpoint.sh "runtime: support dynamic magic ArrayAccess keyed stores"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T14:57:20+02:00
 
 - Checkpoint before this task: `fb68df07 runtime: support magic ArrayAccess

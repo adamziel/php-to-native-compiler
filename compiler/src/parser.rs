@@ -2802,6 +2802,7 @@ impl Parser {
                     AssignTarget::NestedArrayIndex { .. }
                     | AssignTarget::NestedArrayAppend { .. }
                     | AssignTarget::ObjectPropertyArrayIndex { .. }
+                    | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
                     | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
                     | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
                     | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -3244,6 +3245,25 @@ impl Parser {
                 if self.check(|kind| matches!(kind, TokenKind::LParen)) {
                     return Ok(AssignTarget::Variable { name, span });
                 }
+                if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
+                    let (indices, is_append) =
+                        self.parse_object_property_array_indices_or_append()?;
+                    if is_append {
+                        return Ok(AssignTarget::DynamicObjectPropertyArrayAppend {
+                            object: name,
+                            property,
+                            indices,
+                            suffix_indices: Vec::new(),
+                            span,
+                        });
+                    }
+                    return Ok(AssignTarget::DynamicObjectPropertyArrayIndex {
+                        object: name,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
                 return Ok(AssignTarget::DynamicProperty {
                     object: name,
                     property,
@@ -3348,6 +3368,7 @@ impl Parser {
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -3378,6 +3399,7 @@ impl Parser {
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -3569,6 +3591,16 @@ impl Parser {
                     Self::object_property_array_index_path_from_expr(&expr)
                 {
                     return Ok(AssignTarget::ObjectPropertyArrayIndex {
+                        object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+                if let Some((object, property, indices, span)) =
+                    Self::dynamic_object_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::DynamicObjectPropertyArrayIndex {
                         object,
                         property,
                         indices,

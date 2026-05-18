@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Lane 1721-C focused keyed-store support for direct dynamic
+  magic-property-provided `ArrayAccess` objects. A new direct dynamic
+  object-property array-index assignment target distinguishes
+  `$box->{$name}["leaf"] = $array` from `$box->{$name}[] = $array`; the keyed
+  path evaluates the property-name expression once, obtains the
+  `ArrayAccess` object through visible public `__get($name)`, and reuses the
+  covered one-key `offsetSet()` or exact by-reference `offsetGet()` parent
+  bucket bridge to attach array-literal reference slots or copied-array alias
+  metadata to the backing bucket. This does not add by-value
+  terminal/plain-array nested mutation, unsupported
+  `offsetSet()`/`offsetGet()`/`__get()` body shapes, broader mixed nested
+  `ArrayAccess` chains, scalar parent overwrite/error parity, full
+  references/COW, or native reference lowering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: PHP syntax and system PHP output checks passed for
+  the new fixture, `cargo check -q -p phpc` passed, the `milestone1721`
+  `functions_and_scopes` filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1721`
+  passed `1` fixture with `1` system PHP comparison and `0` skips. Adjacent
+  `milestone1720` runtime and system-PHP comparison checks also passed.
+
 - Added Lane 1720-C focused keyed-store support for non-direct
   magic-property-provided `ArrayAccess` objects while preserving the existing
   non-direct append path. The assignment-target AST and parser now distinguish

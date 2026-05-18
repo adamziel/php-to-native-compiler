@@ -9906,6 +9906,7 @@ impl Interpreter {
 
                 Err(unsupported())
             }
+            AssignTarget::DynamicObjectPropertyArrayIndex { .. } => Err(unsupported()),
             AssignTarget::NonDirectObjectPropertyArrayIndex {
                 holder,
                 property,
@@ -13542,6 +13543,99 @@ impl Interpreter {
                 }
                 Ok(value)
             }
+            AssignTarget::DynamicObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
+                if matches!(value, Value::Array(_))
+                    && keys.len() == 1
+                    && self.write_object_property_array_access_keyed_with_reference_propagation(
+                        object,
+                        &property,
+                        keys[0].clone(),
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
+                if matches!(value, Value::Array(_))
+                    && keys.len() > 1
+                    && self
+                        .write_object_property_array_access_nested_keyed_with_reference_propagation(
+                            object,
+                            &property,
+                            keys.clone(),
+                            value.clone(),
+                            expr,
+                            array_literal_references.clone(),
+                            *span,
+                            scope,
+                        )?
+                {
+                    return Ok(value);
+                }
+                if matches!(value, Value::Array(_))
+                    && self.write_magic_get_array_access_keyed_with_reference_propagation(
+                        object,
+                        &property,
+                        keys.clone(),
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
+                let root =
+                    self.context_object_property_alias_root(object, &property, *span, scope)?;
+                let root = scope.canonical_equivalent_object_property_alias_root(&root);
+                scope.detach_array_offset_aliases_below_assignment_paths(&[ArrayOffsetAlias {
+                    root: root.clone(),
+                    keys: keys.clone(),
+                }]);
+                self.write_object_property_nested_array_assignment(
+                    object,
+                    &property,
+                    &keys,
+                    value.clone(),
+                    *span,
+                    scope,
+                )?;
+                scope.sync_array_offset_aliases_for_root_path(&root, &keys);
+                if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
+                    self.bind_array_literal_references_to_alias_root_with_prefix(
+                        root.clone(),
+                        keys.clone(),
+                        array_literal_references,
+                        expr.span(),
+                        scope,
+                    )?;
+                } else if matches!(value, Value::Array(_)) {
+                    self.mirror_copied_array_aliases_to_alias_root(expr, root, &keys, scope);
+                }
+                Ok(value)
+            }
             AssignTarget::NonDirectObjectPropertyArrayIndex {
                 holder,
                 property,
@@ -15683,6 +15777,7 @@ impl Interpreter {
             }
             AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -16131,6 +16226,7 @@ impl Interpreter {
             }
             AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -16389,6 +16485,7 @@ impl Interpreter {
             AssignTarget::NestedArrayIndex { span, .. }
             | AssignTarget::NestedArrayAppend { span, .. }
             | AssignTarget::ObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { span, .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { span, .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { span, .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. }

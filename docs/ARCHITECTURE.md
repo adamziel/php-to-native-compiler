@@ -962,9 +962,13 @@ named and dynamic holder forms such as
 `$holders["box"]->missing["outer"]["leaf"] = $array`, and
 `$holders["box"]->{$name}["leaf"] = $array` evaluate the holder once into a
 temporary object root and reuse the same magic keyed bridge. Dynamic direct
-magic keyed property names, by-value terminal/plain-array nested mutation,
-unsupported `offsetSet()`/`offsetGet()`/`__get()` bodies, broader mixed
-chains, and native lowering remain outside this path.
+magic keyed property names use a direct dynamic object-property array-index
+assignment target, evaluate the property expression once, and then reuse the
+same visible property-held or magic `ArrayAccess` keyed bridge for
+`$box->{$name}["leaf"] = $array` and nested plain-array leaves. By-value
+terminal/plain-array nested mutation, unsupported
+`offsetSet()`/`offsetGet()`/`__get()` bodies, broader mixed chains, and native
+lowering remain outside this path.
 Direct magic-property append stores such as `$box->missing[] = $array` and
 `$box->{$name}[] = $array` are a separate store path from magic append
 reference sources. For the covered store shape, the runtime calls visible

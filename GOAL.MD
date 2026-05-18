@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1720:
+The current in-progress implementation frontier is Lane 1721:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -171,6 +171,12 @@ The current in-progress implementation frontier is Lane 1720:
   reference-slot metadata through the same tested magic/`ArrayAccess`
   backing-bucket bridges, while non-direct append stores continue through
   their append-specific path.
+- Lane 1721 adds direct dynamic magic-property keyed stores such as
+  `$box->{$name}["leaf"] = $array` and
+  `$box->{$name}["outer"]["leaf"] = $array` by introducing a direct dynamic
+  object-property array-index assignment target and routing it through the
+  same visible property-held and magic `ArrayAccess` keyed bridges. Direct
+  dynamic append stores remain on their append-specific route.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

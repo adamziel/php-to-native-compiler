@@ -924,7 +924,10 @@
   property expression are evaluated once, `__get()` obtains the
   `ArrayAccess` object, and the same one-key `offsetSet()` or exact
   by-reference `offsetGet()` parent-bucket bridges attach metadata to the
-  backing bucket. Dynamic direct magic keyed property names, by-value
+  backing bucket. Direct dynamic magic-property keyed stores such as
+  `$box->{$name}["leaf"] = $array` and
+  `$box->{$name}["outer"]["leaf"] = $array` use the same keyed bridge after
+  evaluating the property-name expression once. By-value
   terminal/plain-array nested mutation, unsupported
   `offsetSet()`/`offsetGet()`/`__get()` body shapes, broader mixed chains,
   and native lowering remain unsupported. Direct magic-property append stores
