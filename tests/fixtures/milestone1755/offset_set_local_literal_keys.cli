@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1755/offset_set_local_literal_keys.php

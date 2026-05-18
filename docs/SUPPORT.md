@@ -866,8 +866,11 @@
   `$this->property["bucket"][$offset] = $value;` and
   `$this->property[$offset]["bucket"] = $value;`. Repeated offset-parameter
   paths such as `$this->property[$offset][$offset] = $value;` are also
-  covered for that exact non-branchy bridge, and later bucket copies use
-  the exact public `return $this->property[$offset];` `offsetGet()` bridge.
+  covered for that exact non-branchy bridge. Backing paths may use locals
+  initialized from literal int/string keys, such as
+  `$leaf = "leaf"; $this->property[$offset][$leaf] = $value;`, and later
+  bucket copies use the exact public `return $this->property[$offset];`
+  `offsetGet()` bridge.
   Direct
   append `$bag[] = $array` preserves the same nested reference slots for two
   focused public `offsetSet(null, $value)` shapes: the exact
@@ -885,10 +888,14 @@
   accepts the equivalent `if/else` body without the `return`, including the
   same literal prefix/suffix family, such as
   `if ($offset === null) { $this->property["outer"][]["leaf"] = $value; }
-  else { $this->property["outer"][$offset]["leaf"] = $value; }`. Keyed
-  stores such as `$bag["leaf"] = $array` also preserve copied reference-slot
-  metadata through that same `if/else` body by recognizing the non-null
-  branch's keyed backing assignment. The same focused append
+  else { $this->property["outer"][$offset]["leaf"] = $value; }`. Local
+  literal-key aliases may appear in these branch paths, for example
+  `$bucket = "outer"; $leaf = "leaf"; if ($offset === null) {
+  $this->property[$bucket][][$leaf] = $value; return; }
+  $this->property[$bucket][$offset][$leaf] = $value;`. Keyed stores such as
+  `$bag["leaf"] = $array` also preserve copied reference-slot metadata through
+  that same `if/else` body by recognizing the non-null branch's keyed backing
+  assignment. The same focused append
   stored-bucket propagation is supported
   when a direct visible named or dynamic property holds the `ArrayAccess`
   object, such as `$holder->bag[] = $array` or
@@ -946,7 +953,8 @@
   `$items =& $this->items; $slot = $offset; return $items[$slot];`.
   By-value terminal/plain-array nested mutation, unsupported
   `offsetSet()`/`offsetGet()`/`__get()` body shapes beyond those proven
-  return forms, broader mixed chains, and native lowering remain unsupported.
+  analyzer forms, broader mixed chains, and native lowering remain
+  unsupported.
   Direct magic-property append stores
   such as `$box->missing[] = $array` and `$box->{$name}[] = $array` are also
   supported for this focused stored-bucket COW shape when visible public
@@ -1122,7 +1130,8 @@
   bridges, `elseif`, extra statements in either `offsetSet()` branch,
   fall-through append bodies without `else`/`return`, mismatched append/keyed
   paths, dynamic `offsetSet()` parameter keys, repeated offset parameters in
-  branchy append bridges, non-literal `offsetSet()` path keys, side-effecting or broader
+  branchy append bridges, non-literal/dynamic local `offsetSet()` path keys,
+  side-effecting or broader
   `offsetSet()`/`offsetGet()` bodies,
   built-in interface enforcement/signature validation, typed method
   invocation, broad references/copy-on-write, exact warning/visibility

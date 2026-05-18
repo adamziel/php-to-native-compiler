@@ -7111,6 +7111,112 @@ $bag["outer"]["copy"] = array("bad");
 }
 
 #[test]
+fn offset_set_local_literal_keys_preserve_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public int $id = 1;
+}
+
+class KeyedBag implements ArrayAccess {
+    public $items = array();
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    #[ReturnTypeWillChange]
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        $leaf = "leaf";
+        $this->items[$offset][$leaf] = $value;
+    }
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+class AppendBag implements ArrayAccess {
+    public $items = array();
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    #[ReturnTypeWillChange]
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        $bucket = "bucket";
+        $leaf = "leaf";
+        if ($offset === null) {
+            $this->items[$bucket][][$leaf] = $value;
+            return;
+        }
+        $this->items[$bucket][$offset][$leaf] = $value;
+    }
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+$box = new Box();
+$alias =& $box->id;
+
+$keyed = new KeyedBag();
+$keyed["outer"] = array("copy" => &$alias);
+$keyed->items["outer"]["leaf"]["copy"] = "2";
+echo gettype($box->id), ":", $box->id, "|", gettype($keyed->items["outer"]["leaf"]["copy"]), ":", $keyed->items["outer"]["leaf"]["copy"], "\n";
+
+$append = new AppendBag();
+$append[] = array("copy" => &$alias);
+$append->items["bucket"][0]["leaf"]["copy"] = "3";
+echo gettype($box->id), ":", $box->id, "|", gettype($append->items["bucket"][0]["leaf"]["copy"]), ":", $append->items["bucket"][0]["leaf"]["copy"], "\n";
+
+$append["named"] = array("copy" => &$alias);
+$append->items["bucket"]["named"]["leaf"]["copy"] = "4";
+echo gettype($box->id), ":", $box->id, "|", gettype($append->items["bucket"]["named"]["leaf"]["copy"]), ":", $append->items["bucket"]["named"]["leaf"]["copy"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "integer:2|integer:2\ninteger:3|integer:3\ninteger:4|integer:4"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    public int $id = 1;
+}
+
+class KeyedBag implements ArrayAccess {
+    public $items = array();
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    #[ReturnTypeWillChange]
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        $leaf = "leaf";
+        $this->items[$offset][$leaf] = $value;
+    }
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+$box = new Box();
+$alias =& $box->id;
+$keyed = new KeyedBag();
+$keyed["outer"] = array("copy" => &$alias);
+$keyed->items["outer"]["leaf"]["copy"] = array("bad");
+"#,
+    );
+    assert_eq!(
+        error.message,
+        "invalid property access: typed property Box::$id expects int, got array"
+    );
+}
+
+#[test]
 fn arrayaccess_append_suffix_syntax_routes_to_backing_buckets() {
     let execution = run_source(
         r#"<?php

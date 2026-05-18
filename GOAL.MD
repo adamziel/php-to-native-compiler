@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1754:
+The current in-progress implementation frontier is Lane 1755:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -376,6 +376,10 @@ The current in-progress implementation frontier is Lane 1754:
   one side-effect-free key shape: locals initialized from literal int/string
   keys may be used as backing-path indexes, while non-literal/dynamic key
   variables and arbitrary method bodies remain unsupported.
+- Lane 1755 applies the same side-effect-free local literal-key shape to the
+  proven `ArrayAccess::offsetSet()` backing analyzer for exact keyed stores
+  and branchy null-append/keyed bodies, preserving copied reference slots in
+  the selected backing bucket.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

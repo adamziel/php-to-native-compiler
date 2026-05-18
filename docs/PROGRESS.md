@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1755-C for the matching `ArrayAccess::offsetSet()` backing
+  analyzer broadening: local variables initialized from literal int/string keys
+  may be used as path indexes in exact keyed stores and branchy null-append /
+  keyed bodies, such as `$leaf = "leaf"; $this->items[$offset][$leaf] =
+  $value;` and the corresponding append branch. Covered stores now attach
+  copied reference-slot metadata to the real backing bucket, preserving typed
+  reference slots after later backing writes. Arbitrary `offsetSet()` bodies,
+  non-literal/dynamic key variables, broader complex alias sinks, exact PHP
+  fatal text, string COW identity, and native reference lowering remain
+  unsupported. Focused verification: raw system PHP output matched the new
+  `milestone1755` fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1755` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent
+  `offset_set_local_literal_keys_preserve_reference_slots` passed.
+
 - Added Lane 1754-C for one bounded `__get()`/`offsetGet()` return-body
   broadening: local variables initialized from literal int/string keys may be
   used as backing-bucket indexes in the existing proven return shapes, such as
