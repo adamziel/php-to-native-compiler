@@ -139,7 +139,12 @@
   copied into the callee parameter, and written back to the same slot when the
   callee returns normally or with `return`. This
   direct array-offset and object-property argument path does not expose a
-  general in-call PHP reference container. Direct user-function by-reference
+  general in-call PHP reference container, but ordinary direct user-function
+  calls do bind multiple by-reference parameters to one local cell when the
+  supplied arguments resolve to the same covered alias metadata, such as
+  `handler($alias, $items["slot"])` after `$alias =& $items["slot"]`, or the
+  equivalent visible public object-property array slot shape. Direct
+  user-function by-reference
   calls also accept non-direct holder plain object-property array-offset
   arguments such as `handler($holders["bag"]->items["outer"]["slot"])` and
   dynamic selected properties such as
@@ -176,8 +181,10 @@
   `$alias =& $object->missing[];` and `$alias =& $object->{$name}[];`, when visible public
   `__get($name)` returns a direct variable by reference; the assigned alias
   binds to the selected or appended slot under the returned array cell. This does not add
-  non-direct magic-property holder expressions, mixed nested `ArrayAccess` chains, general
-  magic-property reference containers, arbitrary reference expressions,
+  non-direct magic-property holder expressions, mixed nested `ArrayAccess`
+  chains, broad same-container identity for reference-returning function,
+  method/static/callback dispatch, general magic-property reference containers,
+  arbitrary reference expressions,
   broader `__get()` return body shapes, or a general in-call PHP reference
   container. String
   user-function callbacks,
@@ -248,6 +255,13 @@
   arrays, request bags such as `$_REQUEST`, public object-property array
   slots, and private/protected object-property array slots reached from a
   valid method visibility context through the existing alias metadata. The
+  stored-array path also preserves direct array-literal reference elements
+  below bounded magic `__get()` array roots, such as
+  `$args = array(&$object->missing["slot"], "suffix")` and
+  `$args = array("value" => &$object->{$name}["slot"])`, when visible public
+  `__get($name)` returns a direct variable by reference; callback writeback
+  routes through the returned array cell and keeps the stored argument slot
+  coherent. The
   stored argument array may be a direct variable or a direct visible named
   object property such as `$this->privateArgs` or
   `$peer->protectedArgs`. A direct stored argument-array variable may itself be
@@ -303,6 +317,12 @@
   assigned by reference through the covered direct array-offset target path,
   for example
   `$args[0] =& $value; $alias =& call_user_func_array("tag", $args);`.
+  Stored direct array literals with bounded magic `__get()` array-offset
+  reference elements are accepted for the same reference-return path, for
+  example
+  `$args = array(&$object->missing["slot"]); $alias =&
+  call_user_func_array("tag", $args);`, when the same visible public
+  direct-variable-returning `__get()` bridge applies.
   Stored argument arrays may also use string keys that match declared
   parameter names, provided each reached by-reference slot was assigned by
   reference through the covered alias path. The
@@ -348,8 +368,10 @@
   $store->groups["args"]);`. Reassigning those explicit array or
   object-property array slots detaches covered child aliases below the replaced
   slot so later writes through the old referenced value do not recreate or
-  overwrite the new slot value, while exact aliases to the replaced slot remain
-  write-through in the current bounded model.
+  overwrite the new slot value. Rebinding an already covered direct array slot
+  or public object-property array slot by reference to a new direct variable or
+  storable slot source also detaches the old exact direct aliases with their
+  last observed value before the slot joins the new source.
   Dynamic-property append-offset targets, `ArrayAccess` append targets,
   `ArrayAccess` roots outside the direct `offsetGet()` bridge, reference
   array literals assigned into other non-variable targets, reference
@@ -369,8 +391,9 @@
   dynamic property-held sources, non-direct holder expressions outside the
   documented slice, invisible selected properties, magic-property references,
   mixed nested `ArrayAccess` chains, alias cleanup beyond covered unset
-  container-slot detachment, broad copy-on-write, exact alias destruction
-  ordering, broader by-reference `foreach` expansion, append-offset `ArrayAccess`
+  container-slot detachment, broad copy-on-write, destructor side effects
+  during alias destruction, dynamic or expression-root rebind ordering,
+  broader by-reference `foreach` expansion, append-offset `ArrayAccess`
   source roots outside the exact direct/property-held
   `offsetGet(null)` bridge, `ArrayAccess` bridges outside
   the documented direct/property-held stored-array source path for
@@ -495,16 +518,21 @@
   `$copy = $items["outer"];` after
   `$alias =& $items["outer"]["slot"];`, and to auto-global/request-bag paths
   such as `$copy = $_REQUEST["payload"];` after
-  `$alias =& $_REQUEST["payload"]["slot"];`. Only int/string literal copied
-  path keys are mirrored in this slice; variable, dynamic, append, and
-  side-effecting copied path keys remain ordinary value copies unless another
-  documented alias route covers them. Plain arrays without reference elements
-  still copy by value under the current array model. When a declared public
-  object property array with a covered direct object-property array-offset
-  reference target is copied into a direct static variable, the copied slot
-  also joins the same bounded alias group: writes through the source variable,
-  the original object-property slot, or the copied static-array slot update
-  the same selected value. Whole-property
+  `$alias =& $_REQUEST["payload"]["slot"];`. The same bounded copy mirroring
+  applies to visible direct named and dynamic object-property array paths,
+  such as `$copy = $object->items["outer"];` or
+  `$copy = $object->{$name}["outer"];`, and to whole visible property array
+  copies such as `$copy = $object->{$name};`, when covered reference slots
+  already exist below the selected property. Only int/string literal copied
+  path keys are mirrored in this slice; variable, append, and side-effecting
+  copied path keys below the selected root remain ordinary value copies unless
+  another documented alias route covers them. Plain arrays without reference
+  elements still copy by value under the current array model. When a declared
+  public object property array with a covered direct object-property
+  array-offset reference target is copied into a direct static variable, the
+  copied slot also joins the same bounded alias group: writes through the
+  source variable, the original object-property slot, or the copied
+  static-array slot update the same selected value. Whole-property
   assignment preserves whole-property aliases but detaches narrower
   array-offset aliases into the previous property array before storing the
   replacement value; whole-object-variable reassignment still removes stale

@@ -587,6 +587,41 @@ mutate(1);
 }
 
 #[test]
+fn reference_parameters_share_direct_alias_and_array_slot_container_identity() {
+    let execution = run_source(
+        r#"<?php
+function pair_refcow_1657(&$left, &$right) {
+    $left = $left . ":left";
+    echo $left, "|", $right, "\n";
+    $right = $right . ":right";
+    echo $left, "|", $right, "\n";
+}
+
+$items = array("slot" => "seed");
+$alias =& $items["slot"];
+pair_refcow_1657($alias, $items["slot"]);
+echo $alias, "|", $items["slot"], "\n";
+
+class RefCow1657Bag {
+    public $items = array("slot" => "box");
+}
+
+$bag = new RefCow1657Bag();
+$propertyAlias =& $bag->items["slot"];
+pair_refcow_1657($propertyAlias, $bag->items["slot"]);
+echo $propertyAlias, "|", $bag->items["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "seed:left|seed:left\nseed:left:right|seed:left:right\nseed:left:right|seed:left:right\nbox:left|box:left\nbox:left:right|box:left:right\nbox:left:right|box:left:right"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn omitted_optional_reference_parameters_use_default_without_reference_binding() {
     let execution = run_source(
         r#"<?php
@@ -2091,6 +2126,43 @@ echo $boxSource, "|", $boxSame, "|", $box->items["source"];
     assert_eq!(
         execution.stdout,
         "source-write|source-write|slot-write|slot-write|slot-write\nrequest-source|request-source|request-slot|request-slot|request-slot\nbox-source|box-source|box-slot|box-slot|box-slot"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_rebind_detaches_old_array_slot_alias_group() {
+    let execution = run_source(
+        r#"<?php
+$items = array("slot" => "old");
+$old =& $items["slot"];
+$same =& $old;
+$new = "new";
+$items["slot"] =& $new;
+$new = "changed";
+echo $items["slot"], "|", $old, "|", $same, "|", $new, "\n";
+$same = "old-write";
+echo $items["slot"], "|", $old, "|", $same, "|", $new, "\n";
+
+class RebindDetachBox {
+    public $items = array("slot" => "box-old");
+}
+$box = new RebindDetachBox();
+$propertyOld =& $box->items["slot"];
+$propertySame =& $propertyOld;
+$propertyNew = "box-new";
+$box->items["slot"] =& $propertyNew;
+$propertyNew = "box-changed";
+echo $box->items["slot"], "|", $propertyOld, "|", $propertySame, "|", $propertyNew, "\n";
+$propertySame = "box-old-write";
+echo $box->items["slot"], "|", $propertyOld, "|", $propertySame, "|", $propertyNew;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "changed|old|old|changed\nchanged|old-write|old-write|changed\nbox-changed|box-old|box-old|box-changed\nbox-changed|box-old-write|box-old-write|box-changed"
     );
     assert_eq!(execution.exit_code, 0);
 }

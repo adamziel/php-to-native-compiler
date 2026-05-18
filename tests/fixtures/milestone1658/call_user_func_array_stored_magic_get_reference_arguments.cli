@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1658/call_user_func_array_stored_magic_get_reference_arguments.php

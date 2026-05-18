@@ -4,6 +4,104 @@
 
 Implemented:
 
+- Integrated Milestones 1657-1660 as a second COW-focused checkpoint batch.
+  The batch advances bounded reference/COW behavior for direct
+  by-reference-parameter container identity when a direct alias and an
+  array/property slot resolve to the same covered group, stored
+  `call_user_func_array()` argument arrays containing magic `__get()` array
+  references, reference target rebind detachment for covered direct
+  array/public object-property slots, and by-reference `foreach` over direct
+  copies from visible dynamic object-property arrays. Full gate passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-cow-1657-1660 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: Rust tests completed successfully,
+  `phpc test` reported `1695` fixture tests passed with `0` failures, and
+  `phpc test --compare-php` reported `1695` fixture tests passed with `0`
+  failures, `1002` system PHP comparisons, and `693` `phpc-only` skipped
+  fixtures. COW remains incomplete: general PHP reference containers, broad
+  array/object copy-on-write identity, destructor side effects during alias
+  destruction, dynamic/expression-root rebind ordering, non-direct
+  magic-property holders, mixed `ArrayAccess`/magic reference chains,
+  object/Traversable by-reference iteration, superglobal lifetime breadth, and
+  native reference lowering are still explicit blockers.
+
+- Added Milestone 1658, a bounded Reference/COW slice for stored
+  `call_user_func_array()` argument arrays whose by-reference elements are
+  below direct magic `__get()` array roots. Direct array literals assigned to
+  a stored argument-array variable can now preserve
+  `array(&$object->missing["slot"], ...)` and string-keyed named equivalents
+  when visible public `__get($name)` returns a direct variable by reference;
+  callback writes and covered reference-return aliases route through the
+  returned array cell and keep the stored argument slot coherent. The new
+  `milestone1658` fixture proves the `phpc run` CLI path and matches system
+  PHP. This does not add non-direct magic-property holders, non-direct stored
+  argument-array expressions, arbitrary `__get()` return bodies, general
+  magic-property reference containers, mixed nested `ArrayAccess`/magic
+  chains, broad copy-on-write, exact alias destruction ordering, closure
+  reference-return coverage, or native reference lowering. Focused
+  verification used `CARGO_TARGET_DIR=/tmp/phpc-target-cow-magic-stored-1658
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -p phpc --test
+  call_user_func_builtin
+  call_user_func_array_binds_stored_magic_get_array_reference_arguments --
+  --test-threads=1`; direct pre-fix system PHP and `phpc run` comparison of
+  the stored magic-root shape, where system PHP succeeded and `phpc` failed at
+  `undefined property Box1658::$missing`; full milestone fixture and
+  compare-PHP verification are recorded with this lane's final commands. Full
+  expensive `tools/run-tests.sh`, checkpoint, commit, and push were deferred
+  per lane instructions.
+
+- Added Milestone 1660, a bounded Reference/COW foreach-by-reference slice for
+  copied visible dynamic object-property arrays. When a direct array copy is
+  produced from `$object->{$name}` or a literal-key nested path such as
+  `$object->{$name}["outer"]`, and a covered reference slot already exists
+  below that visible property, by-reference `foreach` now binds the loop
+  variable and post-loop lingering reference through the copied element's
+  alias group instead of mutating only the copied slot. The new
+  `milestone1660` fixture proves the `phpc run` CLI path and matches system
+  PHP for whole dynamic-property and nested dynamic-property array copies.
+  This does not add real PHP reference containers, broad copy-on-write,
+  variable/append/side-effecting copied key paths below the selected property,
+  arbitrary copied reference slots, magic-property or ArrayAccess copied-array
+  containers, non-direct dynamic-property holders, exact alias destruction
+  ordering, object/Traversable foreach, or native reference lowering.
+  Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-cow-foreach-1660 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test foreach
+  foreach_by_reference_over_copied_dynamic_object_property_array_preserves_reference_slots
+  -- --test-threads=1`; direct system PHP execution of the milestone fixture;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1660`; and
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1660`, which compared `1` fixture with `0` skips.
+  Full expensive `tools/run-tests.sh`, checkpoint, commit, and push were
+  deferred per lane instructions.
+
+- Added Milestone 1659, a bounded Reference/COW alias destruction ordering
+  slice for rebinding already covered direct array slots and public
+  object-property array slots by reference. When a covered slot that already
+  has direct aliases is rebound to a new direct variable or storable slot
+  source, the old direct aliases now detach with their last observed value
+  before the slot joins the new source, matching the focused PHP behavior for
+  direct arrays and public object-property array slots. The new
+  `milestone1659` fixture proves the `phpc run` CLI path and is PHP-comparable
+  for those shapes. This does not add real PHP reference containers, broad
+  copy-on-write identity, destructor side effects during alias destruction,
+  dynamic or expression-root rebind ordering, magic-property or ArrayAccess
+  rebind breadth, arbitrary reference expressions, object lifecycle ordering,
+  or native reference lowering.
+
+- Added Milestone 1657, a bounded Reference/COW container-identity slice for
+  ordinary direct user-function by-reference parameters. When one argument is a
+  direct variable already backed by covered alias metadata and another
+  argument resolves to the same direct array slot or visible public
+  object-property array slot, the callee parameters now share one local cell
+  during the call before the existing bounded writeback runs. The new
+  `milestone1657` fixture proves the `phpc run` CLI path and matches system
+  PHP for direct array and public object-property array slots. This does not
+  add broad PHP reference containers, same-container identity for
+  reference-returning function, method/static/callback dispatch, non-direct
+  holders, magic-property containers, mixed `ArrayAccess` chains, arbitrary
+  reference expressions, exact alias destruction ordering, broad
+  copy-on-write, or native reference lowering.
+
 - Integrated the current COW-focused checkpoint batch: Milestone 1648 plus
   Milestones 1652-1656. The batch advances bounded reference/COW behavior for
   alias-backed reference-assignment targets, same-root alias-graph path

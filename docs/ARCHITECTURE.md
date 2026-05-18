@@ -107,18 +107,20 @@ Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
 variable may route to one or more direct array-offset aliases; this lets the
 current runtime mirror the bounded PHP behavior where copying a direct array
-or declared public object-property array that contains a referenced direct slot
+or visible object-property array that contains a referenced direct slot
 preserves that slot's reference identity across a copied direct array. Copying
 a literal-key direct nested array path, including auto-global request paths
-such as `$_REQUEST["payload"]`, also mirrors covered reference slots below the
+such as `$_REQUEST["payload"]`, visible named object-property paths, and
+visible direct dynamic object-property paths such as `$object->{$name}` and
+`$object->{$name}["child"]`, also mirrors covered reference slots below the
 copied path into the destination direct array variable. By-reference `foreach`
 over that copied direct array consults the mirrored element alias group before
 falling back to a plain copied slot, so loop writes and the post-loop lingering
-reference update the original referenced slot for covered direct and
-request-bag copied-path aliases while non-reference copied elements remain
-ordinary copied values. Variable, dynamic, append, and side-effecting copied
-path keys remain outside this bounded mirror and still require the future
-reference/COW value model. When an
+reference update the original referenced slot for covered direct, request-bag,
+and visible object-property copied-path aliases while non-reference copied
+elements remain ordinary copied values. Variable, append, and side-effecting
+copied path keys remain outside this bounded mirror and still require the
+future reference/COW value model. When an
 array-offset or visible named object-property array-offset reference target is
 bound from a direct variable that already shares a direct variable-to-variable
 cell, the interpreter rewires every direct name in that small source cell
@@ -130,7 +132,11 @@ slot is materialized and copied into the callee parameter, then the final
 parameter value is written back to the visible property slot after normal
 return. Public slots use public alias metadata; private/protected slots use
 context-aware alias metadata when reached from a valid method visibility
-context. Direct user-function calls also accept non-direct holder plain
+context. Ordinary direct user-function calls that pass multiple by-reference
+arguments which resolve to the same covered alias metadata, such as a direct
+alias variable and its direct array slot or visible object-property array slot,
+bind those callee parameters to one local cell for the duration of the call
+before the usual bounded writeback. Direct user-function calls also accept non-direct holder plain
 object-property array-offset arguments, such as
 `handler($holders["bag"]->items["outer"]["slot"])`, when evaluating the
 holder once yields an object whose selected property is visible in the current
@@ -140,7 +146,8 @@ path continues to cover property-held `ArrayAccess` offset arguments, such as
 `handler($holders["bag"]->store["outer"]["slot"])`, when the selected visible
 property holds an `ArrayAccess` object using the exact bounded by-reference
 `offsetGet($offset) { return $this->property[$offset]; }` bridge. These
-bridges intentionally do not provide in-call reference-container identity and
+bridges intentionally do not provide broad in-call reference-container
+identity beyond covered same-alias ordinary direct user-function arguments and
 do not cover mixed nested `ArrayAccess` chains, magic property references, or
 arbitrary reference expressions.
 Direct object-variable clone assignments also mirror public object-property
@@ -265,14 +272,18 @@ or context-aware non-public object-property alias root, so later stored-array
 callback use can reuse covered reference elements when the current method
 context can see the property. Direct array-offset and direct visible
 object-property array-offset assignment detach covered child aliases below the
-explicit assigned path before overwriting that slot. When the assigned value is
-a direct array variable or covered literal-key array/property path whose
-elements already have bounded reference alias metadata, the assignment mirrors
-those child reference slots into the target array/property slot so stored
-argument arrays remain usable by the current `call_user_func_array()` reference
-path. This is still path metadata for explicit keys, not PHP's general COW
-container graph; dynamic, magic, side-effecting, and mixed `ArrayAccess`
-source or target paths remain outside this mirror. Direct array-offset `unset(...)` paths, direct
+explicit assigned path before overwriting that slot. Reference assignment that
+rebinds an already covered direct array slot or public object-property array
+slot detaches the old direct alias variables with their last observed value
+before the slot joins the new direct-variable or storable slot source. When the
+assigned value is a direct array variable or covered literal-key array/property
+path whose elements already have bounded reference alias metadata, the
+assignment mirrors those child reference slots into the target array/property
+slot so stored argument arrays remain usable by the current
+`call_user_func_array()` reference path. This is still path metadata for
+explicit keys, not PHP's general COW container graph; dynamic, magic,
+side-effecting, and mixed `ArrayAccess` source or target paths remain outside
+this mirror. Direct array-offset `unset(...)` paths, direct
 visible object-property array-offset `unset(...)` paths, and direct visible
 object-property `unset(...)` paths remove covered alias metadata for the
 removed slot/property, and for child aliases below a removed parent slot or
@@ -286,13 +297,14 @@ container entry without deleting the remaining reference variables. Direct varia
 `unset($name)` also detaches covered aliases rooted below the removed direct
 array/object variable.
 Arbitrary nested copied reference slots beyond the literal copied path slice,
-non-public property-offset or magic clone alias mirroring, dynamic ArrayAccess
-references, arbitrary ArrayAccess append bodies, reference array literals
-outside direct variable, direct array-offset, direct visible object-property,
-and direct dynamic-property assignment targets, plain object-property
-`unset(...)` alias cleanup outside visible properties, exact alias destruction
-ordering, and native lowering still require the future runtime reference/COW
-value model.
+non-direct dynamic-property holders, non-public property-offset or magic clone
+alias mirroring, dynamic ArrayAccess references, arbitrary ArrayAccess append
+bodies, reference array literals outside direct variable, direct array-offset,
+direct visible object-property, and direct dynamic-property assignment targets,
+plain object-property `unset(...)` alias cleanup outside visible properties,
+destructor side effects during alias destruction, dynamic or expression-root
+rebind ordering, and native lowering still require the future runtime
+reference/COW value model.
 
 ## Compiler Crate
 
@@ -865,6 +877,15 @@ slots, such as `$args[] =& $items[]` or
 both aliases are recorded together so later callback writeback and supported
 reference-return binding sync the source slot and stored argument slot without
 introducing a general runtime reference container.
+Direct array literals assigned to stored callback argument variables can also
+record reference elements below bounded magic `__get()` array roots, such as
+`$args = array(&$object->missing["slot"])`, by temporarily rooting the
+direct-variable cell returned from visible public reference-returning
+`__get($name)` and binding the stored argument slot to the selected array
+offset alias. Later normal callback writeback and supported reference-return
+binding use the same stored-slot alias lookup as other stored argument arrays.
+This remains limited to direct object magic-property roots and the existing
+direct-variable-returning `__get()` body shape.
 For the bounded `call_user_func_array()` reference path, string-keyed
 argument-array entries can also bind by declared parameter name for current
 user-function callbacks and public object/static array-callable methods. The

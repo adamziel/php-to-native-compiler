@@ -695,6 +695,52 @@ echo $_REQUEST["payload"]["slot"], "|", $requestCopy["slot"];
 }
 
 #[test]
+fn foreach_by_reference_over_copied_dynamic_object_property_array_preserves_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $items;
+}
+
+$box = new Box();
+$name = "items";
+$box->items = array("outer" => array("plain" => "p", "slot" => "orig"));
+$alias =& $box->{$name}["outer"]["slot"];
+$copy = $box->{$name}["outer"];
+
+foreach ($copy as $key => &$value) {
+    $value = $value . ":" . $key;
+}
+echo $box->items["outer"]["slot"], "|", $copy["slot"], "|", $box->items["outer"]["plain"], "|", $copy["plain"], "|";
+$copy["slot"] = "direct";
+echo $value, "|";
+$value = "tail";
+echo $box->items["outer"]["slot"], "|", $copy["slot"], "\n";
+unset($value);
+
+$box->items = array("plain" => "root", "slot" => "whole");
+$rootAlias =& $box->{$name}["slot"];
+$rootCopy = $box->{$name};
+foreach ($rootCopy as $key => &$value) {
+    $value = $value . ":" . $key;
+}
+echo $box->items["slot"], "|", $rootCopy["slot"], "|", $box->items["plain"], "|", $rootCopy["plain"], "|";
+$rootCopy["slot"] = "root-direct";
+echo $value, "|";
+$value = "root-tail";
+echo $box->items["slot"], "|", $rootCopy["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "orig:slot|orig:slot|p|p:plain|direct|tail|tail\nwhole:slot|whole:slot|root|root:plain|root-direct|root-tail|root-tail"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_binds_method_reference_return_iterables_to_caller_cell() {
     let execution = run_source(
         r#"<?php

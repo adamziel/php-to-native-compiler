@@ -2317,6 +2317,7 @@ impl SymbolTable {
             },
             keys: vec![key],
         };
+        self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
         self.materialize_array_offset_alias(&alias, span)?;
         if !self.write_array_offset_alias(&alias, source_value) {
             return Err(runtime_error(
@@ -2352,6 +2353,7 @@ impl SymbolTable {
             },
             keys,
         };
+        self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
         self.materialize_array_offset_alias(&alias, span)?;
         if !self.write_array_offset_alias(&alias, source_value) {
             return Err(runtime_error(
@@ -2377,6 +2379,7 @@ impl SymbolTable {
             root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
             keys,
         };
+        self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
         self.materialize_array_offset_alias(&alias, span)?;
         if !self.write_array_offset_alias(&alias, source_value) {
             return Err(runtime_error(
@@ -2441,6 +2444,7 @@ impl SymbolTable {
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias { root, keys };
+        self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
         self.materialize_array_offset_alias(&alias, span)?;
         if !self.write_array_offset_alias(&alias, source_value) {
             return Err(runtime_error(
@@ -2475,6 +2479,7 @@ impl SymbolTable {
         }
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
+        self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
         self.materialize_array_offset_alias(&alias, span)?;
         if !self.write_array_offset_alias(&alias, source_value) {
             return Err(runtime_error(
@@ -2783,6 +2788,7 @@ impl SymbolTable {
         value: Value,
         span: Span,
     ) -> CompileResult<()> {
+        self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&target_alias));
         self.materialize_array_offset_alias(&source_alias, span)?;
         self.materialize_array_offset_alias(&target_alias, span)?;
         let aliases = vec![source_alias, target_alias];
@@ -2816,6 +2822,7 @@ impl SymbolTable {
                 ),
             ));
         };
+        self.detach_array_offset_aliases_for_unset_paths(&aliases);
         aliases.insert(0, source_alias);
         for alias in &aliases {
             self.materialize_array_offset_alias(alias, span)?;
@@ -2976,6 +2983,7 @@ impl SymbolTable {
             return Ok(false);
         };
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
+        self.detach_array_offset_aliases_for_unset_paths(&aliases);
         for alias in &aliases {
             self.materialize_array_offset_alias(alias, span)?;
         }
@@ -9541,6 +9549,29 @@ impl Interpreter {
                                         );
                                     }
                                 }
+                            } else if let Some((object_name, property, indices)) =
+                                Self::collect_direct_dynamic_object_property_array_index_path(
+                                    target, index,
+                                )
+                            {
+                                if let Some(keys) = Self::literal_array_key_path(&indices) {
+                                    if let Ok(property) = self.evaluate_dynamic_property_name(
+                                        property,
+                                        expr.span(),
+                                        scope,
+                                    ) {
+                                        if let Ok(root) = self.foreach_object_property_alias_root(
+                                            object_name,
+                                            &property,
+                                            scope,
+                                            expr.span(),
+                                        ) {
+                                            scope.mirror_array_offset_aliases_from_path_copy(
+                                                name, &root, &keys, false,
+                                            );
+                                        }
+                                    }
+                                }
                             }
                         }
                         Expr::Property {
@@ -9559,6 +9590,31 @@ impl Interpreter {
                                         &[],
                                         true,
                                     );
+                                }
+                            }
+                        }
+                        Expr::DynamicProperty {
+                            target, property, ..
+                        } => {
+                            if let Expr::Variable(object_name, _) = target.as_ref() {
+                                if let Ok(property) = self.evaluate_dynamic_property_name(
+                                    property,
+                                    expr.span(),
+                                    scope,
+                                ) {
+                                    if let Ok(root) = self.context_object_property_alias_root(
+                                        object_name,
+                                        &property,
+                                        expr.span(),
+                                        scope,
+                                    ) {
+                                        scope.mirror_array_offset_aliases_from_path_copy(
+                                            name,
+                                            &root,
+                                            &[],
+                                            true,
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -11760,6 +11816,19 @@ impl Interpreter {
         }
 
         if let Some((source_alias, value)) =
+            self.evaluate_magic_get_array_reference_argument(expr, scope)?
+        {
+            return Ok((
+                value.clone(),
+                ArrayLiteralReferenceElement::Alias {
+                    key: ArrayKey::Int(0),
+                    source_alias,
+                    value,
+                },
+            ));
+        }
+
+        if let Some((source_alias, value)) =
             self.evaluate_visible_object_property_array_reference_argument(expr, scope)?
         {
             return Ok((
@@ -11776,7 +11845,7 @@ impl Interpreter {
             expr.span(),
             RuntimeError::unsupported_call(
                 "array literal",
-                "stored reference elements are only implemented for direct variables, direct array offsets, and direct visible object-property array offsets in the current subset",
+                "stored reference elements are only implemented for direct variables, direct array offsets, direct visible object-property array offsets, and bounded magic __get array offsets in the current subset",
             ),
         ))
     }
@@ -28944,6 +29013,20 @@ impl Interpreter {
             .collect()
     }
 
+    fn matching_array_offset_binding_cell(
+        array_offset_binding_cells: &[(String, Vec<ArrayOffsetAlias>, VariableCell)],
+        aliases: &[ArrayOffsetAlias],
+    ) -> Option<VariableCell> {
+        array_offset_binding_cells
+            .iter()
+            .find_map(|(_, existing_aliases, cell)| {
+                existing_aliases
+                    .iter()
+                    .any(|existing| aliases.iter().any(|alias| alias == existing))
+                    .then(|| cell.clone())
+            })
+    }
+
     fn call_user_function_with_checked_values(
         &mut self,
         function: &FunctionDecl,
@@ -29036,33 +29119,57 @@ impl Interpreter {
                     }
                     ReferenceBindingTarget::ArrayOffset(_) => {
                         if let Some(arg) = args.get(index) {
-                            local_scope.write_static(&param.name, arg.clone());
-                            if let Some(cell) = local_scope.read_cell(&param.name) {
-                                let ReferenceBindingTarget::ArrayOffset(alias) = &binding.target
-                                else {
-                                    unreachable!("matched array offset binding");
-                                };
+                            let ReferenceBindingTarget::ArrayOffset(alias) = &binding.target else {
+                                unreachable!("matched array offset binding");
+                            };
+                            let aliases = vec![alias.clone()];
+                            if let Some(cell) = Self::matching_array_offset_binding_cell(
+                                &array_offset_binding_cells,
+                                &aliases,
+                            ) {
+                                local_scope.bind_static_to_cell(&param.name, cell.clone());
                                 array_offset_binding_cells.push((
                                     param.name.clone(),
-                                    vec![alias.clone()],
+                                    aliases,
                                     cell,
                                 ));
+                            } else {
+                                local_scope.write_static(&param.name, arg.clone());
+                                if let Some(cell) = local_scope.read_cell(&param.name) {
+                                    array_offset_binding_cells.push((
+                                        param.name.clone(),
+                                        aliases,
+                                        cell,
+                                    ));
+                                }
                             }
                         }
                     }
                     ReferenceBindingTarget::ArrayOffsets(_) => {
                         if let Some(arg) = args.get(index) {
-                            local_scope.write_static(&param.name, arg.clone());
-                            if let Some(cell) = local_scope.read_cell(&param.name) {
-                                let ReferenceBindingTarget::ArrayOffsets(aliases) = &binding.target
-                                else {
-                                    unreachable!("matched array offset binding list");
-                                };
+                            let ReferenceBindingTarget::ArrayOffsets(aliases) = &binding.target
+                            else {
+                                unreachable!("matched array offset binding list");
+                            };
+                            if let Some(cell) = Self::matching_array_offset_binding_cell(
+                                &array_offset_binding_cells,
+                                aliases,
+                            ) {
+                                local_scope.bind_static_to_cell(&param.name, cell.clone());
                                 array_offset_binding_cells.push((
                                     param.name.clone(),
                                     aliases.clone(),
                                     cell,
                                 ));
+                            } else {
+                                local_scope.write_static(&param.name, arg.clone());
+                                if let Some(cell) = local_scope.read_cell(&param.name) {
+                                    array_offset_binding_cells.push((
+                                        param.name.clone(),
+                                        aliases.clone(),
+                                        cell,
+                                    ));
+                                }
                             }
                         }
                     }

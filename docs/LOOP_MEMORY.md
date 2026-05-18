@@ -26,6 +26,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T03:13:31+02:00
+
+- Checkpoint before this task:
+  `8c1b9781 runtime: advance COW references alias graphs copied arrays foreach and magic calls`,
+  pushed to `origin/master`.
+- Task attempted: COW-focused batch for Milestones 1657-1660 with four
+  worktrees focused only on missing reference/COW behavior.
+- Files changed so far: ordinary direct user-function by-reference parameters
+  now share one callee local cell when a direct alias and a direct
+  array/public object-property slot resolve to the same covered group; direct
+  stored `call_user_func_array()` argument arrays preserve by-reference
+  elements below bounded magic `__get()` array roots; rebinding an already
+  covered direct array or public object-property array slot by reference now
+  detaches old direct aliases with their last observed value before joining
+  the new source; direct copies from visible dynamic object-property arrays
+  preserve covered reference slots for by-reference `foreach`; affected
+  fixtures, support docs, architecture notes, progress, queue, and
+  lane-worker docs were refreshed.
+- Tests run and result: focused Rust tests passed for the new
+  `functions_and_scopes`, `call_user_func_builtin`, and `foreach` regressions;
+  full affected `functions_and_scopes` passed `172` tests; fixture
+  directories `milestone1657`, `milestone1658`, `milestone1659`, and
+  `milestone1660` passed `phpc test` and `--compare-php` with one PHP
+  comparison each; `cargo fmt --check`, `git diff --check`, and
+  conflict-marker scanning passed. Manual full gate passed before checkpoint:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-cow-1657-1660 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1695` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1695` fixture tests
+  passed with `0` failures, `1002` system PHP comparisons, and `693`
+  `phpc-only` skipped fixtures.
+- Remaining semantic gaps: general PHP reference containers, broad
+  array/object copy-on-write identity, destructor side effects during alias
+  destruction, dynamic/expression-root rebind ordering, non-direct
+  magic-property holders, mixed nested `ArrayAccess`/magic reference chains,
+  object/Traversable by-reference iteration, superglobal lifetime breadth,
+  native reference lowering, and the broader WordPress blockers in object
+  lifecycle, SAPI/streams, DB/bootstrap, and native execution.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean the 1657-1660 COW lane worktrees and target directories,
+  then keep all lanes focused on Milestone 1662 COW container/lifetime work
+  until the next bounded COW slice is proven.
+
 ## Loop Event 2026-05-18T02:57:40+02:00
 
 - Checkpoint before this task:

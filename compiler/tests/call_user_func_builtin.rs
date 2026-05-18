@@ -1166,6 +1166,51 @@ echo call_user_func_array("wp_refcow_magic_callback_mark", array("suffix" => "na
 }
 
 #[test]
+fn call_user_func_array_binds_stored_magic_get_array_reference_arguments() {
+    let execution = run_source(
+        r#"<?php
+$storage = array("slot" => "initial", "return" => array("leaf" => "seed"), "named" => "name");
+
+class WP_RefCow_Stored_Magic_Get_Callback_Box {
+    public function &__get($name) {
+        global $storage;
+        return $storage;
+    }
+}
+
+function wp_refcow_stored_magic_callback_mark(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+function &wp_refcow_stored_magic_callback_pick(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$box = new WP_RefCow_Stored_Magic_Get_Callback_Box();
+$args = array(&$box->missing["slot"], "normal");
+echo call_user_func_array("wp_refcow_stored_magic_callback_mark", $args), "|", $storage["slot"], "|", $args[0], "\n";
+
+$return_args = array(&$box->missing["return"]["leaf"], "return");
+$alias =& call_user_func_array("wp_refcow_stored_magic_callback_pick", $return_args);
+$alias = $alias . ":alias";
+echo $storage["return"]["leaf"], "|", $return_args[0], "|", $alias, "\n";
+
+$named = array("suffix" => "named", "value" => &$box->missing["named"]);
+echo call_user_func_array("wp_refcow_stored_magic_callback_mark", $named), "|", $storage["named"], "|", $named["value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "initial:normal|initial:normal|initial:normal\nseed:return:alias|seed:return:alias|seed:return:alias\nname:named|name:named|name:named"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_binds_array_access_reference_roots() {
     let execution = run_source(
         r#"<?php

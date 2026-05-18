@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1659/rebind_detaches_old_alias_group.php

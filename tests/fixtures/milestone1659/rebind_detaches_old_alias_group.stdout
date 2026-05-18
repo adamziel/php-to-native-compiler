@@ -1,0 +1,4 @@
+array-rebind=changed|old|old|changed
+array-old=changed|old-write|old-write|changed
+property-rebind=box-changed|box-old|box-old|box-changed
+property-old=box-changed|box-old-write|box-old-write|box-changed
