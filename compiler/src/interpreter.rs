@@ -13939,39 +13939,95 @@ impl Interpreter {
                 }))
             }
             Expr::Index { target, index, .. } => {
-                let Expr::Property {
-                    target, property, ..
-                } = target.as_ref()
-                else {
-                    return Ok(None);
-                };
-                if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "reference-return $this property offset expressions require return $this->property[$name] in the current subset",
-                        ),
-                    ));
-                }
-                let Some(param) = function.params.first() else {
-                    return Ok(None);
-                };
-                if !matches!(index.as_ref(), Expr::Variable(name, _) if name == &param.name) {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "reference-return $this property offset expressions require return $this->property[$name] where $name is the __get parameter in the current subset",
-                        ),
-                    ));
-                }
-                Ok(Some(ThisPropertyReferenceTarget {
-                    property: property.clone(),
-                    prefix_keys: vec![ArrayKey::String(requested_property.to_string())],
-                }))
+                Self::reference_return_this_property_offset_target(
+                    function,
+                    target,
+                    index,
+                    requested_property,
+                    span,
+                )
             }
             _ => Ok(None),
+        }
+    }
+
+    fn reference_return_this_property_offset_target(
+        function: &FunctionDecl,
+        target: &Expr,
+        index: &Expr,
+        requested_property: &str,
+        span: Span,
+    ) -> CompileResult<Option<ThisPropertyReferenceTarget>> {
+        let Some((property, indices)) =
+            Self::collect_this_property_index_return_path(target, index)
+        else {
+            return Ok(None);
+        };
+        let Some(param) = function.params.first() else {
+            return Ok(None);
+        };
+        let Some((first, suffix)) = indices.split_first() else {
+            return Ok(None);
+        };
+        if !matches!(*first, Expr::Variable(name, _) if name == &param.name) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "reference-return $this property offset expressions require return $this->property[$name] where $name is the __get parameter in the current subset",
+                ),
+            ));
+        }
+
+        let mut prefix_keys = vec![ArrayKey::String(requested_property.to_string())];
+        for suffix_index in suffix {
+            let Some(key) = Self::literal_reference_return_array_key(suffix_index) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "reference-return $this property offset suffixes after $name must be literal int or string keys in the current subset",
+                    ),
+                ));
+            };
+            prefix_keys.push(key);
+        }
+
+        Ok(Some(ThisPropertyReferenceTarget {
+            property: property.to_string(),
+            prefix_keys,
+        }))
+    }
+
+    fn collect_this_property_index_return_path<'a>(
+        target: &'a Expr,
+        index: &'a Expr,
+    ) -> Option<(&'a str, Vec<&'a Expr>)> {
+        let mut indices = vec![index];
+        let mut current = target;
+        while let Expr::Index { target, index, .. } = current {
+            indices.push(index.as_ref());
+            current = target.as_ref();
+        }
+        indices.reverse();
+
+        let Expr::Property {
+            target, property, ..
+        } = current
+        else {
+            return None;
+        };
+        if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
+            return None;
+        }
+        Some((property.as_str(), indices))
+    }
+
+    fn literal_reference_return_array_key(expr: &Expr) -> Option<ArrayKey> {
+        match expr {
+            Expr::String(value, _) => Some(ArrayKey::String(value.clone())),
+            Expr::Int(value, _) => Some(ArrayKey::Int(*value)),
+            _ => None,
         }
     }
 

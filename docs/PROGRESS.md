@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Lane 1706-C focused `__get()` backing-array offset return support with
+  a literal suffix bucket for the append/method-write COW shape. A
+  by-reference `__get($name)` body of
+  `return $this->store[$name]["bucket"];` is now recognized when `$name` is
+  the `__get()` parameter and the suffix keys are literal ints or strings.
+  The runtime prepends the requested magic property and literal suffix under
+  the private `$store` backing array, appends through
+  `$box->missing["outer"][]`, stores copied nested reference-slot metadata
+  under `$this->store["missing"]["bucket"]["outer"]`, and later same-class
+  method writes through that path resynchronize the original referenced
+  variables. This does not add non-literal suffixes, backing-array offset
+  return expressions beyond the exact parameter-key plus literal-suffix shape,
+  broader arbitrary `__get()` return expressions, broader method-local alias
+  lifetimes, full references/COW, or native reference lowering. Focused
+  verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1706` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1706`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1705-C focused `__get()` backing-array offset return support for
   the append/method-write COW shape. A by-reference `__get($name)` body of
   `return $this->store[$name];` is now recognized when `$name` is the

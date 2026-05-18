@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T12:39:00+02:00
+
+- Checkpoint before this task: `335bdf85 runtime: support magic get backing
+  array writes`, pushed to `origin/master`.
+- Task attempted: Lane 1706-C focused magic `__get()` backing-array offset
+  return with a literal suffix bucket,
+  `return $this->store[$name]["bucket"];`, for the private
+  append/method-write COW shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1706/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax check passed for the
+  new milestone1706 fixture; the `milestone1706` `functions_and_scopes`
+  filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1706`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: by-reference `__get($name)` may now use the exact
+  backing-array offset body with literal suffix keys, such as
+  `return $this->store[$name]["bucket"];`; the requested magic property and
+  suffix are prepended under `$this->store`, and same-class method writes
+  resynchronize copied nested reference slots with their original variables.
+- Remaining semantic gaps: non-literal suffixes, backing-array offset return
+  expressions beyond the exact `__get()` parameter-key plus literal-suffix
+  shape, dynamic property-return expressions beyond the exact `__get()`
+  parameter form, broader private/protected `$this` routes, arbitrary
+  `__get()` return expressions, broader method-local alias lifetimes,
+  arbitrary method-return/factory-root variants, by-value terminal/plain-array
+  mutation, arbitrary side-effecting or broader `offsetGet()` bodies, scalar
+  parent overwrite/error parity, full references/COW, and native reference
+  lowering remain unsupported.
+- Next concrete task: run `cargo check`, `cargo fmt --check`, `git diff
+  --check`, adjacent lane checks, then checkpoint with
+  `tools/checkpoint.sh "runtime: support magic get backing suffix writes"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T12:28:38+02:00
 
 - Checkpoint before this task: `abc6edb9 runtime: support dynamic magic get
