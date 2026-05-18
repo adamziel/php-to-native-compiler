@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1761-C for bounded false-to-array diagnostic parity. Covered
+  root-level `false` array writes and direct reference-target materialization
+  now emit PHP's `Automatic conversion of false to array is deprecated`
+  message as `E_DEPRECATED` through user error handlers, while still
+  materializing the array and preserving the written values/references.
+  Exact PHP stderr formatting, broader false-parent deprecations inside every
+  nested/magic/`ArrayAccess` path, string COW identity, and native reference
+  lowering remain unsupported. Focused verification: raw system PHP output
+  matched the new `milestone1761` fixture; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1761` passed `1` fixture with `1`
+  system PHP comparison and `0` skips; focused
+  `root_false_array_writes_emit_deprecation_diagnostics` passed.
+
 - Added Lane 1760-C to pin the reference-target side of the root-level
   `false` materialization work. Direct array-offset reference targets,
   `$GLOBALS` nested reference targets, object-property array-offset reference

@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1761/root_false_array_write_deprecations.php

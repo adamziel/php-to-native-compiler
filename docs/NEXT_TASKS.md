@@ -19842,6 +19842,15 @@ handled.
   alias lifetime ordering, exact PHP deprecation/fatal text, string COW
   identity, and native reference lowering named as unsupported.
 
+## Lane 1761-C: Root False Deprecation Diagnostics
+
+- [x] Runtime/interpreter/tests/docs lane: emit the false-to-array
+  `E_DEPRECATED` diagnostic through user error handlers for covered root-level
+  `false` array write and direct reference-target materialization paths.
+  Keep exact PHP stderr formatting, broader false-parent deprecations inside
+  every nested/magic/`ArrayAccess` path, string COW identity, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

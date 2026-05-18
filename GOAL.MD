@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1760:
+The current in-progress implementation frontier is Lane 1761:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -399,6 +399,9 @@ The current in-progress implementation frontier is Lane 1760:
   `$GLOBALS`, object-property, and append reference targets so reference
   assignments into those newly materialized arrays keep typed-reference cells
   live.
+- Lane 1761 emits the PHP false-to-array `E_DEPRECATED` diagnostic through
+  user error handlers for the covered root-level false array write and
+  reference-target materialization paths.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

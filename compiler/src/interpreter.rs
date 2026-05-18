@@ -6889,6 +6889,23 @@ impl Interpreter {
         self.emit_runtime_diagnostic(function, "Notice", PHP_E_NOTICE, message, span)
     }
 
+    fn emit_deprecated(
+        &mut self,
+        function: &str,
+        message: impl AsRef<str>,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_runtime_diagnostic(function, "Deprecated", PHP_E_DEPRECATED, message, span)
+    }
+
+    fn emit_false_to_array_deprecation(&mut self, span: Span) -> CompileResult<()> {
+        self.emit_deprecated(
+            "array assignment",
+            "Automatic conversion of false to array is deprecated",
+            span,
+        )
+    }
+
     fn emit_runtime_diagnostic(
         &mut self,
         function: &str,
@@ -10218,8 +10235,17 @@ impl Interpreter {
                                 ),
                             ));
                         };
+                        if matches!(
+                            scope.read_global_name(global_name),
+                            Some(Value::Bool(false))
+                        ) {
+                            self.emit_false_to_array_deprecation(span)?;
+                        }
                         scope.bind_global_name_to_static_source(global_name, source_name, span)?;
                         return Ok(());
+                    }
+                    if matches!(scope.read_named(name), Some(Value::Bool(false))) {
+                        self.emit_false_to_array_deprecation(span)?;
                     }
                     scope.bind_array_offset_to_static_source(name, key, source_name, span)?;
                     return Ok(());
@@ -10294,7 +10320,10 @@ impl Interpreter {
                     .read_named(name)
                     .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-                if matches!(slot, Value::Null | Value::Bool(false)) {
+                if matches!(slot, Value::Bool(false)) {
+                    self.emit_false_to_array_deprecation(span)?;
+                    slot = Value::Array(PhpArray::new());
+                } else if matches!(slot, Value::Null) {
                     slot = Value::Array(PhpArray::new());
                 }
 
@@ -10349,6 +10378,9 @@ impl Interpreter {
                                 "append reference binding through $GLOBALS is not implemented",
                             ),
                         ));
+                    }
+                    if matches!(scope.read_named(name), Some(Value::Bool(false))) {
+                        self.emit_false_to_array_deprecation(span)?;
                     }
                     scope.append_array_offset_to_static_source(name, source_name, span)?;
                     return Ok(());
@@ -14661,7 +14693,10 @@ impl Interpreter {
                     .read_named(name)
                     .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-                if matches!(slot, Value::Null | Value::Bool(false)) {
+                if matches!(slot, Value::Bool(false)) {
+                    self.emit_false_to_array_deprecation(*span)?;
+                    slot = Value::Array(PhpArray::new());
+                } else if matches!(slot, Value::Null) {
                     slot = Value::Array(PhpArray::new());
                 }
 
@@ -14956,7 +14991,7 @@ impl Interpreter {
                             scope,
                         )?;
                     } else {
-                        Self::write_global_nested_array_append(&keys, stored_value, *span, scope)?;
+                        self.write_global_nested_array_append(&keys, stored_value, *span, scope)?;
                     }
                     return Ok(value);
                 }
@@ -15020,7 +15055,7 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                Self::write_nested_array_append(name, &keys, stored_value, *span, scope)?;
+                self.write_nested_array_append(name, &keys, stored_value, *span, scope)?;
                 Ok(value)
             }
             AssignTarget::Property {
@@ -17304,7 +17339,7 @@ impl Interpreter {
     }
 
     fn write_nested_array_assignment(
-        &self,
+        &mut self,
         name: &str,
         keys: &[ArrayKey],
         value: Value,
@@ -17315,7 +17350,10 @@ impl Interpreter {
             .read_named(name)
             .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-        if matches!(slot, Value::Null | Value::Bool(false)) {
+        if matches!(slot, Value::Bool(false)) {
+            self.emit_false_to_array_deprecation(span)?;
+            slot = Value::Array(PhpArray::new());
+        } else if matches!(slot, Value::Null) {
             slot = Value::Array(PhpArray::new());
         }
 
@@ -17342,7 +17380,7 @@ impl Interpreter {
     }
 
     fn write_global_nested_array_assignment(
-        &self,
+        &mut self,
         keys: &[ArrayKey],
         value: Value,
         span: Span,
@@ -17353,7 +17391,10 @@ impl Interpreter {
             .read_global_name(&global_name)
             .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-        if matches!(slot, Value::Null | Value::Bool(false)) {
+        if matches!(slot, Value::Bool(false)) {
+            self.emit_false_to_array_deprecation(span)?;
+            slot = Value::Array(PhpArray::new());
+        } else if matches!(slot, Value::Null) {
             slot = Value::Array(PhpArray::new());
         }
 
@@ -17406,7 +17447,10 @@ impl Interpreter {
             .read_property_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(span, error))?;
 
-        if matches!(slot, Value::Null | Value::Bool(false)) {
+        if matches!(slot, Value::Bool(false)) {
+            self.emit_false_to_array_deprecation(span)?;
+            slot = Value::Array(PhpArray::new());
+        } else if matches!(slot, Value::Null) {
             slot = Value::Array(PhpArray::new());
         }
 
@@ -17480,7 +17524,10 @@ impl Interpreter {
             .read_property_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(span, error))?;
 
-        if matches!(slot, Value::Null | Value::Bool(false)) {
+        if matches!(slot, Value::Bool(false)) {
+            self.emit_false_to_array_deprecation(span)?;
+            slot = Value::Array(PhpArray::new());
+        } else if matches!(slot, Value::Null) {
             slot = Value::Array(PhpArray::new());
         }
 
@@ -17700,6 +17747,7 @@ impl Interpreter {
     }
 
     fn write_nested_array_append(
+        &mut self,
         name: &str,
         keys: &[ArrayKey],
         value: Value,
@@ -17710,7 +17758,10 @@ impl Interpreter {
             .read_named(name)
             .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-        if matches!(slot, Value::Null | Value::Bool(false)) {
+        if matches!(slot, Value::Bool(false)) {
+            self.emit_false_to_array_deprecation(span)?;
+            slot = Value::Array(PhpArray::new());
+        } else if matches!(slot, Value::Null) {
             slot = Value::Array(PhpArray::new());
         }
 
@@ -17731,6 +17782,7 @@ impl Interpreter {
     }
 
     fn write_global_nested_array_append(
+        &mut self,
         keys: &[ArrayKey],
         value: Value,
         span: Span,
@@ -17741,7 +17793,10 @@ impl Interpreter {
             .read_global_name(&global_name)
             .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-        if matches!(slot, Value::Null | Value::Bool(false)) {
+        if matches!(slot, Value::Bool(false)) {
+            self.emit_false_to_array_deprecation(span)?;
+            slot = Value::Array(PhpArray::new());
+        } else if matches!(slot, Value::Null) {
             slot = Value::Array(PhpArray::new());
         }
 

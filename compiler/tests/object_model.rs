@@ -7682,6 +7682,55 @@ echo gettype($box->id), ":", $box->id, "|", gettype($append[0]), ":", $append[0]
 }
 
 #[test]
+fn root_false_array_writes_emit_deprecation_diagnostics() {
+    let execution = run_source(
+        r#"<?php
+function deprecated_handler($errno, $message, $file, $line) {
+    echo "deprecated:", $message, "\n";
+    return true;
+}
+set_error_handler("deprecated_handler", E_DEPRECATED);
+
+class Holder {
+    public $items = false;
+}
+
+$direct = false;
+$direct["leaf"] = "direct";
+
+$globalRoot = false;
+$GLOBALS["globalRoot"]["leaf"] = "global";
+
+$holder = new Holder();
+$holder->items["leaf"] = "object";
+
+$append = false;
+$append[] = "append";
+
+$reference = false;
+$source = "source";
+$reference["leaf"] =& $source;
+
+echo $direct["leaf"], "|", $globalRoot["leaf"], "|", $holder->items["leaf"], "|", $append[0], "|", $reference["leaf"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "deprecated:Automatic conversion of false to array is deprecated\n",
+            "deprecated:Automatic conversion of false to array is deprecated\n",
+            "deprecated:Automatic conversion of false to array is deprecated\n",
+            "deprecated:Automatic conversion of false to array is deprecated\n",
+            "deprecated:Automatic conversion of false to array is deprecated\n",
+            "direct|global|object|append|source"
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn arrayaccess_append_suffix_syntax_routes_to_backing_buckets() {
     let execution = run_source(
         r#"<?php
