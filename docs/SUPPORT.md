@@ -1060,7 +1060,10 @@
   and non-direct holder roots. The exact `__get()`/`offsetGet()` backing
   analyzer accepts one local copy of the magic/offset parameter before the
   return, such as `$slot = $name; return $this->store[$slot];` or
-  `$slot = $offset; return $this->items[$slot];`. Direct
+  `$slot = $offset; return $this->items[$slot];`. For the currently covered
+  nested COW write/reference paths, `null` and `false` parents materialize as
+  arrays and preserve copied reference-slot metadata; `true`, int, float, and
+  string parents remain runtime-error boundaries. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
   and writing the result back through `offsetSet($key, $value)`. Direct
@@ -1084,7 +1087,8 @@
   property-held or magic-property `ArrayAccess`, magic `__get()` bodies that
   return unsupported expressions beyond direct variables, one local
   parameter-copy return, and the focused visible/private `$this` property
-  append/keyed routes, dynamic property names that trigger
+  append/keyed routes, exact PHP deprecation/fatal diagnostic text for scalar
+  parent conversion/errors, dynamic property names that trigger
   unsupported fallback or inaccessible properties, append compound assignment
   through object-property
   `ArrayAccess`, ArrayAccess iteration, broader

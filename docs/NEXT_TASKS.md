@@ -19388,6 +19388,19 @@ handled.
   scalar-parent diagnostics, full references/COW, and native reference
   lowering named as unsupported.
 
+## Lane 1723-C: Scalar Parent COW Matrix
+
+- [x] Runtime/tests/docs lane: pin the scalar-parent matrix for currently
+  covered nested COW paths. `false` and `null` parents materialize as arrays
+  with copied reference-slot metadata for direct nested stores, direct nested
+  appends, visible object-property nested stores, by-reference magic `__get()`
+  nested stores, and property-held `ArrayAccess` nested keyed stores. `true`,
+  `int`, and `string` parents remain runtime-error boundaries for direct,
+  magic, and property-held `ArrayAccess` shapes. Keep exact PHP
+  deprecation/fatal text, non-empty nested appends below property-held
+  `ArrayAccess`, arbitrary mixed chains, full references/COW, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

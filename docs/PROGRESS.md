@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Lane 1723-C focused scalar-parent COW matrix coverage for the
+  currently covered nested write/reference propagation paths. A new fixture
+  proves system-PHP parity for `false`/`null` parent materialization while
+  preserving copied reference-slot metadata through direct nested stores,
+  direct nested appends, visible object-property nested stores, by-reference
+  magic `__get()` nested stores, and property-held `ArrayAccess` nested keyed
+  stores. Runtime tests pin the remaining scalar-parent error boundary for
+  `true`, `int`, and `string` parents across direct, magic, and
+  property-held `ArrayAccess` shapes. This does not add exact PHP
+  deprecation/fatal text for scalar-parent diagnostics, non-empty nested
+  appends below property-held `ArrayAccess`, arbitrary mixed chains, full
+  references/COW, or native reference lowering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: the `milestone1723` `functions_and_scopes` filter
+  passed `2` tests, the `scalar_parent_matrix_keeps_unsupported...` runtime
+  filter passed `1` test, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1723`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1722-C fast-track COW bundle. By-reference magic `__get()`
   keyed/nested plain-array stores now write through the returned backing
   array cell and preserve copied reference-slot metadata; by-value magic

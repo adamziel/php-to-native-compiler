@@ -85,6 +85,38 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: broaden magic ArrayAccess COW compatibility"`
   if the full gate passes.
 
+## Loop Event 2026-05-18T16:20:00+02:00
+
+- Checkpoint before this task: `13620fb6 runtime: broaden magic ArrayAccess
+  COW compatibility`, pushed to `origin/master`.
+- Task attempted: Lane 1723-C focused scalar-parent COW matrix for covered
+  nested write/reference propagation paths.
+- Files changed so far: `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1723/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: raw system PHP and `phpc run`
+  matched the new fixture output; the `milestone1723`
+  `functions_and_scopes` filter passed `2` tests; the
+  `scalar_parent_matrix_keeps_unsupported...` runtime filter passed `1`
+  test; and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1723` passed `1` fixture with `1` system PHP
+  comparison and `0` skips.
+- Semantic gap reduced: `false`/`null` parents are now pinned for direct
+  nested stores, direct nested appends, visible object-property nested
+  stores, by-reference magic `__get()` nested stores, and property-held
+  `ArrayAccess` nested keyed stores while preserving copied reference-slot
+  metadata. `true`, `int`, and `string` parents remain tested runtime-error
+  boundaries for direct, magic, and property-held `ArrayAccess` shapes.
+- Remaining semantic gaps: exact PHP deprecation/fatal diagnostic text,
+  non-empty nested appends below property-held `ArrayAccess`, arbitrary mixed
+  chains, full references/COW, and native reference lowering remain
+  unsupported.
+- Next concrete task: run `cargo check`, `cargo fmt --check`,
+  `git diff --check`, adjacent regression checks, then checkpoint with
+  `tools/checkpoint.sh "runtime: pin scalar parent COW matrix"` if the full
+  gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

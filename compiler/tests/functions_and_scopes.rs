@@ -4964,6 +4964,74 @@ fn milestone1722_cow_fasttrack_fixture_matches_runtime() {
 }
 
 #[test]
+fn milestone1723_system_php_scalar_parent_cow_matrix_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1723/scalar_parent_cow_matrix.php",
+        "../tests/fixtures/milestone1723/scalar_parent_cow_matrix.stdout",
+    );
+}
+
+#[test]
+fn milestone1723_scalar_parent_cow_matrix_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1723/scalar_parent_cow_matrix.php",
+        "../tests/fixtures/milestone1723/scalar_parent_cow_matrix.stdout",
+    );
+}
+
+#[test]
+fn scalar_parent_matrix_keeps_unsupported_scalar_parents_as_errors() {
+    let direct_true = runtime_error(
+        r#"<?php
+$items = ["parent" => true];
+$items["parent"]["leaf"] = "x";
+"#,
+    );
+    assert_eq!(
+        direct_true.message,
+        "invalid array access: cannot write offset on bool"
+    );
+
+    let magic_int = runtime_error(
+        r#"<?php
+class Box {
+    public $store = [];
+    public function &__get($name) { return $this->store[$name]; }
+}
+$box = new Box();
+$box->store["missing"]["parent"] = 1;
+$box->missing["parent"]["leaf"] = ["x" => 1];
+"#,
+    );
+    assert_eq!(
+        magic_int.message,
+        "invalid array access: cannot read offset on int"
+    );
+
+    let array_access_string = runtime_error(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = [];
+    public function offsetExists($offset) { return false; }
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { }
+}
+class Holder { public $bag; }
+$bag = new Bag();
+$bag->items["parent"] = "abc";
+$holder = new Holder();
+$holder->bag = $bag;
+$holder->bag["parent"]["leaf"] = ["x" => 1];
+"#,
+    );
+    assert_eq!(
+        array_access_string.message,
+        "invalid array access: cannot read offset on string"
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

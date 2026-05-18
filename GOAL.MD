@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1722:
+The current in-progress implementation frontier is Lane 1723:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -187,6 +187,13 @@ The current in-progress implementation frontier is Lane 1722:
   analyzers accept one local copy of the magic/offset parameter before the
   return. The same analyzer broadening is tested through a mixed by-value
   outer/by-reference inner `ArrayAccess` chain.
+- Lane 1723 pins scalar-parent behavior for the currently covered nested COW
+  paths: `false`/`null` parents materialize as arrays while preserving copied
+  reference-slot metadata through direct nested stores, direct nested
+  appends, visible object-property nested stores, by-reference magic
+  `__get()` nested stores, and property-held `ArrayAccess` nested keyed
+  stores. `true`, `int`, and `string` parents remain explicit runtime-error
+  boundaries for direct, magic, and property-held `ArrayAccess` shapes.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
