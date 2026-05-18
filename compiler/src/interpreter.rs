@@ -2926,8 +2926,11 @@ impl SymbolTable {
 
         let alias = ArrayOffsetAlias { root, keys };
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
-        let source_cell =
-            self.reference_cell_for_static_source_with_target_root(source_name, &alias.root);
+        let source_cell = if self.array_offset_aliases.contains_key(source_name) {
+            self.reference_cell_for_static_source(source_name)
+        } else {
+            self.reference_cell_for_static_source_with_target_root(source_name, &alias.root)
+        };
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
         self.materialize_array_offset_alias(&alias, span)?;
         let wrote_alias = if let Some(source_cell) = source_cell {
@@ -3955,6 +3958,36 @@ impl SymbolTable {
                 self.array_offset_aliases.remove(&alias_name);
             }
         }
+    }
+
+    fn sync_array_offset_aliases_for_root_path_checked_with_object_type_resolver(
+        &mut self,
+        root: &ArrayOffsetAliasRoot,
+        keys: &[ArrayKey],
+        span: Span,
+        object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
+    ) -> CompileResult<()> {
+        let syncs: Vec<(String, Vec<ArrayOffsetAlias>, Value)> = self
+            .array_offset_aliases
+            .iter()
+            .filter_map(|(alias_name, aliases)| {
+                let touched_alias = Self::best_alias_for_changed_root_path(aliases, root, keys)?;
+                self.read_array_offset_alias(touched_alias)
+                    .map(|value| (alias_name.clone(), aliases.clone(), value))
+            })
+            .collect();
+
+        for (alias_name, aliases, value) in syncs {
+            if !self.write_array_offset_aliases_checked_with_object_type_resolver(
+                &aliases,
+                value,
+                span,
+                object_type_resolver,
+            )? {
+                self.array_offset_aliases.remove(&alias_name);
+            }
+        }
+        Ok(())
     }
 
     fn best_alias_for_changed_root_path<'a>(
@@ -16001,6 +16034,57 @@ impl Interpreter {
             if let Some(return_target) =
                 self.reference_return_this_property_name(function, property, span)?
             {
+                if array_literal_references.is_empty() && !return_target.prefix_keys.is_empty() {
+                    if let Some(cell) =
+                        self.call_magic_get_reference_return_cell(holder.clone(), property, span)?
+                    {
+                        match cell.value_cloned() {
+                            Value::Array(_) | Value::Null | Value::Bool(false) => {
+                                let temp_name = self.next_foreach_temporary_array_name();
+                                scope.bind_static_to_cell(&temp_name, cell);
+                                let alias = ArrayOffsetAlias {
+                                    root: ArrayOffsetAliasRoot::StaticArray {
+                                        name: temp_name.clone(),
+                                    },
+                                    keys: keys.clone(),
+                                };
+                                scope.materialize_array_offset_alias(&alias, span)?;
+                                if !scope
+                                    .write_array_offset_alias_checked_with_object_type_resolver(
+                                        &alias,
+                                        value.clone(),
+                                        span,
+                                        &|object, type_name| {
+                                            self.object_satisfies_live_property_type(
+                                                object, type_name,
+                                            )
+                                        },
+                                    )?
+                                {
+                                    return Err(runtime_error(
+                                        span,
+                                        RuntimeError::invalid_array_access(
+                                            "cannot write magic __get() returned array bucket"
+                                                .to_string(),
+                                        ),
+                                    ));
+                                }
+                                let root =
+                                    scope.canonical_equivalent_static_array_alias_root(&alias.root);
+                                scope.sync_array_offset_aliases_for_root_path_checked_with_object_type_resolver(
+                                    &root,
+                                    &keys,
+                                    span,
+                                    &|object, type_name| {
+                                        self.object_satisfies_live_property_type(object, type_name)
+                                    },
+                                )?;
+                                return Ok(true);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 let protected_class_ids = self.protected_class_ids_for_context(class_id);
                 let property_visibility = holder
                     .property_visibility_from_context(
@@ -16316,6 +16400,14 @@ impl Interpreter {
                                 ),
                             ));
                         }
+                        scope.sync_array_offset_aliases_for_root_path_checked_with_object_type_resolver(
+                            &root,
+                            &target_keys,
+                            span,
+                            &|object, type_name| {
+                                self.object_satisfies_live_property_type(object, type_name)
+                            },
+                        )?;
                         self.bind_or_mirror_array_references_to_alias_root(
                             expr,
                             root,
@@ -34676,11 +34768,20 @@ impl Interpreter {
                     }
                     ReferenceBindingTarget::ArrayOffset(alias) => {
                         if let Some(arg) = args.get(index) {
-                            local_scope.write_static(&param.name, arg.clone());
-                            if let Some(cell) = local_scope.read_cell(&param.name) {
+                            let aliases = vec![alias.clone()];
+                            let cell = if let Some(cell) =
+                                caller_scope.reference_cell_for_array_offset_alias_group(&aliases)
+                            {
+                                local_scope.bind_static_to_cell(&param.name, cell.clone());
+                                Some(cell)
+                            } else {
+                                local_scope.write_static(&param.name, arg.clone());
+                                local_scope.read_cell(&param.name)
+                            };
+                            if let Some(cell) = cell {
                                 array_offset_binding_cells.push((
                                     param.name.clone(),
-                                    vec![alias.clone()],
+                                    aliases,
                                     cell,
                                 ));
                             }
@@ -34688,8 +34789,16 @@ impl Interpreter {
                     }
                     ReferenceBindingTarget::ArrayOffsets(aliases) => {
                         if let Some(arg) = args.get(index) {
-                            local_scope.write_static(&param.name, arg.clone());
-                            if let Some(cell) = local_scope.read_cell(&param.name) {
+                            let cell = if let Some(cell) =
+                                caller_scope.reference_cell_for_array_offset_alias_group(aliases)
+                            {
+                                local_scope.bind_static_to_cell(&param.name, cell.clone());
+                                Some(cell)
+                            } else {
+                                local_scope.write_static(&param.name, arg.clone());
+                                local_scope.read_cell(&param.name)
+                            };
+                            if let Some(cell) = cell {
                                 array_offset_binding_cells.push((
                                     param.name.clone(),
                                     aliases.clone(),
@@ -34994,11 +35103,29 @@ impl Interpreter {
                     }
                     ReferenceBindingTarget::ArrayOffset(alias) => {
                         if let Some(arg) = args.get(index) {
-                            local_scope.write_static(&param.name, arg.clone());
-                            if let Some(cell) = local_scope.read_cell(&param.name) {
+                            let aliases = vec![alias.clone()];
+                            let cell = if let Some(scope) = writeback_scope.as_deref_mut() {
+                                if let Some(cell) =
+                                    scope.reference_cell_for_array_offset_alias_group(&aliases)
+                                {
+                                    local_scope.bind_static_to_cell(&param.name, cell.clone());
+                                    Some(cell)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            };
+                            let cell = if cell.is_none() {
+                                local_scope.write_static(&param.name, arg.clone());
+                                local_scope.read_cell(&param.name)
+                            } else {
+                                cell
+                            };
+                            if let Some(cell) = cell {
                                 array_offset_binding_cells.push((
                                     param.name.clone(),
-                                    vec![alias.clone()],
+                                    aliases,
                                     cell,
                                 ));
                             }
@@ -35006,8 +35133,25 @@ impl Interpreter {
                     }
                     ReferenceBindingTarget::ArrayOffsets(aliases) => {
                         if let Some(arg) = args.get(index) {
-                            local_scope.write_static(&param.name, arg.clone());
-                            if let Some(cell) = local_scope.read_cell(&param.name) {
+                            let cell = if let Some(scope) = writeback_scope.as_deref_mut() {
+                                if let Some(cell) =
+                                    scope.reference_cell_for_array_offset_alias_group(aliases)
+                                {
+                                    local_scope.bind_static_to_cell(&param.name, cell.clone());
+                                    Some(cell)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            };
+                            let cell = if cell.is_none() {
+                                local_scope.write_static(&param.name, arg.clone());
+                                local_scope.read_cell(&param.name)
+                            } else {
+                                cell
+                            };
+                            if let Some(cell) = cell {
                                 array_offset_binding_cells.push((
                                     param.name.clone(),
                                     aliases.clone(),
@@ -36318,7 +36462,7 @@ impl Interpreter {
         class_context: Option<ClassId>,
         called_class_context: Option<ClassId>,
         reference_bindings: Vec<ReferenceBinding>,
-        reference_scope: Option<&mut SymbolTable>,
+        mut reference_scope: Option<&mut SymbolTable>,
         prebound_locals: Vec<PreboundLocal>,
         by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
     ) -> CompileResult<Value> {
@@ -36402,8 +36546,25 @@ impl Interpreter {
                                     cell,
                                 ));
                             } else {
-                                local_scope.write_static(&param.name, arg.clone());
-                                if let Some(cell) = local_scope.read_cell(&param.name) {
+                                let cell = if let Some(scope) = reference_scope.as_deref_mut() {
+                                    if let Some(cell) =
+                                        scope.reference_cell_for_array_offset_alias_group(&aliases)
+                                    {
+                                        local_scope.bind_static_to_cell(&param.name, cell.clone());
+                                        Some(cell)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                };
+                                let cell = if cell.is_none() {
+                                    local_scope.write_static(&param.name, arg.clone());
+                                    local_scope.read_cell(&param.name)
+                                } else {
+                                    cell
+                                };
+                                if let Some(cell) = cell {
                                     array_offset_binding_cells.push((
                                         param.name.clone(),
                                         aliases,
@@ -36430,8 +36591,25 @@ impl Interpreter {
                                     cell,
                                 ));
                             } else {
-                                local_scope.write_static(&param.name, arg.clone());
-                                if let Some(cell) = local_scope.read_cell(&param.name) {
+                                let cell = if let Some(scope) = reference_scope.as_deref_mut() {
+                                    if let Some(cell) =
+                                        scope.reference_cell_for_array_offset_alias_group(aliases)
+                                    {
+                                        local_scope.bind_static_to_cell(&param.name, cell.clone());
+                                        Some(cell)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                };
+                                let cell = if cell.is_none() {
+                                    local_scope.write_static(&param.name, arg.clone());
+                                    local_scope.read_cell(&param.name)
+                                } else {
+                                    cell
+                                };
+                                if let Some(cell) = cell {
                                     array_offset_binding_cells.push((
                                         param.name.clone(),
                                         aliases.clone(),

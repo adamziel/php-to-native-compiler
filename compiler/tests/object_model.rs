@@ -6889,7 +6889,7 @@ class MagicBox {
     private $store = array();
 
     public function seed(&$value) {
-        $this->store["missing"]["copy"] = "seed";
+        $this->store["missing"]["copy"] =& $value;
     }
 
     public function &__get($name) {
@@ -6918,7 +6918,7 @@ echo gettype($box->id), ":", $box->id, "|", $magic->read("missing", "copy");
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "integer:2|integer:2\ninteger:2|string:3");
+    assert_eq!(execution.stdout, "integer:2|integer:2\ninteger:3|integer:3");
     assert_eq!(execution.exit_code, 0);
 
     let error = runtime_error(
@@ -6954,6 +6954,58 @@ $bag["outer"]["copy"] = array("bad");
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
+        "invalid property access: typed property Box::$id expects int, got array"
+    );
+
+    let magic_error = runtime_error(
+        r#"<?php
+class Box {
+    public int $id = 1;
+}
+
+class Bag implements ArrayAccess {
+    public $items = array();
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    #[ReturnTypeWillChange]
+    public function &offsetGet($offset) {
+        $bucket =& $this->items[$offset];
+        return $bucket["leaf"];
+    }
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+class MagicBox {
+    private $store = array();
+
+    public function seed(&$value) {
+        $this->store["missing"]["copy"] =& $value;
+    }
+
+    public function &__get($name) {
+        $bucket =& $this->store[$name];
+        return $bucket;
+    }
+}
+
+$box = new Box();
+$alias =& $box->id;
+$bag = new Bag();
+$bag->items["outer"]["leaf"]["copy"] =& $alias;
+$bag["outer"]["copy"] = "2";
+$magic = new MagicBox();
+$magic->seed($alias);
+$magic->missing["copy"] = array("bad");
+"#,
+    );
+    assert_eq!(magic_error.line, 42);
+    assert_eq!(magic_error.column, 1);
+    assert_eq!(
+        magic_error.message,
         "invalid property access: typed property Box::$id expects int, got array"
     );
 }

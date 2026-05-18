@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1752-C for alias-backed direct variables passed to
+  by-reference parameters. When a direct variable is currently routed through
+  covered array-offset alias metadata but that alias group can be promoted to
+  a real `PhpReferenceCell`, by-reference calls now bind the callee parameter
+  to that reference cell instead of a temporary copy/writeback cell. This keeps
+  references stored by the callee live after return, including the covered
+  magic `__get()` backing-bucket write shape from Lane 1751. Arbitrary
+  magic/`ArrayAccess` method bodies, dynamic/non-literal backing keys, broader
+  complex alias sinks, exact PHP fatal text, string COW identity, and native
+  reference lowering remain unsupported. Focused verification: raw system PHP
+  output matched the new `milestone1752` fixture; `cargo run -q -p phpc --
+  test --compare-php tests/fixtures/milestone1752` passed `1` fixture with
+  `1` system PHP comparison and `0` skips; adjacent
+  `local_indexed_backing_alias_returns_preserve_reference_slots` passed.
+
 - Added Lane 1751-C for one bounded `__get()`/`offsetGet()` return-body
   broadening. A public by-reference method may now bind a local variable by
   reference to an indexed `$this->property[...]` backing bucket and then
@@ -12,9 +27,8 @@ Implemented:
   This preserves typed-reference slots through the covered `ArrayAccess`
   nested write shape and executes the equivalent plain magic `__get()` array
   write shape. Arbitrary method bodies, dynamic/non-literal keys, broader
-  magic reference containers, the uncovered magic reference-backed overwrite
-  edge, exact PHP fatal text, string COW identity, and native reference
-  lowering remain unsupported. Focused verification: raw system PHP output
+  magic reference containers, exact PHP fatal text, string COW identity, and
+  native reference lowering remain unsupported. Focused verification: raw system PHP output
   matched the new `milestone1751` fixture; `cargo run -q -p phpc -- test
   --compare-php tests/fixtures/milestone1751` passed `1` fixture with `1`
   system PHP comparison and `0` skips; adjacent

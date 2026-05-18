@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1752/alias_backed_reference_parameter_magic_write.php

@@ -144,6 +144,10 @@
   supplied arguments resolve to the same covered alias metadata, such as
   `handler($alias, $items["slot"])` after `$alias =& $items["slot"]`, or the
   equivalent visible public object-property array slot shape. Direct
+  variable arguments that are already routed through covered array-offset
+  alias metadata reuse the promoted reference cell when the alias group allows
+  it, so references stored by the callee remain connected to the original
+  array/property reference slot after return. Direct
   user-function by-reference
   calls also accept non-direct holder plain object-property array-offset
   arguments such as `handler($holders["bag"]->items["outer"]["slot"])` and

@@ -18,6 +18,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T20:56:30+02:00
+
+- Checkpoint before this task: `5b134974 runtime: accept local indexed
+  backing alias returns`, pushed to `origin/master`.
+- Task attempted: Lane 1752-C, preserving real reference-cell identity when
+  alias-backed direct variables are passed to by-reference parameters and the
+  alias group can be promoted/reused as a `PhpReferenceCell`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1752/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1752/alias_backed_reference_parameter_magic_write.php`;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1752`
+  passed `1` fixture with `1` system PHP comparison and `0` skips; focused
+  `local_indexed_backing_alias_returns_preserve_reference_slots` passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies,
+  dynamic/non-literal backing keys, broader complex alias sinks, broader
+  alias lifetime/detach ordering, exact PHP fatal text, string COW identity,
+  and native reference lowering.
+- Next concrete task: run `cargo check`, formatting, diff, adjacent
+  object-model/function reference regressions, recent milestone fixture
+  comparisons, then checkpoint with
+  `tools/checkpoint.sh "runtime: pass alias-backed reference cells"` if the
+  full gate passes.
+
 ## Loop Event 2026-05-18T20:38:10+02:00
 
 - Checkpoint before this task: `ee5a7345 runtime: preserve unset detached

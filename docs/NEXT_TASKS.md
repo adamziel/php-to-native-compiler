@@ -19732,6 +19732,18 @@ handled.
   containers, exact PHP fatal text, string COW identity, and native reference
   lowering named as unsupported.
 
+## Lane 1752-C: Alias-Backed Reference Parameters Keep Cells
+
+- [x] Runtime/interpreter/tests/docs lane: when a direct variable routed
+  through covered array-offset alias metadata is passed to a by-reference
+  parameter, promote/reuse the reached reference cell when statically safe
+  instead of binding the callee parameter to a temporary copy/writeback cell.
+  Cover the alias-backed typed-property reference path feeding a magic
+  `__get()` backing-bucket write with system-PHP fixture comparison and a
+  focused invalid typed-reference regression. Keep arbitrary method bodies,
+  dynamic/non-literal keys, broader complex alias sinks, exact PHP fatal text,
+  string COW identity, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
