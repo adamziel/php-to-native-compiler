@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1763:
+The current in-progress implementation frontier is Lane 1764:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -411,6 +411,10 @@ The current in-progress implementation frontier is Lane 1763:
   string offset reads/writes now preserve by-value copy isolation and
   by-reference write-through, including negative in-range offsets and
   out-of-range space padding.
+- Lane 1764 extends that bounded ASCII string-offset slice to integer-form
+  string offset keys such as `"01"`, `"+2"`, and `" 1"` for direct,
+  object-property, and array-bucket roots while keeping normal array key
+  normalization unchanged.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

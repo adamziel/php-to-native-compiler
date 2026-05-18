@@ -6912,17 +6912,22 @@ impl Interpreter {
         operation: &str,
         span: Span,
     ) -> CompileResult<usize> {
-        let ArrayKey::Int(offset) = key else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::invalid_array_access(format!("cannot {operation} offset on string")),
-            ));
+        let offset = match key {
+            ArrayKey::Int(offset) => *offset,
+            ArrayKey::String(offset) => Self::parse_string_offset_key(offset).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot {operation} offset on string"
+                    )),
+                )
+            })?,
         };
 
-        let resolved = if *offset < 0 {
-            byte_len as i64 + *offset
+        let resolved = if offset < 0 {
+            byte_len as i64 + offset
         } else {
-            *offset
+            offset
         };
         if resolved < 0 {
             return Err(runtime_error(
@@ -6934,6 +6939,23 @@ impl Interpreter {
             ));
         }
         Ok(resolved as usize)
+    }
+
+    fn parse_string_offset_key(value: &str) -> Option<i64> {
+        let value = value.trim();
+        if value.is_empty() {
+            return None;
+        }
+
+        let digits = value
+            .strip_prefix(['+', '-'])
+            .filter(|digits| !digits.is_empty())
+            .unwrap_or(value);
+        if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+
+        value.parse::<i64>().ok()
     }
 
     fn read_ascii_string_offset(

@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1764-C for integer-form string offset keys in the bounded ASCII
+  string COW path. Direct variable, visible/context object-property, and
+  array-bucket string offset reads/writes now accept decimal integer strings
+  such as `"01"`, `"+2"`, and `" 1"` as string offsets, matching PHP while
+  leaving normal array key normalization untouched. Decimal/exponent
+  non-integer strings, binary/multibyte strings, magic/`ArrayAccess`
+  string-offset paths, broader warning/fatal text parity, and native
+  reference/string COW lowering remain unsupported. Focused verification:
+  raw system PHP output matched the extended `milestone1763` fixture; `cargo
+  run -q -p phpc -- test --compare-php tests/fixtures/milestone1763` passed
+  `1` fixture with `1` system PHP comparison and `0` skips; focused
+  `string_offsets` tests passed.
+
 - Added Lane 1763-C for bounded ASCII string offset COW parity. Direct
   variables, visible/context object properties, and array buckets now support
   integer string offset reads and writes for ASCII strings, preserving

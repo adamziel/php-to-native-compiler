@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T22:24:57+02:00
+
+- Checkpoint before this task: `08cbb8e8 runtime: support ASCII string
+  offset COW`, pushed to `origin/master`.
+- Task attempted: Lane 1764-C, extending the bounded ASCII string-offset COW
+  helper to accept integer-form string offset keys such as `"01"`, `"+2"`,
+  and `" 1"` without changing normal array key normalization.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/string_offsets.rs`,
+  `tests/fixtures/milestone1763/ascii_string_offset_cow.php`,
+  `tests/fixtures/milestone1763/ascii_string_offset_cow.stdout`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the extended
+  `tests/fixtures/milestone1763/ascii_string_offset_cow.php`; `cargo run -q
+  -p phpc -- test --compare-php tests/fixtures/milestone1763` passed `1`
+  fixture with `1` system PHP comparison and `0` skips; focused
+  `cargo test -q -p phpc --test string_offsets` passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies,
+  non-literal/dynamic backing key variables, arbitrary closure capture roots,
+  broader scalar parent matrices and false-parent deprecation coverage in
+  magic/`ArrayAccess` paths, broader complex alias sinks, broader alias
+  lifetime/detach ordering, exact PHP stderr/fatal text, binary/multibyte
+  string offset behavior, decimal/exponent non-integer string offset keys,
+  and native reference/string COW lowering.
+- Next concrete task: run formatting, diff, check, adjacent string/scalar COW
+  regressions, then checkpoint with
+  `tools/checkpoint.sh "runtime: accept numeric string offsets"` if the full
+  gate passes.
+
 ## Loop Event 2026-05-18T22:15:41+02:00
 
 - Checkpoint before this task: `749424da runtime: emit object false reference

@@ -19873,6 +19873,17 @@ handled.
   warning/fatal text parity, magic/`ArrayAccess` string-offset paths, and
   native reference/string COW lowering named as unsupported.
 
+## Lane 1764-C: Integer-Form String Offset Keys
+
+- [x] Runtime/interpreter/tests/docs lane: broaden the bounded ASCII
+  string-offset COW helper so decimal integer strings such as `"01"`, `"+2"`,
+  and `" 1"` are accepted as string offsets for direct variables,
+  visible/context object-property roots, and array buckets. Keep normal array
+  key normalization unchanged. Keep decimal/exponent non-integer strings,
+  binary/multibyte strings, broader warning/fatal text parity,
+  magic/`ArrayAccess` string-offset paths, and native reference/string COW
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

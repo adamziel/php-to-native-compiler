@@ -4531,11 +4531,12 @@
   `false`. Adjacent `true`, numeric, and string roots remain scalar write
   errors in this bounded path. Bounded ASCII string offset reads/writes are
   supported for direct variables, visible/context object-property roots, and
-  array buckets when the offset is an integer. These writes preserve by-value
-  copy isolation and by-reference write-through for direct aliases,
-  object-property aliases, and array-slot aliases, including negative
-  in-range offsets and out-of-range positive offset space padding.
-  Binary/multibyte string offsets, non-integer string offset keys, and
+  array buckets when the offset is an integer or decimal integer-form string
+  such as `"01"`, `"+2"`, or `" 1"`. These writes preserve by-value copy
+  isolation and by-reference write-through for direct aliases, object-property
+  aliases, and array-slot aliases, including negative in-range offsets and
+  out-of-range positive offset space padding. Binary/multibyte string
+  offsets, decimal/exponent non-integer string offset keys, and
   magic/`ArrayAccess` string-offset paths remain unsupported. By-value
   terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
