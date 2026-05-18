@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Lane 1719-C focused keyed-store support for direct
+  magic-property-provided `ArrayAccess` objects. Direct stores such as
+  `$box->missing["leaf"] = $array` now call visible public `__get($name)` to
+  obtain the `ArrayAccess` object, dispatch `offsetSet($key, $value)`, and
+  attach array-literal reference slots or copied-array alias metadata to the
+  recognized backing bucket. Direct nested stores such as
+  `$box->missing["outer"]["leaf"] = $array` select the parent bucket through
+  exact public by-reference `offsetGet($offset) { return
+  $this->property[$offset]; }`, write the nested plain-array leaf, and attach
+  metadata to that leaf path. This does not add non-direct magic keyed stores
+  whose AST shape is still shared with non-direct magic append stores, dynamic
+  direct magic keyed property names, by-value terminal/plain-array nested
+  mutation, unsupported `offsetSet()`/`offsetGet()`/`__get()` body shapes,
+  broader mixed nested `ArrayAccess` chains, scalar parent overwrite/error
+  parity, full references/COW, or native reference lowering. Focused
+  verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax and system PHP output
+  checks passed for the new fixture, `cargo check -q -p phpc` passed, the
+  `milestone1719` `functions_and_scopes` filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1719`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1718-C focused nested keyed-store support for visible
   property-held `ArrayAccess` objects. Direct stores such as
   `$holder->bag["outer"]["leaf"] = $array`, non-direct named holder stores

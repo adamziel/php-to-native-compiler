@@ -4900,6 +4900,22 @@ fn milestone1718_property_held_arrayaccess_nested_keyed_fixture_matches_runtime(
 }
 
 #[test]
+fn milestone1719_system_php_magic_arrayaccess_keyed_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1719/magic_arrayaccess_keyed_reference_slot_cow.php",
+        "../tests/fixtures/milestone1719/magic_arrayaccess_keyed_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1719_magic_arrayaccess_keyed_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1719/magic_arrayaccess_keyed_reference_slot_cow.php",
+        "../tests/fixtures/milestone1719/magic_arrayaccess_keyed_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

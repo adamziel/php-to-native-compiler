@@ -13497,6 +13497,20 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
+                if matches!(value, Value::Array(_))
+                    && self.write_magic_get_array_access_keyed_with_reference_propagation(
+                        object,
+                        property,
+                        keys.clone(),
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
                 let root =
                     self.context_object_property_alias_root(object, property, *span, scope)?;
                 let root = scope.canonical_equivalent_object_property_alias_root(&root);
@@ -14464,6 +14478,140 @@ impl Interpreter {
                 }
                 Some(_) | None => Ok(false),
             }
+        }
+    }
+
+    fn write_magic_get_array_access_keyed_with_reference_propagation(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        if keys.is_empty() {
+            return Ok(false);
+        }
+
+        let Some(Value::Object(holder)) = scope.read_named(object_name) else {
+            return Ok(false);
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match holder.read_property_from_context(property, current_class_id, &protected_class_ids) {
+            Ok(_) => return Ok(false),
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {}
+            Err(error) => return Err(runtime_error(span, error)),
+        }
+
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(holder.class_id(), "__get")
+        else {
+            return Ok(false);
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__get()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, "__get", visibility, span)?;
+        let returns_by_reference = {
+            let function =
+                self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+            function.as_ref().returns_by_reference
+        };
+
+        let array_access_object = if returns_by_reference {
+            let function =
+                self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+            let function = function.as_ref();
+            ensure_user_function_arity(function, 1, span)?;
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            if let Some(return_target) =
+                self.reference_return_this_property_name(function, property, span)?
+            {
+                let protected_class_ids = self.protected_class_ids_for_context(class_id);
+                match holder
+                    .read_property_from_context(
+                        &return_target.property,
+                        Some(class_id),
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))?
+                {
+                    Value::Object(object)
+                        if self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                    {
+                        Some(object)
+                    }
+                    _ => None,
+                }
+            } else {
+                let Some(cell) =
+                    self.call_magic_get_reference_return_cell(holder, property, span)?
+                else {
+                    return Ok(false);
+                };
+                let current_value = cell.borrow().clone();
+                match current_value {
+                    Value::Object(object)
+                        if self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                    {
+                        Some(object)
+                    }
+                    _ => None,
+                }
+            }
+        } else {
+            match self.call_magic_get_property_value(holder, property, span)? {
+                Some(Value::Object(object))
+                    if self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    Some(object)
+                }
+                _ => None,
+            }
+        };
+
+        let Some(array_access_object) = array_access_object else {
+            return Ok(false);
+        };
+
+        if keys.len() == 1 {
+            self.write_array_access_object_keyed_with_reference_propagation(
+                array_access_object,
+                keys[0].clone(),
+                value,
+                expr,
+                array_literal_references,
+                span,
+                scope,
+            )
+        } else {
+            self.write_array_access_object_nested_keyed_with_reference_propagation(
+                array_access_object,
+                keys,
+                value,
+                expr,
+                array_literal_references,
+                span,
+                scope,
+            )
         }
     }
 

@@ -947,10 +947,19 @@ nested plain-array leaf through the returned backing alias. This covers
 direct, non-direct named-holder, and non-direct dynamic-holder paths such as
 `$holder->bag["outer"]["leaf"] = $array`,
 `$holders["box"]->bag["outer"]["leaf"] = $array`, and
-`$holders["box"]->{$name}["outer"]["leaf"] = $array`. Magic-property-provided
-keyed containers, by-value terminal/plain-array nested mutation, unsupported
-`offsetSet()`/`offsetGet()` bodies, and native lowering remain outside this
-path.
+`$holders["box"]->{$name}["outer"]["leaf"] = $array`.
+Direct magic-property-provided keyed `ArrayAccess` containers now use the same
+object-level helpers after `__get()` returns the object handle. For
+`$box->missing["leaf"] = $array`, the runtime calls visible public
+`__get($name)` once, dispatches `offsetSet($key, $value)`, and attaches
+metadata to the recognized backing bucket. For
+`$box->missing["outer"]["leaf"] = $array`, it asks the exact public
+by-reference `offsetGet()` bridge for the parent bucket and writes the nested
+plain-array leaf through that alias. Non-direct magic keyed stores are still
+not split from non-direct magic append stores in the assignment target shape,
+so they remain outside this path along with dynamic direct magic keyed
+property names, by-value terminal/plain-array nested mutation, unsupported
+`offsetSet()`/`offsetGet()`/`__get()` bodies, and native lowering.
 Direct magic-property append stores such as `$box->missing[] = $array` and
 `$box->{$name}[] = $array` are a separate store path from magic append
 reference sources. For the covered store shape, the runtime calls visible

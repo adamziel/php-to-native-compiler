@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1718:
+The current in-progress implementation frontier is Lane 1719:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -158,6 +158,11 @@ The current in-progress implementation frontier is Lane 1718:
 - Lane 1718 extends property-held keyed stores to nested plain-array leaves
   below exact by-reference `offsetGet()` parent buckets, such as
   `$holder->bag["outer"]["leaf"] = $array`.
+- Lane 1719 extends direct magic-property-provided `ArrayAccess` keyed stores
+  such as `$box->missing["leaf"] = $array` and
+  `$box->missing["outer"]["leaf"] = $array`, while leaving non-direct magic
+  keyed stores for a future parser/runtime split because those shapes still
+  share the same AST as non-direct append stores.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

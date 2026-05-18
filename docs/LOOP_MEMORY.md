@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T14:43:18+02:00
+
+- Checkpoint before this task: `53a78669 runtime: support property-held
+  ArrayAccess nested keyed stores`, pushed to `origin/master`.
+- Task attempted: Lane 1719-C focused direct magic-property-provided
+  `ArrayAccess` keyed store COW propagation.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1719/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc` passed;
+  PHP syntax and system PHP output checks passed for the new fixture; the
+  `milestone1719` `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1719`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: direct magic-property keyed stores now obtain an
+  `ArrayAccess` object through visible public `__get()`, then preserve copied
+  nested reference-slot metadata for one-key `offsetSet()` stores and nested
+  plain-array leaf stores below exact by-reference `offsetGet()` parent
+  buckets.
+- Remaining semantic gaps: non-direct magic keyed stores whose AST shape is
+  still shared with non-direct append stores, dynamic direct magic keyed
+  property names, by-value terminal/plain-array nested mutation, unsupported
+  `offsetSet()`/`offsetGet()`/`__get()` body shapes, broader mixed nested
+  `ArrayAccess` chains, scalar parent overwrite/error parity, full
+  references/COW, and native reference lowering remain unsupported.
+- Next concrete task: run adjacent milestone1718 checks, `cargo fmt --check`,
+  `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "runtime: support magic ArrayAccess keyed stores"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T14:33:13+02:00
 
 - Checkpoint before this task: `e21877b0 runtime: support property-held
