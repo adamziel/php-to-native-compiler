@@ -19413,6 +19413,18 @@ handled.
   the append, arbitrary mixed chains, unsupported `offsetGet()` bodies, full
   references/COW, and native reference lowering named as unsupported.
 
+## Lane 1725-C: Magic/ArrayAccess Local Backing Alias COW
+
+- [x] Runtime/tests/docs lane: broaden the exact `__get()` and `offsetGet()`
+  return-body analyzer to allow one local variable first bound by reference to
+  a direct `$this->property`, then used as the return root with the existing
+  literal-key and local parameter-copy index rules. A focused fixture covers a
+  by-reference magic plain-array nested write and a by-value magic/mixed
+  `ArrayAccess` nested append chain through that local backing alias. Keep
+  arbitrary side-effecting method bodies, by-reference magic returning
+  `ArrayAccess` objects through property offsets, non-literal backing keys,
+  full references/COW, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

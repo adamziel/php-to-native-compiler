@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1724:
+The current in-progress implementation frontier is Lane 1725:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -201,6 +201,12 @@ The current in-progress implementation frontier is Lane 1724:
   `$holders["box"]->{$property}["outer"][] = $array` append into the
   by-reference `offsetGet()` backing bucket and preserve copied nested
   reference-slot metadata under the appended key.
+- Lane 1725 broadens the proven backing-bucket analyzer by one shape:
+  `__get()` and `offsetGet()` bodies may first bind a local variable by
+  reference to a direct `$this->property`, then return from that local with
+  the existing literal/parameter-copy index rules. A focused fixture covers
+  by-reference magic plain-array writes and a by-value magic/mixed
+  `ArrayAccess` nested append chain using that local backing alias.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

@@ -4058,6 +4058,11 @@ struct ThisPropertyReferenceTarget {
     suffix_keys: Vec<ArrayKey>,
 }
 
+struct ThisPropertyLocalAlias {
+    local: String,
+    property: String,
+}
+
 enum ArrayAccessOffsetKeyPart {
     Literal(ArrayKey),
     Offset,
@@ -11860,9 +11865,9 @@ impl Interpreter {
                 ),
             ));
         };
-        let (return_value, local_offset_aliases) =
-            match Self::single_return_with_parameter_copy_aliases(function, &param.name) {
-                Some((value, aliases)) => (value, aliases),
+        let (return_value, local_offset_aliases, local_property_aliases) =
+            match Self::single_return_analysis(function, &param.name) {
+                Some((value, aliases, property_aliases)) => (value, aliases, property_aliases),
                 None => {
                     return Err(runtime_error(
                         span,
@@ -11884,7 +11889,11 @@ impl Interpreter {
         };
 
         let Some((property, indices)) =
-            Self::collect_this_property_index_return_path(target, index)
+            Self::collect_this_property_or_local_alias_index_return_path(
+                target,
+                index,
+                &local_property_aliases,
+            )
         else {
             return Err(runtime_error(
                 span,
@@ -11926,7 +11935,7 @@ impl Interpreter {
         }
 
         Ok(ArrayAccessOffsetGetReferenceTarget {
-            property: property.to_string(),
+            property,
             key_parts,
         })
     }
@@ -12006,21 +12015,47 @@ impl Interpreter {
         }
     }
 
-    fn single_return_with_parameter_copy_aliases<'a>(
+    fn single_return_analysis<'a>(
         function: &'a FunctionDecl,
         param_name: &str,
-    ) -> Option<(&'a Expr, Vec<String>)> {
+    ) -> Option<(&'a Expr, Vec<String>, Vec<ThisPropertyLocalAlias>)> {
         let mut aliases = Vec::new();
+        let mut property_aliases = Vec::new();
         let mut statements = function.body.as_slice();
-        if let [Stmt::Assign {
-            target: AssignTarget::Variable { name, .. },
-            expr: Expr::Variable(source, _),
-            ..
-        }, rest @ ..] = statements
-        {
-            if source == param_name {
-                aliases.push(name.clone());
-                statements = rest;
+
+        loop {
+            match statements {
+                [Stmt::Assign {
+                    target: AssignTarget::Variable { name, .. },
+                    expr: Expr::Variable(source, _),
+                    ..
+                }, rest @ ..]
+                    if source == param_name =>
+                {
+                    aliases.push(name.clone());
+                    statements = rest;
+                }
+                [Stmt::ReferenceAssign {
+                    target: AssignTarget::Variable { name, .. },
+                    source:
+                        ReferenceSource::Property {
+                            expr:
+                                Expr::Property {
+                                    target, property, ..
+                                },
+                            ..
+                        },
+                    ..
+                }, rest @ ..]
+                    if matches!(target.as_ref(), Expr::Variable(object, _) if object == "this") =>
+                {
+                    property_aliases.push(ThisPropertyLocalAlias {
+                        local: name.clone(),
+                        property: property.clone(),
+                    });
+                    statements = rest;
+                }
+                _ => break,
             }
         }
 
@@ -12030,7 +12065,7 @@ impl Interpreter {
         else {
             return None;
         };
-        Some((value, aliases))
+        Some((value, aliases, property_aliases))
     }
 
     fn expr_is_parameter_or_local_copy(expr: &Expr, param_name: &str, aliases: &[String]) -> bool {
@@ -15067,8 +15102,8 @@ impl Interpreter {
         let Some(param) = function.params.first() else {
             return Ok(None);
         };
-        let Some((value, local_param_aliases)) =
-            Self::single_return_with_parameter_copy_aliases(function, &param.name)
+        let Some((value, local_param_aliases, local_property_aliases)) =
+            Self::single_return_analysis(function, &param.name)
         else {
             return Ok(None);
         };
@@ -15130,6 +15165,7 @@ impl Interpreter {
                     index,
                     requested_property,
                     &local_param_aliases,
+                    &local_property_aliases,
                     span,
                 )
             }
@@ -15143,10 +15179,15 @@ impl Interpreter {
         index: &Expr,
         requested_property: &str,
         local_param_aliases: &[String],
+        local_property_aliases: &[ThisPropertyLocalAlias],
         span: Span,
     ) -> CompileResult<Option<ThisPropertyReferenceTarget>> {
         let Some((property, indices)) =
-            Self::collect_this_property_index_return_path(target, index)
+            Self::collect_this_property_or_local_alias_index_return_path(
+                target,
+                index,
+                local_property_aliases,
+            )
         else {
             return Ok(None);
         };
@@ -15193,16 +15234,17 @@ impl Interpreter {
         }
 
         Ok(Some(ThisPropertyReferenceTarget {
-            property: property.to_string(),
+            property,
             prefix_keys,
             suffix_keys: Vec::new(),
         }))
     }
 
-    fn collect_this_property_index_return_path<'a>(
+    fn collect_this_property_or_local_alias_index_return_path<'a>(
         target: &'a Expr,
         index: &'a Expr,
-    ) -> Option<(&'a str, Vec<&'a Expr>)> {
+        local_property_aliases: &[ThisPropertyLocalAlias],
+    ) -> Option<(String, Vec<&'a Expr>)> {
         let mut indices = vec![index];
         let mut current = target;
         while let Expr::Index { target, index, .. } = current {
@@ -15211,16 +15253,18 @@ impl Interpreter {
         }
         indices.reverse();
 
-        let Expr::Property {
-            target, property, ..
-        } = current
-        else {
-            return None;
-        };
-        if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
-            return None;
+        match current {
+            Expr::Property {
+                target, property, ..
+            } if matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") => {
+                Some((property.clone(), indices))
+            }
+            Expr::Variable(name, _) => local_property_aliases
+                .iter()
+                .find(|alias| alias.local == *name)
+                .map(|alias| (alias.property.clone(), indices)),
+            _ => None,
         }
-        Some((property.as_str(), indices))
     }
 
     fn literal_reference_return_array_key(expr: &Expr) -> Option<ArrayKey> {

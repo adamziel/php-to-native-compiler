@@ -928,10 +928,15 @@
   backing bucket. Direct dynamic magic-property keyed stores such as
   `$box->{$name}["leaf"] = $array` and
   `$box->{$name}["outer"]["leaf"] = $array` use the same keyed bridge after
-  evaluating the property-name expression once. By-value
-  terminal/plain-array nested mutation, unsupported
-  `offsetSet()`/`offsetGet()`/`__get()` body shapes, broader mixed chains,
-  and native lowering remain unsupported. Direct magic-property append stores
+  evaluating the property-name expression once. The exact backing-bucket
+  analyzers also allow one local variable first bound by reference to a
+  direct `$this->property`, then used as the return root with the existing
+  literal-key and local parameter-copy index rules, such as
+  `$items =& $this->items; $slot = $offset; return $items[$slot];`.
+  By-value terminal/plain-array nested mutation, unsupported
+  `offsetSet()`/`offsetGet()`/`__get()` body shapes beyond those proven
+  return forms, broader mixed chains, and native lowering remain unsupported.
+  Direct magic-property append stores
   such as `$box->missing[] = $array` and `$box->{$name}[] = $array` are also
   supported for this focused stored-bucket COW shape when visible public
   `__get($name)` returns an `ArrayAccess` object; `__get()` is called once
@@ -1060,7 +1065,9 @@
   and non-direct holder roots. The exact `__get()`/`offsetGet()` backing
   analyzer accepts one local copy of the magic/offset parameter before the
   return, such as `$slot = $name; return $this->store[$slot];` or
-  `$slot = $offset; return $this->items[$slot];`. For the currently covered
+  `$slot = $offset; return $this->items[$slot];`; it also accepts a local
+  backing alias first bound by reference to a direct `$this->property`, such
+  as `$store =& $this->store; return $store[$slot];`. For the currently covered
   nested COW write/reference paths, `null` and `false` parents materialize as
   arrays and preserve copied reference-slot metadata; `true`, int, float, and
   string parents remain runtime-error boundaries. Direct

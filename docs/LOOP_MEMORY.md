@@ -145,6 +145,32 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: support property-held ArrayAccess nested appends"`
   if the full gate passes.
 
+## Loop Event 2026-05-18T17:05:00+02:00
+
+- Checkpoint before this task: `8973c1f0 runtime: support property-held
+  ArrayAccess nested appends`, pushed to `origin/master`.
+- Task attempted: Lane 1725-C local backing-alias analyzer broadening for
+  exact magic/`ArrayAccess` COW bridges.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1725/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output seeded the new fixture expectation,
+  `phpc run` matched it, and the `milestone1725`
+  `functions_and_scopes` filter passed `2` tests.
+- Semantic gap reduced: exact `__get()`/`offsetGet()` analyzers now accept a
+  local variable first bound by reference to a direct `$this->property`, then
+  used as the return root with the existing literal-key and local
+  parameter-copy index rules.
+- Remaining semantic gaps: arbitrary side-effecting method bodies,
+  by-reference magic returning `ArrayAccess` objects through property offsets,
+  non-literal backing keys, full references/COW, and native reference
+  lowering remain unsupported.
+- Next concrete task: run adjacent `milestone1722`/`milestone1724` checks,
+  `cargo check`, `cargo fmt --check`, `git diff --check`, then checkpoint
+  with `tools/checkpoint.sh "runtime: broaden magic ArrayAccess backing aliases"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

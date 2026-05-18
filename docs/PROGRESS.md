@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 1725-C focused local backing-alias analysis for COW bridges.
+  Exact `__get()` and `offsetGet()` return-body analyzers now accept a local
+  variable first bound by reference to a direct `$this->property`, then used
+  as the return root with the existing literal-key and local parameter-copy
+  rules. The new fixture proves by-reference magic plain-array nested writes
+  and a by-value magic/mixed `ArrayAccess` nested append chain preserve copied
+  reference-slot metadata through that local backing alias. This does not add
+  arbitrary side-effecting method bodies, by-reference magic returning an
+  `ArrayAccess` object through a property offset, non-literal backing keys,
+  full references/COW, or native reference lowering. Focused verification:
+  raw system PHP output seeded the fixture expectation, `phpc run` matched
+  it, and the `milestone1725` `functions_and_scopes` filter passed `2`
+  tests.
+
 - Added Lane 1724-C focused property-held `ArrayAccess` nested append COW
   propagation. Direct `$holder->bag["outer"][] = $array`, non-direct
   `$holders["box"]->bag["outer"][] = $array`, and dynamic
