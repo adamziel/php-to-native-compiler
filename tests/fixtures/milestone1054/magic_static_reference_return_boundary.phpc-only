@@ -1,1 +1,0 @@
-phpc rejects magic __callStatic reference-return assignment sources as an explicit runtime boundary; this does not model PHP reference containers, magic reference returns, or copy-on-write.

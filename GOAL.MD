@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1808:
+The current in-progress implementation frontier is Lane 1811:
+
+- Lanes 1809 through 1811 add bounded magic `__callStatic()` reference-return
+  sources. Missing named static, `self::`, `static::`, and dynamic static
+  receiver calls can now dispatch to public static by-reference
+  `__callStatic()` when its executed body returns a proven variable,
+  object-property, or array-offset lvalue. Class-string array callables through
+  `call_user_func()` and `call_user_func_array()` share the same bridge. This
+  does not claim direct `$cb(...)` reference-assignment parser support,
+  arbitrary callable arrays, builtin callbacks as reference-return sources,
+  arbitrary PHP syntax or side effects outside the executed interpreter
+  subset, incompatible typed signatures, full exception unwinding, exact PHP
+  diagnostics, or native reference lowering.
 
 - Lanes 1806 through 1808 add bounded magic `__call()` reference-return
   sources to the executed magic/`ArrayAccess` bridge. Covered direct missing

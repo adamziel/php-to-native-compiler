@@ -66,8 +66,10 @@
   `self::`/`parent::`/`static::` sources, non-static dynamic static receiver
   sources, missing-parent parent calls, `static::` sources outside
   class/method context, and non-object/non-string dynamic receivers remain
-  unsupported. Magic `__callStatic` reference-return method sources are an
-  explicit runtime boundary with a stable unsupported-call diagnostic.
+  unsupported. Bounded magic `__callStatic()` reference-return sources are
+  supported for missing named static, `self::`, `static::`, and dynamic static
+  receiver calls when public static `__callStatic()` returns by reference and
+  its executed body returns a proven lvalue.
   Direct free-function, direct visible object-method, direct named static
   method, `self::` static method, `parent::` static method,
   `static::` late-static method, and dynamic static receiver reference-return
@@ -1190,16 +1192,21 @@
   covers direct dynamic calls such as `$cb(...)` and `call_user_func($cb, ...)`
   for object/static array callables, including helper-local
   object-property array-offset returns that can be remapped to a caller-visible
-  root. Arbitrary callable arrays, magic `__callStatic`, and builtin
-  callbacks remain unsupported for reference-return sources. Bounded magic
+  root. Class-string array callables that miss a declared static method can
+  dispatch through bounded public static by-reference `__callStatic()` in
+  `call_user_func($cb, ...)` and `call_user_func_array($cb, ...)`. Direct
+  `$cb(...)` reference-assignment parser support, arbitrary callable arrays,
+  and builtin callbacks remain unsupported for reference-return sources.
+  Bounded magic
   `__call()` is supported for direct missing instance method calls and object
   array-callable paths when `__call()` is public, returns by reference, and
   returns a proven lvalue from the executed body. This covers
   `$this->missing($key)`, `[$this, "missing"]($key)`, and
   `call_user_func([$this, "missing"], $key)` inside supported
-  reference-return bodies. Magic `__callStatic`, arbitrary callable arrays,
-  builtin callbacks, and arbitrary `__call()` side effects beyond the executed
-  subset remain unsupported for reference-return sources. The exact
+  reference-return bodies. Arbitrary callable arrays,
+  builtin callbacks, and arbitrary `__call()`/`__callStatic()` side effects
+  beyond the executed subset remain unsupported for reference-return sources.
+  The exact
   `__get()`/`offsetGet()` backing
   analyzer accepts one local copy of the magic/offset parameter before the
   return, such as `$slot = $name; return $this->store[$slot];` or

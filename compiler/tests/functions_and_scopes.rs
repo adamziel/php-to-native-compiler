@@ -1512,24 +1512,32 @@ echo "object=", $value;
 }
 
 #[test]
-fn magic_static_reference_return_assignment_reports_stable_boundary() {
-    let error = runtime_error(
+fn magic_static_reference_return_assignment_binds_returned_cell() {
+    let execution = run_source(
         r#"<?php
+class Holder {
+    public $slots = array("slot" => "start");
+}
+
+$holder = new Holder();
+
 class Box {
     public static function &__callStatic($method, $args) {
-        return $args[0];
+        global $holder;
+        echo "call=", $method, "|";
+        return $holder->slots[$args[0]];
     }
 }
 
-$value = 1;
-$alias =& Box::missing($value);
+$alias =& Box::missing("slot");
+$alias = "changed";
+echo $holder->slots["slot"];
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(
-        error.message,
-        "unsupported call Box::__callStatic(): magic __callStatic reference-return method sources are not implemented"
-    );
+    assert_eq!(execution.stdout, "call=missing|changed");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

@@ -20123,11 +20123,25 @@ handled.
   by-reference `__call()` when the magic method returns a proven lvalue. Cover
   magic `__get()` returning `$this->slot($name)`, `ArrayAccess::offsetGet()`
   returning `$this->slot($offset)`, and `call_user_func([$this, "slot"],
-  $name)` through `__call()`. Keep magic `__callStatic`, arbitrary callable
+  $name)` through `__call()`. Keep arbitrary callable
   arrays, builtin callbacks as reference-return sources, arbitrary PHP syntax
   and side effects outside the executed method-body subset, incompatible
   typed signatures, full exception unwinding, exact PHP diagnostics, and
   native reference lowering named as unsupported.
+
+## Lane 1809-C through Lane 1811-C: Magic CallStatic Reference Returns
+
+- [x] Runtime/interpreter/tests/docs bundle: allow bounded missing named
+  static, `self::`, `static::`, and dynamic static receiver reference-return
+  calls to dispatch through public static by-reference `__callStatic()` when
+  the executed body returns a proven lvalue. Cover direct named static calls,
+  self/late/dynamic receivers, and class-string array callables through
+  `call_user_func()` and `call_user_func_array()`. Keep direct `$cb(...)`
+  reference-assignment parser support, arbitrary callable arrays, builtin
+  callbacks as reference-return sources, arbitrary PHP syntax and side effects
+  outside the executed method-body subset, incompatible typed signatures, full
+  exception unwinding, exact PHP diagnostics, and native reference lowering
+  named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

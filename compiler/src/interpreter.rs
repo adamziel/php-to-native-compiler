@@ -32276,13 +32276,22 @@ impl Interpreter {
                     is_static,
                 )) = self.resolve_instance_method(class_id, method_name)
                 else {
-                    return Err(runtime_error(
+                    let receiver_class_name = receiver_class.name().to_string();
+                    return match self.call_missing_static_method_reference_return_via_magic(
+                        class_id,
+                        method_name,
+                        args,
                         span,
-                        RuntimeError::undefined_function(format!(
-                            "{}::{method_name}()",
-                            receiver_class.name()
+                        caller_scope,
+                    )? {
+                        Some(binding) => Ok(binding),
+                        None => Err(runtime_error(
+                            span,
+                            RuntimeError::undefined_function(format!(
+                                "{receiver_class_name}::{method_name}()"
+                            )),
                         )),
-                    ));
+                    };
                 };
                 if !is_static {
                     return Err(runtime_error(
@@ -32677,13 +32686,23 @@ impl Interpreter {
                     is_static,
                 )) = self.resolve_instance_method(class_id, method_name)
                 else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::undefined_function(format!(
-                            "{}::{method_name}()",
-                            receiver_class.name()
+                    let receiver_class_name = receiver_class.name().to_string();
+                    return match self
+                        .call_user_func_array_missing_static_method_reference_return_via_magic(
+                            class_id,
+                            method_name,
+                            argument_expr,
+                            span,
+                            caller_scope,
+                        )? {
+                        Some(binding) => Ok(binding),
+                        None => Err(runtime_error(
+                            span,
+                            RuntimeError::undefined_function(format!(
+                                "{receiver_class_name}::{method_name}()"
+                            )),
                         )),
-                    ));
+                    };
                 };
                 if !is_static {
                     return Err(runtime_error(
@@ -35945,11 +35964,21 @@ impl Interpreter {
             is_static,
         )) = self.resolve_instance_method(class_id, method_name)
         else {
-            self.reject_magic_static_reference_return_source(class_id, &receiver_class_name, span)?;
-            return Err(runtime_error(
+            return match self.call_missing_static_method_reference_return_via_magic(
+                class_id,
+                method_name,
+                args,
                 span,
-                RuntimeError::undefined_function(format!("{receiver_class_name}::{method_name}()")),
-            ));
+                caller_scope,
+            )? {
+                Some(binding) => Ok(binding),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{receiver_class_name}::{method_name}()"
+                    )),
+                )),
+            };
         };
 
         self.ensure_instance_method_visible(
@@ -36035,15 +36064,21 @@ impl Interpreter {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(current_class_id, method_name)
         else {
-            self.reject_magic_static_reference_return_source(
+            return match self.call_missing_static_method_reference_return_via_magic(
                 current_class_id,
-                &current_class_name,
+                method_name,
+                args,
                 span,
-            )?;
-            return Err(runtime_error(
-                span,
-                RuntimeError::undefined_function(format!("{current_class_name}::{method_name}()")),
-            ));
+                caller_scope,
+            )? {
+                Some(binding) => Ok(binding),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{current_class_name}::{method_name}()"
+                    )),
+                )),
+            };
         };
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
@@ -36220,15 +36255,21 @@ impl Interpreter {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(called_class_id, method_name)
         else {
-            self.reject_magic_static_reference_return_source(
+            return match self.call_missing_static_method_reference_return_via_magic(
                 called_class_id,
-                &called_class_name,
+                method_name,
+                args,
                 span,
-            )?;
-            return Err(runtime_error(
-                span,
-                RuntimeError::undefined_function(format!("{called_class_name}::{method_name}()")),
-            ));
+                caller_scope,
+            )? {
+                Some(binding) => Ok(binding),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{called_class_name}::{method_name}()"
+                    )),
+                )),
+            };
         };
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
@@ -36320,15 +36361,21 @@ impl Interpreter {
             is_static,
         )) = self.resolve_instance_method(receiver_class_id, method_name)
         else {
-            self.reject_magic_static_reference_return_source(
+            return match self.call_missing_static_method_reference_return_via_magic(
                 receiver_class_id,
-                &receiver_class_name,
+                method_name,
+                args,
                 span,
-            )?;
-            return Err(runtime_error(
-                span,
-                RuntimeError::undefined_function(format!("{receiver_class_name}::{method_name}()")),
-            ));
+                caller_scope,
+            )? {
+                Some(binding) => Ok(binding),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{receiver_class_name}::{method_name}()"
+                    )),
+                )),
+            };
         };
 
         self.ensure_instance_method_visible(
@@ -36389,26 +36436,143 @@ impl Interpreter {
         )
     }
 
-    fn reject_magic_static_reference_return_source(
-        &self,
+    fn call_missing_static_method_reference_return_via_magic(
+        &mut self,
         receiver_class_id: ClassId,
-        receiver_class_name: &str,
+        method_name: &str,
+        args: &[Expr],
         span: Span,
-    ) -> CompileResult<()> {
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnBinding>> {
         if self
             .resolve_instance_method(receiver_class_id, "__callStatic")
-            .is_some()
+            .is_none()
         {
+            return Ok(None);
+        }
+
+        let mut argument_array = PhpArray::new();
+        for arg in args {
+            let value = self.evaluate(arg, caller_scope)?;
+            argument_array
+                .append(value)
+                .map_err(|error| runtime_error(arg.span(), error))?;
+        }
+
+        self.call_reference_return_magic_static_method_with_argument_array(
+            receiver_class_id,
+            method_name,
+            argument_array,
+            span,
+            caller_scope,
+        )
+    }
+
+    fn call_user_func_array_missing_static_method_reference_return_via_magic(
+        &mut self,
+        receiver_class_id: ClassId,
+        method_name: &str,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnBinding>> {
+        if self
+            .resolve_instance_method(receiver_class_id, "__callStatic")
+            .is_none()
+        {
+            return Ok(None);
+        }
+
+        let argument_array_value = self.evaluate(argument_expr, caller_scope)?;
+        let Value::Array(argument_array) = &argument_array_value else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    format!("{receiver_class_name}::__callStatic()"),
-                    "magic __callStatic reference-return method sources are not implemented",
+                    "call_user_func_array()",
+                    format!(
+                        "argument array must be array in the current subset, got {}",
+                        argument_array_value.type_name()
+                    ),
+                ),
+            ));
+        };
+        let values = Self::call_user_func_array_positional_values(argument_array, span)?;
+        let mut magic_args = PhpArray::new();
+        for value in values {
+            magic_args
+                .append(value)
+                .map_err(|error| runtime_error(argument_expr.span(), error))?;
+        }
+
+        self.call_reference_return_magic_static_method_with_argument_array(
+            receiver_class_id,
+            method_name,
+            magic_args,
+            span,
+            caller_scope,
+        )
+    }
+
+    fn call_reference_return_magic_static_method_with_argument_array(
+        &mut self,
+        receiver_class_id: ClassId,
+        method_name: &str,
+        argument_array: PhpArray,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnBinding>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(receiver_class_id, "__callStatic")
+        else {
+            return Ok(None);
+        };
+
+        if !is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__callStatic()"),
+                    "magic static missing-method dispatch requires a static __callStatic method in the current subset",
                 ),
             ));
         }
 
-        Ok(())
+        self.ensure_instance_method_visible(
+            class_id,
+            &class_name,
+            "__callStatic",
+            visibility,
+            span,
+        )?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        if !function.returns_by_reference {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "function does not return by reference",
+                ),
+            ));
+        }
+        ensure_user_function_arity(function, 2, span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+            function,
+            vec![
+                Value::String(method_name.to_string()),
+                Value::Array(argument_array),
+            ],
+            None,
+            Some(class_id),
+            Some(receiver_class_id),
+            Vec::new(),
+            caller_scope,
+        )
+        .map(Some)
     }
 
     fn call_reference_return_function_with_checked_values_for_reference_assignment(

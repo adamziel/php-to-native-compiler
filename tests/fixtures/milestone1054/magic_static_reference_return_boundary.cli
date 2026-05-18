@@ -1,7 +1,1 @@
-$ phpc run tests/fixtures/milestone1054/magic_static_reference_return_boundary.php
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-runtime error at tests/fixtures/milestone1054/magic_static_reference_return_boundary.php:9:14: unsupported call Box::__callStatic(): magic __callStatic reference-return method sources are not implemented
---- stderr end ---
+call:missing|changed

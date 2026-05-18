@@ -1,9 +1,18 @@
 <?php
+class Holder {
+    public $slots = array("slot" => "start");
+}
+
+$holder = new Holder();
+
 class Box {
     public static function &__callStatic($method, $args) {
-        return $args[0];
+        global $holder;
+        echo "call:", $method, "|";
+        return $holder->slots[$args[0]];
     }
 }
 
-$value = 1;
-$alias =& Box::missing($value);
+$alias =& Box::missing("slot");
+$alias = "changed";
+echo $holder->slots["slot"];

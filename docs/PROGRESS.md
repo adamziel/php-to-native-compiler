@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1809-C through Lane 1811-C for bounded magic `__callStatic()`
+  reference-return sources. Missing named static, `self::`, `static::`, and
+  dynamic static receiver calls now dispatch to public static by-reference
+  `__callStatic()` when the magic body returns a proven lvalue. Class-string
+  array callables through `call_user_func()` and `call_user_func_array()` use
+  the same bridge. The old `milestone1054` unsupported boundary was converted
+  to a passing system-PHP comparison. This does not claim direct `$cb(...)`
+  reference-assignment parser support, arbitrary callable arrays, builtin
+  callbacks as reference-return sources, arbitrary PHP syntax or side effects
+  outside the executed interpreter subset, incompatible typed signatures, full
+  exception unwinding, exact PHP diagnostics, or native reference lowering.
+  Focused verification: raw system PHP output matched the converted
+  `milestone1054` fixture and the new `milestone1809`, `milestone1810`, and
+  `milestone1811` fixtures; `cargo run -q -p phpc -- test --compare-php`
+  passed each of those directories with `1` fixture, `1` system PHP
+  comparison, and `0` skips; focused `functions_and_scopes` static-reference
+  tests and adjacent `call_user_func_builtin` tests passed.
+
 - Added Lane 1806-C through Lane 1808-C for bounded magic `__call()`
   reference-return sources inside the executed magic/`ArrayAccess` COW
   bridge. Supported direct missing instance method calls and object

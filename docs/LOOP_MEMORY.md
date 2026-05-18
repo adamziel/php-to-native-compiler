@@ -18,6 +18,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T01:35:40+02:00
+
+- Checkpoint before this task: `5d1ca1ed runtime: support magic call reference
+  returns`, pushed to `origin/master`.
+- Task attempted: Lane 1809-C through Lane 1811-C bundle, allowing bounded
+  missing named static, `self::`, `static::`, and dynamic static receiver
+  reference-return calls to dispatch through public static by-reference
+  `__callStatic()` when the executed body returns a proven lvalue. Class-string
+  array callables through `call_user_func()` and `call_user_func_array()` use
+  the same bridge.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1054/*`, `tests/fixtures/milestone1809/*`,
+  `tests/fixtures/milestone1810/*`, `tests/fixtures/milestone1811/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched the converted `milestone1054` fixture and new `milestone1809`,
+  `milestone1810`, and `milestone1811` fixtures; `cargo run -q -p phpc --
+  test --compare-php` passed each of those fixture directories with `1`
+  fixture, `1` system PHP comparison, and `0` skips; focused
+  `functions_and_scopes` static-reference tests and adjacent
+  `call_user_func_builtin` tests passed.
+- Remaining COW gaps: direct `$cb(...)` reference-assignment parser support,
+  arbitrary callable arrays, builtin callbacks as reference-return sources,
+  unsupported PHP syntax and side effects outside the executed method-body
+  subset, arbitrary type enforcement and incompatible typed reference-return
+  signatures, full exception unwinding and uncaught exception propagation,
+  arbitrary Iterator side effects, broader complex alias sinks and alias
+  lifetime ordering, exact PHP stderr/fatal text, binary/multibyte string
+  offset behavior, and native reference/string COW lowering.
+- Next concrete task: run formatting, diff, adjacent checks, then the full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T01:25:41+02:00
 
 - Checkpoint before this task: `a0aca177 runtime: support array callable
