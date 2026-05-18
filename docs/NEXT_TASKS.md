@@ -19542,6 +19542,19 @@ handled.
   behavior, string COW identity, and native reference lowering named as
   unsupported.
 
+## Lane 1736-C: Method-Local `$this` Reference Slot Targets
+
+- [x] Runtime/interpreter/tests/docs lane: route explicit method-local
+  `$this` object-property array reference targets for direct variable sources
+  through reference-backed `ArraySlot`s. Cover public, dynamic-property, and
+  private/context property forms such as `$this->items["slot"] =& $var`,
+  `$this->items["outer"][] =& $var`, and `$this->{$name}["slot"] =& $var`
+  with system-PHP comparison coverage. Keep `$this` array-literal reference
+  propagation on alias scaffolding for by-value `ArrayAccess` bucket reuse
+  parity, and keep broader non-direct/magic/mixed roots, complete alias
+  lifetime/detach behavior, string COW identity, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

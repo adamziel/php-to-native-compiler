@@ -2884,11 +2884,8 @@ impl SymbolTable {
 
         let alias = ArrayOffsetAlias { root, keys };
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
-        let source_cell = if Self::alias_root_allows_reference_slot_fast_path(&alias.root) {
-            self.reference_cell_for_static_source(source_name)
-        } else {
-            None
-        };
+        let source_cell =
+            self.reference_cell_for_static_source_with_target_root(source_name, &alias.root);
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
         self.materialize_array_offset_alias(&alias, span)?;
         let wrote_alias = if let Some(source_cell) = source_cell {
@@ -3074,6 +3071,9 @@ impl SymbolTable {
             } else {
                 Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?
             }
+        } else if let Some(source_cell) = self.direct_reference_cell_for_static_source(source_name)
+        {
+            Self::append_nested_array_offset_alias_reference(&mut array, &keys, source_cell, span)?
         } else {
             Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?
         };
@@ -3278,6 +3278,18 @@ impl SymbolTable {
     fn reference_cell_for_static_source(&mut self, source_name: &str) -> Option<VariableCell> {
         if let Some(aliases) = self.array_offset_aliases.get(source_name).cloned() {
             return self.reference_cell_for_array_offset_alias_group(&aliases);
+        }
+
+        self.direct_reference_cell_for_static_source(source_name)
+    }
+
+    fn reference_cell_for_static_source_with_target_root(
+        &mut self,
+        source_name: &str,
+        root: &ArrayOffsetAliasRoot,
+    ) -> Option<VariableCell> {
+        if Self::alias_root_allows_reference_slot_fast_path(root) {
+            return self.reference_cell_for_static_source(source_name);
         }
 
         self.direct_reference_cell_for_static_source(source_name)
@@ -17489,12 +17501,23 @@ impl Interpreter {
                 } => {
                     let mut keys = prefix.clone();
                     keys.extend(reference_keys);
-                    scope.bind_object_property_array_offset_alias_root_to_static_source(
-                        root.clone(),
-                        keys,
-                        &source_name,
-                        span,
-                    )?;
+                    if SymbolTable::alias_root_allows_reference_slot_fast_path(&root) {
+                        scope.bind_object_property_array_offset_alias_root_to_static_source(
+                            root.clone(),
+                            keys,
+                            &source_name,
+                            span,
+                        )?;
+                    } else {
+                        scope.bind_array_offset_alias_root_to_static_source(
+                            ArrayOffsetAlias {
+                                root: root.clone(),
+                                keys,
+                            },
+                            &source_name,
+                            span,
+                        )?;
+                    }
                 }
                 ArrayLiteralReferenceElement::Alias {
                     keys: reference_keys,
@@ -56482,6 +56505,9 @@ mod tests {
         class
             .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
             .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("hidden", Visibility::Private))
+            .unwrap();
         let object = PhpObject::from_class(class);
         object
             .write_public_property("items", Value::Array(PhpArray::new()))
@@ -56539,6 +56565,98 @@ mod tests {
         assert_eq!(
             outer.get_slot(0).unwrap().reference_cell_id(),
             Some(property_append_cell.id())
+        );
+
+        let this_object = object.clone();
+        this_object
+            .write_public_property("items", Value::Array(PhpArray::new()))
+            .unwrap();
+        symbols.write_static("this", Value::Object(this_object));
+        symbols.write_static("this_source", Value::String("this".to_string()));
+        let this_source_cell = symbols.read_cell("this_source").unwrap();
+        let this_root = ArrayOffsetAliasRoot::PublicObjectProperty {
+            object: "this".to_string(),
+            property: "items".to_string(),
+        };
+        symbols
+            .bind_object_property_array_offset_alias_root_to_static_source(
+                this_root.clone(),
+                vec![ArrayKey::String("slot".to_string())],
+                "this_source",
+                span,
+            )
+            .unwrap();
+        symbols.write_static("this_append", Value::String("this-append".to_string()));
+        let this_append_cell = symbols.read_cell("this_append").unwrap();
+        symbols
+            .append_object_property_array_offset_alias_root_to_static_source(
+                this_root,
+                vec![ArrayKey::String("outer".to_string())],
+                "this_append",
+                span,
+            )
+            .unwrap();
+
+        let Value::Object(this_object) = symbols.read_static("this", span).unwrap() else {
+            panic!("expected this object");
+        };
+        let Value::Array(items) = this_object.read_public_property("items").unwrap() else {
+            panic!("expected this property array");
+        };
+        assert_eq!(
+            items.get_slot("slot").unwrap().reference_cell_id(),
+            Some(this_source_cell.id())
+        );
+        let Some(Value::Array(outer)) = items.get_cloned("outer") else {
+            panic!("expected this nested property array");
+        };
+        assert_eq!(
+            outer.get_slot(0).unwrap().reference_cell_id(),
+            Some(this_append_cell.id())
+        );
+
+        let context_this_object = this_object.clone();
+        context_this_object
+            .write_property_from_context(
+                "hidden",
+                Value::Array(PhpArray::new()),
+                Some(class_id),
+                &[],
+            )
+            .unwrap();
+        symbols.write_static("this", Value::Object(context_this_object));
+        symbols.write_static(
+            "this_private_source",
+            Value::String("this-private".to_string()),
+        );
+        let this_private_source_cell = symbols.read_cell("this_private_source").unwrap();
+        let context_this_root = ArrayOffsetAliasRoot::ContextObjectProperty {
+            object: "this".to_string(),
+            property: "hidden".to_string(),
+            current_class_id: Some(class_id),
+            protected_class_ids: Vec::new(),
+        };
+        symbols
+            .bind_object_property_array_offset_alias_root_to_static_source(
+                context_this_root,
+                vec![ArrayKey::String("slot".to_string())],
+                "this_private_source",
+                span,
+            )
+            .unwrap();
+
+        let Value::Object(context_this_object) = symbols.read_static("this", span).unwrap() else {
+            panic!("expected context this object");
+        };
+        let Value::Array(hidden) = context_this_object
+            .read_property_from_context("hidden", Some(class_id), &[])
+            .unwrap()
+        else {
+            panic!("expected context this property array");
+        };
+        assert_eq!(
+            hidden.get_slot("slot").unwrap().reference_cell_id(),
+            Some(this_private_source_cell.id())
         );
     }
 

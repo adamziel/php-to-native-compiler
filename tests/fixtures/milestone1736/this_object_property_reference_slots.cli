@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1736/this_object_property_reference_slots.php

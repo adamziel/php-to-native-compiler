@@ -443,6 +443,36 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: promote GLOBALS alias terminals"` if the
   full gate passes.
 
+## Loop Event 2026-05-18T20:45:00+02:00
+
+- Checkpoint before this task: `32f1c68d runtime: promote GLOBALS alias
+  terminals`, pushed to `origin/master`.
+- Task attempted: Lane 1736-C method-local `$this` object-property
+  reference-slot wiring for direct variable sources.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1736/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the expanded milestone1736
+  fixture; `cargo test -q -p phpc
+  symbol_table_nested_and_object_property_reference_targets_use_reference_slots`
+  passed; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1736` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent `milestone1673c`, `milestone1731`,
+  `milestone1734`, and `milestone1735` system-PHP comparisons passed.
+- Semantic gap reduced: explicit `$this->property[...] =& $var` and
+  `$this->property[...][] =& $var` targets, including dynamic-property and
+  private/context property forms, now install real reference-backed slots for
+  direct variable sources. `$this` array-literal reference propagation remains
+  on alias scaffolding to preserve by-value `ArrayAccess` bucket reuse parity.
+- Remaining semantic gaps: broader non-direct/magic/mixed roots, arbitrary
+  method-local alias lifetimes, alias side-table removal, complete PHP alias
+  lifetime/detach parity, string COW identity, and native reference lowering
+  remain unsupported.
+- Next concrete task: run `cargo check -q -p phpc`, `cargo fmt --check`,
+  `git diff --check`, and then one full checkpoint with
+  `tools/checkpoint.sh "runtime: support this property reference slots"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

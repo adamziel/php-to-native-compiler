@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 1736-C method-local `$this` object-property reference-slot
+  wiring for direct variable sources. Explicit reference targets such as
+  `$this->items["slot"] =& $var`, `$this->items["outer"][] =& $var`, and the
+  same dynamic-property/private-property forms now install real
+  reference-backed array slots, so later writes through the source variable or
+  property slot stay synchronized. `$this` array-literal reference propagation
+  remains on the alias-scaffolding path to preserve existing by-value
+  `ArrayAccess` bucket reuse parity. Broader non-direct/magic/mixed roots,
+  complete alias lifetime/detach behavior, string COW identity, and native
+  reference lowering remain unsupported. Focused verification: raw system PHP
+  output matched the new milestone1736 fixture; `cargo test -q -p phpc
+  symbol_table_nested_and_object_property_reference_targets_use_reference_slots`
+  passed; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1736` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent `milestone1673c`, `milestone1731`,
+  `milestone1734`, and `milestone1735` system-PHP comparisons passed.
+
 - Added Lane 1734-C value-backed alias-terminal promotion for the real
   reference-cell value model. When an alias-backed source variable points at a
   statically proven value-backed array terminal, the interpreter promotes that
