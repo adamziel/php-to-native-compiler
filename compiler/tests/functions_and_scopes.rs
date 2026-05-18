@@ -5320,6 +5320,54 @@ fn milestone1781_computed_nested_backing_key_reference_returns_fixture_matches_r
 }
 
 #[test]
+fn milestone1782_system_php_closure_magic_arrayaccess_reference_capture_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1782/closure_magic_arrayaccess_reference_capture_cow.php",
+        "../tests/fixtures/milestone1782/closure_magic_arrayaccess_reference_capture_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1782_closure_magic_arrayaccess_reference_capture_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1782/closure_magic_arrayaccess_reference_capture_cow.php",
+        "../tests/fixtures/milestone1782/closure_magic_arrayaccess_reference_capture_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1783_system_php_closure_nondirect_holder_reference_capture_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1783/closure_nondirect_holder_reference_capture_cow.php",
+        "../tests/fixtures/milestone1783/closure_nondirect_holder_reference_capture_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1783_closure_nondirect_holder_reference_capture_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1783/closure_nondirect_holder_reference_capture_cow.php",
+        "../tests/fixtures/milestone1783/closure_nondirect_holder_reference_capture_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1784_system_php_closure_escaping_reference_capture_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1784/closure_escaping_reference_capture_cow.php",
+        "../tests/fixtures/milestone1784/closure_escaping_reference_capture_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1784_closure_escaping_reference_capture_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1784/closure_escaping_reference_capture_cow.php",
+        "../tests/fixtures/milestone1784/closure_escaping_reference_capture_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

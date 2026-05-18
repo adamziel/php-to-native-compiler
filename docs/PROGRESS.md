@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 1782-C through Lane 1784-C for by-reference closure captures of
+  locals backed by covered magic/`ArrayAccess` alias roots. Direct closure
+  invocation can now preserve COW write-through when captured locals point at
+  direct magic/`ArrayAccess` buckets, non-direct holder magic/`ArrayAccess`
+  buckets, and aliases that escape their creating user function before the
+  closure is invoked. The object-root chooser now avoids choosing hidden
+  internal ArrayAccess temps over readable visible roots, and it no longer
+  exposes non-imported globals as roots in child temp scopes. This does not
+  claim arbitrary closure capture roots, arbitrary magic/`ArrayAccess` method
+  bodies, exception unwinding/catch execution for thrown values, exact PHP
+  diagnostics, or native reference lowering. Focused verification: raw system
+  PHP output matched the new `milestone1782`, `milestone1783`, and
+  `milestone1784` fixtures; `cargo run -q -p phpc -- test --compare-php`
+  passed each new fixture directory with `1` fixture, `1` system PHP
+  comparison, and `0` skips; focused `functions_and_scopes` milestone tests
+  passed.
+
 - Added Lane 1779-C through Lane 1781-C for computed backing keys in the
   executed magic/`ArrayAccess` reference-return body path. Public
   by-reference `ArrayAccess::offsetGet()` and covered by-reference `__get()`

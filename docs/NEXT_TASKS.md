@@ -20009,6 +20009,17 @@ handled.
   unsupported PHP syntax, arbitrary Iterator side effects, and native
   reference lowering named as unsupported.
 
+## Lane 1782-C through Lane 1784-C: Closure Alias Captures
+
+- [x] Runtime/interpreter/tests/docs bundle: preserve by-reference closure
+  captures when the captured local is backed by covered magic/`ArrayAccess`
+  array-offset alias metadata. Cover direct roots, non-direct holder roots,
+  and escaping closures that outlive the creating function before mutating the
+  captured slot. Keep arbitrary closure capture roots, arbitrary
+  magic/`ArrayAccess` method bodies, exception unwinding/catch execution for
+  thrown values, exact PHP diagnostics, and native reference lowering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

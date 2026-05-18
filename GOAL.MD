@@ -32,7 +32,16 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1781:
+The current in-progress implementation frontier is Lane 1784:
+
+- Lanes 1782 through 1784 preserve by-reference closure captures when the
+  captured local is backed by covered magic/`ArrayAccess` array-offset alias
+  metadata. Direct closure invocation can now mutate captured direct,
+  non-direct holder, and escaping function-local aliases that point at covered
+  magic/`__get()` and public by-reference `ArrayAccess::offsetGet()` backing
+  buckets, while keeping copied COW reference-slot write-through. Internal
+  hidden object roots are canonicalized toward readable visible roots before
+  the capture escapes.
 
 - Lanes 1779 through 1781 cover computed backing keys in the executed
   magic/`ArrayAccess` reference-return body path. Public by-reference

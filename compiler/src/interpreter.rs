@@ -3594,13 +3594,20 @@ impl SymbolTable {
             .collect();
         if let Some(global_symbols) = &self.global_symbols {
             names.extend(global_symbols.borrow().iter().filter_map(|(name, cell)| {
+                if !self.name_routes_to_global_storage(name) {
+                    return None;
+                }
                 match cell.value_cloned() {
                     Value::Object(candidate) if &candidate == object => Some(name.clone()),
                     _ => None,
                 }
             }));
         }
-        names.sort();
+        names.sort_by(|left, right| {
+            left.starts_with('\0')
+                .cmp(&right.starts_with('\0'))
+                .then_with(|| left.cmp(right))
+        });
         names.dedup();
         names
     }

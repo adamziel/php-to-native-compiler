@@ -6363,6 +6363,12 @@
   covered direct array-offset or visible object-property array-offset metadata,
   such as `$payload =& $_REQUEST["payload"]; function () use (&$payload) { ... }`
   and `$item =& $object->items["slot"]; function () use (&$item) { ... }`.
+  The same capture path now covers locals backed by documented
+  magic-property and public by-reference `ArrayAccess::offsetGet()` array-slot
+  alias metadata, including direct roots such as
+  `$slot =& $box->missing["node"]`, non-direct holder roots such as
+  `$slot =& $holders["box"]->missing["node"]`, and closures that outlive the
+  creating function before mutating the captured slot.
   When that alias group can be promoted to a real reference cell, closure
   invocation prebinds the captured local to that cell so references stored by
   the closure body remain connected to the original slot after return.
@@ -6396,9 +6402,9 @@
   elements in the same direct-variable and direct array/property slot subset
   used by user-function callbacks. Invocation uses the captured by-value
   snapshot stored when the closure was created. Arrow implicit capture binding
-  and execution, `$this` binding, by-reference capture of magic-property,
-  `ArrayAccess`, non-direct holder, dynamic property, or arbitrary alias roots,
-  closure
+  and execution, `$this` binding, by-reference capture of dynamic property
+  roots outside the documented alias metadata, arbitrary magic/`ArrayAccess`
+  method bodies, arbitrary alias roots, closure
   reference returns, array-callable `call_user_func()` forms beyond public
   object/static method callbacks over by-value arguments, variadic
   reference parameters through `call_user_func()`, typed parameter/return
@@ -7259,7 +7265,8 @@
   supported by direct calls such as `trim()` custom masks, `substr()` `null`
   lengths, recursive `count()` mode, and the third by-reference output
   argument of `is_callable()`, by-reference capture of array-offset,
-  object-property, magic-property, or `ArrayAccess` alias roots, closure
+  object-property, magic-property, or `ArrayAccess` alias roots outside the
+  direct invocation support documented for ordinary closures, closure
   scope/class rebinding, captured-variable reflection, typed parameter/return
   declarations at invocation time, `invokeArgs()` named-argument semantics for
   string keys, reference returns, and broader argument/reference/COW behavior
