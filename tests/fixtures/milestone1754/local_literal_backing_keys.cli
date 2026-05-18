@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1754/local_literal_backing_keys.php

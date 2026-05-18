@@ -4652,6 +4652,18 @@ struct ThisPropertyLocalAlias {
     prefix_indices: Vec<Expr>,
 }
 
+struct LocalLiteralKeyAlias {
+    local: String,
+    key: ArrayKey,
+}
+
+struct ReferenceReturnBodyAnalysis<'a> {
+    return_value: &'a Expr,
+    local_param_aliases: Vec<String>,
+    local_property_aliases: Vec<ThisPropertyLocalAlias>,
+    local_literal_key_aliases: Vec<LocalLiteralKeyAlias>,
+}
+
 enum ArrayAccessOffsetKeyPart {
     Literal(ArrayKey),
     Offset,
@@ -13047,29 +13059,28 @@ impl Interpreter {
                 ),
             ));
         };
-        let (return_value, local_offset_aliases, local_property_aliases) =
-            match Self::single_return_analysis(function, &param.name) {
-                Some((value, aliases, property_aliases)) => (value, aliases, property_aliases),
-                None => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "reference assignment",
-                            "ArrayAccess offset reference sources require offsetGet() to contain only return $this->property[$offset] with optional literal prefix or suffix keys in the current subset",
-                        ),
-                    ));
-                }
-            };
-        let Some((property, indices)) = (match return_value {
+        let analysis = match Self::single_return_analysis(function, &param.name) {
+            Some(analysis) => analysis,
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "ArrayAccess offset reference sources require offsetGet() to contain only return $this->property[$offset] with optional literal prefix or suffix keys in the current subset",
+                    ),
+                ));
+            }
+        };
+        let Some((property, indices)) = (match analysis.return_value {
             Expr::Index { target, index, .. } => {
                 Self::collect_this_property_or_local_alias_index_return_path(
                     target,
                     index,
-                    &local_property_aliases,
+                    &analysis.local_property_aliases,
                 )
             }
             Expr::Variable(name, _) => {
-                Self::local_property_alias_return_path(name, &local_property_aliases)
+                Self::local_property_alias_return_path(name, &analysis.local_property_aliases)
             }
             _ => None,
         }) else {
@@ -13085,13 +13096,20 @@ impl Interpreter {
         let mut key_parts = Vec::new();
         let mut saw_offset_param = false;
         for index in indices {
-            if Self::expr_is_parameter_or_local_copy(index, &param.name, &local_offset_aliases) {
+            if Self::expr_is_parameter_or_local_copy(
+                index,
+                &param.name,
+                &analysis.local_param_aliases,
+            ) {
                 saw_offset_param = true;
                 key_parts.push(ArrayAccessOffsetKeyPart::Offset);
                 continue;
             }
 
-            let Some(key) = Self::literal_reference_return_array_key(index) else {
+            let Some(key) = Self::literal_reference_return_array_key_with_locals(
+                index,
+                &analysis.local_literal_key_aliases,
+            ) else {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -13196,9 +13214,10 @@ impl Interpreter {
     fn single_return_analysis<'a>(
         function: &'a FunctionDecl,
         param_name: &str,
-    ) -> Option<(&'a Expr, Vec<String>, Vec<ThisPropertyLocalAlias>)> {
+    ) -> Option<ReferenceReturnBodyAnalysis<'a>> {
         let mut aliases = Vec::new();
         let mut property_aliases = Vec::new();
+        let mut literal_key_aliases = Vec::new();
         let mut statements = function.body.as_slice();
 
         loop {
@@ -13211,6 +13230,18 @@ impl Interpreter {
                     if source == param_name =>
                 {
                     aliases.push(name.clone());
+                    statements = rest;
+                }
+                [Stmt::Assign {
+                    target: AssignTarget::Variable { name, .. },
+                    expr,
+                    ..
+                }, rest @ ..] => {
+                    let key = Self::literal_reference_return_array_key(expr)?;
+                    literal_key_aliases.push(LocalLiteralKeyAlias {
+                        local: name.clone(),
+                        key,
+                    });
                     statements = rest;
                 }
                 [Stmt::ReferenceAssign {
@@ -13284,7 +13315,12 @@ impl Interpreter {
         else {
             return None;
         };
-        Some((value, aliases, property_aliases))
+        Some(ReferenceReturnBodyAnalysis {
+            return_value: value,
+            local_param_aliases: aliases,
+            local_property_aliases: property_aliases,
+            local_literal_key_aliases: literal_key_aliases,
+        })
     }
 
     fn expr_is_parameter_or_local_copy(expr: &Expr, param_name: &str, aliases: &[String]) -> bool {
@@ -16538,13 +16574,11 @@ impl Interpreter {
         let Some(param) = function.params.first() else {
             return Ok(None);
         };
-        let Some((value, local_param_aliases, local_property_aliases)) =
-            Self::single_return_analysis(function, &param.name)
-        else {
+        let Some(analysis) = Self::single_return_analysis(function, &param.name) else {
             return Ok(None);
         };
 
-        match value {
+        match analysis.return_value {
             Expr::Property {
                 target, property, ..
             } => {
@@ -16578,7 +16612,7 @@ impl Interpreter {
                 if !Self::expr_is_parameter_or_local_copy(
                     property.as_ref(),
                     &param.name,
-                    &local_param_aliases,
+                    &analysis.local_param_aliases,
                 ) {
                     return Err(runtime_error(
                         span,
@@ -16600,14 +16634,15 @@ impl Interpreter {
                     target,
                     index,
                     requested_property,
-                    &local_param_aliases,
-                    &local_property_aliases,
+                    &analysis.local_param_aliases,
+                    &analysis.local_property_aliases,
+                    &analysis.local_literal_key_aliases,
                     span,
                 )
             }
             Expr::Variable(name, _) => {
                 let Some((property, indices)) =
-                    Self::local_property_alias_return_path(name, &local_property_aliases)
+                    Self::local_property_alias_return_path(name, &analysis.local_property_aliases)
                 else {
                     return Ok(None);
                 };
@@ -16616,7 +16651,8 @@ impl Interpreter {
                     property,
                     indices,
                     requested_property,
-                    &local_param_aliases,
+                    &analysis.local_param_aliases,
+                    &analysis.local_literal_key_aliases,
                     span,
                 )
             }
@@ -16631,6 +16667,7 @@ impl Interpreter {
         requested_property: &str,
         local_param_aliases: &[String],
         local_property_aliases: &[ThisPropertyLocalAlias],
+        local_literal_key_aliases: &[LocalLiteralKeyAlias],
         span: Span,
     ) -> CompileResult<Option<ThisPropertyReferenceTarget>> {
         let Some((property, indices)) =
@@ -16648,6 +16685,7 @@ impl Interpreter {
             indices,
             requested_property,
             local_param_aliases,
+            local_literal_key_aliases,
             span,
         )
     }
@@ -16658,6 +16696,7 @@ impl Interpreter {
         indices: Vec<&Expr>,
         requested_property: &str,
         local_param_aliases: &[String],
+        local_literal_key_aliases: &[LocalLiteralKeyAlias],
         span: Span,
     ) -> CompileResult<Option<ThisPropertyReferenceTarget>> {
         let Some(param) = function.params.first() else {
@@ -16681,7 +16720,10 @@ impl Interpreter {
                 continue;
             }
 
-            let Some(key) = Self::literal_reference_return_array_key(index) else {
+            let Some(key) = Self::literal_reference_return_array_key_with_locals(
+                index,
+                local_literal_key_aliases,
+            ) else {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -16761,6 +16803,19 @@ impl Interpreter {
             Expr::Int(value, _) => Some(ArrayKey::Int(*value)),
             _ => None,
         }
+    }
+
+    fn literal_reference_return_array_key_with_locals(
+        expr: &Expr,
+        local_literal_key_aliases: &[LocalLiteralKeyAlias],
+    ) -> Option<ArrayKey> {
+        Self::literal_reference_return_array_key(expr).or_else(|| match expr {
+            Expr::Variable(name, _) => local_literal_key_aliases
+                .iter()
+                .find(|alias| alias.local == *name)
+                .map(|alias| alias.key.clone()),
+            _ => None,
+        })
     }
 
     fn write_array_access_object_nested_append_with_reference_propagation(

@@ -18,6 +18,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T21:26:30+02:00
+
+- Checkpoint before this task: `8dd20623 runtime: capture alias-backed
+  reference cells`, pushed to `origin/master`.
+- Task attempted: Lane 1754-C, broadening the proven `__get()`/`offsetGet()`
+  return-body analyzer so locals initialized from literal int/string keys can
+  be used as backing-bucket indexes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1754/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1754/local_literal_backing_keys.php`;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1754`
+  passed `1` fixture with `1` system PHP comparison and `0` skips; focused
+  `local_literal_backing_keys_preserve_reference_slots` passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies,
+  non-literal/dynamic backing key variables, arbitrary closure capture roots,
+  broader complex alias sinks, broader alias lifetime/detach ordering, exact
+  PHP fatal text, string COW identity, and native reference lowering.
+- Next concrete task: run `cargo check`, formatting, diff, adjacent
+  object-model/functions regressions, recent milestone fixture comparisons,
+  then checkpoint with
+  `tools/checkpoint.sh "runtime: accept local literal backing keys"` if the
+  full gate passes.
+
 ## Loop Event 2026-05-18T21:11:40+02:00
 
 - Checkpoint before this task: `c4fb0677 runtime: pass alias-backed reference

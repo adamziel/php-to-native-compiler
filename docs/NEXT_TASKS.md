@@ -19756,6 +19756,18 @@ handled.
   complex alias sinks, exact PHP fatal text, string COW identity, and native
   reference lowering named as unsupported.
 
+## Lane 1754-C: Local Literal Backing Keys
+
+- [x] Runtime/interpreter/tests/docs lane: broaden the proven `__get()` and
+  `offsetGet()` backing-bucket return analyzer so locals initialized from
+  literal int/string keys may appear in the backing path, for example
+  `$leaf = "leaf"; return $this->items[$offset][$leaf];`. Cover both
+  `ArrayAccess` and magic `__get()` typed-reference preservation with
+  system-PHP fixture comparison and an invalid typed-reference regression.
+  Keep arbitrary method bodies, non-literal/dynamic key variables, broader
+  complex alias sinks, exact PHP fatal text, string COW identity, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

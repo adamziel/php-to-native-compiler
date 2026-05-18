@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1753:
+The current in-progress implementation frontier is Lane 1754:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -372,6 +372,10 @@ The current in-progress implementation frontier is Lane 1753:
   alias group, closure invocation prebinds the capture to the promoted
   reference cell so references stored inside the closure remain connected to
   the original typed-property reference after return.
+- Lane 1754 broadens the proven `__get()`/`offsetGet()` backing analyzer by
+  one side-effect-free key shape: locals initialized from literal int/string
+  keys may be used as backing-path indexes, while non-literal/dynamic key
+  variables and arbitrary method bodies remain unsupported.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

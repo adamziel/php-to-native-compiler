@@ -225,13 +225,15 @@
   local variable bound by reference to an indexed `$this->property[...]`
   backing bucket, followed by returning that local or a literal child below
   it, for example `$bucket =& $this->items[$offset]; return $bucket["leaf"];`.
+  Backing paths may also use locals initialized from literal int/string keys,
+  such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
   This does not add magic property roots without an array offset, magic
-  `__get()` bodies beyond direct variable/property/backing-offset returns
-  one local parameter-copy return, and one local indexed backing-alias return,
-  dynamic `offsetGet()` parameter keys, non-literal
+  `__get()` bodies beyond direct variable/property/backing-offset returns,
+  one local parameter-copy return, one local indexed backing-alias return, and
+  local literal-key aliases; dynamic `offsetGet()` parameter keys, non-literal
   `offsetGet()` path keys, side-effecting or broader `ArrayAccess::offsetGet()`
-  bodies beyond one local offset-parameter copy or local indexed backing-alias
-  return, arbitrary mixed nested
+  bodies beyond one local offset-parameter copy, one local indexed
+  backing-alias return, and local literal-key aliases; arbitrary mixed nested
   `ArrayAccess` object chains, broad same-container identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,

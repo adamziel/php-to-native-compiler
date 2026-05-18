@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 1754-C for one bounded `__get()`/`offsetGet()` return-body
+  broadening: local variables initialized from literal int/string keys may be
+  used as backing-bucket indexes in the existing proven return shapes, such as
+  `$leaf = "leaf"; return $this->items[$offset][$leaf];` and the equivalent
+  magic `__get()` backing path. Covered writes still preserve typed-reference
+  slots through the existing backing-bucket bridge. Arbitrary method bodies,
+  non-literal/dynamic key variables, broader complex alias sinks, exact PHP
+  fatal text, string COW identity, and native reference lowering remain
+  unsupported. Focused verification: raw system PHP output matched the new
+  `milestone1754` fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1754` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent
+  `local_literal_backing_keys_preserve_reference_slots` passed.
+
 - Added Lane 1753-C for by-reference closure captures of alias-backed direct
   variables. When `use (&$name)` captures a variable already routed through a
   covered array-offset alias group, closure invocation now prebinds the local
