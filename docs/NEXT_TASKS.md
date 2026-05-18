@@ -19971,6 +19971,18 @@ handled.
   PHP syntax, broader dynamic backing keys, and native reference lowering
   named as unsupported.
 
+## Lane 1773-C through Lane 1775-C: Broader Reference-Return Bodies
+
+- [x] Runtime/interpreter/tests/docs bundle: preserve reference-return lvalues
+  through by-reference `foreach` over supported array roots, by-value ordinary
+  object public-property foreach, by-value bounded
+  `Iterator`/`IteratorAggregate` foreach, and same-block labels/`goto` in
+  public by-reference `ArrayAccess::offsetGet()` and covered by-reference
+  `__get()` bodies. Keep nested cross-block `goto`, exception
+  unwinding/catch execution for thrown values, arbitrary unsupported PHP
+  syntax, broader dynamic backing keys, arbitrary Iterator side effects, and
+  native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

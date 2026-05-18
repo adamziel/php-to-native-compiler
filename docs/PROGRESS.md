@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 1773-C through Lane 1775-C as a bundled reference-return
+  method-body widening for the supported magic/`ArrayAccess` COW path. Public
+  by-reference `ArrayAccess::offsetGet()` and covered by-reference `__get()`
+  bodies can now preserve returned lvalues through by-reference `foreach`
+  loops over supported array roots, by-value ordinary object public-property
+  foreach, by-value bounded `Iterator`/`IteratorAggregate` foreach, and
+  same-block labels/`goto` in the method-body statement list. Returned
+  backing buckets keep copied reference-slot write-through. Nested cross-block
+  `goto`, exception unwinding/catch execution for thrown values, unsupported
+  PHP syntax, broader dynamic backing keys, arbitrary Iterator side effects,
+  and native reference lowering remain unsupported. Focused verification:
+  raw system PHP output matched the new `milestone1773`, `milestone1774`,
+  and `milestone1775` fixtures; `cargo run -q -p phpc -- test --compare-php`
+  passed each new fixture directory with `1` fixture, `1` system PHP
+  comparison, and `0` skips; focused `functions_and_scopes` milestone tests
+  passed.
+
 - Added Lane 1772-C for by-value array `foreach` reference-return bodies in
   the supported magic/`ArrayAccess` method-body subset. Public by-reference
   `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies can now

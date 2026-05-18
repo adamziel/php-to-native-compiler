@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T23:39:33+02:00
+
+- Checkpoint before this task: `cefc9052 runtime: support foreach reference
+  returns`, pushed to `origin/master`.
+- Task attempted: Lane 1773-C through Lane 1775-C bundle, widening the
+  supported magic/`ArrayAccess` reference-return method-body executor beyond
+  by-value array `foreach`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1773/*`, `tests/fixtures/milestone1774/*`,
+  `tests/fixtures/milestone1775/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched `tests/fixtures/milestone1773/byref_foreach_reference_returns_cow.php`,
+  `tests/fixtures/milestone1774/object_iterator_foreach_reference_returns_cow.php`,
+  and `tests/fixtures/milestone1775/goto_reference_returns_cow.php`; `cargo
+  run -q -p phpc -- test --compare-php` passed for each of
+  `tests/fixtures/milestone1773`, `tests/fixtures/milestone1774`, and
+  `tests/fixtures/milestone1775`; focused `cargo test -q -p phpc --test
+  functions_and_scopes milestone177` passed.
+- Remaining COW gaps: nested cross-block `goto`, exception unwinding/catch
+  execution for thrown values inside magic/`ArrayAccess` reference-return
+  bodies, unsupported PHP syntax inside those bodies, broader
+  dynamic/non-literal backing-key analysis, arbitrary Iterator side effects,
+  arbitrary closure capture roots, broader complex alias sinks and alias
+  lifetime ordering, exact PHP stderr/fatal text, binary/multibyte string
+  offset behavior, and native reference/string COW lowering.
+- Next concrete task: run adjacent regressions, formatting/diff/check gates,
+  then the full `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T01:51:00+02:00
 
 - Checkpoint before this task: `3729d92b runtime: support dynamic this

@@ -32,7 +32,16 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1772:
+The current in-progress implementation frontier is Lane 1775:
+
+- Lanes 1773 through 1775 widen the supported magic/`ArrayAccess`
+  reference-return method-body executor. Public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies now
+  preserve returned lvalues through by-reference `foreach` loops over
+  supported array roots, by-value ordinary object public-property foreach,
+  by-value bounded `Iterator`/`IteratorAggregate` foreach, and same-block
+  labels/`goto`, while keeping copied COW reference-slot write-through for the
+  selected backing bucket.
 
 - Lane 1772 preserves reference-return lvalues through by-value array
   `foreach` bodies in public by-reference `ArrayAccess::offsetGet()` and

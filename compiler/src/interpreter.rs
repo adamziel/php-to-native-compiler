@@ -36528,34 +36528,58 @@ impl Interpreter {
                     Value::Array(array) => self.execute_reference_return_assignment_foreach_array(
                         function, array, key, value, body, *span, scope,
                     ),
-                    other => match self
-                        .execute_foreach_by_value_iterable(other, key, value, body, *span, scope)?
+                    Value::Object(object)
+                        if self
+                            .classes
+                            .implements_interface(object.class_id(), "Iterator") =>
                     {
-                        Flow::Normal => Ok(ReferenceReturnBodyFlow::Normal),
-                        Flow::Return(_) => Err(runtime_error(
-                            *span,
-                            RuntimeError::unsupported_call(
-                                callable_name(&function.name),
-                                "reference returns through this foreach iterable form are not implemented",
-                            ),
-                        )),
-                        Flow::Break { depth, span } => {
-                            Ok(ReferenceReturnBodyFlow::Break { depth, span })
+                        self.execute_reference_return_assignment_foreach_iterator_by_value(
+                            function, object, key, value, body, *span, scope,
+                        )
+                    }
+                    Value::Object(object)
+                        if self
+                            .classes
+                            .implements_interface(object.class_id(), "IteratorAggregate") =>
+                    {
+                        let iterator =
+                            self.call_required_iterator_method(object, "getIterator", *span)?;
+                        match iterator {
+                            Value::Object(iterator)
+                                if self
+                                    .classes
+                                    .implements_interface(iterator.class_id(), "Iterator") =>
+                            {
+                                self.execute_reference_return_assignment_foreach_iterator_by_value(
+                                    function, iterator, key, value, body, *span, scope,
+                                )
+                            }
+                            other => Err(runtime_error(
+                                *span,
+                                RuntimeError::invalid_foreach(format!(
+                                    "IteratorAggregate::getIterator() must return an Iterator object in the current subset, got {}",
+                                    other.type_name()
+                                )),
+                            )),
                         }
-                        Flow::Continue { depth, span } => {
-                            Ok(ReferenceReturnBodyFlow::Continue { depth, span })
-                        }
-                        Flow::Exit(_) => Err(runtime_error(
-                            *span,
-                            RuntimeError::unsupported_call(
-                                callable_name(&function.name),
-                                "exit during reference-return evaluation is not implemented",
-                            ),
-                        )),
-                        Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
                     },
+                    Value::Object(object) if !self.is_traversable_object(&object) => self
+                        .execute_reference_return_assignment_foreach_public_object_by_value(
+                            function, object, key, value, body, *span, scope,
+                        ),
+                    other => Err(runtime_error(
+                        *span,
+                        RuntimeError::invalid_foreach(format!(
+                            "can only iterate arrays, ordinary public-property objects, or bounded Iterator objects in the current subset, got {}",
+                            other.type_name()
+                        )),
+                    )),
                 };
             }
+
+            return self.execute_reference_return_assignment_foreach_by_reference(
+                function, iterable, key, value, body, *span, scope,
+            );
         }
 
         if let Stmt::Try {
@@ -36603,6 +36627,134 @@ impl Interpreter {
         }
     }
 
+    fn execute_reference_return_assignment_foreach_flow(
+        &mut self,
+        function: &FunctionDecl,
+        body: &[Stmt],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnBodyFlow>> {
+        match self.execute_reference_return_assignment_statement_list(function, body, scope)? {
+            ReferenceReturnBodyFlow::Normal => Ok(None),
+            ReferenceReturnBodyFlow::Continue { depth, .. } if depth <= 1 => Ok(None),
+            ReferenceReturnBodyFlow::Continue { depth, span } => {
+                Ok(Some(ReferenceReturnBodyFlow::Continue {
+                    depth: depth - 1,
+                    span,
+                }))
+            }
+            ReferenceReturnBodyFlow::Break { depth, .. } if depth <= 1 => {
+                Ok(Some(ReferenceReturnBodyFlow::Normal))
+            }
+            ReferenceReturnBodyFlow::Break { depth, span } => {
+                Ok(Some(ReferenceReturnBodyFlow::Break {
+                    depth: depth - 1,
+                    span,
+                }))
+            }
+            flow @ ReferenceReturnBodyFlow::Return(_) => Ok(Some(flow)),
+        }
+    }
+
+    fn execute_reference_return_assignment_foreach_public_object_by_value(
+        &mut self,
+        function: &FunctionDecl,
+        object: PhpObject,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnBodyFlow> {
+        let property_names: Vec<String> = object
+            .properties()
+            .into_iter()
+            .filter(|property| {
+                property.visibility() == Visibility::Public && property.is_initialized()
+            })
+            .map(|property| property.name().to_string())
+            .collect();
+
+        for property in property_names {
+            self.tick(span)?;
+            if let Some(key) = key {
+                scope.write_static(key, Value::String(property.clone()));
+            }
+            scope.write_static(value, object.read_public_property(&property)?);
+            if let Some(flow) =
+                self.execute_reference_return_assignment_foreach_flow(function, body, scope)?
+            {
+                return Ok(flow);
+            }
+        }
+
+        Ok(ReferenceReturnBodyFlow::Normal)
+    }
+
+    fn execute_reference_return_assignment_foreach_iterator_by_value(
+        &mut self,
+        function: &FunctionDecl,
+        object: PhpObject,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnBodyFlow> {
+        self.call_required_iterator_method(object.clone(), "rewind", span)?;
+
+        loop {
+            if !self
+                .call_required_iterator_method(object.clone(), "valid", span)?
+                .is_truthy()
+            {
+                break;
+            }
+
+            self.tick(span)?;
+            let (current, array_copy_source) = self
+                .call_required_iterator_current_method_with_array_copy_source(
+                    object.clone(),
+                    span,
+                    scope,
+                )?;
+            if let Some(key) = key {
+                let iterator_key =
+                    self.call_required_iterator_method(object.clone(), "key", span)?;
+                scope.write_static(key, iterator_key);
+            }
+            let target_is_alias = scope.is_array_offset_alias_name(value);
+            let current_is_array = matches!(current, Value::Array(_));
+            scope.write_static(value, current);
+            if !target_is_alias && current_is_array {
+                if let Some(source) = array_copy_source {
+                    scope.mirror_public_object_property_aliases_from_array_copy(
+                        value,
+                        &source.object,
+                        &source.property,
+                        &source.keys,
+                        source.include_exact_path,
+                    );
+                }
+            }
+
+            match self.execute_reference_return_assignment_foreach_flow(function, body, scope)? {
+                None => {
+                    self.call_required_iterator_method(object.clone(), "next", span)?;
+                }
+                Some(ReferenceReturnBodyFlow::Normal) => break,
+                Some(ReferenceReturnBodyFlow::Continue { depth, span }) => {
+                    return Ok(ReferenceReturnBodyFlow::Continue { depth, span });
+                }
+                Some(ReferenceReturnBodyFlow::Break { depth, span }) => {
+                    return Ok(ReferenceReturnBodyFlow::Break { depth, span });
+                }
+                Some(flow @ ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
+            }
+        }
+
+        Ok(ReferenceReturnBodyFlow::Normal)
+    }
+
     fn execute_reference_return_assignment_foreach_array(
         &mut self,
         function: &FunctionDecl,
@@ -36641,6 +36793,134 @@ impl Interpreter {
             }
         }
 
+        Ok(ReferenceReturnBodyFlow::Normal)
+    }
+
+    fn execute_reference_return_assignment_foreach_by_reference(
+        &mut self,
+        function: &FunctionDecl,
+        iterable: &Expr,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnBodyFlow> {
+        let root = self.by_reference_foreach_root(iterable, scope, span)?;
+        Self::read_foreach_root_array(&root, scope, span)?;
+        let mut position = 0usize;
+        let mut lingering_reference_key = None;
+
+        loop {
+            let array = Self::read_foreach_root_array(&root, scope, span)?;
+            let Some(entry) = array.entries().get(position) else {
+                break;
+            };
+            let entry_key = entry.key.clone();
+            self.tick(span)?;
+
+            if let Some(key) = key {
+                scope.write_static(key, value_from_array_key(&entry_key));
+            }
+            bind_foreach_reference_to_key(scope, value, &root, &entry_key, span)?;
+            self.active_foreach_references.push(ActiveForeachReference {
+                root: root.clone(),
+                value_name: value.to_string(),
+                key: entry_key.clone(),
+            });
+            let flow_result =
+                self.execute_reference_return_assignment_statement_list(function, body, scope);
+            self.active_foreach_references.pop();
+            let flow = flow_result?;
+
+            let value_still_bound = if let Some(expected_aliases) =
+                foreach_root_slot_aliases(scope, &root, &entry_key)
+            {
+                scope
+                    .array_offset_aliases_for_name(value)
+                    .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
+            } else {
+                match &root {
+                    ForeachArrayRoot::Static { name, keys } => {
+                        let mut alias_keys = keys.clone();
+                        alias_keys.push(entry_key.clone());
+                        scope.is_static_bound_to_array_offset_path(value, name, &alias_keys)
+                    }
+                    ForeachArrayRoot::Global { name, keys } => {
+                        let mut alias_keys = keys.clone();
+                        alias_keys.push(entry_key.clone());
+                        scope.is_static_bound_to_global_array_offset_path(value, name, &alias_keys)
+                    }
+                    ForeachArrayRoot::Alias { root, keys } => {
+                        let mut alias_keys = keys.clone();
+                        alias_keys.push(entry_key.clone());
+                        scope.is_static_bound_to_array_offset_alias_root(value, root, &alias_keys)
+                    }
+                    ForeachArrayRoot::Aliases { .. } => false,
+                    ForeachArrayRoot::ObjectProperties { .. } => false,
+                }
+            };
+            let array = Self::read_foreach_root_array(&root, scope, span)?;
+            let current_position = array
+                .entries()
+                .iter()
+                .position(|entry| entry.key == entry_key);
+            lingering_reference_key = if value_still_bound && current_position.is_some() {
+                Some(entry_key.clone())
+            } else {
+                None
+            };
+            let next_position = match current_position {
+                Some(current_position) if current_position > position => position,
+                Some(current_position) => current_position + 1,
+                None => {
+                    lingering_reference_key = None;
+                    position
+                }
+            };
+            position = next_position;
+
+            match flow {
+                ReferenceReturnBodyFlow::Normal => {}
+                ReferenceReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                ReferenceReturnBodyFlow::Continue {
+                    depth,
+                    span: flow_span,
+                } => {
+                    bind_foreach_lingering_reference(
+                        scope,
+                        value,
+                        &root,
+                        lingering_reference_key,
+                        span,
+                    )?;
+                    return Ok(ReferenceReturnBodyFlow::Continue {
+                        depth: depth - 1,
+                        span: flow_span,
+                    });
+                }
+                ReferenceReturnBodyFlow::Break { depth, .. } if depth <= 1 => break,
+                ReferenceReturnBodyFlow::Break {
+                    depth,
+                    span: flow_span,
+                } => {
+                    bind_foreach_lingering_reference(
+                        scope,
+                        value,
+                        &root,
+                        lingering_reference_key,
+                        span,
+                    )?;
+                    return Ok(ReferenceReturnBodyFlow::Break {
+                        depth: depth - 1,
+                        span: flow_span,
+                    });
+                }
+                flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
+            }
+        }
+
+        bind_foreach_lingering_reference(scope, value, &root, lingering_reference_key, span)?;
         Ok(ReferenceReturnBodyFlow::Normal)
     }
 
@@ -36713,11 +36993,29 @@ impl Interpreter {
         statements: &[Stmt],
         scope: &mut SymbolTable,
     ) -> CompileResult<ReferenceReturnBodyFlow> {
-        for stmt in statements {
+        let mut labels = HashMap::new();
+        for (index, stmt) in statements.iter().enumerate() {
+            if let Stmt::Label { name, .. } = stmt {
+                labels.insert(name.clone(), index);
+            }
+        }
+
+        let mut index = 0;
+        while index < statements.len() {
+            let stmt = &statements[index];
+            if let Stmt::Goto { label, span } = stmt {
+                let Some(target) = labels.get(label) else {
+                    return Err(undefined_goto_label_error(*span, label));
+                };
+                index = *target;
+                continue;
+            }
+
             let flow = self.execute_reference_return_assignment_statement(function, stmt, scope)?;
             if !matches!(flow, ReferenceReturnBodyFlow::Normal) {
                 return Ok(flow);
             }
+            index += 1;
         }
         Ok(ReferenceReturnBodyFlow::Normal)
     }

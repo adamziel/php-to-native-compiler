@@ -248,6 +248,14 @@
   By-value array `foreach` bodies are covered for the same supported return
   lvalue shapes, including local `continue` before the selected backing bucket
   is returned.
+  By-reference `foreach` bodies over supported array roots are covered for
+  the same supported return lvalue shapes, including returning the
+  by-reference loop value while it remains bound to the selected backing
+  slot. By-value `foreach` over ordinary objects' initialized public
+  properties and bounded `Iterator`/`IteratorAggregate` objects is also
+  covered when the loop body returns one of the supported lvalue shapes.
+  Same-block labels and `goto` in the reference-return method-body statement
+  list are covered when control reaches a supported returned lvalue.
   Public by-reference `__get()` uses the same assignment-capable return path
   for covered array-offset returns such as `return $this->store[$name];`.
   Covered return expressions may also use a dynamically selected `$this`
@@ -264,9 +272,9 @@
   `__get()` roots beyond the covered direct variable/property/backing-offset
   returns; exception unwinding or catch execution for thrown values inside
   reference-return bodies; arbitrary dynamic/non-literal backing-key analysis;
-  by-reference `foreach` or Iterator/object foreach reference returns;
-  arbitrary PHP syntax outside the interpreter subset; arbitrary mixed nested
-  `ArrayAccess` object chains; broad same-container identity for
+  nested cross-block `goto`, arbitrary Iterator side effects, arbitrary PHP
+  syntax outside the interpreter subset; arbitrary mixed nested `ArrayAccess`
+  object chains; broad same-container identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,
   arbitrary reference expressions,
