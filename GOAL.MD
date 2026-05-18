@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1727:
+The current in-progress implementation frontier is Lane 1728:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -219,6 +219,12 @@ The current in-progress implementation frontier is Lane 1727:
   Cloning a reference-backed slot preserves the reference container and writes
   through either slot update the shared container, while ordinary value-backed
   slots keep clone-by-value and detach-on-write behavior.
+- Lane 1728 wires the same reference-cell substrate into object-property
+  storage. Public property reads, writes, `isset`/`empty`, object clone
+  storage, object-to-array enumeration, and diagnostic output can now read
+  reference-backed properties through cloned values, and focused runtime
+  coverage proves writes through a cloned object property update the shared
+  reference container.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

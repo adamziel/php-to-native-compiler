@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1728-C runtime value-model substrate for reference-backed object
+  properties. `ObjectProperty` now stores either a by-value PHP value cell or a
+  PHP reference cell; public property writes update the reference container,
+  public reads and `isset`/`empty` read through cloned values, and object
+  clones preserve reference-backed property identity while ordinary property
+  value cells remain clone-by-value. Object property enumeration and
+  `var_dump`/`print_r` formatting now use cloned property values so
+  reference-backed properties do not require borrowed value access. This still
+  does not wire interpreter-wide PHP-visible references/COW through all
+  lvalues, nested array/object operations, strings, alias lifetimes, or native
+  lowering. Focused verification: `cargo check -q -p phpc` passed and
+  `cargo test -q -p php_runtime
+  object_properties_can_hold_reference_cells_and_share_writes` passed `1`
+  test.
+
 - Added Lane 1727-C runtime value-model substrate for reference-backed array
   slots. `ArraySlot` now stores either a by-value PHP value cell or a PHP
   reference cell; cloning a reference-backed slot keeps the same reference

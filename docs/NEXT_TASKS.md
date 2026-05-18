@@ -19449,6 +19449,17 @@ handled.
   slots, string COW identity, and native reference lowering named as
   unsupported.
 
+## Lane 1728-C: Reference-Backed Object Property Storage
+
+- [x] Runtime/tests/docs lane: wire the PHP reference-cell substrate into
+  object-property storage so a property can hold either a by-value PHP value
+  cell or a PHP reference cell. Prove reference-backed public property writes
+  update the shared reference container and cloned objects preserve the
+  reference-backed property identity, while existing value-backed properties
+  remain clone-by-value. Keep interpreter-wide PHP-visible references/COW,
+  nested lvalue wiring, string COW identity, exact alias lifetimes, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -5675,7 +5675,7 @@ impl Interpreter {
             if property.visibility() == Visibility::Public && property.is_initialized() {
                 array.insert(
                     ArrayKey::String(property.name().to_string()),
-                    property.value().clone(),
+                    property.value_cloned(),
                 );
             }
         }
@@ -40439,7 +40439,7 @@ impl Interpreter {
                         {
                             properties.insert(
                                 ArrayKey::from(property.name()),
-                                property.value().clone(),
+                                property.value_cloned(),
                             );
                         }
                     }
@@ -40470,7 +40470,7 @@ impl Interpreter {
                         }
                         properties.insert(
                             ArrayKey::String(property.mangled_name()),
-                            property.value().clone(),
+                            property.value_cloned(),
                         );
                     }
                     Ok(Value::Array(properties))
@@ -55746,7 +55746,8 @@ fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
                     "{padding}  [{}]=>\n",
                     format_var_dump_object_property(&property)
                 ));
-                output.push_str(&format_var_dump_with_indent(property.value(), indent + 1));
+                let property_value = property.value_cloned();
+                output.push_str(&format_var_dump_with_indent(&property_value, indent + 1));
             }
             output.push_str(&format!("{padding}}}\n"));
             output
@@ -55818,12 +55819,12 @@ fn format_print_r_object(object: &PhpObject, indent: usize) -> String {
             "{child_padding}[{}] => ",
             format_print_r_object_property(&property)
         ));
-        match property.value() {
+        match property.value_cloned() {
             Value::Array(value) => {
-                output.push_str(&format_print_r_array(value, indent + 1));
+                output.push_str(&format_print_r_array(&value, indent + 1));
             }
             Value::Object(value) => {
-                output.push_str(&format_print_r_object(value, indent + 1));
+                output.push_str(&format_print_r_object(&value, indent + 1));
             }
             value => {
                 output.push_str(&value.echo_string());

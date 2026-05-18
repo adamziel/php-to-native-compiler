@@ -4404,10 +4404,12 @@
   primitive with stable cell identity, value-based equality, and
   clone-by-value behavior. The runtime also has a focused PHP reference-cell
   container primitive with shared identity and write-through alias behavior,
-  and `ArraySlot` can store that reference container so cloned
-  reference-backed slots keep shared writes. These are substrate for later
-  PHP-visible reference containers and COW separation, not a claim of general
-  PHP-visible references yet.
+  and `ArraySlot` plus object-property storage can store that reference
+  container so cloned reference-backed slots/properties keep shared writes.
+  Object property reads, enumeration, and diagnostic output use cloned values
+  for this storage shape. These are substrate for later PHP-visible reference
+  containers and COW separation, not a claim of general PHP-visible references
+  yet.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

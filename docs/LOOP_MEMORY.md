@@ -221,6 +221,31 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: support reference-backed array slots"` if
   the full gate passes.
 
+## Loop Event 2026-05-18T18:35:00+02:00
+
+- Checkpoint before this task: `9cd4d551 runtime: support reference-backed
+  array slots`, pushed to `origin/master`.
+- Task attempted: Lane 1728-C reference-backed object-property storage.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed and
+  `cargo test -q -p php_runtime
+  object_properties_can_hold_reference_cells_and_share_writes` passed `1`
+  focused runtime test.
+- Semantic gap reduced: object properties can now store either a by-value PHP
+  value cell or a PHP reference cell; public property writes update the
+  reference container, cloned objects preserve reference-backed property
+  identity, and object property enumeration/diagnostic output read cloned
+  values instead of borrowing reference-backed payloads.
+- Remaining semantic gaps: interpreter-wide PHP-visible references/COW,
+  nested lvalue wiring, string COW identity, exact alias lifetime/error-order
+  parity, and native reference lowering remain unsupported.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, and then
+  one full checkpoint with
+  `tools/checkpoint.sh "runtime: support reference-backed object properties"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

@@ -3666,7 +3666,7 @@ impl PhpObject {
             name: name.to_string(),
             visibility,
             type_decl: type_decl.clone(),
-            cell: PhpValueCell::new(Value::Null),
+            storage: ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null)),
             initialized: type_decl.is_none(),
         });
     }
@@ -3718,7 +3718,7 @@ impl PhpObject {
         let properties = self.properties.borrow();
         let property = self.public_property_or_error(&properties, name)?;
 
-        Ok(property.initialized_value()?.clone())
+        property.initialized_value_cloned()
     }
 
     pub fn public_property_cell_id(&self, name: &str) -> RuntimeResult<PhpValueCellId> {
@@ -3726,6 +3726,16 @@ impl PhpObject {
         let property = self.public_property_or_error(&properties, name)?;
 
         Ok(property.cell_id())
+    }
+
+    pub fn public_property_reference_cell_id(
+        &self,
+        name: &str,
+    ) -> RuntimeResult<Option<PhpReferenceCellId>> {
+        let properties = self.properties.borrow();
+        let property = self.public_property_or_error(&properties, name)?;
+
+        Ok(property.reference_cell_id())
     }
 
     pub fn read_property_from_context(
@@ -3738,7 +3748,7 @@ impl PhpObject {
         let property =
             self.context_property(&properties, name, current_class_id, protected_class_ids)?;
 
-        Ok(property.initialized_value()?.clone())
+        property.initialized_value_cloned()
     }
 
     pub fn property_visibility_from_context(
@@ -3760,7 +3770,7 @@ impl PhpObject {
             return Ok(false);
         };
 
-        Ok(property.initialized && !matches!(property.value(), Value::Null))
+        Ok(property.initialized && !matches!(property.value_cloned(), Value::Null))
     }
 
     pub fn is_property_set_from_context(
@@ -3780,7 +3790,7 @@ impl PhpObject {
             return Ok(false);
         };
 
-        Ok(property.initialized && !matches!(property.value(), Value::Null))
+        Ok(property.initialized && !matches!(property.value_cloned(), Value::Null))
     }
 
     pub fn read_public_property_for_isset(&self, name: &str) -> RuntimeResult<Option<Value>> {
@@ -3793,7 +3803,7 @@ impl PhpObject {
             return Ok(None);
         }
 
-        Ok(Some(property.value().clone()))
+        Ok(Some(property.value_cloned()))
     }
 
     pub fn read_property_for_isset_from_context(
@@ -3817,7 +3827,7 @@ impl PhpObject {
             return Ok(None);
         }
 
-        Ok(Some(property.value().clone()))
+        Ok(Some(property.value_cloned()))
     }
 
     pub fn read_current_public_property(&self, name: &str) -> Option<Value> {
@@ -3825,7 +3835,7 @@ impl PhpObject {
             .borrow()
             .iter()
             .find(|property| property.name == name && property.visibility == Visibility::Public)
-            .and_then(|property| property.initialized.then(|| property.value().clone()))
+            .and_then(|property| property.initialized.then(|| property.value_cloned()))
     }
 
     pub fn is_public_property_empty(&self, name: &str) -> RuntimeResult<bool> {
@@ -3838,7 +3848,7 @@ impl PhpObject {
             return Ok(true);
         }
 
-        Ok(!property.value().is_truthy())
+        Ok(!property.value_cloned().is_truthy())
     }
 
     pub fn is_property_empty_from_context(
@@ -3862,7 +3872,7 @@ impl PhpObject {
             return Ok(true);
         }
 
-        Ok(!property.value().is_truthy())
+        Ok(!property.value_cloned().is_truthy())
     }
 
     pub fn write_public_property(&self, name: &str, value: Value) -> RuntimeResult<()> {
@@ -3871,6 +3881,21 @@ impl PhpObject {
 
         let value = coerce_typed_property_value(property, value)?;
         property.set_value(value);
+        property.initialized = true;
+        Ok(())
+    }
+
+    pub fn bind_public_property_reference_cell(
+        &self,
+        name: &str,
+        reference: PhpReferenceCell,
+    ) -> RuntimeResult<()> {
+        let mut properties = self.properties.borrow_mut();
+        let property = self.public_property_mut_or_error(&mut properties, name)?;
+
+        let value = coerce_typed_property_value(property, reference.value_cloned())?;
+        reference.set_value(value);
+        property.set_reference_cell(reference);
         property.initialized = true;
         Ok(())
     }
@@ -3909,7 +3934,7 @@ impl PhpObject {
             name: name.to_string(),
             visibility: Visibility::Public,
             type_decl: None,
-            cell: PhpValueCell::new(value),
+            storage: ObjectPropertyStorage::Value(PhpValueCell::new(value)),
             initialized: true,
         });
         Ok(())
@@ -4165,8 +4190,14 @@ pub struct ObjectProperty {
     name: String,
     visibility: Visibility,
     type_decl: Option<String>,
-    cell: PhpValueCell,
+    storage: ObjectPropertyStorage,
     initialized: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ObjectPropertyStorage {
+    Value(PhpValueCell),
+    Reference(PhpReferenceCell),
 }
 
 impl ObjectProperty {
@@ -4187,11 +4218,48 @@ impl ObjectProperty {
     }
 
     pub fn value(&self) -> &Value {
-        self.cell.value()
+        match &self.storage {
+            ObjectPropertyStorage::Value(cell) => cell.value(),
+            ObjectPropertyStorage::Reference(_) => {
+                panic!("reference-backed object properties require value_cloned() reads")
+            }
+        }
+    }
+
+    pub fn value_cloned(&self) -> Value {
+        match &self.storage {
+            ObjectPropertyStorage::Value(cell) => cell.value_cloned(),
+            ObjectPropertyStorage::Reference(reference) => reference.value_cloned(),
+        }
     }
 
     pub fn cell_id(&self) -> PhpValueCellId {
-        self.cell.id()
+        match &self.storage {
+            ObjectPropertyStorage::Value(cell) => cell.id(),
+            ObjectPropertyStorage::Reference(_) => {
+                panic!("reference-backed object properties do not have value-cell ids")
+            }
+        }
+    }
+
+    pub fn reference_cell_id(&self) -> Option<PhpReferenceCellId> {
+        match &self.storage {
+            ObjectPropertyStorage::Value(_) => None,
+            ObjectPropertyStorage::Reference(reference) => Some(reference.id()),
+        }
+    }
+
+    pub fn is_reference(&self) -> bool {
+        matches!(self.storage, ObjectPropertyStorage::Reference(_))
+    }
+
+    pub fn shares_reference_with(&self, other: &Self) -> bool {
+        match (&self.storage, &other.storage) {
+            (ObjectPropertyStorage::Reference(left), ObjectPropertyStorage::Reference(right)) => {
+                left.shares_reference_with(right)
+            }
+            _ => false,
+        }
     }
 
     pub fn is_initialized(&self) -> bool {
@@ -4218,9 +4286,9 @@ impl ObjectProperty {
         }
     }
 
-    fn initialized_value(&self) -> RuntimeResult<&Value> {
+    fn initialized_value_cloned(&self) -> RuntimeResult<Value> {
         if self.initialized {
-            Ok(self.value())
+            Ok(self.value_cloned())
         } else {
             Err(RuntimeError::uninitialized_typed_property(
                 self.declaring_class_name.clone(),
@@ -4230,7 +4298,14 @@ impl ObjectProperty {
     }
 
     fn set_value(&mut self, value: Value) {
-        self.cell.set_value(value);
+        match &mut self.storage {
+            ObjectPropertyStorage::Value(cell) => cell.set_value(value),
+            ObjectPropertyStorage::Reference(reference) => reference.set_value(value),
+        }
+    }
+
+    fn set_reference_cell(&mut self, reference: PhpReferenceCell) {
+        self.storage = ObjectPropertyStorage::Reference(reference);
     }
 }
 
@@ -6373,6 +6448,59 @@ mod tests {
 
         slot.set_value(Value::Int(42));
         assert_eq!(reference.value_cloned(), Value::Int(42));
+    }
+
+    #[test]
+    fn object_properties_can_hold_reference_cells_and_share_writes() {
+        let mut classes = PhpClassTable::new();
+        let id = classes.declare_class("Packet").unwrap();
+        let class = classes.get_mut(id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("payload", Visibility::Public))
+            .unwrap();
+
+        let object = PhpObject::from_class(class);
+        let reference = PhpReferenceCell::new(Value::String("original".to_string()));
+        object
+            .bind_public_property_reference_cell("payload", reference.clone())
+            .unwrap();
+
+        assert_eq!(
+            object.public_property_reference_cell_id("payload").unwrap(),
+            Some(reference.id())
+        );
+        assert_eq!(
+            object.read_public_property("payload").unwrap(),
+            Value::String("original".to_string())
+        );
+        assert!(object.is_public_property_set("payload").unwrap());
+        assert!(!object.is_public_property_empty("payload").unwrap());
+
+        object
+            .write_public_property(
+                "payload",
+                Value::String("changed-through-property".to_string()),
+            )
+            .unwrap();
+        assert_eq!(
+            reference.value_cloned(),
+            Value::String("changed-through-property".to_string())
+        );
+
+        let clone = object.shallow_clone_with_id(1001);
+        assert_eq!(
+            clone.public_property_reference_cell_id("payload").unwrap(),
+            Some(reference.id())
+        );
+
+        clone
+            .write_public_property("payload", Value::Int(7))
+            .unwrap();
+        assert_eq!(reference.value_cloned(), Value::Int(7));
+        assert_eq!(
+            object.read_public_property("payload").unwrap(),
+            Value::Int(7)
+        );
     }
 
     #[test]
