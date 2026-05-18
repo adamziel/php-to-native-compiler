@@ -985,6 +985,12 @@ before detaching descendants and syncing aliases. That keeps direct backing
 writes through a visible object name coherent with aliases originally reached
 through a factory-return holder, magic `__get()`, and nested `ArrayAccess`
 object handles.
+For the covered magic/`ArrayAccess` alias-source path, local alias unset uses
+the existing static-name detach machinery: removing the local variable binding
+does not remove copied-bucket reference-slot aliases stored under the backing
+object-property root. Reusing the local name therefore stays detached, while
+subsequent backing-bucket writes can still synchronize the nested reference
+slots that were copied into the bucket.
 The same magic append-store helper also covers the focused plain-array route
 when visible public `__get($name)` returns a direct variable by reference and
 that returned cell currently holds an array or `null`. The runtime binds the

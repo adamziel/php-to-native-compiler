@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T13:45:00+02:00
+
+- Checkpoint before this task: `d2f56baf runtime: sync factory ArrayAccess
+  backing references`, pushed to `origin/master`.
+- Task attempted: Lane 1700-C local alias unset/detach coverage for the
+  focused magic-property mixed `ArrayAccess` reference-source COW shape.
+- Files changed so far: `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1700/*`, `GOAL.MD`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax check passed for the
+  new milestone1700 fixture; the `milestone1700` `functions_and_scopes`
+  filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1700`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+  `cargo check -q -p phpc`, `cargo fmt --check`, `git diff --check`, the
+  adjacent `milestone1699` `functions_and_scopes` filter, and adjacent
+  `milestone1699` fixture comparison also passed.
+- Semantic gap reduced: after direct
+  `$alias =& $box->missing["outer"]["leaf"]; $alias[] = $array;`,
+  `unset($alias); $alias = ["detached-local"];` detaches only the local name,
+  leaves the backing bucket intact, and keeps nested references copied into
+  the backing bucket synchronized for later direct backing-property writes.
+- Remaining semantic gaps: broader alias lifetime, destructor/shutdown/error
+  ordering, arbitrary method-return/factory-root variants, by-value
+  terminal/plain-array mutation, arbitrary side-effecting or broader
+  `offsetGet()` bodies, broader `__get()` return bodies, scalar parent
+  overwrite/error parity, full references/COW, and native reference lowering
+  remain unsupported.
+- Next concrete task: checkpoint with
+  `tools/checkpoint.sh "runtime: pin magic ArrayAccess alias detach"` if the
+  full gate passes.
+
 ## Loop Event 2026-05-18T13:20:00+02:00
 
 - Checkpoint before this task: `b04d3f95 runtime: preserve longer mixed

@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Lane 1700-C local alias unset/detach coverage for the focused
+  magic-property mixed `ArrayAccess` reference-source COW shape. Direct
+  `$alias =& $box->missing["outer"]["leaf"]; $alias[] = $array;` now has
+  executable coverage proving that `unset($alias); $alias =
+  ["detached-local"];` detaches the local name without overwriting the backing
+  bucket, while later direct writes through the backing property still
+  synchronize nested references copied into the bucket. This does not add
+  broader alias lifetime, destructor/shutdown/error ordering, arbitrary
+  method-return/factory-root variants, by-value terminal/plain-array mutation,
+  arbitrary side-effecting or broader `offsetGet()` bodies, broader `__get()`
+  return bodies, full references/COW, or native reference lowering. Focused
+  verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1700` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1700`
+  passed `1` fixture with `1` system PHP comparison and `0` skips. Before
+  checkpointing, `cargo check -q -p phpc`, `cargo fmt --check`,
+  `git diff --check`, the adjacent `milestone1699` `functions_and_scopes`
+  filter, and adjacent `milestone1699` fixture comparison also passed.
+
 - Added Lane 1699-C factory-root magic-property mixed `ArrayAccess`
   reference-source backing-write synchronization for the focused COW shape
   where a factory return is used as the holder root,

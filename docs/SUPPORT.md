@@ -921,6 +921,10 @@
   $alias[] = $array` binds to the leaf bucket, and later direct writes through
   the visible backing property such as `$leaf->items["leaf"][0]...` sync with
   aliases that were reached through hidden magic/`ArrayAccess` object handles.
+  Local alias unset/detach is covered for the same direct magic/`ArrayAccess`
+  reference-source shape: after `unset($alias)`, reusing `$alias` is detached
+  from the backing bucket, while nested references already stored inside the
+  backing bucket continue to synchronize with their original variables.
   Magic-property
   append stores below plain arrays are also
   supported for the focused by-reference `__get()`
@@ -975,7 +979,8 @@
   bridges, side-effecting or broader `offsetSet()`/`offsetGet()` bodies,
   built-in interface enforcement/signature validation, typed method
   invocation, broad references/copy-on-write, exact warning/visibility
-  diagnostics, and native lowering remain unsupported.
+  diagnostics, broader alias destruction/shutdown/error ordering, and native
+  lowering remain unsupported.
   Direct `$object[$key] op= expr`
   compound assignment is supported by reading through `offsetGet($key)`,
   applying the current compound-assignment helper, and writing the result back

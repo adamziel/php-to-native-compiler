@@ -18979,6 +18979,22 @@ handled.
   native reference lowering, and exact alias destruction/destructor ordering
   named as unsupported.
 
+## Lane 1700-C: Magic ArrayAccess Alias Unset Detach
+
+- [x] Runtime/tests/docs lane: pin local alias unset/detach behavior for the
+  focused magic-property mixed `ArrayAccess` reference-source path. The covered
+  shape binds `$alias =& $box->missing["outer"]["leaf"];`, appends an array
+  carrying copied nested reference slots through `$alias[] = $array`, then
+  runs `unset($alias); $alias = ["detached-local"];`. The local name is
+  detached from the backing bucket, the backing bucket is not overwritten by
+  the later local assignment, and direct backing-property writes still
+  synchronize the nested references copied into the bucket. Keep broader
+  alias lifetime, destructor/shutdown/error ordering, arbitrary
+  method-return/factory-root variants, by-value terminal/plain-array
+  mutation, arbitrary side-effecting or broader `offsetGet()` bodies, broader
+  `__get()` return bodies, scalar parent overwrite/error parity, full
+  references/COW, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
