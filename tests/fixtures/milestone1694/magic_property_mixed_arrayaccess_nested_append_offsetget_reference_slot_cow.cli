@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1694/magic_property_mixed_arrayaccess_nested_append_offsetget_reference_slot_cow.php
+stdout:
+via-mixed-arrayaccess-append|via-mixed-arrayaccess-label|via-mixed-arrayaccess-append|via-mixed-arrayaccess-label|1|plain|plain|1|0
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

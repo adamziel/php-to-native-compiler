@@ -18865,6 +18865,26 @@ handled.
   native reference lowering, and exact alias destruction/destructor ordering
   named as unsupported.
 
+## Lane 1694-C: Mixed Magic ArrayAccess Nested Append Mutation
+
+- [x] Runtime/tests/docs lane: parse and execute the focused mixed nested
+  `ArrayAccess` append store below a magic property when visible public
+  `__get($name)` returns an outer `ArrayAccess` object whose exact public
+  by-reference `offsetGet($offset)` returns a backing property bucket, and
+  that selected bucket contains another `ArrayAccess` object using the same
+  exact by-reference `offsetGet()` bridge. The covered direct shape is
+  `$box->missing["outer"]["inner"][] = $array`; the runtime resolves the
+  complete parent path through the existing recursive `ArrayAccess` alias
+  resolver, appends into the inner object's selected backing bucket, preserves
+  nested reference-slot metadata for appended array literals, and preserves
+  provenance through copied-bucket reads such as
+  `$box->missing["outer"]["inner"][0]`. Keep by-value intermediate
+  `ArrayAccess` object mutation, longer/arbitrary mixed chains,
+  side-effecting or broader `offsetGet()` bodies, broader `__get()` return
+  bodies, method-return or factory holder roots, scalar parent overwrite/error
+  parity, full references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

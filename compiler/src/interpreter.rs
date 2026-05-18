@@ -13602,16 +13602,11 @@ impl Interpreter {
         let hidden_name = self.hidden_array_access_reference_object_name(&array_access_object);
         scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
 
-        let Some((first_key, remaining_keys)) = keys.split_first() else {
-            return Ok(false);
-        };
-        let offset_get_keys = vec![first_key.clone()];
-
         if self
             .evaluate_array_access_by_value_reference_source_value_for_object(
                 array_access_object.clone(),
                 hidden_name.clone(),
-                offset_get_keys.clone(),
+                keys.clone(),
                 span,
                 scope,
             )?
@@ -13623,15 +13618,13 @@ impl Interpreter {
         let (parent_alias, _) = self.evaluate_array_access_reference_source_alias_for_object(
             array_access_object,
             hidden_name,
-            offset_get_keys,
+            keys,
             span,
             scope,
         )?;
-        let mut append_parent_keys = parent_alias.keys;
-        append_parent_keys.extend(remaining_keys.iter().cloned());
         let target_alias = scope.append_object_property_array_offset_reference_alias(
             parent_alias.root,
-            append_parent_keys,
+            parent_alias.keys,
             value,
             span,
         )?;

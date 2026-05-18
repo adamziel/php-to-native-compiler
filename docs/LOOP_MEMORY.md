@@ -26,6 +26,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T11:20:00+02:00
+
+- Checkpoint before this task: `c00aa10c runtime: preserve deeper magic
+  ArrayAccess append references`, pushed to `origin/master`.
+- Task attempted: reconcile the full PHP/WordPress compatibility goal into a
+  digestible canonical `GOAL.MD`, then advance the next focused COW gap.
+- Files changed so far: `GOAL.MD`, removed stale duplicate `GOAL.md`,
+  `README.md`, `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1694/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax check passed for the
+  new milestone1694 fixture; `cargo check -q -p phpc` passed;
+  `cargo fmt --check` passed; the `milestone1694` `functions_and_scopes`
+  filter passed `2` tests; and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1694` passed `1` fixture with `1` system PHP
+  comparison and `0` skips. Adjacent `milestone1693` and `milestone1692`
+  `functions_and_scopes` filters each passed `2` tests, adjacent
+  `milestone1693` and `milestone1692` fixture comparisons each passed `5`
+  fixtures with `5` system PHP comparisons and `0` skips, and
+  `git diff --check` passed.
+- Semantic gap reduced: direct
+  `$box->missing["outer"]["inner"][] = $array` now works for the focused mixed
+  nested magic-property `ArrayAccess` chain where the first by-reference
+  `offsetGet()` backing bucket contains another `ArrayAccess` object with the
+  same exact by-reference backing-property bridge. The append lands in the
+  inner object's selected backing bucket and copied-bucket reads preserve
+  nested reference slots.
+- Remaining semantic gaps: by-value intermediate `ArrayAccess` object mutation,
+  arbitrary/longer mixed chains, side-effecting or broader `offsetGet()`
+  bodies, broader `__get()` return bodies, method-return or factory holder
+  roots, full references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering remain unsupported.
+- Next concrete task: run adjacent COW regressions and checkpoint this lane if
+  they pass; then keep COW focus on broader mixed-chain/by-value intermediate
+  behavior or alias lifetime/detach coverage.
+
 ## Loop Event 2026-05-18T10:45:33+02:00
 
 - Checkpoint before this task: `6d2cc837 runtime: preserve magic

@@ -4,6 +4,45 @@
 
 Implemented:
 
+- Added Lane 1694-C focused mixed nested magic-property `ArrayAccess` append
+  mutation for the by-reference `offsetGet()` COW shape. When visible public
+  `__get($name)` returns an outer `ArrayAccess` object whose exact public
+  by-reference `offsetGet($offset)` returns a backing property bucket, and
+  that selected bucket contains another `ArrayAccess` object with the same
+  exact by-reference backing-property bridge, direct
+  `$box->missing["outer"]["inner"][] = $array` now appends into the inner
+  object's selected backing bucket. The append helper now resolves the
+  complete parent path through the existing recursive `ArrayAccess` alias
+  resolver instead of selecting only the first parent key and treating the
+  rest as a plain-array suffix. The focused fixture proves later
+  `$box->missing["outer"]["inner"][0]` copied-bucket reads preserve nested
+  reference slots while ordinary copied fields remain detached. This does not
+  add by-value intermediate `ArrayAccess` object mutation, arbitrary/longer
+  mixed chains, side-effecting or broader `offsetGet()` bodies, broader
+  `__get()` return bodies, method-return or factory holder roots, full
+  references/COW, native reference lowering, or exact alias
+  destruction/destructor ordering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  PHP syntax checks passed for the new fixture, `cargo check -q -p phpc`
+  passed, `cargo fmt --check` passed, the `milestone1694`
+  `functions_and_scopes` filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1694`
+  passed `1` fixture with `1` system PHP comparison and `0` skips. Adjacent
+  `milestone1693` and `milestone1692` `functions_and_scopes` filters each
+  passed `2` tests, and adjacent `milestone1693` and `milestone1692` fixture
+  comparisons each passed `5` fixtures with `5` system PHP comparisons and
+  `0` skips. `git diff --check` passed.
+
+- Reconciled the long-term PHP and WordPress compatibility roadmap into the
+  canonical `GOAL.MD` file. The goal artifact now removes the oversized
+  historical narrative, names the current checked-in Lane 1693 COW frontier,
+  separates success criteria from current evidence, and groups the remaining
+  hard blockers into reference/COW, object/dynamic PHP,
+  request/SAPI/streams/filesystem, database/persistence, WordPress runtime, and
+  native runtime ABI work. The stale duplicate `GOAL.md` was removed and the
+  README now points to `GOAL.MD`. This is a documentation reconciliation only;
+  it does not claim new runtime support.
+
 - Added Lane 1693-C deeper magic-property `ArrayAccess` nested append
   mutation for the focused by-reference `offsetGet()` COW shape. Direct
   `$box->missing["outer"]["inner"][] = $array`, direct dynamic

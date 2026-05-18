@@ -4499,6 +4499,22 @@ fn milestone1693_magic_property_array_access_two_key_nested_append_fixtures_matc
 }
 
 #[test]
+fn milestone1694_system_php_magic_property_mixed_array_access_nested_append_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1694/magic_property_mixed_arrayaccess_nested_append_offsetget_reference_slot_cow.php",
+        "../tests/fixtures/milestone1694/magic_property_mixed_arrayaccess_nested_append_offsetget_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1694_magic_property_mixed_array_access_nested_append_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1694/magic_property_mixed_arrayaccess_nested_append_offsetget_reference_slot_cow.php",
+        "../tests/fixtures/milestone1694/magic_property_mixed_arrayaccess_nested_append_offsetget_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

@@ -944,12 +944,19 @@ appended bucket. Nested array reads preserve provenance from an inner
 metadata. By-value `offsetGet()` remains the PHP notice/no-op boundary for
 this lane.
 For the focused deeper magic `ArrayAccess` append shape, such as
-`$box->missing["outer"]["inner"][] = $array`, the runtime still dispatches
-only the first parent key through `offsetGet("outer")`. The selected backing
-bucket then becomes the alias root for the remaining plain-array suffix
-before the final append. This keeps mixed nested `ArrayAccess` chains outside
-the lane while preserving reference metadata for copied buckets read back via
-`$box->missing["outer"]["inner"][0]`.
+`$box->missing["outer"]["inner"][] = $array`, the runtime asks the
+`ArrayAccess` reference-source resolver for the complete parent path before
+the final append. When the first selected bucket is a plain array, that keeps
+the existing behavior where `offsetGet("outer")` provides the backing alias
+root and the remaining parent path is materialized as plain-array storage. If
+that first selected bucket is another `ArrayAccess` object using the same
+exact by-reference `offsetGet($offset) { return $this->items[$offset]; }`
+bridge, the resolver recurses and the append lands in the inner object's
+selected backing bucket. Copied-bucket reads such as
+`$box->missing["outer"]["inner"][0]` can then mirror the stored bucket's
+nested reference metadata. Broader mixed chains, by-value intermediate
+objects, and side-effecting `offsetGet()` bodies remain outside the current
+model.
 The same magic append-store helper also covers the focused plain-array route
 when visible public `__get($name)` returns a direct variable by reference and
 that returned cell currently holds an array or `null`. The runtime binds the

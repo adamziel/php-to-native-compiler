@@ -890,7 +890,14 @@
   `$holders["box"]->{$name}["outer"]["inner"][] = $array`; the first key is
   selected through `offsetGet("outer")`, then the remaining parent path is
   materialized and appended as plain array storage inside that backing
-  bucket. By-value `offsetGet()` keeps PHP's indirect-modification
+  bucket. The same helper now also covers the focused mixed nested
+  `ArrayAccess` chain where that first selected bucket contains another
+  `ArrayAccess` object with the same exact public by-reference
+  `offsetGet($offset) { return $this->items[$offset]; }` bridge; in that
+  shape `$box->missing["outer"]["inner"][] = $array` appends into the inner
+  object's selected backing bucket and preserves nested reference slots for a
+  later copied-bucket read. By-value `offsetGet()` keeps PHP's
+  indirect-modification
   notice/no-op behavior for these nested append shapes. Magic-property
   append stores below plain arrays are also
   supported for the focused by-reference `__get()`
@@ -921,11 +928,13 @@
   `--$holder->bag[$key]`, and `$holder->bag[$key]--` are supported for
   current integer and float values by reading through `offsetGet($key)` and
   applying the update to PHP's current by-value temporary result without
-  dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
-  paths below plain arrays returned by magic `__get()` beyond the direct
+  dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains beyond
+  the focused magic-property mixed append route above, append paths below
+  plain arrays returned by magic `__get()` beyond the direct
   empty append and focused one-key and two-key parent append shapes,
   magic-property `ArrayAccess` nested append paths beyond the focused
-  first-`offsetGet()` bucket plus tested plain-array suffix shapes, dynamic
+  by-reference `offsetGet()` bucket, tested plain-array suffix shapes, and the
+  one tested mixed nested `ArrayAccess` chain, dynamic
   non-direct
   whole-property setup assignment, method-return or factory holder roots for
   dynamic non-direct append stores, non-empty nested append paths below
