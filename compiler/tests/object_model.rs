@@ -6735,6 +6735,76 @@ $holder->bag["outer"]["copy"] = array("bad");
 }
 
 #[test]
+fn scalar_nested_arrayaccess_writes_keep_typed_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public int $id = 1;
+}
+
+class Bag implements ArrayAccess {
+    public $items = array();
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    #[ReturnTypeWillChange]
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+$box = new Box();
+$alias =& $box->id;
+$bag = new Bag();
+$bag->items["outer"] = array();
+$bag->items["outer"]["copy"] =& $alias;
+$bag["outer"]["copy"] = "2";
+echo gettype($box->id), ":", $box->id, "|", gettype($bag->items["outer"]["copy"]), ":", $bag->items["outer"]["copy"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "integer:2|integer:2");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    public int $id = 1;
+}
+
+class Bag implements ArrayAccess {
+    public $items = array();
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    #[ReturnTypeWillChange]
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+$box = new Box();
+$alias =& $box->id;
+$bag = new Bag();
+$bag->items["outer"] = array();
+$bag->items["outer"]["copy"] =& $alias;
+$bag["outer"]["copy"] = array("bad");
+"#,
+    );
+    assert_eq!(error.line, 24);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid property access: typed property Box::$id expects int, got array"
+    );
+}
+
+#[test]
 fn typed_property_reference_writes_use_live_class_alias_metadata() {
     let execution = run_source(
         r#"<?php

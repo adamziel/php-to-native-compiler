@@ -19675,6 +19675,17 @@ handled.
   alias lifetime/detach behavior, string COW identity, and native reference
   lowering named as unsupported.
 
+## Lane 1747-C: Scalar Nested ArrayAccess Backing Writes
+
+- [x] Runtime/interpreter/tests/docs lane: broaden scalar nested keyed writes
+  through currently proven by-reference `ArrayAccess` backing buckets. Cover
+  direct `ArrayAccess`, property-held, dynamic property-held, non-direct
+  holder, dynamic non-direct holder, and magic-provided `ArrayAccess` roots
+  with system-PHP fixture comparison, plus a focused invalid typed-reference
+  regression. Keep arbitrary `ArrayAccess` method bodies, append suffixes
+  after `[]`, exact PHP fatal text, complete alias lifetime/detach behavior,
+  string COW identity, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

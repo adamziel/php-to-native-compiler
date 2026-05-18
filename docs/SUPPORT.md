@@ -4471,7 +4471,11 @@
   also used by the covered statically proven magic/`ArrayAccess`
   backing-bucket writes; focused evidence covers a property-held
   `ArrayAccess` nested backing write rejecting an array value before it can
-  overwrite an `int` typed-property reference slot. Unsetting a covered
+  overwrite an `int` typed-property reference slot. The same proven
+  by-reference backing buckets now accept scalar nested writes for direct
+  `ArrayAccess`, property-held, dynamic-property-held, non-direct holder,
+  dynamic non-direct holder, and magic-provided `ArrayAccess` roots, preserving
+  typed-property reference coercion. Unsetting a covered
   promoted reference-backed object property detaches that property slot from
   the alias cell instead of writing through the alias. Covered public,
   typed public, clone-shared public, and method-local private property aliases
@@ -4491,7 +4495,7 @@
   are substrate for later PHP-visible reference containers and COW separation;
   broader non-direct append target forms, append suffixes after `[]`,
   arbitrary magic/`ArrayAccess` method bodies, scalar nested `ArrayAccess`
-  writes outside the current covered paths, broader mixed array element
+  writes outside the current proven backing-bucket paths, broader mixed array element
   bindings, arbitrary writes through remaining complex typed-property alias
   sinks, exact PHP fatal text for invalid typed-reference writes, arbitrary
   dynamic-property policy beyond the current dynamic-capable object subset,

@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 1747-C for scalar nested writes through currently proven
+  `ArrayAccess` backing buckets. Direct `ArrayAccess`, property-held
+  `ArrayAccess`, dynamic property-held `ArrayAccess`, non-direct holder,
+  dynamic non-direct holder, and magic-provided `ArrayAccess` roots now route
+  scalar nested keyed writes through the same by-reference backing bucket path
+  as array-valued writes, preserving typed-property reference-cell coercion.
+  Arbitrary `ArrayAccess` method bodies, append suffixes after `[]`, exact PHP
+  fatal text, complete alias lifetime/detach behavior, string COW identity,
+  and native reference lowering remain unsupported. Focused verification: raw
+  system PHP output matched the new `milestone1747` fixture; `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone1747` passed `1`
+  fixture with `1` system PHP comparison and `0` skips; adjacent
+  `scalar_nested_arrayaccess_writes_keep_typed_reference_slots` and
+  `typed_property_reference_arrayaccess_backing_writes_keep_property_enforcement`
+  passed.
+
 - Added Lane 1746-C for checked typed-reference failures through a statically
   proven property-held `ArrayAccess` backing bucket. The exact backing-bucket
   alias writes used by covered magic/`ArrayAccess` bridges now call the

@@ -37151,6 +37151,32 @@ next run, batch work aggressively:
   full gate passes. Milestone 833 should bound the reached object-receiver
   static property/class-constant access diagnostic or implementation slice.
 
+## Loop Event 2026-05-18T19:43:53+02:00
+
+- Checkpoint before this task: `8cb2b0c8 runtime: check ArrayAccess typed
+  reference backing writes`, pushed to `origin/master`.
+- Task attempted: Lane 1747-C, scalar nested keyed writes through currently
+  proven by-reference `ArrayAccess` backing buckets.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1747/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  and `docs/LOOP_MEMORY.md`.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1747/scalar_nested_arrayaccess_typed_reference_writes.php`;
+  `cargo check -q -p phpc` passed; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1747` passed; focused
+  `scalar_nested_arrayaccess_writes_keep_typed_reference_slots` and adjacent
+  `typed_property_reference_arrayaccess_backing_writes_keep_property_enforcement`
+  passed.
+- Remaining COW gaps: arbitrary `ArrayAccess`/magic method bodies, append
+  suffixes after `[]`, broader complex alias sinks, exact PHP fatal text,
+  complete alias lifetime/detach behavior, string COW identity, and native
+  reference lowering.
+- Next concrete task: run formatting, diff, check, adjacent regression, and
+  checkpoint gates, then checkpoint with
+  `tools/checkpoint.sh "runtime: write scalar nested ArrayAccess backing slots"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T19:36:46+02:00
 
 - Checkpoint before this task: `26f6b873 runtime: check alias-backed typed

@@ -14546,6 +14546,26 @@ impl Interpreter {
                 )? {
                     return Ok(value);
                 }
+                if keys.len() > 1 {
+                    if let Some(Value::Object(array_access_object)) = scope.read_named(name) {
+                        if self
+                            .classes
+                            .implements_interface(array_access_object.class_id(), "ArrayAccess")
+                            && self
+                                .write_array_access_object_nested_keyed_with_reference_propagation(
+                                    array_access_object,
+                                    keys.clone(),
+                                    value.clone(),
+                                    expr,
+                                    array_literal_references.clone(),
+                                    *span,
+                                    scope,
+                                )?
+                        {
+                            return Ok(value);
+                        }
+                    }
+                }
                 scope.detach_array_offset_aliases_below_assignment_paths(&[ArrayOffsetAlias {
                     root: ArrayOffsetAliasRoot::StaticArray {
                         name: name.to_string(),
@@ -14776,8 +14796,7 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
-                if matches!(value, Value::Array(_))
-                    && keys.len() == 1
+                if keys.len() == 1
                     && self.write_object_property_array_access_keyed_with_reference_propagation(
                         object,
                         property,
@@ -14791,8 +14810,7 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && keys.len() > 1
+                if keys.len() > 1
                     && self
                         .write_object_property_array_access_nested_keyed_with_reference_propagation(
                             object,
@@ -14807,18 +14825,16 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && self.write_magic_get_array_access_keyed_with_reference_propagation(
-                        object,
-                        property,
-                        keys.clone(),
-                        value.clone(),
-                        expr,
-                        array_literal_references.clone(),
-                        *span,
-                        scope,
-                    )?
-                {
+                if self.write_magic_get_array_access_keyed_with_reference_propagation(
+                    object,
+                    property,
+                    keys.clone(),
+                    value.clone(),
+                    expr,
+                    array_literal_references.clone(),
+                    *span,
+                    scope,
+                )? {
                     return Ok(value);
                 }
                 let root =
@@ -14869,8 +14885,7 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
-                if matches!(value, Value::Array(_))
-                    && keys.len() == 1
+                if keys.len() == 1
                     && self.write_object_property_array_access_keyed_with_reference_propagation(
                         object,
                         &property,
@@ -14884,8 +14899,7 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && keys.len() > 1
+                if keys.len() > 1
                     && self
                         .write_object_property_array_access_nested_keyed_with_reference_propagation(
                             object,
@@ -14900,18 +14914,16 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && self.write_magic_get_array_access_keyed_with_reference_propagation(
-                        object,
-                        &property,
-                        keys.clone(),
-                        value.clone(),
-                        expr,
-                        array_literal_references.clone(),
-                        *span,
-                        scope,
-                    )?
-                {
+                if self.write_magic_get_array_access_keyed_with_reference_propagation(
+                    object,
+                    &property,
+                    keys.clone(),
+                    value.clone(),
+                    expr,
+                    array_literal_references.clone(),
+                    *span,
+                    scope,
+                )? {
                     return Ok(value);
                 }
                 let root =
@@ -14976,8 +14988,7 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
-                if matches!(value, Value::Array(_))
-                    && keys.len() == 1
+                if keys.len() == 1
                     && self.write_object_property_array_access_keyed_with_reference_propagation(
                         &temp_name,
                         property,
@@ -14991,8 +15002,7 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && keys.len() > 1
+                if keys.len() > 1
                     && self
                         .write_object_property_array_access_nested_keyed_with_reference_propagation(
                             &temp_name,
@@ -15007,18 +15017,16 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && self.write_magic_get_array_access_keyed_with_reference_propagation(
-                        &temp_name,
-                        property,
-                        keys,
-                        value.clone(),
-                        expr,
-                        array_literal_references,
-                        *span,
-                        scope,
-                    )?
-                {
+                if self.write_magic_get_array_access_keyed_with_reference_propagation(
+                    &temp_name,
+                    property,
+                    keys,
+                    value.clone(),
+                    expr,
+                    array_literal_references,
+                    *span,
+                    scope,
+                )? {
                     return Ok(value);
                 }
                 Err(runtime_error(
@@ -15148,8 +15156,7 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
-                if matches!(value, Value::Array(_))
-                    && keys.len() == 1
+                if keys.len() == 1
                     && self.write_object_property_array_access_keyed_with_reference_propagation(
                         &temp_name,
                         &property,
@@ -15163,8 +15170,7 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && keys.len() > 1
+                if keys.len() > 1
                     && self
                         .write_object_property_array_access_nested_keyed_with_reference_propagation(
                             &temp_name,
@@ -15179,18 +15185,16 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && self.write_magic_get_array_access_keyed_with_reference_propagation(
-                        &temp_name,
-                        &property,
-                        keys,
-                        value.clone(),
-                        expr,
-                        array_literal_references,
-                        *span,
-                        scope,
-                    )?
-                {
+                if self.write_magic_get_array_access_keyed_with_reference_propagation(
+                    &temp_name,
+                    &property,
+                    keys,
+                    value.clone(),
+                    expr,
+                    array_literal_references,
+                    *span,
+                    scope,
+                )? {
                     return Ok(value);
                 }
                 Err(runtime_error(

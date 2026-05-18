@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1746:
+The current in-progress implementation frontier is Lane 1747:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -332,6 +332,11 @@ The current in-progress implementation frontier is Lane 1746:
   The covered evidence pins property-held `ArrayAccess` nested backing writes
   that would otherwise overwrite an `int` typed-property reference slot with
   an array value.
+- Lane 1747 broadens nested scalar `ArrayAccess` writes over the same proven
+  by-reference backing buckets. Direct `ArrayAccess`, property-held,
+  dynamic-property-held, non-direct holder, dynamic non-direct holder, and
+  magic-provided `ArrayAccess` roots now write scalar values through the
+  backing reference slot and keep typed-property reference coercion.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
