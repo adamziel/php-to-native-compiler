@@ -1252,8 +1252,17 @@ impl SymbolTable {
         self.write_named(name, value);
     }
 
-    fn write_static_checked(&mut self, name: &str, value: Value, span: Span) -> CompileResult<()> {
-        self.write_named_checked(name, value, span)
+    fn write_static_checked_with_object_type_resolver<F>(
+        &mut self,
+        name: &str,
+        value: Value,
+        span: Span,
+        object_type_resolver: F,
+    ) -> CompileResult<()>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        self.write_named_checked_with_object_type_resolver(name, value, span, object_type_resolver)
     }
 
     fn write_detached_static(&mut self, name: &str, value: Value) {
@@ -1340,7 +1349,16 @@ impl SymbolTable {
         }
     }
 
-    fn write_named_checked(&mut self, name: &str, value: Value, span: Span) -> CompileResult<()> {
+    fn write_named_checked_with_object_type_resolver<F>(
+        &mut self,
+        name: &str,
+        value: Value,
+        span: Span,
+        object_type_resolver: F,
+    ) -> CompileResult<()>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
         if let Some(aliases) = self.array_offset_aliases.get(name).cloned() {
             if self.write_array_offset_aliases(&aliases, value.clone()) {
                 return Ok(());
@@ -1348,7 +1366,12 @@ impl SymbolTable {
             self.array_offset_aliases.remove(name);
         }
 
-        self.write_storage_named_checked(name, value, span)?;
+        self.write_storage_named_checked_with_object_type_resolver(
+            name,
+            value,
+            span,
+            object_type_resolver,
+        )?;
         if self.name_routes_to_global_storage(name) {
             self.sync_array_offset_aliases_for_global_root(name);
         }
@@ -1383,17 +1406,21 @@ impl SymbolTable {
         }
     }
 
-    fn write_storage_named_checked(
+    fn write_storage_named_checked_with_object_type_resolver<F>(
         &mut self,
         name: &str,
         value: Value,
         span: Span,
-    ) -> CompileResult<()> {
+        object_type_resolver: F,
+    ) -> CompileResult<()>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
         let storage = self.routed_storage(name).clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
             let value = cell
-                .coerce_value_for_write(value)
+                .coerce_value_for_write_with_object_type_resolver(value, object_type_resolver)
                 .map_err(|error| runtime_error(span, error))?;
             cell.set_value(value);
         } else {
@@ -9987,7 +10014,13 @@ impl Interpreter {
                 match &mut slot {
                     Value::Array(array) => {
                         array
-                            .insert_checked(key, value)
+                            .insert_checked_with_object_type_resolver(
+                                key,
+                                value,
+                                |object, type_name| {
+                                    self.object_satisfies_live_property_type(object, type_name)
+                                },
+                            )
                             .map_err(|error| runtime_error(span, error))?;
                         scope.write_static(name, slot);
                         Ok(())
@@ -13700,7 +13733,12 @@ impl Interpreter {
                         scope.array_offset_aliases.remove(name);
                     }
                 }
-                scope.write_static_checked(name, value.clone(), *span)?;
+                scope.write_static_checked_with_object_type_resolver(
+                    name,
+                    value.clone(),
+                    *span,
+                    |object, type_name| self.object_satisfies_live_property_type(object, type_name),
+                )?;
                 if !target_is_alias && matches!(value, Value::Array(_)) {
                     match expr {
                         Expr::Variable(source_name, _) => {
@@ -14155,7 +14193,13 @@ impl Interpreter {
                     Value::Array(array) => match key {
                         Some(key) => {
                             array
-                                .insert_checked(key, value.clone())
+                                .insert_checked_with_object_type_resolver(
+                                    key,
+                                    value.clone(),
+                                    |object, type_name| {
+                                        self.object_satisfies_live_property_type(object, type_name)
+                                    },
+                                )
                                 .map_err(|error| runtime_error(*span, error))?;
                         }
                         None => {
@@ -14235,7 +14279,7 @@ impl Interpreter {
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
                 if name == "GLOBALS" {
-                    Self::write_global_nested_array_assignment(&keys, value.clone(), *span, scope)?;
+                    self.write_global_nested_array_assignment(&keys, value.clone(), *span, scope)?;
                     if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                         let (global_name, prefix) =
                             SymbolTable::split_globals_reference_path(keys, *span)?;
@@ -14258,7 +14302,7 @@ impl Interpreter {
                     },
                     keys: keys.clone(),
                 }]);
-                Self::write_nested_array_assignment(name, &keys, value.clone(), *span, scope)?;
+                self.write_nested_array_assignment(name, &keys, value.clone(), *span, scope)?;
                 if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                     self.bind_array_literal_references_to_alias_root_with_prefix(
                         ArrayOffsetAliasRoot::StaticArray {
@@ -16429,6 +16473,7 @@ impl Interpreter {
     }
 
     fn write_nested_array_assignment(
+        &self,
         name: &str,
         keys: &[ArrayKey],
         value: Value,
@@ -16445,7 +16490,7 @@ impl Interpreter {
 
         match &mut slot {
             Value::Array(array) => {
-                Self::write_nested_array_value(array, keys, value, span)?;
+                self.write_nested_array_value(array, keys, value, span)?;
                 scope.write_static(name, slot);
                 scope.sync_array_offset_aliases_for_root_path(
                     &ArrayOffsetAliasRoot::StaticArray {
@@ -16466,6 +16511,7 @@ impl Interpreter {
     }
 
     fn write_global_nested_array_assignment(
+        &self,
         keys: &[ArrayKey],
         value: Value,
         span: Span,
@@ -16482,7 +16528,7 @@ impl Interpreter {
 
         match &mut slot {
             Value::Array(array) => {
-                Self::write_nested_array_value(array, &keys, value, span)?;
+                self.write_nested_array_value(array, &keys, value, span)?;
                 scope.write_global_name(&global_name, slot);
                 scope.sync_array_offset_aliases_for_root_path(
                     &ArrayOffsetAliasRoot::GlobalArray {
@@ -16556,7 +16602,7 @@ impl Interpreter {
 
         match &mut slot {
             Value::Array(array) => {
-                Self::write_nested_array_value(array, keys, value, span)?;
+                self.write_nested_array_value(array, keys, value, span)?;
                 object
                     .write_property_from_context(
                         property,
@@ -16688,11 +16734,58 @@ impl Interpreter {
         }
 
         let mut array = PhpArray::new();
-        Self::write_nested_array_value(&mut array, suffix_keys, value, span)?;
+        Self::write_nested_array_value_without_reference_constraints(
+            &mut array,
+            suffix_keys,
+            value,
+            span,
+        )?;
         Ok(Value::Array(array))
     }
 
+    fn write_nested_array_value_without_reference_constraints(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some((key, rest)) = keys.split_first() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array assignment",
+                    "nested array assignment requires at least one key",
+                ),
+            ));
+        };
+
+        if rest.is_empty() {
+            array.insert(key.clone(), value);
+            return Ok(());
+        }
+
+        let mut child = match array.get_cloned(key.clone()) {
+            Some(Value::Array(child)) => child,
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        Self::write_nested_array_value_without_reference_constraints(
+            &mut child, rest, value, span,
+        )?;
+        array.insert(key.clone(), Value::Array(child));
+        Ok(())
+    }
+
     fn write_nested_array_value(
+        &self,
         array: &mut PhpArray,
         keys: &[ArrayKey],
         value: Value,
@@ -16710,7 +16803,11 @@ impl Interpreter {
 
         if rest.is_empty() {
             array
-                .insert_checked(key.clone(), value)
+                .insert_checked_with_object_type_resolver(
+                    key.clone(),
+                    value,
+                    |object, type_name| self.object_satisfies_live_property_type(object, type_name),
+                )
                 .map_err(|error| runtime_error(span, error))?;
             return Ok(());
         }
@@ -16729,7 +16826,7 @@ impl Interpreter {
             }
         };
 
-        Self::write_nested_array_value(&mut child, rest, value, span)?;
+        self.write_nested_array_value(&mut child, rest, value, span)?;
         array.insert(key.clone(), Value::Array(child));
         Ok(())
     }
@@ -17168,13 +17265,24 @@ impl Interpreter {
     ) -> CompileResult<()> {
         match place {
             CompoundAssignmentPlace::Variable(name) => {
-                scope.write_static_checked(&name, value, span)?;
+                scope.write_static_checked_with_object_type_resolver(
+                    &name,
+                    value,
+                    span,
+                    |object, type_name| self.object_satisfies_live_property_type(object, type_name),
+                )?;
                 Ok(())
             }
             CompoundAssignmentPlace::ArrayIndex { name, key } => match scope.read_named(&name) {
                 Some(Value::Array(mut array)) => {
                     array
-                        .insert_checked(key, value)
+                        .insert_checked_with_object_type_resolver(
+                            key,
+                            value,
+                            |object, type_name| {
+                                self.object_satisfies_live_property_type(object, type_name)
+                            },
+                        )
                         .map_err(|error| runtime_error(span, error))?;
                     scope.write_static(&name, Value::Array(array));
                     Ok(())
@@ -17298,7 +17406,7 @@ impl Interpreter {
                                 )),
                             ));
                         };
-                        Self::write_nested_array_value(array, &keys, value, span)?;
+                        self.write_nested_array_value(array, &keys, value, span)?;
                         object
                             .write_property_from_context(
                                 &property,
@@ -17687,7 +17795,13 @@ impl Interpreter {
                     match &mut slot {
                         Value::Array(array) => {
                             array
-                                .insert_checked(key, value.clone())
+                                .insert_checked_with_object_type_resolver(
+                                    key,
+                                    value.clone(),
+                                    |object, type_name| {
+                                        self.object_satisfies_live_property_type(object, type_name)
+                                    },
+                                )
                                 .map_err(|error| runtime_error(*span, error))?;
                             scope.write_static(name, slot);
                             Ok(value)
@@ -32759,7 +32873,7 @@ impl Interpreter {
             }
             MysqliResultBindingTarget::ArrayOffset { name, keys } => {
                 if name == "GLOBALS" {
-                    Self::write_global_nested_array_assignment(keys, value, span, caller_scope)
+                    self.write_global_nested_array_assignment(keys, value, span, caller_scope)
                 } else if caller_scope.write_alias_backed_array_offset(
                     name,
                     keys,
@@ -32768,7 +32882,7 @@ impl Interpreter {
                 )? {
                     Ok(())
                 } else {
-                    Self::write_nested_array_assignment(name, keys, value, span, caller_scope)
+                    self.write_nested_array_assignment(name, keys, value, span, caller_scope)
                 }
             }
             MysqliResultBindingTarget::ObjectProperty {
@@ -38430,7 +38544,7 @@ impl Interpreter {
                 .map(|index| self.evaluate_array_key(index, caller_scope))
                 .collect::<CompileResult<Vec<_>>>()?;
             if name == "GLOBALS" {
-                Self::write_global_nested_array_assignment(&keys, value, arg.span(), caller_scope)?;
+                self.write_global_nested_array_assignment(&keys, value, arg.span(), caller_scope)?;
             } else {
                 let wrote_alias = caller_scope.write_alias_backed_array_offset(
                     name,
@@ -38439,7 +38553,7 @@ impl Interpreter {
                     arg.span(),
                 )?;
                 if !wrote_alias {
-                    Self::write_nested_array_assignment(
+                    self.write_nested_array_assignment(
                         name,
                         &keys,
                         value,

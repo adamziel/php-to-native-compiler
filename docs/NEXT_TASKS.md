@@ -19630,6 +19630,16 @@ handled.
   reference constraint is attached, string COW identity, and native reference
   lowering named as unsupported.
 
+## Lane 1743-C: Live Alias Metadata for Typed Reference Cells
+
+- [x] Runtime/interpreter/tests/docs lane: route checked typed-property
+  reference writes through the interpreter's live class/interface type
+  resolver. Cover class and interface aliases registered after object
+  instantiation for direct property aliases and reference-backed array slots
+  with system-PHP comparison. Keep broader complex alias sinks, exact PHP
+  fatal text, complete alias lifetime/detach behavior, string COW identity,
+  and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

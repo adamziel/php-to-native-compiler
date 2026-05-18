@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1742:
+The current in-progress implementation frontier is Lane 1743:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -312,6 +312,11 @@ The current in-progress implementation frontier is Lane 1742:
   array, public object-property array, and compound-assignment writes to such
   slots coerce or reject through the typed-property constraint instead of
   overwriting the shared cell unchecked.
+- Lane 1743 routes checked reference-cell writes through the interpreter's
+  live class/interface metadata resolver, so property aliases and
+  reference-backed array slots respect `class_alias()` names registered after
+  an object was instantiated when enforcing class/interface typed-property
+  constraints.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

@@ -6646,6 +6646,50 @@ $target["copy"] = "bad";
 }
 
 #[test]
+fn typed_property_reference_writes_use_live_class_alias_metadata() {
+    let execution = run_source(
+        r#"<?php
+class Hook {}
+class Registry { public HookLateAlias $instance; }
+
+$hook = new Hook();
+class_alias("Hook", "HookLateAlias");
+$registry = new Registry();
+$registry->instance = $hook;
+$alias =& $registry->instance;
+$alias = $hook;
+echo get_class($registry->instance), "|", get_class($alias);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Hook|Hook");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+class Hook {}
+class OtherHook {}
+class Registry { public HookLateAlias $instance; }
+
+$hook = new Hook();
+$other = new OtherHook();
+class_alias("Hook", "HookLateAlias");
+$registry = new Registry();
+$registry->instance = $hook;
+$alias =& $registry->instance;
+$alias = $other;
+"#,
+    );
+    assert_eq!(error.line, 12);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid property access: typed property Registry::$instance expects HookLateAlias, got object"
+    );
+}
+
+#[test]
 fn typed_properties_accept_inherited_class_name_assignments() {
     let execution = run_source(
         r#"<?php

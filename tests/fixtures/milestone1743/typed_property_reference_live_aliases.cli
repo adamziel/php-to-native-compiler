@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1743/typed_property_reference_live_aliases.php

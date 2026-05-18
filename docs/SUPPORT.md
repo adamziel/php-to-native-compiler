@@ -4459,7 +4459,11 @@
   property references. Reference-backed array slots that reuse one of those
   typed property reference cells also enforce the constraint for the covered
   direct array, nested array, public object-property array, and compound
-  assignment write paths. By-value
+  assignment write paths. These checked reference-cell writes use the
+  interpreter's live class/interface metadata resolver for the covered
+  class-name and interface typed-property subset, so aliases registered with
+  `class_alias()` after an object was instantiated are honored for direct
+  property aliases and reference-backed array slot writes. By-value
   terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's
@@ -4474,8 +4478,7 @@
   broader non-direct append target forms, append suffixes after `[]`,
   arbitrary magic/`ArrayAccess` method bodies, broader mixed array element
   bindings, arbitrary writes through every remaining complex typed-property
-  alias sink, exact PHP fatal text for invalid typed-reference writes, live
-  class/interface alias changes after a reference constraint is attached, arbitrary
+  alias sink, exact PHP fatal text for invalid typed-reference writes, arbitrary
   dynamic-property policy beyond the current dynamic-capable object subset,
   complete alias lifetime/detach parity, string COW identity, and native
   reference lowering remain unsupported.

@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 1743-C for live class/interface metadata in typed-property
+  reference-cell enforcement. Checked direct variable and array-slot writes
+  now thread the interpreter's live property type resolver into
+  `PhpReferenceCell` constraints, so class/interface aliases registered after
+  object instantiation are honored when a typed property alias or a
+  reference-backed array slot is written. Focused verification covers direct
+  property aliases, array slot sinks, and interface aliases with system PHP
+  comparison. Broader complex alias sinks, exact PHP fatal text, complete
+  alias lifetime/detach behavior, string COW identity, and native reference
+  lowering remain unsupported. Focused verification:
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1743`
+  passed `1` fixture with `1` system PHP comparison and `0` skips; adjacent
+  `typed_property_reference_writes_use_live_class_alias_metadata` and
+  `typed_properties_accept_class_aliases_registered_after_instantiation`
+  passed.
+
 - Added Lane 1742-C for typed-property reference constraints through
   reference-backed array slot sinks. Array slot updates now have a checked
   write path for reused `PhpReferenceCell`s, and covered interpreter

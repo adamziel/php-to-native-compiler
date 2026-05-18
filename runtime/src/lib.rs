@@ -1285,11 +1285,25 @@ impl PhpArray {
         key: impl Into<ArrayKey>,
         value: Value,
     ) -> RuntimeResult<ArrayKey> {
+        self.insert_checked_with_object_type_resolver(key, value, |object, type_name| {
+            object.is_instance_of_class_name(type_name)
+        })
+    }
+
+    pub fn insert_checked_with_object_type_resolver<F>(
+        &mut self,
+        key: impl Into<ArrayKey>,
+        value: Value,
+        object_type_resolver: F,
+    ) -> RuntimeResult<ArrayKey>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
         let key = key.into().normalized();
         self.bump_next_auto_index(&key);
 
         if let Some(slot) = self.get_slot_mut(key.clone()) {
-            slot.set_value_checked(value)?;
+            slot.set_value_checked_with_object_type_resolver(value, object_type_resolver)?;
             return Ok(key);
         }
 
@@ -2432,13 +2446,29 @@ impl ArraySlot {
     }
 
     pub fn set_value_checked(&mut self, value: Value) -> RuntimeResult<()> {
+        self.set_value_checked_with_object_type_resolver(value, |object, type_name| {
+            object.is_instance_of_class_name(type_name)
+        })
+    }
+
+    pub fn set_value_checked_with_object_type_resolver<F>(
+        &mut self,
+        value: Value,
+        object_type_resolver: F,
+    ) -> RuntimeResult<()>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
         match &self.storage {
             ArraySlotStorage::Value(_) => {
                 self.cell_mut_for_by_value_write().set_value(value);
                 Ok(())
             }
             ArraySlotStorage::Reference(reference) => {
-                let value = reference.coerce_value_for_write(value)?;
+                let value = reference.coerce_value_for_write_with_object_type_resolver(
+                    value,
+                    object_type_resolver,
+                )?;
                 reference.set_value(value);
                 Ok(())
             }
@@ -2559,14 +2589,28 @@ impl PhpReferenceCell {
     }
 
     pub fn coerce_value_for_write(&self, value: Value) -> RuntimeResult<Value> {
+        self.coerce_value_for_write_with_object_type_resolver(value, |object, type_name| {
+            object.is_instance_of_class_name(type_name)
+        })
+    }
+
+    pub fn coerce_value_for_write_with_object_type_resolver<F>(
+        &self,
+        value: Value,
+        object_type_resolver: F,
+    ) -> RuntimeResult<Value>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
         let constraints = self.state.borrow().constraints.clone();
         let mut value = value;
         for constraint in constraints {
-            value = coerce_property_value(
+            value = coerce_property_value_with_object_type_resolver(
                 &constraint.type_decl,
                 value,
                 &constraint.class_name,
                 &constraint.property_name,
+                &object_type_resolver,
             )?;
         }
         Ok(value)

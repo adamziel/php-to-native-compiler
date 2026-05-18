@@ -91,6 +91,39 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "runtime: enforce typed reference slot writes"` if the
   full gate passes.
 
+## Loop Event 2026-05-18T19:05:00+02:00
+
+- Checkpoint before this task: `3b5ff276 runtime: enforce typed reference
+  slot writes`, pushed to `origin/master`.
+- Task attempted: Lane 1743-C live class/interface alias metadata for checked
+  typed-property reference-cell writes.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1743/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new milestone1743
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1743` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; `cargo fmt --check` passed; isolated
+  `CARGO_TARGET_DIR=target/cow-1743-check cargo check -q -p phpc` passed;
+  adjacent `typed_property_reference_writes_use_live_class_alias_metadata`
+  and `typed_properties_accept_class_aliases_registered_after_instantiation`
+  passed.
+- Semantic gap reduced: direct checked variable writes and checked array-slot
+  writes through typed property reference cells now use the interpreter's live
+  class/interface resolver, so `class_alias()` names registered after object
+  instantiation are accepted for covered typed-property reference aliases and
+  slot sinks.
+- Remaining semantic gaps: broader complex typed-property alias sinks, exact
+  PHP fatal text, arbitrary dynamic-property policy, complete alias
+  lifetime/detach behavior, string COW identity, and native reference
+  lowering remain unsupported.
+- Next concrete task: run `git diff --check`, adjacent milestone1741/1742
+  fixture comparisons and typed-reference regressions, then one full
+  checkpoint with
+  `tools/checkpoint.sh "runtime: resolve live typed reference aliases"` if the
+  full gate passes.
+
 ## Loop Event 2026-05-18T22:10:00+02:00
 
 - Checkpoint before this task: `23714182 runtime: support arrayaccess
