@@ -878,9 +878,16 @@
   reference and that cell holds an array or `null`: direct named/dynamic and
   non-direct named/dynamic forms append into the returned array cell and
   preserve nested reference slots for appended array literals or copied arrays
-  carrying mirrored alias metadata. By-value `__get()` returning a plain
-  array or `null` follows PHP's indirect-modification notice/no-op behavior
-  for the covered array RHS shape and leaves backing storage unchanged. Direct
+  carrying mirrored alias metadata. The same focused route supports one
+  tested string-keyed parent path before the append, such as
+  `$box->missing["outer"][] = $array`,
+  `$box->{$name}["outer"][] = $array`,
+  `$holders["box"]->missing["outer"][] = $array`, and
+  `$holders["box"]->{$name}["outer"][] = $array`, materializing missing or
+  null array parents in the returned cell. By-value `__get()` returning a
+  plain array or `null` follows PHP's indirect-modification notice/no-op
+  behavior for the covered array RHS shapes and leaves backing storage
+  unchanged. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
   and writing the result back through `offsetSet($key, $value)`. Direct
@@ -890,7 +897,7 @@
   applying the update to PHP's current by-value temporary result without
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
   paths below plain arrays returned by magic `__get()` beyond the direct
-  empty append shape, dynamic non-direct
+  empty append and focused one-key parent append shapes, dynamic non-direct
   whole-property setup assignment, method-return or factory holder roots for
   dynamic non-direct append stores, non-empty nested append paths below
   property-held or magic-property `ArrayAccess`, magic `__get()` bodies that

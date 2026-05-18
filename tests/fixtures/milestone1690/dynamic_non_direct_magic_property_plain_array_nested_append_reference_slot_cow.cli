@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1690/dynamic_non_direct_magic_property_plain_array_nested_append_reference_slot_cow.php
+stdout:
+via-dynamic-non-direct-magic-nested-append|via-dynamic-non-direct-magic-nested-label|via-dynamic-non-direct-magic-nested-append|via-dynamic-non-direct-magic-nested-label|1|plain|plain
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

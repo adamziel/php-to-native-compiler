@@ -18711,7 +18711,8 @@ handled.
   `offsetGet(null)` notice/no-op behavior. Lane 1688-C extends the same
   append-store bridge to non-direct holder magic-property receivers. Lane
   1689-C extends magic append stores to plain arrays returned by-reference
-  from `__get()`. Keep non-empty nested append paths, side-effecting or
+  from `__get()`, and Lane 1690-C extends that plain-array path to one-key
+  nested append parents. Keep deeper nested append paths, side-effecting or
   broader `__get()`/`offsetSet()`/`offsetGet()` bodies, mixed nested
   `ArrayAccess` chains, full references/COW, native reference lowering, and
   exact alias destruction/destructor ordering named as unsupported.
@@ -18731,9 +18732,9 @@ handled.
   exact by-value `offsetGet($offset) { return $this->property[$offset]; }`
   bucket copies preserve nested reference slots while ordinary copied fields
   remain detached. Lane 1689-C extends magic append stores to plain arrays
-  returned by-reference from `__get()`. Keep non-empty nested append paths
-  such as `$holders["box"]->missing["x"][]`, method-return or factory holder
-  roots, side-effecting or broader
+  returned by-reference from `__get()`, and Lane 1690-C extends that
+  plain-array path to one-key nested append parents. Keep deeper nested append
+  paths, method-return or factory holder roots, side-effecting or broader
   `__get()`/`offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess`
   chains, full references/COW, native reference lowering, and exact alias
   destruction/destructor ordering named as unsupported.
@@ -18752,13 +18753,37 @@ handled.
   preserves nested reference slots for appended array literals and copied
   arrays carrying mirrored alias metadata. By-value `__get()` returning a
   plain array or `null` stays a PHP-compatible indirect-modification
-  notice/no-op for the covered array RHS shape. Keep non-empty nested append
-  paths such as `$box->missing["x"][]`, by-value plain-array mutation,
-  arbitrary `__get()` return bodies beyond direct-variable reference returns
-  for mutation, method-return or factory holder roots, scalar by-value no-op
-  coverage for non-array RHS values, mixed nested `ArrayAccess` chains, full
-  references/COW, native reference lowering, and exact alias
-  destruction/destructor ordering named as unsupported.
+  notice/no-op for the covered array RHS shape. Lane 1690-C extends this same
+  plain-array path to one-key nested append parents. Keep deeper nested append
+  paths, by-value plain-array mutation, arbitrary `__get()` return bodies
+  beyond direct-variable reference returns for mutation, method-return or
+  factory holder roots, scalar by-value no-op coverage for non-array RHS
+  values, mixed nested `ArrayAccess` chains, full references/COW, native
+  reference lowering, and exact alias destruction/destructor ordering named
+  as unsupported.
+
+## Lane 1690-C: Nested Plain-Array Magic Append Mutation
+
+- [x] Runtime/tests/docs lane: parse and execute one-key nested append stores
+  below magic properties when visible public `__get($name)` returns a direct
+  variable by reference whose cell holds an array or `null`. Covered forms are
+  direct named `$box->missing["outer"][] = $array`, direct dynamic
+  `$box->{$name}["outer"][] = $array`, non-direct named
+  `$holders["box"]->missing["outer"][] = $array`, and dynamic non-direct
+  `$holders["box"]->{$name}["outer"][] = $array`. The runtime appends into
+  the returned array cell under the parent key, materializes missing/null
+  array parents, canonicalizes reference metadata from the temporary magic
+  root back to the visible static variable sharing that cell, and preserves
+  nested reference slots for appended array literals and copied arrays
+  carrying mirrored alias metadata. By-value `__get()` returning a plain
+  array or `null` stays a PHP-compatible indirect-modification notice/no-op
+  for the covered nested array RHS shape. Keep deeper nested append paths,
+  magic `ArrayAccess` non-empty nested append stores, by-value plain-array
+  mutation, arbitrary `__get()` return bodies beyond direct-variable
+  reference returns for mutation, method-return or factory holder roots,
+  scalar by-value no-op coverage for non-array RHS values, mixed nested
+  `ArrayAccess` chains, full references/COW, native reference lowering, and
+  exact alias destruction/destructor ordering named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

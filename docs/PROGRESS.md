@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Lane 1690-C nested plain-array magic-property append mutation for the
+  focused by-reference `__get()` COW shape. Direct
+  `$box->missing["outer"][] = $array`, direct dynamic
+  `$box->{$name}["outer"][] = $array`, non-direct
+  `$holders["box"]->missing["outer"][] = $array`, and dynamic non-direct
+  `$holders["box"]->{$name}["outer"][] = $array` now append into the nested
+  array path below the array cell returned by visible public `__get($name)`
+  when `__get()` returns a direct variable by reference. The same temporary
+  cell binding and canonical visible-root metadata bridge used by Lane 1689
+  now carries the parent key path, so later copied-bucket mutations preserve
+  nested reference slots while ordinary copied fields remain detached.
+  By-value `__get()` returning a plain array or `null` keeps PHP's
+  indirect-modification notice/no-op behavior for the covered nested array RHS
+  shape. Magic `ArrayAccess` non-empty nested append remains unsupported.
+  This does not add deeper parent paths beyond the single tested key,
+  by-value plain-array mutation, arbitrary `__get()` return bodies beyond
+  direct-variable reference returns for mutation, method-return or factory
+  holder roots, scalar by-value no-op coverage for non-array RHS values,
+  mixed nested `ArrayAccess` chains, full references/COW, native reference
+  lowering, or exact alias destruction/destructor ordering. Focused
+  verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc` passed,
+  the nested magic plain-array append `functions_and_scopes` filter passed
+  `5` tests, and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1690` passed `5` fixtures with `5` system PHP
+  comparisons and `0` skips.
+
 - Added Lane 1689-C plain-array magic-property append mutation for the
   focused by-reference `__get()` COW shape. Direct `$box->missing[] =
   $array`, direct dynamic `$box->{$name}[] = $array`, non-direct
@@ -19,9 +46,10 @@ Implemented:
   path for the covered array RHS shape and does not call `__set()`. The
   existing magic `ArrayAccess` append-store path still dispatches
   `offsetSet(null, $value)`, and magic append reference-source paths remain
-  separate. This does not add non-empty nested append paths such as
-  `$box->missing["x"][]`, by-value plain-array mutation, magic `__get()`
-  return bodies beyond direct-variable reference returns for mutation,
+  separate. Lane 1690-C extends this same plain-array path to the focused
+  single parent-key nested append shape. This does not add by-value
+  plain-array mutation, magic `__get()` return bodies beyond direct-variable
+  reference returns for mutation,
   method-return or factory holder roots, scalar by-value no-op coverage for
   non-array RHS values, mixed nested `ArrayAccess` chains, full
   references/COW, native reference lowering, or exact alias

@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T10:18:30+02:00
+
+- Checkpoint before this task: `ca6f2a3b runtime: preserve plain-array magic
+  append references`, pushed to `origin/master`.
+- Task attempted: Lane 1690-C nested plain-array magic-property append
+  mutation for the focused by-reference `__get()` COW shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1690/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, the lane
+  review note, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc`
+  passed; `cargo fmt --check` and `git diff --check` passed; the nested
+  magic plain-array append `functions_and_scopes` filter passed `5` tests;
+  and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1690` passed `5` fixtures with `5` system PHP
+  comparisons and `0` skips.
+- Semantic gap reduced: direct named/dynamic and non-direct named/dynamic
+  `$...->missing["outer"][] = $array` forms now mutate a nested path below a
+  plain array cell returned by reference from visible public `__get($name)`,
+  materialize missing/null parents, and preserve nested reference slots for
+  appended array literals/copies. By-value `__get()` returning a plain array
+  or `null` stays a notice/no-op for the covered nested array RHS shape.
+- Remaining semantic gaps: deeper nested append paths, magic `ArrayAccess`
+  non-empty nested append stores, by-value plain-array mutation, arbitrary
+  `__get()` return bodies beyond direct-variable reference returns for
+  mutation, method-return or factory holder roots, scalar by-value no-op
+  coverage for non-array RHS values, mixed nested `ArrayAccess` chains, full
+  references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering remain unsupported.
+- Next concrete task: run adjacent regressions and checkpoint this lane; then
+  keep lanes focused on the next COW gap, likely deeper parent paths or magic
+  `ArrayAccess` non-empty nested append stores after local PHP/runtime probes.
+
 ## Loop Event 2026-05-18T09:56:20+02:00
 
 - Checkpoint before this task: `ce425047 runtime: preserve non-direct magic

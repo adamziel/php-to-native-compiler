@@ -12923,7 +12923,11 @@ impl Interpreter {
                 indices,
                 span,
             } => {
-                if indices.is_empty() {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                if matches!(keys.len(), 0 | 1) {
                     let holder_value = self.evaluate(holder, scope)?;
                     let holder_object = match holder_value {
                         Value::Object(object) => object,
@@ -12948,6 +12952,7 @@ impl Interpreter {
                         _ => (self.evaluate(expr, scope)?, Vec::new()),
                     };
                     if matches!(value, Value::Array(_))
+                        && keys.is_empty()
                         && self
                             .write_object_property_array_access_append_with_reference_propagation(
                                 &temp_name,
@@ -12965,6 +12970,7 @@ impl Interpreter {
                         && self.write_magic_get_array_access_append_with_reference_propagation(
                             &temp_name,
                             property,
+                            keys,
                             value.clone(),
                             expr,
                             array_literal_references,
@@ -12989,7 +12995,11 @@ impl Interpreter {
                 indices,
                 span,
             } => {
-                if indices.is_empty() {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                if matches!(keys.len(), 0 | 1) {
                     let holder_value = self.evaluate(holder, scope)?;
                     let holder_object = match holder_value {
                         Value::Object(object) => object,
@@ -13015,6 +13025,7 @@ impl Interpreter {
                         _ => (self.evaluate(expr, scope)?, Vec::new()),
                     };
                     if matches!(value, Value::Array(_))
+                        && keys.is_empty()
                         && self
                             .write_object_property_array_access_append_with_reference_propagation(
                                 &temp_name,
@@ -13032,6 +13043,7 @@ impl Interpreter {
                         && self.write_magic_get_array_access_append_with_reference_propagation(
                             &temp_name,
                             &property,
+                            keys,
                             value.clone(),
                             expr,
                             array_literal_references,
@@ -13087,6 +13099,22 @@ impl Interpreter {
                     && self.write_magic_get_array_access_append_with_reference_propagation(
                         object,
                         property,
+                        keys.clone(),
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
+                if matches!(keys.len(), 1)
+                    && matches!(value, Value::Array(_))
+                    && self.write_magic_get_array_access_append_with_reference_propagation(
+                        object,
+                        property,
+                        keys.clone(),
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
@@ -13166,9 +13194,25 @@ impl Interpreter {
                     && self.write_magic_get_array_access_append_with_reference_propagation(
                         object,
                         &property,
+                        keys.clone(),
                         value.clone(),
                         expr,
-                        array_literal_references,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
+                if matches!(keys.len(), 1)
+                    && matches!(value, Value::Array(_))
+                    && self.write_magic_get_array_access_append_with_reference_propagation(
+                        object,
+                        &property,
+                        keys.clone(),
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
                         *span,
                         scope,
                     )?
@@ -13434,6 +13478,7 @@ impl Interpreter {
         &mut self,
         object_name: &str,
         property: &str,
+        keys: Vec<ArrayKey>,
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
@@ -13482,9 +13527,10 @@ impl Interpreter {
             let current_value = cell.borrow().clone();
             match current_value {
                 Value::Object(object)
-                    if self
-                        .classes
-                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                    if keys.is_empty()
+                        && self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
                 {
                     self.write_array_access_object_append_with_reference_propagation(
                         object,
@@ -13495,15 +13541,12 @@ impl Interpreter {
                         scope,
                     )
                 }
+                Value::Object(_) => Ok(false),
                 Value::Array(_) | Value::Null => {
                     let temp_name = self.next_foreach_temporary_array_name();
                     scope.bind_static_to_cell(&temp_name, cell);
-                    let alias = scope.append_array_offset_reference_alias(
-                        &temp_name,
-                        Vec::new(),
-                        value,
-                        span,
-                    )?;
+                    let alias =
+                        scope.append_array_offset_reference_alias(&temp_name, keys, value, span)?;
                     let root = scope.canonical_equivalent_static_array_alias_root(&alias.root);
                     self.bind_or_mirror_array_references_to_alias_root(
                         expr,
@@ -13519,9 +13562,10 @@ impl Interpreter {
         } else {
             match self.call_magic_get_property_value(holder, property, span)? {
                 Some(Value::Object(object))
-                    if self
-                        .classes
-                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                    if keys.is_empty()
+                        && self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
                 {
                     self.write_array_access_object_append_with_reference_propagation(
                         object,
@@ -13597,9 +13641,8 @@ impl Interpreter {
             vec![Self::array_key_value(None), value],
             span,
         )?;
-
         if let Some((root, reference_keys)) = self.array_access_offset_set_alias_for_object(
-            array_access_object,
+            array_access_object.clone(),
             &hidden_name,
             None,
             true,
@@ -13614,7 +13657,6 @@ impl Interpreter {
                 scope,
             )?;
         }
-
         Ok(true)
     }
 

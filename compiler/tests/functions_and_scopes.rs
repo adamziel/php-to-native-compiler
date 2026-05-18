@@ -20,6 +20,39 @@ fn system_php_available() -> bool {
     Command::new("php").arg("-v").output().is_ok()
 }
 
+fn assert_system_php_fixture_matches_stdout(fixture: &str, expected: &str) {
+    if !system_php_available() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("php")
+        .arg(manifest_dir.join(fixture))
+        .output()
+        .expect("run system PHP fixture");
+    let expected_stdout =
+        std::fs::read_to_string(manifest_dir.join(expected)).expect("read expected stdout");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        expected_stdout.trim_end_matches('\n')
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+fn assert_run_source_fixture_matches_stdout(source: &str, expected: &str) {
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 #[test]
 fn user_functions_use_local_scope_without_clobbering_globals() {
     let execution = run_source(
@@ -4136,6 +4169,108 @@ fn dynamic_non_direct_magic_property_plain_array_append_preserves_nested_referen
     assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn system_php_mutates_by_reference_magic_get_plain_array_nested_append_reference_slots() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1690/magic_property_plain_array_nested_append_reference_slot_cow.php",
+        "../tests/fixtures/milestone1690/magic_property_plain_array_nested_append_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn system_php_mutates_dynamic_by_reference_magic_get_plain_array_nested_append_reference_slots() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1690/dynamic_magic_property_plain_array_nested_append_reference_slot_cow.php",
+        "../tests/fixtures/milestone1690/dynamic_magic_property_plain_array_nested_append_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn system_php_mutates_non_direct_by_reference_magic_get_plain_array_nested_append_reference_slots()
+{
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1690/non_direct_magic_property_plain_array_nested_append_reference_slot_cow.php",
+        "../tests/fixtures/milestone1690/non_direct_magic_property_plain_array_nested_append_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn system_php_mutates_dynamic_non_direct_by_reference_magic_get_plain_array_nested_append_reference_slots(
+) {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1690/dynamic_non_direct_magic_property_plain_array_nested_append_reference_slot_cow.php",
+        "../tests/fixtures/milestone1690/dynamic_non_direct_magic_property_plain_array_nested_append_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn system_php_by_value_magic_get_plain_array_nested_append_notices_and_does_not_mutate() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1690/magic_property_plain_array_nested_append_by_value_noop.php",
+        "../tests/fixtures/milestone1690/magic_property_plain_array_nested_append_by_value_noop.stdout",
+    );
+}
+
+#[test]
+fn magic_property_plain_array_nested_append_preserves_nested_reference_slots() {
+    assert_run_source_fixture_matches_stdout(
+        include_str!(
+            "../../tests/fixtures/milestone1690/magic_property_plain_array_nested_append_reference_slot_cow.php"
+        ),
+        include_str!(
+            "../../tests/fixtures/milestone1690/magic_property_plain_array_nested_append_reference_slot_cow.stdout"
+        ),
+    );
+}
+
+#[test]
+fn dynamic_magic_property_plain_array_nested_append_preserves_nested_reference_slots() {
+    assert_run_source_fixture_matches_stdout(
+        include_str!(
+            "../../tests/fixtures/milestone1690/dynamic_magic_property_plain_array_nested_append_reference_slot_cow.php"
+        ),
+        include_str!(
+            "../../tests/fixtures/milestone1690/dynamic_magic_property_plain_array_nested_append_reference_slot_cow.stdout"
+        ),
+    );
+}
+
+#[test]
+fn non_direct_magic_property_plain_array_nested_append_preserves_nested_reference_slots() {
+    assert_run_source_fixture_matches_stdout(
+        include_str!(
+            "../../tests/fixtures/milestone1690/non_direct_magic_property_plain_array_nested_append_reference_slot_cow.php"
+        ),
+        include_str!(
+            "../../tests/fixtures/milestone1690/non_direct_magic_property_plain_array_nested_append_reference_slot_cow.stdout"
+        ),
+    );
+}
+
+#[test]
+fn dynamic_non_direct_magic_property_plain_array_nested_append_preserves_nested_reference_slots() {
+    assert_run_source_fixture_matches_stdout(
+        include_str!(
+            "../../tests/fixtures/milestone1690/dynamic_non_direct_magic_property_plain_array_nested_append_reference_slot_cow.php"
+        ),
+        include_str!(
+            "../../tests/fixtures/milestone1690/dynamic_non_direct_magic_property_plain_array_nested_append_reference_slot_cow.stdout"
+        ),
+    );
+}
+
+#[test]
+fn by_value_magic_property_plain_array_nested_append_notices_and_does_not_mutate() {
+    assert_run_source_fixture_matches_stdout(
+        include_str!(
+            "../../tests/fixtures/milestone1690/magic_property_plain_array_nested_append_by_value_noop.php"
+        ),
+        include_str!(
+            "../../tests/fixtures/milestone1690/magic_property_plain_array_nested_append_by_value_noop.stdout"
+        ),
+    );
 }
 
 #[test]
