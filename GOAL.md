@@ -129,13 +129,13 @@ evidence, not promises:
 
 ## Next Concrete Target
 
-Continue from Milestone 1669 with the highest-impact remaining compatibility
-gap: WP_Hook-style iterator bucket COW. Milestone 1668 added several bounded
-reference-container slices and PHP-parity rejection for userland iterator
-by-reference foreach. The next step is preserving nested reference slots when
-by-value `Iterator::current()` returns a copied public-property array bucket
-that is then iterated by reference. That shape is directly relevant to
-WordPress hook callback storage. After that, continue into broader reference
+Continue from Milestone 1670 with the next highest-impact remaining COW
+compatibility gap: `ArrayAccess` reference/COW targets. Milestone 1669 closed
+the bounded WP_Hook-style iterator bucket case where by-value
+`Iterator::current()` returns a copied public-property array bucket that is
+then iterated by reference. The next step is proving bounded reference
+assignment to `ArrayAccess` offset targets and side-effecting/bucket-copy
+`offsetGet()` provenance. After that, continue into broader reference
 containers, COW identity, SPL iterator behavior, and native reference lowering.
 
 After that, keep moving through the missing areas above until the WordPress

@@ -2162,6 +2162,97 @@ impl SymbolTable {
         }
     }
 
+    fn mirror_public_object_property_aliases_from_array_copy(
+        &mut self,
+        target_name: &str,
+        source_object: &PhpObject,
+        source_property: &str,
+        source_keys: &[ArrayKey],
+        include_exact_path: bool,
+    ) {
+        let source_roots =
+            self.public_object_property_alias_roots_for_object(source_object, source_property);
+        for source_root in source_roots {
+            self.mirror_array_offset_aliases_from_path_copy(
+                target_name,
+                &source_root,
+                source_keys,
+                include_exact_path,
+            );
+        }
+    }
+
+    fn public_object_property_alias_roots_for_object(
+        &self,
+        source_object: &PhpObject,
+        source_property: &str,
+    ) -> Vec<ArrayOffsetAliasRoot> {
+        let mut roots = Vec::new();
+        for alias in self
+            .array_offset_aliases
+            .values()
+            .flat_map(|aliases| aliases.iter())
+        {
+            let ArrayOffsetAliasRoot::PublicObjectProperty { object, property } = &alias.root
+            else {
+                continue;
+            };
+            if property != source_property {
+                continue;
+            }
+            match self.read_storage_named(object) {
+                Some(Value::Object(candidate)) if candidate == *source_object => {
+                    if !roots.contains(&alias.root) {
+                        roots.push(alias.root.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        roots
+    }
+
+    fn import_public_object_property_aliases_for_object_value(
+        &mut self,
+        local_object_name: &str,
+        source_object: &PhpObject,
+        source_scope: &SymbolTable,
+    ) {
+        let additions: Vec<(String, ArrayOffsetAlias)> = source_scope
+            .array_offset_aliases
+            .iter()
+            .flat_map(|(alias_name, aliases)| {
+                aliases.iter().filter_map(move |alias| {
+                    let ArrayOffsetAliasRoot::PublicObjectProperty { object, property } =
+                        &alias.root
+                    else {
+                        return None;
+                    };
+                    match source_scope.read_storage_named(object) {
+                        Some(Value::Object(candidate)) if candidate == *source_object => Some((
+                            alias_name.clone(),
+                            ArrayOffsetAlias {
+                                root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                                    object: local_object_name.to_string(),
+                                    property: property.clone(),
+                                },
+                                keys: alias.keys.clone(),
+                            },
+                        )),
+                        _ => None,
+                    }
+                })
+            })
+            .collect();
+
+        for (alias_name, alias) in additions {
+            let aliases = self.array_offset_aliases.entry(alias_name).or_default();
+            if !aliases.contains(&alias) {
+                aliases.push(alias);
+            }
+        }
+    }
+
     fn mirror_object_property_aliases_from_clone(
         &mut self,
         target_object_name: &str,
@@ -2940,6 +3031,29 @@ impl SymbolTable {
         names
     }
 
+    fn object_names_for_value(&self, object: &PhpObject) -> Vec<String> {
+        let mut names: Vec<_> = self
+            .symbols
+            .borrow()
+            .iter()
+            .filter_map(|(name, cell)| match &*cell.borrow() {
+                Value::Object(candidate) if candidate == object => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        if let Some(global_symbols) = &self.global_symbols {
+            names.extend(global_symbols.borrow().iter().filter_map(|(name, cell)| {
+                match &*cell.borrow() {
+                    Value::Object(candidate) if candidate == object => Some(name.clone()),
+                    _ => None,
+                }
+            }));
+        }
+        names.sort();
+        names.dedup();
+        names
+    }
+
     fn materialize_array_offset_alias(
         &mut self,
         alias: &ArrayOffsetAlias,
@@ -3588,16 +3702,25 @@ enum ReferenceReturnLocalBinding {
         root_name: String,
         keys: Vec<ArrayKey>,
     },
+    ObjectPropertyArrayOffset(ArrayOffsetAlias),
+}
+
+#[derive(Debug, Clone)]
+struct PublicObjectPropertyArrayCopySource {
+    object: PhpObject,
+    property: String,
+    keys: Vec<ArrayKey>,
+    include_exact_path: bool,
 }
 
 #[derive(Debug, Clone)]
 enum ArrayLiteralReferenceElement {
     Variable {
-        key: ArrayKey,
+        keys: Vec<ArrayKey>,
         source_name: String,
     },
     Alias {
-        key: ArrayKey,
+        keys: Vec<ArrayKey>,
         source_alias: ArrayOffsetAlias,
         value: Value,
     },
@@ -4077,6 +4200,45 @@ impl Interpreter {
         } else {
             ArrayOffsetAliasRoot::ContextObjectProperty {
                 object: object_name.to_string(),
+                property: property.to_string(),
+                current_class_id,
+                protected_class_ids,
+            }
+        })
+    }
+
+    fn this_object_property_alias_root(
+        &self,
+        property: &str,
+        scope: &SymbolTable,
+        span: Span,
+    ) -> CompileResult<ArrayOffsetAliasRoot> {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let object = match scope.read_static("this", span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let visibility = object
+            .property_visibility_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+
+        Ok(if visibility == Visibility::Public {
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: "this".to_string(),
+                property: property.to_string(),
+            }
+        } else {
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object: "this".to_string(),
                 property: property.to_string(),
                 current_class_id,
                 protected_class_ids,
@@ -4614,6 +4776,294 @@ impl Interpreter {
         Ok(Flow::Normal)
     }
 
+    fn call_required_iterator_current_method_with_array_copy_source(
+        &mut self,
+        object: PhpObject,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+        let method_name = "current";
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), method_name)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    object.class_name()
+                )),
+            ));
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        if function.returns_by_reference {
+            ensure_user_function_arity(function, 0, span)?;
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+
+            let called_class_id = object.class_id();
+            let binding = self
+                .call_reference_return_function_with_checked_values_for_reference_assignment(
+                    function,
+                    Vec::new(),
+                    Some(object),
+                    Some(class_id),
+                    Some(called_class_id),
+                    Vec::new(),
+                    caller_scope,
+                )?;
+            let source = Self::public_object_property_array_copy_source_from_reference_binding(
+                &binding,
+                caller_scope,
+            );
+            let value = match binding {
+                ReferenceReturnBinding::Cell(cell) => cell.borrow().clone(),
+                ReferenceReturnBinding::ArrayOffset(alias) => caller_scope
+                    .read_array_offset_alias(&alias)
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::invalid_array_access(
+                                "cannot read Iterator::current() reference-return array result"
+                                    .to_string(),
+                            ),
+                        )
+                    })?,
+                ReferenceReturnBinding::ArrayOffsets(aliases) => {
+                    let alias = aliases.first().ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::invalid_array_access(
+                                "cannot read empty Iterator::current() reference-return array result"
+                                    .to_string(),
+                            ),
+                        )
+                    })?;
+                    caller_scope.read_array_offset_alias(alias).ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::invalid_array_access(
+                                "cannot read Iterator::current() reference-return array result"
+                                    .to_string(),
+                            ),
+                        )
+                    })?
+                }
+            };
+            return Ok((value, source));
+        }
+        ensure_user_function_arity(function, 0, span)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let called_class_id = object.class_id();
+        self.function_context.push(function.name.clone());
+        self.class_context.push(class_id);
+        self.called_class_context.push(called_class_id);
+        let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
+        local_scope.write_static("this", Value::Object(object));
+
+        self.call_depth += 1;
+        self.active_static_locals.push(Vec::new());
+        let flow =
+            self.execute_statements_with_array_copy_return_source(&function.body, &mut local_scope);
+        let static_names = self.active_static_locals.pop().unwrap_or_default();
+        let function_key = function.name.to_ascii_lowercase();
+        for name in static_names {
+            if let Some(value) = local_scope.read_named(&name) {
+                self.static_locals
+                    .insert((function_key.clone(), name), value.clone());
+            }
+        }
+        self.call_depth -= 1;
+        self.function_context.pop();
+        self.class_context.pop();
+        self.called_class_context.pop();
+
+        let (flow, source) = flow?;
+        match flow {
+            Flow::Normal => Ok((Value::Null, None)),
+            Flow::Break { span, .. } => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+            )),
+            Flow::Continue { span, .. } => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
+            )),
+            Flow::Return(value) => Ok((value, source)),
+            Flow::Exit(_) => Ok((Value::Null, None)),
+            Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
+        }
+    }
+
+    fn execute_statements_with_array_copy_return_source(
+        &mut self,
+        statements: &[Stmt],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+        let mut labels = HashMap::new();
+        for (index, stmt) in statements.iter().enumerate() {
+            if let Stmt::Label { name, .. } = stmt {
+                labels.insert(name.clone(), index);
+            }
+        }
+
+        let mut index = 0;
+        while index < statements.len() {
+            let stmt = &statements[index];
+            if let Stmt::Return { value, .. } = stmt {
+                self.tick(stmt.span())?;
+                let Some(expr) = value else {
+                    return Ok((Flow::Return(Value::Null), None));
+                };
+                let value = self.evaluate(expr, scope)?;
+                let source = if matches!(value, Value::Array(_)) {
+                    self.public_object_property_array_copy_source_for_expr(expr, scope)
+                } else {
+                    None
+                };
+                return Ok((Flow::Return(value), source));
+            }
+
+            match self.execute_statement(stmt, scope)? {
+                Flow::Normal => {}
+                Flow::Goto { label, span } => {
+                    let Some(target) = labels.get(&label) else {
+                        return Ok((Flow::Goto { label, span }, None));
+                    };
+                    index = *target;
+                    continue;
+                }
+                flow @ (Flow::Break { .. }
+                | Flow::Continue { .. }
+                | Flow::Return(_)
+                | Flow::Exit(_)) => return Ok((flow, None)),
+            }
+            if let Some(code) = self.exit_signal {
+                return Ok((Flow::Exit(code), None));
+            }
+            index += 1;
+        }
+        Ok((Flow::Normal, None))
+    }
+
+    fn public_object_property_array_copy_source_for_expr(
+        &self,
+        expr: &Expr,
+        scope: &SymbolTable,
+    ) -> Option<PublicObjectPropertyArrayCopySource> {
+        match expr {
+            Expr::Property {
+                target, property, ..
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return None;
+                };
+                let Value::Object(object) = scope.read_named(object_name)? else {
+                    return None;
+                };
+                object.read_public_property(property).ok()?;
+                Some(PublicObjectPropertyArrayCopySource {
+                    object,
+                    property: property.clone(),
+                    keys: Vec::new(),
+                    include_exact_path: true,
+                })
+            }
+            Expr::Index { target, index, .. } => {
+                let (object_name, property, indices) =
+                    Self::collect_direct_object_property_array_index_path(target, index)?;
+                let Value::Object(object) = scope.read_named(object_name)? else {
+                    return None;
+                };
+                object.read_public_property(property).ok()?;
+                let mut keys = Vec::with_capacity(indices.len());
+                for index in indices {
+                    keys.push(Self::side_effect_free_array_key(index, scope)?);
+                }
+                Some(PublicObjectPropertyArrayCopySource {
+                    object,
+                    property: property.to_string(),
+                    keys,
+                    include_exact_path: false,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn public_object_property_array_copy_source_from_reference_binding(
+        binding: &ReferenceReturnBinding,
+        scope: &SymbolTable,
+    ) -> Option<PublicObjectPropertyArrayCopySource> {
+        let alias = match binding {
+            ReferenceReturnBinding::ArrayOffset(alias) => alias,
+            ReferenceReturnBinding::ArrayOffsets(aliases) => aliases.first()?,
+            ReferenceReturnBinding::Cell(_) => return None,
+        };
+        let ArrayOffsetAliasRoot::PublicObjectProperty { object, property } = &alias.root else {
+            return None;
+        };
+        let Value::Object(object) = scope.read_named(object)? else {
+            return None;
+        };
+        Some(PublicObjectPropertyArrayCopySource {
+            object,
+            property: property.clone(),
+            keys: alias.keys.clone(),
+            include_exact_path: false,
+        })
+    }
+
+    fn side_effect_free_array_key(expr: &Expr, scope: &SymbolTable) -> Option<ArrayKey> {
+        let value = Self::side_effect_free_value(expr, scope)?;
+        ArrayKey::from_value(&value).ok()
+    }
+
+    fn side_effect_free_value(expr: &Expr, scope: &SymbolTable) -> Option<Value> {
+        Some(match expr {
+            Expr::Null(_) => Value::Null,
+            Expr::Bool(value, _) => Value::Bool(*value),
+            Expr::Int(value, _) => Value::Int(*value),
+            Expr::Float(value, _) => Value::Float(*value),
+            Expr::String(value, _) => Value::String(value.clone()),
+            Expr::Variable(name, _) => scope.read_named(name)?,
+            Expr::Property {
+                target, property, ..
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return None;
+                };
+                let Value::Object(object) = scope.read_named(object_name)? else {
+                    return None;
+                };
+                object.read_public_property(property).ok()?
+            }
+            Expr::Index { target, index, .. } => {
+                let Value::Array(array) = Self::side_effect_free_value(target, scope)? else {
+                    return None;
+                };
+                let key = Self::side_effect_free_array_key(index, scope)?;
+                array.get(key)?.clone()
+            }
+            _ => return None,
+        })
+    }
+
     fn call_required_iterator_method(
         &mut self,
         object: PhpObject,
@@ -4652,13 +5102,31 @@ impl Interpreter {
             }
 
             self.tick(span)?;
-            let current = self.call_required_iterator_method(object.clone(), "current", span)?;
+            let (current, array_copy_source) = self
+                .call_required_iterator_current_method_with_array_copy_source(
+                    object.clone(),
+                    span,
+                    scope,
+                )?;
             if let Some(key) = key {
                 let iterator_key =
                     self.call_required_iterator_method(object.clone(), "key", span)?;
                 scope.write_static(key, iterator_key);
             }
+            let target_is_alias = scope.is_array_offset_alias_name(value);
+            let current_is_array = matches!(current, Value::Array(_));
             scope.write_static(value, current);
+            if !target_is_alias && current_is_array {
+                if let Some(source) = array_copy_source {
+                    scope.mirror_public_object_property_aliases_from_array_copy(
+                        value,
+                        &source.object,
+                        &source.property,
+                        &source.keys,
+                        source.include_exact_path,
+                    );
+                }
+            }
 
             match self.execute_statements(body, scope)? {
                 Flow::Normal => {
@@ -9756,6 +10224,51 @@ impl Interpreter {
         format!("\0phpc_array_access_ref_object_{}", object.id())
     }
 
+    fn hidden_reference_return_object_name(&self, object: &PhpObject) -> String {
+        format!("\0phpc_reference_return_object_{}", object.id())
+    }
+
+    fn object_property_reference_return_alias_for_caller(
+        &self,
+        alias: &ArrayOffsetAlias,
+        object: &PhpObject,
+        caller_scope: &mut SymbolTable,
+    ) -> ArrayOffsetAlias {
+        let object_name = caller_scope
+            .object_names_for_value(object)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| {
+                let hidden_name = self.hidden_reference_return_object_name(object);
+                caller_scope.write_static(&hidden_name, Value::Object(object.clone()));
+                hidden_name
+            });
+        let root = match &alias.root {
+            ArrayOffsetAliasRoot::PublicObjectProperty { property, .. } => {
+                ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: object_name,
+                    property: property.clone(),
+                }
+            }
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                property,
+                current_class_id,
+                protected_class_ids,
+                ..
+            } => ArrayOffsetAliasRoot::ContextObjectProperty {
+                object: object_name,
+                property: property.clone(),
+                current_class_id: *current_class_id,
+                protected_class_ids: protected_class_ids.clone(),
+            },
+            _ => alias.root.clone(),
+        };
+        ArrayOffsetAlias {
+            root: caller_scope.canonical_equivalent_object_property_alias_root(&root),
+            keys: alias.keys.clone(),
+        }
+    }
+
     fn array_access_offset_get_reference_property(
         &self,
         function: &FunctionDecl,
@@ -10283,23 +10796,23 @@ impl Interpreter {
                 }
                 for reference in array_literal_references {
                     match reference {
-                        ArrayLiteralReferenceElement::Variable { key, source_name } => {
-                            scope.bind_array_offset_to_static_source(
+                        ArrayLiteralReferenceElement::Variable { keys, source_name } => {
+                            scope.bind_nested_array_offset_to_static_source(
                                 name,
-                                key,
+                                keys,
                                 &source_name,
                                 expr.span(),
                             )?;
                         }
                         ArrayLiteralReferenceElement::Alias {
-                            key,
+                            keys,
                             source_alias,
                             value,
                         } => {
                             if target_is_alias {
                                 scope.bind_alias_backed_array_offset_to_reference_alias(
                                     name,
-                                    std::slice::from_ref(&key),
+                                    &keys,
                                     source_alias,
                                     value,
                                     expr.span(),
@@ -10309,7 +10822,7 @@ impl Interpreter {
                                     root: ArrayOffsetAliasRoot::StaticArray {
                                         name: name.to_string(),
                                     },
-                                    keys: vec![key],
+                                    keys,
                                 };
                                 scope.bind_array_offset_alias_to_reference_alias(
                                     target_alias,
@@ -12369,32 +12882,66 @@ impl Interpreter {
                         .map_err(|error| runtime_error(span, error))?,
                 };
                 references.push(match reference {
-                    ArrayLiteralReferenceElement::Variable { source_name, .. } => {
-                        ArrayLiteralReferenceElement::Variable { key, source_name }
+                    ArrayLiteralReferenceElement::Variable {
+                        mut keys,
+                        source_name,
+                    } => {
+                        keys.insert(0, key);
+                        ArrayLiteralReferenceElement::Variable { keys, source_name }
                     }
                     ArrayLiteralReferenceElement::Alias {
+                        mut keys,
                         source_alias,
                         value,
-                        ..
-                    } => ArrayLiteralReferenceElement::Alias {
-                        key,
-                        source_alias,
-                        value,
-                    },
+                    } => {
+                        keys.insert(0, key);
+                        ArrayLiteralReferenceElement::Alias {
+                            keys,
+                            source_alias,
+                            value,
+                        }
+                    }
                 });
                 continue;
             }
 
-            let value = self.evaluate(&item.value, scope)?;
-            match key {
+            let (value, nested_references) = match &item.value {
+                Expr::Array { items, span } => {
+                    self.evaluate_array_for_direct_assignment(items, *span, scope)?
+                }
+                _ => (self.evaluate(&item.value, scope)?, Vec::new()),
+            };
+            let key = match key {
                 Some(key) => {
-                    array.insert(key, value);
+                    array.insert(key.clone(), value);
+                    key
                 }
-                None => {
-                    array
-                        .append(value)
-                        .map_err(|error| runtime_error(span, error))?;
-                }
+                None => array
+                    .append(value)
+                    .map_err(|error| runtime_error(span, error))?,
+            };
+            for reference in nested_references {
+                references.push(match reference {
+                    ArrayLiteralReferenceElement::Variable {
+                        mut keys,
+                        source_name,
+                    } => {
+                        keys.insert(0, key.clone());
+                        ArrayLiteralReferenceElement::Variable { keys, source_name }
+                    }
+                    ArrayLiteralReferenceElement::Alias {
+                        mut keys,
+                        source_alias,
+                        value,
+                    } => {
+                        keys.insert(0, key.clone());
+                        ArrayLiteralReferenceElement::Alias {
+                            keys,
+                            source_alias,
+                            value,
+                        }
+                    }
+                });
             }
         }
 
@@ -12427,9 +12974,12 @@ impl Interpreter {
     ) -> CompileResult<()> {
         for reference in references {
             match reference {
-                ArrayLiteralReferenceElement::Variable { key, source_name } => {
+                ArrayLiteralReferenceElement::Variable {
+                    keys: reference_keys,
+                    source_name,
+                } => {
                     let mut keys = prefix.clone();
-                    keys.push(key);
+                    keys.extend(reference_keys);
                     scope.bind_object_property_array_offset_alias_root_to_static_source(
                         root.clone(),
                         keys,
@@ -12438,12 +12988,12 @@ impl Interpreter {
                     )?;
                 }
                 ArrayLiteralReferenceElement::Alias {
-                    key,
+                    keys: reference_keys,
                     source_alias,
                     value,
                 } => {
                     let mut keys = prefix.clone();
-                    keys.push(key);
+                    keys.extend(reference_keys);
                     let target_alias = ArrayOffsetAlias {
                         root: root.clone(),
                         keys,
@@ -12472,7 +13022,7 @@ impl Interpreter {
             return Ok((
                 value,
                 ArrayLiteralReferenceElement::Variable {
-                    key: ArrayKey::Int(0),
+                    keys: Vec::new(),
                     source_name: source_name.clone(),
                 },
             ));
@@ -12484,7 +13034,7 @@ impl Interpreter {
             return Ok((
                 value.clone(),
                 ArrayLiteralReferenceElement::Alias {
-                    key: ArrayKey::Int(0),
+                    keys: Vec::new(),
                     source_alias,
                     value,
                 },
@@ -12497,7 +13047,7 @@ impl Interpreter {
             return Ok((
                 value.clone(),
                 ArrayLiteralReferenceElement::Alias {
-                    key: ArrayKey::Int(0),
+                    keys: Vec::new(),
                     source_alias,
                     value,
                 },
@@ -12510,7 +13060,7 @@ impl Interpreter {
             return Ok((
                 value.clone(),
                 ArrayLiteralReferenceElement::Alias {
-                    key: ArrayKey::Int(0),
+                    keys: Vec::new(),
                     source_alias,
                     value,
                 },
@@ -28340,6 +28890,7 @@ impl Interpreter {
             self.called_class_context.push(called_class_context);
         }
         let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
+        let returned_this_object = this_object.clone();
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
         }
@@ -28479,6 +29030,15 @@ impl Interpreter {
                         )
                     })
             }
+            ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(alias) => {
+                returned_this_object.as_ref().map(|object| {
+                    vec![self.object_property_reference_return_alias_for_caller(
+                        alias,
+                        object,
+                        caller_scope,
+                    )]
+                })
+            }
         });
         let writeback_result = if result.is_ok() {
             let mut writeback_result = Ok(());
@@ -28561,6 +29121,13 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         callable_name(&function.name),
                         "reference-return array-offset expressions require a covered by-reference array-slot argument in the current subset",
+                    ),
+                )),
+                ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(_) => Err(runtime_error(
+                    function.span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "reference-return object-property array-offset expressions require a covered by-reference argument in the current subset",
                     ),
                 )),
             }
@@ -28858,32 +29425,51 @@ impl Interpreter {
                             });
                     }
                     Expr::Index { target, index, .. } => {
-                        let Some((root_name, indices)) =
+                        if let Some((root_name, indices)) =
                             Self::collect_direct_variable_array_index_path(target, index)
-                        else {
+                        {
+                            let keys = indices
+                                .iter()
+                                .map(|index| self.evaluate_array_key(index, scope))
+                                .collect::<CompileResult<Vec<_>>>()?;
+                            let alias = ArrayOffsetAlias {
+                                root: ArrayOffsetAliasRoot::StaticArray {
+                                    name: root_name.to_string(),
+                                },
+                                keys: keys.clone(),
+                            };
+                            scope.materialize_array_offset_alias(&alias, *span)?;
+                            return Ok(ReferenceReturnLocalBinding::ArrayOffset {
+                                root_name: root_name.to_string(),
+                                keys,
+                            });
+                        }
+
+                        if let Some((property, indices)) =
+                            Self::collect_this_property_array_index_path(target, index)
+                        {
+                            let keys = indices
+                                .iter()
+                                .map(|index| self.evaluate_array_key(index, scope))
+                                .collect::<CompileResult<Vec<_>>>()?;
+                            let root =
+                                self.this_object_property_alias_root(property, scope, *span)?;
+                            let alias = ArrayOffsetAlias { root, keys };
+                            scope.materialize_array_offset_alias(&alias, *span)?;
+                            return Ok(ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(
+                                alias,
+                            ));
+                        }
+
+                        {
                             return Err(runtime_error(
                                 *span,
                                 RuntimeError::unsupported_call(
                                     callable_name(&function.name),
-                                    "reference-return array-offset expressions are only implemented for direct variable roots in the current subset",
+                                    "reference-return array-offset expressions are only implemented for direct variable roots and bounded $this->property roots in the current subset",
                                 ),
                             ));
-                        };
-                        let keys = indices
-                            .iter()
-                            .map(|index| self.evaluate_array_key(index, scope))
-                            .collect::<CompileResult<Vec<_>>>()?;
-                        let alias = ArrayOffsetAlias {
-                            root: ArrayOffsetAliasRoot::StaticArray {
-                                name: root_name.to_string(),
-                            },
-                            keys: keys.clone(),
-                        };
-                        scope.materialize_array_offset_alias(&alias, *span)?;
-                        return Ok(ReferenceReturnLocalBinding::ArrayOffset {
-                            root_name: root_name.to_string(),
-                            keys,
-                        });
+                        }
                     }
                     _ => {
                         return Err(runtime_error(
@@ -29697,6 +30283,111 @@ impl Interpreter {
         Ok(())
     }
 
+    fn write_back_reference_parameter_object_aliases(
+        &mut self,
+        reference_bindings: &[ReferenceBinding],
+        local_scope: &SymbolTable,
+        caller_scope: &mut SymbolTable,
+        this_object: Option<&PhpObject>,
+        span: Span,
+    ) -> CompileResult<()> {
+        for binding in reference_bindings {
+            let ReferenceBindingTarget::CallerCell {
+                name: caller_name, ..
+            } = &binding.target
+            else {
+                continue;
+            };
+            let Some(aliases) = local_scope.array_offset_aliases_for_name(&binding.param_name)
+            else {
+                continue;
+            };
+
+            for alias in aliases {
+                let Some(translated_alias) = self.translate_local_object_alias_to_caller(
+                    alias,
+                    local_scope,
+                    caller_scope,
+                    this_object,
+                ) else {
+                    continue;
+                };
+                caller_scope.bind_array_offset_alias_root_to_static_source(
+                    translated_alias,
+                    caller_name,
+                    span,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn translate_local_object_alias_to_caller(
+        &self,
+        alias: ArrayOffsetAlias,
+        local_scope: &SymbolTable,
+        caller_scope: &mut SymbolTable,
+        this_object: Option<&PhpObject>,
+    ) -> Option<ArrayOffsetAlias> {
+        match alias.root {
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
+                let object =
+                    self.caller_object_alias_name(&object, local_scope, caller_scope, this_object)?;
+                Some(ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::PublicObjectProperty { object, property },
+                    keys: alias.keys,
+                })
+            }
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object,
+                property,
+                current_class_id,
+                protected_class_ids,
+            } => {
+                let object =
+                    self.caller_object_alias_name(&object, local_scope, caller_scope, this_object)?;
+                Some(ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::ContextObjectProperty {
+                        object,
+                        property,
+                        current_class_id,
+                        protected_class_ids,
+                    },
+                    keys: alias.keys,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn caller_object_alias_name(
+        &self,
+        local_object_name: &str,
+        local_scope: &SymbolTable,
+        caller_scope: &mut SymbolTable,
+        this_object: Option<&PhpObject>,
+    ) -> Option<String> {
+        let object = if local_object_name == "this" {
+            this_object?.clone()
+        } else {
+            match local_scope.read_named(local_object_name)? {
+                Value::Object(object) => object,
+                _ => return None,
+            }
+        };
+
+        caller_scope
+            .object_names_for_value(&object)
+            .into_iter()
+            .next()
+            .or_else(|| {
+                let hidden_name = self.hidden_array_access_reference_object_name(&object);
+                caller_scope.write_static(&hidden_name, Value::Object(object));
+                Some(hidden_name)
+            })
+    }
+
     fn write_back_array_offset_aliases(
         &mut self,
         aliases: &[ArrayOffsetAlias],
@@ -29800,6 +30491,7 @@ impl Interpreter {
             self.called_class_context.push(called_class_context);
         }
         let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
+        let this_object_for_alias_transfer = this_object.clone();
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
         }
@@ -29932,6 +30624,15 @@ impl Interpreter {
                 }
             };
             local_scope.write_static(&param.name, value);
+            if let Some(source_scope) = reference_scope.as_deref() {
+                if let Some(Value::Object(object)) = local_scope.read_named(&param.name) {
+                    local_scope.import_public_object_property_aliases_for_object_value(
+                        &param.name,
+                        &object,
+                        source_scope,
+                    );
+                }
+            }
         }
 
         self.call_depth += 1;
@@ -29942,12 +30643,23 @@ impl Interpreter {
             Ok(Flow::Normal) | Ok(Flow::Return(_)) | Ok(Flow::Exit(_))
         ) {
             let reference_writeback = if let Some(reference_scope) = reference_scope {
-                self.write_back_reference_bindings(
+                let result = self.write_back_reference_bindings(
                     &array_offset_binding_cells,
                     &local_scope,
                     reference_scope,
                     function.span,
-                )
+                );
+                if let Err(error) = result {
+                    Err(error)
+                } else {
+                    self.write_back_reference_parameter_object_aliases(
+                        &reference_bindings,
+                        &local_scope,
+                        reference_scope,
+                        this_object_for_alias_transfer.as_ref(),
+                        function.span,
+                    )
+                }
             } else {
                 Ok(())
             };
@@ -36899,6 +37611,36 @@ impl Interpreter {
                     };
                     indices.reverse();
                     return Some((name, property, indices));
+                }
+                Expr::Index { target, index, .. } => {
+                    indices.push(index);
+                    current = target;
+                }
+                _ => return None,
+            }
+        }
+    }
+
+    fn collect_this_property_array_index_path<'a>(
+        target: &'a Expr,
+        index: &'a Expr,
+    ) -> Option<(&'a str, Vec<&'a Expr>)> {
+        let mut indices = vec![index];
+        let mut current = target;
+
+        loop {
+            match current {
+                Expr::Property {
+                    target, property, ..
+                } => {
+                    let Expr::Variable(name, _) = target.as_ref() else {
+                        return None;
+                    };
+                    if name != "this" {
+                        return None;
+                    }
+                    indices.reverse();
+                    return Some((property, indices));
                 }
                 Expr::Index { target, index, .. } => {
                     indices.push(index);

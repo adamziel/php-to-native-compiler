@@ -56,20 +56,17 @@ injects this file into every prompt. Each Codex pass should update it with:
   failures, and `phpc test --compare-php` reported `1703` fixture tests
   passed with `0` failures, `1010` system PHP comparisons, and `693`
   `phpc-only` skipped fixtures.
-- Remaining semantic gaps: WP_Hook-style iterator bucket COW where by-value
-  `Iterator::current()` returns a copied public-property array containing
-  nested reference slots; expression-root reference targets; arbitrary
-  expression roots; arbitrary magic `__get()` return bodies; by-value or
-  side-effecting `ArrayAccess::offsetGet()` bodies; reference assignment to
-  `ArrayAccess` offset targets; exact alias destruction/destructor ordering;
-  general PHP reference containers; broad array/object COW identity; SPL
-  iterator by-reference execution; superglobal lifetime breadth; native
-  reference lowering; and broader WordPress bootstrap/object/SAPI/DB/native
-  blockers.
+- Remaining semantic gaps after Milestone 1669: expression-root reference
+  targets; arbitrary expression roots; arbitrary magic `__get()` return
+  bodies; by-value or side-effecting `ArrayAccess::offsetGet()` bodies;
+  reference assignment to `ArrayAccess` offset targets; exact alias
+  destruction/destructor ordering; general PHP reference containers; broad
+  array/object COW identity; SPL iterator by-reference execution; superglobal
+  lifetime breadth; native reference lowering; and broader WordPress
+  bootstrap/object/SAPI/DB/native blockers.
 - Next concrete task: checkpoint with `tools/checkpoint.sh`, push, clean
-  `/tmp/phpc-target-cow-1668` and `/tmp/phpc-target-full-cow-1668`, then keep
-  all COW lanes on Milestone 1669 until the WP_Hook iterator bucket COW gap is
-  proven.
+  Milestone 1669 target directories, then keep all COW lanes on Milestone 1670
+  until the `ArrayAccess` reference/COW target gap is proven.
 
 ## Loop Event 2026-05-18T04:08:00+02:00
 

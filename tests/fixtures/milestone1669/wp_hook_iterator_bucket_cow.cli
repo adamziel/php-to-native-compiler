@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1669/wp_hook_iterator_bucket_cow.php
+--- stdout begin ---
+via-copy|via-copy|1|plain
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit code: 0

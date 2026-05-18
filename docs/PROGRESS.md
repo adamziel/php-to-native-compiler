@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 1669, a focused WP_Hook-style iterator bucket COW slice.
+  By-value `foreach` over bounded userland `Iterator` objects can now preserve
+  covered nested reference-slot provenance when public `Iterator::current()`
+  returns an array copied from a direct public `$this->property` array or a
+  selected bucket such as `$this->callbacks[$priority]`. The copied loop value
+  remains a by-value array, but by-reference foreach over that copy can route
+  writes for mirrored reference elements back to the original public
+  object-property array slot while plain copied elements remain detached,
+  matching the focused PHP behavior. The new foreach regression is
+  PHP-comparable and the same source was exercised through `phpc run`. This
+  still does not add `Iterator::current()` provenance for magic or non-public
+  properties, dynamic property roots, arbitrary return expressions, builtin
+  `current($this->callbacks)`-style return expressions, side-effecting key
+  expressions, full PHP reference containers, broad COW identity, SPL iterator
+  by-reference execution, or native reference lowering. Focused verification
+  used isolated `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test foreach -- --test-threads=1`
+  passed `37` tests; `cargo test -p phpc --test call_user_func_builtin --
+  --test-threads=1` passed `39` tests; and `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1669` passed `1` fixture with `1`
+  system PHP comparison.
+
 - Added Milestone 1668, a focused Reference/COW container batch. Reference
   assignment sources can now bind visible object-property array slots reached
   through expression-root object holders such as

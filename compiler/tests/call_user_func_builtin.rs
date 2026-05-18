@@ -1659,6 +1659,81 @@ echo is_callable("call_user_func_array") ? "callable" : "missing";
 }
 
 #[test]
+fn iterator_current_bucket_copy_preserves_nested_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class WP_RefCow_Hook_Iterator implements Iterator {
+    public $callbacks = array();
+    public $priorities = array(10);
+    public $index = 0;
+
+    public function rewind() {
+        $this->index = 0;
+    }
+
+    public function valid() {
+        return $this->index < count($this->priorities);
+    }
+
+    public function key() {
+        return $this->priorities[$this->index];
+    }
+
+    public function next() {
+        $this->index = $this->index + 1;
+    }
+
+    public function current() {
+        return $this->callbacks[$this->priorities[$this->index]];
+    }
+}
+
+class WP_RefCow_Hook_Ref_Iterator extends WP_RefCow_Hook_Iterator {
+    public function &current() {
+        return $this->callbacks[$this->priorities[$this->index]];
+    }
+}
+
+$target = "seed";
+$hook = new WP_RefCow_Hook_Iterator();
+$hook->callbacks[10] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+);
+$hook->callbacks[10]["id"]["function"] =& $target;
+foreach ($hook as $priority => $bucket) {
+    $bucket["id"]["accepted_args"] = 99;
+    foreach ($bucket as $id => &$callback) {
+        $callback["function"] = $callback["function"] . ":value";
+    }
+}
+echo $target, "|", $hook->callbacks[10]["id"]["function"], "|", $hook->callbacks[10]["id"]["accepted_args"], "\n";
+
+$refTarget = "seed";
+$refHook = new WP_RefCow_Hook_Ref_Iterator();
+$refHook->callbacks[10] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+);
+$refHook->callbacks[10]["id"]["function"] =& $refTarget;
+foreach ($refHook as $priority => $bucket) {
+    $bucket["id"]["accepted_args"] = 99;
+    foreach ($bucket as $id => &$callback) {
+        $callback["function"] = $callback["function"] . ":ref";
+    }
+}
+echo $refTarget, "|", $refHook->callbacks[10]["id"]["function"], "|", $refHook->callbacks[10]["id"]["accepted_args"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "seed:value|seed:value|1\nseed:ref|seed:ref|1"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_rejects_forms_outside_current_subset() {
     let missing = runtime_error(
         r#"<?php

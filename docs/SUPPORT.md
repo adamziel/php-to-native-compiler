@@ -914,7 +914,13 @@
   PHP order, writes the key variable from `key()`, writes the value variable
   from `current()`, and observes iterator object mutations made by the loop
   body before later iterations. `IteratorAggregate` is recognized only when
-  `getIterator()` returns one of those bounded `Iterator` objects. By-reference
+  `getIterator()` returns one of those bounded `Iterator` objects. If
+  `current()` returns an array copied from a direct public `$this->property`
+  array or selected bucket such as `$this->callbacks[$priority]`, covered
+  nested reference slots below that public object-property array are mirrored
+  into the copied loop value, so a later by-reference foreach over that copy
+  can update the original referenced slot while non-reference copied elements
+  remain detached. By-reference
   value forms over a direct array variable, such
   as `foreach ($array as &$value)` and
   `foreach ($array as $key => &$value)`, execute as a bounded direct-slot and
@@ -1005,8 +1011,8 @@
   foreach or by-reference iteration: broad array reordering/replacement
   semantics, full reference containers, copy-on-write, by-reference
   SPL `Iterator`/`IteratorAggregate`/`Traversable` object execution,
-  WP_Hook-style iterator bucket COW where by-value `Iterator::current()`
-  returns a copied public-property array containing nested reference slots,
+  `Iterator::current()` array-copy provenance outside direct public
+  `$this->property` array and selected-bucket return expressions,
   `IteratorAggregate` returns outside the bounded userland `Iterator` object
   path or non-traversable diagnostic path, direct `Traversable`
   implementations,

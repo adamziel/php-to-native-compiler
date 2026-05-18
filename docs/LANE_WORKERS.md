@@ -52,7 +52,7 @@ disjoint:
 - Native runtime ABI lane for runtime helper ABI, generated-code helper-call
   probes, owned buffers/handles, and explicit native lowering boundaries.
 
-Current next queue after the Milestone 1668 COW container slice:
+Current next queue after the Milestone 1669 COW iterator-bucket slice:
 
 - Milestone 1647: object lifecycle WordPress blocker.
 - Milestone 1648 and COW slices 1652-1656: completed for the current
@@ -68,8 +68,11 @@ Current next queue after the Milestone 1668 COW container slice:
 - Milestone 1668: expression-root object-property array references,
   non-direct magic append references, nested magic/`ArrayAccess` containers,
   and userland iterator by-reference rejection parity completed.
-- Milestone 1669: keep all available COW lanes focused on the WP_Hook-style
-  iterator bucket COW blocker until it is proven.
+- Milestone 1669: WP_Hook-style iterator bucket COW completed for bounded
+  public object-property `Iterator::current()` bucket copies with covered
+  nested reference slots.
+- Milestone 1670: keep all available COW lanes focused on the next large
+  `ArrayAccess` reference/COW target gap until it is proven.
 - Milestone 1649: request/SAPI/filesystem/stream WordPress blocker.
 - Milestone 1650: WordPress DB/bootstrap evidence blocker.
 - Milestone 1651: native runtime ABI/execution blocker.

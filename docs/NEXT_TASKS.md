@@ -18392,12 +18392,20 @@ handled.
 
 ## Milestone 1669: WP_Hook Iterator Bucket COW Blocker
 
-- [ ] Reference/COW lane: focus all active lanes on the WP_Hook-style iterator
+- [x] Reference/COW lane: focus all active lanes on the WP_Hook-style iterator
   bucket gap. PHP preserves nested reference slots when by-value
   `Iterator::current()` returns a copied public-property array bucket and that
-  bucket is later iterated by reference; `phpc` still detaches the copied
-  bucket from the original callback/reference slot. Prove the fix with a
-  PHP-comparable fixture before moving to any other missing area.
+  bucket is later iterated by reference; `phpc` now preserves the covered
+  public-property bucket reference slots while keeping plain copied elements
+  detached. Covered by Rust regressions and a PHP-comparable fixture.
+
+## Milestone 1670: ArrayAccess Reference/COW Target Blocker
+
+- [ ] Reference/COW lane: keep all active lanes on the next large COW gap:
+  `ArrayAccess::offsetGet()` reference targets and side-effecting bucket
+  provenance. Prove bounded reference assignment to `ArrayAccess` offset
+  targets and by-value `offsetGet()` bucket copies with PHP-comparable
+  fixtures before moving to unrelated WordPress blockers.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

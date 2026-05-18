@@ -57,7 +57,11 @@ arrives at that property. By-value `foreach` over bounded userland
 `Iterator` objects dispatches public `rewind()`, `valid()`, `current()`,
 `key()`, and `next()` in PHP order through the existing method-call path;
 `IteratorAggregate::getIterator()` is bounded to returning one of those
-`Iterator` objects. By-reference foreach over userland `Iterator` objects is
+`Iterator` objects. When a by-value `Iterator::current()` result is an array
+copied from a direct public `$this->property` array or selected literal-key
+bucket such as `$this->callbacks[$priority]`, the interpreter can mirror
+covered nested public object-property reference slots into the loop variable's
+copied array. By-reference foreach over userland `Iterator` objects is
 rejected with PHP-parity diagnostics because PHP itself forbids that shape.
 Bounded non-direct named and dynamic property holder expressions in
 by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
@@ -85,10 +89,9 @@ foreach array-slot alias machinery. This is still a
 materialized-symbol-table model, not PHP's full reference-backed alias,
 recursive `$GLOBALS` array, copy-on-write, dynamic global-name, broader
 ArrayAccess iteration, `Iterator`/`IteratorAggregate`/`Traversable` object
-by-reference execution, WP_Hook-style iterator bucket reference-slot
-preservation, non-public or magic-property object iteration,
-arbitrary dynamic object-property iterable roots, or included-file scope
-model.
+by-reference execution, non-public or magic-property iterator bucket
+reference-slot preservation, non-public or magic-property object iteration,
+arbitrary dynamic object-property iterable roots, or included-file scope model.
 `$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded in the
 same root symbol table and route direct function-scope reads and writes through
 that root storage. `$_SESSION` is materialized lazily into the same root symbol

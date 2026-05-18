@@ -1190,6 +1190,129 @@ echo "|", $iterator->pos;
 }
 
 #[test]
+fn foreach_by_value_iterator_current_public_property_bucket_preserves_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class HookBucketIterator implements Iterator {
+    public $callbacks = array("10" => array("a" => "seed", "b" => "plain"));
+    public $keys = array("10");
+    public $pos = 0;
+
+    #[ReturnTypeWillChange]
+    public function rewind() {
+        $this->pos = 0;
+    }
+
+    #[ReturnTypeWillChange]
+    public function valid() {
+        return isset($this->keys[$this->pos]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function current() {
+        $priority = $this->keys[$this->pos];
+        return $this->callbacks[$priority];
+    }
+
+    #[ReturnTypeWillChange]
+    public function key() {
+        return $this->keys[$this->pos];
+    }
+
+    #[ReturnTypeWillChange]
+    public function next() {
+        $this->pos = $this->pos + 1;
+    }
+}
+
+$iterator = new HookBucketIterator();
+$alias =& $iterator->callbacks["10"]["a"];
+foreach ($iterator as $priority => $callbacks) {
+    foreach ($callbacks as $id => &$callback) {
+        $callback = $id . ":seen";
+    }
+    unset($callback);
+    echo $priority, "=", $callbacks["a"], ",", $callbacks["b"], ";";
+}
+echo "|", $alias, "|", $iterator->callbacks["10"]["a"], "|", $iterator->callbacks["10"]["b"], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "10=a:seen,b:seen;|a:seen|a:seen|plain\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_value_iterator_bucket_copy_preserves_nested_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class HookBucketCow implements Iterator {
+    public $callbacks = array();
+    public $priorities = array();
+    public $pos = 0;
+
+    public function add($priority, &$callback) {
+        $this->callbacks[$priority] = array(
+            "id" => array("function" => &$callback, "accepted_args" => 1),
+            "plain" => array("function" => "plain", "accepted_args" => 1),
+        );
+        $this->priorities[] = $priority;
+    }
+
+    #[ReturnTypeWillChange]
+    public function rewind() {
+        $this->pos = 0;
+    }
+
+    #[ReturnTypeWillChange]
+    public function valid() {
+        return isset($this->priorities[$this->pos]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function current() {
+        $priority = $this->priorities[$this->pos];
+        return $this->callbacks[$priority];
+    }
+
+    #[ReturnTypeWillChange]
+    public function key() {
+        return $this->priorities[$this->pos];
+    }
+
+    #[ReturnTypeWillChange]
+    public function next() {
+        $this->pos = $this->pos + 1;
+    }
+}
+
+$callable = "seed";
+$hook = new HookBucketCow();
+$hook->add(10, $callable);
+
+foreach ($hook as $priority => $bucket) {
+    foreach ($bucket as $id => &$node) {
+        if ($id === "id") {
+            $node["function"] = "via-copy";
+            $node["accepted_args"] = 2;
+        } else {
+            $node["function"] = "plain-copy";
+        }
+    }
+    unset($node);
+}
+
+echo $callable, "|", $hook->callbacks[10]["id"]["function"], "|", $hook->callbacks[10]["id"]["accepted_args"], "|", $hook->callbacks[10]["plain"]["function"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "via-copy|via-copy|1|plain");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_rejects_userland_iterator_like_php() {
     let error = runtime_error(
         r#"<?php
