@@ -976,7 +976,11 @@
   `foreach ($holders["bag"]->{$name}["outer"] as &$value)` are also covered
   when the holder expression evaluates once to an object, the selected property
   is visible from the current context, and that property holds the same exact
-  bounded `ArrayAccess` shape. Direct
+  bounded `ArrayAccess` shape. Nested bounded `ArrayAccess` reference sources
+  can recurse through one intermediate `ArrayAccess` object when
+  by-reference `offsetGet($offset)` returns an object stored in the backing
+  property array, including through magic `__get()` array roots and stored
+  `call_user_func_array()` reference argument arrays. Direct
   free-function call iterables such as `foreach (items($items) as &$value)`,
   direct visible instance-method call iterables such as
   `foreach ($bag->items($items) as &$value)`, direct named-static-method
@@ -992,12 +996,20 @@
   direct static-local cell slice. After loop completion the loop
   variable remains routed to the last
   successfully iterated existing slot until `unset($value)` detaches it. Empty
-  array iteration creates no lingering reference. This is still not full PHP
+  array iteration creates no lingering reference. By-reference foreach over
+  userland `Iterator` objects, and over `IteratorAggregate` objects returning
+  userland `Iterator` objects, is rejected with PHP-parity
+  `An iterator cannot be used with foreach by reference`; aggregate
+  `getIterator()` values that are not traversable report a stable invalid
+  foreach diagnostic. This is still not full PHP
   foreach or by-reference iteration: broad array reordering/replacement
   semantics, full reference containers, copy-on-write, by-reference
-  `Iterator`/`IteratorAggregate`/`Traversable` object iteration,
+  SPL `Iterator`/`IteratorAggregate`/`Traversable` object execution,
+  WP_Hook-style iterator bucket COW where by-value `Iterator::current()`
+  returns a copied public-property array containing nested reference slots,
   `IteratorAggregate` returns outside the bounded userland `Iterator` object
-  path, direct `Traversable` implementations,
+  path or non-traversable diagnostic path, direct `Traversable`
+  implementations,
   ArrayAccess roots outside the exact direct/property-held/non-direct-holder
   `offsetGet()` bridge, non-direct property holder expressions outside
   the documented object-result named/dynamic property foreach slice and this

@@ -1211,6 +1211,81 @@ echo call_user_func_array("wp_refcow_stored_magic_callback_mark", $named), "|", 
 }
 
 #[test]
+fn call_user_func_array_binds_stored_magic_get_nested_array_access_references() {
+    let execution = run_source(
+        r#"<?php
+class WP_RefCow_Stored_Magic_Nested_ArrayAccess_Bag implements ArrayAccess {
+    private $storage;
+
+    public function __construct($storage = []) {
+        $this->storage = $storage;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        return isset($this->storage[$offset]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function &offsetGet($offset) {
+        return $this->storage[$offset];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        $this->storage[$offset] = $value;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {
+        unset($this->storage[$offset]);
+    }
+
+    public function read($offset) {
+        return $this->storage[$offset];
+    }
+}
+
+$inner = new WP_RefCow_Stored_Magic_Nested_ArrayAccess_Bag(["slot" => "seed", "return" => "pick"]);
+$outer = new WP_RefCow_Stored_Magic_Nested_ArrayAccess_Bag(["inner" => $inner]);
+
+class WP_RefCow_Stored_Magic_Nested_ArrayAccess_Box {
+    public function &__get($name) {
+        global $outer;
+        return $outer;
+    }
+}
+
+function wp_refcow_stored_magic_nested_array_access_mark(&$value, $suffix) {
+    $value = ($value === null ? "null" : $value) . ":" . $suffix;
+    return $value;
+}
+
+function &wp_refcow_stored_magic_nested_array_access_pick(&$value, $suffix) {
+    $value = ($value === null ? "null" : $value) . ":" . $suffix;
+    return $value;
+}
+
+$box = new WP_RefCow_Stored_Magic_Nested_ArrayAccess_Box();
+$args = array(&$box->missing["inner"]["slot"], "stored");
+echo call_user_func_array("wp_refcow_stored_magic_nested_array_access_mark", $args), "|", $inner->read("slot"), "|", $args[0], "\n";
+
+$returnArgs = array(&$box->missing["inner"]["return"], "return");
+$alias =& call_user_func_array("wp_refcow_stored_magic_nested_array_access_pick", $returnArgs);
+$alias = $alias . ":alias";
+echo $inner->read("return"), "|", $returnArgs[0], "|", $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "seed:stored|seed:stored|seed:stored\npick:return:alias|pick:return:alias|pick:return:alias"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_binds_array_access_reference_roots() {
     let execution = run_source(
         r#"<?php

@@ -2970,6 +2970,28 @@ impl Parser {
                         span,
                     });
                 }
+                if let Some((holder, property, indices, _)) =
+                    Self::non_direct_dynamic_object_property_array_append_target_from_expr(
+                        target.as_ref(),
+                    )
+                {
+                    return Ok(ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+                        holder,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+                if let Some((holder, property, indices, _)) =
+                    Self::non_direct_object_property_array_append_target_from_expr(target.as_ref())
+                {
+                    return Ok(ReferenceSource::NonDirectObjectPropertyArrayAppend {
+                        holder,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
                 match *target {
                     Expr::Variable(name, _) => Ok(ReferenceSource::ArrayAppend {
                         name,
@@ -3783,6 +3805,42 @@ impl Parser {
                 _ => None,
             },
             Expr::Index { .. } => Self::dynamic_object_property_array_index_path_from_expr(expr),
+            _ => None,
+        }
+    }
+
+    fn non_direct_object_property_array_append_target_from_expr(
+        expr: &Expr,
+    ) -> Option<(Expr, String, Vec<Expr>, Span)> {
+        match expr {
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => match target.as_ref() {
+                Expr::Variable(_, _) => None,
+                _ => Some(((**target).clone(), property.clone(), Vec::new(), *span)),
+            },
+            Expr::Index { .. } => Self::non_direct_object_property_array_index_path_from_expr(expr),
+            _ => None,
+        }
+    }
+
+    fn non_direct_dynamic_object_property_array_append_target_from_expr(
+        expr: &Expr,
+    ) -> Option<(Expr, Expr, Vec<Expr>, Span)> {
+        match expr {
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => match target.as_ref() {
+                Expr::Variable(_, _) => None,
+                _ => Some(((**target).clone(), (**property).clone(), Vec::new(), *span)),
+            },
+            Expr::Index { .. } => {
+                Self::non_direct_dynamic_object_property_array_index_path_from_expr(expr)
+            }
             _ => None,
         }
     }

@@ -45,8 +45,8 @@ Full compatibility is not complete until these are true:
 
 The latest recorded full gate passed with:
 
-- `1700` fixture tests passed, `0` failed.
-- `1007` system PHP comparisons.
+- `1703` fixture tests passed, `0` failed.
+- `1010` system PHP comparisons.
 - `693` `phpc-only` skipped fixtures.
 
 That proves the current bounded subset. It does not prove full PHP or full
@@ -129,13 +129,14 @@ evidence, not promises:
 
 ## Next Concrete Target
 
-Continue from Milestone 1668 with the highest-impact remaining compatibility
-gap: real PHP references and COW across iterable objects. Milestone 1667 proved
-bounded by-value public-object and userland `Iterator` foreach. The next step
-is by-reference `Iterator`/`IteratorAggregate` behavior where PHP permits it,
-then broader reference containers and COW identity. This is directly relevant
-to WordPress hook and collection objects and also tightens the remaining COW
-surface.
+Continue from Milestone 1669 with the highest-impact remaining compatibility
+gap: WP_Hook-style iterator bucket COW. Milestone 1668 added several bounded
+reference-container slices and PHP-parity rejection for userland iterator
+by-reference foreach. The next step is preserving nested reference slots when
+by-value `Iterator::current()` returns a copied public-property array bucket
+that is then iterated by reference. That shape is directly relevant to
+WordPress hook callback storage. After that, continue into broader reference
+containers, COW identity, SPL iterator behavior, and native reference lowering.
 
 After that, keep moving through the missing areas above until the WordPress
 inventory can run through real bootstrap flows without unsupported gaps.

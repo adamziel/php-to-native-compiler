@@ -18384,14 +18384,20 @@ handled.
 
 ## Milestone 1668: References/COW Remaining Container Blocker
 
-- [ ] Reference/COW lane: keep all active lanes on the next large COW gap.
-  Prioritize general PHP reference containers, broad array/object copy-on-write
-  identity, destructor side effects during alias destruction, arbitrary
-  expression-root reference targets, general magic-property and mixed
-  `ArrayAccess` reference containers, real `Iterator`/`IteratorAggregate`/
-  `Traversable` by-reference iteration, superglobal lifetime breadth, or
-  native reference-lowering diagnostics. Keep every unsupported edge named and
-  PHP-comparable.
+- [x] Reference/COW lane: add the next bounded COW batch: expression-root
+  object-property array reference sources, non-direct magic `__get()` append
+  reference sources, nested magic/`ArrayAccess` reference containers including
+  stored `call_user_func_array()` argument arrays, and PHP-parity userland
+  `Iterator` by-reference foreach rejection diagnostics.
+
+## Milestone 1669: WP_Hook Iterator Bucket COW Blocker
+
+- [ ] Reference/COW lane: focus all active lanes on the WP_Hook-style iterator
+  bucket gap. PHP preserves nested reference slots when by-value
+  `Iterator::current()` returns a copied public-property array bucket and that
+  bucket is later iterated by reference; `phpc` still detaches the copied
+  bucket from the original callback/reference slot. Prove the fix with a
+  PHP-comparable fixture before moving to any other missing area.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

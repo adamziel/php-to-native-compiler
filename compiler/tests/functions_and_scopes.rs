@@ -2209,6 +2209,47 @@ echo "dynamic-old=", $dynamicBag->items["slot"], "|", $dynamicOld, "|", $dynamic
 }
 
 #[test]
+fn reference_assignment_expression_root_object_property_array_source_aliases_slot() {
+    let execution = run_source(
+        r#"<?php
+class ExpressionRootReferenceBox {
+    public $items = array("slot" => "old");
+    public $dynamic = array("slot" => "dyn-old");
+}
+
+function expression_root_reference_box() {
+    static $box;
+    if (!$box) {
+        $box = new ExpressionRootReferenceBox();
+    }
+    return $box;
+}
+
+$box = expression_root_reference_box();
+$alias =& expression_root_reference_box()->items["slot"];
+$alias = "via-alias";
+echo $box->items["slot"], "|";
+$box->items["slot"] = "via-box";
+echo $alias, "\n";
+
+$property = "dynamic";
+$dynamicAlias =& expression_root_reference_box()->{$property}["slot"];
+$dynamicAlias = "dynamic-alias";
+echo $box->dynamic["slot"], "|";
+$box->dynamic["slot"] = "dynamic-box";
+echo $dynamicAlias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "via-alias|via-box\ndynamic-alias|dynamic-box"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_array_variable_source_to_variable_executes_current_subset() {
     let execution = run_source(
         r#"<?php
@@ -3166,6 +3207,53 @@ echo $bag->read("slot"), "\n", $bag->read("created"), "|", $alias;
 }
 
 #[test]
+fn magic_get_nested_array_access_reference_chain_reaches_inner_storage() {
+    let execution = run_source(
+        r#"<?php
+class MagicNestedArrayAccessBag implements ArrayAccess {
+    private $storage;
+
+    public function __construct($storage = []) {
+        $this->storage = $storage;
+    }
+
+    public function offsetExists($offset) { return isset($this->storage[$offset]); }
+    public function &offsetGet($offset) { return $this->storage[$offset]; }
+    public function offsetSet($offset, $value) { $this->storage[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->storage[$offset]); }
+    public function read($offset) { return $this->storage[$offset]; }
+}
+
+$inner = new MagicNestedArrayAccessBag(["slot" => "seed"]);
+$outer = new MagicNestedArrayAccessBag(["inner" => $inner]);
+
+class MagicNestedArrayAccessBox {
+    public function &__get($name) {
+        global $outer;
+        return $outer;
+    }
+}
+
+function touch_magic_nested_array_access(&$value, $suffix) {
+    $value = ($value === null ? "null" : $value) . ":" . $suffix;
+}
+
+$box = new MagicNestedArrayAccessBox();
+touch_magic_nested_array_access($box->missing["inner"]["slot"], "arg");
+
+$alias =& $box->missing["inner"]["created"];
+$alias = "via-alias";
+
+echo $inner->read("slot"), "\n", $inner->read("created"), "|", $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "seed:arg\nvia-alias|via-alias");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_parameter_accepts_non_direct_holder_magic_get_array_offset_source() {
     let execution = run_source(
         r#"<?php
@@ -3209,6 +3297,57 @@ echo $storage["dynamic"];
             "inside:alias|inside:alias:store\n",
             "get:dynamicMissing\n",
             "selected:dynamic"
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_accepts_non_direct_holder_magic_get_array_append_source() {
+    let execution = run_source(
+        r#"<?php
+$storage = ["nested" => ["base" => "keep"]];
+
+class NonDirectMagicAppendBox {
+    public function &__get($name) {
+        echo "get:$name\n";
+        global $storage;
+        return $storage;
+    }
+}
+
+$holders = ["box" => new NonDirectMagicAppendBox()];
+$alias =& $holders["box"]->missing[];
+$alias = "first";
+echo $storage[0], "|", $alias, "\n";
+$storage[0] = "store";
+echo $alias, "|";
+$alias = "tail";
+echo $storage[0], "\n";
+unset($alias);
+
+$nested =& $holders["box"]->missing["nested"][];
+$nested = "child";
+echo $storage["nested"][0], "|", $nested, "\n";
+
+$property = "dynamicMissing";
+$dynamic =& $holders["box"]->{$property}[];
+$dynamic = "dynamic";
+echo $storage[1], "|", $dynamic;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "get:missing\n",
+            "first|first\n",
+            "store|tail\n",
+            "get:missing\n",
+            "child|child\n",
+            "get:dynamicMissing\n",
+            "dynamic|dynamic"
         )
     );
     assert_eq!(execution.exit_code, 0);

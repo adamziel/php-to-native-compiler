@@ -26,6 +26,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T04:46:00+02:00
+
+- Checkpoint before this task:
+  `a71c58bf runtime: add goal roadmap and bounded iterator foreach`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1668 COW-focused batch with four lanes focused on
+  remaining reference-container blockers.
+- Files changed so far: expression-root object-property array reference
+  sources, non-direct magic `__get()` append reference sources, nested
+  magic/`ArrayAccess` reference containers, stored `call_user_func_array()`
+  nested magic/`ArrayAccess` reference arguments, and userland
+  `Iterator`/`IteratorAggregate` by-reference foreach PHP-parity rejection
+  diagnostics; affected parser/AST/runtime files, Rust tests, milestone
+  fixtures, support docs, architecture notes, progress, queue, lane-worker
+  docs, goal doc, and loop memory were refreshed.
+- Tests run and result: `CARGO_TARGET_DIR=/tmp/phpc-target-cow-1668
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -p phpc --test
+  functions_and_scopes -- --test-threads=1` passed `178` tests; `cargo test
+  -p phpc --test call_user_func_builtin -- --test-threads=1` passed `38`
+  tests; `cargo test -p phpc --test foreach -- --test-threads=1` passed `35`
+  tests; `cargo run -q -p phpc -- test tests/fixtures/milestone1668` passed
+  `3` fixtures; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1668` passed `3` fixtures and compared `3` with
+  system PHP. Manual full gate passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-cow-1668 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: Rust tests completed
+  successfully, `phpc test` reported `1703` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1703` fixture tests
+  passed with `0` failures, `1010` system PHP comparisons, and `693`
+  `phpc-only` skipped fixtures.
+- Remaining semantic gaps: WP_Hook-style iterator bucket COW where by-value
+  `Iterator::current()` returns a copied public-property array containing
+  nested reference slots; expression-root reference targets; arbitrary
+  expression roots; arbitrary magic `__get()` return bodies; by-value or
+  side-effecting `ArrayAccess::offsetGet()` bodies; reference assignment to
+  `ArrayAccess` offset targets; exact alias destruction/destructor ordering;
+  general PHP reference containers; broad array/object COW identity; SPL
+  iterator by-reference execution; superglobal lifetime breadth; native
+  reference lowering; and broader WordPress bootstrap/object/SAPI/DB/native
+  blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push, clean
+  `/tmp/phpc-target-cow-1668` and `/tmp/phpc-target-full-cow-1668`, then keep
+  all COW lanes on Milestone 1669 until the WP_Hook iterator bucket COW gap is
+  proven.
+
 ## Loop Event 2026-05-18T04:08:00+02:00
 
 - Checkpoint before this task:

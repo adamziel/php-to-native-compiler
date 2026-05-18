@@ -1190,6 +1190,147 @@ echo "|", $iterator->pos;
 }
 
 #[test]
+fn foreach_by_reference_rejects_userland_iterator_like_php() {
+    let error = runtime_error(
+        r#"<?php
+class RefIterator implements Iterator {
+    public $items = array("first" => "alpha", "second" => "beta");
+    public $keys = array("first", "second");
+    public $pos = 0;
+
+    #[ReturnTypeWillChange]
+    public function rewind() {
+        $this->pos = 0;
+    }
+
+    #[ReturnTypeWillChange]
+    public function valid() {
+        return isset($this->keys[$this->pos]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function &current() {
+        $key = $this->keys[$this->pos];
+        return $this->items[$key];
+    }
+
+    #[ReturnTypeWillChange]
+    public function key() {
+        return $this->keys[$this->pos];
+    }
+
+    #[ReturnTypeWillChange]
+    public function next() {
+        $this->pos = $this->pos + 1;
+    }
+}
+
+$iterator = new RefIterator();
+foreach ($iterator as $key => &$value) {
+    $value = $value . ":" . $key;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 35);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid foreach: An iterator cannot be used with foreach by reference"
+    );
+}
+
+#[test]
+fn foreach_by_reference_rejects_iterator_aggregate_userland_iterator_like_php() {
+    let error = runtime_error(
+        r#"<?php
+class RefIteratorAggregateIterator implements Iterator {
+    public $items = array("first" => "alpha", "second" => "beta");
+    public $keys = array("first", "second");
+    public $pos = 0;
+
+    #[ReturnTypeWillChange]
+    public function rewind() {
+        $this->pos = 0;
+    }
+
+    #[ReturnTypeWillChange]
+    public function valid() {
+        return isset($this->keys[$this->pos]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function &current() {
+        $key = $this->keys[$this->pos];
+        return $this->items[$key];
+    }
+
+    #[ReturnTypeWillChange]
+    public function key() {
+        return $this->keys[$this->pos];
+    }
+
+    #[ReturnTypeWillChange]
+    public function next() {
+        $this->pos = $this->pos + 1;
+    }
+}
+
+class RefIteratorAggregate implements IteratorAggregate {
+    public $iterator;
+
+    public function __construct() {
+        $this->iterator = new RefIteratorAggregateIterator();
+    }
+
+    #[ReturnTypeWillChange]
+    public function getIterator() {
+        return $this->iterator;
+    }
+}
+
+$aggregate = new RefIteratorAggregate();
+foreach ($aggregate as $key => &$value) {
+    $value = $value . ":" . $key;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 48);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid foreach: An iterator cannot be used with foreach by reference"
+    );
+}
+
+#[test]
+fn foreach_by_reference_rejects_iterator_aggregate_non_traversable_return() {
+    let error = runtime_error(
+        r#"<?php
+class BadAggregate implements IteratorAggregate {
+    #[ReturnTypeWillChange]
+    public function getIterator() {
+        return "not-iterator";
+    }
+}
+
+$aggregate = new BadAggregate();
+foreach ($aggregate as $key => &$value) {
+    echo $key, $value;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 10);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid foreach: IteratorAggregate::getIterator() must return a Traversable object for by-reference foreach in PHP, got string"
+    );
+}
+
+#[test]
 fn foreach_key_value_requires_array_iterable() {
     let error = runtime_error(
         r#"<?php

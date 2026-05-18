@@ -4,6 +4,49 @@
 
 Implemented:
 
+- Added Milestone 1668, a focused Reference/COW container batch. Reference
+  assignment sources can now bind visible object-property array slots reached
+  through expression-root object holders such as
+  `expression_root()->items["slot"]` and
+  `expression_root()->{$property}["slot"]`; the holder expression is evaluated
+  once and the resulting object slot is routed through the existing
+  public/context object-property alias root. Non-direct holder magic
+  `__get()` append-offset sources such as `$holders["box"]->missing[]` and
+  `$holders["box"]->{$property}[]` are now parsed and can bind appended cells
+  when visible public `__get($name)` returns an array by reference. Bounded
+  nested magic `__get()` plus `ArrayAccess` chains can recurse through an
+  intermediate `ArrayAccess` object returned by by-reference
+  `offsetGet($offset)`, including stored `call_user_func_array()` argument
+  arrays. By-reference `foreach` over userland `Iterator` objects and
+  `IteratorAggregate` objects returning userland `Iterator` objects now
+  reports PHP-parity `invalid foreach: An iterator cannot be used with foreach
+  by reference`; `IteratorAggregate::getIterator()` returning a non-traversable
+  value reports a stable invalid-foreach diagnostic. The new `milestone1668`
+  fixtures prove the `phpc run` CLI path and match system PHP for the three
+  supported COW slices. This still does not add WP_Hook-style iterator bucket
+  COW where by-value `Iterator::current()` returns a copied public-property
+  array containing nested reference slots, expression-root reference targets,
+  arbitrary expression roots, arbitrary `__get()` return bodies, by-value or
+  side-effecting `ArrayAccess::offsetGet()` bodies, reference assignment to
+  `ArrayAccess` offset targets, exact alias-destruction/destructor ordering,
+  general PHP reference containers, broad COW identity, SPL iterator
+  by-reference execution, or native reference lowering. Focused verification
+  used `CARGO_TARGET_DIR=/tmp/phpc-target-cow-1668 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test functions_and_scopes --
+  --test-threads=1` passed `178` tests; `cargo test -p phpc --test
+  call_user_func_builtin -- --test-threads=1` passed `38` tests; `cargo test
+  -p phpc --test foreach -- --test-threads=1` passed `35` tests; `cargo run
+  -q -p phpc -- test tests/fixtures/milestone1668` passed `3` fixtures with
+  `0` failures; and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1668` passed `3` fixtures with `0` failures and
+  compared `3` system PHP fixtures with `0` skips. The full gate passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-cow-1668 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: Rust tests completed
+  successfully, `phpc test` reported `1703` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1703` fixture tests
+  passed with `0` failures, `1010` system PHP comparisons, and `693`
+  `phpc-only` skipped fixtures.
+
 - Added `GOAL.md` to reconcile the work so far into the explicit long-term
   target: full PHP and WordPress compatibility, including the difficult
   missing pieces rather than only the currently bounded subset.

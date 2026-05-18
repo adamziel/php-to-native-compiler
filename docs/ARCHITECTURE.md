@@ -57,7 +57,9 @@ arrives at that property. By-value `foreach` over bounded userland
 `Iterator` objects dispatches public `rewind()`, `valid()`, `current()`,
 `key()`, and `next()` in PHP order through the existing method-call path;
 `IteratorAggregate::getIterator()` is bounded to returning one of those
-`Iterator` objects. Bounded non-direct named and dynamic property holder expressions in
+`Iterator` objects. By-reference foreach over userland `Iterator` objects is
+rejected with PHP-parity diagnostics because PHP itself forbids that shape.
+Bounded non-direct named and dynamic property holder expressions in
 by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
 `$holders["bag"]->{$name}["child"]`, method-context
 `$this->holder()->items`, or `$this->holder()->{$name}`, evaluate the holder
@@ -68,7 +70,13 @@ visible property-held `ArrayAccess` offset-array roots, such as
 `foreach ($holder->{$name}["outer"] as &$value)`, reuse the exact bounded
 by-reference `offsetGet($offset) { return $this->property[$offset]; }` bridge
 and then apply the same foreach array-slot alias machinery to the returned
-backing array slot. Direct free-function calls
+backing array slot. The same exact `ArrayAccess` bridge can recurse one
+bounded level when an intermediate selected offset contains another
+`ArrayAccess` object, including through a magic `__get()` array root or stored
+`call_user_func_array()` reference argument array. Statement-form reference
+assignment can also bind expression-root object-property array sources such as
+`factory()->items["slot"]` and non-direct magic `__get()` append sources such
+as `$holders["box"]->missing[]`. Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller
 variable cell, such as a by-reference parameter; the interpreter binds a
@@ -77,7 +85,8 @@ foreach array-slot alias machinery. This is still a
 materialized-symbol-table model, not PHP's full reference-backed alias,
 recursive `$GLOBALS` array, copy-on-write, dynamic global-name, broader
 ArrayAccess iteration, `Iterator`/`IteratorAggregate`/`Traversable` object
-by-reference iteration, non-public or magic-property object iteration,
+by-reference execution, WP_Hook-style iterator bucket reference-slot
+preservation, non-public or magic-property object iteration,
 arbitrary dynamic object-property iterable roots, or included-file scope
 model.
 `$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded in the

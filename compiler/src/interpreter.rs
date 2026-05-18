@@ -3971,17 +3971,67 @@ impl Interpreter {
     }
 
     fn by_reference_foreach_variable_root(
-        &self,
+        &mut self,
         name: &str,
         scope: &SymbolTable,
         span: Span,
     ) -> CompileResult<ForeachArrayRoot> {
         match scope.read_static(name, span)? {
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "Iterator") =>
+            {
+                Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_foreach(
+                        "An iterator cannot be used with foreach by reference",
+                    ),
+                ))
+            }
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "IteratorAggregate") =>
+            {
+                let iterator =
+                    self.call_required_iterator_method(object, "getIterator", span)?;
+                match iterator {
+                    Value::Object(iterator)
+                        if self
+                            .classes
+                            .implements_interface(iterator.class_id(), "Iterator") =>
+                    {
+                        Err(runtime_error(
+                            span,
+                            RuntimeError::invalid_foreach(
+                                "An iterator cannot be used with foreach by reference",
+                            ),
+                        ))
+                    }
+                    Value::Object(iterator) if self.is_traversable_object(&iterator) => {
+                        Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "foreach",
+                                "SPL Traversable object by-reference iteration is not implemented in the current subset",
+                            ),
+                        ))
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_foreach(format!(
+                            "IteratorAggregate::getIterator() must return a Traversable object for by-reference foreach in PHP, got {}",
+                            other.type_name()
+                        )),
+                    )),
+                }
+            }
             Value::Object(object) if self.is_traversable_object(&object) => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "foreach",
-                    "Iterator, IteratorAggregate, and Traversable object by-reference iteration are not implemented in the current subset",
+                    "Traversable object by-reference iteration is not implemented in the current subset",
                 ),
             )),
             Value::Object(_) => Ok(ForeachArrayRoot::ObjectProperties {
@@ -8936,6 +8986,25 @@ impl Interpreter {
                 })?;
                 Ok(Some((alias, value)))
             }
+            ReferenceSource::NonDirectObjectPropertyArrayAppend {
+                holder,
+                property,
+                indices,
+                ..
+            } => self.evaluate_non_direct_holder_magic_get_array_append_reference_source_alias(
+                holder, property, indices, span, scope,
+            ),
+            ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+                holder,
+                property,
+                indices,
+                ..
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                self.evaluate_non_direct_holder_magic_get_array_append_reference_source_alias(
+                    holder, &property, indices, span, scope,
+                )
+            }
             _ => Ok(None),
         }
     }
@@ -9082,7 +9151,7 @@ impl Interpreter {
                 property,
                 indices,
                 ..
-            } => self.evaluate_non_direct_holder_magic_get_array_reference_source_alias(
+            } => self.evaluate_non_direct_holder_object_property_array_reference_source_alias(
                 holder, property, indices, span, scope,
             ),
             ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
@@ -9092,7 +9161,7 @@ impl Interpreter {
                 ..
             } => {
                 let property = self.evaluate_dynamic_property_name(property, span, scope)?;
-                self.evaluate_non_direct_holder_magic_get_array_reference_source_alias(
+                self.evaluate_non_direct_holder_object_property_array_reference_source_alias(
                     holder, &property, indices, span, scope,
                 )
             }
@@ -9430,7 +9499,7 @@ impl Interpreter {
         }
     }
 
-    fn evaluate_non_direct_holder_magic_get_array_reference_source_alias(
+    fn evaluate_non_direct_holder_object_property_array_reference_source_alias(
         &mut self,
         holder: &Expr,
         property: &str,
@@ -9458,7 +9527,74 @@ impl Interpreter {
             .collect::<CompileResult<Vec<_>>>()?;
         let temp_name = self.next_foreach_temporary_array_name();
         scope.write_static(&temp_name, Value::Object(holder_object));
-        self.evaluate_magic_get_array_reference_source_alias(
+
+        if let Some(alias) = self.evaluate_object_property_array_access_reference_source_alias(
+            &temp_name,
+            property,
+            keys.clone(),
+            span,
+            scope,
+        )? {
+            return Ok(Some(alias));
+        }
+        if let Some(alias) = self.evaluate_magic_get_array_reference_source_alias(
+            &temp_name,
+            property,
+            keys.clone(),
+            span,
+            scope,
+        )? {
+            return Ok(Some(alias));
+        }
+
+        self.reject_object_property_array_access_reference_source_if_needed(
+            &temp_name, property, span, scope,
+        )?;
+        let root = self.context_object_property_alias_root(&temp_name, property, span, scope)?;
+        let root = scope.canonical_equivalent_object_property_alias_root(&root);
+        let alias = ArrayOffsetAlias { root, keys };
+        scope.materialize_array_offset_alias(&alias, span)?;
+        let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind missing non-direct object-property array reference source"
+                        .to_string(),
+                ),
+            )
+        })?;
+        Ok(Some((alias, value)))
+    }
+
+    fn evaluate_non_direct_holder_magic_get_array_append_reference_source_alias(
+        &mut self,
+        holder: &Expr,
+        property: &str,
+        indices: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        let holder_value = self.evaluate(holder, scope)?;
+        let holder_object = match holder_value {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let keys = indices
+            .iter()
+            .map(|index| self.evaluate_array_key(index, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        let temp_name = self.next_foreach_temporary_array_name();
+        scope.write_static(&temp_name, Value::Object(holder_object));
+        self.evaluate_magic_get_array_append_reference_source_alias(
             &temp_name, property, keys, span, scope,
         )
     }
@@ -9568,16 +9704,41 @@ impl Interpreter {
         let root = if property_visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
                 object: object_name.clone(),
-                property,
+                property: property.clone(),
             }
         } else {
             ArrayOffsetAliasRoot::ContextObjectProperty {
                 object: object_name.clone(),
-                property,
+                property: property.clone(),
                 current_class_id: Some(class_id),
                 protected_class_ids,
             }
         };
+        if keys.len() > 1 {
+            let first_alias = ArrayOffsetAlias {
+                root: root.clone(),
+                keys: vec![keys[0].clone()],
+            };
+            scope.materialize_array_offset_alias(&first_alias, span)?;
+            if let Some(Value::Object(nested_object)) = scope.read_array_offset_alias(&first_alias)
+            {
+                if self
+                    .classes
+                    .implements_interface(nested_object.class_id(), "ArrayAccess")
+                {
+                    let hidden_name =
+                        self.hidden_array_access_reference_object_name(&nested_object);
+                    scope.write_static(&hidden_name, Value::Object(nested_object.clone()));
+                    return self.evaluate_array_access_reference_source_alias_for_object(
+                        nested_object,
+                        hidden_name,
+                        keys[1..].to_vec(),
+                        span,
+                        scope,
+                    );
+                }
+            }
+        }
         let alias = ArrayOffsetAlias { root, keys };
         scope.materialize_array_offset_alias(&alias, span)?;
         let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
@@ -9849,7 +10010,9 @@ impl Interpreter {
             | ReferenceSource::DynamicObjectPropertyArrayIndex { .. }
             | ReferenceSource::DynamicObjectPropertyArrayAppend { .. }
             | ReferenceSource::DynamicObjectPropertyNestedArrayIndex { .. }
+            | ReferenceSource::NonDirectObjectPropertyArrayAppend { .. }
             | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex { .. }
+            | ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex { .. } => {
                 return Err(runtime_error(
                     span,
@@ -9902,7 +10065,9 @@ impl Interpreter {
             | ReferenceSource::DynamicObjectPropertyArrayIndex { .. }
             | ReferenceSource::DynamicObjectPropertyArrayAppend { .. }
             | ReferenceSource::DynamicObjectPropertyNestedArrayIndex { .. }
+            | ReferenceSource::NonDirectObjectPropertyArrayAppend { .. }
             | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex { .. }
+            | ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex { .. } => {
                 return Err(runtime_error(
                     span,

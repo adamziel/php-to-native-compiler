@@ -1,0 +1,12 @@
+exit: 0
+stdout:
+get:missing
+first|first
+store|tail
+get:missing
+child|child
+get:dynamicMissing
+dynamic|dynamic
+--- stdout end ---
+stderr:
+--- stderr end ---
