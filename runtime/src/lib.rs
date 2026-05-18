@@ -2476,7 +2476,20 @@ impl PhpReferenceCellId {
 #[derive(Debug, Clone)]
 pub struct PhpReferenceCell {
     id: PhpReferenceCellId,
-    value: Rc<RefCell<Value>>,
+    state: Rc<RefCell<PhpReferenceCellState>>,
+}
+
+#[derive(Debug, Clone)]
+struct PhpReferenceCellState {
+    value: Value,
+    constraints: Vec<PhpReferenceCellConstraint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PhpReferenceCellConstraint {
+    type_decl: String,
+    class_name: String,
+    property_name: String,
 }
 
 impl PartialEq for PhpReferenceCell {
@@ -2491,7 +2504,10 @@ impl PhpReferenceCell {
             id: PhpReferenceCellId(
                 NEXT_PHP_REFERENCE_CELL_ID.fetch_add(1, AtomicOrdering::Relaxed),
             ),
-            value: Rc::new(RefCell::new(value)),
+            state: Rc::new(RefCell::new(PhpReferenceCellState {
+                value,
+                constraints: Vec::new(),
+            })),
         }
     }
 
@@ -2500,15 +2516,49 @@ impl PhpReferenceCell {
     }
 
     pub fn shares_reference_with(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.value, &other.value)
+        Rc::ptr_eq(&self.state, &other.state)
     }
 
     pub fn value_cloned(&self) -> Value {
-        self.value.borrow().clone()
+        self.state.borrow().value.clone()
     }
 
     pub fn set_value(&self, value: Value) {
-        *self.value.borrow_mut() = value;
+        self.state.borrow_mut().value = value;
+    }
+
+    pub fn coerce_value_for_write(&self, value: Value) -> RuntimeResult<Value> {
+        let constraints = self.state.borrow().constraints.clone();
+        let mut value = value;
+        for constraint in constraints {
+            value = coerce_property_value(
+                &constraint.type_decl,
+                value,
+                &constraint.class_name,
+                &constraint.property_name,
+            )?;
+        }
+        Ok(value)
+    }
+
+    fn add_property_type_constraint(
+        &self,
+        type_decl: Option<&str>,
+        class_name: &str,
+        property_name: &str,
+    ) {
+        let Some(type_decl) = type_decl else {
+            return;
+        };
+        let constraint = PhpReferenceCellConstraint {
+            type_decl: type_decl.to_string(),
+            class_name: class_name.to_string(),
+            property_name: property_name.to_string(),
+        };
+        let mut state = self.state.borrow_mut();
+        if !state.constraints.contains(&constraint) {
+            state.constraints.push(constraint);
+        }
     }
 }
 
@@ -4407,6 +4457,11 @@ impl ObjectProperty {
     }
 
     fn set_reference_cell(&mut self, reference: PhpReferenceCell) {
+        reference.add_property_type_constraint(
+            self.type_decl.as_deref(),
+            &self.declaring_class_name,
+            &self.name,
+        );
         self.storage = ObjectPropertyStorage::Reference(reference);
     }
 
@@ -4419,9 +4474,21 @@ impl ObjectProperty {
         }
 
         match &self.storage {
-            ObjectPropertyStorage::Reference(reference) => Ok(reference.clone()),
+            ObjectPropertyStorage::Reference(reference) => {
+                reference.add_property_type_constraint(
+                    self.type_decl.as_deref(),
+                    &self.declaring_class_name,
+                    &self.name,
+                );
+                Ok(reference.clone())
+            }
             ObjectPropertyStorage::Value(cell) => {
                 let reference = PhpReferenceCell::new(cell.value_cloned());
+                reference.add_property_type_constraint(
+                    self.type_decl.as_deref(),
+                    &self.declaring_class_name,
+                    &self.name,
+                );
                 self.storage = ObjectPropertyStorage::Reference(reference.clone());
                 Ok(reference)
             }

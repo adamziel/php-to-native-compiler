@@ -6562,6 +6562,46 @@ Box::$ready = array();
 }
 
 #[test]
+fn typed_property_reference_alias_writes_keep_property_enforcement() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public int $id;
+}
+
+$box = new Box();
+$box->id = 1;
+$alias =& $box->id;
+$alias = "2";
+echo gettype($box->id), ":", $box->id, "|", gettype($alias), ":", $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "integer:2|integer:2");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    public int $id;
+}
+
+$box = new Box();
+$box->id = 1;
+$alias =& $box->id;
+$alias = "bad";
+"#,
+    );
+    assert_eq!(error.line, 9);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid property access: typed property Box::$id expects int, got string"
+    );
+}
+
+#[test]
 fn typed_properties_accept_inherited_class_name_assignments() {
     let execution = run_source(
         r#"<?php

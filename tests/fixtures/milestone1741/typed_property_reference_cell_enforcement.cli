@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1741/typed_property_reference_cell_enforcement.php

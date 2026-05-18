@@ -1252,6 +1252,10 @@ impl SymbolTable {
         self.write_named(name, value);
     }
 
+    fn write_static_checked(&mut self, name: &str, value: Value, span: Span) -> CompileResult<()> {
+        self.write_named_checked(name, value, span)
+    }
+
     fn write_detached_static(&mut self, name: &str, value: Value) {
         let target_is_alias = self.array_offset_aliases.remove(name).is_some();
         let replaces_copied_array_provenance = self.has_copied_array_provenance_path(name);
@@ -1336,6 +1340,21 @@ impl SymbolTable {
         }
     }
 
+    fn write_named_checked(&mut self, name: &str, value: Value, span: Span) -> CompileResult<()> {
+        if let Some(aliases) = self.array_offset_aliases.get(name).cloned() {
+            if self.write_array_offset_aliases(&aliases, value.clone()) {
+                return Ok(());
+            }
+            self.array_offset_aliases.remove(name);
+        }
+
+        self.write_storage_named_checked(name, value, span)?;
+        if self.name_routes_to_global_storage(name) {
+            self.sync_array_offset_aliases_for_global_root(name);
+        }
+        Ok(())
+    }
+
     fn write_global_name(&mut self, name: &str, value: Value) {
         let storage = self.global_storage().clone();
         let cell = storage.borrow().get(name).cloned();
@@ -1362,6 +1381,27 @@ impl SymbolTable {
                 .borrow_mut()
                 .insert(name.to_string(), value_cell(value));
         }
+    }
+
+    fn write_storage_named_checked(
+        &mut self,
+        name: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let storage = self.routed_storage(name).clone();
+        let cell = storage.borrow().get(name).cloned();
+        if let Some(cell) = cell {
+            let value = cell
+                .coerce_value_for_write(value)
+                .map_err(|error| runtime_error(span, error))?;
+            cell.set_value(value);
+        } else {
+            storage
+                .borrow_mut()
+                .insert(name.to_string(), value_cell(value));
+        }
+        Ok(())
     }
 
     fn bind_static_to_static(
@@ -13623,7 +13663,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         match target {
-            AssignTarget::Variable { name, .. } => {
+            AssignTarget::Variable { name, span } => {
                 let (value, array_literal_references, array_copy_source) = match expr {
                     Expr::Array { items, span } => {
                         let (value, references) =
@@ -13658,7 +13698,7 @@ impl Interpreter {
                         scope.array_offset_aliases.remove(name);
                     }
                 }
-                scope.write_static(name, value.clone());
+                scope.write_static_checked(name, value.clone(), *span)?;
                 if !target_is_alias && matches!(value, Value::Array(_)) {
                     match expr {
                         Expr::Variable(source_name, _) => {

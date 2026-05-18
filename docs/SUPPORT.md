@@ -4450,7 +4450,13 @@
   undefined-property boundary. Array-offset and append reference sources below
   a missing dynamic-capable property materialize that property as an array and
   preserve nested references through object clones for the covered direct
-  holder forms. By-value
+  holder forms. Promoted object-property reference cells for typed properties
+  carry the declared property type constraint in the current bounded write
+  path: direct assignments, variable-to-variable aliases, and ordinary
+  by-reference parameter writes through such an alias coerce or reject writes
+  like ordinary typed-property assignment for the covered scalar/class
+  subset, including reference-backed property clones and method-local private
+  property references. By-value
   terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's
@@ -4464,7 +4470,9 @@
   are substrate for later PHP-visible reference containers and COW separation;
   broader non-direct append target forms, append suffixes after `[]`,
   arbitrary magic/`ArrayAccess` method bodies, broader mixed array element
-  bindings, typed-property reference write enforcement, arbitrary
+  bindings, arbitrary writes through every complex typed-property alias sink,
+  exact PHP fatal text for invalid typed-reference writes, live class/interface
+  alias changes after a reference constraint is attached, arbitrary
   dynamic-property policy beyond the current dynamic-capable object subset,
   complete alias lifetime/detach parity, string COW identity, and native
   reference lowering remain unsupported.
@@ -4503,7 +4511,7 @@
   coercions, alias lifecycle/reflection parity beyond direct typed-property
   compatibility checks, broader built-in/internal interface catalog behavior
   beyond the current metadata in typed-property
-  compatibility checks, references, property writes through
+  compatibility checks, arbitrary typed-property reference writes through
   complex alias paths, readonly properties, property hooks, static typed
   property unset, parenthesized DNF property types, exact PHP union scalar
   coercion preference rules, and native lowering remain unsupported.

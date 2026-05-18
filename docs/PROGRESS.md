@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1741-C for bounded typed-property enforcement on promoted object
+  property reference cells. Runtime `PhpReferenceCell`s can now carry
+  property type constraints, and direct variable assignment through aliases
+  bound to typed properties coerces or rejects writes through the same bounded
+  typed-property path as ordinary property writes. Covered evidence includes
+  public and dynamic-name property references, clone-shared reference-backed
+  typed properties, nullable scalar coercion, method-local private property
+  references, variable-to-variable aliases, and ordinary by-reference
+  parameter writes through the property alias. Arbitrary writes through every
+  complex alias sink, exact PHP fatal text, live class/interface alias changes
+  after a reference constraint is attached, string COW identity, and native
+  reference lowering remain unsupported. Focused verification:
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1741`
+  passed `1` fixture with `1` system PHP comparison and `0` skips; adjacent
+  `typed_property_reference_alias_writes_keep_property_enforcement` and
+  `typed_properties_track_uninitialized_slots_and_enforce_simple_writes`
+  passed.
+
 - Added Lane 1740-C for missing dynamic-property reference sources on
   dynamic-capable objects. For `stdClass`-style objects, named, dynamic, and
   function-return expression-root reference sources such as

@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement tested behavior and
   checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T18:52:00+02:00
+
+- Checkpoint before this task: `f55a0ddf runtime: materialize dynamic
+  property reference cells`, pushed to `origin/master`.
+- Task attempted: Lane 1741-C bounded typed-property enforcement on promoted
+  object-property reference cells.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1741/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new milestone1741
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1741` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; `cargo check -q -p phpc` passed with isolated
+  `CARGO_TARGET_DIR=target/cow-1741-check`; adjacent
+  `typed_property_reference_alias_writes_keep_property_enforcement` and
+  `typed_properties_track_uninitialized_slots_and_enforce_simple_writes`
+  passed.
+- Semantic gap reduced: promoted typed object-property reference cells now
+  carry bounded property type constraints, so direct assignments,
+  variable-to-variable aliases, and ordinary by-reference parameter writes
+  through public/dynamic-name/private-context typed property aliases coerce or
+  reject values like ordinary typed-property writes, including through cloned
+  reference-backed properties.
+- Remaining semantic gaps: arbitrary writes through every complex
+  typed-property alias sink, exact PHP fatal text, live class/interface alias
+  changes after a reference constraint is attached, arbitrary dynamic-property
+  policy, complete alias lifetime/detach behavior, string COW identity, and
+  native reference lowering remain unsupported.
+- Next concrete task: run format/diff checks, adjacent milestone1739/1740
+  fixture comparisons and object-reference regressions, then checkpoint with
+  `tools/checkpoint.sh "runtime: enforce typed property reference cells"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T22:10:00+02:00
 
 - Checkpoint before this task: `23714182 runtime: support arrayaccess

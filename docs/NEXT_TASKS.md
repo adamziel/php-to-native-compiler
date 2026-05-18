@@ -19607,6 +19607,18 @@ handled.
   lifetime/detach behavior, string COW identity, and native reference lowering
   named as unsupported.
 
+## Lane 1741-C: Typed Property Reference Cell Enforcement
+
+- [x] Runtime/interpreter/tests/docs lane: attach bounded typed-property
+  constraints to promoted object-property `PhpReferenceCell`s. Cover public,
+  dynamic-name, clone-shared, nullable scalar, method-local private property,
+  variable-to-variable alias, and ordinary by-reference parameter writes
+  through a typed property alias with system-PHP fixture comparison. Keep
+  arbitrary writes through every complex typed-property alias sink, exact PHP
+  fatal text, live class/interface alias changes after a reference constraint
+  is attached, string COW identity, and native reference lowering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

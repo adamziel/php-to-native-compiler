@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1740:
+The current in-progress implementation frontier is Lane 1741:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -301,6 +301,12 @@ The current in-progress implementation frontier is Lane 1740:
   missing dynamic property materialize the property as an array and preserve
   the nested reference through clones. Declared classes that do not allow
   dynamic public properties remain an explicit undefined-property boundary.
+- Lane 1741 attaches typed-property write constraints to promoted object
+  property `PhpReferenceCell`s. Direct assignments, variable-to-variable
+  aliases, and ordinary by-reference parameter writes through a typed
+  property alias now use the same bounded weak scalar coercion/error path as
+  ordinary typed-property writes, including reference-backed property clones
+  and method-local private property references.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
