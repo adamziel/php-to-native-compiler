@@ -19524,10 +19524,23 @@ handled.
   alias is used as the source for a new direct array, nested array, or direct
   object-property array reference target. Cover direct static arrays, public
   object-property arrays, and dynamically selected public property names with
-  a system-PHP comparison fixture. Keep `$GLOBALS` value-backed terminal
-  promotion, method-local `$this` object-property targets, broader
-  non-direct/magic/mixed roots, complete alias lifetime/detach behavior,
-  string COW identity, and native reference lowering named as unsupported.
+  a system-PHP comparison fixture. Keep method-local `$this` object-property
+  targets, broader non-direct/magic/mixed roots, complete alias
+  lifetime/detach behavior, string COW identity, and native reference lowering
+  named as unsupported.
+
+## Lane 1735-C: `$GLOBALS` Value-Backed Alias Terminal Promotion
+
+- [x] Runtime/interpreter/tests/docs lane: route statement-form
+  string-keyed `$GLOBALS` array-offset reference sources through
+  `GlobalArray` alias roots before value-backed terminal promotion, then prove
+  `$alias =& $GLOBALS["bag"]["slot"]; $target["copy"] =& $alias;` stays
+  synchronized through `$GLOBALS`, the alias, and the new target. Keep
+  non-string `$GLOBALS` roots, `$GLOBALS[]` source/target forms, recursive
+  `$GLOBALS` materialization, method-local `$this` object-property targets,
+  broader non-direct/magic/mixed roots, complete alias lifetime/detach
+  behavior, string COW identity, and native reference lowering named as
+  unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

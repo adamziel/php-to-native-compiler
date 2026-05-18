@@ -10,8 +10,8 @@ Implemented:
   terminal to a `PhpReferenceCell` before binding new direct array, nested
   array, and direct object-property array reference targets. Covered roots are
   direct static arrays and direct public object-property arrays, including
-  dynamically selected public property names. `$GLOBALS` value-backed terminal
-  promotion, method-local `$this` object-property targets, broader
+  dynamically selected public property names. Method-local `$this`
+  object-property targets, broader
   non-direct/magic/mixed roots, complete alias lifetime/detach behavior,
   string COW identity, and native reference lowering remain unsupported.
   Focused verification: raw system PHP output matched the new milestone1734
@@ -20,6 +20,23 @@ Implemented:
   the focused compiler unit test; and `cargo run -q -p phpc -- test
   --compare-php tests/fixtures/milestone1734` passed `1` fixture with `1`
   system PHP comparison and `0` skips.
+
+- Added Lane 1735-C `$GLOBALS` value-backed alias-terminal promotion.
+  Statement-form string-keyed `$GLOBALS` array-offset reference sources now
+  route through `GlobalArray` aliases before terminal promotion, so bindings
+  such as `$alias =& $GLOBALS["bag"]["slot"]; $target["copy"] =& $alias;`
+  keep writes through the new target visible through `$GLOBALS`, the alias,
+  and the target. Non-string `$GLOBALS` roots, `$GLOBALS[]` source/target
+  forms, recursive `$GLOBALS` materialization, method-local `$this`
+  object-property targets, broader non-direct/magic/mixed roots, complete
+  alias lifetime/detach behavior, string COW identity, and native reference
+  lowering remain unsupported. Focused verification: raw system PHP output
+  matched the new milestone1735 fixture; `cargo check -q -p phpc` passed;
+  `cargo test -q -p phpc
+  symbol_table_value_backed_alias_sources_promote_to_reference_slots` passed;
+  and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1735` passed `1` fixture with `1` system PHP
+  comparison and `0` skips.
 
 - Added Lane 1733-C alias-backed source reuse for reference-backed array
   slots. When a source variable is bound to an array-offset alias whose

@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1735/globals_value_backed_alias_terminal_reference_slots.php

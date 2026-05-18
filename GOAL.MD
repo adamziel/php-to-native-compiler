@@ -260,6 +260,10 @@ The current in-progress implementation frontier is Lane 1734:
   can share the same `PhpReferenceCell` after `$alias =& $items["slot"]` or
   `$alias =& $object->{$name}["slot"]` even when the original terminal was
   not already reference-backed.
+- Lane 1735 fixes the equivalent string-keyed `$GLOBALS` source-alias route:
+  statement-form sources such as `$alias =& $GLOBALS["bag"]["slot"]` now use
+  the real global-root alias representation before value-backed terminal
+  promotion, so later target writes stay visible through `$GLOBALS`.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

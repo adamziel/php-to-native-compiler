@@ -3319,12 +3319,17 @@ impl SymbolTable {
 
     fn array_offset_alias_allows_reference_cell_promotion(&self, alias: &ArrayOffsetAlias) -> bool {
         if alias.keys.is_empty() {
-            return matches!(alias.root, ArrayOffsetAliasRoot::StaticArray { .. });
+            return match &alias.root {
+                ArrayOffsetAliasRoot::StaticArray { name } => name != "GLOBALS",
+                ArrayOffsetAliasRoot::GlobalArray { .. } => true,
+                ArrayOffsetAliasRoot::PublicObjectProperty { .. }
+                | ArrayOffsetAliasRoot::ContextObjectProperty { .. } => false,
+            };
         }
 
         match &alias.root {
-            ArrayOffsetAliasRoot::StaticArray { .. } => true,
-            ArrayOffsetAliasRoot::GlobalArray { .. } => false,
+            ArrayOffsetAliasRoot::StaticArray { name } => name != "GLOBALS",
+            ArrayOffsetAliasRoot::GlobalArray { .. } => true,
             ArrayOffsetAliasRoot::PublicObjectProperty { .. }
             | ArrayOffsetAliasRoot::ContextObjectProperty { .. } => {
                 Self::alias_root_allows_reference_slot_fast_path(&alias.root)
@@ -3614,12 +3619,20 @@ impl SymbolTable {
         if alias.keys.is_empty() {
             return match &alias.root {
                 ArrayOffsetAliasRoot::StaticArray { name } => {
+                    if name == "GLOBALS" {
+                        return false;
+                    }
                     self.routed_storage(name)
                         .borrow_mut()
                         .insert(name.clone(), reference);
                     true
                 }
-                ArrayOffsetAliasRoot::GlobalArray { .. } => false,
+                ArrayOffsetAliasRoot::GlobalArray { name } => {
+                    self.global_storage()
+                        .borrow_mut()
+                        .insert(name.clone(), reference);
+                    true
+                }
                 ArrayOffsetAliasRoot::PublicObjectProperty { .. }
                 | ArrayOffsetAliasRoot::ContextObjectProperty { .. } => false,
             };
@@ -9151,6 +9164,17 @@ impl Interpreter {
                         return Ok(());
                     }
                     self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
+                    if array_name == "GLOBALS" {
+                        let (global_name, keys) =
+                            SymbolTable::split_globals_reference_path(vec![key], span)?;
+                        scope.bind_static_to_existing_global_nested_array_offset(
+                            name,
+                            &global_name,
+                            keys,
+                            span,
+                        )?;
+                        return Ok(());
+                    }
                     scope.bind_static_to_existing_array_offset(name, array_name, key, span)?;
                 } else if let ReferenceSource::NestedArrayIndex {
                     name: array_name,
@@ -9185,6 +9209,17 @@ impl Interpreter {
                         return Ok(());
                     }
                     self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
+                    if array_name == "GLOBALS" {
+                        let (global_name, keys) =
+                            SymbolTable::split_globals_reference_path(keys, span)?;
+                        scope.bind_static_to_existing_global_nested_array_offset(
+                            name,
+                            &global_name,
+                            keys,
+                            span,
+                        )?;
+                        return Ok(());
+                    }
                     scope.bind_static_to_existing_nested_array_offset(
                         name, array_name, keys, span,
                     )?;
@@ -56640,6 +56675,40 @@ mod tests {
         assert_eq!(
             target.get_cloned("copy"),
             Some(Value::String("alias-write".to_string()))
+        );
+
+        let mut global_items = PhpArray::new();
+        global_items.insert("slot", Value::String("global".to_string()));
+        symbols.write_global_name("global_items", Value::Array(global_items));
+        symbols
+            .bind_static_to_existing_global_nested_array_offset(
+                "global_alias",
+                "global_items",
+                vec![ArrayKey::String("slot".to_string())],
+                span,
+            )
+            .unwrap();
+        symbols
+            .bind_array_offset_to_static_source(
+                "target",
+                ArrayKey::String("global".to_string()),
+                "global_alias",
+                span,
+            )
+            .unwrap();
+        let Value::Array(global_array) = symbols.read_global_name("global_items").unwrap() else {
+            panic!("expected global array");
+        };
+        let global_slot_cell = global_array
+            .get_slot("slot")
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected promoted global reference slot");
+        let Value::Array(target) = symbols.read_static("target", span).unwrap() else {
+            panic!("expected target array");
+        };
+        assert_eq!(
+            target.get_slot("global").unwrap().reference_cell_id(),
+            Some(global_slot_cell.id())
         );
 
         let mut classes = PhpClassTable::new();

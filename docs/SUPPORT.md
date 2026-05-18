@@ -4425,12 +4425,14 @@
   value-backed, the interpreter can now promote the terminal to a
   `PhpReferenceCell` first for direct static array roots and direct public
   object-property array roots, including dynamically selected public property
-  names, before binding the new target. These are substrate for later
-  PHP-visible reference containers and COW separation; method-local `$this`
-  object-property targets, `$GLOBALS` value-backed alias-terminal promotion,
-  broader non-direct, magic, and mixed array element bindings, complete alias
-  lifetime/detach parity, string COW identity, and native reference lowering
-  remain unsupported.
+  names, before binding the new target. String-keyed `$GLOBALS` source aliases
+  such as `$alias =& $GLOBALS["bag"]["slot"]` use the global-root alias form
+  for the same promotion path, so later writes through a newly bound target
+  remain visible through `$GLOBALS`. These are substrate for later PHP-visible
+  reference containers and COW separation; method-local `$this`
+  object-property targets, broader non-direct, magic, and mixed array element
+  bindings, complete alias lifetime/detach parity, string COW identity, and
+  native reference lowering remain unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

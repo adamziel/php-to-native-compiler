@@ -415,6 +415,34 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: promote value-backed alias terminals"` if
   the full gate passes.
 
+## Loop Event 2026-05-18T20:05:00+02:00
+
+- Checkpoint before this task: `f80d2903 runtime: promote value-backed alias
+  terminals`, pushed to `origin/master`.
+- Task attempted: Lane 1735-C `$GLOBALS` value-backed alias-terminal
+  promotion.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1735/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new milestone1735
+  fixture; `cargo check -q -p phpc` passed; `cargo test -q -p phpc
+  symbol_table_value_backed_alias_sources_promote_to_reference_slots` passed;
+  and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1735` passed `1` fixture with `1` system PHP
+  comparison and `0` skips.
+- Semantic gap reduced: string-keyed `$GLOBALS` reference sources now use
+  `GlobalArray` aliases before promotion, so value-backed terminal promotion
+  keeps target writes visible through `$GLOBALS`.
+- Remaining semantic gaps: non-string `$GLOBALS` roots, `$GLOBALS[]`
+  source/target forms, recursive `$GLOBALS` materialization, method-local
+  `$this` object-property targets, broader non-direct/magic/mixed roots, alias
+  side-table removal, complete PHP alias lifetime/detach parity, string COW
+  identity, and native reference lowering remain unsupported.
+- Next concrete task: run adjacent `milestone1734`/`milestone1735` checks,
+  `cargo fmt --check`, `git diff --check`, and then one full checkpoint with
+  `tools/checkpoint.sh "runtime: promote GLOBALS alias terminals"` if the
+  full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic
