@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1704-C focused dynamic private `$this->{$name}` magic return
+  support for the append/method-write COW shape. A by-reference `__get($name)`
+  body of `return $this->{$name};` is now recognized when `$name` is the
+  `__get()` parameter and the selected inaccessible property is a private
+  backing array. The runtime appends through `$box->missing["outer"][]`,
+  stores copied nested reference-slot metadata under the private property root,
+  and later same-class method writes through `$this->missing["outer"][0]...`
+  resynchronize the original referenced variables. This does not add dynamic
+  property-return expressions beyond that exact parameter form, broader
+  private/protected `$this` routes, arbitrary `__get()` return expressions,
+  broader method-local alias lifetimes, full references/COW, or native
+  reference lowering. Focused verification used isolated `CARGO_TARGET_DIR`
+  values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks
+  passed for the new fixture, the `milestone1704` `functions_and_scopes`
+  filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1704`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1703-C focused private `$this` property magic append/method-write
   synchronization. A by-reference `__get($name)` body that directly returns
   private `$this->store` is now covered for

@@ -13684,7 +13684,7 @@ impl Interpreter {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
             if let Some(return_property) =
-                self.reference_return_this_property_name(function, span)?
+                self.reference_return_this_property_name(function, property, span)?
             {
                 let protected_class_ids = self.protected_class_ids_for_context(class_id);
                 let property_visibility = holder
@@ -13871,27 +13871,59 @@ impl Interpreter {
     fn reference_return_this_property_name(
         &self,
         function: &FunctionDecl,
+        requested_property: &str,
         span: Span,
     ) -> CompileResult<Option<String>> {
         let [Stmt::Return {
-            value: Some(Expr::Property {
-                target, property, ..
-            }),
-            ..
+            value: Some(value), ..
         }] = function.body.as_slice()
         else {
             return Ok(None);
         };
-        if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    callable_name(&function.name),
-                    "reference-return $this property expressions require return $this->property in the current subset",
-                ),
-            ));
+
+        match value {
+            Expr::Property {
+                target, property, ..
+            } => {
+                if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "reference-return $this property expressions require return $this->property in the current subset",
+                        ),
+                    ));
+                }
+                Ok(Some(property.clone()))
+            }
+            Expr::DynamicProperty {
+                target, property, ..
+            } => {
+                if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "reference-return $this dynamic-property expressions require return $this->{$name} in the current subset",
+                        ),
+                    ));
+                }
+                let Some(param) = function.params.first() else {
+                    return Ok(None);
+                };
+                if !matches!(property.as_ref(), Expr::Variable(name, _) if name == &param.name) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "reference-return $this dynamic-property expressions require return $this->{$name} where $name is the __get parameter in the current subset",
+                        ),
+                    ));
+                }
+                Ok(Some(requested_property.to_string()))
+            }
+            _ => Ok(None),
         }
-        Ok(Some(property.clone()))
     }
 
     fn write_array_access_object_nested_append_with_reference_propagation(

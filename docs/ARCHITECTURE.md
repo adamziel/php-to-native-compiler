@@ -1003,7 +1003,10 @@ connected to nested reference slots created through `$box->missing[]` or
 shape, the helper recognizes a single direct `return $this->property;` body
 when that property is visible to the caller's later backing write, and for
 one focused private `$this->property` route where a same-class method later
-mutates that private backing bucket. It appends into the corresponding
+mutates that private backing bucket. The same focused private route also
+recognizes `return $this->{$name};` when `$name` is the `__get()` parameter,
+using the requested inaccessible property name as the backing property. It
+appends into the corresponding
 object-property alias root and mirrors copied reference-slot metadata there,
 without creating a general object-property cell model. The same
 object-property-root path is tested through a two-key parent append, so

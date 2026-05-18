@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1703:
+The current in-progress implementation frontier is Lane 1704:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -84,6 +84,11 @@ The current in-progress implementation frontier is Lane 1703:
   private backing property, and a later same-class method write through
   `$this->store["outer"][0]...` resynchronizes caller-visible aliases with the
   original referenced variables.
+- Lane 1704 adds the focused dynamic private-property return form
+  `public function &__get($name) { return $this->{$name}; }` for the same
+  append/method-write COW shape, so an inaccessible private property selected
+  by the magic property name can be appended to and later method-local writes
+  resynchronize copied nested reference slots.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
@@ -125,8 +130,8 @@ Still missing:
 - Arbitrary expression-root reference targets and sources.
 - Mixed and arbitrary nested `ArrayAccess` chains.
 - Broader magic `__get()`/`__set()`/`__isset()`/`__unset()` behavior beyond
-  the tested direct-variable, visible `$this->property`, and private
-  `$this->property` method-write append slices.
+  the tested direct-variable, visible `$this->property`, private
+  `$this->property`, and `$this->{$name}` method-write append slices.
 - Alias detach, destructor, shutdown, and error-ordering parity.
 - Reference/COW semantics across function calls, returns, includes,
   superglobals, iterators, and native lowering.

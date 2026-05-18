@@ -943,8 +943,12 @@
   body is also covered when `$store` is a private property and a same-class
   method later mutates the private backing bucket through `$this->store...`;
   caller-side aliases for nested references copied into the appended bucket
-  resynchronize after the method returns. Broader private/protected
-  `$this` property routes, dynamic property-return expressions, and
+  resynchronize after the method returns. The focused dynamic private-property
+  return body `return $this->{$name};` is also covered when `$name` is the
+  `__get()` parameter and the selected inaccessible property is the private
+  backing array. Broader private/protected
+  `$this` property routes, dynamic property-return expressions beyond that
+  exact parameter form, and
   arbitrary method-local alias lifetimes remain outside that focused slice.
   The same
   focused route supports one

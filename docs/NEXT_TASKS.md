@@ -19045,6 +19045,23 @@ handled.
   parent overwrite/error parity, full references/COW, and native reference
   lowering named as unsupported.
 
+## Lane 1704-C: Dynamic Private Magic `$this->{$name}` Return
+
+- [x] Runtime/tests/docs lane: extend the focused private magic-property
+  append/method-write route to the dynamic return body
+  `public function &__get($name) { return $this->{$name}; }`. The covered
+  shape selects an inaccessible private property by the magic property name,
+  appends through `$box->missing["outer"][] = $array`, and later same-class
+  method writes through `$this->missing["outer"][0]...` resynchronize copied
+  nested reference slots with their original variables. Keep dynamic
+  property-return expressions beyond the exact `__get()` parameter form,
+  broader private/protected `$this` routes, arbitrary `__get()` return
+  expressions, broader method-local alias lifetimes, arbitrary
+  method-return/factory-root variants, by-value terminal/plain-array mutation,
+  arbitrary side-effecting or broader `offsetGet()` bodies, scalar parent
+  overwrite/error parity, full references/COW, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

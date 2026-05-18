@@ -4660,6 +4660,22 @@ fn milestone1703_magic_get_private_this_property_method_write_fixture_matches_ru
 }
 
 #[test]
+fn milestone1704_system_php_magic_get_dynamic_private_this_property_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1704/magic_get_dynamic_private_this_property_reference_slot_cow.php",
+        "../tests/fixtures/milestone1704/magic_get_dynamic_private_this_property_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1704_magic_get_dynamic_private_this_property_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1704/magic_get_dynamic_private_this_property_reference_slot_cow.php",
+        "../tests/fixtures/milestone1704/magic_get_dynamic_private_this_property_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php
