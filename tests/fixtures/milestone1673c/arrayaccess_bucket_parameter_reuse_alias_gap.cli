@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1673c/arrayaccess_bucket_parameter_reuse_alias_gap.php
+--- stdout begin ---
+param:reused|param:reused|param:reused
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit code: 0

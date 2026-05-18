@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1673c/arrayaccess_bucket_reuse_controls.php
+--- stdout begin ---
+outer-bucket-reuse:seed|seed|bucket:reused
+callback-name-reuse:new-local|seed|after-callback-reuse
+two-distinct-refs:first:mutated|second:mutated|first:mutated|second:mutated
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit code: 0

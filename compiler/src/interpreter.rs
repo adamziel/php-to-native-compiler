@@ -2162,10 +2162,11 @@ impl SymbolTable {
         }
     }
 
-    fn import_static_array_offset_aliases_from_copy(
+    fn import_static_array_offset_aliases_from_path_copy(
         &mut self,
         target_name: &str,
         source_name: &str,
+        source_keys: &[ArrayKey],
         source_scope: &SymbolTable,
     ) -> Vec<ArrayOffsetAlias> {
         let mut imported = self.import_array_offset_aliases_from_path_copy(
@@ -2174,17 +2175,19 @@ impl SymbolTable {
             &ArrayOffsetAliasRoot::StaticArray {
                 name: source_name.to_string(),
             },
-            &[],
+            source_keys,
             true,
         );
 
         if let Some(source_aliases) = source_scope.array_offset_aliases.get(source_name).cloned() {
             for source_alias in source_aliases {
+                let mut keys = source_alias.keys;
+                keys.extend(source_keys.iter().cloned());
                 imported.extend(self.import_array_offset_aliases_from_path_copy(
                     target_name,
                     source_scope,
                     &source_alias.root,
-                    &source_alias.keys,
+                    &keys,
                     false,
                 ));
             }
@@ -2197,6 +2200,50 @@ impl SymbolTable {
             }
         }
         unique_imports
+    }
+
+    fn mirror_nested_static_array_offset_aliases_from_copy_to_path(
+        &mut self,
+        target_name: &str,
+        target_keys: &[ArrayKey],
+        source_name: &str,
+    ) {
+        self.mirror_nested_static_array_offset_aliases_from_copy_to_alias_root(
+            ArrayOffsetAliasRoot::StaticArray {
+                name: target_name.to_string(),
+            },
+            target_keys,
+            source_name,
+        );
+    }
+
+    fn mirror_nested_static_array_offset_aliases_from_copy_to_alias_root(
+        &mut self,
+        target_root: ArrayOffsetAliasRoot,
+        target_keys: &[ArrayKey],
+        source_name: &str,
+    ) {
+        self.mirror_array_offset_aliases_from_path_copy_to_alias_root(
+            target_root.clone(),
+            target_keys,
+            &ArrayOffsetAliasRoot::StaticArray {
+                name: source_name.to_string(),
+            },
+            &[],
+            false,
+        );
+
+        if let Some(source_aliases) = self.array_offset_aliases.get(source_name).cloned() {
+            for source_alias in source_aliases {
+                self.mirror_array_offset_aliases_from_path_copy_to_alias_root(
+                    target_root.clone(),
+                    target_keys,
+                    &source_alias.root,
+                    &source_alias.keys,
+                    false,
+                );
+            }
+        }
     }
 
     fn import_array_offset_aliases_from_path_copy(
@@ -3847,6 +3894,10 @@ enum ArrayLiteralReferenceElement {
         keys: Vec<ArrayKey>,
         source_alias: ArrayOffsetAlias,
         value: Value,
+    },
+    CopiedArray {
+        keys: Vec<ArrayKey>,
+        source_name: String,
     },
 }
 
@@ -11109,6 +11160,15 @@ impl Interpreter {
                                 )?;
                             }
                         }
+                        ArrayLiteralReferenceElement::CopiedArray { keys, source_name } => {
+                            if !target_is_alias {
+                                scope.mirror_nested_static_array_offset_aliases_from_copy_to_path(
+                                    name,
+                                    &keys,
+                                    &source_name,
+                                );
+                            }
+                        }
                     }
                 }
                 if !target_is_alias && matches!(value, Value::Object(_)) {
@@ -13178,6 +13238,13 @@ impl Interpreter {
                             value,
                         }
                     }
+                    ArrayLiteralReferenceElement::CopiedArray {
+                        mut keys,
+                        source_name,
+                    } => {
+                        keys.insert(0, key);
+                        ArrayLiteralReferenceElement::CopiedArray { keys, source_name }
+                    }
                 });
                 continue;
             }
@@ -13218,6 +13285,19 @@ impl Interpreter {
                             value,
                         }
                     }
+                    ArrayLiteralReferenceElement::CopiedArray {
+                        mut keys,
+                        source_name,
+                    } => {
+                        keys.insert(0, key.clone());
+                        ArrayLiteralReferenceElement::CopiedArray { keys, source_name }
+                    }
+                });
+            }
+            if let Expr::Variable(source_name, _) = &item.value {
+                references.push(ArrayLiteralReferenceElement::CopiedArray {
+                    keys: vec![key],
+                    source_name: source_name.clone(),
                 });
             }
         }
@@ -13281,6 +13361,18 @@ impl Interpreter {
                         value,
                         span,
                     )?;
+                }
+                ArrayLiteralReferenceElement::CopiedArray {
+                    keys: reference_keys,
+                    source_name,
+                } => {
+                    let mut keys = prefix.clone();
+                    keys.extend(reference_keys);
+                    scope.mirror_nested_static_array_offset_aliases_from_copy_to_alias_root(
+                        root.clone(),
+                        &keys,
+                        &source_name,
+                    );
                 }
             }
         }
@@ -25185,7 +25277,15 @@ impl Interpreter {
             Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
                 function,
                 argument_expr,
-            );
+            )
+            .into_iter()
+            .chain(
+                Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
+                    function,
+                    argument_expr,
+                ),
+            )
+            .collect();
         let prebound_locals = self.closure_prebound_locals(&closure);
         self.call_user_function_with_checked_values_and_locals(
             function,
@@ -25269,7 +25369,15 @@ impl Interpreter {
             Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
                 function,
                 argument_expr,
-            );
+            )
+            .into_iter()
+            .chain(
+                Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
+                    function,
+                    argument_expr,
+                ),
+            )
+            .collect();
         self.ensure_user_function_call_depth(function, span)?;
 
         self.call_user_function_with_checked_values_and_locals(
@@ -28573,7 +28681,7 @@ impl Interpreter {
     fn by_value_array_copy_bindings_for_call(
         function: &FunctionDecl,
         args: &[Expr],
-    ) -> Vec<(String, String)> {
+    ) -> Vec<(String, String, Vec<ArrayKey>)> {
         function
             .params
             .iter()
@@ -28585,7 +28693,7 @@ impl Interpreter {
                 let Expr::Variable(source_name, _) = arg else {
                     return None;
                 };
-                Some((param.name.clone(), source_name.clone()))
+                Some((param.name.clone(), source_name.clone(), Vec::new()))
             })
             .collect()
     }
@@ -28593,7 +28701,7 @@ impl Interpreter {
     fn by_value_array_copy_bindings_for_call_user_func_array_literal(
         function: &FunctionDecl,
         argument_expr: &Expr,
-    ) -> Vec<(String, String)> {
+    ) -> Vec<(String, String, Vec<ArrayKey>)> {
         let Expr::Array { items, .. } = argument_expr else {
             return Vec::new();
         };
@@ -28614,9 +28722,34 @@ impl Interpreter {
             let Expr::Variable(source_name, _) = &item.value else {
                 continue;
             };
-            bindings.push((param.name.clone(), source_name.clone()));
+            bindings.push((param.name.clone(), source_name.clone(), Vec::new()));
         }
         bindings
+    }
+
+    fn by_value_array_copy_bindings_for_call_user_func_array_stored(
+        function: &FunctionDecl,
+        argument_expr: &Expr,
+    ) -> Vec<(String, String, Vec<ArrayKey>)> {
+        let Expr::Variable(source_name, _) = argument_expr else {
+            return Vec::new();
+        };
+
+        function
+            .params
+            .iter()
+            .enumerate()
+            .filter_map(|(index, param)| {
+                if param.by_reference || param.is_variadic {
+                    return None;
+                }
+                Some((
+                    param.name.clone(),
+                    source_name.clone(),
+                    vec![ArrayKey::Int(index as i64)],
+                ))
+            })
+            .collect()
     }
 
     fn call_reference_return_function_for_reference_assignment(
@@ -30665,12 +30798,12 @@ impl Interpreter {
 
     fn write_back_by_value_array_copy_aliases(
         &mut self,
-        alias_writebacks: &[(String, Vec<ArrayOffsetAlias>)],
+        alias_writebacks: &[(String, Vec<ArrayKey>, Vec<ArrayOffsetAlias>)],
         local_scope: &SymbolTable,
         caller_scope: &mut SymbolTable,
         span: Span,
     ) -> CompileResult<()> {
-        for (source_name, local_aliases) in alias_writebacks {
+        for (source_name, source_keys, local_aliases) in alias_writebacks {
             for local_alias in local_aliases {
                 let ArrayOffsetAliasRoot::StaticArray { .. } = &local_alias.root else {
                     continue;
@@ -30681,8 +30814,10 @@ impl Interpreter {
                 let Some(value) = local_scope.read_array_offset_alias(local_alias) else {
                     continue;
                 };
+                let mut caller_keys = source_keys.clone();
+                caller_keys.extend(local_alias.keys.iter().cloned());
                 let Some(caller_aliases) = caller_scope
-                    .array_offset_alias_group_for_stored_array_path(source_name, &local_alias.keys)
+                    .array_offset_alias_group_for_stored_array_path(source_name, &caller_keys)
                 else {
                     continue;
                 };
@@ -30892,7 +31027,7 @@ impl Interpreter {
         reference_bindings: Vec<ReferenceBinding>,
         reference_scope: Option<&mut SymbolTable>,
         prebound_locals: Vec<PreboundLocal>,
-        by_value_array_copy_bindings: Vec<(String, String)>,
+        by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
     ) -> CompileResult<Value> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
@@ -30907,8 +31042,11 @@ impl Interpreter {
             local_scope.write_static("this", Value::Object(this_object));
         }
         let mut captured_array_offset_binding_cells = Vec::new();
-        let mut by_value_array_copy_alias_writebacks: Vec<(String, Vec<ArrayOffsetAlias>)> =
-            Vec::new();
+        let mut by_value_array_copy_alias_writebacks: Vec<(
+            String,
+            Vec<ArrayKey>,
+            Vec<ArrayOffsetAlias>,
+        )> = Vec::new();
         for local in prebound_locals {
             match local {
                 PreboundLocal::Value { name, value } => local_scope.write_static(&name, value),
@@ -31038,14 +31176,15 @@ impl Interpreter {
             };
             local_scope.write_static(&param.name, value);
             if let Some(source_scope) = reference_scope.as_deref() {
-                if let Some((_, source_name)) = by_value_array_copy_bindings
+                if let Some((_, source_name, source_keys)) = by_value_array_copy_bindings
                     .iter()
-                    .find(|(param_name, _)| param_name == &param.name)
+                    .find(|(param_name, _, _)| param_name == &param.name)
                 {
                     let imported_aliases = local_scope
-                        .import_static_array_offset_aliases_from_copy(
+                        .import_static_array_offset_aliases_from_path_copy(
                             &param.name,
                             source_name,
+                            source_keys,
                             source_scope,
                         );
                     let imported_aliases: Vec<_> = imported_aliases
@@ -31053,8 +31192,11 @@ impl Interpreter {
                         .filter(|alias| !alias.keys.is_empty())
                         .collect();
                     if !imported_aliases.is_empty() {
-                        by_value_array_copy_alias_writebacks
-                            .push((source_name.clone(), imported_aliases));
+                        by_value_array_copy_alias_writebacks.push((
+                            source_name.clone(),
+                            source_keys.clone(),
+                            imported_aliases,
+                        ));
                     }
                 }
                 if let Some(Value::Object(object)) = local_scope.read_named(&param.name) {

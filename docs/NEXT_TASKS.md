@@ -18437,10 +18437,24 @@ handled.
   user-function, direct closure, string-user-function `call_user_func()`, and
   positional literal `call_user_func_array()` parameter binding for the
   covered copied-bucket sources.
-- [ ] Runtime lane: carry copied bucket provenance through stored
-  `call_user_func_array()` argument arrays and reused alias variables after
-  replacement/detachment
-  without broadening the existing `offsetGet()` reference source boundary.
+- [x] Runtime lane: carry copied bucket provenance through direct stored
+  positional `call_user_func_array()` argument-array variables when a copied
+  bucket direct variable is stored in a positional slot, without broadening the
+  existing `offsetGet()` reference source boundary.
+- [ ] Runtime lane: fix exact alias detachment when a by-value helper
+  parameter carrying copied bucket provenance is replaced, without changing the
+  now-proven stored `call_user_func_array()` path.
+
+## Lane 1673-C: ArrayAccess Copied-Bucket Reuse Probes
+
+- [x] Tests/docs lane: classify callback/bucket variable reuse after copied
+  `ArrayAccess` bucket reference-slot propagation. Comparable controls show
+  outer copied bucket replacement, `unset($callback)` callback-name reuse, and
+  two distinct nested reference slots in one copied bucket match PHP. A
+  comparable probe also shows lingering foreach callback-variable reuse
+  preserves the earlier nested write that PHP preserves. The phpc-only probe
+  documents the remaining mismatch: helper parameter replacement keeps the old
+  nested alias attached.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

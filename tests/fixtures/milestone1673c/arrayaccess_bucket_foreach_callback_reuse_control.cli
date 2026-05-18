@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1673c/arrayaccess_bucket_foreach_callback_reuse_control.php
+--- stdout begin ---
+loop:first|loop:first|loop:first
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit code: 0

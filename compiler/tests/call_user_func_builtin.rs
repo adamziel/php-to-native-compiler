@@ -1,6 +1,8 @@
 use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
+use std::path::Path;
+use std::process::Command;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
@@ -8,6 +10,50 @@ fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Runtime);
     error
+}
+
+fn system_php_available() -> bool {
+    Command::new("php").arg("-v").output().is_ok()
+}
+
+#[test]
+fn system_php_preserves_copied_arrayaccess_buckets_in_stored_call_user_func_array_args() {
+    if !system_php_available() {
+        return;
+    }
+
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../tests/probes/milestone1673/stored_call_user_func_array_arrayaccess_bucket_cow.php",
+    );
+    let expected = std::fs::read_to_string(fixture.with_extension("stdout"))
+        .expect("read stored call_user_func_array ArrayAccess bucket probe expectation");
+    let output = Command::new("php")
+        .arg(&fixture)
+        .output()
+        .expect("run system PHP stored call_user_func_array ArrayAccess bucket probe");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn call_user_func_array_preserves_copied_arrayaccess_buckets_in_stored_args() {
+    let source = include_str!(
+        "../../tests/probes/milestone1673/stored_call_user_func_array_arrayaccess_bucket_cow.php"
+    );
+    let expected = include_str!(
+        "../../tests/probes/milestone1673/stored_call_user_func_array_arrayaccess_bucket_cow.stdout"
+    );
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(execution.stdout, expected);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

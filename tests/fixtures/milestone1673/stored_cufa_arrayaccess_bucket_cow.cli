@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1673/stored_cufa_arrayaccess_bucket_cow.php
+--- stdout begin ---
+direct:ref|direct:ref|1|plain
+property:ref|property:ref|1|plain
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit code: 0

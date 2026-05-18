@@ -26,6 +26,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T06:55:00+02:00
+
+- Checkpoint before this task: `ffa2b865 runtime: preserve ArrayAccess bucket
+  parameter reference slots`, pushed to `origin/master`.
+- Task attempted: Milestone 1673 focused only on the next copied
+  `ArrayAccess` bucket COW gap: direct stored positional
+  `call_user_func_array()` argument arrays, plus probes for reuse/alias
+  detachment nuances.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/call_user_func_builtin.rs`,
+  `tests/fixtures/milestone1673/*`, `tests/fixtures/milestone1673c/*`,
+  `tests/probes/milestone1673/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `docs/probes/milestone1673-arrayaccess-reuse.md`,
+  `docs/queue/review/lane-1673-d-cufa-copied-bucket-cow.md`, and this memory
+  file.
+- Tests run and result with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test
+  call_user_func_builtin -- --test-threads=1` passed `41` tests; `cargo test
+  -q -p phpc --test functions_and_scopes -- --test-threads=1` passed `187`
+  tests; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1673` passed `2` fixtures with `2` system PHP
+  comparisons and `0` skips; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1673c` passed `3` fixtures with `2` system PHP
+  comparisons and `1` phpc-only skip.
+- Semantic gap reduced: copied buckets from the covered exact-bridge
+  `ArrayAccess` sources now preserve covered nested public-property reference
+  slots through direct stored positional `call_user_func_array()` argument
+  arrays such as `$args = [$bucket, "label"]`, while ordinary copied bucket
+  fields remain detached.
+- Remaining semantic gaps: exact alias detachment when a by-value helper
+  parameter carrying copied bucket provenance is replaced, by-value
+  `offsetGet()` reference-source notice/no-op fidelity, non-public backing
+  properties, side-effecting or broader `offsetGet()` bodies, arbitrary nested
+  reference slots stored inside `ArrayAccess` buckets, broader stored-array
+  expression/named-argument/array-callable propagation, broader mixed
+  `ArrayAccess` chains, general PHP reference containers, broad COW identity,
+  native reference lowering, and exact alias destruction/destructor ordering.
+- Next concrete task: run formatting and diff checks, then checkpoint and push
+  Milestone 1673 if the full checkpoint gate passes.
+
 ## Loop Event 2026-05-18T06:18:00+02:00
 
 - Checkpoint before this task: `f3ea22c5 runtime: preserve holder

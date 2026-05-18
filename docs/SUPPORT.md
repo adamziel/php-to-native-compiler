@@ -795,7 +795,14 @@
   such as `$holder->hook[10]`, `$holder->{$name}[10]`,
   `$holders["box"]->hook[10]`, or `make_holder($hook)->hook[10]`. This covers
   the current WP_Hook-shaped direct-object and holder bucket-copy cases where a
-  copied callback bucket contains nested reference slots. Direct
+  copied callback bucket contains nested reference slots. Stored positional
+  `call_user_func_array()` argument-array variables also preserve this focused
+  provenance when a direct variable copied bucket is stored into a positional
+  slot, such as
+  `$bucket = $hook[10]; $args = [$bucket, "label"];
+  call_user_func_array("helper", $args)`: callback-local writes through
+  mirrored nested reference slots reach the original callback slot, while
+  ordinary copied fields remain detached. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
   and writing the result back through `offsetSet($key, $value)`. Direct
@@ -805,8 +812,10 @@
   applying the update to PHP's current by-value temporary result without
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
   compound assignment through object-property `ArrayAccess`, ArrayAccess
-  iteration, stored-argument-array `call_user_func_array()` propagation for
-  copied bucket provenance, non-public backing properties, side-effecting or broader
+  iteration, broader stored-argument-array `call_user_func_array()`
+  propagation beyond direct positional copied-bucket variables, exact alias
+  detachment when a by-value helper parameter holding copied bucket provenance
+  is replaced, non-public backing properties, side-effecting or broader
   `offsetGet()` bodies, built-in interface enforcement/signature
   validation, typed method invocation, broad references/copy-on-write, exact
   warning/visibility diagnostics, and native lowering remain unsupported.

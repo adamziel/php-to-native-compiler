@@ -4,6 +4,61 @@
 
 Implemented:
 
+- Added Milestone 1673 stored `call_user_func_array()` copied-bucket
+  propagation for the focused `ArrayAccess` COW shape. Direct stored
+  positional argument-array variables such as
+  `$args = [$bucket, "label"]; call_user_func_array("helper", $args)` now
+  carry copied-bucket provenance from the covered exact-bridge `ArrayAccess`
+  sources into by-value string user-function callback parameters. Writes
+  through mirrored nested public-property reference slots inside the callback
+  reach the original referenced callback variable and backing bucket, while
+  ordinary copied fields remain detached. The runtime fix is bounded to direct
+  variable copied-array elements mirrored into stored array literals and
+  path-aware by-value callback-parameter imports from stored positional
+  argument slots; it does not add broader stored-array expression support,
+  untested string-keyed/named argument propagation, side-effecting or broader
+  `offsetGet()` bodies, arbitrary nested reference slots stored inside
+  `ArrayAccess` buckets, broader mixed `ArrayAccess` chains, general PHP
+  reference containers, broad COW identity, native reference lowering, or exact
+  alias destruction/destructor ordering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  `cargo test -q -p phpc --test call_user_func_builtin
+  call_user_func_array_preserves_copied_arrayaccess_buckets_in_stored_args --
+  --test-threads=1` passed `1` test; `cargo test -q -p phpc --test
+  call_user_func_builtin
+  system_php_preserves_copied_arrayaccess_buckets_in_stored_call_user_func_array_args
+  -- --test-threads=1` passed `1` test; `cargo test -q -p phpc --test
+  call_user_func_builtin -- --test-threads=1` passed `41` tests; `cargo
+  test -q -p phpc --test functions_and_scopes
+  array_access_bucket_copy_helper_parameter_preserves_nested_reference_slots
+  -- --test-threads=1` passed `1` test; and `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1673` passed `2` fixtures with `2`
+  system PHP comparisons and `0` skips. `cargo fmt --check` and
+  `git diff --check` passed.
+
+- Added Lane 1673-C probes for the alias/reuse nuance left after
+  Milestone 1672 copied `ArrayAccess` bucket reference-slot propagation; no
+  runtime behavior was changed in this lane. The PHP-compatible control
+  fixture proves that replacing the outer copied `$bucket` variable detaches
+  subsequent writes from the original callback slot, `unset($callback)` plus
+  callback-name reuse keeps the new callback variable detached while the
+  copied bucket can still write through, and two distinct nested reference
+  slots in one copied bucket propagate independently. A separate comparable
+  probe shows that assigning a new array to the lingering by-reference foreach
+  callback variable after a copied-bucket loop preserves the earlier nested
+  reference write and does not let the later whole-variable replacement
+  overwrite the original callback slot. One phpc-only probe documents the
+  current mismatch: replacing a by-value helper parameter after it carried
+  copied bucket provenance writes the replacement array's nested value through
+  the old callback slot in phpc, while PHP leaves the original slot at the
+  first write. Verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-1673-probe CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1673c` passed `3` fixtures with `0` failures, and
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1673c` passed `3` fixtures with `2` system PHP
+  comparisons and `1` phpc-only skip.
+
 - Added Milestone 1672 copied-bucket function-parameter propagation for the
   focused `ArrayAccess` COW shape. System PHP preserves nested
   reference slots when an exact-bridge `ArrayAccess` bucket copy is passed by

@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1673/stored_call_user_func_array_arrayaccess_bucket_cow.php
