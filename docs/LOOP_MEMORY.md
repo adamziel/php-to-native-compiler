@@ -37151,6 +37151,31 @@ next run, batch work aggressively:
   full gate passes. Milestone 833 should bound the reached object-receiver
   static property/class-constant access diagnostic or implementation slice.
 
+## Loop Event 2026-05-18T19:27:08+02:00
+
+- Checkpoint before this task: `c3b04a79 runtime: detach unset property
+  reference cells`, pushed to `origin/master`.
+- Task attempted: Lane 1745-C, checked writes through alias-backed array-slot
+  paths that reuse typed property reference cells.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1745/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  and `docs/LOOP_MEMORY.md`.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1745/typed_property_reference_alias_slot_writeback.php`;
+  `cargo check -q -p phpc` passed; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1745` passed; focused
+  `typed_property_reference_alias_slot_variable_writes_keep_property_enforcement`
+  and adjacent `typed_property_reference_array_slot_writes_keep_property_enforcement`
+  passed; `tests/fixtures/milestone1742` system-PHP comparison passed.
+- Remaining COW gaps: broader complex alias sinks, exact PHP fatal text,
+  complete alias lifetime/detach behavior, string COW identity, and native
+  reference lowering.
+- Next concrete task: run formatting, diff, check, adjacent regression, and
+  checkpoint gates, then checkpoint with
+  `tools/checkpoint.sh "runtime: check alias-backed typed reference writes"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T19:12:00+02:00
 
 - Checkpoint before this task: `544fbc8f runtime: resolve live typed reference

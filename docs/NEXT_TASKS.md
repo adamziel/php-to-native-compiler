@@ -19651,6 +19651,18 @@ handled.
   property slots, exact PHP fatal text, string COW identity, and native
   reference lowering named as unsupported.
 
+## Lane 1745-C: Checked Alias-Backed Reference Slot Writes
+
+- [x] Runtime/interpreter/tests/docs lane: route covered alias-backed writes
+  into reference-backed array slots through typed-property reference-cell
+  checks. Cover local alias variables, by-reference function writeback, nested
+  alias slots, object-property and dynamic object-property array slots,
+  `$GLOBALS` alias roots, and alias-rooted array-offset writes with
+  system-PHP fixture comparison and an invalid-write regression. Keep broader
+  complex alias sinks, exact PHP fatal text, complete alias lifetime/detach
+  behavior, string COW identity, and native reference lowering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

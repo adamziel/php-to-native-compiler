@@ -4464,6 +4464,10 @@
   class-name and interface typed-property subset, so aliases registered with
   `class_alias()` after an object was instantiated are honored for direct
   property aliases and reference-backed array slot writes. Unsetting a covered
+  reference-backed array slot through a local alias variable, by-reference
+  function writeback, `$GLOBALS` alias root, or alias-rooted array-offset
+  write now routes through the same typed-reference check for the covered
+  direct/nested/object-property array slot shapes. Unsetting a covered
   promoted reference-backed object property detaches that property slot from
   the alias cell instead of writing through the alias. Covered public,
   typed public, clone-shared public, and method-local private property aliases
@@ -4483,8 +4487,8 @@
   are substrate for later PHP-visible reference containers and COW separation;
   broader non-direct append target forms, append suffixes after `[]`,
   arbitrary magic/`ArrayAccess` method bodies, broader mixed array element
-  bindings, arbitrary writes through every remaining complex typed-property
-  alias sink, exact PHP fatal text for invalid typed-reference writes, arbitrary
+  bindings, arbitrary writes through remaining complex typed-property alias
+  sinks, exact PHP fatal text for invalid typed-reference writes, arbitrary
   dynamic-property policy beyond the current dynamic-capable object subset,
   complete alias lifetime/detach parity beyond the covered property-unset
   slots, string COW identity, and native reference lowering remain

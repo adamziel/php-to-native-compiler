@@ -1360,7 +1360,12 @@ impl SymbolTable {
         F: Fn(&PhpObject, &str) -> bool,
     {
         if let Some(aliases) = self.array_offset_aliases.get(name).cloned() {
-            if self.write_array_offset_aliases(&aliases, value.clone()) {
+            if self.write_array_offset_aliases_checked_with_object_type_resolver(
+                &aliases,
+                value.clone(),
+                span,
+                &object_type_resolver,
+            )? {
                 return Ok(());
             }
             self.array_offset_aliases.remove(name);
@@ -1388,6 +1393,30 @@ impl SymbolTable {
                 .borrow_mut()
                 .insert(name.to_string(), value_cell(value));
         }
+    }
+
+    fn write_global_name_checked_with_object_type_resolver(
+        &mut self,
+        name: &str,
+        value: Value,
+        span: Span,
+        object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
+    ) -> CompileResult<()> {
+        let storage = self.global_storage().clone();
+        let cell = storage.borrow().get(name).cloned();
+        if let Some(cell) = cell {
+            let value = cell
+                .coerce_value_for_write_with_object_type_resolver(value, |object, type_name| {
+                    object_type_resolver(object, type_name)
+                })
+                .map_err(|error| runtime_error(span, error))?;
+            cell.set_value(value);
+        } else {
+            storage
+                .borrow_mut()
+                .insert(name.to_string(), value_cell(value));
+        }
+        Ok(())
     }
 
     fn read_storage_named(&self, name: &str) -> Option<Value> {
@@ -1464,6 +1493,21 @@ impl SymbolTable {
         if let Some(existing_aliases) = self.array_offset_aliases.get(source).cloned() {
             for alias in &existing_aliases {
                 self.materialize_array_offset_alias(alias, span)?;
+            }
+            if let Some(source_cell) = self.reference_cell_for_static_source(source) {
+                self.global_storage()
+                    .borrow_mut()
+                    .insert(global_name.to_string(), source_cell);
+                self.bind_direct_alias_group_to_array_offset_alias(
+                    source,
+                    ArrayOffsetAlias {
+                        root: ArrayOffsetAliasRoot::GlobalArray {
+                            name: global_name.to_string(),
+                        },
+                        keys: Vec::new(),
+                    },
+                );
+                return Ok(());
             }
             let source_value = self.read_named(source).unwrap_or(Value::Null);
             let alias = ArrayOffsetAlias {
@@ -3678,6 +3722,46 @@ impl SymbolTable {
             .is_ok()
     }
 
+    fn write_array_offset_alias_checked_with_object_type_resolver(
+        &mut self,
+        alias: &ArrayOffsetAlias,
+        value: Value,
+        span: Span,
+        object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
+    ) -> CompileResult<bool> {
+        if alias.keys.is_empty() {
+            self.write_alias_root_value_checked_with_object_type_resolver(
+                alias,
+                value,
+                span,
+                object_type_resolver,
+            )?;
+            return Ok(true);
+        }
+
+        let Some(Value::Array(mut array)) = self.read_alias_root_value(alias, span)? else {
+            return Ok(false);
+        };
+
+        if !Self::write_nested_array_offset_alias_checked_with_object_type_resolver(
+            &mut array,
+            &alias.keys,
+            value,
+            object_type_resolver,
+        )
+        .map_err(|error| runtime_error(span, error))?
+        {
+            return Ok(false);
+        }
+        self.write_alias_root_value_checked_with_object_type_resolver(
+            alias,
+            Value::Array(array),
+            span,
+            object_type_resolver,
+        )?;
+        Ok(true)
+    }
+
     fn write_array_offset_alias_reference(
         &mut self,
         alias: &ArrayOffsetAlias,
@@ -3709,12 +3793,38 @@ impl SymbolTable {
             .all(|alias| self.write_array_offset_alias(alias, value.clone()))
     }
 
-    fn write_alias_backed_array_offset(
+    fn write_array_offset_aliases_checked_with_object_type_resolver(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+        value: Value,
+        span: Span,
+        object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
+    ) -> CompileResult<bool> {
+        if aliases.is_empty() {
+            return Ok(false);
+        }
+
+        let mut wrote_all = true;
+        for alias in aliases {
+            if !self.write_array_offset_alias_checked_with_object_type_resolver(
+                alias,
+                value.clone(),
+                span,
+                object_type_resolver,
+            )? {
+                wrote_all = false;
+            }
+        }
+        Ok(wrote_all)
+    }
+
+    fn write_alias_backed_array_offset_checked_with_object_type_resolver(
         &mut self,
         array_name: &str,
         keys: &[ArrayKey],
         value: Value,
         span: Span,
+        object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
     ) -> CompileResult<bool> {
         let Some(aliases) = self.array_offset_aliases_for_name_with_suffix(array_name, keys) else {
             return Ok(false);
@@ -3722,7 +3832,12 @@ impl SymbolTable {
         for alias in &aliases {
             self.materialize_array_offset_alias(alias, span)?;
         }
-        if !self.write_array_offset_aliases(&aliases, value) {
+        if !self.write_array_offset_aliases_checked_with_object_type_resolver(
+            &aliases,
+            value,
+            span,
+            object_type_resolver,
+        )? {
             return Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access(
@@ -3986,6 +4101,82 @@ impl SymbolTable {
         }
     }
 
+    fn write_alias_root_value_checked_with_object_type_resolver(
+        &mut self,
+        alias: &ArrayOffsetAlias,
+        value: Value,
+        span: Span,
+        object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
+    ) -> CompileResult<()> {
+        match &alias.root {
+            ArrayOffsetAliasRoot::StaticArray { name } => self
+                .write_storage_named_checked_with_object_type_resolver(
+                    name,
+                    value,
+                    span,
+                    |object, type_name| object_type_resolver(object, type_name),
+                ),
+            ArrayOffsetAliasRoot::GlobalArray { name } => self
+                .write_global_name_checked_with_object_type_resolver(
+                    name,
+                    value,
+                    span,
+                    object_type_resolver,
+                ),
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
+                match self.read_storage_named(object) {
+                    Some(Value::Object(object)) => object
+                        .write_property_from_context_with_object_type_resolver(
+                            property,
+                            value,
+                            None,
+                            &[],
+                            |object, type_name| object_type_resolver(object, type_name),
+                        )
+                        .map_err(|error| runtime_error(span, error)),
+                    Some(other) => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_property_access(format!(
+                            "cannot write property ${property} on {}",
+                            other.type_name()
+                        )),
+                    )),
+                    None => Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_variable(object),
+                    )),
+                }
+            }
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object,
+                property,
+                current_class_id,
+                protected_class_ids,
+            } => match self.read_storage_named(object) {
+                Some(Value::Object(object)) => object
+                    .write_property_from_context_with_object_type_resolver(
+                        property,
+                        value,
+                        *current_class_id,
+                        protected_class_ids,
+                        |object, type_name| object_type_resolver(object, type_name),
+                    )
+                    .map_err(|error| runtime_error(span, error)),
+                Some(other) => Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot write property ${property} on {}",
+                        other.type_name()
+                    )),
+                )),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_variable(object),
+                )),
+            },
+        }
+    }
+
     fn materialize_nested_array_offset_alias(
         array: &mut PhpArray,
         keys: &[ArrayKey],
@@ -4083,6 +4274,47 @@ impl SymbolTable {
         }
         array.insert(key.clone(), Value::Array(child));
         true
+    }
+
+    fn write_nested_array_offset_alias_checked_with_object_type_resolver(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        value: Value,
+        object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
+    ) -> RuntimeResult<bool> {
+        let Some((key, rest)) = keys.split_first() else {
+            return Ok(false);
+        };
+
+        if rest.is_empty() {
+            if array.get_slot(key.clone()).is_none() {
+                return Ok(false);
+            }
+            array.insert_checked_with_object_type_resolver(
+                key.clone(),
+                value,
+                |object, type_name| object_type_resolver(object, type_name),
+            )?;
+            return Ok(true);
+        }
+
+        let Some(Value::Array(mut child)) = array.get_cloned(key.clone()) else {
+            return Ok(false);
+        };
+        if !Self::write_nested_array_offset_alias_checked_with_object_type_resolver(
+            &mut child,
+            rest,
+            value,
+            object_type_resolver,
+        )? {
+            return Ok(false);
+        }
+        array.insert_checked_with_object_type_resolver(
+            key.clone(),
+            Value::Array(child),
+            |object, type_name| object_type_resolver(object, type_name),
+        )?;
+        Ok(true)
     }
 
     fn write_nested_array_offset_alias_reference(
@@ -14036,11 +14268,14 @@ impl Interpreter {
                     return Ok(value);
                 }
                 if let Some(key) = key.as_ref() {
-                    if scope.write_alias_backed_array_offset(
+                    if scope.write_alias_backed_array_offset_checked_with_object_type_resolver(
                         name,
                         std::slice::from_ref(key),
                         value.clone(),
                         *span,
+                        &|object, type_name| {
+                            self.object_satisfies_live_property_type(object, type_name)
+                        },
                     )? {
                         return Ok(value);
                     }
@@ -14293,7 +14528,15 @@ impl Interpreter {
                     }
                     return Ok(value);
                 }
-                if scope.write_alias_backed_array_offset(name, &keys, value.clone(), *span)? {
+                if scope.write_alias_backed_array_offset_checked_with_object_type_resolver(
+                    name,
+                    &keys,
+                    value.clone(),
+                    *span,
+                    &|object, type_name| {
+                        self.object_satisfies_live_property_type(object, type_name)
+                    },
+                )? {
                     return Ok(value);
                 }
                 scope.detach_array_offset_aliases_below_assignment_paths(&[ArrayOffsetAlias {
@@ -32874,12 +33117,17 @@ impl Interpreter {
             MysqliResultBindingTarget::ArrayOffset { name, keys } => {
                 if name == "GLOBALS" {
                     self.write_global_nested_array_assignment(keys, value, span, caller_scope)
-                } else if caller_scope.write_alias_backed_array_offset(
-                    name,
-                    keys,
-                    value.clone(),
-                    span,
-                )? {
+                } else if caller_scope
+                    .write_alias_backed_array_offset_checked_with_object_type_resolver(
+                        name,
+                        keys,
+                        value.clone(),
+                        span,
+                        &|object, type_name| {
+                            self.object_satisfies_live_property_type(object, type_name)
+                        },
+                    )?
+                {
                     Ok(())
                 } else {
                     self.write_nested_array_assignment(name, keys, value, span, caller_scope)
@@ -34366,7 +34614,16 @@ impl Interpreter {
                 let Some(value) = local_scope.read_named(param_name) else {
                     continue;
                 };
-                if !caller_scope.write_array_offset_aliases(aliases, value) {
+                let wrote_aliases = caller_scope
+                    .write_array_offset_aliases_checked_with_object_type_resolver(
+                        aliases,
+                        value,
+                        function.span,
+                        &|object, type_name| {
+                            self.object_satisfies_live_property_type(object, type_name)
+                        },
+                    )?;
+                if !wrote_aliases {
                     writeback_result = Err(runtime_error(
                         function.span,
                         RuntimeError::invalid_array_access(
@@ -34612,7 +34869,16 @@ impl Interpreter {
                     let Some(value) = local_scope.read_named(param_name) else {
                         continue;
                     };
-                    if !target_scope.write_array_offset_aliases(aliases, value) {
+                    let wrote_aliases = target_scope
+                        .write_array_offset_aliases_checked_with_object_type_resolver(
+                            aliases,
+                            value,
+                            function.span,
+                            &|object, type_name| {
+                                self.object_satisfies_live_property_type(object, type_name)
+                            },
+                        )?;
+                    if !wrote_aliases {
                         writeback_result = Err(runtime_error(
                             function.span,
                             RuntimeError::invalid_array_access(
@@ -34653,7 +34919,16 @@ impl Interpreter {
                     let Some(value) = local_scope.read_named(param_name) else {
                         continue;
                     };
-                    if !local_scope.write_array_offset_aliases(aliases, value) {
+                    let wrote_aliases = local_scope
+                        .write_array_offset_aliases_checked_with_object_type_resolver(
+                            aliases,
+                            value,
+                            function.span,
+                            &|object, type_name| {
+                                self.object_satisfies_live_property_type(object, type_name)
+                            },
+                        )?;
+                    if !wrote_aliases {
                         writeback_result = Err(runtime_error(
                             function.span,
                             RuntimeError::invalid_array_access(
@@ -35760,7 +36035,12 @@ impl Interpreter {
         scope: &mut SymbolTable,
         span: Span,
     ) -> CompileResult<()> {
-        if !scope.write_array_offset_aliases(aliases, value) {
+        if !scope.write_array_offset_aliases_checked_with_object_type_resolver(
+            aliases,
+            value,
+            span,
+            &|object, type_name| self.object_satisfies_live_property_type(object, type_name),
+        )? {
             return Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access(
@@ -38546,12 +38826,16 @@ impl Interpreter {
             if name == "GLOBALS" {
                 self.write_global_nested_array_assignment(&keys, value, arg.span(), caller_scope)?;
             } else {
-                let wrote_alias = caller_scope.write_alias_backed_array_offset(
-                    name,
-                    &keys,
-                    value.clone(),
-                    arg.span(),
-                )?;
+                let wrote_alias = caller_scope
+                    .write_alias_backed_array_offset_checked_with_object_type_resolver(
+                        name,
+                        &keys,
+                        value.clone(),
+                        arg.span(),
+                        &|object, type_name| {
+                            self.object_satisfies_live_property_type(object, type_name)
+                        },
+                    )?;
                 if !wrote_alias {
                     self.write_nested_array_assignment(
                         name,

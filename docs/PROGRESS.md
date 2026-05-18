@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 1745-C for checked writes through alias-backed array-slot paths
+  that reuse typed property reference cells. Local variables bound to
+  reference-backed array slots, by-reference function writeback into those
+  slots, nested alias slots, object-property array slots, dynamic property
+  array slots, `$GLOBALS` alias roots, and alias-rooted array-offset writes
+  now route through the typed reference-cell coercion/error path instead of
+  overwriting unchecked. Broader complex alias sinks, exact PHP fatal text,
+  complete alias lifetime/detach behavior, string COW identity, and native
+  reference lowering remain unsupported. Focused verification: raw system PHP
+  output matched the new `milestone1745` fixture; `cargo run -q -p phpc --
+  test --compare-php tests/fixtures/milestone1745` passed `1` fixture with
+  `1` system PHP comparison and `0` skips; adjacent
+  `typed_property_reference_alias_slot_variable_writes_keep_property_enforcement`
+  and `typed_property_reference_array_slot_writes_keep_property_enforcement`
+  passed.
+
 - Added Lane 1744-C for whole object-property `unset` detach behavior on
   promoted reference-backed properties. `unset($object->property)` now
   detaches the property slot from a stored `PhpReferenceCell` instead of
