@@ -4,6 +4,38 @@
 
 Implemented:
 
+- Added Lane 1684-C direct visible dynamic property-held `ArrayAccess` append
+  `offsetSet(null, $value)` stored-bucket reference-slot propagation for the
+  focused copied-bucket COW shape. The parser now accepts
+  `$holder->{$name}[] = $array` as a narrow assignment target, and the
+  interpreter evaluates the dynamic property name once, selects the visible
+  property holding the `ArrayAccess` object, and preserves nested reference
+  slots for the same two public bridges as the direct and named property-held
+  lanes: the exact `offsetSet($offset, $value) {
+  $this->property[$offset] = $value; }` empty-string-key bridge and the
+  branchy `if ($offset === null) { $this->property[] = $value; return; }
+  $this->property[$offset] = $value;` append-key bridge. Later exact by-value
+  `offsetGet($offset) { return $this->property[$offset]; }` bucket copies
+  preserve those nested reference slots while ordinary copied fields remain
+  detached. Native lowering still rejects this target with the existing array
+  access lowering boundary. This does not add non-direct or magic-property
+  append `offsetSet(null)` stored-bucket receivers, dynamic property names
+  that trigger magic fallback or inaccessible properties, side-effecting or
+  broader `offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess`
+  chains, full references/COW, native reference lowering, or exact alias
+  destruction/destructor ordering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  the dynamic property-held append stored-bucket `functions_and_scopes`
+  filter passed `7` tests, and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1684` passed `2` fixtures with `2` system PHP
+  comparisons and `0` skips. Broader verification passed `cargo fmt
+  --check`, `git diff --check`, the full `functions_and_scopes` test file
+  with `219` tests, the `foreach` test file with `39` tests, the
+  `call_user_func_builtin` test file with `41` tests, and adjacent
+  `milestone1683`/`milestone1684` fixture comparisons. The checkpoint full
+  gate passed with `1728` fixture tests, `1036` system PHP comparisons, and
+  `692` phpc-only skips.
+
 - Added Lane 1683-C direct visible property-held `ArrayAccess` append
   `offsetSet(null, $value)` stored-bucket reference-slot propagation for the
   focused copied-bucket COW shape. Direct `$holder->bag[] = $array` now

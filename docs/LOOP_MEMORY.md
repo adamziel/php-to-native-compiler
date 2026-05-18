@@ -26,6 +26,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T15:05:00+02:00
+
+- Checkpoint before this task: `8a8d4aa3 runtime: preserve property-held
+  ArrayAccess append offsetSet references`, pushed to `origin/master`.
+- Task attempted: Lane 1684-C direct visible dynamic property-held
+  `ArrayAccess` append `offsetSet(null, $value)` stored-bucket reference-slot
+  propagation for the focused copied-bucket COW shape.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1684/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, the lane
+  review note, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: the dynamic property-held append
+  stored-bucket `functions_and_scopes` filter passed `7` tests, and `cargo
+  run -q -p phpc -- test --compare-php tests/fixtures/milestone1684` passed
+  `2` fixtures with `2` system PHP comparisons and `0` skips. `cargo fmt
+  --check` and `git diff --check` also passed. Broader verification passed
+  full `functions_and_scopes` (`219` tests), `foreach` (`39` tests),
+  `call_user_func_builtin` (`41` tests), and adjacent milestone fixture
+  comparisons. The checkpoint full gate passed with `1728` fixture tests,
+  `1036` system PHP comparisons, and `692` phpc-only skips before committing
+  this lane.
+- Semantic gap reduced: `$holder->{$name}[] = $array` is now parsed and
+  executed for direct visible dynamic properties holding `ArrayAccess`
+  objects. The dynamic property name is evaluated once, then exact
+  `offsetSet()` empty-key and branchy append-key bridges preserve nested
+  reference-slot metadata for later exact `offsetGet()` bucket copies.
+- Remaining semantic gaps: non-direct or magic-property append
+  `offsetSet(null)` stored-bucket receivers, dynamic property names that
+  trigger magic fallback or inaccessible properties, nested append-at-depth
+  dynamic property stores, side-effecting or broader `offsetSet()`/`offsetGet()`
+  bodies, mixed nested `ArrayAccess` chains, full references/COW, native
+  reference lowering, and exact alias destruction/destructor ordering remain
+  unsupported.
+- Next concrete task: if this checkpoint passes, continue the COW receiver
+  ladder with the next largest append stored-bucket gap, likely non-direct
+  holder receivers.
+
 ## Loop Event 2026-05-18T14:25:00+02:00
 
 - Checkpoint before this task: `3a4f5d3f runtime: preserve ArrayAccess append

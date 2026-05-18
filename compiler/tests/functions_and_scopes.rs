@@ -3301,6 +3301,96 @@ fn property_held_array_access_exact_append_offset_set_bucket_copy_uses_empty_key
 }
 
 #[test]
+fn system_php_preserves_dynamic_property_held_array_access_append_offset_set_bucket_reference_slots(
+) {
+    if !system_php_available() {
+        return;
+    }
+
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../tests/fixtures/milestone1684/dynamic_property_held_arrayaccess_append_offsetset_bucket_reference_slot_cow.php",
+    );
+    let expected = std::fs::read_to_string(fixture.with_extension("stdout")).expect(
+        "read dynamic property-held ArrayAccess append offsetSet stored-bucket COW probe expectation",
+    );
+    let output = Command::new("php").arg(&fixture).output().expect(
+        "run system PHP dynamic property-held ArrayAccess append offsetSet stored-bucket COW probe",
+    );
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        expected.trim_end_matches('\n')
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn system_php_preserves_dynamic_property_held_array_access_exact_append_offset_set_empty_key_reference_slots(
+) {
+    if !system_php_available() {
+        return;
+    }
+
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../tests/fixtures/milestone1684/dynamic_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php",
+    );
+    let expected = std::fs::read_to_string(fixture.with_extension("stdout")).expect(
+        "read exact dynamic property-held ArrayAccess append offsetSet stored-bucket COW probe expectation",
+    );
+    let output = Command::new("php").arg(&fixture).output().expect(
+        "run system PHP exact dynamic property-held ArrayAccess append offsetSet stored-bucket COW probe",
+    );
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        expected.trim_end_matches('\n')
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn dynamic_property_held_array_access_append_offset_set_bucket_copy_preserves_nested_reference_slots(
+) {
+    let source = include_str!(
+        "../../tests/fixtures/milestone1684/dynamic_property_held_arrayaccess_append_offsetset_bucket_reference_slot_cow.php"
+    );
+    let expected = include_str!(
+        "../../tests/fixtures/milestone1684/dynamic_property_held_arrayaccess_append_offsetset_bucket_reference_slot_cow.stdout"
+    );
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_property_held_array_access_exact_append_offset_set_bucket_copy_uses_empty_key_reference_slots(
+) {
+    let source = include_str!(
+        "../../tests/fixtures/milestone1684/dynamic_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php"
+    );
+    let expected = include_str!(
+        "../../tests/fixtures/milestone1684/dynamic_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.stdout"
+    );
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

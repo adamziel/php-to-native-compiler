@@ -2805,6 +2805,7 @@ impl Parser {
                     | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
                     | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
                     | AssignTarget::ObjectPropertyArrayAppend { .. }
+                    | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
                     | AssignTarget::DynamicProperty { .. }
                     | AssignTarget::ObjectStaticProperty { .. }
                     | AssignTarget::ArrayIndex { index: None, .. } => {
@@ -3324,6 +3325,7 @@ impl Parser {
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
+            | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
@@ -3350,6 +3352,7 @@ impl Parser {
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
+            | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
@@ -3536,6 +3539,16 @@ impl Parser {
                 }
             }
             Expr::AppendIndex { target, span } => {
+                if let Some((object, property, indices, _)) =
+                    Self::dynamic_object_property_array_append_target_from_expr(target.as_ref())
+                {
+                    return Ok(AssignTarget::DynamicObjectPropertyArrayAppend {
+                        object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
                 if let Some((object, property, indices, _)) =
                     Self::object_property_array_append_target_from_expr(target.as_ref())
                 {

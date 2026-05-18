@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1684/dynamic_property_held_arrayaccess_append_offsetset_bucket_reference_slot_cow.php
+stdout:
+via-dynamic-append|via-dynamic-label|via-dynamic-append|via-dynamic-label|1|plain|plain
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

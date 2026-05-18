@@ -12926,6 +12926,48 @@ impl Interpreter {
                 scope.sync_array_offset_aliases_for_object_property_root(object, property);
                 Ok(value)
             }
+            AssignTarget::DynamicObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                span,
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
+                if keys.is_empty()
+                    && matches!(value, Value::Array(_))
+                    && self
+                        .write_object_property_array_access_append_with_reference_propagation(
+                            object,
+                            &property,
+                            value.clone(),
+                            expr,
+                            array_literal_references,
+                            *span,
+                            scope,
+                        )?
+                {
+                    return Ok(value);
+                }
+                Err(runtime_error(
+                    *span,
+                    RuntimeError::unsupported_call(
+                        "assignment",
+                        "dynamic object-property append assignment targets are only implemented for direct visible ArrayAccess append reference propagation in the current subset",
+                    ),
+                ))
+            }
             AssignTarget::DynamicProperty {
                 object,
                 property,
@@ -13757,7 +13799,8 @@ impl Interpreter {
             | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
-            | AssignTarget::ObjectPropertyArrayAppend { .. } => Err(runtime_error(
+            | AssignTarget::ObjectPropertyArrayAppend { .. }
+            | AssignTarget::DynamicObjectPropertyArrayAppend { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "compound assignment",
@@ -14200,7 +14243,8 @@ impl Interpreter {
             | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
-            | AssignTarget::ObjectPropertyArrayAppend { .. } => Err(runtime_error(
+            | AssignTarget::ObjectPropertyArrayAppend { .. }
+            | AssignTarget::DynamicObjectPropertyArrayAppend { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "increment/decrement",
@@ -14453,7 +14497,8 @@ impl Interpreter {
             | AssignTarget::ObjectPropertyArrayIndex { span, .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { span, .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::ObjectPropertyArrayAppend { span, .. } => Err(runtime_error(
+            | AssignTarget::ObjectPropertyArrayAppend { span, .. }
+            | AssignTarget::DynamicObjectPropertyArrayAppend { span, .. } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_call("??=", "nested array targets are not implemented"),
             )),
