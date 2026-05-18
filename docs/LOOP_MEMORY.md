@@ -246,6 +246,34 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: support reference-backed object properties"`
   if the full gate passes.
 
+## Loop Event 2026-05-18T16:50:00+02:00
+
+- Checkpoint before this task: `94cb0d34 runtime: support reference-backed
+  object properties`, pushed to `origin/master`.
+- Task attempted: Lane 1729-C interpreter variable and closure reference-cell
+  storage.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `runtime/src/lib.rs`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed;
+  `cargo test -q -p php_runtime
+  closure_captures_can_hold_reference_cells` passed `1` focused runtime test;
+  and `cargo test -q -p phpc
+  symbol_table_reference_aliases_use_php_reference_cells` passed the focused
+  compiler unit test.
+- Semantic gap reduced: direct variable cells, by-reference parameters and
+  returns, magic reference-return cells, and by-reference closure captures now
+  use runtime `PhpReferenceCell` handles instead of compiler-private
+  `Rc<RefCell<Value>>` containers.
+- Remaining semantic gaps: reference-backed array element binding wiring,
+  interpreter-wide nested lvalue COW, complete PHP alias lifetime/detach
+  parity, string COW identity, and native reference lowering remain
+  unsupported.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, and then
+  one full checkpoint with
+  `tools/checkpoint.sh "runtime: use reference cells for interpreter variables"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

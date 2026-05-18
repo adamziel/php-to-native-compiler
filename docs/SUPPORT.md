@@ -4407,9 +4407,12 @@
   and `ArraySlot` plus object-property storage can store that reference
   container so cloned reference-backed slots/properties keep shared writes.
   Object property reads, enumeration, and diagnostic output use cloned values
-  for this storage shape. These are substrate for later PHP-visible reference
-  containers and COW separation, not a claim of general PHP-visible references
-  yet.
+  for this storage shape. Interpreter direct variable cells and by-reference
+  closure captures also use the runtime reference-cell primitive for their
+  internal shared cell identity. These are substrate for later PHP-visible
+  reference containers and COW separation; array element bindings, complete
+  alias lifetime/detach parity, string COW identity, and native reference
+  lowering remain unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

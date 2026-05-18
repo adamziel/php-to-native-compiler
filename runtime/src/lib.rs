@@ -4576,7 +4576,7 @@ pub struct PhpClosure {
 pub struct PhpClosureCapture {
     name: String,
     by_reference: bool,
-    value: Rc<RefCell<Value>>,
+    value: PhpReferenceCell,
 }
 
 impl PhpClosure {
@@ -4606,14 +4606,14 @@ impl PhpClosureCapture {
         Self {
             name: name.into(),
             by_reference,
-            value: Rc::new(RefCell::new(value)),
+            value: PhpReferenceCell::new(value),
         }
     }
 
     pub fn new_reference(
         name: impl Into<String>,
         by_reference: bool,
-        value: Rc<RefCell<Value>>,
+        value: PhpReferenceCell,
     ) -> Self {
         Self {
             name: name.into(),
@@ -4631,10 +4631,10 @@ impl PhpClosureCapture {
     }
 
     pub fn value(&self) -> Value {
-        self.value.borrow().clone()
+        self.value.value_cloned()
     }
 
-    pub fn cell(&self) -> Rc<RefCell<Value>> {
+    pub fn cell(&self) -> PhpReferenceCell {
         self.value.clone()
     }
 }
@@ -6501,6 +6501,25 @@ mod tests {
             object.read_public_property("payload").unwrap(),
             Value::Int(7)
         );
+    }
+
+    #[test]
+    fn closure_captures_can_hold_reference_cells() {
+        let reference = PhpReferenceCell::new(Value::String("original".to_string()));
+        let capture = PhpClosureCapture::new_reference("payload", true, reference.clone());
+
+        assert!(capture.by_reference());
+        assert_eq!(capture.cell().id(), reference.id());
+        assert_eq!(capture.value(), Value::String("original".to_string()));
+
+        reference.set_value(Value::String("changed-through-source".to_string()));
+        assert_eq!(
+            capture.value(),
+            Value::String("changed-through-source".to_string())
+        );
+
+        capture.cell().set_value(Value::Int(11));
+        assert_eq!(reference.value_cloned(), Value::Int(11));
     }
 
     #[test]

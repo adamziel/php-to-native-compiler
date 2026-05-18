@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1728:
+The current in-progress implementation frontier is Lane 1729:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -225,6 +225,11 @@ The current in-progress implementation frontier is Lane 1728:
   reference-backed properties through cloned values, and focused runtime
   coverage proves writes through a cloned object property update the shared
   reference container.
+- Lane 1729 moves interpreter direct variable/reference cells and
+  by-reference closure captures onto the same runtime `PhpReferenceCell`
+  primitive. Direct variable aliases, by-reference parameters/returns, magic
+  reference-return cells, and closure capture cells now share the runtime
+  reference-cell identity instead of a compiler-local `Rc<RefCell<Value>>`.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

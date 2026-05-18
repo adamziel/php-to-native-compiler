@@ -19460,6 +19460,17 @@ handled.
   nested lvalue wiring, string COW identity, exact alias lifetimes, and native
   reference lowering named as unsupported.
 
+## Lane 1729-C: Interpreter Variable Reference Cell Storage
+
+- [x] Runtime/interpreter/tests/docs lane: move interpreter direct variable
+  cells and by-reference closure captures from compiler-private
+  `Rc<RefCell<Value>>` storage onto runtime `PhpReferenceCell` handles. Prove
+  direct variable aliases share runtime reference-cell identity and
+  by-reference closure captures read/write through the same reference
+  container. Keep reference-backed array element binding wiring, complete PHP
+  alias lifetime/detach behavior, string COW identity, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

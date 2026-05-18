@@ -12,8 +12,8 @@ use php_runtime::{
     coerce_property_value_with_object_type_resolver, ArityExpectation, ArrayColumnKey, ArrayKey,
     ArrayKeyCase, ClassId, ClassMemberKind, Comparison, ObjectProperty, PhpArray,
     PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture, PhpMethodMetadata,
-    PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata, RuntimeError, RuntimeErrorKind,
-    RuntimeResult, Value, Visibility,
+    PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata, PhpReferenceCell, RuntimeError,
+    RuntimeErrorKind, RuntimeResult, Value, Visibility,
 };
 use sha2::Sha256;
 
@@ -1130,7 +1130,7 @@ struct SymbolTable {
 }
 
 type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
-type VariableCell = Rc<RefCell<Value>>;
+type VariableCell = PhpReferenceCell;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ArrayOffsetAlias {
@@ -1319,7 +1319,7 @@ impl SymbolTable {
         self.global_storage()
             .borrow()
             .get(name)
-            .map(|cell| cell.borrow().clone())
+            .map(|cell| cell.value_cloned())
     }
 
     fn write_named(&mut self, name: &str, value: Value) {
@@ -1340,7 +1340,7 @@ impl SymbolTable {
         let storage = self.global_storage().clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
-            *cell.borrow_mut() = value;
+            cell.set_value(value);
         } else {
             storage
                 .borrow_mut()
@@ -1349,14 +1349,14 @@ impl SymbolTable {
     }
 
     fn read_storage_named(&self, name: &str) -> Option<Value> {
-        self.read_cell(name).map(|cell| cell.borrow().clone())
+        self.read_cell(name).map(|cell| cell.value_cloned())
     }
 
     fn write_storage_named(&mut self, name: &str, value: Value) {
         let storage = self.routed_storage(name).clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
-            *cell.borrow_mut() = value;
+            cell.set_value(value);
         } else {
             storage
                 .borrow_mut()
@@ -2950,7 +2950,7 @@ impl SymbolTable {
             for (candidate_name, candidate_cell) in storage.borrow().iter() {
                 if candidate_name != name
                     && !candidate_name.starts_with('\0')
-                    && Rc::ptr_eq(candidate_cell, &target_cell)
+                    && candidate_cell.shares_reference_with(&target_cell)
                 {
                     return ArrayOffsetAliasRoot::StaticArray {
                         name: candidate_name.clone(),
@@ -3373,7 +3373,7 @@ impl SymbolTable {
             .borrow()
             .iter()
             .filter_map(|(candidate, cell)| {
-                if Rc::ptr_eq(cell, &source_cell) {
+                if cell.shares_reference_with(&source_cell) {
                     Some(candidate.clone())
                 } else {
                     None
@@ -3389,15 +3389,15 @@ impl SymbolTable {
             .symbols
             .borrow()
             .iter()
-            .filter_map(|(name, cell)| match &*cell.borrow() {
-                Value::Object(candidate) if candidate == object => Some(name.clone()),
+            .filter_map(|(name, cell)| match cell.value_cloned() {
+                Value::Object(candidate) if &candidate == object => Some(name.clone()),
                 _ => None,
             })
             .collect();
         if let Some(global_symbols) = &self.global_symbols {
             names.extend(global_symbols.borrow().iter().filter_map(|(name, cell)| {
-                match &*cell.borrow() {
-                    Value::Object(candidate) if candidate == object => Some(name.clone()),
+                match cell.value_cloned() {
+                    Value::Object(candidate) if &candidate == object => Some(name.clone()),
                     _ => None,
                 }
             }));
@@ -3887,7 +3887,7 @@ impl SymbolTable {
 }
 
 fn value_cell(value: Value) -> VariableCell {
-    Rc::new(RefCell::new(value))
+    PhpReferenceCell::new(value)
 }
 
 fn bind_foreach_lingering_reference(
@@ -5256,7 +5256,7 @@ impl Interpreter {
                 caller_scope,
             );
             let value = match binding {
-                ReferenceReturnBinding::Cell(cell) => cell.borrow().clone(),
+                ReferenceReturnBinding::Cell(cell) => cell.value_cloned(),
                 ReferenceReturnBinding::ArrayOffset(alias) => caller_scope
                     .read_array_offset_alias(&alias)
                     .ok_or_else(|| {
@@ -11135,7 +11135,7 @@ impl Interpreter {
                         Vec::new(),
                         None,
                     )?;
-                    if let Value::Object(object) = cell.borrow().clone() {
+                    if let Value::Object(object) = cell.value_cloned() {
                         if self
                             .classes
                             .implements_interface(object.class_id(), "ArrayAccess")
@@ -14776,7 +14776,7 @@ impl Interpreter {
                 return Ok(false);
             };
 
-            let current_value = cell.borrow().clone();
+            let current_value = cell.value_cloned();
             match current_value {
                 Value::Object(object)
                     if keys.is_empty()
@@ -15003,7 +15003,7 @@ impl Interpreter {
                 else {
                     return Ok(false);
                 };
-                let current_value = cell.borrow().clone();
+                let current_value = cell.value_cloned();
                 match current_value {
                     Value::Array(_) | Value::Null | Value::Bool(false) => {
                         let temp_name = self.next_foreach_temporary_array_name();
@@ -23486,7 +23486,7 @@ impl Interpreter {
                 Vec::new(),
                 None,
             )?;
-            let value = cell.borrow().clone();
+            let value = cell.value_cloned();
             return Ok(Some(value));
         }
 
@@ -29426,7 +29426,7 @@ impl Interpreter {
                         RuntimeError::undefined_variable(caller_name),
                     )
                 })?;
-                values.push(caller_cell.borrow().clone());
+                values.push(caller_cell.value_cloned());
                 reference_bindings.push(ReferenceBinding {
                     param_name: param.name.clone(),
                     target: ReferenceBindingTarget::CallerCell {
@@ -29834,7 +29834,7 @@ impl Interpreter {
                             RuntimeError::undefined_variable(caller_name),
                         )
                     })?;
-                    values.push(caller_cell.borrow().clone());
+                    values.push(caller_cell.value_cloned());
                     reference_bindings.push(ReferenceBinding {
                         param_name: param.name.clone(),
                         target: ReferenceBindingTarget::CallerCell {
@@ -30118,7 +30118,7 @@ impl Interpreter {
                             RuntimeError::undefined_variable(caller_name),
                         )
                     })?;
-                    values_by_param[param_index] = Some(caller_cell.borrow().clone());
+                    values_by_param[param_index] = Some(caller_cell.value_cloned());
                     reference_bindings.push(ReferenceBinding {
                         param_name: param.name.clone(),
                         target: ReferenceBindingTarget::CallerCell {
@@ -33227,7 +33227,7 @@ impl Interpreter {
             ReferenceReturnLocalBinding::Cell(returned_cell) => array_offset_binding_cells
                 .iter()
                 .find_map(|(_, aliases, original_cell)| {
-                    if Rc::ptr_eq(returned_cell, original_cell) {
+                    if returned_cell.shares_reference_with(original_cell) {
                         Some(aliases.clone())
                     } else {
                         None
@@ -33241,7 +33241,7 @@ impl Interpreter {
                             return None;
                         }
                         let local_cell = local_scope.read_cell(param_name)?;
-                        if Rc::ptr_eq(&local_cell, original_cell) {
+                        if local_cell.shares_reference_with(original_cell) {
                             Some(Self::array_offset_aliases_with_suffix(aliases, keys))
                         } else {
                             None
@@ -33254,7 +33254,7 @@ impl Interpreter {
                                     return None;
                                 }
                                 let local_cell = local_scope.read_cell(param_name)?;
-                                if Rc::ptr_eq(&local_cell, original_cell) {
+                                if local_cell.shares_reference_with(original_cell) {
                                     let mut caller_names =
                                         caller_scope.direct_names_sharing_cell(caller_name);
                                     if caller_names.is_empty() {
@@ -33292,7 +33292,7 @@ impl Interpreter {
                 let Some(local_cell) = local_scope.read_cell(param_name) else {
                     continue;
                 };
-                if !Rc::ptr_eq(&local_cell, original_cell) {
+                if !local_cell.shares_reference_with(original_cell) {
                     continue;
                 }
                 let Some(value) = local_scope.read_named(param_name) else {
@@ -33402,7 +33402,7 @@ impl Interpreter {
             )?;
 
         match binding {
-            ReferenceReturnBinding::Cell(cell) => Ok(cell.borrow().clone()),
+            ReferenceReturnBinding::Cell(cell) => Ok(cell.value_cloned()),
             ReferenceReturnBinding::ArrayOffset(alias) => {
                 caller_scope.read_array_offset_alias(&alias).ok_or_else(|| {
                     runtime_error(
@@ -33538,7 +33538,7 @@ impl Interpreter {
                     let Some(local_cell) = local_scope.read_cell(param_name) else {
                         continue;
                     };
-                    if !Rc::ptr_eq(&local_cell, original_cell) {
+                    if !local_cell.shares_reference_with(original_cell) {
                         continue;
                     }
                     let Some(value) = local_scope.read_named(param_name) else {
@@ -33579,7 +33579,7 @@ impl Interpreter {
                     let Some(local_cell) = local_scope.read_cell(param_name) else {
                         continue;
                     };
-                    if !Rc::ptr_eq(&local_cell, original_cell) {
+                    if !local_cell.shares_reference_with(original_cell) {
                         continue;
                     }
                     let Some(value) = local_scope.read_named(param_name) else {
@@ -33915,7 +33915,7 @@ impl Interpreter {
                     let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
                         runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
                     })?;
-                    values.push(caller_cell.borrow().clone());
+                    values.push(caller_cell.value_cloned());
                     reference_bindings.push(ReferenceBinding {
                         param_name: param.name.clone(),
                         target: ReferenceBindingTarget::CallerCell {
@@ -34052,7 +34052,7 @@ impl Interpreter {
                 if let Some(cell) =
                     self.call_magic_get_reference_return_cell(object, &property, arg.span())?
                 {
-                    let value = cell.borrow().clone();
+                    let value = cell.value_cloned();
                     Ok(Some((cell, value)))
                 } else {
                     Ok(None)
@@ -34519,10 +34519,10 @@ impl Interpreter {
     ) -> CompileResult<()> {
         for (param_name, aliases, original_cell) in array_offset_binding_cells {
             let value = match local_scope.read_cell(param_name) {
-                Some(local_cell) if Rc::ptr_eq(&local_cell, original_cell) => {
+                Some(local_cell) if local_cell.shares_reference_with(original_cell) => {
                     local_scope.read_named(param_name).unwrap_or(Value::Null)
                 }
-                _ => original_cell.borrow().clone(),
+                _ => original_cell.value_cloned(),
             };
             self.write_back_array_offset_aliases(aliases, value, caller_scope, span)?;
         }
@@ -35015,10 +35015,10 @@ impl Interpreter {
                     &mut captured_array_offset_binding_cells
                 {
                     let value = match local_scope.read_cell(name) {
-                        Some(local_cell) if Rc::ptr_eq(&local_cell, original_cell) => {
+                        Some(local_cell) if local_cell.shares_reference_with(original_cell) => {
                             local_scope.read_named(name).unwrap_or(Value::Null)
                         }
-                        _ => original_cell.borrow().clone(),
+                        _ => original_cell.value_cloned(),
                     };
                     if let Err(error) = self.write_back_array_offset_aliases(
                         aliases,
@@ -37161,8 +37161,8 @@ impl Interpreter {
         self.global_symbols
             .borrow()
             .get("_SESSION")
-            .and_then(|cell| match &*cell.borrow() {
-                Value::Array(array) => Some(array.clone()),
+            .and_then(|cell| match cell.value_cloned() {
+                Value::Array(array) => Some(array),
                 _ => None,
             })
             .unwrap_or_else(PhpArray::new)
@@ -55884,6 +55884,34 @@ mod tests {
 
         assert_eq!(symbols.read_static("name", span).unwrap(), Value::Null);
         assert!(!symbols.is_set_static("name"));
+    }
+
+    #[test]
+    fn symbol_table_reference_aliases_use_php_reference_cells() {
+        let mut symbols = SymbolTable::new();
+        let span = Span::new(7, 3);
+
+        symbols.write_static("source", Value::String("original".to_string()));
+        symbols
+            .bind_static_to_static("alias", "source", span)
+            .unwrap();
+
+        let source_cell = symbols.read_cell("source").unwrap();
+        let alias_cell = symbols.read_cell("alias").unwrap();
+
+        assert_eq!(source_cell.id(), alias_cell.id());
+        assert!(source_cell.shares_reference_with(&alias_cell));
+
+        symbols.write_static("alias", Value::String("changed".to_string()));
+
+        assert_eq!(
+            symbols.read_static("source", span).unwrap(),
+            Value::String("changed".to_string())
+        );
+        assert_eq!(
+            source_cell.value_cloned(),
+            Value::String("changed".to_string())
+        );
     }
 
     #[test]

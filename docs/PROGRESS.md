@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 1729-C runtime/interpreter value-model substrate for direct
+  variable reference cells and by-reference closure captures. The interpreter
+  `SymbolTable` now stores direct variable cells as runtime
+  `PhpReferenceCell` handles, so direct variable aliases, by-reference
+  parameters/returns, magic reference-return cells, and closure prebound
+  reference captures use the same shared reference-container primitive as
+  array slots and object properties. Closure captures now store
+  `PhpReferenceCell` for by-reference captures. This still does not wire
+  reference-backed array slots through all array element reference bindings,
+  implement complete PHP alias lifetime/detach behavior, string COW identity,
+  or native reference lowering. Focused verification: `cargo check -q -p phpc`
+  passed; `cargo test -q -p php_runtime
+  closure_captures_can_hold_reference_cells` passed `1` test; and
+  `cargo test -q -p phpc
+  symbol_table_reference_aliases_use_php_reference_cells` passed the focused
+  compiler unit test.
+
 - Added Lane 1728-C runtime value-model substrate for reference-backed object
   properties. `ObjectProperty` now stores either a by-value PHP value cell or a
   PHP reference cell; public property writes update the reference container,
