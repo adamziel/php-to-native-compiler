@@ -26,6 +26,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T10:55:00+02:00
+
+- Checkpoint before this task: `fc6bd34a runtime: detach non-direct
+  ArrayAccess reference sources`, pushed to `origin/master`.
+- Task attempted: Lane 1679 non-direct holder append-source by-value
+  `ArrayAccess::offsetGet(null)` reference-source notice/no-op behavior.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1679/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, the lane
+  review note, and this memory file.
+- Tests run and result with isolated
+  `CARGO_TARGET_DIR=/tmp/phpc-target-1679-local` and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: the by-value non-direct holder
+  append `functions_and_scopes` filter passed; by-reference `ArrayAccess`
+  append and plain property-array append fallback guard filters passed; `cargo
+  run -q -p phpc -- test --compare-php tests/fixtures/milestone1679` passed
+  `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: bounded non-direct holder visible property-held
+  by-value exact-bridge append sources now evaluate the holder once, use PHP's
+  `offsetGet(null)` path, emit the bounded indirect-modification notice,
+  initialize the target as a detached local value from the empty-string backing
+  key, and leave backing `ArrayAccess` storage unchanged.
+- Remaining semantic gaps: magic-property holder roots for this by-value
+  notice/no-op slice, side-effecting or broader `offsetGet()` bodies,
+  arbitrary nested reference slots stored inside `ArrayAccess` buckets,
+  broader mixed `ArrayAccess` chains, full references/COW, native reference
+  lowering, and exact alias destruction/destructor ordering.
+
 ## Loop Event 2026-05-18T10:05:00+02:00
 
 - Checkpoint before this task: `f940aff5 runtime: detach by-value ArrayAccess

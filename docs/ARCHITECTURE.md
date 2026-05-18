@@ -94,7 +94,12 @@ such as `$holders["box"]->bag[$key]`,
 `$holders["box"]->{$name}["outer"]["slot"]`,
 `$registry->holder()->bag[$key]`, and
 `make_holder($bag)->bag[$key]`: the target receives only a detached local
-value and later writes do not mutate the backing `ArrayAccess` storage.
+value and later writes do not mutate the backing `ArrayAccess` storage. The
+same focused by-value notice/no-op bridge covers non-direct holder append
+sources such as `$holders["box"]->bag[]`,
+`$holders["box"]->{$name}[]`, `$registry->holder()->bag[]`, and
+`make_holder($bag)->bag[]`, using PHP's `offsetGet(null)` behavior and the
+exact bridge's empty-string backing key.
 Statement-form reference assignment can also bind expression-root
 object-property array sources such as `factory()->items["slot"]` and
 non-direct magic `__get()` append sources such as
@@ -281,18 +286,20 @@ protected holder properties and nested offset elements, when public by-reference
 `offsetGet($offset)` has the exact bounded `return $this->property[$offset];`
 shape; the interpreter maps that to the backing property array alias root plus
 any nested child-key suffix instead of creating a real reference container.
-Append-offset `ArrayAccess` reference sources such as `$bag[]` and
-`$holder->bag[]` use the same bridge and model PHP's `offsetGet(null)` call as
-the backing property array's empty-string key for that exact body shape.
+Append-offset `ArrayAccess` reference sources such as `$bag[]`,
+`$holder->bag[]`, and non-direct visible property-held forms such as
+`$holders["box"]->bag[]` use the same bridge and model PHP's
+`offsetGet(null)` call as the backing property array's empty-string key for
+that exact body shape.
 Statement-form direct-variable reference assignment from append offsets below
 reference-returning magic `__get()` properties, such as
 `$alias =& $object->missing[]` and `$alias =& $object->{$name}[]`, temporarily
 roots the returned direct-variable cell and appends through the same bounded
 array-offset alias metadata used for direct array append references. It
 does not make stored callback argument arrays from magic `__get()` roots,
-non-public object-property array bridges, dynamic ArrayAccess roots beyond
-direct dynamic property-held sources, non-direct holder expressions, mixed
-nested `ArrayAccess` chains, general magic-property reference containers,
+non-public object-property array bridges, magic-property `ArrayAccess` roots,
+dynamic ArrayAccess roots beyond the documented visible property-held sources,
+mixed nested `ArrayAccess` chains, general magic-property reference containers,
 arbitrary append ArrayAccess bodies, or stored array-offset metadata into
 general runtime reference containers. By-reference
 `foreach` currently consumes direct non-`Traversable` object variables for
@@ -808,7 +815,7 @@ sources, non-string root keys, recursive `$GLOBALS` materialization,
 dynamic-property sources on non-direct object expressions, dynamic
 non-public property sources, magic property sources, non-variable reference
 targets, full reference containers, copy-on-write, exact alias destruction
-ordering, and native lowering remain future work. Direct `ArrayAccess`
+destructor ordering, and native lowering remain future work. Direct `ArrayAccess`
 reference sources now have a narrow root bridge for `$alias =& $bag[$key]`,
 property-held roots such as `$alias =& $holder->bag[$key]`, direct dynamic
 property-held roots such as `$alias =& $holder->{$name}[$key]`, and literal
@@ -842,14 +849,16 @@ reached through a non-direct holder expression such as
 `$alias =& $registry->holder()->bag["outer"]["slot"]`, or
 `$alias =& make_holder($bag)->bag["outer"]["slot"]`, or another covered nested
 child suffix snapshots the selected value into a detached local variable.
-Append source forms such as `$alias =& $bag[]`, `$alias =& $holder->bag[]`, and
-`$alias =& $holder->{$name}[]` use PHP's `offsetGet(null)` path and snapshot
-the backing empty-string key value for the exact bridge. These by-value
-reference-source forms emit the bounded indirect-modification `E_NOTICE` and
-leave the backing `ArrayAccess` storage unchanged when the alias is later
-written. Non-direct append sources, magic-property roots, and broader
-side-effecting or mixed `ArrayAccess` chains remain outside that notice/no-op
-slice.
+Append source forms such as `$alias =& $bag[]`, `$alias =& $holder->bag[]`,
+`$alias =& $holder->{$name}[]`, `$alias =& $holders["box"]->bag[]`,
+`$alias =& $holders["box"]->{$name}[]`,
+`$alias =& $registry->holder()->bag[]`, and
+`$alias =& make_holder($bag)->bag[]` use PHP's `offsetGet(null)` path and
+snapshot the backing empty-string key value for the exact bridge. These
+by-value reference-source forms emit the bounded indirect-modification
+`E_NOTICE` and leave the backing `ArrayAccess` storage unchanged when the
+alias is later written. Magic-property roots and broader side-effecting or
+mixed `ArrayAccess` chains remain outside that notice/no-op slice.
 Function-parameter propagation of copied bucket provenance is covered for the
 same direct-object, direct property-held, array-held, and expression-root
 holder paths when the copied bucket is passed as a direct variable to a
@@ -1035,12 +1044,14 @@ positional arguments after a string-keyed named argument, variadic named
 callback arguments, dynamic key expressions in the literal reference
 named-argument path,
 dynamic ArrayAccess reference roots, append-offset ArrayAccess source roots
-outside the exact direct/property-held `offsetGet(null)` bridge, stored-array
-ArrayAccess roots outside the current direct/property-held `offsetGet()`
-reference bridge, non-public property roots outside the current valid
+outside the exact direct/property-held/non-direct visible property-held
+`offsetGet(null)` bridge, stored-array ArrayAccess roots outside the current
+direct/property-held `offsetGet()` reference bridge, non-public property roots
+outside the current valid
 method-context named-property slice, dynamic static receiver callback
 object-property array arguments, broader reference-return binding, exact
-by-reference `foreach`, or copy-on-write.
+by-reference `foreach`, exact alias destruction/destructor ordering, or
+copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
 ordered array, writes the key variable by value, routes the value variable to

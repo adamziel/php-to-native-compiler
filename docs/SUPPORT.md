@@ -678,18 +678,22 @@
   it emits the indirect-modification `E_NOTICE`, initializes the target as a
   detached local value, and does not mutate the backing element when the
   target is later written. Append source forms such as `$alias =& $bag[]`,
-  `$alias =& $holder->bag[]`, and `$alias =& $holder->{$name}[]` use the same
-  notice/no-op path through PHP's `offsetGet(null)` behavior and snapshot the
-  exact bridge's empty-string backing key as a detached value. Non-direct
-  append-source `ArrayAccess` forms, `offsetGet()` bodies with side effects or
-  broader return expressions, dynamic property-held sources outside visible
-  property access, magic-property roots, broader property-held alias lifetime
-  after replacing non-direct/dynamic containing properties, append
-  `ArrayAccess` sources outside the exact `offsetGet(null)` bridge, mixed
-  nested `ArrayAccess` chains beyond the documented one-level bridge, arbitrary
-  nested reference slots copied from `ArrayAccess` storage, full
-  references/COW, native lowering, exact alias destruction ordering, and real
-  runtime reference containers remain unsupported. Direct
+  `$alias =& $holder->bag[]`, `$alias =& $holder->{$name}[]`,
+  `$alias =& $holders["box"]->bag[]`,
+  `$alias =& $holders["box"]->{$name}[]`,
+  `$alias =& $registry->holder()->bag[]`, and
+  `$alias =& make_holder($bag)->bag[]` use the same notice/no-op path through
+  PHP's `offsetGet(null)` behavior and snapshot the exact bridge's
+  empty-string backing key as a detached value. `offsetGet()` bodies with side
+  effects or broader return expressions, dynamic property-held sources outside
+  visible property access, magic-property roots, broader property-held alias
+  lifetime after replacing non-direct/dynamic containing properties, append
+  `ArrayAccess` sources outside the exact direct/property-held/non-direct
+  visible property-held `offsetGet(null)` bridge, mixed nested `ArrayAccess`
+  chains beyond the documented one-level bridge, arbitrary nested reference
+  slots copied from `ArrayAccess` storage, full references/COW, native
+  lowering, exact alias destruction/destructor ordering, and real runtime
+  reference containers remain unsupported. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`

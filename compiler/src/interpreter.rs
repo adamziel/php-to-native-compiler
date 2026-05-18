@@ -9160,6 +9160,51 @@ impl Interpreter {
                         }
                         return Ok(());
                     }
+                } else if let ReferenceSource::NonDirectObjectPropertyArrayAppend {
+                    holder,
+                    property,
+                    indices,
+                    ..
+                } = source
+                {
+                    if let Some(binding) = self
+                        .evaluate_non_direct_holder_object_property_array_append_reference_source_binding(
+                            holder, property, indices, span, scope,
+                        )?
+                    {
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
+                        return Ok(());
+                    }
+                } else if let ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+                    holder,
+                    property,
+                    indices,
+                    ..
+                } = source
+                {
+                    let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                    if let Some(binding) = self
+                        .evaluate_non_direct_holder_object_property_array_append_reference_source_binding(
+                            holder, &property, indices, span, scope,
+                        )?
+                    {
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
+                        return Ok(());
+                    }
                 } else if let Some((alias, _)) =
                     self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
@@ -10720,6 +10765,80 @@ impl Interpreter {
             )
         })?;
         Ok(Some((alias, value)))
+    }
+
+    fn evaluate_non_direct_holder_object_property_array_append_reference_source_binding(
+        &mut self,
+        holder: &Expr,
+        property: &str,
+        indices: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<NonDirectReferenceSourceBinding>> {
+        let holder_value = self.evaluate(holder, scope)?;
+        let holder_object = match holder_value {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let keys = indices
+            .iter()
+            .map(|index| self.evaluate_array_key(index, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        let temp_name = self.next_foreach_temporary_array_name();
+        scope.write_static(&temp_name, Value::Object(holder_object));
+
+        if keys.is_empty() {
+            if let Some(value) = self
+                .evaluate_object_property_array_access_by_value_reference_source_value(
+                    &temp_name,
+                    property,
+                    vec![Self::array_access_append_reference_key()],
+                    span,
+                    scope,
+                )?
+            {
+                return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(value)));
+            }
+            if let Some((alias, _)) = self
+                .evaluate_object_property_array_access_append_reference_source_alias(
+                    &temp_name, property, span, scope,
+                )?
+            {
+                return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)));
+            }
+        }
+
+        if let Some((alias, _)) = self.evaluate_magic_get_array_append_reference_source_alias(
+            &temp_name,
+            property,
+            keys.clone(),
+            span,
+            scope,
+        )? {
+            return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)));
+        }
+
+        self.reject_object_property_array_access_reference_source_if_needed(
+            &temp_name, property, span, scope,
+        )?;
+        let root = self.context_object_property_alias_root(&temp_name, property, span, scope)?;
+        let root = scope.canonical_equivalent_object_property_alias_root(&root);
+        let alias = scope.append_object_property_array_offset_reference_alias(
+            root,
+            keys,
+            Value::Null,
+            span,
+        )?;
+        Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)))
     }
 
     fn evaluate_non_direct_holder_magic_get_array_append_reference_source_alias(

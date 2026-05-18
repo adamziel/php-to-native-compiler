@@ -18519,6 +18519,23 @@ handled.
   lowering, and exact alias destruction/destructor ordering named as
   unsupported.
 
+## Lane 1679-C: Non-Direct Holder Append By-Value `offsetGet(null)` Reference-Source No-op
+
+- [x] Runtime/tests/docs lane: extend the focused by-value
+  `ArrayAccess::offsetGet(null)` reference-source notice/no-op/detached-alias
+  slice to bounded non-direct holder append forms such as
+  `$alias =& $holders["box"]->bag[]`,
+  `$alias =& $holders["box"]->{$name}[]`,
+  `$alias =& $registry->holder()->bag[]`, and
+  `$alias =& make_holder($bag)->bag[]`. These forms evaluate the holder once,
+  emit the bounded indirect-modification notice, initialize only a detached
+  local alias/value from the empty-string backing key used by `offsetGet(null)`,
+  and leave backing `ArrayAccess` storage unchanged. Keep magic-property
+  roots, side-effecting or broader `offsetGet()` bodies, arbitrary nested
+  reference slots stored inside `ArrayAccess` buckets, broader mixed
+  `ArrayAccess` chains, full references/COW, native reference lowering, and
+  exact alias destruction/destructor ordering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

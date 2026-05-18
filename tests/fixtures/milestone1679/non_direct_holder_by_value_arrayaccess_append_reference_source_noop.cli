@@ -1,0 +1,16 @@
+$ phpc run tests/fixtures/milestone1679/non_direct_holder_by_value_arrayaccess_append_reference_source_noop.php
+stdout:
+notice:Indirect modification of overloaded element of Milestone1679_Bag has no effect
+changed|empty
+notice:Indirect modification of overloaded element of Milestone1679_Bag has no effect
+dynamic-changed|empty
+notice:Indirect modification of overloaded element of Milestone1679_Bag has no effect
+method-changed|empty
+notice:Indirect modification of overloaded element of Milestone1679_Bag has no effect
+expr-changed|empty
+ref-changed|ref-changed
+plain-changed|plain-changed|plain-empty
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

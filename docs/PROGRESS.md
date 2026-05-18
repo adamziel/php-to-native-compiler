@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Lane 1679 non-direct holder append-source by-value
+  `ArrayAccess::offsetGet(null)` reference-source notice/no-op fidelity for the
+  focused exact visible property-held bridge. Statement-form reference
+  assignment from visible property-held `ArrayAccess` append sources reached
+  through non-direct holder expressions such as
+  `$alias =& $holders["box"]->bag[]`,
+  `$alias =& $holders["box"]->{$name}[]`,
+  `$alias =& $registry->holder()->bag[]`, and
+  `$alias =& make_holder($bag)->bag[]` now evaluates the holder once, emits the
+  bounded indirect-modification `E_NOTICE`, initializes the target from the
+  exact bridge's `offsetGet(null)` empty-string backing key as a detached local
+  variable, and leaves the backing `ArrayAccess` storage unchanged when the
+  target is later written. The regression guards also preserve by-reference
+  `ArrayAccess` append and plain property-array append alias paths. This does
+  not add magic-property roots, side-effecting or broader `offsetGet()` bodies,
+  arbitrary nested reference slots stored inside `ArrayAccess` buckets,
+  broader mixed `ArrayAccess` chains, full references/COW, native reference
+  lowering, or exact alias destruction/destructor ordering. Focused
+  verification used `CARGO_TARGET_DIR=/tmp/phpc-target-1679-local
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test
+  functions_and_scopes
+  reference_assignment_non_direct_holder_array_access_append_source_by_value_detaches_with_notice
+  -- --test-threads=1` passed `1` test; the by-reference `ArrayAccess` append
+  and plain property-array append fallback guard filters each passed; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1679`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1678-C non-direct holder by-value
   `ArrayAccess::offsetGet()` reference-source notice/no-op fidelity for the
   focused exact visible property-held bridge. Statement-form reference

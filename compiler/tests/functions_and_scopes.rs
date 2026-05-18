@@ -3772,6 +3772,74 @@ echo $expr, "|", $bag->items["outer"]["slot"];
 }
 
 #[test]
+fn reference_assignment_non_direct_holder_array_access_append_source_by_value_detaches_with_notice()
+{
+    let execution = run_source(
+        r#"<?php
+function notice_handler($errno, $message, $file, $line) {
+    echo "notice:", $message, "\n";
+    return true;
+}
+set_error_handler("notice_handler", E_NOTICE);
+
+class Bag implements ArrayAccess {
+    public $items = ["" => "empty"];
+    public function offsetExists($offset) { return false; }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { }
+}
+class Holder {
+    public $bag;
+    public $dynamicBag;
+    public function __construct($bag) {
+        $this->bag = $bag;
+        $this->dynamicBag = $bag;
+    }
+}
+class Registry {
+    public $holder;
+    public function holder() {
+        return $this->holder;
+    }
+}
+function make_holder($bag) {
+    return new Holder($bag);
+}
+
+$bag = new Bag();
+$holders = ["box" => new Holder($bag)];
+$alias =& $holders["box"]->bag[];
+$alias = "changed";
+echo $alias, "|", $bag->items[""], "\n";
+
+$property = "dynamicBag";
+$dynamic =& $holders["box"]->{$property}[];
+$dynamic = "dynamic-changed";
+echo $dynamic, "|", $bag->items[""], "\n";
+
+$registry = new Registry();
+$registry->holder = new Holder($bag);
+$method =& $registry->holder()->bag[];
+$method = "method-changed";
+echo $method, "|", $bag->items[""], "\n";
+
+$expr =& make_holder($bag)->bag[];
+$expr = "expr-changed";
+echo $expr, "|", $bag->items[""];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "notice:Indirect modification of overloaded element of Bag has no effect\nchanged|empty\nnotice:Indirect modification of overloaded element of Bag has no effect\ndynamic-changed|empty\nnotice:Indirect modification of overloaded element of Bag has no effect\nmethod-changed|empty\nnotice:Indirect modification of overloaded element of Bag has no effect\nexpr-changed|empty"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_non_direct_holder_array_access_reference_source_still_binds() {
     let execution = run_source(
         r#"<?php
@@ -3803,6 +3871,37 @@ echo $alias, "|", $bag->items["slot"];
 }
 
 #[test]
+fn reference_assignment_non_direct_holder_array_access_append_source_by_reference_still_aliases() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = ["" => "empty"];
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+class Holder {
+    public $bag;
+    public function __construct($bag) {
+        $this->bag = $bag;
+    }
+}
+$bag = new Bag();
+$holders = ["box" => new Holder($bag)];
+$alias =& $holders["box"]->bag[];
+$alias = "changed";
+echo $alias, "|", $bag->items[""];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|changed");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_non_direct_holder_plain_property_array_source_still_binds() {
     let execution = run_source(
         r#"<?php
@@ -3818,6 +3917,26 @@ echo $alias, "|", $holders["box"]->items["slot"];
     .unwrap();
 
     assert_eq!(execution.stdout, "changed|changed");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_non_direct_holder_plain_property_array_append_source_still_aliases() {
+    let execution = run_source(
+        r#"<?php
+class Holder {
+    public $items = ["" => "empty"];
+}
+$holders = ["box" => new Holder()];
+$alias =& $holders["box"]->items[];
+$alias = "changed";
+echo $alias, "|", $holders["box"]->items[0], "|", $holders["box"]->items[""];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|changed|empty");
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
