@@ -19640,6 +19640,17 @@ handled.
   fatal text, complete alias lifetime/detach behavior, string COW identity,
   and native reference lowering named as unsupported.
 
+## Lane 1744-C: Reference-Backed Property Unset Detach
+
+- [x] Runtime/tests/docs lane: detach covered whole object-property
+  `unset($object->property)` operations from promoted reference-backed
+  property cells instead of writing through the alias. Cover public untyped,
+  public typed, clone-shared public, and method-local private property
+  aliases with system-PHP fixture comparison. Keep broader dynamic-property
+  unset policy, complex alias lifetime/detach behavior beyond covered
+  property slots, exact PHP fatal text, string COW identity, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

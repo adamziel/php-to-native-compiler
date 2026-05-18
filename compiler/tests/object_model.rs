@@ -6690,6 +6690,35 @@ $alias = $other;
 }
 
 #[test]
+fn unset_property_reference_detaches_alias_from_property_slot() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $item = "seed";
+    public int $typed = 7;
+}
+
+$box = new Box();
+$alias =& $box->item;
+unset($box->item);
+$alias = "alias";
+echo isset($box->item) ? "item-set" : "item-unset";
+echo "|", $alias, "\n";
+
+$typed =& $box->typed;
+unset($box->typed);
+$typed = "bad";
+echo isset($box->typed) ? "typed-set" : "typed-unset";
+echo "|", $typed;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "item-unset|alias\ntyped-unset|bad");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn typed_properties_accept_inherited_class_name_assignments() {
     let execution = run_source(
         r#"<?php

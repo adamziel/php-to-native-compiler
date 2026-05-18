@@ -2635,6 +2635,26 @@ impl PhpReferenceCell {
             state.constraints.push(constraint);
         }
     }
+
+    fn remove_property_type_constraint(
+        &self,
+        type_decl: Option<&str>,
+        class_name: &str,
+        property_name: &str,
+    ) {
+        let Some(type_decl) = type_decl else {
+            return;
+        };
+        let constraint = PhpReferenceCellConstraint {
+            type_decl: type_decl.to_string(),
+            class_name: class_name.to_string(),
+            property_name: property_name.to_string(),
+        };
+        self.state
+            .borrow_mut()
+            .constraints
+            .retain(|existing| existing != &constraint);
+    }
 }
 
 #[derive(Debug)]
@@ -4239,8 +4259,7 @@ impl PhpObject {
             return Ok(false);
         };
 
-        property.set_value(Value::Null);
-        property.initialized = property.type_decl.is_none();
+        property.unset_value();
         Ok(true)
     }
 
@@ -4538,6 +4557,18 @@ impl ObjectProperty {
             &self.name,
         );
         self.storage = ObjectPropertyStorage::Reference(reference);
+    }
+
+    fn unset_value(&mut self) {
+        if let ObjectPropertyStorage::Reference(reference) = &self.storage {
+            reference.remove_property_type_constraint(
+                self.type_decl.as_deref(),
+                &self.declaring_class_name,
+                &self.name,
+            );
+        }
+        self.storage = ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null));
+        self.initialized = self.type_decl.is_none();
     }
 
     fn reference_cell(&mut self) -> RuntimeResult<PhpReferenceCell> {

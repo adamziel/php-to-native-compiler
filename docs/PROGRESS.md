@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1744-C for whole object-property `unset` detach behavior on
+  promoted reference-backed properties. `unset($object->property)` now
+  detaches the property slot from a stored `PhpReferenceCell` instead of
+  writing through the alias cell, and removes that property's typed-reference
+  constraint from the detached alias. Focused coverage includes public
+  untyped aliases, public typed aliases, clone-shared public aliases, and
+  method-local private aliases. Broader dynamic-property unset policy,
+  complex alias lifetime/detach behavior beyond covered property slots,
+  exact PHP fatal text, string COW identity, and native reference lowering
+  remain unsupported. Focused verification: raw system PHP output matched the
+  new `milestone1744` fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1744` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent
+  `unset_property_reference_detaches_alias_from_property_slot` passed.
+
 - Added Lane 1743-C for live class/interface metadata in typed-property
   reference-cell enforcement. Checked direct variable and array-slot writes
   now thread the interpreter's live property type resolver into

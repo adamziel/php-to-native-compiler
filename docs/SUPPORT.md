@@ -4463,7 +4463,13 @@
   interpreter's live class/interface metadata resolver for the covered
   class-name and interface typed-property subset, so aliases registered with
   `class_alias()` after an object was instantiated are honored for direct
-  property aliases and reference-backed array slot writes. By-value
+  property aliases and reference-backed array slot writes. Unsetting a covered
+  promoted reference-backed object property detaches that property slot from
+  the alias cell instead of writing through the alias. Covered public,
+  typed public, clone-shared public, and method-local private property aliases
+  keep their old alias value; later alias writes do not resurrect the
+  property, and detached typed aliases no longer enforce the old property
+  type constraint. By-value
   terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's
@@ -4480,8 +4486,9 @@
   bindings, arbitrary writes through every remaining complex typed-property
   alias sink, exact PHP fatal text for invalid typed-reference writes, arbitrary
   dynamic-property policy beyond the current dynamic-capable object subset,
-  complete alias lifetime/detach parity, string COW identity, and native
-  reference lowering remain unsupported.
+  complete alias lifetime/detach parity beyond the covered property-unset
+  slots, string COW identity, and native reference lowering remain
+  unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

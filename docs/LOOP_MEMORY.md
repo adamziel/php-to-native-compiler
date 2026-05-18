@@ -37150,3 +37150,28 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: add bounded wordpress empty paths"` if the
   full gate passes. Milestone 833 should bound the reached object-receiver
   static property/class-constant access diagnostic or implementation slice.
+
+## Loop Event 2026-05-18T19:12:00+02:00
+
+- Checkpoint before this task: `544fbc8f runtime: resolve live typed reference
+  aliases`, pushed to `origin/master`.
+- Task attempted: Lane 1744-C, reference-backed object-property `unset`
+  detach behavior for covered public, typed public, clone-shared public, and
+  method-local private property aliases.
+- Files changed so far: `runtime/src/lib.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1744/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  and `docs/LOOP_MEMORY.md`.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1744/property_reference_unset_detach.php`;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1744`
+  passed; focused `cargo test -q -p phpc --test object_model
+  unset_property_reference_detaches_alias_from_property_slot` passed.
+- Remaining COW gaps: broader dynamic-property unset policy, complex alias
+  lifetime/detach behavior beyond covered property slots, arbitrary writes
+  through every remaining complex typed-property alias sink, exact PHP fatal
+  text, string COW identity, and native reference lowering.
+- Next concrete task: run formatting, diff, check, adjacent regression, and
+  checkpoint gates, then checkpoint with
+  `tools/checkpoint.sh "runtime: detach unset property reference cells"` if
+  the full gate passes.
