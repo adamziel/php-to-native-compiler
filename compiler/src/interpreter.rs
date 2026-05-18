@@ -5029,6 +5029,66 @@ impl Interpreter {
         })
     }
 
+    fn array_access_array_copy_source_for_direct_variable_index(
+        &self,
+        object_name: &str,
+        indices: &[&Expr],
+        span: Span,
+        scope: &SymbolTable,
+    ) -> Option<PublicObjectPropertyArrayCopySource> {
+        if indices.len() != 1 {
+            return None;
+        }
+        let Value::Object(object) = scope.read_named(object_name)? else {
+            return None;
+        };
+        let key = Self::side_effect_free_array_key(indices[0], scope)?;
+        self.array_access_array_copy_source_for_object(object, key, span)
+    }
+
+    fn array_access_array_copy_source_for_object(
+        &self,
+        object: PhpObject,
+        key: ArrayKey,
+        span: Span,
+    ) -> Option<PublicObjectPropertyArrayCopySource> {
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return None;
+        }
+        let (class_id, class_name, resolved_method_name, visibility, is_static) =
+            self.resolve_instance_method(object.class_id(), "offsetGet")?;
+        if is_static || visibility != Visibility::Public {
+            return None;
+        }
+        let function = self
+            .method_function(class_id, &class_name, &resolved_method_name, span)
+            .ok()?;
+        let function = function.as_ref();
+        if function.params.len() != 1 {
+            return None;
+        }
+        let property = self
+            .array_access_offset_get_reference_property(function, span)
+            .ok()?;
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        if object
+            .property_visibility_from_context(&property, Some(class_id), &protected_class_ids)
+            .ok()?
+            != Visibility::Public
+        {
+            return None;
+        }
+        Some(PublicObjectPropertyArrayCopySource {
+            object,
+            property,
+            keys: vec![key],
+            include_exact_path: false,
+        })
+    }
+
     fn side_effect_free_array_key(expr: &Expr, scope: &SymbolTable) -> Option<ArrayKey> {
         let value = Self::side_effect_free_value(expr, scope)?;
         ArrayKey::from_value(&value).ok()
@@ -10679,7 +10739,22 @@ impl Interpreter {
                             if let Some((source_name, indices)) =
                                 Self::collect_direct_variable_array_index_path(target, index)
                             {
-                                if let Some(keys) = Self::literal_array_key_path(&indices) {
+                                if let Some(source) = self
+                                    .array_access_array_copy_source_for_direct_variable_index(
+                                        source_name,
+                                        &indices,
+                                        expr.span(),
+                                        scope,
+                                    )
+                                {
+                                    scope.mirror_public_object_property_aliases_from_array_copy(
+                                        name,
+                                        &source.object,
+                                        &source.property,
+                                        &source.keys,
+                                        source.include_exact_path,
+                                    );
+                                } else if let Some(keys) = Self::literal_array_key_path(&indices) {
                                     if source_name == "GLOBALS" {
                                         if let Ok((global_name, keys)) =
                                             SymbolTable::split_globals_reference_path(

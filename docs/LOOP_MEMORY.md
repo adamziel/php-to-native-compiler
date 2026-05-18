@@ -26,6 +26,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T05:05:00+02:00
+
+- Checkpoint before this task: `b90daa37 runtime: preserve COW iterator bucket
+  reference slots`, pushed to `origin/master`.
+- Task attempted: Milestone 1670 focused on the `ArrayAccess` bucket-copy COW
+  gap. A probe corrected the initial target-alias direction: PHP rejects
+  `$bag[$key] =& $value` with `Cannot assign by reference to an array dimension
+  of an object`, even when `offsetGet()` returns by reference, so this batch
+  keeps `ArrayAccess` offset reference-assignment targets as a boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `compiler/tests/foreach.rs`,
+  `tests/fixtures/milestone1670/wp_hook_array_access_bucket_cow.*`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run and result with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test
+  functions_and_scopes -- --test-threads=1` passed `181` tests; `cargo run -q
+  -p phpc -- test --compare-php tests/fixtures/milestone1670` passed `1`
+  fixture with `1` system PHP comparison and `0` skips. The full `foreach`
+  test and final checkpoint gate still need to be rerun after documentation
+  cleanup.
+- Semantic gap reduced: direct `$bag[$key]` bucket copies now preserve covered
+  nested public-property reference slots when public `offsetGet($offset)` has
+  the exact `return $this->property[$offset];` body, for both by-value and
+  by-reference declarations. The WP_Hook-shaped fixture proves only the copied
+  bucket's nested referenced callback slot writes through while plain copied
+  bucket fields stay detached.
+- Remaining semantic gaps: property-held and non-direct `ArrayAccess` bucket
+  copy provenance, non-public backing properties, side-effecting or broader
+  `offsetGet()` bodies, expression-root `ArrayAccess` holders, by-value
+  `offsetGet()` reference-source indirect-modification notice/no-effect
+  fidelity, mixed nested `ArrayAccess` chains, general PHP reference
+  containers, broad COW identity, native reference lowering, and exact alias
+  destruction/destructor ordering.
+- Next concrete task: rerun the focused `foreach` test, formatting/diff
+  checks, then checkpoint and push Milestone 1670 before continuing to the
+  next `ArrayAccess` COW gap.
+
 ## Loop Event 2026-05-18T04:46:00+02:00
 
 - Checkpoint before this task:

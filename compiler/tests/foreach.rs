@@ -1041,6 +1041,107 @@ echo $holder->bag["outer"]["c"], "|", $value;
 }
 
 #[test]
+fn foreach_by_reference_over_array_access_bucket_copies_preserves_nested_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class RefCowForeachArrayAccessBucketCopy implements ArrayAccess {
+    public $callbacks = [];
+
+    public function add($priority, &$callback) {
+        $this->callbacks[$priority] = [
+            "id" => ["function" => &$callback, "accepted_args" => 1],
+            "plain" => ["function" => "plain", "accepted_args" => 1],
+        ];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        return isset($this->callbacks[$offset]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetGet($offset) {
+        return $this->callbacks[$offset];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        $this->callbacks[$offset] = $value;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {
+        unset($this->callbacks[$offset]);
+    }
+}
+
+class RefCowForeachArrayAccessBucketAlias implements ArrayAccess {
+    public $callbacks = [];
+
+    public function add($priority, &$callback) {
+        $this->callbacks[$priority] = [
+            "id" => ["function" => &$callback, "accepted_args" => 1],
+            "plain" => ["function" => "plain", "accepted_args" => 1],
+        ];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        return isset($this->callbacks[$offset]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function &offsetGet($offset) {
+        return $this->callbacks[$offset];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        $this->callbacks[$offset] = $value;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {
+        unset($this->callbacks[$offset]);
+    }
+}
+
+function exercise_array_access_bucket_copy($hook, $label) {
+    $bucket = $hook[10];
+    foreach ($bucket as $id => &$node) {
+        if ($id === "id") {
+            $node["function"] = $label . ":copy";
+            $node["accepted_args"] = 2;
+        } else {
+            $node["function"] = $label . ":plain-copy";
+        }
+    }
+    unset($node);
+}
+
+$callback = "seed";
+$valueHook = new RefCowForeachArrayAccessBucketCopy();
+$valueHook->add(10, $callback);
+exercise_array_access_bucket_copy($valueHook, "value");
+echo $callback, "|", $valueHook->callbacks[10]["id"]["function"], "|", $valueHook->callbacks[10]["id"]["accepted_args"], "|", $valueHook->callbacks[10]["plain"]["function"], "\n";
+
+$refCallback = "seed";
+$refHook = new RefCowForeachArrayAccessBucketAlias();
+$refHook->add(10, $refCallback);
+exercise_array_access_bucket_copy($refHook, "ref");
+echo $refCallback, "|", $refHook->callbacks[10]["id"]["function"], "|", $refHook->callbacks[10]["id"]["accepted_args"], "|", $refHook->callbacks[10]["plain"]["function"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "value:copy|value:copy|1|plain\nref:copy|ref:copy|1|plain"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_binds_non_direct_holder_array_access_reference_roots() {
     let execution = run_source(
         r#"<?php

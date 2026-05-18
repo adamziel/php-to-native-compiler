@@ -18399,13 +18399,26 @@ handled.
   public-property bucket reference slots while keeping plain copied elements
   detached. Covered by Rust regressions and a PHP-comparable fixture.
 
-## Milestone 1670: ArrayAccess Reference/COW Target Blocker
+## Milestone 1670: ArrayAccess Bucket-Copy COW Slice
 
-- [ ] Reference/COW lane: keep all active lanes on the next large COW gap:
-  `ArrayAccess::offsetGet()` reference targets and side-effecting bucket
-  provenance. Prove bounded reference assignment to `ArrayAccess` offset
-  targets and by-value `offsetGet()` bucket copies with PHP-comparable
-  fixtures before moving to unrelated WordPress blockers.
+- [x] Reference/COW lane: direct `$bag[$key]` bucket copies now mirror covered
+  nested public object-property reference slots into a copied direct array
+  variable when the direct object implements `ArrayAccess`, the selected key is
+  side-effect-free, and public `offsetGet($offset)` has the exact
+  `return $this->property[$offset];` body. Covered by Rust regressions and a
+  PHP-comparable WP_Hook-shaped fixture for both by-value and by-reference
+  `offsetGet()` declarations. `ArrayAccess` offset reference-assignment
+  targets remain a PHP-parity boundary.
+
+## Milestone 1671: ArrayAccess Remaining COW Frontiers
+
+- [ ] Reference/COW lane: keep all active lanes on the remaining `ArrayAccess`
+  COW gaps before moving to unrelated WordPress blockers: property-held and
+  non-direct bucket-copy provenance, non-public backing properties,
+  side-effecting or broader `offsetGet()` bodies, expression-root holders,
+  by-value `offsetGet()` reference-source indirect-modification notice/no-op
+  fidelity, arbitrary nested reference slots stored inside `ArrayAccess`
+  buckets, and broader mixed `ArrayAccess` chains.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

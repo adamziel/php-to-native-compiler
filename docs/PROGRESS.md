@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added Milestone 1670, a focused `ArrayAccess` bucket-copy COW slice. Direct
+  variable assignment from `$bag[$key]` now mirrors covered nested reference
+  slots when the direct object implements `ArrayAccess`, the selected key is
+  side-effect-free, and public `offsetGet($offset)` has the exact
+  `return $this->property[$offset];` body, including both by-value and
+  by-reference `offsetGet()` declarations. The new WP_Hook-shaped fixture
+  copies a callback bucket from an `ArrayAccess` hook object, mutates the
+  copied bucket through by-reference foreach, and proves that only the nested
+  referenced callback slot writes through while ordinary copied bucket fields
+  remain detached, matching system PHP. A separate boundary regression keeps
+  `ArrayAccess` offset reference-assignment targets rejected, matching PHP's
+  `Cannot assign by reference to an array dimension of an object` behavior
+  rather than inventing target aliases. This still does not add bucket-copy
+  provenance for property-held or non-direct `ArrayAccess` holders, non-public
+  backing properties, side-effecting or broader `offsetGet()` bodies,
+  expression-root `ArrayAccess` holders, mixed nested `ArrayAccess` chains
+  beyond existing reference-source bridges, by-value `offsetGet()` used as a
+  reference source with PHP's indirect-modification notice/no-effect behavior,
+  general PHP reference containers, broad copy-on-write identity, native
+  reference lowering, or exact alias destruction/destructor ordering. Focused
+  verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test
+  functions_and_scopes -- --test-threads=1` passed `181` tests; `cargo test
+  -q -p phpc --test foreach -- --test-threads=1` passed `38` tests; `cargo
+  run -q -p phpc -- test --compare-php tests/fixtures/milestone1670` passed
+  `1` fixture with `1` system PHP comparison and `0` skips; and manual system
+  PHP execution of the milestone fixture matched the expected output.
+
 - Added Milestone 1669, a focused WP_Hook-style iterator bucket COW slice.
   By-value `foreach` over bounded userland `Iterator` objects can now preserve
   covered nested reference-slot provenance when public `Iterator::current()`

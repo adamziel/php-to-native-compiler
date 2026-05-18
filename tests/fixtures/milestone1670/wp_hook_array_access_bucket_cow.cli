@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1670/wp_hook_array_access_bucket_cow.php
+--- stdout begin ---
+value:copy|value:copy|1|plain
+ref:copy|ref:copy|1|plain
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit code: 0

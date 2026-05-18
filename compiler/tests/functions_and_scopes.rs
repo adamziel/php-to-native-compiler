@@ -2875,6 +2875,31 @@ $bag["name"] =& $value;
 }
 
 #[test]
+fn reference_assignment_array_access_reference_return_offset_target_reports_stable_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = [];
+    public function offsetExists($offset) { return false; }
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { }
+    public function offsetUnset($offset) { }
+}
+$bag = new Bag();
+$value = "Grace";
+$bag["name"] =& $value;
+"#,
+    );
+
+    assert_eq!(error.line, 11);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call reference assignment: ArrayAccess object offsets cannot be assigned by reference in the current runtime"
+    );
+}
+
+#[test]
 fn reference_assignment_object_property_array_access_target_reports_stable_boundary() {
     let error = runtime_error(
         r#"<?php
@@ -2922,6 +2947,46 @@ echo $bag["name"], "|", $alias;
     .unwrap();
 
     assert_eq!(execution.stdout, "Grace|Grace");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_access_offset_get_bucket_copy_preserves_nested_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = array();
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+$target = "seed";
+$bag = new Bag();
+$bag->items["outer"] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+    "plain" => array("function" => "plain", "accepted_args" => 1),
+);
+$bag->items["outer"]["id"]["function"] =& $target;
+
+$bucket = $bag["outer"];
+foreach ($bucket as $id => &$node) {
+    if ($id === "id") {
+        $node["function"] = "via-offset";
+        $node["accepted_args"] = 2;
+    } else {
+        $node["function"] = "plain-copy";
+    }
+}
+unset($node);
+
+echo $target, "|", $bag->items["outer"]["id"]["function"], "|", $bag->items["outer"]["id"]["accepted_args"], "|", $bag->items["outer"]["plain"]["function"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "via-offset|via-offset|1|plain");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -3001,6 +3066,42 @@ echo $holder->bag["created"]["leaf"], "|", $missing;
     .unwrap();
 
     assert_eq!(execution.stdout, "seed:alias|seed:alias\nmade|made");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn property_held_array_access_reference_source_survives_holder_property_rebind() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items;
+    public function __construct($items) { $this->items = $items; }
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+class Holder {
+    public $bag;
+}
+$holder = new Holder();
+$holder->bag = new Bag(["slot" => "old"]);
+$old = $holder->bag;
+$alias =& $holder->bag["slot"];
+$alias = "alias";
+echo $old["slot"], "|", $holder->bag["slot"], "|", $alias, "\n";
+$holder->bag = new Bag(["slot" => "new"]);
+echo $old["slot"], "|", $holder->bag["slot"], "|", $alias, "\n";
+$alias = "after";
+echo $old["slot"], "|", $holder->bag["slot"], "|", $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "alias|alias|alias\nalias|new|alias\nafter|new|after"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

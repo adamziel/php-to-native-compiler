@@ -74,13 +74,22 @@ visible property-held `ArrayAccess` offset-array roots, such as
 `foreach ($holder->{$name}["outer"] as &$value)`, reuse the exact bounded
 by-reference `offsetGet($offset) { return $this->property[$offset]; }` bridge
 and then apply the same foreach array-slot alias machinery to the returned
-backing array slot. The same exact `ArrayAccess` bridge can recurse one
+backing array slot. When a direct `ArrayAccess` object uses a public
+`offsetGet($offset)` body with the same exact
+`return $this->property[$offset];` shape, normal direct-variable assignment
+from `$bag[$key]` can also mirror covered nested public-property reference
+slots from the returned bucket copy, including by-value and by-reference
+`offsetGet()` declarations. The same exact `ArrayAccess` bridge can recurse one
 bounded level when an intermediate selected offset contains another
 `ArrayAccess` object, including through a magic `__get()` array root or stored
 `call_user_func_array()` reference argument array. Statement-form reference
-assignment can also bind expression-root object-property array sources such as
-`factory()->items["slot"]` and non-direct magic `__get()` append sources such
-as `$holders["box"]->missing[]`. Direct free-function calls
+assignment to direct and property-held `ArrayAccess` offset targets remains a
+runtime boundary; the current runtime does not invent aliases for object array
+dimensions.
+Statement-form reference assignment can also bind expression-root
+object-property array sources such as `factory()->items["slot"]` and
+non-direct magic `__get()` append sources such as
+`$holders["box"]->missing[]`. Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller
 variable cell, such as a by-reference parameter; the interpreter binds a
@@ -331,7 +340,9 @@ slot so stored argument arrays remain usable by the current
 `call_user_func_array()` reference path. This is still path metadata for
 explicit keys, not PHP's general COW container graph; dynamic, magic,
 side-effecting, and mixed `ArrayAccess` source or target paths remain outside
-this mirror. Direct array-offset `unset(...)` paths, direct
+this mirror, except for the bounded direct `ArrayAccess` bucket-copy source
+whose public `offsetGet($offset)` body is exactly
+`return $this->property[$offset];`. Direct array-offset `unset(...)` paths, direct
 visible object-property array-offset `unset(...)` paths, and direct visible
 object-property `unset(...)` paths remove covered alias metadata for the
 removed slot/property, and for child aliases below a removed parent slot or
@@ -798,11 +809,18 @@ object variable or visible selected property value implements `ArrayAccess`, pub
 current `return $this->property[$offset];` shape. Property-held roots are
 parked in a hidden object-handle symbol and then reuse the same backing
 property array alias metadata, including private/protected properties through
-the declaring method context. By-value `offsetGet()`, dynamic property-held
-ArrayAccess sources on non-direct holder expressions or outside visible
-property access, alias lifetime after replacing the containing property,
+the declaring method context. Direct public property-held aliases remain bound
+to the held `ArrayAccess` object if the holder property is later rebound.
+Direct by-value or by-reference `offsetGet()` bucket-copy reads can mirror
+covered nested public-property reference slots into a direct array variable
+only for the same exact public `return $this->property[$offset];` body shape
+and side-effect-free selected keys. Dynamic property-held ArrayAccess sources
+on non-direct holder expressions or outside visible property access, broader
+alias lifetime after replacing non-direct/dynamic containing properties,
 side-effecting or broader `offsetGet()` bodies, mixed nested ArrayAccess
-chains, append sources, and real reference containers remain future work.
+chains beyond the documented one-level bridge, append sources, arbitrary
+nested reference slots copied from ArrayAccess storage, and real reference
+containers remain future work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or

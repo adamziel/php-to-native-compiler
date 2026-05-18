@@ -655,14 +655,23 @@
   Append-offset sources such as `$alias =& $bag[]` and
   `$alias =& $holder->bag[]` use that same exact-body bridge and bind
   `offsetGet(null)` to the backing property array's empty-string key.
-  Normal reads through that same bounded reference-returning `offsetGet()`
-  return the selected slot value. By-value `offsetGet()`, `offsetGet()` bodies
-  with side effects or broader return expressions, dynamic property-held
-  sources on non-direct holder expressions or outside visible property access,
-  property-held alias lifetime after replacing the containing
-  property, append `ArrayAccess` sources outside the exact `offsetGet(null)`
-  bridge, mixed nested `ArrayAccess` chains, and real runtime reference
-  containers remain unsupported. Direct
+  Direct public property-held aliases created through this bridge remain bound
+  to the held `ArrayAccess` object's backing slot if the holder property is
+  later replaced. Normal reads through that same bounded reference-returning
+  `offsetGet()` return the selected slot value. Exact-body direct
+  `offsetGet()` bucket reads, whether the method returns by value or by
+  reference, can mirror covered nested public object-property reference-slot
+  provenance into a copied direct array variable when the selected key is
+  side-effect-free; this is copy provenance only, not by-reference source
+  support for by-value `offsetGet()`. By-value `offsetGet()` used as a
+  reference source, `offsetGet()` bodies with side effects or broader return
+  expressions, dynamic property-held sources on non-direct holder expressions
+  or outside visible property access, broader property-held alias lifetime
+  after replacing non-direct/dynamic containing properties, append
+  `ArrayAccess` sources outside the exact `offsetGet(null)` bridge, mixed
+  nested `ArrayAccess` chains beyond the documented one-level bridge, arbitrary
+  nested reference slots copied from `ArrayAccess` storage, and real runtime
+  reference containers remain unsupported. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`
@@ -680,9 +689,11 @@
   through any covered source-group name and the direct array offset observe the
   same selected value, and `unset($value)` detaches only that source name.
   `$GLOBALS`, PHP's deprecated false-root conversion, other non-array roots,
-  object-property/`ArrayAccess` targets, non-direct sources, full PHP reference
-  containers, copy-on-write, exact alias rebinding/mutation ordering, and native
-  lowering remain unsupported. Direct public object-property
+  object-property targets outside the documented public-property array path,
+  `ArrayAccess` offset reference-assignment targets, non-direct sources, full
+  PHP reference containers, copy-on-write, exact alias rebinding/mutation
+  ordering, and native lowering remain unsupported. Direct public
+  object-property
   array-offset and array-append reference targets such as
   `$object->items[$key] =& $value;`, `$object->items[] =& $value;`,
   `$object->groups[$outer][$inner] =& $value;`, and
@@ -698,12 +709,11 @@
   the same selected value, and `unset($value)` detaches only that source name.
   `$GLOBALS`, dynamic/magic/non-public properties, non-direct sources, full PHP
   reference containers, copy-on-write, exact alias rebinding/mutation ordering,
-  and native lowering remain unsupported.
-  ArrayAccess object reference targets such as `$bag[$key] =& $value;` and
-  property-held `$holder->bag[$key] =& $value;` report a stable runtime
-  boundary because PHP fatals when assigning by reference to an object array
-  dimension. Broader by-reference `ArrayAccess::offsetGet()`
-  indirect-modification fidelity remains unsupported.
+  and native lowering remain unsupported. `ArrayAccess` offset
+  reference-assignment targets such as `$bag[$key] =& $value;` and
+  `$holder->bag["outer"]["slot"] =& $value;` remain rejected in this runtime,
+  matching PHP's fatal `Cannot assign by reference to an array dimension of an
+  object` behavior instead of creating alias metadata for object dimensions.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment
@@ -769,7 +779,14 @@
   `??`/`unset` dispatch is supported when a visible direct object property
   holds an `ArrayAccess` object, such as `$holder->bag[$key]`. Direct append
   writes through visible property-held `ArrayAccess` objects, such as
-  `$holder->bag[] = $value`, call `offsetSet(null, $value)`. Direct
+  `$holder->bag[] = $value`, call `offsetSet(null, $value)`. When direct
+  variable assignment copies an array returned by a direct object variable's
+  public `offsetGet($offset)` method, and that method body is exactly
+  `return $this->property[$offset];`, covered nested reference slots below
+  the returned public-property bucket are mirrored into the copied direct
+  array variable for both by-value and by-reference `offsetGet()`
+  declarations. This covers the current WP_Hook-shaped bucket-copy case where
+  a copied callback bucket contains nested reference slots. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
   and writing the result back through `offsetSet($key, $value)`. Direct
@@ -779,9 +796,12 @@
   applying the update to PHP's current by-value temporary result without
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
   compound assignment through object-property `ArrayAccess`, ArrayAccess
-  iteration, built-in interface enforcement/signature validation, typed method
-  invocation, references/copy-on-write, exact warning/visibility diagnostics,
-  and native lowering remain unsupported. Direct `$object[$key] op= expr`
+  iteration, bucket-copy provenance for property-held or non-direct
+  `ArrayAccess` holders, non-public backing properties, side-effecting or
+  broader `offsetGet()` bodies, built-in interface enforcement/signature
+  validation, typed method invocation, broad references/copy-on-write, exact
+  warning/visibility diagnostics, and native lowering remain unsupported.
+  Direct `$object[$key] op= expr`
   compound assignment is supported by reading through `offsetGet($key)`,
   applying the current compound-assignment helper, and writing the result back
   through `offsetSet($key, $value)`. Direct `++$object[$key]`,
