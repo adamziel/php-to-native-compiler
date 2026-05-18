@@ -20044,6 +20044,19 @@ handled.
   arbitrary magic/`ArrayAccess` method bodies outside the interpreter subset,
   and native reference lowering named as unsupported.
 
+## Lane 1791-C through Lane 1793-C: Property-Root Reference Returns
+
+- [x] Runtime/interpreter/tests/docs bundle: preserve COW write-through when
+  executed public by-reference `__get()` bodies return `$this->property` or
+  `$this->{$name}` roots, direct reference assignments bind to that root, and
+  caller-side nested keys are applied below that returned root. Cover the same
+  property-root bridge for public by-reference
+  `ArrayAccess::offsetGet()` returning a whole `$this->property` backing
+  array before caller suffix keys select the final bucket. Keep arbitrary PHP
+  syntax, arbitrary side effects outside the executed method-body subset,
+  incompatible typed signatures, full exception unwinding, exact PHP
+  diagnostics, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

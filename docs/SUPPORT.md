@@ -1156,7 +1156,16 @@
   append and keyed/nested keyed shapes and leaves backing storage unchanged.
   By-reference `__get()` keyed/nested keyed stores with an array RHS also
   write through the returned plain-array cell for the same direct, dynamic,
-  and non-direct holder roots. The exact `__get()`/`offsetGet()` backing
+  and non-direct holder roots. When the by-reference `__get()` body runs
+  within the supported reference-return statement subset, it may return a
+  whole `$this->property` root or a dynamically selected `$this->{$name}` root;
+  direct reference assignments bind to that root, and nested caller writes
+  append their remaining keys below that returned property root while
+  preserving copied reference-slot metadata. The same executed
+  reference-return path covers public by-reference
+  `ArrayAccess::offsetGet()` returning a whole `$this->property` backing root
+  before the caller suffix selects the final bucket. The exact
+  `__get()`/`offsetGet()` backing
   analyzer accepts one local copy of the magic/offset parameter before the
   return, such as `$slot = $name; return $this->store[$slot];` or
   `$slot = $offset; return $this->items[$slot];`; it also accepts a local

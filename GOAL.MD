@@ -32,7 +32,17 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1790:
+The current in-progress implementation frontier is Lane 1793:
+
+- Lanes 1791 through 1793 add property-root reference-return bridges for
+  executed magic/`ArrayAccess` method bodies. Covered public by-reference
+  `__get()` bodies can now run side effects and return `$this->property` or
+  `$this->{$name}` by reference, then let direct reference assignments bind to
+  that root or let the caller apply nested array keys while preserving copied
+  COW reference-slot write-through. The same
+  property-root alias promotion now lets public by-reference
+  `ArrayAccess::offsetGet()` return a whole backing property such as
+  `$this->items` before the caller suffix selects the final bucket.
 
 - Lanes 1788 through 1790 close two bounded real-code gaps in the same
   magic/`ArrayAccess` reference-return body path. Catch matching now has

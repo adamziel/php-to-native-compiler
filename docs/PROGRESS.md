@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1791-C through Lane 1793-C for property-root reference returns
+  in the executed magic/`ArrayAccess` COW bridge. Public by-reference
+  `__get()` bodies can now execute supported side effects and return
+  `$this->property` or `$this->{$name}` by reference; nested caller writes
+  and direct reference assignments then bind to that returned root, while
+  nested caller writes apply their suffix keys below it and preserve copied
+  reference-slot write-through. Public by-reference
+  `ArrayAccess::offsetGet()` can also return a whole backing property root
+  such as `$this->items` before the caller suffix selects the final bucket.
+  This does not claim arbitrary PHP syntax, arbitrary method-body side
+  effects outside the executed interpreter subset, incompatible typed
+  signatures, full exception unwinding, exact PHP diagnostics, or native
+  reference lowering. Focused verification: raw system PHP output matched the
+  new `milestone1791`, `milestone1792`, and `milestone1793` fixtures; `cargo
+  run -q -p phpc -- test --compare-php` passed each new fixture directory
+  with `1` fixture, `1` system PHP comparison, and `0` skips; focused
+  `functions_and_scopes` milestone tests passed.
+
 - Added Lane 1788-C through Lane 1790-C for two bounded real-code
   reference-return body gaps. Subclass catch matching now has focused
   system-PHP evidence inside the supported magic/`ArrayAccess`

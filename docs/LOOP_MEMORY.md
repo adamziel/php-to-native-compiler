@@ -18,6 +18,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T00:22:00+02:00
+
+- Checkpoint before this task: `2b7c4d82 runtime: accept typed reference
+  return bridges`, pushed to `origin/master`.
+- Task attempted: Lane 1791-C through Lane 1793-C bundle, adding
+  property-root reference returns and direct reference assignment binding for
+  executed magic/`ArrayAccess` COW bridges.
+- Files changed so far: `compiler/src/interpreter.rs`, `runtime/src/lib.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1791/*`, `tests/fixtures/milestone1792/*`,
+  `tests/fixtures/milestone1793/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched the new `milestone1791`, `milestone1792`, and `milestone1793`
+  fixtures; `cargo run -q -p phpc -- test --compare-php` passed each new
+  fixture directory with `1` fixture, `1` system PHP comparison, and `0`
+  skips; focused `cargo test -q -p phpc --test functions_and_scopes
+  milestone179` passed.
+- Remaining COW gaps: unsupported PHP syntax and side effects outside the
+  executed magic/`ArrayAccess` reference-return body subset, arbitrary type
+  enforcement and incompatible typed reference-return signatures, full
+  exception unwinding and uncaught exception propagation, arbitrary Iterator
+  side effects, arbitrary closure capture roots, broader complex alias sinks
+  and alias lifetime ordering, exact PHP stderr/fatal text, binary/multibyte
+  string offset behavior, and native reference/string COW lowering.
+- Next concrete task: run adjacent regressions, formatting/diff/check gates,
+  then the full `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T00:15:16+02:00
 
 - Checkpoint before this task: `ea89122f runtime: catch reference return

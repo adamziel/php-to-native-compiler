@@ -3366,6 +3366,12 @@ impl SymbolTable {
             })?;
 
         for alias in aliases {
+            if self
+                .read_array_offset_alias_reference_cell(alias)
+                .is_some_and(|cell| cell.shares_reference_with(&reference))
+            {
+                continue;
+            }
             if !self.promote_array_offset_alias_to_reference_cell(alias, reference.clone()) {
                 return None;
             }
@@ -3380,7 +3386,7 @@ impl SymbolTable {
                 ArrayOffsetAliasRoot::StaticArray { name } => name != "GLOBALS",
                 ArrayOffsetAliasRoot::GlobalArray { .. } => true,
                 ArrayOffsetAliasRoot::PublicObjectProperty { .. }
-                | ArrayOffsetAliasRoot::ContextObjectProperty { .. } => false,
+                | ArrayOffsetAliasRoot::ContextObjectProperty { .. } => true,
             };
         }
 
@@ -3662,8 +3668,31 @@ impl SymbolTable {
                 ArrayOffsetAliasRoot::GlobalArray { name } => {
                     self.global_storage().borrow().get(name).cloned()
                 }
-                ArrayOffsetAliasRoot::PublicObjectProperty { .. }
-                | ArrayOffsetAliasRoot::ContextObjectProperty { .. } => None,
+                ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
+                    let Some(Value::Object(object)) = self.read_storage_named(object) else {
+                        return None;
+                    };
+                    object
+                        .bind_property_reference_cell_from_context(property, None, &[])
+                        .ok()
+                }
+                ArrayOffsetAliasRoot::ContextObjectProperty {
+                    object,
+                    property,
+                    current_class_id,
+                    protected_class_ids,
+                } => {
+                    let Some(Value::Object(object)) = self.read_storage_named(object) else {
+                        return None;
+                    };
+                    object
+                        .bind_property_reference_cell_from_context(
+                            property,
+                            *current_class_id,
+                            protected_class_ids,
+                        )
+                        .ok()
+                }
             };
         }
 
@@ -3697,8 +3726,32 @@ impl SymbolTable {
                         .insert(name.clone(), reference);
                     true
                 }
-                ArrayOffsetAliasRoot::PublicObjectProperty { .. }
-                | ArrayOffsetAliasRoot::ContextObjectProperty { .. } => false,
+                ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
+                    let Some(Value::Object(object)) = self.read_storage_named(object) else {
+                        return false;
+                    };
+                    object
+                        .bind_property_reference_cell_to_context(property, reference, None, &[])
+                        .is_ok()
+                }
+                ArrayOffsetAliasRoot::ContextObjectProperty {
+                    object,
+                    property,
+                    current_class_id,
+                    protected_class_ids,
+                } => {
+                    let Some(Value::Object(object)) = self.read_storage_named(object) else {
+                        return false;
+                    };
+                    object
+                        .bind_property_reference_cell_to_context(
+                            property,
+                            reference,
+                            *current_class_id,
+                            protected_class_ids,
+                        )
+                        .is_ok()
+                }
             };
         }
 
@@ -12427,27 +12480,19 @@ impl Interpreter {
                     }
                 }
 
-                let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object.clone(), property, span)?
-                else {
-                    return Ok(None);
-                };
-                let temp_name = self.next_foreach_temporary_array_name();
-                scope.bind_static_to_cell(&temp_name, cell);
-                if let Some((alias, value)) = self
-                    .evaluate_direct_array_access_reference_source_alias(
-                        &temp_name,
-                        keys.clone(),
-                        span,
+                let binding = self
+                    .call_reference_return_function_with_checked_values_for_reference_assignment(
+                        function,
+                        vec![Value::String(property.to_string())],
+                        Some(object.clone()),
+                        Some(class_id),
+                        Some(object.class_id()),
+                        Vec::new(),
                         scope,
-                    )?
-                {
-                    return Ok(Some((alias, value)));
-                }
-                let alias = ArrayOffsetAlias {
-                    root: ArrayOffsetAliasRoot::StaticArray { name: temp_name },
-                    keys,
-                };
+                    )?;
+                let alias = self.reference_return_binding_array_alias_with_suffix(
+                    binding, &keys, span, scope,
+                )?;
                 scope.materialize_array_offset_alias(&alias, span)?;
                 let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
                     runtime_error(
@@ -37230,6 +37275,24 @@ impl Interpreter {
                     ));
                 }
 
+                if let Expr::Property {
+                    target, property, ..
+                } = target.as_ref()
+                {
+                    if matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
+                        let key = self.evaluate_array_key(index, scope)?;
+                        let root = self.this_object_property_alias_root(property, scope, span)?;
+                        let alias = ArrayOffsetAlias {
+                            root,
+                            keys: vec![key],
+                        };
+                        scope.materialize_array_offset_alias(&alias, span)?;
+                        return Ok(ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(
+                            alias,
+                        ));
+                    }
+                }
+
                 if let Some((object_name, property, indices)) =
                     Self::collect_direct_dynamic_object_property_array_index_path(target, index)
                 {
@@ -37254,6 +37317,51 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         callable_name(&function.name),
                         "reference-return array-offset expressions are only implemented for direct variable roots and bounded $this->property roots in the current subset",
+                    ),
+                ))
+            }
+            Expr::Property {
+                target, property, ..
+            } => {
+                if matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
+                    let root = self.this_object_property_alias_root(property, scope, span)?;
+                    let alias = ArrayOffsetAlias {
+                        root,
+                        keys: Vec::new(),
+                    };
+                    scope.materialize_array_offset_alias(&alias, span)?;
+                    return Ok(ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(
+                        alias,
+                    ));
+                }
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "reference-return property expressions are only implemented for bounded $this->property roots in the current subset",
+                    ),
+                ))
+            }
+            Expr::DynamicProperty {
+                target, property, ..
+            } => {
+                if matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
+                    let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                    let root = self.this_object_property_alias_root(&property, scope, span)?;
+                    let alias = ArrayOffsetAlias {
+                        root,
+                        keys: Vec::new(),
+                    };
+                    scope.materialize_array_offset_alias(&alias, span)?;
+                    return Ok(ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(
+                        alias,
+                    ));
+                }
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "reference-return dynamic-property expressions are only implemented for bounded $this->{$name} roots in the current subset",
                     ),
                 ))
             }

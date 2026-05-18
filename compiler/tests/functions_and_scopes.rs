@@ -5464,6 +5464,54 @@ fn milestone1790_typed_magic_get_reference_return_fixture_matches_runtime() {
 }
 
 #[test]
+fn milestone1791_system_php_magic_get_return_property_root_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1791/magic_get_return_property_root_cow.php",
+        "../tests/fixtures/milestone1791/magic_get_return_property_root_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1791_magic_get_return_property_root_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1791/magic_get_return_property_root_cow.php",
+        "../tests/fixtures/milestone1791/magic_get_return_property_root_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1792_system_php_magic_get_return_dynamic_property_root_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1792/magic_get_return_dynamic_property_root_cow.php",
+        "../tests/fixtures/milestone1792/magic_get_return_dynamic_property_root_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1792_magic_get_return_dynamic_property_root_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1792/magic_get_return_dynamic_property_root_cow.php",
+        "../tests/fixtures/milestone1792/magic_get_return_dynamic_property_root_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1793_system_php_arrayaccess_return_property_root_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1793/arrayaccess_return_property_root_cow.php",
+        "../tests/fixtures/milestone1793/arrayaccess_return_property_root_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1793_arrayaccess_return_property_root_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1793/arrayaccess_return_property_root_cow.php",
+        "../tests/fixtures/milestone1793/arrayaccess_return_property_root_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php
@@ -7401,8 +7449,8 @@ $alias =& $box->missing;
 }
 
 #[test]
-fn reference_assignment_magic_get_source_non_direct_return_remains_boundary() {
-    let error = runtime_error(
+fn reference_assignment_magic_get_source_property_return_aliases_root() {
+    let execution = run_source(
         r#"<?php
 class MagicBox {
     public $value = "initial";
@@ -7414,15 +7462,15 @@ class MagicBox {
 
 $box = new MagicBox();
 $alias =& $box->missing;
+$alias = "changed";
+echo $box->value;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 9);
-    assert_eq!(
-        error.message,
-        "unsupported call __get(): reference returns are only implemented for direct variable and direct array-offset return expressions"
-    );
+    assert_eq!(execution.stdout, "changed");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

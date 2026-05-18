@@ -4213,6 +4213,28 @@ impl PhpObject {
         property.reference_cell()
     }
 
+    pub fn bind_property_reference_cell_to_context(
+        &self,
+        name: &str,
+        reference: PhpReferenceCell,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<()> {
+        let mut properties = self.properties.borrow_mut();
+        let property = self.context_property_mut(
+            &mut properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?;
+
+        let value = coerce_typed_property_value(property, reference.value_cloned())?;
+        reference.set_value(value);
+        property.set_reference_cell(reference);
+        property.initialized = true;
+        Ok(())
+    }
+
     pub fn write_property_from_context_with_object_type_resolver<F>(
         &self,
         name: &str,
