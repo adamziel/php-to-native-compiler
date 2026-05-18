@@ -665,25 +665,31 @@
   side-effect-free. By-value `offsetGet()` used as a reference source such as
   `$alias =& $bag[$key]`, `$alias =& $bag["outer"]["slot"]`,
   `$alias =& $holder->bag[$key]`,
-  `$alias =& $holder->bag["outer"]["slot"]`, or
-  `$alias =& $holder->{$name}["outer"]["slot"]` follows PHP's bounded
+  `$alias =& $holder->bag["outer"]["slot"]`,
+  `$alias =& $holder->{$name}["outer"]["slot"]`,
+  `$alias =& $holders["box"]->bag[$key]`,
+  `$alias =& $holders["box"]->{$name}["outer"]["slot"]`,
+  `$alias =& $registry->holder()->bag["outer"]["slot"]`, or
+  `$alias =& make_holder($bag)->bag["outer"]["slot"]` follows PHP's bounded
   notice/no-op path for that same exact bridge when the root is a direct
-  object variable or a visible direct named or dynamic property-held object:
+  object variable, a visible direct named or dynamic property-held object, or
+  a bounded non-direct holder expression that evaluates once to a visible
+  property-held object:
   it emits the indirect-modification `E_NOTICE`, initializes the target as a
   detached local value, and does not mutate the backing element when the
   target is later written. Append source forms such as `$alias =& $bag[]`,
   `$alias =& $holder->bag[]`, and `$alias =& $holder->{$name}[]` use the same
   notice/no-op path through PHP's `offsetGet(null)` behavior and snapshot the
   exact bridge's empty-string backing key as a detached value. Non-direct
-  property-held by-value reference-source roots and `offsetGet()` bodies with
-  side effects or broader return
-  expressions, dynamic property-held sources on non-direct holder expressions
-  or outside visible property access, broader property-held alias lifetime
+  append-source `ArrayAccess` forms, `offsetGet()` bodies with side effects or
+  broader return expressions, dynamic property-held sources outside visible
+  property access, magic-property roots, broader property-held alias lifetime
   after replacing non-direct/dynamic containing properties, append
   `ArrayAccess` sources outside the exact `offsetGet(null)` bridge, mixed
   nested `ArrayAccess` chains beyond the documented one-level bridge, arbitrary
-  nested reference slots copied from `ArrayAccess` storage, and real runtime
-  reference containers remain unsupported. Direct
+  nested reference slots copied from `ArrayAccess` storage, full
+  references/COW, native lowering, exact alias destruction ordering, and real
+  runtime reference containers remain unsupported. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`

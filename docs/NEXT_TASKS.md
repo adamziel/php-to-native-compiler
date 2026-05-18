@@ -18494,10 +18494,28 @@ handled.
   by-value exact-bridge `offsetGet()` now emit the bounded
   indirect-modification notice, initialize only a detached local alias/value
   from the empty-string backing key used by `offsetGet(null)`, and leave
-  backing `ArrayAccess` storage unchanged. Keep non-direct holder roots,
+  backing `ArrayAccess` storage unchanged. Keep non-direct append roots,
   side-effecting or broader `offsetGet()` bodies, arbitrary nested reference
   slots stored inside `ArrayAccess` buckets, broader mixed `ArrayAccess`
   chains, real reference containers, broad COW identity, native reference
+  lowering, and exact alias destruction/destructor ordering named as
+  unsupported.
+
+## Lane 1678-C: Non-Direct Holder By-Value `ArrayAccess` Reference-Source No-op
+
+- [x] Runtime/tests/docs lane: extend the focused by-value
+  `ArrayAccess::offsetGet()` reference-source notice/no-op/detached-alias
+  slice to bounded non-direct holder forms such as
+  `$alias =& $holders["box"]->bag[$key]`,
+  `$alias =& $holders["box"]->{$name}["outer"]["slot"]`,
+  `$alias =& $registry->holder()->bag["outer"]["slot"]`, and
+  `$alias =& make_holder($bag)->bag["outer"]["slot"]`. These forms now
+  evaluate the holder once, emit the bounded indirect-modification notice,
+  initialize only a detached local alias/value, and leave backing
+  `ArrayAccess` storage unchanged. Keep magic-property holder roots,
+  non-direct append roots, side-effecting or broader `offsetGet()` bodies,
+  arbitrary nested reference slots stored inside `ArrayAccess` buckets,
+  broader mixed `ArrayAccess` chains, full references/COW, native reference
   lowering, and exact alias destruction/destructor ordering named as
   unsupported.
 

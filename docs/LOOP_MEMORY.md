@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T10:05:00+02:00
+
+- Checkpoint before this task: `f940aff5 runtime: detach by-value ArrayAccess
+  append sources`, pushed to `origin/master`.
+- Task attempted: Lane 1678-B non-direct holder by-value
+  `ArrayAccess::offsetGet()` reference-source notice/no-op behavior.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1678/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run and result with isolated `CARGO_TARGET_DIR=/tmp/phpc-target-1678b`
+  and `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: the shared
+  `reference_assignment_non_direct_holder` `functions_and_scopes` filter
+  passed `5` tests, including by-reference `offsetGet()` and plain
+  property-array fallback guards; full `functions_and_scopes` passed `200`
+  tests; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1678` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; `cargo fmt --check` and `git diff --check` passed.
+- Semantic gap reduced: bounded non-direct holder visible property-held
+  by-value exact-bridge `offsetGet()` reference sources now evaluate the
+  holder once, emit the bounded indirect-modification notice, initialize the
+  target as a detached local value, and leave backing `ArrayAccess` storage
+  unchanged.
+- Remaining semantic gaps: magic-property holder roots for this by-value
+  notice/no-op slice, non-direct append-source by-value `offsetGet(null)`,
+  side-effecting or broader `offsetGet()` bodies, arbitrary nested reference
+  slots stored inside `ArrayAccess` buckets, broader mixed `ArrayAccess`
+  chains, full references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering.
+
 ## Loop Event 2026-05-18T09:20:00+02:00
 
 - Checkpoint before this task: `c102a657 runtime: extend by-value ArrayAccess

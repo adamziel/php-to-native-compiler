@@ -86,6 +86,15 @@ bounded level when an intermediate selected offset contains another
 assignment to direct and property-held `ArrayAccess` offset targets remains a
 runtime boundary; the current runtime does not invent aliases for object array
 dimensions.
+Statement-form reference assignment from by-value exact-bridge `ArrayAccess`
+offset sources follows PHP's indirect-modification notice/no-op behavior for
+direct object roots, visible direct property-held roots, and bounded
+non-direct holder roots that evaluate once to a visible property-held object,
+such as `$holders["box"]->bag[$key]`,
+`$holders["box"]->{$name}["outer"]["slot"]`,
+`$registry->holder()->bag[$key]`, and
+`make_holder($bag)->bag[$key]`: the target receives only a detached local
+value and later writes do not mutate the backing `ArrayAccess` storage.
 Statement-form reference assignment can also bind expression-root
 object-property array sources such as `factory()->items["slot"]` and
 non-direct magic `__get()` append sources such as
@@ -826,15 +835,21 @@ path for the same exact bridge instead of creating a backing alias. Statement
 form reference assignment from a direct object root such as
 `$alias =& $bag[$key]`, a direct visible named or dynamic property-held root
 such as `$alias =& $holder->bag[$key]` or
-`$alias =& $holder->{$name}["outer"]["slot"]`, or another covered nested child
-suffix snapshots the selected value into a detached local variable. Append
-source forms such as `$alias =& $bag[]`, `$alias =& $holder->bag[]`, and
+`$alias =& $holder->{$name}["outer"]["slot"]`, a visible property-held root
+reached through a non-direct holder expression such as
+`$alias =& $holders["box"]->bag[$key]`,
+`$alias =& $holders["box"]->{$name}["outer"]["slot"]`,
+`$alias =& $registry->holder()->bag["outer"]["slot"]`, or
+`$alias =& make_holder($bag)->bag["outer"]["slot"]`, or another covered nested
+child suffix snapshots the selected value into a detached local variable.
+Append source forms such as `$alias =& $bag[]`, `$alias =& $holder->bag[]`, and
 `$alias =& $holder->{$name}[]` use PHP's `offsetGet(null)` path and snapshot
 the backing empty-string key value for the exact bridge. These by-value
 reference-source forms emit the bounded indirect-modification `E_NOTICE` and
 leave the backing `ArrayAccess` storage unchanged when the alias is later
-written. Non-direct property-held by-value roots remain outside that
-notice/no-op slice.
+written. Non-direct append sources, magic-property roots, and broader
+side-effecting or mixed `ArrayAccess` chains remain outside that notice/no-op
+slice.
 Function-parameter propagation of copied bucket provenance is covered for the
 same direct-object, direct property-held, array-held, and expression-root
 holder paths when the copied bucket is passed as a direct variable to a

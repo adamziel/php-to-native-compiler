@@ -3986,6 +3986,12 @@ enum ReferenceReturnBinding {
 }
 
 #[derive(Debug, Clone)]
+enum NonDirectReferenceSourceBinding {
+    DetachedValue(Value),
+    ArrayOffset(ArrayOffsetAlias),
+}
+
+#[derive(Debug, Clone)]
 enum ReferenceReturnLocalBinding {
     Cell(VariableCell),
     ArrayOffset {
@@ -9109,6 +9115,51 @@ impl Interpreter {
                     self.bind_static_to_appended_context_object_property_array_offset(
                         name, object, &property, keys, span, scope,
                     )?;
+                } else if let ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+                    holder,
+                    property,
+                    indices,
+                    ..
+                } = source
+                {
+                    if let Some(binding) = self
+                        .evaluate_non_direct_holder_object_property_array_reference_source_binding(
+                            holder, property, indices, span, scope,
+                        )?
+                    {
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
+                        return Ok(());
+                    }
+                } else if let ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+                    holder,
+                    property,
+                    indices,
+                    ..
+                } = source
+                {
+                    let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                    if let Some(binding) = self
+                        .evaluate_non_direct_holder_object_property_array_reference_source_binding(
+                            holder, &property, indices, span, scope,
+                        )?
+                    {
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
+                        return Ok(());
+                    }
                 } else if let Some((alias, _)) =
                     self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
@@ -10523,6 +10574,85 @@ impl Interpreter {
             }
             Err(error) => Err(runtime_error(span, error)),
         }
+    }
+
+    fn evaluate_non_direct_holder_object_property_array_reference_source_binding(
+        &mut self,
+        holder: &Expr,
+        property: &str,
+        indices: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<NonDirectReferenceSourceBinding>> {
+        let holder_value = self.evaluate(holder, scope)?;
+        let holder_object = match holder_value {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let keys = indices
+            .iter()
+            .map(|index| self.evaluate_array_key(index, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        let temp_name = self.next_foreach_temporary_array_name();
+        scope.write_static(&temp_name, Value::Object(holder_object));
+        if let Some(value) = self
+            .evaluate_object_property_array_access_by_value_reference_source_value(
+                &temp_name,
+                property,
+                keys.clone(),
+                span,
+                scope,
+            )?
+        {
+            return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(value)));
+        }
+        if let Some((alias, _)) = self
+            .evaluate_object_property_array_access_reference_source_alias(
+                &temp_name,
+                property,
+                keys.clone(),
+                span,
+                scope,
+            )?
+        {
+            return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)));
+        }
+        if let Some((alias, _)) = self.evaluate_magic_get_array_reference_source_alias(
+            &temp_name,
+            property,
+            keys.clone(),
+            span,
+            scope,
+        )? {
+            return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)));
+        }
+
+        self.reject_object_property_array_access_reference_source_if_needed(
+            &temp_name, property, span, scope,
+        )?;
+        let root = self.context_object_property_alias_root(&temp_name, property, span, scope)?;
+        let root = scope.canonical_equivalent_object_property_alias_root(&root);
+        let alias = ArrayOffsetAlias { root, keys };
+        scope.materialize_array_offset_alias(&alias, span)?;
+        if scope.read_array_offset_alias(&alias).is_none() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind missing non-direct object-property array reference source"
+                        .to_string(),
+                ),
+            ));
+        }
+        Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)))
     }
 
     fn evaluate_non_direct_holder_object_property_array_reference_source_alias(

@@ -3704,6 +3704,177 @@ echo $target, "|", $items["slot"], "|", $bag->items[""];
 }
 
 #[test]
+fn reference_assignment_non_direct_holder_array_access_source_by_value_detaches_with_notice() {
+    let execution = run_source(
+        r#"<?php
+function notice_handler($errno, $message, $file, $line) {
+    echo "notice:", $message, "\n";
+    return true;
+}
+set_error_handler("notice_handler", E_NOTICE);
+
+class Bag implements ArrayAccess {
+    public $items = ["name" => "seed", "outer" => ["slot" => "nested"]];
+    public function offsetExists($offset) { return false; }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { }
+}
+class Holder {
+    public $bag;
+    public $dynamicBag;
+    public function __construct($bag) {
+        $this->bag = $bag;
+        $this->dynamicBag = $bag;
+    }
+}
+class Registry {
+    public $holder;
+    public function holder() {
+        return $this->holder;
+    }
+}
+function make_holder($bag) {
+    return new Holder($bag);
+}
+
+$bag = new Bag();
+$holders = ["box" => new Holder($bag)];
+$key = "name";
+$alias =& $holders["box"]->bag[$key];
+$alias = "changed";
+echo $alias, "|", $bag->items[$key], "\n";
+
+$property = "dynamicBag";
+$dynamic =& $holders["box"]->{$property}["outer"]["slot"];
+$dynamic = "dynamic-changed";
+echo $dynamic, "|", $bag->items["outer"]["slot"], "\n";
+
+$registry = new Registry();
+$registry->holder = new Holder($bag);
+$method =& $registry->holder()->bag["outer"]["slot"];
+$method = "method-changed";
+echo $method, "|", $bag->items["outer"]["slot"], "\n";
+
+$expr =& make_holder($bag)->bag["outer"]["slot"];
+$expr = "expr-changed";
+echo $expr, "|", $bag->items["outer"]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "notice:Indirect modification of overloaded element of Bag has no effect\nchanged|seed\nnotice:Indirect modification of overloaded element of Bag has no effect\ndynamic-changed|nested\nnotice:Indirect modification of overloaded element of Bag has no effect\nmethod-changed|nested\nnotice:Indirect modification of overloaded element of Bag has no effect\nexpr-changed|nested"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_non_direct_holder_array_access_reference_source_still_binds() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = ["slot" => "seed"];
+    public function offsetExists($offset) { return false; }
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { }
+}
+class Holder {
+    public $bag;
+    public function __construct($bag) {
+        $this->bag = $bag;
+    }
+}
+$bag = new Bag();
+$holders = ["box" => new Holder($bag)];
+$alias =& $holders["box"]->bag["slot"];
+$alias = "changed";
+echo $alias, "|", $bag->items["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|changed");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_non_direct_holder_plain_property_array_source_still_binds() {
+    let execution = run_source(
+        r#"<?php
+class Holder {
+    public $items = ["slot" => "seed"];
+}
+$holders = ["box" => new Holder()];
+$alias =& $holders["box"]->items["slot"];
+$alias = "changed";
+echo $alias, "|", $holders["box"]->items["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|changed");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_non_direct_holder_array_access_source_by_reference_still_aliases() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = ["outer" => ["slot" => "seed"]];
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+class Holder {
+    public $bag;
+    public function __construct($bag) { $this->bag = $bag; }
+}
+
+$bag = new Bag();
+$holders = ["box" => new Holder($bag)];
+$alias =& $holders["box"]->bag["outer"]["slot"];
+$alias = "changed";
+echo $bag->items["outer"]["slot"], "|", $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|changed");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_non_direct_holder_plain_property_array_source_still_aliases() {
+    let execution = run_source(
+        r#"<?php
+class Holder {
+    public $items = ["outer" => ["slot" => "seed"]];
+}
+
+$holder = new Holder();
+$holders = ["box" => $holder];
+$alias =& $holders["box"]->items["outer"]["slot"];
+$alias = "changed";
+echo $holder->items["outer"]["slot"], "|", $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|changed");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_object_property_array_access_source_binds_bounded_offset_get_root() {
     let execution = run_source(
         r#"<?php

@@ -4,6 +4,36 @@
 
 Implemented:
 
+- Added Lane 1678-C non-direct holder by-value
+  `ArrayAccess::offsetGet()` reference-source notice/no-op fidelity for the
+  focused exact visible property-held bridge. Statement-form reference
+  assignment from visible property-held `ArrayAccess` objects reached through
+  non-direct holder expressions such as
+  `$alias =& $holders["box"]->bag[$key]`,
+  `$alias =& $holders["box"]->{$name}["outer"]["slot"]`,
+  `$alias =& $registry->holder()->bag["outer"]["slot"]`, and
+  `$alias =& make_holder($bag)->bag["outer"]["slot"]` now evaluates the
+  holder once, emits the bounded indirect-modification `E_NOTICE`, initializes
+  the target from the selected value as a detached local variable, and leaves
+  the backing `ArrayAccess` storage unchanged when the target is later
+  written. The non-direct helper also preserves the existing by-reference
+  `ArrayAccess`, magic `__get()`, and plain property-array alias paths without
+  double-evaluating expression holders. This does not add magic-property
+  holder roots for this by-value notice/no-op slice, non-direct append-source
+  by-value `offsetGet(null)`, side-effecting or broader `offsetGet()` bodies,
+  arbitrary nested reference slots stored inside `ArrayAccess` buckets,
+  broader mixed `ArrayAccess` chains, full references/COW, native reference
+  lowering, or exact alias destruction/destructor ordering. Focused
+  verification used `CARGO_TARGET_DIR=/tmp/phpc-target-1678c
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test
+  functions_and_scopes reference_assignment_non_direct_holder --
+  --test-threads=1` passed `5` tests, including by-reference
+  `offsetGet()` and plain property-array fallback guards; `cargo test -q -p
+  phpc --test functions_and_scopes -- --test-threads=1` passed `200` tests;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1678`
+  passed `1` fixture with `1` system PHP comparison and `0` skips; and
+  `cargo fmt --check` passed.
+
 - Added Lane 1677 append-source by-value `ArrayAccess::offsetGet(null)`
   reference-source notice/no-op fidelity for the focused exact bridge. Direct
   append source forms such as `$alias =& $bag[]`, direct visible
