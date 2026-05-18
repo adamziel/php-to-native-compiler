@@ -53,6 +53,15 @@ fn assert_run_source_fixture_matches_stdout(source: &str, expected: &str) {
     assert_eq!(execution.exit_code, 0);
 }
 
+fn assert_run_source_fixture_path_matches_stdout(fixture: &str, expected: &str) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = std::fs::read_to_string(manifest_dir.join(fixture)).expect("read fixture source");
+    let expected_stdout =
+        std::fs::read_to_string(manifest_dir.join(expected)).expect("read expected stdout");
+
+    assert_run_source_fixture_matches_stdout(&source, &expected_stdout);
+}
+
 #[test]
 fn user_functions_use_local_scope_without_clobbering_globals() {
     let execution = run_source(
@@ -4375,6 +4384,62 @@ fn by_value_magic_property_plain_array_deep_nested_append_notices_and_does_not_m
             "../../tests/fixtures/milestone1691/magic_property_plain_array_deep_nested_append_by_value_noop.stdout"
         ),
     );
+}
+
+#[test]
+fn milestone1692_system_php_magic_property_array_access_nested_append_fixtures_match() {
+    for (fixture, expected) in [
+        (
+            "../tests/fixtures/milestone1692/magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1692/magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1692/dynamic_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1692/dynamic_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1692/non_direct_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1692/non_direct_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1692/dynamic_non_direct_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1692/dynamic_non_direct_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1692/magic_property_arrayaccess_nested_append_by_value_offsetget_noop.php",
+            "../tests/fixtures/milestone1692/magic_property_arrayaccess_nested_append_by_value_offsetget_noop.stdout",
+        ),
+    ] {
+        assert_system_php_fixture_matches_stdout(fixture, expected);
+    }
+}
+
+#[test]
+fn milestone1692_magic_property_array_access_nested_append_fixtures_match_runtime() {
+    for (fixture, expected) in [
+        (
+            "../tests/fixtures/milestone1692/magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1692/magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1692/dynamic_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1692/dynamic_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1692/non_direct_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1692/non_direct_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1692/dynamic_non_direct_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1692/dynamic_non_direct_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1692/magic_property_arrayaccess_nested_append_by_value_offsetget_noop.php",
+            "../tests/fixtures/milestone1692/magic_property_arrayaccess_nested_append_by_value_offsetget_noop.stdout",
+        ),
+    ] {
+        assert_run_source_fixture_path_matches_stdout(fixture, expected);
+    }
 }
 
 #[test]

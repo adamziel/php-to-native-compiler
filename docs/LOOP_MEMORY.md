@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T10:30:24+02:00
+
+- Checkpoint before this task: `a3634363 runtime: preserve deeper plain-array
+  magic append references`, pushed to `origin/master`.
+- Task attempted: Lane 1692-C magic-property `ArrayAccess` nested append
+  mutation for the focused by-reference `offsetGet()` COW shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1692/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, the lane
+  review note, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for
+  `tests/fixtures/milestone1692/*.php`; `cargo check -q -p phpc` passed;
+  `cargo fmt --check` and `git diff --check` passed; the `milestone1692`
+  `functions_and_scopes` filter passed `2` tests; `cargo run -q -p phpc --
+  test --compare-php tests/fixtures/milestone1692` passed `5` fixtures with
+  `5` system PHP comparisons and `0` skips; the adjacent magic `ArrayAccess`
+  append `functions_and_scopes` filter passed `8` tests; and adjacent
+  `milestone1687`, `milestone1688`, and `milestone1691` fixture comparisons
+  passed.
+- Semantic gap reduced: direct named/dynamic and non-direct named/dynamic
+  `$...->missing["outer"][] = $array` forms now mutate the backing array
+  bucket returned by public by-reference `offsetGet("outer")` when visible
+  public `__get($name)` returns an `ArrayAccess` object, and copied-bucket
+  reads preserve nested reference slots. By-value `offsetGet()` remains the
+  PHP notice/no-op boundary for this covered nested append shape.
+- Remaining semantic gaps: deeper `ArrayAccess` parent paths, mixed nested
+  `ArrayAccess` chains, side-effecting or broader `offsetGet()` bodies,
+  arbitrary `__get()` return bodies outside the tested object/plain-array
+  shapes, method-return or factory holder roots, by-value mutation, full
+  references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering remain unsupported.
+- Next concrete task: run the checkpoint full gate and commit this lane; then
+  keep lanes focused on the next COW gap, likely deeper/mixed `ArrayAccess`
+  parent paths or broader reference-container identity after PHP probes.
+
 ## Loop Event 2026-05-18T10:12:34+02:00
 
 - Checkpoint before this task: `73fdaa4c runtime: preserve nested plain-array

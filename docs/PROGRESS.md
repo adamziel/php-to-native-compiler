@@ -4,6 +4,39 @@
 
 Implemented:
 
+- Added Lane 1692-C magic-property `ArrayAccess` nested append mutation for
+  the focused by-reference `offsetGet()` COW shape. Direct
+  `$box->missing["outer"][] = $array`, direct dynamic
+  `$box->{$name}["outer"][] = $array`, non-direct
+  `$holders["box"]->missing["outer"][] = $array`, and dynamic non-direct
+  `$holders["box"]->{$name}["outer"][] = $array` now append into the backing
+  array bucket selected by public by-reference
+  `offsetGet($offset) { return $this->items[$offset]; }` when visible public
+  `__get($name)` returns an `ArrayAccess` object. The runtime keeps the
+  empty magic `ArrayAccess` append-store path on `offsetSet(null, $value)`,
+  but routes the one-key nested shape through the selected `offsetGet()` alias
+  and attaches array-literal or copied-array reference metadata to the actual
+  appended backing bucket. Nested array reads now preserve array-copy
+  provenance through an inner `ArrayAccess` copy source, so later copied
+  buckets such as `$box->missing["outer"][0]` preserve nested reference slots
+  while ordinary copied fields remain detached. By-value `offsetGet()` keeps
+  PHP's indirect-modification notice/no-op behavior for the covered nested
+  append shape. This does not add deeper `ArrayAccess` parent paths such as
+  `$box->missing["outer"]["inner"][]`, mixed nested `ArrayAccess` chains,
+  side-effecting or broader `offsetGet()` bodies beyond the exact public
+  backing-property bridge, method-return or factory holder roots,
+  by-value mutation, full references/COW, native reference lowering, or exact
+  alias destruction/destructor ordering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  PHP syntax checks passed for the new fixtures, `cargo check -q -p phpc`
+  passed, the `milestone1692` `functions_and_scopes` filter passed `2`
+  tests, `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1692` passed `5` fixtures with `5` system PHP
+  comparisons and `0` skips, the adjacent magic `ArrayAccess` append
+  `functions_and_scopes` filter passed `8` tests, and adjacent
+  `milestone1687`, `milestone1688`, and `milestone1691` fixture comparisons
+  passed.
+
 - Added Lane 1691-C deeper plain-array magic-property append mutation for the
   focused by-reference `__get()` COW shape. Direct
   `$box->missing["outer"]["inner"][] = $array`, direct dynamic
@@ -19,8 +52,9 @@ Implemented:
   reference slots while ordinary copied fields remain detached. By-value
   `__get()` returning a plain array or `null` keeps PHP's
   indirect-modification notice/no-op behavior for the covered deeper array
-  RHS shape. Magic `ArrayAccess` non-empty nested append remains unsupported.
-  This does not add by-value plain-array mutation, arbitrary `__get()` return
+  RHS shape. Lane 1692-C covers the separate focused one-key magic
+  `ArrayAccess` nested append path through by-reference `offsetGet()`. This
+  does not add by-value plain-array mutation, arbitrary `__get()` return
   bodies beyond direct-variable reference returns for mutation, method-return
   or factory holder roots, scalar by-value no-op coverage for non-array RHS
   values, mixed nested `ArrayAccess` chains, full references/COW, native
@@ -46,8 +80,9 @@ Implemented:
   By-value `__get()` returning a plain array or `null` keeps PHP's
   indirect-modification notice/no-op behavior for the covered nested array RHS
   shape. Lane 1691-C extends this same plain-array path to the focused
-  two-key deeper parent shape. Magic `ArrayAccess` non-empty nested append
-  remains unsupported. This does not add by-value plain-array mutation,
+  two-key deeper parent shape. Lane 1692-C covers the separate focused
+  one-key magic `ArrayAccess` nested append path through by-reference
+  `offsetGet()`. This does not add by-value plain-array mutation,
   arbitrary `__get()` return bodies beyond
   direct-variable reference returns for mutation, method-return or factory
   holder roots, scalar by-value no-op coverage for non-array RHS values,

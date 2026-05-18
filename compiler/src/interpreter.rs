@@ -13503,6 +13503,22 @@ impl Interpreter {
                         scope,
                     )
                 }
+                Value::Object(object)
+                    if keys.len() == 1
+                        && self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    self.write_array_access_object_nested_append_with_reference_propagation(
+                        object,
+                        keys,
+                        value,
+                        expr,
+                        array_literal_references,
+                        span,
+                        scope,
+                    )
+                }
                 Value::Object(_) => Ok(false),
                 Value::Array(_) | Value::Null => {
                     let temp_name = self.next_foreach_temporary_array_name();
@@ -13538,6 +13554,22 @@ impl Interpreter {
                         scope,
                     )
                 }
+                Some(Value::Object(object))
+                    if keys.len() == 1
+                        && self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    self.write_array_access_object_nested_append_with_reference_propagation(
+                        object,
+                        keys,
+                        value,
+                        expr,
+                        array_literal_references,
+                        span,
+                        scope,
+                    )
+                }
                 Some(Value::Array(_)) | Some(Value::Null) => {
                     self.emit_notice(
                         "__get()",
@@ -13551,6 +13583,59 @@ impl Interpreter {
                 Some(_) | None => Ok(false),
             }
         }
+    }
+
+    fn write_array_access_object_nested_append_with_reference_propagation(
+        &mut self,
+        array_access_object: PhpObject,
+        keys: Vec<ArrayKey>,
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        if keys.is_empty() {
+            return Ok(false);
+        }
+
+        let hidden_name = self.hidden_array_access_reference_object_name(&array_access_object);
+        scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
+
+        if self
+            .evaluate_array_access_by_value_reference_source_value_for_object(
+                array_access_object.clone(),
+                hidden_name.clone(),
+                keys.clone(),
+                span,
+                scope,
+            )?
+            .is_some()
+        {
+            return Ok(true);
+        }
+
+        let (parent_alias, _) = self.evaluate_array_access_reference_source_alias_for_object(
+            array_access_object,
+            hidden_name,
+            keys,
+            span,
+            scope,
+        )?;
+        let target_alias = scope.append_object_property_array_offset_reference_alias(
+            parent_alias.root,
+            parent_alias.keys,
+            value,
+            span,
+        )?;
+        self.bind_or_mirror_array_references_to_alias_root(
+            expr,
+            target_alias.root,
+            target_alias.keys,
+            array_literal_references,
+            scope,
+        )?;
+        Ok(true)
     }
 
     fn write_array_access_object_append_with_reference_propagation(
@@ -21157,21 +21242,34 @@ impl Interpreter {
             }
         }
 
-        let target_value = self.evaluate(target, scope)?;
+        let (target_value, target_copy_source) = match target {
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => self.evaluate_array_index_with_array_copy_source(target, index, *span, scope)?,
+            _ => (self.evaluate(target, scope)?, None),
+        };
 
         match target_value {
             Value::Array(array) => {
                 let key = self.evaluate_array_key(index, scope)?;
-                array
-                    .get(key.clone())
-                    .cloned()
-                    .map(|value| (value, None))
-                    .ok_or_else(|| {
-                        runtime_error(
-                            span,
-                            RuntimeError::undefined_array_key(key.diagnostic_key()),
-                        )
+                let value = array.get(key.clone()).cloned().ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_array_key(key.diagnostic_key()),
+                    )
+                })?;
+                let source = if matches!(value, Value::Array(_)) {
+                    target_copy_source.map(|mut source| {
+                        source.keys.push(key);
+                        source.include_exact_path = false;
+                        source
                     })
+                } else {
+                    None
+                };
+                Ok((value, source))
             }
             Value::Object(object) => {
                 let key_value = self.evaluate(index, scope)?;

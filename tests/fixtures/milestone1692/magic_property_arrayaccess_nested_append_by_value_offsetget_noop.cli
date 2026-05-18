@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1692/magic_property_arrayaccess_nested_append_by_value_offsetget_noop.php
+stdout:
+notice:Indirect modification of overloaded element of Milestone1692_ByValueMagicNestedAppendBag has no effect
+0
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

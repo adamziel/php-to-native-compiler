@@ -18782,8 +18782,9 @@ handled.
   array or `null` stays a PHP-compatible indirect-modification notice/no-op
   for the covered nested array RHS shape. Lane 1691-C extends this same
   plain-array path to the focused two-key deeper parent shape. Keep broader
-  parent-path generalization beyond tested shapes, magic `ArrayAccess`
-  non-empty nested append stores, by-value plain-array mutation, arbitrary
+  parent-path generalization beyond tested shapes, broader magic
+  `ArrayAccess` nested append stores beyond the Lane 1692-C one-key
+  by-reference `offsetGet()` bridge, by-value plain-array mutation, arbitrary
   `__get()` return bodies beyond direct-variable reference returns for
   mutation, method-return or factory holder roots, scalar by-value no-op
   coverage for non-array RHS values, mixed nested `ArrayAccess` chains, full
@@ -18806,13 +18807,36 @@ handled.
   literals and copied arrays carrying mirrored alias metadata. By-value
   `__get()` returning a plain array or `null` stays a PHP-compatible
   indirect-modification notice/no-op for the covered deeper array RHS shape.
-  Keep broader parent-path generalization beyond tested shapes, magic
-  `ArrayAccess` non-empty nested append stores, by-value plain-array
-  mutation, arbitrary `__get()` return bodies beyond direct-variable
-  reference returns for mutation, method-return or factory holder roots,
-  scalar by-value no-op coverage for non-array RHS values, mixed nested
-  `ArrayAccess` chains, full references/COW, native reference lowering, and
-  exact alias destruction/destructor ordering named as unsupported.
+  Lane 1692-C covers the separate focused one-key magic `ArrayAccess` nested
+  append path through by-reference `offsetGet()`. Keep broader parent-path
+  generalization beyond tested shapes, broader magic `ArrayAccess` nested
+  append stores beyond that one-key bridge, by-value plain-array mutation,
+  arbitrary `__get()` return bodies beyond direct-variable reference returns
+  for mutation, method-return or factory holder roots, scalar by-value no-op
+  coverage for non-array RHS values, mixed nested `ArrayAccess` chains, full
+  references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering named as unsupported.
+
+## Lane 1692-C: Magic ArrayAccess Nested Append Mutation
+
+- [x] Runtime/tests/docs lane: parse and execute focused one-key nested
+  append stores below magic properties when visible public `__get($name)`
+  returns an `ArrayAccess` object whose exact public by-reference
+  `offsetGet($offset)` returns a backing property bucket. Covered forms are
+  direct named `$box->missing["outer"][] = $array`, direct dynamic
+  `$box->{$name}["outer"][] = $array`, non-direct named
+  `$holders["box"]->missing["outer"][] = $array`, and dynamic non-direct
+  `$holders["box"]->{$name}["outer"][] = $array`. The runtime appends into
+  the selected backing bucket without using `offsetSet()` or `__set()`,
+  preserves nested reference-slot metadata for appended array literals and
+  copied arrays, and preserves provenance through nested copied-bucket reads
+  such as `$box->missing["outer"][0]`. By-value `offsetGet()` stays a
+  PHP-compatible indirect-modification notice/no-op for the covered nested
+  append shape. Keep deeper `ArrayAccess` parent paths, mixed nested
+  `ArrayAccess` chains, side-effecting or broader `offsetGet()` bodies,
+  method-return or factory holder roots, by-value mutation, full
+  references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

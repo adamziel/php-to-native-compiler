@@ -872,8 +872,19 @@
   shape when the evaluated holder is an object whose visible public
   `__get($name)` returns an `ArrayAccess` object; the holder is evaluated
   once, `__get()` is called once for the append store, and `__set()` is not
-  called for the covered object case. Magic-property append stores below
-  plain arrays are also supported for the focused by-reference `__get()`
+  called for the covered object case. One-key nested append stores below a
+  magic-property `ArrayAccess` object are also supported for the focused
+  by-reference `offsetGet()` shape: `$box->missing["outer"][] = $array`,
+  `$box->{$name}["outer"][] = $array`,
+  `$holders["box"]->missing["outer"][] = $array`, and
+  `$holders["box"]->{$name}["outer"][] = $array` call visible public
+  `__get($name)` once, select the parent bucket through exact public
+  by-reference `offsetGet($offset) { return $this->items[$offset]; }`, append
+  into that backing bucket without calling `offsetSet()` or `__set()`, and
+  preserve nested reference slots for copied buckets. By-value `offsetGet()`
+  keeps PHP's indirect-modification notice/no-op behavior for this nested
+  append shape. Magic-property append stores below plain arrays are also
+  supported for the focused by-reference `__get()`
   shape when visible public `__get($name)` returns a direct variable by
   reference and that cell holds an array or `null`: direct named/dynamic and
   non-direct named/dynamic forms append into the returned array cell and
@@ -904,7 +915,8 @@
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
   paths below plain arrays returned by magic `__get()` beyond the direct
   empty append and focused one-key and two-key parent append shapes,
-  dynamic non-direct
+  magic-property `ArrayAccess` nested append paths beyond the focused one-key
+  by-reference `offsetGet()` bridge, dynamic non-direct
   whole-property setup assignment, method-return or factory holder roots for
   dynamic non-direct append stores, non-empty nested append paths below
   property-held or magic-property `ArrayAccess`, magic `__get()` bodies that

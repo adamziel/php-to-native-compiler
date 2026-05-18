@@ -930,6 +930,19 @@ The covered object case calls `__get()` once for the append store and does not
 call `__set()`, then attaches the appended array's reference metadata to the
 returned `ArrayAccess` object's exact empty-key or branchy append-key backing
 bucket.
+For the focused one-key nested magic `ArrayAccess` append shape, such as
+`$box->missing["outer"][] = $array` and
+`$holders["box"]->{$name}["outer"][] = $array`, the same magic append-store
+helper does not use `offsetSet(null, $value)`. It calls visible public
+`__get($name)` once to obtain the `ArrayAccess` object, resolves the parent
+bucket through exact public by-reference `offsetGet($offset) { return
+$this->items[$offset]; }`, appends into that backing property alias, and
+attaches array-literal or copied-array reference metadata to the actual
+appended bucket. Nested array reads preserve provenance from an inner
+`ArrayAccess` copy source, so a later copied bucket read such as
+`$box->missing["outer"][0]` can mirror the stored bucket's nested reference
+metadata. By-value `offsetGet()` remains the PHP notice/no-op boundary for
+this lane.
 The same magic append-store helper also covers the focused plain-array route
 when visible public `__get($name)` returns a direct variable by reference and
 that returned cell currently holds an array or `null`. The runtime binds the

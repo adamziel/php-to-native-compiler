@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1692/dynamic_magic_property_arrayaccess_nested_append_offsetget_reference_slot_cow.php
+stdout:
+via-dynamic-magic-arrayaccess-nested-append|via-dynamic-magic-arrayaccess-nested-label|via-dynamic-magic-arrayaccess-nested-append|via-dynamic-magic-arrayaccess-nested-label|1|plain|plain|1|0
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
