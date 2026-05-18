@@ -883,6 +883,13 @@ that backing bucket. Later exact by-value or by-reference
 `offsetGet($offset) { return $this->property[$offset]; }` bucket copies can
 therefore preserve those nested reference slots, including private/protected
 backing properties reached through the method's declaring-class context.
+Direct append stores through `$bag[] = $array` now cover the same stored-bucket
+reference-slot propagation for two public `offsetSet(null, $value)` shapes:
+the exact `$this->property[$offset] = $value;` bridge, where PHP's null offset
+stores under the backing array's empty-string key, and the branchy append
+bridge `if ($offset === null) { $this->property[] = $value; return; }
+$this->property[$offset] = $value;`, where metadata is attached after the user
+method call to the actual appended integer key.
 By-value helper parameters that import copied-bucket provenance detach those
 mirrored static-array provenance paths when the parameter variable is replaced:
 writes through the copied bucket before replacement still write back to the
@@ -894,7 +901,8 @@ copied bucket loop, and mutating two distinct nested reference slots in one
 copied bucket match the focused PHP probes. Broader alias lifetime after
 replacing non-direct containing properties, side-effecting or broader
 `offsetGet()` bodies, mixed nested
-ArrayAccess chains beyond the documented one-level bridge, append sources,
+ArrayAccess chains beyond the documented one-level bridge, property-held or
+non-direct append `offsetSet(null)` stored-bucket receivers,
 arbitrary nested reference slots copied from ArrayAccess storage outside the
 exact `offsetSet()`/`offsetGet()` bridge, and real reference containers remain
 future work.

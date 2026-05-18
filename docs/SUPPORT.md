@@ -840,9 +840,16 @@
   literal or copied array containing references, the receiver is a direct
   `ArrayAccess` object, public `offsetSet($offset, $value)` has the exact
   `$this->property[$offset] = $value;` body, and later bucket copies use the
-  exact public `return $this->property[$offset];` `offsetGet()` bridge. This
-  covers public plus private/protected backing properties reached through the
-  `ArrayAccess` method's declaring-class context. Direct
+  exact public `return $this->property[$offset];` `offsetGet()` bridge. Direct
+  append `$bag[] = $array` preserves the same nested reference slots for two
+  focused public `offsetSet(null, $value)` shapes: the exact
+  `$this->property[$offset] = $value;` bridge, which stores under PHP's
+  empty-string backing key for a null offset, and the branchy append bridge
+  `if ($offset === null) { $this->property[] = $value; return; }
+  $this->property[$offset] = $value;`, which stores under the actual appended
+  integer key. These stored-bucket COW bridges cover public plus
+  private/protected backing properties reached through the `ArrayAccess`
+  method's declaring-class context. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
   and writing the result back through `offsetSet($key, $value)`. Direct
@@ -851,14 +858,15 @@
   current integer and float values by reading through `offsetGet($key)` and
   applying the update to PHP's current by-value temporary result without
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
-  compound assignment through object-property `ArrayAccess`, ArrayAccess
-  iteration, broader stored-argument-array `call_user_func_array()`
-  propagation beyond direct positional copied-bucket variables, non-public
-  backing properties outside the exact method-context bridges,
-  side-effecting or broader
-  `offsetGet()` bodies, built-in interface enforcement/signature
-  validation, typed method invocation, broad references/copy-on-write, exact
-  warning/visibility diagnostics, and native lowering remain unsupported.
+  `offsetSet(null, $value)` storage through property-held or non-direct
+  receivers, append compound assignment through object-property `ArrayAccess`,
+  ArrayAccess iteration, broader stored-argument-array
+  `call_user_func_array()` propagation beyond direct positional copied-bucket
+  variables, non-public backing properties outside the exact method-context
+  bridges, side-effecting or broader `offsetSet()`/`offsetGet()` bodies,
+  built-in interface enforcement/signature validation, typed method
+  invocation, broad references/copy-on-write, exact warning/visibility
+  diagnostics, and native lowering remain unsupported.
   Direct `$object[$key] op= expr`
   compound assignment is supported by reading through `offsetGet($key)`,
   applying the current compound-assignment helper, and writing the result back

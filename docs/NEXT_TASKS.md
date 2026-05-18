@@ -18564,11 +18564,29 @@ handled.
   mutated. The focused slice covers public and method-context
   private/protected backing properties, binds array literal reference metadata
   onto the backing bucket, and mirrors copied-array alias metadata for copied
-  array values. Keep append `offsetSet(null)` stored-bucket reference slots,
-  non-direct receiver `offsetSet()` storage, side-effecting or broader
+  array values. Lane 1682-C extends the same direct stored-bucket shape to
+  append `offsetSet(null)` stores. Keep non-direct receiver `offsetSet()`
+  storage, side-effecting or broader
   `offsetSet()`/`offsetGet()` bodies, broader mixed `ArrayAccess` chains,
   full references/COW, native reference lowering, and exact alias
   destruction/destructor ordering named as unsupported.
+
+## Lane 1682-C: ArrayAccess Append `offsetSet(null)` Stored-Bucket Reference Slots
+
+- [x] Runtime/tests/docs lane: preserve nested reference slots when direct
+  `$bag[] = $array` stores an array literal or copied array through a direct
+  `ArrayAccess` object's public `offsetSet(null, $value)` path. The focused
+  slice covers the exact `$this->property[$offset] = $value;` bridge, where
+  PHP's null offset stores under the backing array's empty-string key, and the
+  branchy append bridge `if ($offset === null) { $this->property[] = $value;
+  return; } $this->property[$offset] = $value;`, where metadata attaches to
+  the actual appended integer key after the method call. Later exact
+  by-value `offsetGet($offset) { return $this->property[$offset]; }` bucket
+  copies preserve nested reference slots. Keep property-held and non-direct
+  append stores, side-effecting or broader `offsetSet()`/`offsetGet()` bodies,
+  mixed nested `ArrayAccess` chains, full references/COW, native reference
+  lowering, and exact alias destruction/destructor ordering named as
+  unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
