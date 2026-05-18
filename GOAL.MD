@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1749:
+The current in-progress implementation frontier is Lane 1750:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -349,6 +349,11 @@ The current in-progress implementation frontier is Lane 1749:
   property roots, non-direct holder roots, dynamic non-direct holder roots,
   and non-direct magic-provided `ArrayAccess` roots now parse and route to the
   same proven by-reference backing-bucket append path.
+- Lane 1750 tightens alias lifetime after array-offset `unset`: when an unset
+  array slot was backed by a PHP reference cell, detached local aliases keep
+  that reference cell instead of degrading to a plain value snapshot. Covered
+  direct, nested, and object-property array-offset unsets keep typed-property
+  reference coercion/error behavior after detach.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

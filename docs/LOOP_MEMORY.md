@@ -18,6 +18,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T20:14:25+02:00
+
+- Checkpoint before this task: `95717ebc parser: route ArrayAccess append
+  suffix targets`, pushed to `origin/master`.
+- Task attempted: Lane 1750-C, preserving reference-cell identity when
+  array-offset `unset` detaches local aliases from reference-backed direct,
+  nested, and object-property array slots.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/array_unset.rs`, `tests/fixtures/milestone1750/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1750/unset_array_offset_keeps_detached_reference_cell.php`;
+  `cargo check -q -p phpc` passed with isolated
+  `CARGO_TARGET_DIR=target/cow-1750-check`;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1750`
+  passed `1` fixture with `1` system PHP comparison and `0` skips; focused
+  `unset_array_offsets_preserves_detached_typed_reference_cells` passed.
+- Remaining COW gaps: broader alias lifetime/detach behavior, arbitrary
+  magic/`ArrayAccess` method bodies, broader complex alias sinks, exact PHP
+  fatal text, string COW identity, and native reference lowering.
+- Next concrete task: run formatting, diff, check, adjacent array-unset and
+  milestone1744/1745 regressions, then checkpoint with
+  `tools/checkpoint.sh "runtime: preserve unset detached reference cells"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T20:02:10+02:00
 
 - Checkpoint before this task: `22e3a921 runtime: write scalar ArrayAccess

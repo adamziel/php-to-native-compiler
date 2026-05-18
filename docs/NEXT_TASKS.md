@@ -19710,6 +19710,16 @@ handled.
   bodies, exact PHP fatal text, complete alias lifetime/detach behavior,
   string COW identity, and native reference lowering named as unsupported.
 
+## Lane 1750-C: Array Offset Unset Keeps Detached Reference Cells
+
+- [x] Runtime/interpreter/tests/docs lane: preserve reference-cell identity
+  when direct, nested, or object-property array-offset unsets detach local
+  aliases from a reference-backed slot. Cover typed-property reference
+  coercion after detach with system-PHP fixture comparison and an invalid
+  typed-reference regression. Keep broader alias lifetime/detach behavior,
+  arbitrary magic/`ArrayAccess` method bodies, exact PHP fatal text, string
+  COW identity, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

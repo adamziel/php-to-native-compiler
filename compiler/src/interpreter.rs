@@ -1906,7 +1906,7 @@ impl SymbolTable {
                 self.bind_detached_array_offset_alias_fallback(
                     &alias_name,
                     &previous_aliases,
-                    fallback_value,
+                    fallback_value.map(value_cell),
                     &mut detached_groups,
                 );
             } else {
@@ -2036,7 +2036,7 @@ impl SymbolTable {
                 self.bind_detached_array_offset_alias_fallback(
                     &alias_name,
                     &previous_aliases,
-                    fallbacks.get(&alias_name).cloned(),
+                    fallbacks.get(&alias_name).cloned().map(value_cell),
                     &mut detached_groups,
                 );
             } else {
@@ -2068,7 +2068,7 @@ impl SymbolTable {
                 self.bind_detached_array_offset_alias_fallback(
                     &alias_name,
                     &previous_aliases,
-                    fallbacks.get(&alias_name).cloned(),
+                    fallbacks.get(&alias_name).cloned().map(value_cell),
                     &mut detached_groups,
                 );
             } else {
@@ -2089,7 +2089,7 @@ impl SymbolTable {
                 continue;
             };
             let previous_aliases = existing_aliases.clone();
-            let mut fallback_value = None;
+            let mut fallback_cell = None;
             let mut aliases = Vec::new();
 
             for alias in existing_aliases {
@@ -2097,8 +2097,10 @@ impl SymbolTable {
                     alias.root == unset_path.root && alias.keys.starts_with(&unset_path.keys)
                 });
                 if should_detach {
-                    if fallback_value.is_none() {
-                        fallback_value = self.read_array_offset_alias(&alias);
+                    if fallback_cell.is_none() {
+                        fallback_cell = self
+                            .read_array_offset_alias_reference_cell(&alias)
+                            .or_else(|| self.read_array_offset_alias(&alias).map(value_cell));
                     }
                 } else {
                     aliases.push(alias);
@@ -2110,7 +2112,7 @@ impl SymbolTable {
                 self.bind_detached_array_offset_alias_fallback(
                     &alias_name,
                     &previous_aliases,
-                    fallback_value,
+                    fallback_cell,
                     &mut detached_groups,
                 );
             } else {
@@ -2123,10 +2125,10 @@ impl SymbolTable {
         &mut self,
         alias_name: &str,
         previous_aliases: &[ArrayOffsetAlias],
-        fallback_value: Option<Value>,
+        fallback_cell: Option<VariableCell>,
         detached_groups: &mut Vec<(Vec<ArrayOffsetAlias>, VariableCell)>,
     ) {
-        let Some(value) = fallback_value else {
+        let Some(fallback_cell) = fallback_cell else {
             return;
         };
 
@@ -2136,7 +2138,7 @@ impl SymbolTable {
                 (aliases.as_slice() == previous_aliases).then(|| cell.clone())
             })
             .unwrap_or_else(|| {
-                let cell = value_cell(value);
+                let cell = fallback_cell;
                 detached_groups.push((previous_aliases.to_vec(), cell.clone()));
                 cell
             });

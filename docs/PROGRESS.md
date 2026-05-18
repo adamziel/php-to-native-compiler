@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1750-C for array-offset `unset` detach parity over real
+  `PhpReferenceCell` slots. When a direct, nested, or object-property
+  array-offset alias is detached by `unset(...)`, local aliases now keep the
+  original reference cell when the removed slot was reference-backed, rather
+  than being rebound to a plain value snapshot. This preserves typed-property
+  reference constraints after detach, so valid scalar writes still coerce and
+  invalid writes still fail like PHP. Broader alias lifetime/detach behavior,
+  arbitrary magic/`ArrayAccess` method bodies, exact PHP fatal text, string
+  COW identity, and native reference lowering remain unsupported. Focused
+  verification: raw system PHP output matched the new `milestone1750`
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1750` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent
+  `unset_array_offsets_preserves_detached_typed_reference_cells` passed.
+
 - Added Lane 1749-C for the remaining parsed suffix syntax over proven
   `ArrayAccess` append backing buckets. Direct roots such as
   `$bag["outer"][]["leaf"] = $value`, direct dynamic property roots,

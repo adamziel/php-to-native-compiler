@@ -4503,8 +4503,9 @@
   bindings, arbitrary writes through remaining complex typed-property alias
   sinks, exact PHP fatal text for invalid typed-reference writes, arbitrary
   dynamic-property policy beyond the current dynamic-capable object subset,
-  complete alias lifetime/detach parity beyond the covered property-unset
-  slots, string COW identity, and native reference lowering remain
+  complete alias lifetime/detach parity beyond covered property-unset slots
+  and array-offset unsets that detach reference-backed local aliases, string
+  COW identity, and native reference lowering remain
   unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when

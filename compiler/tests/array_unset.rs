@@ -168,6 +168,51 @@ echo "|leaf=", $leaf, "|other=", $other;
 }
 
 #[test]
+fn unset_array_offsets_preserves_detached_typed_reference_cells() {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    public int $id = 1;
+}
+
+$box = new Box();
+$alias =& $box->id;
+$items = array();
+$items["copy"] =& $alias;
+$slot =& $items["copy"];
+unset($items["copy"]);
+$slot = array("bad");
+"#,
+    );
+    assert_eq!(error.line, 12);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid property access: typed property Box::$id expects int, got array"
+    );
+
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public int $id = 1;
+}
+
+$box = new Box();
+$alias =& $box->id;
+$items = array("outer" => array());
+$items["outer"]["copy"] =& $alias;
+$slot =& $items["outer"]["copy"];
+unset($items["outer"]);
+$slot = "2";
+echo gettype($box->id), ":", $box->id, "|", gettype($slot), ":", $slot;
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "integer:2|integer:2");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unset_object_property_array_offsets_detaches_covered_reference_aliases() {
     let source = r#"<?php
 class RefcowUnsetAliasBag {

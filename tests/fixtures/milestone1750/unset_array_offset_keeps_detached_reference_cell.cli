@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1750/unset_array_offset_keeps_detached_reference_cell.php
