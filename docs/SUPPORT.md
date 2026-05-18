@@ -868,9 +868,11 @@
   paths such as `$this->property[$offset][$offset] = $value;` are also
   covered for that exact non-branchy bridge. Backing paths may use locals
   initialized from literal int/string keys, such as
-  `$leaf = "leaf"; $this->property[$offset][$leaf] = $value;`, and later
-  bucket copies use the exact public `return $this->property[$offset];`
-  `offsetGet()` bridge.
+  `$leaf = "leaf"; $this->property[$offset][$leaf] = $value;`, and one local
+  copy of the offset parameter, such as
+  `$slot = $offset; $this->property[$slot]["leaf"] = $value;`. Later bucket
+  copies use the exact public `return $this->property[$offset];` `offsetGet()`
+  bridge.
   Direct
   append `$bag[] = $array` preserves the same nested reference slots for two
   focused public `offsetSet(null, $value)` shapes: the exact
@@ -892,10 +894,12 @@
   literal-key aliases may appear in these branch paths, for example
   `$bucket = "outer"; $leaf = "leaf"; if ($offset === null) {
   $this->property[$bucket][][$leaf] = $value; return; }
-  $this->property[$bucket][$offset][$leaf] = $value;`. Keyed stores such as
-  `$bag["leaf"] = $array` also preserve copied reference-slot metadata through
-  that same `if/else` body by recognizing the non-null branch's keyed backing
-  assignment. The same focused append
+  $this->property[$bucket][$offset][$leaf] = $value;`. One local copy of the
+  offset parameter may also appear in the non-null branch, for example
+  `$slot = $offset; ... $this->property[$bucket][$slot][$leaf] = $value;`.
+  Keyed stores such as `$bag["leaf"] = $array` also preserve copied
+  reference-slot metadata through that same `if/else` body by recognizing the
+  non-null branch's keyed backing assignment. The same focused append
   stored-bucket propagation is supported
   when a direct visible named or dynamic property holds the `ArrayAccess`
   object, such as `$holder->bag[] = $array` or
@@ -1129,8 +1133,9 @@
   variables, non-public backing properties outside the exact method-context
   bridges, `elseif`, extra statements in either `offsetSet()` branch,
   fall-through append bodies without `else`/`return`, mismatched append/keyed
-  paths, dynamic `offsetSet()` parameter keys, repeated offset parameters in
-  branchy append bridges, non-literal/dynamic local `offsetSet()` path keys,
+  paths, dynamic `offsetSet()` parameter keys beyond one local copy, repeated
+  offset parameters in branchy append bridges, non-literal/dynamic local
+  `offsetSet()` path keys,
   side-effecting or broader
   `offsetSet()`/`offsetGet()` bodies,
   built-in interface enforcement/signature validation, typed method

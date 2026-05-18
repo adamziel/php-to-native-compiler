@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1756/offset_set_local_offset_aliases.php

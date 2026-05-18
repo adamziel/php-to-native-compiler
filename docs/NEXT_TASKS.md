@@ -19781,6 +19781,19 @@ handled.
   broader complex alias sinks, exact PHP fatal text, string COW identity, and
   native reference lowering named as unsupported.
 
+## Lane 1756-C: Local OffsetSet Parameter Copies
+
+- [x] Runtime/interpreter/tests/docs lane: broaden the proven
+  `ArrayAccess::offsetSet()` backing-bucket analyzer so one local copy of the
+  offset parameter may appear in exact keyed store paths and branchy
+  null-append/keyed paths, for example
+  `$slot = $offset; $this->items[$slot]["leaf"] = $value;`. Cover exact
+  keyed, non-null branch, and append-branch preservation of typed-reference
+  slots with system-PHP fixture comparison and an invalid typed-reference
+  regression. Keep arbitrary `offsetSet()` bodies, non-literal/dynamic key
+  variables, broader complex alias sinks, exact PHP fatal text, string COW
+  identity, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

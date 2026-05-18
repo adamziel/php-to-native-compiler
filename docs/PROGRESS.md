@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 1756-C for the matching local offset-parameter copy shape in the
+  proven `ArrayAccess::offsetSet()` backing analyzer. Exact keyed stores and
+  branchy null-append/keyed bodies may now use one local copy of the offset
+  parameter before the backing assignment, such as
+  `$slot = $offset; $this->items[$slot]["leaf"] = $value;`, while still
+  preserving copied reference-slot metadata in the real backing bucket.
+  Arbitrary `offsetSet()` bodies, non-literal/dynamic key variables, broader
+  complex alias sinks, exact PHP fatal text, string COW identity, and native
+  reference lowering remain unsupported. Focused verification: raw system PHP
+  output matched the new `milestone1756` fixture; `cargo run -q -p phpc --
+  test --compare-php tests/fixtures/milestone1756` passed `1` fixture with
+  `1` system PHP comparison and `0` skips; adjacent
+  `offset_set_local_offset_aliases_preserve_reference_slots` passed.
+
 - Added Lane 1755-C for the matching `ArrayAccess::offsetSet()` backing
   analyzer broadening: local variables initialized from literal int/string keys
   may be used as path indexes in exact keyed stores and branchy null-append /

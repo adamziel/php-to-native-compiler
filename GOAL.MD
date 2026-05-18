@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1755:
+The current in-progress implementation frontier is Lane 1756:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -380,6 +380,9 @@ The current in-progress implementation frontier is Lane 1755:
   proven `ArrayAccess::offsetSet()` backing analyzer for exact keyed stores
   and branchy null-append/keyed bodies, preserving copied reference slots in
   the selected backing bucket.
+- Lane 1756 broadens that same `offsetSet()` analyzer to one local copy of
+  the offset parameter before the backing assignment, matching the existing
+  bounded parameter-copy family without accepting arbitrary side effects.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

@@ -4666,6 +4666,7 @@ struct ReferenceReturnBodyAnalysis<'a> {
 
 struct OffsetSetBodyAnalysis<'a> {
     statements: &'a [Stmt],
+    local_param_aliases: Vec<String>,
     local_literal_key_aliases: Vec<LocalLiteralKeyAlias>,
 }
 
@@ -13168,12 +13169,13 @@ impl Interpreter {
         indices: &[Expr],
         offset_param: &str,
         selected_key: ArrayKey,
+        local_param_aliases: &[String],
         local_literal_key_aliases: &[LocalLiteralKeyAlias],
     ) -> Option<Vec<ArrayKey>> {
         let mut keys = Vec::new();
         let mut saw_offset_param = false;
         for index in indices {
-            if matches!(index, Expr::Variable(name, _) if name == offset_param) {
+            if Self::expr_is_parameter_or_local_copy(index, offset_param, local_param_aliases) {
                 saw_offset_param = true;
                 keys.push(selected_key.clone());
                 continue;
@@ -13193,13 +13195,14 @@ impl Interpreter {
     fn array_access_offset_parameter_key_parts_with_locals(
         indices: &[Expr],
         offset_param: &str,
+        local_param_aliases: &[String],
         local_literal_key_aliases: &[LocalLiteralKeyAlias],
     ) -> Option<(Vec<ArrayKey>, Vec<ArrayKey>)> {
         let mut prefix_keys = Vec::new();
         let mut suffix_keys = Vec::new();
         let mut saw_offset_param = false;
         for index in indices {
-            if matches!(index, Expr::Variable(name, _) if name == offset_param) {
+            if Self::expr_is_parameter_or_local_copy(index, offset_param, local_param_aliases) {
                 if saw_offset_param {
                     return None;
                 }
@@ -13366,8 +13369,10 @@ impl Interpreter {
         let Some(value_param) = function.params.get(1) else {
             return Ok(None);
         };
-        let body_analysis = Self::offset_set_body_analysis(function.body.as_slice());
+        let body_analysis =
+            Self::offset_set_body_analysis(function.body.as_slice(), &offset_param.name);
         let body = body_analysis.statements;
+        let local_param_aliases = body_analysis.local_param_aliases;
         let local_literal_key_aliases = body_analysis.local_literal_key_aliases;
         let (property, keys) = if let Some(key) = key {
             let Some((property, indices)) = Self::offset_set_keyed_assignment_target(
@@ -13381,6 +13386,7 @@ impl Interpreter {
                 &indices,
                 &offset_param.name,
                 key,
+                &local_param_aliases,
                 &local_literal_key_aliases,
             ) else {
                 return Ok(None);
@@ -13405,9 +13411,10 @@ impl Interpreter {
                 return Ok(None);
             }
             let Some(keys) = Self::array_access_offset_parameter_keys_with_locals(
-                indices,
+                &indices,
                 &offset_param.name,
                 Self::array_access_append_reference_key(),
+                &local_param_aliases,
                 &local_literal_key_aliases,
             ) else {
                 return Ok(None);
@@ -13453,7 +13460,8 @@ impl Interpreter {
             } else {
                 return Ok(None);
             };
-            if !Self::is_null_offset_guard(condition, &offset_param.name) || target_object != "this"
+            if !Self::is_null_offset_guard(&condition, &offset_param.name)
+                || target_object != "this"
             {
                 return Ok(None);
             };
@@ -13461,6 +13469,7 @@ impl Interpreter {
                 Self::array_access_offset_parameter_key_parts_with_locals(
                     &indices,
                     &offset_param.name,
+                    &local_param_aliases,
                     &local_literal_key_aliases,
                 )
             else {
@@ -13468,7 +13477,7 @@ impl Interpreter {
             };
             let require_return = body.len() > 1;
             let Some(append_target) = Self::offset_set_append_target(
-                then_branch,
+                &then_branch,
                 &value_param.name,
                 require_return,
                 &local_literal_key_aliases,
@@ -13537,28 +13546,47 @@ impl Interpreter {
                     && matches!(right.as_ref(), Expr::Variable(name, _) if name == offset_param)))
     }
 
-    fn offset_set_body_analysis(body: &[Stmt]) -> OffsetSetBodyAnalysis<'_> {
+    fn offset_set_body_analysis<'a>(
+        body: &'a [Stmt],
+        offset_param: &str,
+    ) -> OffsetSetBodyAnalysis<'a> {
+        let mut local_param_aliases = Vec::new();
         let mut local_literal_key_aliases = Vec::new();
         let mut statements = body;
 
-        while let [Stmt::Assign {
-            target: AssignTarget::Variable { name, .. },
-            expr,
-            ..
-        }, rest @ ..] = statements
-        {
-            let Some(key) = Self::literal_reference_return_array_key(expr) else {
-                break;
-            };
-            local_literal_key_aliases.push(LocalLiteralKeyAlias {
-                local: name.clone(),
-                key,
-            });
-            statements = rest;
+        loop {
+            match statements {
+                [Stmt::Assign {
+                    target: AssignTarget::Variable { name, .. },
+                    expr: Expr::Variable(source, _),
+                    ..
+                }, rest @ ..]
+                    if source == offset_param =>
+                {
+                    local_param_aliases.push(name.clone());
+                    statements = rest;
+                }
+                [Stmt::Assign {
+                    target: AssignTarget::Variable { name, .. },
+                    expr,
+                    ..
+                }, rest @ ..] => {
+                    let Some(key) = Self::literal_reference_return_array_key(expr) else {
+                        break;
+                    };
+                    local_literal_key_aliases.push(LocalLiteralKeyAlias {
+                        local: name.clone(),
+                        key,
+                    });
+                    statements = rest;
+                }
+                _ => break,
+            }
         }
 
         OffsetSetBodyAnalysis {
             statements,
+            local_param_aliases,
             local_literal_key_aliases,
         }
     }
