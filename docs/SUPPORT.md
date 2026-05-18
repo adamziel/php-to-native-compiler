@@ -910,7 +910,13 @@
   slots. The matching by-value `__get()` object-handle root is also covered
   for that focused reference-source shape when `__get($name)` returns the
   outer `ArrayAccess` object by value; the alias still binds through the
-  mixed chain to the inner by-reference backing bucket. Magic-property
+  mixed chain to the inner by-reference backing bucket. The same recursive
+  object-handle route is tested through one longer three-object mixed chain,
+  such as
+  `$alias =& $box->missing["outer"]["middle"]["leaf"]; $alias[] = $array`,
+  where by-value intermediate `offsetGet()` calls return nested
+  `ArrayAccess` objects before the terminal by-reference backing bucket.
+  Magic-property
   append stores below plain arrays are also
   supported for the focused by-reference `__get()`
   shape when visible public `__get($name)` returns a direct variable by
@@ -948,7 +954,7 @@
   by-reference or by-value-object intermediate `offsetGet()` bucket, tested
   plain-array suffix shapes, the one tested mixed nested `ArrayAccess` append
   chain, and the tested mixed nested by-reference/by-value magic
-  reference-source chains, dynamic
+  reference-source chains including the three-object chain, dynamic
   non-direct
   whole-property setup assignment, method-return or factory holder roots for
   dynamic non-direct append stores, non-empty nested append paths below

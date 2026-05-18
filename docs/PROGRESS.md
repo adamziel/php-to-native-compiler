@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Lane 1698-C longer by-value magic-property mixed `ArrayAccess`
+  reference-source coverage for the COW shape where visible public
+  `__get($name)` returns an outer `ArrayAccess` object handle by value, the
+  outer and middle exact public by-value `offsetGet($offset)` calls each
+  return nested `ArrayAccess` object handles, and the terminal leaf object
+  exposes the exact public by-reference `offsetGet($offset)` backing-property
+  bridge. Direct
+  `$alias =& $box->missing["outer"]["middle"]["leaf"]; $alias[] = $array;`
+  now has executable coverage proving the recursive resolver follows the
+  longer object-handle chain, binds the alias to the leaf selected backing
+  bucket, appends through that alias-backed bucket, and preserves nested
+  reference-slot provenance for later copied-bucket reads. This does not add
+  by-value terminal/plain-array mutation, arbitrary side-effecting or broader
+  `offsetGet()` bodies, broader `__get()` return bodies, method-return or
+  factory holder roots, full references/COW, native reference lowering, or
+  exact alias destruction/destructor ordering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, `cargo check -q -p phpc` passed, the `milestone1698`
+  `functions_and_scopes` filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1698`
+  passed `1` fixture with `1` system PHP comparison and `0` skips. Before
+  checkpointing, `cargo fmt --check`, `git diff --check`, the adjacent
+  `milestone1697` `functions_and_scopes` filter, and adjacent
+  `milestone1697` fixture comparison also passed.
+
 - Added Lane 1697-C focused by-value magic-property mixed `ArrayAccess`
   reference-source binding for the COW shape where visible public
   `__get($name)` returns an outer `ArrayAccess` object handle by value, the

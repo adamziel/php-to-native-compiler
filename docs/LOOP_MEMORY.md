@@ -26,6 +26,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T12:45:00+02:00
+
+- Checkpoint before this task: `19ccd512 runtime: preserve by-value magic
+  mixed ArrayAccess reference sources`, pushed to `origin/master`.
+- Task attempted: Lane 1698-C longer by-value magic-property mixed
+  `ArrayAccess` reference-source binding for the focused COW shape.
+- Files changed so far: `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1698/*`, `GOAL.MD`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax check passed for the
+  new milestone1698 fixture; `cargo check -q -p phpc` passed; the
+  `milestone1698` `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1698`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+  `cargo fmt --check`, `git diff --check`, the adjacent `milestone1697`
+  `functions_and_scopes` filter, and adjacent `milestone1697` fixture
+  comparison also passed.
+- Semantic gap reduced: direct
+  `$alias =& $box->missing["outer"]["middle"]["leaf"]; $alias[] = $array;`
+  is now pinned through a longer mixed chain where by-value `__get()` returns
+  an outer `ArrayAccess` object handle, by-value outer and middle
+  `offsetGet()` calls return nested object handles, and the terminal leaf uses
+  the exact by-reference backing-property bridge. The alias binds to the leaf
+  selected bucket and append writes through that alias mutate the backing
+  bucket while preserving nested reference-slot provenance.
+- Remaining semantic gaps: by-value terminal/plain-array mutation, arbitrary
+  side-effecting or broader `offsetGet()` bodies, broader `__get()` return
+  bodies, method-return or factory holder roots, scalar parent
+  overwrite/error parity, full references/COW, native reference lowering, and
+  exact alias destruction/destructor ordering remain unsupported.
+- Next concrete task: checkpoint with
+  `tools/checkpoint.sh "runtime: preserve longer mixed ArrayAccess reference sources"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T12:25:00+02:00
 
 - Checkpoint before this task: `efc45656 runtime: preserve by-value outer

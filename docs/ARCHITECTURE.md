@@ -973,6 +973,12 @@ return the outer `ArrayAccess` object and then use the same recursive resolver
 to bind the alias to the inner backing bucket. This is intentionally still an
 object-handle bridge, not broad by-value magic-property reference semantics
 for plain arrays or terminal by-value `offsetGet()` results.
+The resolver is not hard-coded to exactly two objects: the tested three-object
+chain follows by-value `ArrayAccess` object handles through outer and middle
+buckets before binding to the terminal by-reference leaf bucket. The remaining
+boundary is arbitrary side-effecting/broader `offsetGet()` semantics and
+non-object or by-value terminal containers, not the mechanical recursion depth
+of the current exact bridge.
 The same magic append-store helper also covers the focused plain-array route
 when visible public `__get($name)` returns a direct variable by reference and
 that returned cell currently holds an array or `null`. The runtime binds the
