@@ -18,6 +18,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T01:09:42+02:00
+
+- Checkpoint before this task: `c479715a runtime: support dynamic reference
+  return helpers`, pushed to `origin/master`.
+- Task attempted: Lane 1800-C through Lane 1802-C bundle, allowing executed
+  magic/`ArrayAccess` reference-return bodies to return bounded by-reference
+  closure callbacks through direct dynamic closure calls, `call_user_func()`,
+  and `call_user_func_array()`, plus helper-local direct object-property
+  array-offset roots such as `return $box->store[$key]`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1800/*`, `tests/fixtures/milestone1801/*`,
+  `tests/fixtures/milestone1802/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched the new `milestone1800`, `milestone1801`, and `milestone1802`
+  fixtures; `cargo run -q -p phpc -- test --compare-php` passed each new
+  fixture directory and adjacent `milestone1799` with `1` fixture, `1`
+  system PHP comparison, and `0` skips; focused `cargo test -q -p phpc
+  --test functions_and_scopes milestone180`, `cargo test -q -p phpc --test
+  functions_and_scopes milestone179`, `cargo test -q -p phpc --test
+  functions_and_scopes closure`, and `cargo test -q -p phpc --test
+  call_user_func_builtin` passed.
+- Remaining COW gaps: arbitrary closure capture roots, arbitrary array
+  callables and builtin callbacks as reference-return sources, unsupported PHP
+  syntax and side effects outside the executed method-body subset, arbitrary
+  type enforcement and incompatible typed reference-return signatures, full
+  exception unwinding and uncaught exception propagation, arbitrary Iterator
+  side effects, broader complex alias sinks and alias lifetime ordering, exact
+  PHP stderr/fatal text, binary/multibyte string offset behavior, and native
+  reference/string COW lowering.
+- Next concrete task: run formatting, diff, adjacent checks, then the full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T00:43:00+02:00
 
 - Checkpoint before this task: `acd0a914 runtime: delegate reference return

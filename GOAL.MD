@@ -32,7 +32,16 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1799:
+The current in-progress implementation frontier is Lane 1802:
+
+- Lanes 1800 through 1802 add bounded by-reference closure callbacks to the
+  executed magic/`ArrayAccess` reference-return body path. Covered bodies can
+  now return a direct by-reference closure call, `call_user_func()` with a
+  by-reference closure or function callback, and `call_user_func_array()` with
+  a by-reference closure callback when the returned lvalue stays inside the
+  proven variable/object-property/array-offset subset. Helper-local direct
+  object-property array offsets such as `return $box->store[$key]` are remapped
+  back to a caller-visible object root before caller suffix keys are applied.
 
 - Lanes 1797 through 1799 add dynamic string function-call delegation in the
   executed magic/`ArrayAccess` reference-return body path. Covered bodies can

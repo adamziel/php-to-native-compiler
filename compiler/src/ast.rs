@@ -944,6 +944,7 @@ pub enum Expr {
         params: Vec<FunctionParam>,
         captures: Vec<ClosureCapture>,
         return_type: Option<TypeDecl>,
+        returns_by_reference: bool,
         body: Vec<Stmt>,
         is_arrow: bool,
         span: Span,

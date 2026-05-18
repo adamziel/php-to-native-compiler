@@ -1174,8 +1174,17 @@
   is stored in a supported local string variable, such as `return $fn(...)`.
   If the helper returns a direct object-property root from its local scope,
   such as `return $box->store`, the returned alias is remapped to a
-  caller-visible object root before caller suffix keys are applied. The exact
-  `__get()`/`offsetGet()` backing
+  caller-visible object root before caller suffix keys are applied. Bounded
+  by-reference closure callbacks are covered in the same executed body path:
+  a direct `$closure(...)` call, `call_user_func($closure, ...)` or
+  `call_user_func("helper", ...)`, and `call_user_func_array($closure, ...)`
+  can be returned when the callback body returns a proven variable,
+  object-property, or array-offset lvalue. Helper-local direct object-property
+  array-offset roots such as `return $box->store[$key]` are remapped back to a
+  caller-visible object root before suffix keys are applied. Arbitrary closure
+  capture roots, array callables through `call_user_func()`, builtin callbacks
+  as reference-return sources, and arbitrary callable side effects remain
+  unsupported. The exact `__get()`/`offsetGet()` backing
   analyzer accepts one local copy of the magic/offset parameter before the
   return, such as `$slot = $name; return $this->store[$slot];` or
   `$slot = $offset; return $this->items[$slot];`; it also accepts a local

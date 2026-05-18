@@ -20087,6 +20087,20 @@ handled.
   unwinding, exact PHP diagnostics, and native reference lowering named as
   unsupported.
 
+## Lane 1800-C through Lane 1802-C: Closure Callback Reference Returns
+
+- [x] Runtime/interpreter/tests/docs bundle: allow supported
+  magic/`ArrayAccess` reference-return bodies to return bounded by-reference
+  closure callbacks through direct `$closure(...)`, `call_user_func()`, and
+  `call_user_func_array()` paths when the callback returns a proven lvalue.
+  Cover direct by-reference closure parameters, by-value object handle
+  callbacks returning `$box->store[$key]`, and `call_user_func_array()`
+  reference argument arrays. Keep arbitrary closure capture roots, arbitrary
+  array callables, builtin callbacks as reference-return sources, arbitrary
+  PHP syntax and side effects outside the executed method-body subset,
+  incompatible typed signatures, full exception unwinding, exact PHP
+  diagnostics, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

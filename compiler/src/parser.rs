@@ -5351,13 +5351,7 @@ impl Parser {
     }
 
     fn parse_closure_expression(&mut self, span: Span) -> CompileResult<Expr> {
-        if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
-            let span = self.advance().span;
-            return Err(self.error_at(
-                span,
-                "unsupported reference return: returning closures by reference is not implemented",
-            ));
-        }
+        let returns_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
 
         self.consume_keyword(TokenKind::LParen, "expected '(' after function")?;
         let params = self.parse_function_params_after_open()?;
@@ -5403,6 +5397,7 @@ impl Parser {
             params,
             captures,
             return_type,
+            returns_by_reference,
             body,
             is_arrow: false,
             span,
@@ -5438,6 +5433,7 @@ impl Parser {
             params,
             captures: Vec::new(),
             return_type,
+            returns_by_reference: false,
             body: vec![Stmt::Return {
                 value: Some(value),
                 span,

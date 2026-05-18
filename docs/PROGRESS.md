@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Lane 1800-C through Lane 1802-C for bounded by-reference closure
+  callback sources inside the executed magic/`ArrayAccess` COW bridge.
+  Supported public by-reference `__get()` and `ArrayAccess::offsetGet()`
+  bodies can now return a direct by-reference closure call, `call_user_func()`
+  over a by-reference closure/function callback, or `call_user_func_array()`
+  over a by-reference closure callback when the returned lvalue stays inside
+  the proven variable/object-property/array-offset subset. Helper-local direct
+  object-property array-offset returns such as `return $box->store[$key]` are
+  remapped to a caller-visible object root before caller suffix keys are
+  applied. This does not claim arbitrary closure capture roots, arbitrary
+  callable arrays, builtin callbacks as reference-return sources, arbitrary
+  PHP syntax or side effects outside the executed interpreter subset,
+  incompatible typed signatures, full exception unwinding, exact PHP
+  diagnostics, or native reference lowering. Focused verification: raw system
+  PHP output matched the new `milestone1800`, `milestone1801`, and
+  `milestone1802` fixtures; `cargo run -q -p phpc -- test --compare-php`
+  passed each new fixture directory with `1` fixture, `1` system PHP
+  comparison, and `0` skips; focused `functions_and_scopes` milestone and
+  adjacent closure/callback tests passed.
+
 - Added Lane 1797-C through Lane 1799-C for dynamic string function-call
   delegation inside the executed magic/`ArrayAccess` COW bridge. Supported
   public by-reference `__get()` and `ArrayAccess::offsetGet()` bodies can now

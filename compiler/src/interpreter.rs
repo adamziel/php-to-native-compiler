@@ -8953,6 +8953,7 @@ impl Interpreter {
                 params,
                 captures,
                 return_type,
+                returns_by_reference,
                 body,
                 span,
                 is_arrow,
@@ -8961,6 +8962,7 @@ impl Interpreter {
                 params,
                 captures,
                 return_type.as_ref(),
+                *returns_by_reference,
                 body,
                 *is_arrow,
                 *span,
@@ -14666,6 +14668,8 @@ impl Interpreter {
             } => {
                 if name.eq_ignore_ascii_case("call_user_func_array") {
                     self.call_user_func_array_reference_return_source(args, *call_span, scope)
+                } else if name.eq_ignore_ascii_case("call_user_func") {
+                    self.call_user_func_reference_return_source(args, *call_span, scope)
                 } else {
                     self.call_reference_return_function_for_reference_assignment(
                         name, args, *call_span, scope,
@@ -14722,7 +14726,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     "reference assignment",
-                    "only direct function-call, dynamic string function-call, object method-call, named static method-call, self:: static method-call, parent:: static method-call, static:: late-static method-call, and dynamic static receiver method-call reference-return sources are implemented in the current subset",
+                    "only direct function-call, call_user_func(), call_user_func_array(), dynamic string or closure function-call, object method-call, named static method-call, self:: static method-call, parent:: static method-call, static:: late-static method-call, and dynamic static receiver method-call reference-return sources are implemented in the current subset",
                 ),
             )),
         }
@@ -27714,6 +27718,29 @@ impl Interpreter {
         }
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            let (values, reference_bindings) = self
+                .evaluate_user_function_call_arguments_with_options(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    true,
+                )?;
+            let prebound_locals = self.closure_prebound_locals(&closure);
+            return self.call_reference_return_function_value_with_checked_values_and_locals(
+                function,
+                values,
+                None,
+                None,
+                None,
+                reference_bindings,
+                caller_scope,
+                prebound_locals,
+            );
+        }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
         let (values, reference_bindings) =
@@ -30775,6 +30802,7 @@ impl Interpreter {
         params: &[FunctionParam],
         captures: &[ClosureCapture],
         return_type: Option<&TypeDecl>,
+        returns_by_reference: bool,
         body: &[Stmt],
         is_arrow: bool,
         span: Span,
@@ -30820,6 +30848,7 @@ impl Interpreter {
                 id,
                 params,
                 return_type,
+                returns_by_reference,
                 body,
                 self.source_file.clone(),
                 span,
@@ -30831,7 +30860,7 @@ impl Interpreter {
                 name: "{closure}".to_string(),
                 params: params.to_vec(),
                 return_type: return_type.cloned(),
-                returns_by_reference: false,
+                returns_by_reference,
                 body: body.to_vec(),
                 is_nested: false,
                 end_line: reflection_closure_end_line(body, span),
@@ -31420,6 +31449,23 @@ impl Interpreter {
         }
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            let values =
+                self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
+            let prebound_locals = self.closure_prebound_locals(&closure);
+            return self.call_reference_return_function_value_with_checked_values_and_locals(
+                function,
+                values,
+                None,
+                None,
+                None,
+                Vec::new(),
+                caller_scope,
+                prebound_locals,
+            );
+        }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
         let values =
@@ -31563,7 +31609,7 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "call_user_func_array()",
                     format!(
-                        "callback must evaluate to string or array callable in the current subset, got {}",
+                        "callback must evaluate to string, closure, or array callable in the current subset, got {}",
                         other.type_name()
                     ),
                 ),
@@ -31601,6 +31647,28 @@ impl Interpreter {
             ));
         }
         let function = function.as_ref();
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            let (values, reference_bindings) = self
+                .evaluate_call_user_func_array_checked_arguments(
+                    function,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                )?;
+            let prebound_locals = self.closure_prebound_locals(&closure);
+            return self.call_reference_return_function_value_with_checked_values_and_locals(
+                function,
+                values,
+                None,
+                None,
+                None,
+                reference_bindings,
+                caller_scope,
+                prebound_locals,
+            );
+        }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
         let (values, reference_bindings) = self.evaluate_call_user_func_array_checked_arguments(
@@ -31799,19 +31867,203 @@ impl Interpreter {
                 span,
                 caller_scope,
             ),
-            Value::Closure(_) => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    "closure invocation is not implemented",
-                ),
-            )),
+            Value::Closure(closure) => {
+                let function = self
+                    .closure_functions
+                    .get(&closure.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "call_user_func_array()",
+                                "closure body metadata is missing in the current subset",
+                            ),
+                        )
+                    })?;
+                if closure.is_arrow() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "call_user_func_array()",
+                            "arrow closure reference-return sources are not implemented",
+                        ),
+                    ));
+                }
+                let function = function.as_ref();
+                if !function.returns_by_reference {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "call_user_func_array()",
+                            "closure does not return by reference",
+                        ),
+                    ));
+                }
+                let (values, reference_bindings) = self
+                    .evaluate_call_user_func_array_reference_return_arguments(
+                        function,
+                        &args[1],
+                        span,
+                        caller_scope,
+                    )?;
+                self.ensure_user_function_call_depth(function, span)?;
+                let prebound_locals = self.closure_prebound_locals(closure);
+                self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
+                    function,
+                    values,
+                    None,
+                    None,
+                    None,
+                    reference_bindings,
+                    caller_scope,
+                    prebound_locals,
+                )
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "call_user_func_array()",
                     format!(
                         "callback must evaluate to string or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn call_user_func_reference_return_source(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnBinding> {
+        if args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "call_user_func()",
+                    ArityExpectation::AtLeast(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let callback = self.evaluate(&args[0], caller_scope)?;
+        match &callback {
+            Value::String(callback_name) => {
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                let Callable::User(function) = callable else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "call_user_func()",
+                            "builtin callbacks cannot be used as reference-return sources in the current subset",
+                        ),
+                    ));
+                };
+                let function = function.as_ref();
+                if !function.returns_by_reference {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "function does not return by reference",
+                        ),
+                    ));
+                }
+                ensure_user_function_arity(function, args.len().saturating_sub(1), span)?;
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                let values = self.evaluate_call_user_func_value_arguments(
+                    function,
+                    &args[1..],
+                    span,
+                    caller_scope,
+                )?;
+                self.call_reference_return_function_with_checked_values_for_reference_assignment(
+                    function,
+                    values,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    caller_scope,
+                )
+            }
+            Value::Closure(closure) => {
+                let function = self
+                    .closure_functions
+                    .get(&closure.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "call_user_func()",
+                                "closure body metadata is missing in the current subset",
+                            ),
+                        )
+                    })?;
+                if closure.is_arrow() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "call_user_func()",
+                            "arrow closure reference-return sources are not implemented",
+                        ),
+                    ));
+                }
+                let function = function.as_ref();
+                if !function.returns_by_reference {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "call_user_func()",
+                            "closure does not return by reference",
+                        ),
+                    ));
+                }
+                ensure_user_function_arity(function, args.len().saturating_sub(1), span)?;
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                let values = self.evaluate_call_user_func_value_arguments(
+                    function,
+                    &args[1..],
+                    span,
+                    caller_scope,
+                )?;
+                let prebound_locals = self.closure_prebound_locals(closure);
+                self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
+                    function,
+                    values,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    caller_scope,
+                    prebound_locals,
+                )
+            }
+            Value::Array(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func()",
+                    "array callables as reference-return sources are not implemented in the current subset",
+                ),
+            )),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func()",
+                    format!(
+                        "callback must evaluate to string, closure, or array callable in the current subset, got {}",
                         other.type_name()
                     ),
                 ),
@@ -35157,14 +35409,14 @@ impl Interpreter {
         let callee_value = self.evaluate(callee, caller_scope)?;
         let name = match callee_value {
             Value::String(name) => name,
-            Value::Closure(_) => {
-                return Err(runtime_error(
+            Value::Closure(closure) => {
+                return self.call_reference_return_closure_for_reference_assignment(
+                    closure,
+                    args,
                     span,
-                    RuntimeError::unsupported_call(
-                        "dynamic function call",
-                        "closure reference-return sources are not implemented in the current subset",
-                    ),
-                ));
+                    caller_scope,
+                    "closure",
+                );
             }
             other => {
                 return Err(runtime_error(
@@ -35224,6 +35476,68 @@ impl Interpreter {
             None,
             reference_bindings,
             caller_scope,
+        )
+    }
+
+    fn call_reference_return_closure_for_reference_assignment(
+        &mut self,
+        closure: PhpClosure,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        context: &str,
+    ) -> CompileResult<ReferenceReturnBinding> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        context,
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        if closure.is_arrow() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    "arrow closure reference-return sources are not implemented",
+                ),
+            ));
+        }
+        let function = function.as_ref();
+        if !function.returns_by_reference {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(context, "closure does not return by reference"),
+            ));
+        }
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let (values, reference_bindings) = self
+            .evaluate_user_function_call_arguments_with_options(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
+        let prebound_locals = self.closure_prebound_locals(&closure);
+        self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
+            function,
+            values,
+            None,
+            None,
+            None,
+            reference_bindings,
+            caller_scope,
+            prebound_locals,
         )
     }
 
@@ -35816,6 +36130,29 @@ impl Interpreter {
         reference_bindings: Vec<ReferenceBinding>,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<ReferenceReturnBinding> {
+        self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
+            function,
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            reference_bindings,
+            caller_scope,
+            Vec::new(),
+        )
+    }
+
+    fn call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        reference_bindings: Vec<ReferenceBinding>,
+        caller_scope: &mut SymbolTable,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<ReferenceReturnBinding> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
             self.class_context.push(class_context);
@@ -35826,6 +36163,40 @@ impl Interpreter {
         let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
+        }
+        let mut captured_array_offset_binding_cells = Vec::new();
+        for local in prebound_locals {
+            match local {
+                PreboundLocal::Value { name, value } => local_scope.write_static(&name, value),
+                PreboundLocal::Cell { name, cell } => local_scope.bind_static_to_cell(&name, cell),
+                PreboundLocal::ArrayOffsets {
+                    name,
+                    aliases,
+                    mut source_scope,
+                } => {
+                    let cell = if let Some(cell) =
+                        source_scope.reference_cell_for_array_offset_alias_group(&aliases)
+                    {
+                        local_scope.bind_static_to_cell(&name, cell.clone());
+                        Some(cell)
+                    } else {
+                        let value = aliases
+                            .first()
+                            .and_then(|alias| source_scope.read_array_offset_alias(alias))
+                            .unwrap_or(Value::Null);
+                        local_scope.write_static(&name, value);
+                        local_scope.read_cell(&name)
+                    };
+                    if let Some(cell) = cell {
+                        captured_array_offset_binding_cells.push((
+                            name,
+                            aliases,
+                            cell,
+                            source_scope,
+                        ));
+                    }
+                }
+            }
         }
         let mut direct_parent_binding_cells = Vec::new();
         let mut array_offset_binding_cells = Vec::new();
@@ -36048,6 +36419,31 @@ impl Interpreter {
         } else {
             Ok(())
         };
+        let captured_writeback_result = if result.is_ok() {
+            let mut result = Ok(());
+            for (name, aliases, original_cell, source_scope) in
+                &mut captured_array_offset_binding_cells
+            {
+                let value = match local_scope.read_cell(name) {
+                    Some(local_cell) if local_cell.shares_reference_with(original_cell) => {
+                        local_scope.read_named(name).unwrap_or(Value::Null)
+                    }
+                    _ => original_cell.value_cloned(),
+                };
+                if let Err(error) = self.write_back_array_offset_aliases(
+                    aliases,
+                    value,
+                    source_scope,
+                    function.span,
+                ) {
+                    result = Err(error);
+                    break;
+                }
+            }
+            result
+        } else {
+            Ok(())
+        };
         let static_names = self.active_static_locals.pop().unwrap_or_default();
         let function_key = function.name.to_ascii_lowercase();
         for name in static_names {
@@ -36066,6 +36462,7 @@ impl Interpreter {
         }
 
         writeback_result?;
+        captured_writeback_result?;
         if let Some(aliases) = returned_array_offset {
             for alias in &aliases {
                 caller_scope.materialize_array_offset_alias(alias, function.span)?;
@@ -36115,8 +36512,31 @@ impl Interpreter {
         reference_bindings: Vec<ReferenceBinding>,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        self.call_reference_return_function_value_with_checked_values_and_locals(
+            function,
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            reference_bindings,
+            caller_scope,
+            Vec::new(),
+        )
+    }
+
+    fn call_reference_return_function_value_with_checked_values_and_locals(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        reference_bindings: Vec<ReferenceBinding>,
+        caller_scope: &mut SymbolTable,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<Value> {
         let binding = self
-            .call_reference_return_function_with_checked_values_for_reference_assignment(
+            .call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
                 function,
                 args,
                 this_object,
@@ -36124,6 +36544,7 @@ impl Interpreter {
                 called_class_context,
                 reference_bindings,
                 caller_scope,
+                prebound_locals,
             )?;
 
         match binding {
@@ -37355,6 +37776,28 @@ impl Interpreter {
                     ));
                 }
 
+                if let Some((object_name, property, indices)) =
+                    Self::collect_direct_object_property_array_index_path(target, index)
+                {
+                    if object_name != "this" {
+                        let keys = indices
+                            .iter()
+                            .map(|index| self.evaluate_array_key(index, scope))
+                            .collect::<CompileResult<Vec<_>>>()?;
+                        let root = self.context_object_property_alias_root(
+                            object_name,
+                            property,
+                            span,
+                            scope,
+                        )?;
+                        let alias = ArrayOffsetAlias { root, keys };
+                        scope.materialize_array_offset_alias(&alias, span)?;
+                        return Ok(ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(
+                            alias,
+                        ));
+                    }
+                }
+
                 if let Expr::Property {
                     target, property, ..
                 } = target.as_ref()
@@ -37396,7 +37839,7 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         callable_name(&function.name),
-                        "reference-return array-offset expressions are only implemented for direct variable roots and bounded $this->property roots in the current subset",
+                        "reference-return array-offset expressions are only implemented for direct variable roots and bounded direct object-property roots in the current subset",
                     ),
                 ))
             }
@@ -48802,6 +49245,7 @@ fn reflection_function_state_from_closure(
     closure_id: i64,
     params: &[FunctionParam],
     return_type: Option<&TypeDecl>,
+    returns_by_reference: bool,
     body: &[Stmt],
     file_name: Option<String>,
     span: Span,
@@ -48816,7 +49260,7 @@ fn reflection_function_state_from_closure(
         end_line: reflection_closure_end_line(body, span),
         doc_comment: None,
         return_type: return_type.map(|decl| decl.text.clone()),
-        returns_by_reference: false,
+        returns_by_reference,
         params: reflection_parameter_metadata_from_function_params(params),
     }
 }

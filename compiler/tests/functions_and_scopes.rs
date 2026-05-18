@@ -5608,6 +5608,54 @@ fn milestone1799_magic_get_return_dynamic_helper_property_root_fixture_matches_r
 }
 
 #[test]
+fn milestone1800_system_php_magic_get_return_reference_closure_call_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1800/magic_get_return_reference_closure_call_cow.php",
+        "../tests/fixtures/milestone1800/magic_get_return_reference_closure_call_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1800_magic_get_return_reference_closure_call_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1800/magic_get_return_reference_closure_call_cow.php",
+        "../tests/fixtures/milestone1800/magic_get_return_reference_closure_call_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1801_system_php_magic_get_return_call_user_func_closure_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1801/magic_get_return_call_user_func_closure_cow.php",
+        "../tests/fixtures/milestone1801/magic_get_return_call_user_func_closure_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1801_magic_get_return_call_user_func_closure_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1801/magic_get_return_call_user_func_closure_cow.php",
+        "../tests/fixtures/milestone1801/magic_get_return_call_user_func_closure_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1802_system_php_arrayaccess_return_call_user_func_array_closure_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1802/arrayaccess_return_call_user_func_array_closure_cow.php",
+        "../tests/fixtures/milestone1802/arrayaccess_return_call_user_func_array_closure_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1802_arrayaccess_return_call_user_func_array_closure_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1802/arrayaccess_return_call_user_func_array_closure_cow.php",
+        "../tests/fixtures/milestone1802/arrayaccess_return_call_user_func_array_closure_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php
