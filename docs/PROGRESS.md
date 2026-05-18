@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1768-C for loop reference-return control flow in the supported
+  magic/`ArrayAccess` method-body subset. By-reference
+  `ArrayAccess::offsetGet()` and `__get()` bodies can now return covered
+  lvalues from `while`, `do while`, and `for` bodies while preserving COW
+  reference-slot write-through for the selected bucket. Multi-level
+  `break`/`continue`, try/finally-style reference returns, unsupported PHP
+  syntax inside the body, broader dynamic backing-key variables, and native
+  reference lowering remain unsupported. Focused verification: raw system PHP
+  output matched the new `milestone1768` fixture; `cargo run -q -p phpc --
+  test --compare-php tests/fixtures/milestone1768` passed `1` fixture with
+  `1` system PHP comparison and `0` skips; focused `functions_and_scopes`
+  milestone tests passed.
+
 - Added Lane 1767-C for `switch` reference-return control flow in the
   supported magic/`ArrayAccess` method-body subset. By-reference
   `ArrayAccess::offsetGet()` and `__get()` bodies can now select covered

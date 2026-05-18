@@ -235,6 +235,9 @@
   `switch`/`case`/`default` bodies are covered for the same supported return
   lvalue shapes, including ordinary case fallthrough until a returned lvalue
   or `break` is reached.
+  `while`, `do while`, and `for` bodies are also covered when execution
+  reaches one of the supported return lvalue shapes; local `break` exits the
+  loop without a return, and local `continue` advances the loop.
   Public by-reference `__get()` uses the same assignment-capable return path
   for covered array-offset returns such as `return $this->store[$name];`.
   The bounded `__get()` and `offsetGet()` backing analyzers also accept one
@@ -245,9 +248,9 @@
   such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
   This does not add magic property roots without an array offset, magic
   `__get()` roots beyond the covered direct variable/property/backing-offset
-  returns; loop/try-style reference returns; arbitrary PHP syntax
-  outside the interpreter subset; arbitrary mixed nested `ArrayAccess` object
-  chains; broad same-container identity for
+  returns; multi-level loop control or try-style reference returns; arbitrary
+  PHP syntax outside the interpreter subset; arbitrary mixed nested
+  `ArrayAccess` object chains; broad same-container identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,
   arbitrary reference expressions,

@@ -4736,6 +4736,14 @@ enum ReferenceReturnLocalBinding {
     ObjectPropertyArrayOffset(ArrayOffsetAlias),
 }
 
+#[derive(Debug)]
+enum ReferenceReturnLoopBodyFlow {
+    Normal,
+    Break,
+    Continue,
+    Return(ReferenceReturnLocalBinding),
+}
+
 #[derive(Debug, Clone)]
 struct PublicObjectPropertyArrayCopySource {
     object: PhpObject,
@@ -36358,6 +36366,84 @@ impl Interpreter {
                 .execute_reference_return_assignment_statement_list(function, branch, scope);
         }
 
+        if let Stmt::While {
+            condition,
+            body,
+            span,
+        } = stmt
+        {
+            loop {
+                self.tick(*span)?;
+                if !self.evaluate(condition, scope)?.is_truthy() {
+                    return Ok(None);
+                }
+                match self.execute_reference_return_assignment_loop_body(function, body, scope)? {
+                    ReferenceReturnLoopBodyFlow::Normal | ReferenceReturnLoopBodyFlow::Continue => {
+                    }
+                    ReferenceReturnLoopBodyFlow::Break => return Ok(None),
+                    ReferenceReturnLoopBodyFlow::Return(binding) => return Ok(Some(binding)),
+                }
+            }
+        }
+
+        if let Stmt::DoWhile {
+            body,
+            condition,
+            span,
+        } = stmt
+        {
+            loop {
+                self.tick(*span)?;
+                match self.execute_reference_return_assignment_loop_body(function, body, scope)? {
+                    ReferenceReturnLoopBodyFlow::Normal | ReferenceReturnLoopBodyFlow::Continue => {
+                    }
+                    ReferenceReturnLoopBodyFlow::Break => return Ok(None),
+                    ReferenceReturnLoopBodyFlow::Return(binding) => return Ok(Some(binding)),
+                }
+
+                if !self.evaluate(condition, scope)?.is_truthy() {
+                    return Ok(None);
+                }
+            }
+        }
+
+        if let Stmt::For {
+            initializers,
+            conditions,
+            increments,
+            body,
+            span,
+        } = stmt
+        {
+            for initializer in initializers {
+                self.execute_for_action(initializer, scope)?;
+            }
+
+            loop {
+                self.tick(*span)?;
+                if !conditions.is_empty() {
+                    let mut keep_running = true;
+                    for condition in conditions {
+                        keep_running = self.evaluate(condition, scope)?.is_truthy();
+                    }
+                    if !keep_running {
+                        return Ok(None);
+                    }
+                }
+
+                match self.execute_reference_return_assignment_loop_body(function, body, scope)? {
+                    ReferenceReturnLoopBodyFlow::Normal | ReferenceReturnLoopBodyFlow::Continue => {
+                    }
+                    ReferenceReturnLoopBodyFlow::Break => return Ok(None),
+                    ReferenceReturnLoopBodyFlow::Return(binding) => return Ok(Some(binding)),
+                }
+
+                for increment in increments {
+                    self.execute_for_action(increment, scope)?;
+                }
+            }
+        }
+
         if let Stmt::Switch { value, cases, .. } = stmt {
             return self.execute_reference_return_assignment_switch(function, value, cases, scope);
         }
@@ -36388,6 +36474,55 @@ impl Interpreter {
             )),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
+    }
+
+    fn execute_reference_return_assignment_loop_body(
+        &mut self,
+        function: &FunctionDecl,
+        body: &[Stmt],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnLoopBodyFlow> {
+        for stmt in body {
+            match stmt {
+                Stmt::Break { depth, .. } if *depth <= 1 => {
+                    return Ok(ReferenceReturnLoopBodyFlow::Break);
+                }
+                Stmt::Break { depth, span } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            format!(
+                                "break {depth} inside loop reference-return bodies is not implemented"
+                            ),
+                        ),
+                    ));
+                }
+                Stmt::Continue { depth, .. } if *depth <= 1 => {
+                    return Ok(ReferenceReturnLoopBodyFlow::Continue);
+                }
+                Stmt::Continue { depth, span } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            format!(
+                                "continue {depth} inside loop reference-return bodies is not implemented"
+                            ),
+                        ),
+                    ));
+                }
+                _ => {
+                    if let Some(binding) =
+                        self.execute_reference_return_assignment_statement(function, stmt, scope)?
+                    {
+                        return Ok(ReferenceReturnLoopBodyFlow::Return(binding));
+                    }
+                }
+            }
+        }
+
+        Ok(ReferenceReturnLoopBodyFlow::Normal)
     }
 
     fn execute_reference_return_assignment_switch(

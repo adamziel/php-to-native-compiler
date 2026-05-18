@@ -19911,9 +19911,19 @@ handled.
   through `switch`/`case`/`default` bodies in public by-reference
   `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies, so
   case-selected backing buckets keep copied reference-slot write-through.
-  Keep loop/try-style reference returns, arbitrary unsupported PHP syntax,
-  broader dynamic backing keys, and native reference lowering named as
-  unsupported.
+  Keep loop/try-style reference returns outside the covered switch form,
+  arbitrary unsupported PHP syntax, broader dynamic backing keys, and native
+  reference lowering named as unsupported.
+
+## Lane 1768-C: Loop Reference-Return Bodies
+
+- [x] Runtime/interpreter/tests/docs lane: preserve reference-return lvalues
+  through `while`, `do while`, and `for` bodies in public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies, so
+  loop-selected backing buckets keep copied reference-slot write-through.
+  Keep multi-level loop control, try-style reference returns, arbitrary
+  unsupported PHP syntax, broader dynamic backing keys, and native reference
+  lowering named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

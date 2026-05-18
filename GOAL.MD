@@ -32,7 +32,12 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1767:
+The current in-progress implementation frontier is Lane 1768:
+
+- Lane 1768 preserves reference-return lvalues through `while`, `do while`,
+  and `for` bodies in public by-reference `ArrayAccess::offsetGet()` and
+  covered by-reference `__get()` bodies, so loop-selected backing buckets keep
+  COW reference-slot write-through.
 
 - Lane 1767 preserves reference-return lvalues through
   `switch`/`case`/`default` bodies in public by-reference

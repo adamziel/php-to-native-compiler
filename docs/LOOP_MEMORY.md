@@ -18,6 +18,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T00:12:00+02:00
+
+- Checkpoint before this task: `1ce40e0f runtime: support switch reference
+  returns`, pushed to `origin/master`.
+- Task attempted: Lane 1768-C, preserving reference-return lvalues through
+  `while`, `do while`, and `for` bodies in public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1768/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1768/loop_reference_returns_cow.php`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1768` passed `1`
+  fixture with `1` system PHP comparison and `0` skips; focused `cargo test
+  -q -p phpc --test functions_and_scopes milestone1768` passed; `cargo check
+  -q -p phpc` passed.
+- Remaining COW gaps: multi-level loop control and try/finally-style
+  reference returns inside magic/`ArrayAccess` bodies, unsupported PHP syntax
+  inside those bodies, non-literal/dynamic backing-key variables beyond
+  evaluated return expressions, arbitrary closure capture roots, broader
+  complex alias sinks and alias lifetime ordering, exact PHP stderr/fatal
+  text, binary/multibyte string offset behavior, and native reference/string
+  COW lowering.
+- Next concrete task: run formatting, diff, adjacent regression coverage, and
+  the full `tools/checkpoint.sh` bundle gate.
+
 ## Loop Event 2026-05-18T23:54:00+02:00
 
 - Checkpoint before this task: `4d3dca14 runtime: support branch reference
