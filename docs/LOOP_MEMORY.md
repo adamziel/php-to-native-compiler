@@ -26,6 +26,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T08:59:57+02:00
+
+- Checkpoint before this task: `dafec096 runtime: preserve non-direct holder
+  ArrayAccess append references`, pushed to `origin/master`.
+- Task attempted: Lane 1686-C dynamic non-direct holder visible
+  property-held `ArrayAccess` append `offsetSet(null, $value)`
+  stored-bucket reference-slot propagation for the focused copied-bucket COW
+  shape.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1686/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, the lane
+  review note, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc`
+  passed; `cargo fmt --check` and `git diff --check` passed; the dynamic
+  non-direct holder property-held `ArrayAccess` append
+  `functions_and_scopes` filter passed `4` tests; and `cargo run -q -p phpc
+  -- test --compare-php tests/fixtures/milestone1686` passed `2` fixtures
+  with `2` system PHP comparisons and `0` skips. Adjacent guards for
+  assignment expressions, syntax boundaries, direct object-property
+  `ArrayAccess` append dispatch, dynamic property reads/writes, missing
+  dynamic properties on declared classes, native object/ArrayAccess lowering
+  boundaries, reference-assignment ArrayAccess target boundaries, adjacent
+  `milestone1684`, and adjacent `milestone1685` passed.
+- Semantic gap reduced: `$holders["box"]->{$name}[] = $array` now evaluates
+  the holder once, evaluates the dynamic property name once, writes through
+  the visible dynamic property-held `ArrayAccess` object, and preserves nested
+  reference slots for both the exact empty-string-key and branchy append-key
+  `offsetSet(null, $value)` bridges.
+- Remaining semantic gaps: dynamic non-direct whole-property setup
+  assignment, magic-property append stores, method-return or factory holder
+  roots, non-empty nested append paths, dynamic property names that trigger
+  magic fallback or inaccessible properties, side-effecting or broader
+  `offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess` chains, full
+  references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering remain unsupported.
+- Next concrete task: run broader verification and checkpoint this lane; then
+  continue the COW receiver ladder with magic-property append stores or the
+  next largest remaining COW gap instead of switching areas.
+
 ## Loop Event 2026-05-18T08:39:17+02:00
 
 - Checkpoint before this task: `2c496440 runtime: preserve dynamic

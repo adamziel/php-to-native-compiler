@@ -12099,8 +12099,7 @@ impl Interpreter {
                     _ => (self.evaluate(expr, scope)?, Vec::new(), None),
                 };
                 let target_is_alias = scope.is_array_offset_alias_name(name);
-                let replaces_copied_array_provenance =
-                    scope.has_copied_array_provenance_path(name);
+                let replaces_copied_array_provenance = scope.has_copied_array_provenance_path(name);
                 if replaces_copied_array_provenance {
                     scope.detach_copied_array_provenance_for_root(name);
                 }
@@ -12218,13 +12217,14 @@ impl Interpreter {
                                             scope,
                                         )
                                     {
-                                        scope.mirror_public_object_property_aliases_from_array_copy(
-                                            name,
-                                            &source.object,
-                                            &source.property,
-                                            &source.keys,
-                                            source.include_exact_path,
-                                        );
+                                        scope
+                                            .mirror_public_object_property_aliases_from_array_copy(
+                                                name,
+                                                &source.object,
+                                                &source.property,
+                                                &source.keys,
+                                                source.include_exact_path,
+                                            );
                                     } else if let Some(keys) =
                                         Self::literal_array_key_path(&indices)
                                     {
@@ -12938,12 +12938,57 @@ impl Interpreter {
                     ),
                 ))
             }
-            AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. } => {
+            AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+                holder,
+                property,
+                indices,
+                span,
+            } => {
+                if indices.is_empty() {
+                    let holder_value = self.evaluate(holder, scope)?;
+                    let holder_object = match holder_value {
+                        Value::Object(object) => object,
+                        other => {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::invalid_property_access(format!(
+                                    "cannot read dynamic property on {}",
+                                    other.type_name()
+                                )),
+                            ));
+                        }
+                    };
+                    let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                    let temp_name = self.next_foreach_temporary_array_name();
+                    scope.write_static(&temp_name, Value::Object(holder_object));
+                    let (value, array_literal_references) = match expr {
+                        Expr::Array { items, span } => {
+                            let (value, references) =
+                                self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                            (value, references)
+                        }
+                        _ => (self.evaluate(expr, scope)?, Vec::new()),
+                    };
+                    if matches!(value, Value::Array(_))
+                        && self
+                            .write_object_property_array_access_append_with_reference_propagation(
+                                &temp_name,
+                                &property,
+                                value.clone(),
+                                expr,
+                                array_literal_references,
+                                *span,
+                                scope,
+                            )?
+                    {
+                        return Ok(value);
+                    }
+                }
                 Err(runtime_error(
                     *span,
                     RuntimeError::unsupported_call(
                         "assignment",
-                        "non-direct object-property array assignment targets are only implemented for reference assignment in the current subset",
+                        "non-direct dynamic object-property array assignment targets are only implemented for visible ArrayAccess append reference propagation in the current subset",
                     ),
                 ))
             }
@@ -12967,16 +13012,15 @@ impl Interpreter {
                 };
                 if keys.is_empty()
                     && matches!(value, Value::Array(_))
-                    && self
-                        .write_object_property_array_access_append_with_reference_propagation(
-                            object,
-                            property,
-                            value.clone(),
-                            expr,
-                            array_literal_references.clone(),
-                            *span,
-                            scope,
-                        )?
+                    && self.write_object_property_array_access_append_with_reference_propagation(
+                        object,
+                        property,
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
                 {
                     return Ok(value);
                 }
@@ -13033,16 +13077,15 @@ impl Interpreter {
                 };
                 if keys.is_empty()
                     && matches!(value, Value::Array(_))
-                    && self
-                        .write_object_property_array_access_append_with_reference_propagation(
-                            object,
-                            &property,
-                            value.clone(),
-                            expr,
-                            array_literal_references,
-                            *span,
-                            scope,
-                        )?
+                    && self.write_object_property_array_access_append_with_reference_propagation(
+                        object,
+                        &property,
+                        value.clone(),
+                        expr,
+                        array_literal_references,
+                        *span,
+                        scope,
+                    )?
                 {
                     return Ok(value);
                 }

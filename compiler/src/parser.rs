@@ -3164,7 +3164,6 @@ impl Parser {
                 indices.push(self.parse_expression()?);
                 self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
             }
-            let before_object_operator = self.current;
             if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
                 let holder = Self::array_index_expr_from_parts(&name, span, &indices);
                 let operator_span = self.previous().span;
@@ -3172,9 +3171,12 @@ impl Parser {
                     let property = self.parse_dynamic_property_name_expr(operator_span)?;
                     let property_span = property.span();
                     if !self.check(|kind| matches!(kind, TokenKind::LBracket)) {
-                        self.current = before_object_operator;
+                        return Err(self.error_at(
+                            property_span,
+                            unsupported_assignment_expression_target_message(),
+                        ));
                     } else {
-                        let indices = self.parse_required_object_property_array_indices()?;
+                        let indices = self.parse_object_property_array_indices_or_append()?;
                         return Ok(AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
                             holder,
                             property,
@@ -3282,34 +3284,6 @@ impl Parser {
             };
         }
         expr
-    }
-
-    fn parse_required_object_property_array_indices(&mut self) -> CompileResult<Vec<Expr>> {
-        if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-            return Err(self.error_at(
-                self.peek().span,
-                unsupported_assignment_expression_target_message(),
-            ));
-        }
-        if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
-            return Err(self.error_at(
-                self.peek().span,
-                unsupported_assignment_expression_target_message(),
-            ));
-        }
-        let mut indices = vec![self.parse_expression()?];
-        self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
-        while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-            if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
-                return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_assignment_expression_target_message(),
-                ));
-            }
-            indices.push(self.parse_expression()?);
-            self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
-        }
-        Ok(indices)
     }
 
     fn parse_object_property_array_indices_or_append(&mut self) -> CompileResult<Vec<Expr>> {
@@ -3583,6 +3557,18 @@ impl Parser {
                 {
                     return Ok(AssignTarget::ObjectPropertyArrayAppend {
                         object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+                if let Some((holder, property, indices, _)) =
+                    Self::non_direct_dynamic_object_property_array_append_target_from_expr(
+                        target.as_ref(),
+                    )
+                {
+                    return Ok(AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+                        holder,
                         property,
                         indices,
                         span,
