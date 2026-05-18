@@ -247,6 +247,10 @@
   a supported lvalue returned from `finally` overrides an earlier try return.
   Public by-reference `__get()` uses the same assignment-capable return path
   for covered array-offset returns such as `return $this->store[$name];`.
+  Covered return expressions may also use a dynamically selected `$this`
+  backing property before the array-offset path, such as
+  `$property = "items"; return $this->{$property}[$offset]["bucket"];`,
+  with the property name evaluated in the executing method body.
   The bounded `__get()` and `offsetGet()` backing analyzers also accept one
   local variable bound by reference to an indexed `$this->property[...]`
   backing bucket, followed by returning that local or a literal child below
@@ -256,8 +260,8 @@
   This does not add magic property roots without an array offset, magic
   `__get()` roots beyond the covered direct variable/property/backing-offset
   returns; exception unwinding or catch execution for thrown values inside
-  reference-return bodies; arbitrary PHP syntax outside the interpreter
-  subset; arbitrary mixed nested
+  reference-return bodies; arbitrary dynamic/non-literal backing-key analysis;
+  arbitrary PHP syntax outside the interpreter subset; arbitrary mixed nested
   `ArrayAccess` object chains; broad same-container identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,

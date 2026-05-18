@@ -36694,6 +36694,25 @@ impl Interpreter {
                     ));
                 }
 
+                if let Some((object_name, property, indices)) =
+                    Self::collect_direct_dynamic_object_property_array_index_path(target, index)
+                {
+                    if object_name == "this" {
+                        let property =
+                            self.evaluate_dynamic_property_name(property, span, scope)?;
+                        let keys = indices
+                            .iter()
+                            .map(|index| self.evaluate_array_key(index, scope))
+                            .collect::<CompileResult<Vec<_>>>()?;
+                        let root = self.this_object_property_alias_root(&property, scope, span)?;
+                        let alias = ArrayOffsetAlias { root, keys };
+                        scope.materialize_array_offset_alias(&alias, span)?;
+                        return Ok(ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(
+                            alias,
+                        ));
+                    }
+                }
+
                 Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(

@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T01:27:00+02:00
+
+- Checkpoint before this task: `6808a95d runtime: support multilevel
+  reference return loops`, pushed to `origin/master`.
+- Task attempted: Lane 1771-C, allowing covered reference-return expressions
+  in public by-reference `ArrayAccess::offsetGet()` and covered by-reference
+  `__get()` bodies to bind through dynamically selected
+  `$this->{$property}[...]` backing-property roots.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1771/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1771/dynamic_this_backing_reference_returns_cow.php`;
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1771` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent `milestone1769` through `milestone1771`
+  fixture comparisons passed; focused `cargo test -q -p phpc --test
+  functions_and_scopes milestone177` passed; `cargo check -q -p phpc`,
+  `cargo fmt --check`, and `git diff --check` passed.
+- Remaining COW gaps: arbitrary dynamic/non-literal backing-key analysis,
+  exception unwinding/catch execution for thrown values inside
+  magic/`ArrayAccess` reference-return bodies, unsupported PHP syntax inside
+  those bodies, arbitrary closure capture roots, broader complex alias sinks
+  and alias lifetime ordering, exact PHP stderr/fatal text, binary/multibyte
+  string offset behavior, and native reference/string COW lowering.
+- Next concrete task: run the full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-19T01:04:00+02:00
 
 - Checkpoint before this task: `66840ddc runtime: support try finally

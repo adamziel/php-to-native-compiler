@@ -19948,6 +19948,18 @@ handled.
   PHP syntax, broader dynamic backing keys, and native reference lowering
   named as unsupported.
 
+## Lane 1771-C: Dynamic `$this` Backing Reference Returns
+
+- [x] Runtime/interpreter/tests/docs lane: allow covered reference-return
+  expressions in public by-reference `ArrayAccess::offsetGet()` and covered
+  by-reference `__get()` bodies to bind through dynamically selected
+  `$this->{$property}[...]` backing-property roots. The selected property name
+  is evaluated in the executing method body before materializing the returned
+  bucket, preserving copied COW reference-slot write-through. Keep arbitrary
+  dynamic/non-literal backing-key analysis, exception unwinding/catch
+  execution for thrown values, arbitrary unsupported PHP syntax, broader magic
+  roots, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1771-C for dynamically selected `$this->{$property}[...]`
+  backing-property roots in the supported magic/`ArrayAccess` reference-return
+  method-body subset. Public by-reference `ArrayAccess::offsetGet()` and
+  covered by-reference `__get()` bodies can now evaluate a dynamic `$this`
+  property name in the executed method body and bind a covered array-offset
+  return through that selected backing property while preserving copied
+  reference-slot write-through. Arbitrary dynamic/non-literal backing-key
+  analysis, exception unwinding/catch execution for thrown values, unsupported
+  PHP syntax, broader magic roots, and native reference lowering remain
+  unsupported. Focused verification: raw system PHP output matched the new
+  `milestone1771` fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1771` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; focused `functions_and_scopes` milestone tests
+  passed.
+
 - Added Lane 1770-C for multi-level loop control in the supported
   magic/`ArrayAccess` reference-return method-body subset. By-reference
   `ArrayAccess::offsetGet()` and `__get()` bodies now propagate `break N` and

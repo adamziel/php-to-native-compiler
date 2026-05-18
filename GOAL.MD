@@ -32,7 +32,14 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1770:
+The current in-progress implementation frontier is Lane 1771:
+
+- Lane 1771 allows covered reference-return expressions in public
+  by-reference `ArrayAccess::offsetGet()` and `__get()` bodies to bind through
+  dynamically selected `$this->{$property}[...]` backing-property roots. The
+  selected property name is evaluated in the method body before the bucket is
+  materialized, preserving copied COW reference-slot write-through for the
+  selected backing property.
 
 - Lane 1770 preserves reference-return lvalues after multi-level
   `break`/`continue` control in nested loops inside public by-reference
