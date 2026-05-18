@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1710:
+The current in-progress implementation frontier is Lane 1711:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -121,6 +121,11 @@ The current in-progress implementation frontier is Lane 1710:
   literal-key family used by the magic `__get()` work, such as
   `return $this->items["bucket"][$offset];` and
   `return $this->items[$offset]["bucket"];`.
+- Lane 1711 applies the same literal-key family to the exact
+  `ArrayAccess::offsetSet()` backing-property write bridge, so assignments
+  like `$bag["leaf"] = $array` preserve copied reference-slot metadata when
+  `offsetSet($offset, $value)` writes to
+  `$this->items["bucket"][$offset]` or `$this->items[$offset]["bucket"]`.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

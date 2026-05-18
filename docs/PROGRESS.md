@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Lane 1711-C focused literal-bucket support for the exact public
+  `ArrayAccess::offsetSet()` backing-property write bridge. Direct
+  `$bag["leaf"] = $array` now preserves copied nested reference-slot metadata
+  when `offsetSet($offset, $value)` writes to
+  `$this->items["bucket"][$offset] = $value` or
+  `$this->items[$offset]["bucket"] = $value`, so later direct writes through
+  those backing buckets resynchronize the original referenced variables. This
+  does not add dynamic or repeated `offsetSet()` parameter keys, non-literal
+  `offsetSet()` path keys, branchy literal-bucket append forms, arbitrary
+  side-effecting or broader `offsetSet()` bodies, broader mixed nested
+  `ArrayAccess` chains, broader `__get()` return expressions, by-value
+  terminal/plain-array mutation, scalar parent overwrite/error parity, full
+  references/COW, or native reference lowering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1711` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1711`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1710-C focused literal-bucket support for the exact public
   `ArrayAccess::offsetGet()` backing-property reference-source bridge.
   `offsetGet($offset)` may now return

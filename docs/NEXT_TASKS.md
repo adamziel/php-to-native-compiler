@@ -19181,6 +19181,24 @@ handled.
   scalar parent overwrite/error parity, full references/COW, and native
   reference lowering named as unsupported.
 
+## Lane 1711-C: ArrayAccess Literal Bucket `offsetSet()` Store
+
+- [x] Runtime/tests/docs lane: extend the exact public
+  `ArrayAccess::offsetSet()` backing-property write bridge beyond
+  `$this->items[$offset] = $value;` to the bounded single-offset-parameter
+  literal-key family, including
+  `$this->items["bucket"][$offset] = $value;` and
+  `$this->items[$offset]["bucket"] = $value;`. The covered direct
+  `$bag["leaf"] = $array` shape now stores copied nested reference-slot
+  metadata under the literal prefix or suffix backing bucket, so later direct
+  backing-property writes resynchronize the original referenced variables.
+  Keep dynamic or repeated `offsetSet()` parameter keys, non-literal
+  `offsetSet()` path keys, branchy literal-bucket append forms,
+  side-effecting or broader `offsetSet()` bodies, broader mixed nested
+  `ArrayAccess` chains, broader `__get()` return expressions, by-value
+  terminal/plain-array mutation, scalar parent overwrite/error parity, full
+  references/COW, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

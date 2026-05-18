@@ -880,9 +880,12 @@ mirrored nested aliases from the stored argument slot and writes those nested
 reference-slot updates back through the original copied-bucket alias group.
 When a direct `ArrayAccess` object stores an array literal or copied array into
 a keyed bucket through the exact public `offsetSet($offset, $value) {
-$this->property[$offset] = $value; }` bridge, the interpreter binds the array
-literal's reference slots or mirrors the copied array's alias metadata onto
-that backing bucket. Later exact by-value or by-reference
+$this->property[$offset] = $value; }` bridge, including the bounded literal
+int/string prefix or suffix variants
+`$this->property["bucket"][$offset] = $value;` and
+`$this->property[$offset]["bucket"] = $value;`, the interpreter binds the
+array literal's reference slots or mirrors the copied array's alias metadata
+onto that backing bucket. Later exact by-value or by-reference
 `offsetGet($offset) { return $this->property[$offset]; }` bucket copies can
 therefore preserve those nested reference slots, including private/protected
 backing properties reached through the method's declaring-class context.
@@ -1065,8 +1068,9 @@ assignment,
 dynamic property names that trigger unsupported fallback or inaccessible
 properties,
 arbitrary nested reference slots copied from ArrayAccess storage outside the
-exact `offsetSet()`/`offsetGet()` bridge, and real reference containers remain
-future work.
+exact `offsetSet()`/`offsetGet()` bridge, dynamic or repeated
+`offsetSet()`/`offsetGet()` parameter keys, non-literal bridge path keys, and
+real reference containers remain future work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or

@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T14:39:00+02:00
+
+- Checkpoint before this task: `bfd6bfce runtime: support ArrayAccess literal
+  bucket sources`, pushed to `origin/master`.
+- Task attempted: Lane 1711-C focused literal prefix/suffix bucket support
+  for exact public `ArrayAccess::offsetSet()` backing-property write bridges.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1711/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: temporary PHP/`phpc run` probes
+  for both `$this->items["bucket"][$offset] = $value` and
+  `$this->items[$offset]["bucket"] = $value` passed and matched system PHP;
+  `cargo check -q -p phpc` passed after the implementation edit.
+- Semantic gap reduced: the exact ArrayAccess write bridge can now recognize
+  one literal-key prefix or suffix family around the single `offsetSet()`
+  parameter, so direct ArrayAccess stores keep copied nested reference-slot
+  metadata under the intended backing bucket.
+- Remaining semantic gaps: dynamic or repeated `offsetSet()` parameter keys,
+  non-literal `offsetSet()` path keys, branchy literal-bucket append forms,
+  side-effecting or broader `offsetSet()` bodies, broader mixed nested
+  `ArrayAccess` chains, broader `__get()` return expressions, by-value
+  terminal/plain-array mutation, scalar parent overwrite/error parity, full
+  references/COW, and native reference lowering remain unsupported.
+- Next concrete task: run PHP syntax checks, focused milestone1711 tests,
+  milestone1711 fixture comparison, `cargo check`, `cargo fmt --check`,
+  `git diff --check`, adjacent lane checks, then checkpoint with
+  `tools/checkpoint.sh "runtime: support ArrayAccess literal bucket stores"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T14:14:00+02:00
 
 - Checkpoint before this task: `ac7f7019 runtime: pin nondirect magic backing

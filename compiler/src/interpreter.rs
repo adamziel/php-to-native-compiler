@@ -11933,6 +11933,32 @@ impl Interpreter {
         target_keys
     }
 
+    fn array_access_offset_parameter_keys(
+        indices: &[Expr],
+        offset_param: &str,
+        selected_key: ArrayKey,
+    ) -> Option<Vec<ArrayKey>> {
+        let mut keys = Vec::new();
+        let mut saw_offset_param = false;
+        for index in indices {
+            if matches!(index, Expr::Variable(name, _) if name == offset_param) {
+                if saw_offset_param {
+                    return None;
+                }
+                saw_offset_param = true;
+                keys.push(selected_key.clone());
+                continue;
+            }
+
+            keys.push(Self::literal_reference_return_array_key(index)?);
+        }
+        if saw_offset_param {
+            Some(keys)
+        } else {
+            None
+        }
+    }
+
     fn array_access_offset_set_alias_for_object(
         &mut self,
         object: PhpObject,
@@ -11974,16 +12000,18 @@ impl Interpreter {
             else {
                 return Ok(None);
             };
-            if target_object != "this" || indices.len() != 1 {
-                return Ok(None);
-            }
-            if !matches!(&indices[0], Expr::Variable(name, _) if name == &offset_param.name) {
+            if target_object != "this" {
                 return Ok(None);
             }
             if !matches!(expr, Expr::Variable(name, _) if name == &value_param.name) {
                 return Ok(None);
             }
-            (property, vec![key])
+            let Some(keys) =
+                Self::array_access_offset_parameter_keys(indices, &offset_param.name, key)
+            else {
+                return Ok(None);
+            };
+            (property, keys)
         } else if let [Stmt::Assign {
             target:
                 AssignTarget::ObjectPropertyArrayIndex {
@@ -11996,16 +12024,20 @@ impl Interpreter {
             ..
         }] = function.body.as_slice()
         {
-            if target_object != "this" || indices.len() != 1 {
-                return Ok(None);
-            }
-            if !matches!(&indices[0], Expr::Variable(name, _) if name == &offset_param.name) {
+            if target_object != "this" {
                 return Ok(None);
             }
             if !matches!(expr, Expr::Variable(name, _) if name == &value_param.name) {
                 return Ok(None);
             }
-            (property, vec![Self::array_access_append_reference_key()])
+            let Some(keys) = Self::array_access_offset_parameter_keys(
+                indices,
+                &offset_param.name,
+                Self::array_access_append_reference_key(),
+            ) else {
+                return Ok(None);
+            };
+            (property, keys)
         } else {
             if !allow_append_branch {
                 return Ok(None);

@@ -847,8 +847,12 @@
   assignment also preserves nested reference slots when the value is an array
   literal or copied array containing references, the receiver is a direct
   `ArrayAccess` object, public `offsetSet($offset, $value)` has the exact
-  `$this->property[$offset] = $value;` body, and later bucket copies use the
-  exact public `return $this->property[$offset];` `offsetGet()` bridge. Direct
+  `$this->property[$offset] = $value;` body or the same single-offset-parameter
+  body with literal int/string prefix or suffix buckets, such as
+  `$this->property["bucket"][$offset] = $value;` and
+  `$this->property[$offset]["bucket"] = $value;`, and later bucket copies use
+  the exact public `return $this->property[$offset];` `offsetGet()` bridge.
+  Direct
   append `$bag[] = $array` preserves the same nested reference slots for two
   focused public `offsetSet(null, $value)` shapes: the exact
   `$this->property[$offset] = $value;` bridge, which stores under PHP's
@@ -1021,7 +1025,9 @@
   stored-argument-array
   `call_user_func_array()` propagation beyond direct positional copied-bucket
   variables, non-public backing properties outside the exact method-context
-  bridges, side-effecting or broader `offsetSet()`/`offsetGet()` bodies,
+  bridges, dynamic or repeated `offsetSet()` parameter keys, non-literal
+  `offsetSet()` path keys, side-effecting or broader
+  `offsetSet()`/`offsetGet()` bodies,
   built-in interface enforcement/signature validation, typed method
   invocation, broad references/copy-on-write, exact warning/visibility
   diagnostics, broader alias destruction/shutdown/error ordering, and native
