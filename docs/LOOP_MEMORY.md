@@ -18,6 +18,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T21:32:12+02:00
+
+- Checkpoint before this task: `376a39c8 runtime: accept local offsetSet
+  property aliases`, pushed to `origin/master`.
+- Task attempted: Lane 1758-C, tightening scalar-parent parity for covered
+  magic plain-array COW paths: by-value `__get()` false parents no-op with the
+  existing indirect-modification notice, adjacent scalar returns fail as scalar
+  offset writes, and by-reference `__get()` append roots convert false parents
+  to arrays while preserving copied typed-reference slots.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1758/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1758/by_value_magic_get_false_noop.php`; `cargo
+  run -q -p phpc -- test --compare-php tests/fixtures/milestone1758` passed
+  `1` fixture with `1` system PHP comparison and `0` skips; focused
+  `magic_get_false` object-model regressions passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies,
+  non-literal/dynamic backing key variables, arbitrary closure capture roots,
+  broader scalar parent matrices, broader complex alias sinks, broader alias
+  lifetime/detach ordering, exact PHP deprecation/fatal text, string COW
+  identity, and native reference lowering.
+- Next concrete task: run formatting, diff, check, adjacent regression, and
+  checkpoint gates, then checkpoint with
+  `tools/checkpoint.sh "runtime: align magic false-parent COW"` if the full
+  gate passes.
+
 ## Loop Event 2026-05-18T21:20:11+02:00
 
 - Checkpoint before this task: `93f227bb runtime: accept local offsetSet

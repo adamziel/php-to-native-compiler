@@ -16364,7 +16364,7 @@ impl Interpreter {
                     )
                     .map_err(|error| runtime_error(span, error))?
                 {
-                    Value::Array(_) | Value::Null => {
+                    Value::Array(_) | Value::Null | Value::Bool(false) => {
                         let stored_value =
                             Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
                         let alias = scope.append_object_property_array_offset_reference_alias(
@@ -16462,7 +16462,7 @@ impl Interpreter {
                     )
                 }
                 Value::Object(_) => Ok(false),
-                Value::Array(_) | Value::Null => {
+                Value::Array(_) | Value::Null | Value::Bool(false) => {
                     let temp_name = self.next_foreach_temporary_array_name();
                     scope.bind_static_to_cell(&temp_name, cell);
                     let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
@@ -16521,7 +16521,7 @@ impl Interpreter {
                         scope,
                     )
                 }
-                Some(Value::Array(_)) | Some(Value::Null) => {
+                Some(Value::Array(_)) | Some(Value::Null) | Some(Value::Bool(false)) => {
                     self.emit_notice(
                         "__get()",
                         format!(
@@ -16530,6 +16530,25 @@ impl Interpreter {
                         span,
                     )?;
                     Ok(true)
+                }
+                Some(
+                    value
+                    @ (Value::Bool(true) | Value::Int(_) | Value::Float(_) | Value::String(_)),
+                ) => {
+                    self.emit_notice(
+                        "__get()",
+                        format!(
+                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
+                        ),
+                        span,
+                    )?;
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "cannot write offset on {}",
+                            value.type_name()
+                        )),
+                    ))
                 }
                 Some(_) | None => Ok(false),
             }
@@ -16735,7 +16754,7 @@ impl Interpreter {
                 {
                     Some(object)
                 }
-                Some(Value::Array(_)) | Some(Value::Null) => {
+                Some(Value::Array(_)) | Some(Value::Null) | Some(Value::Bool(false)) => {
                     self.emit_notice(
                         "__get()",
                         format!(
@@ -16744,6 +16763,25 @@ impl Interpreter {
                         span,
                     )?;
                     return Ok(true);
+                }
+                Some(
+                    value
+                    @ (Value::Bool(true) | Value::Int(_) | Value::Float(_) | Value::String(_)),
+                ) => {
+                    self.emit_notice(
+                        "__get()",
+                        format!(
+                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
+                        ),
+                        span,
+                    )?;
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "cannot write offset on {}",
+                            value.type_name()
+                        )),
+                    ));
                 }
                 _ => None,
             }

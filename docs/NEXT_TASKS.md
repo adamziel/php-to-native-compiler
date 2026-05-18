@@ -19809,6 +19809,18 @@ handled.
   alias sinks, exact PHP fatal text, string COW identity, and native reference
   lowering named as unsupported.
 
+## Lane 1758-C: Magic False-Parent COW Parity
+
+- [x] Runtime/interpreter/tests/docs lane: tighten covered magic plain-array
+  scalar-parent behavior. By-value `__get()` returning `false` now follows
+  PHP's indirect-modification no-op behavior for nested keyed and append
+  writes; adjacent by-value scalar parents fail as scalar offset writes rather
+  than undefined properties; by-reference `__get()` append roots backed by a
+  `$this` property or direct returned cell convert `false` parents to arrays
+  and preserve copied typed-reference slots. Keep arbitrary magic method
+  bodies, exact PHP deprecation/fatal text, broader scalar parent matrices,
+  string COW identity, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

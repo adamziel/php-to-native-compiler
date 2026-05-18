@@ -4520,6 +4520,13 @@
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's
   indirect-modification/no-op behavior for the covered nested append shape.
+  For covered by-value magic plain-array keyed and append writes, a `false`
+  value returned from `__get()` also follows that indirect-modification
+  no-op path; adjacent `true`, numeric, and string scalar returns now fail as
+  scalar offset writes instead of falling through to undefined-property
+  errors. By-reference magic `__get()` append roots backed by a `$this`
+  property or direct returned cell convert `false` parents to arrays and keep
+  copied typed-reference slots attached to the materialized append bucket.
   Property-held `ArrayAccess` reference targets can bind through exact public
   by-reference `offsetGet($offset) { return $this->property[$offset]; }`
   backing buckets for keyed targets and parent appends, including direct,

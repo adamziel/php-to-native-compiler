@@ -7452,6 +7452,112 @@ $keyed->items["outer"]["leaf"]["copy"] = array("bad");
 }
 
 #[test]
+fn by_value_magic_get_false_nested_writes_are_noops() {
+    let execution = run_source(
+        r#"<?php
+error_reporting(E_NOTICE);
+function notice($errno, $message, $file, $line) {
+    echo "notice:", $message, "\n";
+    return true;
+}
+set_error_handler("notice", E_NOTICE);
+
+class Box {
+    public function __get($name) {
+        return false;
+    }
+}
+
+$box = new Box();
+$box->missing["leaf"] = "keyed";
+$box->missing["outer"]["leaf"] = "nested";
+$box->missing[] = "append";
+$box->missing["outer"][] = "nested-append";
+
+echo property_exists($box, "missing") ? "mutated" : "no-op";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "notice:Indirect modification of overloaded property Box::$missing has no effect\n",
+            "notice:Indirect modification of overloaded property Box::$missing has no effect\n",
+            "notice:Indirect modification of overloaded property Box::$missing has no effect\n",
+            "notice:Indirect modification of overloaded property Box::$missing has no effect\n",
+            "no-op"
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let true_parent = runtime_error(
+        r#"<?php
+class Box {
+    public function __get($name) {
+        return true;
+    }
+}
+$box = new Box();
+$box->missing["leaf"] = "keyed";
+"#,
+    );
+    assert_eq!(
+        true_parent.message,
+        "invalid array access: cannot write offset on bool"
+    );
+
+    let string_parent = runtime_error(
+        r#"<?php
+class Box {
+    public function __get($name) {
+        return "abc";
+    }
+}
+$box = new Box();
+$box->missing["outer"][] = "append";
+"#,
+    );
+    assert_eq!(
+        string_parent.message,
+        "invalid array access: cannot write offset on string"
+    );
+}
+
+#[test]
+fn by_reference_magic_get_false_append_materializes_array() {
+    let execution = run_source(
+        r#"<?php
+error_reporting(0);
+
+class Box {
+    public int $id = 1;
+}
+
+class StoreBox {
+    public $store = false;
+
+    public function &__get($name) {
+        return $this->store;
+    }
+}
+
+$box = new Box();
+$alias =& $box->id;
+$store = new StoreBox();
+$store->missing[] = array("copy" => &$alias);
+$store->store[0]["copy"] = "2";
+
+echo gettype($box->id), ":", $box->id, "|", gettype($store->store[0]["copy"]), ":", $store->store[0]["copy"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "integer:2|integer:2");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn arrayaccess_append_suffix_syntax_routes_to_backing_buckets() {
     let execution = run_source(
         r#"<?php

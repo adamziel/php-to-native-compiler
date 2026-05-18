@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1757:
+The current in-progress implementation frontier is Lane 1758:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -386,6 +386,12 @@ The current in-progress implementation frontier is Lane 1757:
 - Lane 1757 extends `offsetSet()` backing analysis to local variables bound by
   reference to `$this->property` or indexed `$this->property[...]` buckets,
   covering exact keyed stores plus branchy null-append/keyed bodies.
+- Lane 1758 tightens scalar-parent parity for by-value and by-reference magic
+  plain-array paths: by-value `__get()` returning `false` now follows PHP's
+  indirect-modification no-op behavior for covered nested keyed and append
+  writes, adjacent scalar returns fail as scalar offset writes instead of
+  undefined properties, and by-reference `__get()` append roots convert
+  `false` parents to arrays while preserving copied typed-reference slots.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

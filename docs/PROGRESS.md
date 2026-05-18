@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 1758-C for scalar-parent parity in the covered magic plain-array
+  COW paths. By-value `__get()` returning `false` now emits the existing
+  indirect-modification notice/no-op behavior for direct nested keyed, deeper
+  nested keyed, direct append, and nested append writes instead of falling
+  through to an undefined-property error. Adjacent by-value scalar parents
+  (`true`, numbers, strings) now fail as scalar offset writes after the same
+  notice. By-reference `__get()` append roots backed by a `$this` property or
+  direct returned cell now convert `false` parents to arrays and preserve
+  copied typed-reference slots. Arbitrary magic method bodies, exact PHP
+  deprecation/fatal text, broader scalar parent matrices, string COW identity,
+  and native reference lowering remain unsupported. Focused verification: raw
+  system PHP output matched the new `milestone1758` fixture; `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone1758` passed `1`
+  fixture with `1` system PHP comparison and `0` skips; focused
+  `magic_get_false` object-model regressions passed.
+
 - Added Lane 1757-C for another bounded `ArrayAccess::offsetSet()` backing
   analyzer shape: local variables bound by reference to `$this->property` or
   indexed `$this->property[...]` buckets may be used as the assignment root in
