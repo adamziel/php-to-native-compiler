@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1687/magic_property_arrayaccess_append_offsetset_bucket_reference_slot_cow.php
+stdout:
+via-magic-append|via-magic-label|via-magic-append|via-magic-label|1|plain|plain
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T09:14:44+02:00
+
+- Checkpoint before this task: `36e65ba7 runtime: preserve dynamic
+  non-direct holder ArrayAccess append references`, pushed to
+  `origin/master`.
+- Task attempted: Lane 1687-C direct magic-property `ArrayAccess` append
+  `offsetSet(null, $value)` stored-bucket reference-slot propagation for the
+  focused copied-bucket COW shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1687/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, the lane
+  review note, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc`
+  passed; `cargo fmt --check` and `git diff --check` passed; the
+  magic-property `ArrayAccess` append `functions_and_scopes` filter passed
+  `8` tests; and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1687` passed `4` fixtures with `4` system PHP
+  comparisons and `0` skips. Adjacent reference-source regressions for magic
+  `ArrayAccess` notice/no-op behavior and native lowering boundary filters
+  passed.
+- Semantic gap reduced: `$box->missing[] = $array` and
+  `$box->{$name}[] = $array` now call visible public `__get($name)` once,
+  use the returned `ArrayAccess` object, and preserve nested reference slots
+  for both the exact empty-string-key and branchy append-key
+  `offsetSet(null, $value)` bridges.
+- Remaining semantic gaps: non-direct magic-property append stores,
+  plain-array magic append mutation, non-empty nested append paths,
+  side-effecting or broader `__get()`/`offsetSet()`/`offsetGet()` bodies,
+  mixed nested `ArrayAccess` chains, full references/COW, native reference
+  lowering, and exact alias destruction/destructor ordering remain
+  unsupported.
+- Next concrete task: run broader verification and checkpoint this lane; then
+  continue the COW receiver ladder with non-direct magic-property append
+  stores or the next largest remaining COW gap.
+
 ## Loop Event 2026-05-18T08:59:57+02:00
 
 - Checkpoint before this task: `dafec096 runtime: preserve non-direct holder

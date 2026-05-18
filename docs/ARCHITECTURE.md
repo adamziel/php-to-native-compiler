@@ -911,6 +911,16 @@ the holder expression is evaluated once, the dynamic property-name expression
 is evaluated once, and the selected visible property reuses the property-held
 append bridge. This does not add dynamic non-direct whole-property setup
 assignment; that remains outside the COW append slice.
+Direct magic-property append stores such as `$box->missing[] = $array` and
+`$box->{$name}[] = $array` are a separate store path from magic append
+reference sources. For the covered store shape, the runtime calls visible
+public `__get($name)` once, requires the returned value to be an `ArrayAccess`
+object, then dispatches `offsetSet(null, $value)` through the same hidden
+`ArrayAccess` object-root propagation helper used by visible property-held
+receivers. This path preserves stored-bucket nested reference metadata for the
+exact empty-key and branchy append-key bridges, while the existing
+`$alias =& $box->missing[]` reference-source path remains an
+`offsetGet(null)` notice/no-op boundary.
 By-value helper parameters that import copied-bucket provenance detach those
 mirrored static-array provenance paths when the parameter variable is replaced:
 writes through the copied bucket before replacement still write back to the
@@ -922,10 +932,11 @@ copied bucket loop, and mutating two distinct nested reference slots in one
 copied bucket match the focused PHP probes. Broader alias lifetime after
 replacing non-direct containing properties, side-effecting or broader
 `offsetGet()` bodies, mixed nested
-ArrayAccess chains beyond the documented one-level bridge, magic-property
-append `offsetSet(null)` stored-bucket receivers, dynamic non-direct
-whole-property setup assignment, dynamic property names that trigger magic
-fallback or inaccessible properties,
+ArrayAccess chains beyond the documented one-level bridge, non-direct
+magic-property append `offsetSet(null)` stored-bucket receivers, plain-array
+magic append mutation, dynamic non-direct whole-property setup assignment,
+dynamic property names that trigger unsupported fallback or inaccessible
+properties,
 arbitrary nested reference slots copied from ArrayAccess storage outside the
 exact `offsetSet()`/`offsetGet()` bridge, and real reference containers remain
 future work.

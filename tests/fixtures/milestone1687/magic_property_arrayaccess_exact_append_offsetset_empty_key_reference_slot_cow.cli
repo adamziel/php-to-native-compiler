@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1687/magic_property_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php
+stdout:
+via-magic-empty-key|via-magic-empty-label|via-magic-empty-key|via-magic-empty-label|1|plain|plain
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

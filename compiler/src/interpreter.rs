@@ -13024,6 +13024,20 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
+                if keys.is_empty()
+                    && matches!(value, Value::Array(_))
+                    && self.write_magic_get_array_access_append_with_reference_propagation(
+                        object,
+                        property,
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
                 if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, property, *span, scope,
@@ -13078,6 +13092,20 @@ impl Interpreter {
                 if keys.is_empty()
                     && matches!(value, Value::Array(_))
                     && self.write_object_property_array_access_append_with_reference_propagation(
+                        object,
+                        &property,
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
+                if keys.is_empty()
+                    && matches!(value, Value::Array(_))
+                    && self.write_magic_get_array_access_append_with_reference_propagation(
                         object,
                         &property,
                         value.clone(),
@@ -13334,6 +13362,71 @@ impl Interpreter {
             return Ok(false);
         }
 
+        self.write_array_access_object_append_with_reference_propagation(
+            array_access_object,
+            value,
+            expr,
+            array_literal_references,
+            span,
+            scope,
+        )
+    }
+
+    fn write_magic_get_array_access_append_with_reference_propagation(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some(Value::Object(holder)) = scope.read_named(object_name) else {
+            return Ok(false);
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let array_access_object = match holder.read_property_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(_) => return Ok(false),
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                match self.call_magic_get_property_value(holder, property, span)? {
+                    Some(Value::Object(object)) => object,
+                    Some(_) | None => return Ok(false),
+                }
+            }
+            Err(error) => return Err(runtime_error(span, error)),
+        };
+
+        if !self
+            .classes
+            .implements_interface(array_access_object.class_id(), "ArrayAccess")
+        {
+            return Ok(false);
+        }
+
+        self.write_array_access_object_append_with_reference_propagation(
+            array_access_object,
+            value,
+            expr,
+            array_literal_references,
+            span,
+            scope,
+        )
+    }
+
+    fn write_array_access_object_append_with_reference_propagation(
+        &mut self,
+        array_access_object: PhpObject,
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
         let hidden_name = self.hidden_array_access_reference_object_name(&array_access_object);
         scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
 

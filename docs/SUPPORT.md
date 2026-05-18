@@ -860,7 +860,13 @@
   context. The non-direct holder append path evaluates the holder once; the
   dynamic-property append path also evaluates the property-name expression
   once. The narrow setup assignment `$holders["box"]->bag = $value` is
-  supported for visible named properties. Direct
+  supported for visible named properties. Direct magic-property append stores
+  such as `$box->missing[] = $array` and `$box->{$name}[] = $array` are also
+  supported for this focused stored-bucket COW shape when visible public
+  `__get($name)` returns an `ArrayAccess` object; `__get()` is called once
+  and `offsetSet(null, $value)` receives the append value. This store path is
+  separate from magic `ArrayAccess` append reference sources, which keep their
+  existing `offsetGet(null)` notice/no-op behavior. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
   and writing the result back through `offsetSet($key, $value)`. Direct
@@ -869,11 +875,13 @@
   current integer and float values by reading through `offsetGet($key)` and
   applying the update to PHP's current by-value temporary result without
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
-  `offsetSet(null, $value)` storage through magic-property receivers,
-  dynamic non-direct whole-property setup assignment, method-return or factory
-  holder roots for dynamic non-direct append stores, non-empty nested append
-  paths below property-held `ArrayAccess`, dynamic property names that trigger
-  magic fallback or inaccessible properties, append compound assignment
+  `offsetSet(null, $value)` storage through non-direct magic-property
+  receivers, plain-array magic append mutation, dynamic non-direct
+  whole-property setup assignment, method-return or factory holder roots for
+  dynamic non-direct append stores, non-empty nested append paths below
+  property-held or magic-property `ArrayAccess`, magic `__get()` bodies that
+  return unsupported expressions, dynamic property names that trigger
+  unsupported fallback or inaccessible properties, append compound assignment
   through object-property
   `ArrayAccess`, ArrayAccess iteration, broader
   stored-argument-array
