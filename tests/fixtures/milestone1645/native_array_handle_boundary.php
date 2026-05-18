@@ -1,0 +1,3 @@
+<?php
+$native = [];
+echo $native;

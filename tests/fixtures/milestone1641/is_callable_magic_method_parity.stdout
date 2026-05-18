@@ -1,0 +1,6 @@
+object-missing
+object-callable
+register:init,10
+static-missing
+static-callable
+resolve:save_post,20

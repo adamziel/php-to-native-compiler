@@ -1519,10 +1519,15 @@
   the second value is a string method name; this shape check does not resolve
   classes or methods. Normal array callable resolution checks the same
   two-element shape against current declared method metadata: object receivers
-  are true for public declared methods, and class-string receivers are true for
-  public static declared methods. Array callable dynamic invocation,
-  callable-name output, object `__invoke` callables, private/protected
-  caller-context method callability, first-class callable syntax,
+  are true for public declared methods, or for missing/inaccessible methods
+  when the object class declares or inherits public non-static `__call`.
+  Class-string receivers are true for public static declared methods, or for
+  missing/inaccessible methods when the class declares or inherits public
+  static `__callStatic`. This `is_callable()` magic-method introspection does
+  not broaden the currently executable array-callback dispatch subset. Array
+  callable dynamic invocation, callable-name output, object `__invoke`
+  callables, private/protected caller-context method callability,
+  `__callStatic` parity for declared public non-static methods, first-class callable syntax,
   namespace/autoload behavior, exact native `TypeError` behavior, native
   lowering, and the environment-specific legacy `is_real` alias are not
   implemented.
@@ -2276,6 +2281,10 @@
   `DROP KEY ...`, `DROP INDEX ...`, or `DROP PRIMARY KEY` entries mutate that
   recorded table. Column drops also remove recorded indexes that referenced the
   dropped column, and column changes rename matching recorded index parts.
+  Repeating `CREATE TABLE` for an existing recorded table applies a bounded
+  dbDelta-style diff by upserting declared columns and indexes by name,
+  preserving omitted recorded columns/indexes, and updating the recorded table
+  collation from the new declaration.
   Later `SHOW TABLES LIKE
   '<pattern>'`, `SHOW TABLE STATUS LIKE '<pattern>'`,
   `SHOW TABLE STATUS WHERE Name = '<table>'`, `DESCRIBE`/`DESC <table>`,
@@ -2355,7 +2364,7 @@
   lists, joined metadata queries beyond the exact documented
   `COLUMNS`/`STATISTICS` left-join projection, direct literal joined metadata
   queries, joined metadata predicates beyond one table-name placeholder,
-  dbDelta diff generation, real DDL execution, real transactional DDL
+  full dbDelta diff generation, real DDL execution, real transactional DDL
   semantics beyond the bounded in-memory snapshot/restore path, host database
   inspection, or native database lowering. For an
   exact current synthetic WordPress option write,
@@ -2536,7 +2545,10 @@
   `ASC`/`DESC` index-part ordering metadata, plus exact
   `ALTER TABLE <table> ADD ...`, `CHANGE COLUMN ...`, `MODIFY COLUMN ...`,
   `DROP COLUMN ...`, `DROP KEY ...`, `DROP INDEX ...`, and
-  `DROP PRIMARY KEY` mutations, then exposes that recorded shape through the
+  `DROP PRIMARY KEY` mutations; repeated `CREATE TABLE` definitions for an
+  existing recorded table upsert declared columns/indexes by name while
+  preserving omitted recorded columns/indexes and updating the recorded
+  collation, then exposes that recorded shape through the
   same `SHOW TABLES LIKE`, `DESCRIBE`/`DESC`,
   `SHOW [FULL] COLUMNS`, `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS` including
   bounded `WHERE Key_name = ...` and `WHERE Key_name LIKE ...` filters, and
@@ -2569,7 +2581,7 @@
   metadata beyond the bounded `ASC`/`DESC` part ordering slice, exact MySQL
   `SHOW CREATE TABLE`
   formatting for every column attribute, exact MySQL `SHOW TABLE STATUS`
-  counters/timestamps/options, dbDelta diff generation, real transactional DDL
+  counters/timestamps/options, full dbDelta diff generation, real transactional DDL
   behavior beyond bounded in-memory schema snapshots, joined metadata query
   shapes beyond the exact documented prepared `COLUMNS`/`STATISTICS`
   left-join projection, direct literal joined metadata queries, or real index behavior,
@@ -2904,6 +2916,11 @@
   non-negative max length truncates the returned UTF-8 string. Missing local
   file reads and negative offsets before the start of the current payload emit
   a bounded PHP-style `E_WARNING`, return `false`, and let execution continue.
+  When `ini_set("open_basedir", $path)` stores a non-empty request-local
+  allow-list, local paths and local `file://` URLs are checked against those
+  bounded directories before reading. Denied reads emit a bounded PHP-style
+  `E_WARNING`, return `false`, and do not populate bounded realpath-cache
+  entries.
   When a bounded string user-function handler or public object/static array
   callable handler is registered through `set_error_handler()` for
   `E_WARNING`, the warning is delivered to that handler with the current
@@ -2918,8 +2935,9 @@
   wrappers, context option effects, wrapper-specific context
   behavior, exact byte offsets through non-UTF-8 data, negative offsets before
   the start for stream/resource types outside the current local/`php://input`
-  payload paths, real request-body state outside the explicit CLI seed, `open_basedir`,
-  stat-cache behavior, partial-output behavior, and native lowering remain
+  payload paths, real request-body state outside the explicit CLI seed,
+  `open_basedir` policy beyond this bounded local read check, stat-cache
+  behavior, partial-output behavior, and native lowering remain
   unsupported. Direct native
   `file_get_contents(...)` calls stop at a dedicated filesystem-read codegen
   boundary before argument lowering or backend selection, while native
@@ -2935,7 +2953,10 @@
   with optional `+`, `b`, or `t` flags. Local file `fopen()` accepts the same
   bounded include-path-then-source-relative lookup flag as
   `file_get_contents()` and accepts, but does not apply, a bounded
-  stream-context resource. Local open failures,
+  stream-context resource. When `ini_set("open_basedir", $path)` stores a
+  non-empty request-local allow-list, local paths and local `file://` URLs are
+  checked against those bounded directories before opening; denied opens emit
+  a bounded PHP-style `E_WARNING` and return `false`. Local open failures,
   including missing read targets, emit a bounded PHP-style `E_WARNING`, return
   `false`, and continue; that warning can route through the same current
   bounded `set_error_handler()` stack described for `file_get_contents()`.
@@ -4691,9 +4712,9 @@
   selected pointer to the same runtime-helper path. This does not yet cover
   arbitrary dynamic string-pointer expression output, binary PHP string values
   beyond valid UTF-8 byte payloads, diagnostics handles for failed stdout
-  writes, linked native execution, array/object/resource/reference storage
-  beyond null-only opaque ABI handle shapes, or the C fallback assembly
-  helper-call path.
+  writes, linked native execution, production array lowering beyond the empty
+  array handle ABI probe, object/resource/reference storage beyond null-only
+  opaque ABI handle shapes, or the C fallback assembly helper-call path.
   The compiler-side native runtime helper probe now renders `usize`-shaped
   helper signatures from an explicit pointer-width target, with committed
   32-bit and current host-width coverage. The probe includes scalar echo
@@ -4701,12 +4722,14 @@
   helper surface, and a bounded valid-UTF-8 string-handle-to-runtime-value
   bridge plus the value stdout helper. Null string handles and non-UTF-8
   payloads return null value handles until diagnostics handles and binary PHP
-  string values exist. The probe also declares null-only opaque array, object,
-  resource, and reference handle shapes with exported null constructors and
-  predicates. This is still a bounded ABI slice: linked native execution, broad
-  production string helper lowering, string interning, array/object/resource/
-  reference storage or copy-on-write semantics, stack frames, diagnostics, and
-  WordPress host state remain unsupported in native lowering.
+  string values exist. The probe also declares the first nullable array-handle
+  storage slice with null handles, allocated empty handles, length reads, and
+  handle free. Object, resource, and reference handle shapes remain null-only
+  with exported null constructors and predicates. This is still a bounded ABI
+  slice: linked native execution, broad production string helper lowering,
+  string interning, production array lowering beyond empty-handle probes,
+  object/resource/reference storage or copy-on-write semantics, stack frames,
+  diagnostics, and WordPress host state remain unsupported in native lowering.
   Statement-form reference assignment is an explicit native codegen boundary:
   `phpc compile --emit-ir` and `--emit-asm` reject direct variable,
   array-offset, object-property, function-call, method-call, static-call,
@@ -5620,7 +5643,15 @@
   values are stored on the
   closure value; by-reference direct-variable captures store the source
   variable cell and closure invocation prebinds that cell into the closure
-  local scope. Ordinary untyped closure values can be invoked directly with
+  local scope. By-reference captures also preserve the current bounded
+  alias-backed direct variable shape when the captured name is already bound to
+  covered direct array-offset or visible object-property array-offset metadata,
+  such as `$payload =& $_REQUEST["payload"]; function () use (&$payload) { ... }`
+  and `$item =& $object->items["slot"]; function () use (&$item) { ... }`.
+  Writes inside direct `$closure(...)`, closure-valued `call_user_func()`,
+  positional `call_user_func_array()`, and `ReflectionFunction::invoke()`
+  invocations are copied back to those captured slots after supported closure
+  completion. Ordinary untyped closure values can be invoked directly with
   `$closure(...)` and through `call_user_func()` or positional-array
   `call_user_func_array()` over the current by-value argument subset.
   `call_user_func($closure, ...)` also matches PHP's reached
@@ -5647,8 +5678,9 @@
   elements in the same direct-variable and direct array/property slot subset
   used by user-function callbacks. Invocation uses the captured by-value
   snapshot stored when the closure was created. Arrow implicit capture binding
-  and execution, `$this` binding, by-reference capture of array-offset,
-  object-property, magic-property, or `ArrayAccess` alias roots, closure
+  and execution, `$this` binding, by-reference capture of magic-property,
+  `ArrayAccess`, non-direct holder, dynamic property, or arbitrary alias roots,
+  closure
   reference returns, array-callable `call_user_func()` forms beyond public
   object/static method callbacks over by-value arguments, variadic
   reference parameters through `call_user_func()`, typed parameter/return
@@ -5806,8 +5838,13 @@
   name; this shape check does not resolve classes or methods. Normal array
   callable resolution checks the same two-element shape against current
   declared method metadata: object receivers are true for public declared
-  methods, and class-string receivers are true for public static declared
-  methods. Scalar non-string values return false. Native lowering folds only direct calls whose value
+  methods, or for missing/inaccessible methods when the object class declares
+  or inherits public non-static `__call`; class-string receivers are true for
+  public static declared methods, or for missing/inaccessible methods when the
+  class declares or inherits public static `__callStatic`. This
+  `is_callable()` magic-method introspection does not broaden the currently
+  executable array-callback dispatch subset. Scalar non-string values return
+  false. Native lowering folds only direct calls whose value
   argument is an already-lowerable string or non-string scalar/null value and
   whose optional syntax-only flag is an already-lowerable boolean; true
   syntax-only flags return true for string values, non-string scalar/null
@@ -7303,14 +7340,16 @@
   failures from `phpc_native_value_from_string_with_diagnostic`. The
   deterministic native runtime probe now includes one branch on a nullable
   value-handle return and clones/reports/frees the diagnostic message on the
-  failure path. Production `--emit-ir` uses the same nullable-value branch and
-  stderr diagnostic-reporting helper for the documented direct and selected
-  string output slices. Linked native execution, binary PHP string value
-  handles, diagnostics for stdout writes or arbitrary runtime failures,
+  failure path. It also includes the first nullable array-handle storage probe:
+  a real allocated empty array handle can be distinguished from null, queried
+  for length, and freed. Production `--emit-ir` uses the same nullable-value
+  branch and stderr diagnostic-reporting helper for the documented direct and
+  selected string output slices. Linked native execution, binary PHP string
+  value handles, diagnostics for stdout writes or arbitrary runtime failures,
   request-state storage/population beyond the null-only ABI handle shape,
-  array/object/resource/reference storage beyond null-only ABI shapes,
-  WordPress host-state ABI, and C fallback assembly helper calls remain
-  unsupported.
+  generated array reads/writes or non-empty array storage, object/resource/
+  reference storage beyond null-only ABI shapes, WordPress host-state ABI, and
+  C fallback assembly helper calls remain unsupported.
 - Array gaps: array spread elements, reference array keys,
   expression-position `list(...)`, and keyed, nested, reference, or
   non-variable destructuring targets are rejected with stable parse diagnostics.
@@ -7354,9 +7393,10 @@
   Native array lowering is not implemented; `phpc compile --emit-ir` and
   `--emit-asm` reject array literals, offset reads/writes, `foreach`, array
   offset `unset`, array offset `isset`, and array builtins before claiming any
-  generated array
-  storage, key normalization, callback dispatch, references, copy-on-write, or
-  exact native error behavior.
+  generated array storage. The native runtime ABI can allocate and free an
+  empty array handle and report its length, but generated PHP code does not yet
+  use that handle for array literals, key normalization, callback dispatch,
+  references, copy-on-write, or exact native error behavior.
 
 ## Test Support
 

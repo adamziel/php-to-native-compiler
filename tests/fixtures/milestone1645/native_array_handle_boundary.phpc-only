@@ -1,0 +1,1 @@
+native array handle ABI fixture proves production native array lowering still rejects; system PHP array-to-string warning output is not the target

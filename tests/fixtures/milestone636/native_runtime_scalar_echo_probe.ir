@@ -34,7 +34,10 @@ declare %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc
 declare i64 @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)
 declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)
 declare %phpc.NativeArrayHandle @phpc_native_array_null()
+declare %phpc.NativeArrayHandle @phpc_native_array_empty()
 declare i1 @phpc_native_array_is_null(%phpc.NativeArrayHandle)
+declare i64 @phpc_native_array_len(%phpc.NativeArrayHandle)
+declare void @phpc_native_array_free(%phpc.NativeArrayHandle)
 declare %phpc.NativeObjectHandle @phpc_native_object_null()
 declare i1 @phpc_native_object_is_null(%phpc.NativeObjectHandle)
 declare %phpc.NativeResourceHandle @phpc_native_resource_null()
@@ -159,6 +162,17 @@ entry:
   %right = and i1 %resource_is_null, %reference_is_null
   %all = and i1 %left, %right
   ret i1 %all
+}
+
+define i64 @phpc_probe_array_handle_empty_len() {
+entry:
+  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()
+  %array_is_null = call i1 @phpc_native_array_is_null(%phpc.NativeArrayHandle %array)
+  %len = call i64 @phpc_native_array_len(%phpc.NativeArrayHandle %array)
+  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)
+  %nullable_len = zext i1 %array_is_null to i64
+  %result = add i64 %len, %nullable_len
+  ret i64 %result
 }
 
 define i1 @phpc_probe_request_state_handle_null_shape() {

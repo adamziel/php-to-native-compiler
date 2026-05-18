@@ -851,11 +851,20 @@ and placeholder utf8mb4 collation metadata. Exact `SHOW INDEX FROM
 wp_options`, `SHOW INDEXES FROM wp_options`, and `SHOW KEYS FROM wp_options`
 probes, including backticked table spelling, return fixed MySQL-8-shaped index
 rows for the primary `option_id` index and unique `option_name` index. They do
-not read a host database, execute CREATE/ALTER TABLE, model dbDelta diffs,
-mutate schema, inspect real indexes/collations beyond those fixed markers, or
-model warning/error fidelity.
+not read a host database, execute arbitrary CREATE/ALTER TABLE, mutate host
+schema, inspect real indexes/collations beyond those fixed markers, or model
+warning/error fidelity.
 For dynamic schema metadata recorded through the bounded `CREATE TABLE` path,
-direct literal `SHOW TABLE STATUS WHERE Name IN ('table', ...)` probes,
+repeating `CREATE TABLE` for an existing recorded table applies a bounded
+dbDelta-style diff: declared columns and indexes are upserted by name,
+omitted existing columns and indexes are preserved, and table collation is
+updated from the new declaration. This does not add full dbDelta SQL
+normalization, column rename inference, drop detection from omitted
+definitions, index prefix comparison breadth beyond the existing parser,
+engine/row-format options, transactional DDL, host database inspection, or
+warning/error fidelity.
+The same recorded schema also supports direct literal
+`SHOW TABLE STATUS WHERE Name IN ('table', ...)` probes,
 including ``WHERE `Name` IN (...)`` spelling, accept non-empty
 single-quoted identifier-shaped table-name lists through `mysqli_query()`,
 returning deterministic table-status rows in table-name order and skipping

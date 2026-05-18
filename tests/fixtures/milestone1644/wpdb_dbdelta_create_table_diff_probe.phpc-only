@@ -1,0 +1,1 @@
+Uses phpc's deterministic in-memory MySQLi schema-state island for a bounded dbDelta-style repeated CREATE TABLE diff; system PHP needs a real database connection and host table state.

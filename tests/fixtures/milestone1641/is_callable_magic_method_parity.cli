@@ -1,0 +1,10 @@
+phpc run is_callable_magic_method_parity.php
+stdout:
+object-missing
+object-callable
+register:init,10
+static-missing
+static-callable
+resolve:save_post,20
+stderr:
+exit: 0

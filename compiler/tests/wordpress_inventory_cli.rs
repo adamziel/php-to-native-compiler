@@ -782,6 +782,84 @@ fn wordpress_inventory_wpdb_joined_schema_bootstrap_smoke_matches_fixture() {
 }
 
 #[test]
+fn wordpress_inventory_wpdb_dbdelta_schema_bootstrap_smoke_matches_fixture() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    let wp_root = std::env::temp_dir().join(format!(
+        "phpc-wordpress-wpdb-dbdelta-schema-{}-{unique}",
+        std::process::id()
+    ));
+    let wp_includes = wp_root.join("wp-includes");
+
+    fs::create_dir_all(&wp_includes).expect("create synthetic wp-includes");
+    fs::write(
+        wp_root.join("wp-blog-header.php"),
+        "<?php\nrequire_once __DIR__ . '/wp-load.php';\n",
+    )
+    .expect("write front controller");
+    fs::write(
+        wp_root.join("wp-load.php"),
+        "<?php\nif (!defined('ABSPATH')) { define('ABSPATH', __DIR__ . '/'); }\nrequire_once ABSPATH . 'wp-config.php';\n",
+    )
+    .expect("write wp-load.php");
+    fs::write(
+        wp_root.join("wp-config.php"),
+        "<?php\n$table_prefix = 'wp_';\nrequire_once ABSPATH . 'wp-settings.php';\n",
+    )
+    .expect("write wp-config.php");
+    fs::write(
+        wp_root.join("wp-settings.php"),
+        "<?php\ndefine('WPINC', 'wp-includes');\nrequire ABSPATH . WPINC . '/load.php';\nrequire ABSPATH . WPINC . '/class-wpdb.php';\nrequire ABSPATH . WPINC . '/schema.php';\n$wpdb = new wpdb();\necho wp_schema_probe();\n",
+    )
+    .expect("write wp-settings.php");
+    fs::write(wp_includes.join("load.php"), "<?php\n").expect("write load.php");
+    fs::write(
+        wp_includes.join("class-wpdb.php"),
+        "<?php\nclass wpdb {\n    public $dbh;\n\n    public function __construct() {\n        $this->dbh = mysqli_init();\n        mysqli_real_connect($this->dbh, 'localhost', 'user', 'pass', null, 3306, null, 0);\n    }\n\n    public function query($query) {\n        return mysqli_query($this->dbh, $query);\n    }\n\n    public function get_results($query) {\n        $result = mysqli_query($this->dbh, $query);\n        $rows = array();\n        while ($row = mysqli_fetch_assoc($result)) {\n            $rows[] = $row;\n        }\n        return $rows;\n    }\n}\n",
+    )
+    .expect("write class-wpdb.php");
+    fs::write(
+        wp_includes.join("schema.php"),
+        "<?php\nfunction wp_schema_probe() {\n    global $wpdb;\n    $wpdb->query(\"CREATE TABLE wp_dbdelta_probe (id bigint(20) unsigned NOT NULL auto_increment, slug varchar(191) NOT NULL default '', legacy varchar(20) NOT NULL default 'keep', PRIMARY KEY  (id), KEY slug (slug)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci\");\n    $wpdb->query(\"CREATE TABLE wp_dbdelta_probe (id bigint(20) unsigned NOT NULL auto_increment, slug varchar(200) NOT NULL default '', title text NULL, status varchar(20) NOT NULL default 'publish', PRIMARY KEY  (id), KEY slug (slug(64), title(32)), KEY status (status)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci\");\n    $columns = $wpdb->get_results('DESCRIBE wp_dbdelta_probe');\n    $indexes = $wpdb->get_results('SHOW INDEX FROM wp_dbdelta_probe');\n    return 'dbdelta=' . count($columns) . ':' . $columns[2]['Field'] . ':' . $indexes[1]['Key_name'] . ':' . $indexes[1]['Sub_part'] . '|status=' . $indexes[3]['Non_unique'];\n}\n",
+    )
+    .expect("write schema.php");
+    fs::write(
+        wp_includes.join("version.php"),
+        "<?php\n$wp_version = '6.9.4';\n",
+    )
+    .expect("write version.php");
+
+    let output = Command::new("sh")
+        .arg(repo_root.join("tools/wordpress-inventory.sh"))
+        .arg("--normalize")
+        .arg(&wp_root)
+        .env("PHPC_BIN", env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(repo_root)
+        .output()
+        .expect("run wordpress inventory");
+
+    let _ = fs::remove_dir_all(&wp_root);
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+
+    let expected = include_str!(
+        "../../tests/fixtures/compat/wordpress/wpdb_dbdelta_schema_bootstrap.expected"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+}
+
+#[test]
 fn wordpress_inventory_plugin_theme_loading_smoke_matches_fixture() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()

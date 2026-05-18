@@ -145,6 +145,11 @@ params on those contexts. Context resources may be passed to the current
 non-negative length reads over those UTF-8 payloads. Local absolute `file://`
 URLs with an empty host or `localhost` are also accepted by the current
 include/require resolver after the same bounded UTF-8 percent-decoding.
+When `ini_set("open_basedir", $path)` configures a non-empty
+request-local allow-list, local `file_get_contents()` and `fopen()` paths,
+including local `file://` URLs, are checked against those bounded directories
+before opening; denied reads emit a bounded `E_WARNING`, return `false`, and
+do not populate the realpath cache.
 Missing local files and negative offsets before the start of those payloads
 emit bounded PHP-style `E_WARNING` events, return `false`, and continue; the
 current slice can route those warnings through the top registered string or
@@ -179,6 +184,7 @@ option merging, broader wrapper metadata,
 binary byte fidelity, directory entry ordering fidelity, multipart upload
 parsing, runtime temporary upload creation, host upload validation,
 permissions/locking, realpath-cache ancestor entries and broader
+`open_basedir` policy beyond local `file_get_contents()`/`fopen()`,
 stat-cache/realpath-cache state beyond those local read paths, closure shutdown
 callback execution,
 invokable-object shutdown callbacks, exact warning text and error-handler
@@ -365,7 +371,9 @@ incorrect native code.
   add/drop index probes with bounded column default/nullability/
   auto-increment metadata, inline column key metadata, `ASC`/`DESC`
   index-part ordering metadata, and bounded `FULLTEXT`/`SPATIAL` index type
-  metadata, and later `DESCRIBE`/`SHOW COLUMNS`/
+  metadata, plus a bounded dbDelta-style repeated `CREATE TABLE` diff that
+  upserts declared columns/indexes on an existing recorded table while
+  preserving omitted recorded columns/indexes, and later `DESCRIBE`/`SHOW COLUMNS`/
   `SHOW INDEX`/`SHOW CREATE TABLE`/`SHOW TABLE STATUS` inspection, including
   bounded schema metadata `LIKE` wildcards and single-character `ESCAPE`
   clauses, literal `SHOW TABLE STATUS WHERE Name IN (...)` table-name lists,
@@ -380,7 +388,7 @@ incorrect native code.
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
   index inspection, expression indexes, fulltext parser clauses, index
   opclass/parser metadata, exact
-  table-status counters or timestamps, dbDelta diffing, real transactional DDL
+  table-status counters or timestamps, full dbDelta diffing, real transactional DDL
   beyond bounded in-memory schema snapshots, persistent object cache, full
   `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
@@ -886,19 +894,21 @@ The current native path is focused on straight-line scalar lowering:
 The native runtime ABI has an early helper surface for scalar echo conversion,
 owned byte buffers, opaque copied PHP string handles, and a bounded valid-UTF-8
 string-handle-to-runtime-value bridge with diagnostic handles for that
-conversion's null-handle and non-UTF-8 failure cases. It also pins null-only
-opaque array, object, resource, and reference handle shapes for future native
-storage work, plus a deterministic probe branch for string-to-value diagnostic
-message ownership and reporting. Normal generated LLVM now uses the
+conversion's null-handle and non-UTF-8 failure cases. It also exposes the first
+nullable native array handle slice: null array handles, allocated empty array
+handles, length reads, and handle free. Object, resource, and reference handles
+remain null-only opaque shapes for future native storage work. The deterministic
+probe includes string-to-value diagnostic message ownership/reporting and the
+empty-array handle length/free path. Normal generated LLVM now uses the
 string/value ABI for a narrow output path: statement-form `echo` and `print` of
 a direct compile-time string value or documented selected string pointer call
 runtime string/value helpers, branch on nullable value-handle conversion
 failure, report that helper diagnostic to stderr, and otherwise call
 `phpc_native_value_echo_stdout`. Dynamic string-pointer expression output beyond
 the documented selected-string slices, linked native execution, binary PHP
-string value handles, array/object/resource/reference storage semantics,
-general diagnostics, and broad production runtime string-helper lowering are
-not implemented.
+string value handles, production array lowering beyond this empty-handle ABI
+probe, object/resource/reference storage semantics, general diagnostics, and
+broad production runtime string-helper lowering are not implemented.
 
 Native lowering rejects arrays, array destructuring, objects, `instanceof`
 relationship checks, static class members, ArrayAccess object-offset dispatch,

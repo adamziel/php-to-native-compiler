@@ -18136,50 +18136,128 @@ handled.
 
 ## Milestone 1641: Object Lifecycle WordPress Blocker
 
-- [ ] Object/interface lane: close one bounded executable slice from
-  constructor/destructor fidelity, autoload/class-alias lifecycle,
-  `__call`/`__callStatic`, `method_exists`/`is_callable` object parity,
-  interface implementation dispatch from reflected interface methods,
-  non-static trait method execution, or exact reflection exception behavior.
-  Keep unsupported edges and native object/reflection lowering explicit.
+- [x] Object/interface lane: closed a bounded magic-method callability slice.
+  `is_callable()` now reports public array callables as true when an object
+  class declares or inherits public non-static `__call`, or when a class-string
+  receiver declares or inherits public static `__callStatic`, while
+  `method_exists()` still reports only declared methods. This does not broaden
+  executable dynamic array-callback dispatch, object `__invoke`, autoload,
+  private/protected caller-context callability, exact `TypeError` behavior, or
+  native object/reflection lowering.
 
 ## Milestone 1642: References/COW WordPress Blocker
 
-- [ ] Reference/COW lane: close one bounded executable slice from real PHP
-  reference cells, array/object copy-on-write, alias destruction ordering,
-  by-reference function/method returns, by-reference captures, foreach-by-ref,
-  array-offset/property reference roots, superglobal reference lifetime breadth,
-  or callable/reference parity. Keep native reference lowering explicit.
+- [x] Reference/COW lane: closed a bounded closure by-reference capture slice.
+  Closures that capture a direct variable already backed by the current
+  covered array-offset or visible object-property array-offset alias metadata
+  now preserve that binding through direct closure calls, closure-valued
+  `call_user_func()`, positional `call_user_func_array()`, and
+  `ReflectionFunction::invoke()`, copying writes back to the captured slot
+  after supported closure completion. Real reference containers, broad
+  copy-on-write, magic-property/ArrayAccess/non-direct/dynamic alias roots,
+  closure reference returns, alias destruction ordering, and native reference
+  lowering remain future work.
 
 ## Milestone 1643: Request/SAPI/Filesystem/Stream Blocker
 
-- [ ] Request/SAPI/filesystem/stream lane: close one bounded executable slice
-  from headers/cookies/sessions, output buffering and shutdown ordering,
-  request body/import behavior, uploads, broader `file://`/`phar://`/URL
-  wrapper behavior, stream contexts/metadata, `open_basedir`, or fatal
-  shutdown/destructor ordering. Keep native stream/SAPI lowering explicit.
+- [x] Request/SAPI/filesystem/stream lane: closed one bounded executable
+  `open_basedir` slice for local `file_get_contents()` and `fopen()` paths,
+  including local `file://` URLs. Denied paths now emit bounded recoverable
+  warnings through the current handler stack, return `false`, and avoid
+  realpath-cache population. Broader `open_basedir` policy for includes,
+  metadata builtins, directories, uploads, symlink/exact-warning parity,
+  other wrappers, and native stream/SAPI lowering remains explicit future
+  work.
 
 ## Milestone 1644: WordPress DB/Bootstrap Evidence Blocker
 
+- [x] WordPress DB/bootstrap lane: closed a bounded dbDelta-style repeated
+  `CREATE TABLE` schema diff slice. The deterministic MySQLi schema-state
+  island now upserts declared columns/indexes by name when a repeated
+  `CREATE TABLE` targets an existing recorded table, preserves omitted
+  recorded columns/indexes, updates recorded collation from the new
+  declaration, and exposes the merged shape through `DESCRIBE`, `SHOW INDEX`,
+  and `SHOW CREATE TABLE` in a `wpdb`-shaped fixture plus WordPress inventory
+  bootstrap probe. Remaining gaps include full dbDelta SQL normalization,
+  rename inference, drop detection from omitted declarations, broader
+  prepared SQL metadata queries, host database inspection, persistent
+  object-cache/transient behavior, arbitrary `$wpdb` result shapes, broader
+  plugin/theme/front-controller evidence, and native database lowering.
+
+## Milestone 1645: Native Runtime ABI/Execution Blocker
+
+- [x] Native runtime ABI lane: closed a first real nullable array-handle ABI
+  slice. The runtime now exposes null array handles plus allocated empty array
+  handles with length reads and free, and the deterministic native runtime ABI
+  probe declares/calls the empty-handle path for host-width and explicit 32-bit
+  snapshots. A `milestone1645` CLI fixture proves production native array
+  lowering still rejects array literals through `--emit-ir` and `--emit-asm`
+  instead of pretending that the new empty handle is generated array storage.
+  Linked native execution, generated array literals/reads/writes, non-empty
+  array storage, key normalization, request-state allocation/population,
+  generated superglobal reads, binary PHP string handles, stdout/stderr write
+  diagnostics beyond the existing string conversion path, C fallback assembly
+  helper calls, and object/resource/reference storage remain future work.
+
+## Milestone 1646: WordPress-Focused Queue Refresh
+
+- [x] Tests/docs lane: integrate Milestones 1641-1645, refresh support docs,
+  progress, lane-worker queue, and loop memory; record focused verification;
+  run the serialized full gate; checkpoint the batch; push; and clean lane
+  worktrees and target directories. Full gate passed with `1685` fixture
+  tests, `0` failures, `992` system PHP comparisons, and `693` `phpc-only`
+  skipped fixtures before checkpoint.
+
+## Milestone 1647: Object Lifecycle WordPress Blocker
+
+- [ ] Object/interface lane: close one bounded executable slice from
+  constructor/destructor fidelity, autoload/class-alias lifecycle,
+  `__call`/`__callStatic` dispatch breadth, object `__invoke`,
+  method_exists/is_callable private/protected caller-context parity, interface
+  implementation dispatch from reflected interface methods, non-static trait
+  method execution, or exact reflection exception behavior. Keep unsupported
+  edges and native object/reflection lowering explicit.
+
+## Milestone 1648: References/COW WordPress Blocker
+
+- [ ] Reference/COW lane: close one bounded executable slice from real PHP
+  reference cells, array/object copy-on-write, alias destruction ordering,
+  by-reference function/method returns, by-reference captures beyond the
+  current direct alias-backed slots, foreach-by-reference, array-offset/
+  property/ArrayAccess reference roots, superglobal reference lifetime breadth,
+  or callable/reference parity. Keep native reference lowering explicit.
+
+## Milestone 1649: Request/SAPI/Filesystem/Stream Blocker
+
+- [ ] Request/SAPI/filesystem/stream lane: close one bounded executable slice
+  from headers/cookies/sessions, output buffering and shutdown ordering,
+  `open_basedir` breadth beyond local reads, request body/import behavior,
+  uploads, `php://`/`file://`/`phar://`/URL wrappers, stream contexts/metadata,
+  directories/stat caches, or fatal shutdown/destructor ordering. Keep native
+  stream/SAPI lowering explicit.
+
+## Milestone 1650: WordPress DB/Bootstrap Evidence Blocker
+
 - [ ] WordPress DB/bootstrap lane: close one bounded executable slice from
-  dbDelta-style schema diff execution, broader prepared SQL metadata queries,
+  fuller dbDelta SQL normalization, broader prepared SQL metadata queries,
   host database inspection boundaries, object-cache/options/transients,
   `$wpdb` insert/update/delete/query result shapes, plugin/theme bootstrap
   probes, or deterministic front-controller evidence. Keep native database
   lowering explicit.
 
-## Milestone 1645: Native Runtime ABI/Execution Blocker
+## Milestone 1651: Native Runtime ABI/Execution Blocker
 
 - [ ] Native runtime ABI lane: close one bounded executable slice from linked
-  native execution, request-state allocation/population, generated
-  superglobal reads, binary PHP string handles, stdout/stderr write
-  diagnostics, C fallback assembly helper calls, or first real nullable
-  array/object/resource/reference handle use. Keep interpreter-only support
-  and native lowering boundaries explicit.
+  native execution, generated use of empty array handles, non-empty native
+  array storage, request-state allocation/population, generated superglobal
+  reads, binary PHP string handles, stdout/stderr write diagnostics, C
+  fallback assembly helper calls, or first real object/resource/reference
+  handle use. Keep interpreter-only support and native lowering boundaries
+  explicit.
 
-## Milestone 1646: WordPress-Focused Queue Refresh
+## Milestone 1652: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: integrate Milestones 1641-1645, refresh support docs,
+- [ ] Tests/docs lane: integrate Milestones 1647-1651, refresh support docs,
   progress, lane-worker queue, and loop memory; record focused verification;
   run the serialized full gate; checkpoint the batch; push; and clean lane
   worktrees and target directories.

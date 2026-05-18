@@ -93,7 +93,11 @@ struct NativeDiagnostic {
     message: String,
 }
 
-enum NativeArray {}
+#[derive(Debug)]
+struct NativeArray {
+    value: PhpArray,
+}
+
 enum NativeObject {}
 enum NativeResource {}
 enum NativeReference {}
@@ -210,8 +214,20 @@ impl NativeArrayHandle {
         }
     }
 
+    pub fn empty() -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeArray {
+                value: PhpArray::new(),
+            })),
+        }
+    }
+
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeArray> {
+        unsafe { self.ptr.as_ref() }
     }
 }
 
@@ -344,8 +360,37 @@ pub extern "C" fn phpc_native_array_null() -> NativeArrayHandle {
 }
 
 #[no_mangle]
+pub extern "C" fn phpc_native_array_empty() -> NativeArrayHandle {
+    NativeArrayHandle::empty()
+}
+
+#[no_mangle]
 pub extern "C" fn phpc_native_array_is_null(handle: NativeArrayHandle) -> bool {
     handle.is_null()
+}
+
+/// # Safety
+///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_len(handle: NativeArrayHandle) -> usize {
+    unsafe { handle.as_ref() }
+        .map(|array| array.value.len())
+        .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. Passing any other pointer is undefined behavior.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_free(handle: NativeArrayHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(handle.ptr) });
 }
 
 #[no_mangle]
@@ -5058,7 +5103,7 @@ mod tests {
     }
 
     #[test]
-    fn native_container_handle_shapes_are_pointer_sized_and_null_only() {
+    fn native_container_handle_shapes_are_pointer_sized_with_nullable_array_storage() {
         assert_eq!(
             std::mem::size_of::<NativeArrayHandle>(),
             std::mem::size_of::<*mut ()>()
@@ -5096,6 +5141,18 @@ mod tests {
         assert!(phpc_native_resource_is_null(resource));
         assert!(phpc_native_reference_is_null(reference));
         assert!(phpc_native_request_state_is_null(request_state));
+
+        let array = phpc_native_array_empty();
+        assert!(!array.is_null());
+        assert!(!phpc_native_array_is_null(array));
+        assert_eq!(unsafe { phpc_native_array_len(array) }, 0);
+        unsafe { phpc_native_array_free(array) };
+
+        assert_eq!(
+            unsafe { phpc_native_array_len(NativeArrayHandle::null()) },
+            0
+        );
+        unsafe { phpc_native_array_free(NativeArrayHandle::null()) };
     }
 
     #[test]

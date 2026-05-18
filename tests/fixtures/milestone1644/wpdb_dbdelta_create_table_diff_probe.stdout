@@ -1,0 +1,1 @@
+columns=5:id:bigint(20) unsigned:PRI;slug:varchar(200):MUL;legacy:varchar(20):;title:text:MUL;status:varchar(20):MUL;|indexes=4:PRIMARY:1:id:;slug:1:slug:64;slug:2:title:32;status:1:status:;

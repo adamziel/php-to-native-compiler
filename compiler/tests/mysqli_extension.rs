@@ -5639,6 +5639,39 @@ while ($index = mysqli_fetch_assoc($indexes)) {
 }
 
 #[test]
+fn mysqli_query_applies_bounded_wordpress_dbdelta_create_table_diff() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_dbdelta_probe (id bigint(20) unsigned NOT NULL auto_increment, slug varchar(191) NOT NULL default '', legacy varchar(20) NOT NULL default 'keep', PRIMARY KEY  (id), KEY slug (slug)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+echo mysqli_query($handle, "CREATE TABLE wp_dbdelta_probe (id bigint(20) unsigned NOT NULL auto_increment, slug varchar(200) NOT NULL default '', title text NULL, status varchar(20) NOT NULL default 'publish', PRIMARY KEY  (id), KEY slug (slug(64), title(32)), KEY status (status)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci") ? "diff" : "failed";
+echo ":", mysqli_affected_rows($handle);
+$columns = mysqli_query($handle, "DESCRIBE wp_dbdelta_probe");
+echo "|columns=";
+while ($column = mysqli_fetch_assoc($columns)) {
+    echo $column["Field"], ":", $column["Type"], ":", $column["Null"], ":", $column["Key"], ":", $column["Default"], ";";
+}
+$indexes = mysqli_query($handle, "SHOW INDEX FROM wp_dbdelta_probe");
+echo "|indexes=", mysqli_num_rows($indexes), ":";
+while ($index = mysqli_fetch_assoc($indexes)) {
+    echo $index["Key_name"], ":", $index["Seq_in_index"], ":", $index["Column_name"], ":", $index["Sub_part"], ";";
+}
+$create = mysqli_query($handle, "SHOW CREATE TABLE wp_dbdelta_probe");
+$row = mysqli_fetch_assoc($create);
+echo "|", $row["Create Table"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "diff:0|columns=id:bigint(20) unsigned:NO:PRI:;slug:varchar(200):NO:MUL:;legacy:varchar(20):NO::keep;title:text:YES:MUL:;status:varchar(20):NO:MUL:publish;|indexes=4:PRIMARY:1:id:;slug:1:slug:64;slug:2:title:32;status:1:status:;|CREATE TABLE `wp_dbdelta_probe` (\n  `id` bigint(20) unsigned NOT NULL auto_increment,\n  `slug` varchar(200) NOT NULL DEFAULT '',\n  `legacy` varchar(20) NOT NULL DEFAULT 'keep',\n  `title` text NULL,\n  `status` varchar(20) NOT NULL DEFAULT 'publish',\n  PRIMARY KEY (`id`),\n  KEY `slug` (`slug`(64),`title`(32)),\n  KEY `status` (`status`)\n) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_tracks_bounded_wordpress_schema_multi_column_index_parts() {
     let execution = run_source(
         r#"<?php

@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1644/wpdb_dbdelta_create_table_diff_probe.php

@@ -26,6 +26,57 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T02:14:51+02:00
+
+- Checkpoint before this task:
+  `71371f15 runtime: advance WordPress reflection call_user_func file urls wpdb joins and native request handles`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1641-1646, focused on large WordPress/PHP
+  blockers with five disjoint implementation/native lanes plus one serialized
+  integration/full-gate slot.
+- Files changed so far: `is_callable()` now recognizes inherited public
+  `__call`/`__callStatic` for object and class-string array-callable shapes
+  while `method_exists()` remains declaration-only; closure by-reference
+  captures preserve covered alias-backed direct array-offset and visible
+  object-property slots across direct invocation, closure-valued
+  `call_user_func()`, positional `call_user_func_array()`, and
+  `ReflectionFunction::invoke()`; local `open_basedir` checks gate
+  `file_get_contents()` and `fopen()` local paths plus local `file://` URLs;
+  repeated deterministic MySQLi `CREATE TABLE` statements now apply a bounded
+  dbDelta-style column/index upsert while preserving omitted recorded schema;
+  the native runtime ABI can allocate, length-check, and free an empty array
+  handle while production native array lowering remains an explicit rejection;
+  affected fixtures, support docs, progress, queue, lane-worker docs, native
+  ABI snapshots, and WordPress inventory probes were refreshed.
+- Tests run and result: focused integrated checks passed for `object_model`,
+  `call_user_func_builtin`, `file_get_contents_builtin`,
+  `stream_resource_builtin`, `mysqli_extension`, `wordpress_inventory_cli`,
+  `native_runtime_abi`, `php_runtime`, milestone fixture directories
+  1641-1645, PHP comparisons where applicable, `cargo fmt --check`,
+  `git diff --check`, and conflict-marker scanning. Manual full gate passed
+  before checkpoint: `CARGO_TARGET_DIR=/tmp/phpc-target-full-1641-1646
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test`
+  completed successfully, `phpc test` reported `1685` fixture tests passed
+  with `0` failures, and `phpc test --compare-php` reported `1685` fixture
+  tests passed with `0` failures, `992` system PHP comparisons, and `693`
+  `phpc-only` skipped fixtures.
+- Remaining semantic gaps: constructor/destructor/autoload/class-alias
+  fidelity, executable dynamic `__call`/`__callStatic` dispatch breadth,
+  object `__invoke`, private/protected caller-context callability, real PHP
+  reference containers, broad array/object copy-on-write, alias destruction
+  ordering, broader by-reference capture roots, sessions/headers/cookies/
+  uploads, output buffering and shutdown behavior, broader URL/phar wrappers,
+  broader `open_basedir`, exact warning/fatal object text, full dbDelta SQL
+  normalization, arbitrary SQL/database behavior, host database inspection,
+  persistent object cache/transients, full WordPress plugin/theme/admin/REST/
+  front-controller flows, linked native execution, generated array/request
+  state reads, binary PHP string handles, WordPress host-state ABI, and real
+  object/resource/reference native handles remain explicit blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean the 1641-1645 lane worktrees and target directories, then
+  start the next blocker-focused lanes from Milestones 1647-1651 with one
+  integration owner and one serialized full gate per checkpoint batch.
+
 ## Loop Event 2026-05-18T01:56:04+02:00
 
 - Checkpoint before this task:

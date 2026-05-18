@@ -148,6 +148,7 @@ struct Interpreter {
     closure_reflection_functions: HashMap<i64, ReflectionFunctionState>,
     closure_functions: HashMap<i64, Rc<FunctionDecl>>,
     closure_values: HashMap<i64, PhpClosure>,
+    closure_alias_captures: HashMap<i64, Vec<ClosureAliasCapture>>,
     reflection_methods: HashMap<i64, ReflectionMethodState>,
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
@@ -665,6 +666,18 @@ fn local_filesystem_metadata_path(path: &str) -> PathBuf {
         return path;
     }
     repo_root_relative_candidate(&path).unwrap_or(path)
+}
+
+fn open_basedir_check_path(path: &Path) -> PathBuf {
+    if let Ok(resolved) = fs::canonicalize(path) {
+        return resolved;
+    }
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(path))
+        .unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn bounded_local_file_url_path(path: &str) -> Option<Result<PathBuf, String>> {
@@ -3143,6 +3156,13 @@ struct ReferenceBinding {
 }
 
 #[derive(Debug, Clone)]
+struct ClosureAliasCapture {
+    name: String,
+    aliases: Vec<ArrayOffsetAlias>,
+    source_scope: SymbolTable,
+}
+
+#[derive(Debug, Clone)]
 enum ReferenceBindingTarget {
     CallerCell { name: String, cell: VariableCell },
     ArrayOffset(ArrayOffsetAlias),
@@ -3151,8 +3171,19 @@ enum ReferenceBindingTarget {
 
 #[derive(Debug, Clone)]
 enum PreboundLocal {
-    Value { name: String, value: Value },
-    Cell { name: String, cell: VariableCell },
+    Value {
+        name: String,
+        value: Value,
+    },
+    Cell {
+        name: String,
+        cell: VariableCell,
+    },
+    ArrayOffsets {
+        name: String,
+        aliases: Vec<ArrayOffsetAlias>,
+        source_scope: SymbolTable,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -3425,6 +3456,7 @@ impl Interpreter {
             closure_reflection_functions: HashMap::new(),
             closure_functions: HashMap::new(),
             closure_values: HashMap::new(),
+            closure_alias_captures: HashMap::new(),
             reflection_methods: HashMap::new(),
             reflection_parameters: HashMap::new(),
             reflection_properties: HashMap::new(),
@@ -5626,6 +5658,42 @@ impl Interpreter {
         }
 
         local_filesystem_metadata_path(path.to_string_lossy().as_ref())
+    }
+
+    fn enforce_bounded_open_basedir(
+        &mut self,
+        function: &str,
+        display_path: &str,
+        filesystem_path: &Path,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if self.path_allowed_by_bounded_open_basedir(filesystem_path) {
+            return Ok(true);
+        }
+
+        self.emit_warning(
+            function,
+            format!("{display_path}: open_basedir restriction in effect"),
+            span,
+        )?;
+        Ok(false)
+    }
+
+    fn path_allowed_by_bounded_open_basedir(&self, filesystem_path: &Path) -> bool {
+        let Some(value) = self.ini_value("open_basedir") else {
+            return true;
+        };
+        if value.is_empty() {
+            return true;
+        }
+
+        let candidate = open_basedir_check_path(filesystem_path);
+        value
+            .split(INCLUDE_PATH_SEPARATOR)
+            .filter(|entry| !entry.is_empty())
+            .map(PathBuf::from)
+            .map(|entry| open_basedir_check_path(&entry))
+            .any(|base| candidate.starts_with(base))
     }
 
     fn cached_local_metadata(&mut self, path: &str) -> Option<fs::Metadata> {
@@ -15538,10 +15606,12 @@ impl Interpreter {
         }
 
         if let Some(table) = parse_wordpress_schema_create_table_query(query) {
-            self.mysqli_schema_tables
-                .entry(handle_id)
-                .or_default()
-                .insert(table.name.clone(), table);
+            let tables = self.mysqli_schema_tables.entry(handle_id).or_default();
+            if let Some(existing) = tables.get_mut(&table.name) {
+                apply_wordpress_schema_create_table(existing, table);
+            } else {
+                tables.insert(table.name.clone(), table);
+            }
             self.mysqli_affected_rows.insert(handle_id, 0);
             return Ok(Value::Bool(true));
         }
@@ -18965,23 +19035,7 @@ impl Interpreter {
         ensure_user_function_arity(function, values.len(), span)?;
         ensure_supported_function_signature(function, values.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
-        let prebound_locals = closure
-            .captures()
-            .iter()
-            .map(|capture| {
-                if capture.by_reference() {
-                    PreboundLocal::Cell {
-                        name: capture.name().to_string(),
-                        cell: capture.cell(),
-                    }
-                } else {
-                    PreboundLocal::Value {
-                        name: capture.name().to_string(),
-                        value: capture.value(),
-                    }
-                }
-            })
-            .collect();
+        let prebound_locals = self.closure_prebound_locals(&closure);
         self.call_user_function_with_checked_values_and_locals(
             function,
             values,
@@ -19129,7 +19183,7 @@ impl Interpreter {
         self.ensure_user_function_call_depth(function, span)?;
         let (values, reference_bindings) =
             self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
-        let prebound_locals = Self::closure_prebound_locals(&closure);
+        let prebound_locals = self.closure_prebound_locals(&closure);
         self.call_user_function_with_checked_values_and_locals(
             function,
             values,
@@ -19142,8 +19196,8 @@ impl Interpreter {
         )
     }
 
-    fn closure_prebound_locals(closure: &PhpClosure) -> Vec<PreboundLocal> {
-        closure
+    fn closure_prebound_locals(&self, closure: &PhpClosure) -> Vec<PreboundLocal> {
+        let mut locals: Vec<_> = closure
             .captures()
             .iter()
             .map(|capture| {
@@ -19159,7 +19213,19 @@ impl Interpreter {
                     }
                 }
             })
-            .collect()
+            .collect();
+        if let Some(alias_captures) = self.closure_alias_captures.get(&closure.id()) {
+            locals.extend(
+                alias_captures
+                    .iter()
+                    .map(|capture| PreboundLocal::ArrayOffsets {
+                        name: capture.name.clone(),
+                        aliases: capture.aliases.clone(),
+                        source_scope: capture.source_scope.clone(),
+                    }),
+            );
+        }
+        locals
     }
 
     fn invoke_reflection_method(
@@ -22177,8 +22243,20 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let mut captured_values = Vec::with_capacity(captures.len());
+        let mut alias_captures = Vec::new();
         for capture in captures {
             if capture.by_reference {
+                if let Some(aliases) = scope.array_offset_aliases_for_name(&capture.name) {
+                    for alias in &aliases {
+                        scope.materialize_array_offset_alias(alias, capture.span)?;
+                    }
+                    alias_captures.push(ClosureAliasCapture {
+                        name: capture.name.clone(),
+                        aliases,
+                        source_scope: scope.clone(),
+                    });
+                    continue;
+                }
                 let cell = scope.read_cell(&capture.name).ok_or_else(|| {
                     runtime_error(
                         capture.span,
@@ -22225,6 +22303,9 @@ impl Interpreter {
         );
         let closure = PhpClosure::new(id, is_arrow, captured_values);
         self.closure_values.insert(id, closure.clone());
+        if !alias_captures.is_empty() {
+            self.closure_alias_captures.insert(id, alias_captures);
+        }
         Ok(Value::Closure(closure))
     }
 
@@ -22801,7 +22882,7 @@ impl Interpreter {
         self.ensure_user_function_call_depth(function, span)?;
         let values =
             self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
-        let prebound_locals = Self::closure_prebound_locals(&closure);
+        let prebound_locals = self.closure_prebound_locals(&closure);
         self.call_user_function_with_checked_values_and_locals(
             function,
             values,
@@ -22983,23 +23064,7 @@ impl Interpreter {
             span,
             caller_scope,
         )?;
-        let prebound_locals = closure
-            .captures()
-            .iter()
-            .map(|capture| {
-                if capture.by_reference() {
-                    PreboundLocal::Cell {
-                        name: capture.name().to_string(),
-                        cell: capture.cell(),
-                    }
-                } else {
-                    PreboundLocal::Value {
-                        name: capture.name().to_string(),
-                        value: capture.value(),
-                    }
-                }
-            })
-            .collect();
+        let prebound_locals = self.closure_prebound_locals(&closure);
         self.call_user_function_with_checked_values_and_locals(
             function,
             values,
@@ -28264,29 +28329,39 @@ impl Interpreter {
                 }
                 _ => original_cell.borrow().clone(),
             };
-            if !caller_scope.write_array_offset_aliases(aliases, value) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::invalid_array_access(
-                        "cannot write array reference argument".to_string(),
-                    ),
-                ));
-            }
-            for alias in aliases {
-                match &alias.root {
-                    ArrayOffsetAliasRoot::StaticArray { name } => {
-                        caller_scope.sync_array_offset_aliases_for_static_root(name);
-                    }
-                    ArrayOffsetAliasRoot::GlobalArray { name } => {
-                        caller_scope.sync_array_offset_aliases_for_global_root(name);
-                    }
-                    ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
-                    | ArrayOffsetAliasRoot::ContextObjectProperty {
-                        object, property, ..
-                    } => {
-                        caller_scope
-                            .sync_array_offset_aliases_for_object_property_root(object, property);
-                    }
+            self.write_back_array_offset_aliases(aliases, value, caller_scope, span)?;
+        }
+        Ok(())
+    }
+
+    fn write_back_array_offset_aliases(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+        value: Value,
+        scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<()> {
+        if !scope.write_array_offset_aliases(aliases, value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot write array reference argument".to_string(),
+                ),
+            ));
+        }
+        for alias in aliases {
+            match &alias.root {
+                ArrayOffsetAliasRoot::StaticArray { name } => {
+                    scope.sync_array_offset_aliases_for_static_root(name);
+                }
+                ArrayOffsetAliasRoot::GlobalArray { name } => {
+                    scope.sync_array_offset_aliases_for_global_root(name);
+                }
+                ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                | ArrayOffsetAliasRoot::ContextObjectProperty {
+                    object, property, ..
+                } => {
+                    scope.sync_array_offset_aliases_for_object_property_root(object, property);
                 }
             }
         }
@@ -28351,10 +28426,30 @@ impl Interpreter {
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
         }
+        let mut captured_array_offset_binding_cells = Vec::new();
         for local in prebound_locals {
             match local {
                 PreboundLocal::Value { name, value } => local_scope.write_static(&name, value),
                 PreboundLocal::Cell { name, cell } => local_scope.bind_static_to_cell(&name, cell),
+                PreboundLocal::ArrayOffsets {
+                    name,
+                    aliases,
+                    source_scope,
+                } => {
+                    let value = aliases
+                        .first()
+                        .and_then(|alias| source_scope.read_array_offset_alias(alias))
+                        .unwrap_or(Value::Null);
+                    local_scope.write_static(&name, value);
+                    if let Some(cell) = local_scope.read_cell(&name) {
+                        captured_array_offset_binding_cells.push((
+                            name,
+                            aliases,
+                            cell,
+                            source_scope,
+                        ));
+                    }
+                }
             }
         }
         let mut array_offset_binding_cells = Vec::new();
@@ -28445,7 +28540,7 @@ impl Interpreter {
             &flow,
             Ok(Flow::Normal) | Ok(Flow::Return(_)) | Ok(Flow::Exit(_))
         ) {
-            if let Some(reference_scope) = reference_scope {
+            let reference_writeback = if let Some(reference_scope) = reference_scope {
                 self.write_back_reference_bindings(
                     &array_offset_binding_cells,
                     &local_scope,
@@ -28454,6 +28549,31 @@ impl Interpreter {
                 )
             } else {
                 Ok(())
+            };
+            if let Err(error) = reference_writeback {
+                Err(error)
+            } else {
+                let mut result = Ok(());
+                for (name, aliases, original_cell, source_scope) in
+                    &mut captured_array_offset_binding_cells
+                {
+                    let value = match local_scope.read_cell(name) {
+                        Some(local_cell) if Rc::ptr_eq(&local_cell, original_cell) => {
+                            local_scope.read_named(name).unwrap_or(Value::Null)
+                        }
+                        _ => original_cell.borrow().clone(),
+                    };
+                    if let Err(error) = self.write_back_array_offset_aliases(
+                        aliases,
+                        value,
+                        source_scope,
+                        function.span,
+                    ) {
+                        result = Err(error);
+                        break;
+                    }
+                }
+                result
             }
         } else {
             Ok(())
@@ -28763,6 +28883,9 @@ impl Interpreter {
         } else {
             let filesystem_path = file_url_path
                 .unwrap_or_else(|| self.resolve_file_get_contents_path(path, use_include_path));
+            if !self.enforce_bounded_open_basedir("fopen()", path, &filesystem_path, span)? {
+                return Ok(Value::Bool(false));
+            }
             let realpath_entry = self.bounded_realpath_entry_for_local_path(&filesystem_path);
             let file = match fs::OpenOptions::new()
                 .read(stream_mode.readable)
@@ -32425,9 +32548,10 @@ impl Interpreter {
                     Value::Array(array) if syntax_only => {
                         Ok(Value::Bool(is_array_callable_syntax_shape(array)))
                     }
-                    Value::Array(array) => {
-                        Ok(Value::Bool(is_array_callable_resolved(&self.classes, array)))
-                    }
+                    Value::Array(array) => Ok(Value::Bool(is_array_callable_for_is_callable(
+                        &self.classes,
+                        array,
+                    ))),
                     _ => Ok(Value::Bool(false)),
                 }
             }
@@ -32749,6 +32873,14 @@ impl Interpreter {
                         } else {
                             self.resolve_file_get_contents_path(path, use_include_path)
                         };
+                        if !self.enforce_bounded_open_basedir(
+                            "file_get_contents()",
+                            path,
+                            &filesystem_path,
+                            span,
+                        )? {
+                            return Ok(Value::Bool(false));
+                        }
                         let contents = match fs::read_to_string(&filesystem_path) {
                             Ok(contents) => contents,
                             Err(error) => {
@@ -38860,15 +38992,22 @@ fn find_public_method<'a>(
     class_id: ClassId,
     method_lookup_name: &str,
 ) -> Option<(ClassId, &'a str, &'a PhpMethodMetadata)> {
+    find_method(classes, class_id, method_lookup_name)
+        .filter(|(_, _, method)| method.visibility() == Visibility::Public)
+}
+
+fn find_method<'a>(
+    classes: &'a PhpClassTable,
+    class_id: ClassId,
+    method_lookup_name: &str,
+) -> Option<(ClassId, &'a str, &'a PhpMethodMetadata)> {
     let mut current = Some(class_id);
     while let Some(current_id) = current {
         let current_class = classes
             .get(current_id)
             .expect("class id should resolve to class metadata");
         if let Some(method) = current_class.method(method_lookup_name) {
-            if method.visibility() == Visibility::Public {
-                return Some((current_id, current_class.name(), method));
-            }
+            return Some((current_id, current_class.name(), method));
         }
         current = current_class.parent_id();
     }
@@ -39611,6 +39750,59 @@ fn is_array_callable_resolved(classes: &PhpClassTable, array: &PhpArray) -> bool
             .is_some_and(|method| method.visibility() == Visibility::Public && method.is_static()),
         _ => false,
     }
+}
+
+fn is_array_callable_for_is_callable(classes: &PhpClassTable, array: &PhpArray) -> bool {
+    let Some((target, method_name)) = array_callable_parts(array) else {
+        return false;
+    };
+
+    match target {
+        Value::Object(object) => {
+            is_object_array_callable_for_is_callable(classes, object.class_id(), method_name)
+        }
+        Value::String(class_name) => classes.lookup_class(class_name).is_some_and(|class| {
+            is_static_array_callable_for_is_callable(classes, class.id(), method_name)
+        }),
+        _ => false,
+    }
+}
+
+fn is_object_array_callable_for_is_callable(
+    classes: &PhpClassTable,
+    class_id: ClassId,
+    method_name: &str,
+) -> bool {
+    match find_method(classes, class_id, method_name) {
+        Some((_, _, method)) if method.visibility() == Visibility::Public => true,
+        Some(_) | None => has_public_non_static_magic_call(classes, class_id),
+    }
+}
+
+fn is_static_array_callable_for_is_callable(
+    classes: &PhpClassTable,
+    class_id: ClassId,
+    method_name: &str,
+) -> bool {
+    match find_method(classes, class_id, method_name) {
+        Some((_, _, method)) if method.visibility() == Visibility::Public && method.is_static() => {
+            true
+        }
+        Some((_, _, method)) if method.visibility() == Visibility::Public => false,
+        Some(_) | None => has_public_static_magic_call_static(classes, class_id),
+    }
+}
+
+fn has_public_non_static_magic_call(classes: &PhpClassTable, class_id: ClassId) -> bool {
+    find_method(classes, class_id, "__call").is_some_and(|(_, _, method)| {
+        method.visibility() == Visibility::Public && !method.is_static()
+    })
+}
+
+fn has_public_static_magic_call_static(classes: &PhpClassTable, class_id: ClassId) -> bool {
+    find_method(classes, class_id, "__callStatic").is_some_and(|(_, _, method)| {
+        method.visibility() == Visibility::Public && method.is_static()
+    })
 }
 
 fn array_callable_parts(array: &PhpArray) -> Option<(&Value, &str)> {
@@ -41742,10 +41934,7 @@ fn apply_wordpress_schema_alter(
                 upsert_wordpress_schema_column(table, column);
             }
             WordPressSchemaAlterOperation::AddIndex(index) => {
-                table
-                    .indexes
-                    .retain(|existing| existing.key_name != index.key_name);
-                table.indexes.push(index);
+                upsert_wordpress_schema_index(table, index);
             }
             WordPressSchemaAlterOperation::DropColumn(column_name) => {
                 table.columns.retain(|column| column.name != column_name);
@@ -41785,6 +41974,19 @@ fn apply_wordpress_schema_alter(
     }
 }
 
+fn apply_wordpress_schema_create_table(
+    table: &mut WordPressSchemaTableState,
+    create: WordPressSchemaTableState,
+) {
+    table.collation = create.collation;
+    for column in create.columns {
+        upsert_wordpress_schema_column(table, column);
+    }
+    for index in create.indexes {
+        upsert_wordpress_schema_index(table, index);
+    }
+}
+
 fn upsert_wordpress_schema_column(
     table: &mut WordPressSchemaTableState,
     column: WordPressSchemaColumnState,
@@ -41797,6 +41999,21 @@ fn upsert_wordpress_schema_column(
         *existing = column;
     } else {
         table.columns.push(column);
+    }
+}
+
+fn upsert_wordpress_schema_index(
+    table: &mut WordPressSchemaTableState,
+    index: WordPressSchemaIndexState,
+) {
+    if let Some(existing) = table
+        .indexes
+        .iter_mut()
+        .find(|existing| existing.key_name == index.key_name)
+    {
+        *existing = index;
+    } else {
+        table.indexes.push(index);
     }
 }
 

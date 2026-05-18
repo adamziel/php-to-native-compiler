@@ -144,6 +144,49 @@ echo file_get_contents("file://{}", false, null, 8, 4);
 }
 
 #[test]
+fn file_get_contents_enforces_bounded_open_basedir_for_local_paths() {
+    let root = std::env::temp_dir().join(format!(
+        "{}-{}-phpc-file-get-contents-open-basedir",
+        std::process::id(),
+        line!()
+    ));
+    let allowed = root.join("allowed");
+    let denied = root.join("denied");
+    fs::create_dir_all(&allowed).expect("allowed open_basedir fixture directory can be created");
+    fs::create_dir_all(&denied).expect("denied open_basedir fixture directory can be created");
+    let allowed_file = allowed.join("payload.txt");
+    let denied_file = denied.join("secret.txt");
+    fs::write(&allowed_file, "allowed-payload").expect("allowed fixture file can be seeded");
+    fs::write(&denied_file, "denied-payload").expect("denied fixture file can be seeded");
+    let source = format!(
+        r#"<?php
+function capture_basedir_warning($errno, $errstr) {{
+    echo "|warning:" . $errno . ":" . (str_contains($errstr, "open_basedir") ? "basedir" : "other");
+    return true;
+}}
+
+ini_set("open_basedir", "{}");
+set_error_handler("capture_basedir_warning", E_WARNING);
+echo file_get_contents("{}");
+$blocked = file_get_contents("{}");
+echo $blocked === false ? "|blocked" : "|read";
+"#,
+        allowed.display(),
+        allowed_file.display(),
+        denied_file.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "allowed-payload|warning:2:basedir|blocked"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn file_get_contents_applies_offset_and_length_to_php_input_seed() {
     let program = php_compiler::parse(
         r#"<?php

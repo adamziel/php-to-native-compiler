@@ -158,7 +158,19 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("declare %phpc.NativeArrayHandle @phpc_native_array_empty()"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare i1 @phpc_native_array_is_null(%phpc.NativeArrayHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i64 @phpc_native_array_len(%phpc.NativeArrayHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare void @phpc_native_array_free(%phpc.NativeArrayHandle)"),
         "{ir}"
     );
     assert!(
@@ -221,6 +233,10 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     );
     assert!(
         ir.contains("define i1 @phpc_probe_container_handle_null_shapes()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_array_handle_empty_len()"),
         "{ir}"
     );
     assert!(
@@ -317,6 +333,10 @@ fn scalar_echo_probe_ir_renders_32_bit_usize_helper_signatures() {
         "{ir}"
     );
     assert!(
+        ir.contains("define i32 @phpc_probe_array_handle_empty_len()"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("define i1 @phpc_probe_request_state_handle_null_shape()"),
         "{ir}"
     );
@@ -409,7 +429,19 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
         "{ir}"
     );
     assert!(
+        ir.contains("declare %phpc.NativeArrayHandle @phpc_native_array_empty()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i64 @phpc_native_array_len(%phpc.NativeArrayHandle)"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("define i1 @phpc_probe_container_handle_null_shapes()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_array_handle_empty_len()"),
         "{ir}"
     );
     assert!(
@@ -806,6 +838,47 @@ fn selected_length_string_pointer_emit_ir_cli_snapshot_uses_runtime_value_stdout
         !actual.contains("@printf(ptr @.fmt_str, ptr %tmp2)"),
         "{actual}"
     );
+}
+
+#[test]
+fn native_array_handle_boundary_cli_snapshots_match_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone1645/native_array_handle_boundary.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    for (mode, snapshot) in [
+        (
+            "--emit-ir",
+            "tests/fixtures/milestone1645/native_array_handle_boundary_emit_ir.cli",
+        ),
+        (
+            "--emit-asm",
+            "tests/fixtures/milestone1645/native_array_handle_boundary_emit_asm.cli",
+        ),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+            .current_dir(workspace_root)
+            .args(["compile", &relative_fixture, mode])
+            .output()
+            .unwrap_or_else(|error| {
+                panic!("failed to compile {relative_fixture} with {mode}: {error}")
+            });
+
+        let expected = fs::read_to_string(workspace_root.join(snapshot))
+            .expect("native array handle boundary CLI snapshot is readable");
+        let actual = render_cli_snapshot(&output);
+
+        assert_eq!(actual, expected);
+    }
 }
 
 fn render_cli_snapshot(output: &Output) -> String {

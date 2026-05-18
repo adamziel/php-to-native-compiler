@@ -1303,11 +1303,15 @@ references/copy-on-write, broad dynamic string-pointer output,
 locale/version-specific float formatting, integer overflow promotion, assembly
 linking/execution, or native PHP error objects. The native runtime ABI probe has
 diagnostic-handle calls, one deterministic failure branch for string-to-value
-conversion failures, and a null-only request-state handle probe. Normal
-generated LLVM for the documented string-output slices branches on that helper's
-nullable value-handle result and reports the diagnostic message to stderr on the
-failure path before cleanup. Request-state handles are ABI shape only; native
-superglobal storage/population still rejects at the request-state boundary.
+conversion failures, a first nullable empty-array handle allocation/length/free
+probe, and a null-only request-state handle probe. Normal generated LLVM for the
+documented string-output slices branches on that helper's nullable value-handle
+result and reports the diagnostic message to stderr on the failure path before
+cleanup. The empty-array handle is ABI evidence only: generated PHP array
+literals, array reads/writes, key normalization, references/COW, and non-empty
+array storage still reject before native lowering. Request-state handles are ABI
+shape only; native superglobal storage/population still rejects at the
+request-state boundary.
 Finite same-type float arithmetic and finite float unary-minus results are
 bounded and tracked only for later scalar folds such as strict identity when
 all possible results are proven. Float overflow, `INF`, and `NAN`
@@ -2277,8 +2281,10 @@ binary strings, exact PHP warning or handler `errstr` text, non-local
 percent-decoded paths, stream context
 effects, wrapper-specific context behavior, exact byte offsets through
 non-UTF-8 data, warning recovery for other stream/resource paths,
-handler stack mutation edge cases during active handler dispatch, `open_basedir`,
-stat caching, host SAPI body streams, or native filesystem lowering. Direct
+handler stack mutation edge cases during active handler dispatch,
+`open_basedir` policy beyond the current request-local allow-list check for
+local `file_get_contents()` and `fopen()` paths, stat caching, host SAPI body
+streams, or native filesystem lowering. Direct
 native `file_get_contents(...)` calls stop at a
 dedicated filesystem-read codegen boundary before argument lowering or backend
 selection, while native function-table introspection can still see the known

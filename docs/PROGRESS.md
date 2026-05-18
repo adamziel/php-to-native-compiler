@@ -4,6 +4,151 @@
 
 Implemented:
 
+- Integrated Milestones 1641-1646 as one WordPress-focused checkpoint batch.
+  The batch closes bounded slices for magic-method array-callable
+  `is_callable()` parity, closure by-reference captures of covered alias-backed
+  slots, local `open_basedir` read checks for `file_get_contents()`/`fopen()`,
+  repeated `CREATE TABLE` dbDelta-style schema diffs, and allocated empty
+  native array handles. The combined manual full gate passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1641-1646 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: Rust tests completed successfully,
+  `phpc test` reported `1685` fixture tests passed with `0` failures, and
+  `phpc test --compare-php` reported `1685` fixture tests passed with `0`
+  failures, `992` system PHP comparisons, and `693` `phpc-only` skipped
+  fixtures. Remaining WordPress blockers are still broad: constructor/
+  destructor/autoload/class-alias fidelity, executable `__call`/`__callStatic`
+  dispatch breadth, real reference containers and copy-on-write, sessions/
+  headers/cookies/uploads/output/shutdown behavior, broader stream wrappers
+  and `open_basedir`, fuller dbDelta and arbitrary SQL/database behavior,
+  object cache/transients, complete plugin/theme/admin/REST/front-controller
+  flows, and linked native execution with generated heap/request/array/object/
+  resource/reference storage.
+
+- Added Milestone 1645, a bounded native runtime ABI slice for the first real
+  nullable array-handle storage. The runtime now exports
+  `phpc_native_array_empty()`, `phpc_native_array_len(...)`, and
+  `phpc_native_array_free(...)` alongside null array handles, backed by an
+  allocated empty `PhpArray`. The deterministic native runtime ABI probe
+  declares and calls the empty-handle path in host-width and explicit 32-bit
+  snapshots. The new `milestone1645` fixture proves that production native
+  array lowering still rejects array literals through `--emit-ir` and
+  `--emit-asm` instead of pretending the new handle is generated array storage.
+  This does not add linked native execution, generated array literals, array
+  reads/writes, non-empty array storage, key normalization, request-state
+  population, generated superglobal reads, binary PHP strings, C fallback
+  helper calls, or object/resource/reference native storage. Focused
+  verification used `CARGO_TARGET_DIR=/tmp/phpc-target-native-abi-1645
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -p php_runtime
+  native_container_handle_shapes_are_pointer_sized_with_nullable_array_storage
+  -- --test-threads=1`; `cargo test -p phpc --test native_runtime_abi
+  native_array_handle_boundary_cli_snapshots_match_committed_output --
+  --test-threads=1`; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1645`; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1645`, which skipped the `phpc-only`
+  fixture for system PHP comparison; `cargo fmt --check`; and `git diff
+  --check` passed. Full expensive `tools/run-tests.sh`, checkpoint, commit,
+  and push were deferred until integration.
+
+- Added Milestone 1644, a bounded WordPress DB/bootstrap dbDelta-style schema
+  diff slice. Repeating a supported `CREATE TABLE` statement for an existing
+  deterministic MySQLi schema-state table now merges declared columns and
+  indexes by name instead of replacing the whole recorded table, preserves
+  omitted recorded columns/indexes, updates the recorded table collation from
+  the new declaration, and exposes the merged shape through `DESCRIBE`,
+  `SHOW INDEX`, and `SHOW CREATE TABLE`. The new `milestone1644` fixture proves
+  the `phpc run` CLI path through a `wpdb`-shaped wrapper, and the WordPress
+  inventory probe records a bootstrap path that performs the repeated
+  `CREATE TABLE` diff and inspects the merged schema. This does not add full
+  dbDelta SQL normalization, column rename inference, drop detection from
+  omitted declarations, engine/row-format option fidelity, host database
+  inspection, arbitrary SQL, persistent object-cache/transient behavior,
+  broader `$wpdb` result shapes, or native database lowering. Focused
+  verification used `CARGO_TARGET_DIR=/tmp/phpc-target-wpdb-1644
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -p phpc --test
+  mysqli_extension
+  mysqli_query_applies_bounded_wordpress_dbdelta_create_table_diff --
+  --test-threads=1`; `cargo test -p phpc --test wordpress_inventory_cli
+  wordpress_inventory_wpdb_dbdelta_schema_bootstrap_smoke_matches_fixture --
+  --test-threads=1`; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1644/wpdb_dbdelta_create_table_diff_probe.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1644`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1644`, which
+  skipped the `phpc-only` fixture for system PHP comparison; fixture
+  `compile --emit-ir` and `--emit-asm` checks rejected at the existing native
+  object/class lowering boundary; full affected `cargo test -p phpc --test
+  mysqli_extension -- --test-threads=1`; full affected `cargo test -p phpc
+  --test wordpress_inventory_cli -- --test-threads=1`; and `cargo fmt`
+  plus `cargo fmt --check` passed. Full expensive `tools/run-tests.sh`,
+  checkpoint, commit, and push were deferred per lane instructions.
+
+- Added Milestone 1643, a bounded request/SAPI/filesystem slice for local
+  `open_basedir` read checks. When `ini_set("open_basedir", $path)` stores a
+  non-empty request-local allow-list, local paths and local `file://` URLs are
+  checked before `file_get_contents()` and `fopen()` reads. Denied reads route
+  a bounded recoverable `E_WARNING` through the current handler stack, return
+  `false`, and do not populate bounded realpath-cache entries. The new
+  `milestone1643` fixture proves the CLI path and matches system PHP for the
+  covered local file-read shape. This does not add include/require
+  `open_basedir` enforcement, metadata/directory/upload checks, symlink and
+  exact-warning parity, broader wrappers, `open_basedir` inheritance or INI
+  mode behavior, or native stream/SAPI lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-sapi-1643 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test
+  file_get_contents_builtin
+  file_get_contents_enforces_bounded_open_basedir_for_local_paths --
+  --test-threads=1`; `cargo test -p phpc --test stream_resource_builtin
+  local_fopen_enforces_bounded_open_basedir_for_local_paths_and_file_urls --
+  --test-threads=1`; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1643`; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1643`, which compared `1` fixture with `0` skips;
+  `cargo fmt --check`; and `git diff --check` passed. Full expensive
+  `tools/run-tests.sh`, checkpoint, commit, and push were deferred until
+  integration.
+
+- Added Milestone 1642, a bounded Reference/COW slice for closure
+  by-reference captures of alias-backed slots. Closures that capture a direct
+  variable already backed by the current covered direct array-offset or visible
+  object-property array-offset alias metadata now preserve that binding across
+  direct closure invocation, closure-valued `call_user_func()`, positional
+  `call_user_func_array()`, and `ReflectionFunction::invoke()`, copying writes
+  back to the captured slot after supported closure completion. The new
+  `milestone1642` fixture proves the CLI path and matches system PHP for a
+  request-bag alias and a public object-property slot alias. This does not add
+  real PHP reference containers, broad copy-on-write, alias destruction
+  ordering, closure reference returns, magic-property/ArrayAccess/non-direct/
+  dynamic alias roots, by-reference captures for arbitrary expressions, or
+  native reference lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-refcow-1642 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test call_user_func_builtin
+  closures_capture_alias_backed_array_and_property_slots_by_reference --
+  --test-threads=1`; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1642`; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1642`, which compared `1` fixture with `0` skips;
+  `cargo fmt`; `cargo fmt --check`; and `git diff --check` passed. Full
+  expensive `tools/run-tests.sh`, checkpoint, commit, and push were deferred
+  until integration.
+
+- Added Milestone 1641, a bounded object/magic-method callability slice for
+  WordPress hook and dispatcher patterns. `is_callable()` now reports array
+  callables as true when an object receiver's class declares or inherits public
+  non-static `__call`, and when a class-string receiver declares or inherits
+  public static `__callStatic`; `method_exists()` remains limited to declared
+  methods. The new `milestone1641` fixture proves the CLI path and matches
+  system PHP for inherited magic object and static array-callable callability
+  while preserving method-existence behavior. This does not broaden executable
+  dynamic array-callback dispatch, object `__invoke`, autoload,
+  private/protected caller-context callability, exact `TypeError` behavior, or
+  native object/reflection lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-object-1641 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test object_model
+  is_callable_reports_magic_object_and_static_array_callables --
+  --test-threads=1`; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1641`; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1641`, which compared `1` fixture with `0` skips;
+  `cargo fmt`; `cargo fmt --check`; and `git diff --check` passed. Full
+  expensive `tools/run-tests.sh`, checkpoint, commit, and push were deferred
+  until integration.
+
 - Integrated Milestones 1635-1640 as one WordPress-focused checkpoint batch.
   The batch closes bounded slices for abstract reflected method invocation
   diagnostics, direct `call_user_func()` public array-callable by-reference
