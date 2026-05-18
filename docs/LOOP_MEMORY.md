@@ -186,10 +186,12 @@ next run, batch work aggressively:
   focused runtime test.
 - Semantic gap reduced: runtime array slots and object properties now share a
   common internal PHP value-cell primitive with stable identity, value-based
-  equality, and clone-by-value behavior.
-- Remaining semantic gaps: PHP-visible reference containers, broad COW
-  separation, array/object/string alias lifetime parity, arbitrary expression
-  reference roots, and native reference lowering remain unsupported.
+  equality, and clone-by-value behavior. A focused PHP reference-cell
+  container primitive now provides shared identity and write-through alias
+  behavior for later zval/reference wiring.
+- Remaining semantic gaps: interpreter-wide PHP-visible reference containers,
+  broad COW separation, array/object/string alias lifetime parity, arbitrary
+  expression reference roots, and native reference lowering remain unsupported.
 - Next concrete task: run adjacent runtime/object checks, `cargo fmt --check`,
   `git diff --check`, then one full checkpoint with
   `tools/checkpoint.sh "runtime: share value cells across array and object slots"`

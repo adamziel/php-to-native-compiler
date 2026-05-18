@@ -7,14 +7,16 @@ Implemented:
 - Added Lane 1726-C as the first post-bridge value-model refactor slice.
   Runtime array slots and object properties now share a common internal PHP
   value-cell primitive with stable cell identity, value-based equality, and
-  clone-by-value behavior. Public object-property reads/writes and clone
-  behavior remain PHP-compatible for the current subset, while a focused
-  runtime test proves object clones allocate independent property cells and
-  keep writes separated. This does not add PHP-visible reference containers,
-  general COW separation, array/object/string alias lifetime parity, or native
-  reference lowering. Focused verification: `cargo check -q -p phpc` passed
-  and `cargo test -q -p php_runtime
-  object_property_slots_use_value_cells_and_clone_by_value` passed `1` test.
+  clone-by-value behavior. A focused PHP reference-cell container primitive
+  now carries shared identity and write-through alias behavior for the later
+  zval/reference model. Public object-property reads/writes and clone behavior
+  remain PHP-compatible for the current subset, while focused runtime tests
+  prove object clones allocate independent property cells and reference-cell
+  aliases share writes. This does not add interpreter-wide PHP-visible
+  reference containers, general COW separation, array/object/string alias
+  lifetime parity, or native reference lowering. Focused verification:
+  `cargo check -q -p phpc` passed and the targeted `php_runtime` value-cell
+  and reference-cell tests passed.
 
 - Added Lane 1725-C focused local backing-alias analysis for COW bridges.
   Exact `__get()` and `offsetGet()` return-body analyzers now accept a local

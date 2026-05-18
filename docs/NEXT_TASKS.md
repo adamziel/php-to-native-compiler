@@ -19430,11 +19430,13 @@ handled.
 - [x] Runtime/tests/docs lane: start the real value-model refactor by moving
   runtime array slots and object properties onto a shared internal PHP
   value-cell primitive with stable identity, value-based equality, and
-  clone-by-value behavior. Add focused runtime coverage proving object clones
-  allocate independent property value cells and keep later writes separated.
-  Keep PHP-visible reference containers, broad COW separation,
-  array/object/string alias lifetime parity, and native reference lowering
-  named as unsupported.
+  clone-by-value behavior, and by adding a focused PHP reference-cell
+  container primitive with shared identity and write-through alias behavior.
+  Add focused runtime coverage proving object clones allocate independent
+  property value cells, keep later writes separated, and reference-cell aliases
+  share writes. Keep interpreter-wide PHP-visible reference containers, broad
+  COW separation, array/object/string alias lifetime parity, and native
+  reference lowering named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

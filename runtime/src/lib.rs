@@ -2334,6 +2334,7 @@ impl ArraySlot {
 }
 
 static NEXT_PHP_VALUE_CELL_ID: AtomicI64 = AtomicI64::new(1);
+static NEXT_PHP_REFERENCE_CELL_ID: AtomicI64 = AtomicI64::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PhpValueCellId(i64);
@@ -2343,6 +2344,54 @@ pub type ArraySlotCellId = PhpValueCellId;
 impl PhpValueCellId {
     pub fn as_i64(self) -> i64 {
         self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PhpReferenceCellId(i64);
+
+impl PhpReferenceCellId {
+    pub fn as_i64(self) -> i64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PhpReferenceCell {
+    id: PhpReferenceCellId,
+    value: Rc<RefCell<Value>>,
+}
+
+impl PartialEq for PhpReferenceCell {
+    fn eq(&self, other: &Self) -> bool {
+        self.value_cloned() == other.value_cloned()
+    }
+}
+
+impl PhpReferenceCell {
+    pub fn new(value: Value) -> Self {
+        Self {
+            id: PhpReferenceCellId(
+                NEXT_PHP_REFERENCE_CELL_ID.fetch_add(1, AtomicOrdering::Relaxed),
+            ),
+            value: Rc::new(RefCell::new(value)),
+        }
+    }
+
+    pub fn id(&self) -> PhpReferenceCellId {
+        self.id
+    }
+
+    pub fn shares_reference_with(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.value, &other.value)
+    }
+
+    pub fn value_cloned(&self) -> Value {
+        self.value.borrow().clone()
+    }
+
+    pub fn set_value(&self, value: Value) {
+        *self.value.borrow_mut() = value;
     }
 }
 
@@ -6195,6 +6244,31 @@ mod tests {
         assert_eq!(
             clone.read_public_property("payload").unwrap(),
             Value::String("clone".to_string())
+        );
+    }
+
+    #[test]
+    fn php_reference_cells_share_container_identity_and_writes() {
+        let reference = PhpReferenceCell::new(Value::String("original".to_string()));
+        let alias = reference.clone();
+        let distinct = PhpReferenceCell::new(Value::String("original".to_string()));
+
+        assert_eq!(reference.id(), alias.id());
+        assert!(reference.shares_reference_with(&alias));
+        assert!(!reference.shares_reference_with(&distinct));
+        assert_eq!(reference, distinct);
+        assert!(reference.id().as_i64() > 0);
+
+        alias.set_value(Value::String("changed".to_string()));
+
+        assert_eq!(
+            reference.value_cloned(),
+            Value::String("changed".to_string())
+        );
+        assert_eq!(alias.value_cloned(), Value::String("changed".to_string()));
+        assert_eq!(
+            distinct.value_cloned(),
+            Value::String("original".to_string())
         );
     }
 

@@ -210,8 +210,10 @@ The current in-progress implementation frontier is Lane 1726:
 - Lane 1726 starts the real value-model refactor after the bridge bundles:
   array slots and object properties now share a common internal PHP value-cell
   primitive with stable cell identity, value-based equality, and clone-by-value
-  behavior. This is runtime substrate for later reference containers and COW
-  separation, not PHP-visible general references yet.
+  behavior. The runtime also has a focused PHP reference-cell container
+  primitive with shared identity and write-through alias behavior. This is
+  substrate for later COW separation and interpreter wiring, not PHP-visible
+  general references yet.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

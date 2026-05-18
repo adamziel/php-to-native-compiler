@@ -4402,9 +4402,10 @@
   initialized object values, and structured duplicate class/member diagnostics.
   Runtime array slots and object properties share an internal PHP value-cell
   primitive with stable cell identity, value-based equality, and
-  clone-by-value behavior; this is substrate for later PHP reference
-  containers and COW separation, not a claim of general PHP-visible
-  references yet.
+  clone-by-value behavior. The runtime also has a focused PHP reference-cell
+  container primitive with shared identity and write-through alias behavior;
+  these are substrate for later PHP-visible reference containers and COW
+  separation, not a claim of general PHP-visible references yet.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class
