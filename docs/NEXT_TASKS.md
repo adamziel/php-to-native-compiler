@@ -19720,6 +19720,18 @@ handled.
   arbitrary magic/`ArrayAccess` method bodies, exact PHP fatal text, string
   COW identity, and native reference lowering named as unsupported.
 
+## Lane 1751-C: Local Indexed Backing Alias Returns
+
+- [x] Runtime/interpreter/tests/docs lane: broaden the proven `__get()` and
+  `offsetGet()` return-body analyzer by one static shape where a local is
+  bound by reference to an indexed `$this->property[...]` backing bucket and
+  the method returns that local, or a literal child below it. Cover
+  typed-reference preservation through `ArrayAccess` and the plain magic
+  `__get()` value-write shape with system-PHP fixture comparison. Keep
+  arbitrary method bodies, dynamic/non-literal keys, broader magic reference
+  containers, exact PHP fatal text, string COW identity, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

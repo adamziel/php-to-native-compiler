@@ -6862,6 +6862,103 @@ echo $bag->items["outer"][0],
 }
 
 #[test]
+fn local_indexed_backing_alias_returns_preserve_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public int $id = 1;
+}
+
+class Bag implements ArrayAccess {
+    public $items = array();
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    #[ReturnTypeWillChange]
+    public function &offsetGet($offset) {
+        $bucket =& $this->items[$offset];
+        return $bucket["leaf"];
+    }
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+class MagicBox {
+    private $store = array();
+
+    public function seed(&$value) {
+        $this->store["missing"]["copy"] = "seed";
+    }
+
+    public function &__get($name) {
+        $bucket =& $this->store[$name];
+        return $bucket;
+    }
+
+    public function read($name, $key) {
+        return gettype($this->store[$name][$key]) . ":" . $this->store[$name][$key];
+    }
+}
+
+$box = new Box();
+$alias =& $box->id;
+
+$bag = new Bag();
+$bag->items["outer"]["leaf"]["copy"] =& $alias;
+$bag["outer"]["copy"] = "2";
+echo gettype($box->id), ":", $box->id, "|", gettype($bag->items["outer"]["leaf"]["copy"]), ":", $bag->items["outer"]["leaf"]["copy"], "\n";
+
+$magic = new MagicBox();
+$magic->seed($alias);
+$magic->missing["copy"] = "3";
+echo gettype($box->id), ":", $box->id, "|", $magic->read("missing", "copy");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "integer:2|integer:2\ninteger:2|string:3");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    public int $id = 1;
+}
+
+class Bag implements ArrayAccess {
+    public $items = array();
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    #[ReturnTypeWillChange]
+    public function &offsetGet($offset) {
+        $bucket =& $this->items[$offset];
+        return $bucket["leaf"];
+    }
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+$box = new Box();
+$alias =& $box->id;
+$bag = new Bag();
+$bag->items["outer"]["leaf"]["copy"] =& $alias;
+$bag["outer"]["copy"] = array("bad");
+"#,
+    );
+    assert_eq!(error.line, 26);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid property access: typed property Box::$id expects int, got array"
+    );
+}
+
+#[test]
 fn arrayaccess_append_suffix_syntax_routes_to_backing_buckets() {
     let execution = run_source(
         r#"<?php

@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1750:
+The current in-progress implementation frontier is Lane 1751:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -354,6 +354,13 @@ The current in-progress implementation frontier is Lane 1750:
   that reference cell instead of degrading to a plain value snapshot. Covered
   direct, nested, and object-property array-offset unsets keep typed-property
   reference coercion/error behavior after detach.
+- Lane 1751 broadens the proven magic/`ArrayAccess` return-body analyzer by
+  one static local-alias shape: a public by-reference `__get()` or
+  `offsetGet()` method may bind a local by reference to an indexed
+  `$this->property[...]` backing bucket and return that local, or a literal
+  child below it. The covered `ArrayAccess` nested write shape preserves
+  typed-reference slots; the matching plain magic `__get()` value-write shape
+  routes through the same backing bucket.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

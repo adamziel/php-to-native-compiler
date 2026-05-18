@@ -4616,6 +4616,7 @@ struct ThisPropertyReferenceTarget {
 struct ThisPropertyLocalAlias {
     local: String,
     property: String,
+    prefix_indices: Vec<Expr>,
 }
 
 enum ArrayAccessOffsetKeyPart {
@@ -13026,23 +13027,19 @@ impl Interpreter {
                     ));
                 }
             };
-        let Expr::Index { target, index, .. } = return_value else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "reference assignment",
-                    "ArrayAccess offset reference sources require offsetGet() to contain only return $this->property[$offset] with optional literal prefix or suffix keys in the current subset",
-                ),
-            ));
-        };
-
-        let Some((property, indices)) =
-            Self::collect_this_property_or_local_alias_index_return_path(
-                target,
-                index,
-                &local_property_aliases,
-            )
-        else {
+        let Some((property, indices)) = (match return_value {
+            Expr::Index { target, index, .. } => {
+                Self::collect_this_property_or_local_alias_index_return_path(
+                    target,
+                    index,
+                    &local_property_aliases,
+                )
+            }
+            Expr::Variable(name, _) => {
+                Self::local_property_alias_return_path(name, &local_property_aliases)
+            }
+            _ => None,
+        }) else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -13200,6 +13197,47 @@ impl Interpreter {
                     property_aliases.push(ThisPropertyLocalAlias {
                         local: name.clone(),
                         property: property.clone(),
+                        prefix_indices: Vec::new(),
+                    });
+                    statements = rest;
+                }
+                [Stmt::ReferenceAssign {
+                    target: AssignTarget::Variable { name, .. },
+                    source:
+                        ReferenceSource::ObjectPropertyArrayIndex {
+                            object,
+                            property,
+                            index,
+                            ..
+                        },
+                    ..
+                }, rest @ ..]
+                    if object == "this" =>
+                {
+                    property_aliases.push(ThisPropertyLocalAlias {
+                        local: name.clone(),
+                        property: property.clone(),
+                        prefix_indices: vec![index.clone()],
+                    });
+                    statements = rest;
+                }
+                [Stmt::ReferenceAssign {
+                    target: AssignTarget::Variable { name, .. },
+                    source:
+                        ReferenceSource::ObjectPropertyNestedArrayIndex {
+                            object,
+                            property,
+                            indices,
+                            ..
+                        },
+                    ..
+                }, rest @ ..]
+                    if object == "this" =>
+                {
+                    property_aliases.push(ThisPropertyLocalAlias {
+                        local: name.clone(),
+                        property: property.clone(),
+                        prefix_indices: indices.clone(),
                     });
                     statements = rest;
                 }
@@ -16475,6 +16513,21 @@ impl Interpreter {
                     span,
                 )
             }
+            Expr::Variable(name, _) => {
+                let Some((property, indices)) =
+                    Self::local_property_alias_return_path(name, &local_property_aliases)
+                else {
+                    return Ok(None);
+                };
+                Self::reference_return_this_property_indices_target(
+                    function,
+                    property,
+                    indices,
+                    requested_property,
+                    &local_param_aliases,
+                    span,
+                )
+            }
             _ => Ok(None),
         }
     }
@@ -16497,6 +16550,24 @@ impl Interpreter {
         else {
             return Ok(None);
         };
+        Self::reference_return_this_property_indices_target(
+            function,
+            property,
+            indices,
+            requested_property,
+            local_param_aliases,
+            span,
+        )
+    }
+
+    fn reference_return_this_property_indices_target(
+        function: &FunctionDecl,
+        property: String,
+        indices: Vec<&Expr>,
+        requested_property: &str,
+        local_param_aliases: &[String],
+        span: Span,
+    ) -> CompileResult<Option<ThisPropertyReferenceTarget>> {
         let Some(param) = function.params.first() else {
             return Ok(None);
         };
@@ -16549,7 +16620,7 @@ impl Interpreter {
     fn collect_this_property_or_local_alias_index_return_path<'a>(
         target: &'a Expr,
         index: &'a Expr,
-        local_property_aliases: &[ThisPropertyLocalAlias],
+        local_property_aliases: &'a [ThisPropertyLocalAlias],
     ) -> Option<(String, Vec<&'a Expr>)> {
         let mut indices = vec![index];
         let mut current = target;
@@ -16568,9 +16639,28 @@ impl Interpreter {
             Expr::Variable(name, _) => local_property_aliases
                 .iter()
                 .find(|alias| alias.local == *name)
-                .map(|alias| (alias.property.clone(), indices)),
+                .map(|alias| {
+                    let mut combined_indices = alias.prefix_indices.iter().collect::<Vec<_>>();
+                    combined_indices.extend(indices);
+                    (alias.property.clone(), combined_indices)
+                }),
             _ => None,
         }
+    }
+
+    fn local_property_alias_return_path<'a>(
+        name: &str,
+        local_property_aliases: &'a [ThisPropertyLocalAlias],
+    ) -> Option<(String, Vec<&'a Expr>)> {
+        local_property_aliases
+            .iter()
+            .find(|alias| alias.local == name)
+            .map(|alias| {
+                (
+                    alias.property.clone(),
+                    alias.prefix_indices.iter().collect::<Vec<_>>(),
+                )
+            })
     }
 
     fn literal_reference_return_array_key(expr: &Expr) -> Option<ArrayKey> {

@@ -217,12 +217,17 @@
   `$alias =& $holders["box"]->missing["slot"];` and
   `$alias =& $holders["box"]->{$name}["outer"]["slot"];` are also accepted for
   direct-variable reference assignment through the same temporary holder root.
+  The bounded `__get()` and `offsetGet()` backing analyzers also accept one
+  local variable bound by reference to an indexed `$this->property[...]`
+  backing bucket, followed by returning that local or a literal child below
+  it, for example `$bucket =& $this->items[$offset]; return $bucket["leaf"];`.
   This does not add magic property roots without an array offset, magic
   `__get()` bodies beyond direct variable/property/backing-offset returns
-  and one local parameter-copy return,
+  one local parameter-copy return, and one local indexed backing-alias return,
   dynamic `offsetGet()` parameter keys, non-literal
   `offsetGet()` path keys, side-effecting or broader `ArrayAccess::offsetGet()`
-  bodies beyond one local offset-parameter copy, arbitrary mixed nested
+  bodies beyond one local offset-parameter copy or local indexed backing-alias
+  return, arbitrary mixed nested
   `ArrayAccess` object chains, broad same-container identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,

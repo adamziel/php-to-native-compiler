@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1751/local_indexed_backing_alias_returns.php

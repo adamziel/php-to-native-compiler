@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T20:38:10+02:00
+
+- Checkpoint before this task: `ee5a7345 runtime: preserve unset detached
+  reference cells`, pushed to `origin/master`.
+- Task attempted: Lane 1751-C, one bounded `__get()`/`offsetGet()`
+  return-body broadening for locals bound by reference to indexed
+  `$this->property[...]` backing buckets and then returned directly or with a
+  literal child suffix.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1751/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1751/local_indexed_backing_alias_returns.php`;
+  `cargo check -q -p phpc` passed with isolated
+  `CARGO_TARGET_DIR=target/cow-1751-check`;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1751`
+  passed `1` fixture with `1` system PHP comparison and `0` skips; focused
+  `local_indexed_backing_alias_returns_preserve_reference_slots` passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies,
+  dynamic/non-literal backing keys, broader magic reference containers
+  including the uncovered magic reference-backed overwrite edge, broader
+  complex alias sinks, exact PHP fatal text, string COW identity, and native
+  reference lowering.
+- Next concrete task: run formatting, diff, check, adjacent object-model and
+  milestone1747/1749/1750 regressions, then checkpoint with
+  `tools/checkpoint.sh "runtime: accept local indexed backing alias returns"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T20:14:25+02:00
 
 - Checkpoint before this task: `95717ebc parser: route ArrayAccess append

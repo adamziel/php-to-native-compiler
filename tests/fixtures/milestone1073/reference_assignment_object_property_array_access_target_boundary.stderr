@@ -1,2 +1,2 @@
-runtime error at 14:1: unsupported call reference assignment: ArrayAccess offset reference sources require offsetGet() to contain only return $this->property[$offset] with optional literal prefix or suffix keys in the current subset
+runtime error at 14:1: unsupported call reference assignment: ArrayAccess offset reference sources require offsetGet() to return $this->property[$offset] with optional literal prefix or suffix keys in the current subset
 
