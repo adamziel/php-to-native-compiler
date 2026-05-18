@@ -3944,6 +3944,47 @@ impl PhpObject {
         Ok(())
     }
 
+    pub fn bind_dynamic_public_property_reference_cell(
+        &self,
+        name: &str,
+    ) -> RuntimeResult<PhpReferenceCell> {
+        let mut properties = self.properties.borrow_mut();
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name && property.visibility == Visibility::Public
+        }) {
+            return properties[index].reference_cell();
+        }
+
+        if properties
+            .iter()
+            .any(|property| property.name == name && property.visibility != Visibility::Public)
+        {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires same-class method context in the current subset",
+                self.class_name, name
+            )));
+        }
+
+        if !self.allows_dynamic_public_properties() {
+            return Err(RuntimeError::undefined_property(
+                self.class_name.clone(),
+                name,
+            ));
+        }
+
+        let reference = PhpReferenceCell::new(Value::Null);
+        properties.push(ObjectProperty {
+            declaring_class_id: self.class_id,
+            declaring_class_name: self.class_name.clone(),
+            name: name.to_string(),
+            visibility: Visibility::Public,
+            type_decl: None,
+            storage: ObjectPropertyStorage::Reference(reference.clone()),
+            initialized: true,
+        });
+        Ok(reference)
+    }
+
     pub fn write_dynamic_public_property(&self, name: &str, value: Value) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
         if let Some(index) = properties.iter().rposition(|property| {

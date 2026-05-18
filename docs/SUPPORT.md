@@ -4443,7 +4443,14 @@
   shared property-reference identity for the covered public/dynamic/private
   context shapes. Explicit reference targets reached through alias-backed
   array roots also install source reference cells for the statically known
-  alias path. By-value
+  alias path. Missing property reference sources on dynamic-capable objects
+  such as `stdClass`, including named, dynamic, and expression-root forms,
+  materialize a reference-backed dynamic public property; declared classes
+  that do not allow dynamic public properties still report the current
+  undefined-property boundary. Array-offset and append reference sources below
+  a missing dynamic-capable property materialize that property as an array and
+  preserve nested references through object clones for the covered direct
+  holder forms. By-value
   terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's
@@ -4457,10 +4464,10 @@
   are substrate for later PHP-visible reference containers and COW separation;
   broader non-direct append target forms, append suffixes after `[]`,
   arbitrary magic/`ArrayAccess` method bodies, broader mixed array element
-  bindings, typed-property reference write enforcement, missing-property
-  dynamic creation for expression-root property references, complete alias
-  lifetime/detach parity, string COW identity, and native reference lowering
-  remain unsupported.
+  bindings, typed-property reference write enforcement, arbitrary
+  dynamic-property policy beyond the current dynamic-capable object subset,
+  complete alias lifetime/detach parity, string COW identity, and native
+  reference lowering remain unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

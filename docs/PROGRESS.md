@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Lane 1740-C for missing dynamic-property reference sources on
+  dynamic-capable objects. For `stdClass`-style objects, named, dynamic, and
+  function-return expression-root reference sources such as
+  `$alias =& $box->created`, `$alias =& $box->{$name}`, and
+  `$alias =& make()->created` now materialize the missing public property as
+  a runtime `PhpReferenceCell`, so aliases and clones share writes with the
+  new property. Array-offset and append reference sources below a missing
+  dynamic property, such as `$alias =& $box->created["slot"]` and
+  `$alias =& $box->created[]`, materialize the property as an array and
+  preserve the nested reference through clones. Declared objects that do not
+  allow dynamic properties remain an undefined-property boundary, and
+  typed-property reference write
+  enforcement, arbitrary dynamic-property policy, complete alias
+  lifetime/detach behavior, string COW identity, and native reference lowering
+  remain unsupported. Focused verification:
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1740`
+  passed `1` fixture with `1` system PHP comparison and `0` skips;
+  `cargo check -q -p phpc` passed; adjacent
+  `reference_assignment_dynamic_stdclass_property_source_materializes_missing_slot`
+  and
+  `reference_assignment_dynamic_declared_object_missing_property_source_remains_boundary`
+  passed.
+
 - Added Lane 1739-C for whole object-property reference source promotion.
   Supported visible/context property reference sources such as
   `$items =& $box->items`, `$items =& $box->{$name}`, and method-local

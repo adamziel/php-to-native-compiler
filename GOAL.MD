@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1739:
+The current in-progress implementation frontier is Lane 1740:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -293,6 +293,14 @@ The current in-progress implementation frontier is Lane 1739:
   only on array-offset alias side metadata. Alias-backed array target roots
   also install source reference cells when binding through a statically known
   alias path.
+- Lane 1740 extends that property reference-cell path to missing dynamic
+  properties on dynamic-capable objects such as `stdClass`. Named, dynamic,
+  and function-return expression roots now materialize the missing property
+  as a reference-backed dynamic public property, so aliases and object clones
+  share writes like PHP. Array-offset and append reference sources below a
+  missing dynamic property materialize the property as an array and preserve
+  the nested reference through clones. Declared classes that do not allow
+  dynamic public properties remain an explicit undefined-property boundary.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

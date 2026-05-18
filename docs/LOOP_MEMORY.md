@@ -59,6 +59,40 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "runtime: promote object property reference cells"` if
   the full gate passes.
 
+## Loop Event 2026-05-18T22:45:00+02:00
+
+- Checkpoint before this task: `45850fbd runtime: promote object property
+  reference cells`, pushed to `origin/master`.
+- Task attempted: Lane 1740-C dynamic-capable missing property reference-cell
+  materialization.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1740/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new milestone1740
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1740` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; `cargo check -q -p phpc` passed; adjacent
+  `reference_assignment_dynamic_stdclass_property_source_materializes_missing_slot`
+  and
+  `reference_assignment_dynamic_declared_object_missing_property_source_remains_boundary`
+  passed.
+- Semantic gap reduced: missing named, dynamic, and function-return
+  expression-root property reference sources on `stdClass`-style
+  dynamic-capable objects now materialize as reference-backed dynamic public
+  properties, so aliases, direct property writes, and clones share writes.
+  Direct array-offset and append reference sources below missing
+  dynamic-capable properties now materialize the property as an array and
+  preserve the nested reference through clones.
+- Remaining semantic gaps: declared classes that do not allow dynamic public
+  properties remain an undefined-property boundary; typed-property reference
+  write enforcement, arbitrary dynamic-property policy, complete alias
+  lifetime/detach behavior, string COW identity, and native reference lowering
+  remain unsupported.
+- Next concrete task: run format/diff checks, adjacent milestone1739 and
+  object-reference regressions, then checkpoint with
+  `tools/checkpoint.sh "runtime: materialize dynamic property reference cells"`
+  if the full gate passes.
+
 ## Fast-Track Directive 2026-05-18T15:15:00+02:00
 
 The previous loop was correct but too slow for the current 1-2 hour build

@@ -1,0 +1,5 @@
+null|alias|clone|clone|clone
+dynamic-alias|dynamic-property
+expr|expr-clone|expr-clone|expr-clone
+array-alias|array-clone|array-clone|array-clone
+append-alias|append-clone|append-clone|append-clone

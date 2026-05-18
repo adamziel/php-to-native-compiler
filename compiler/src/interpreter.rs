@@ -1592,54 +1592,6 @@ impl SymbolTable {
         })
     }
 
-    fn bind_static_to_dynamic_object_property(
-        &mut self,
-        target: &str,
-        object_name: &str,
-        property: &str,
-        span: Span,
-    ) -> CompileResult<()> {
-        let alias = ArrayOffsetAlias {
-            root: ArrayOffsetAliasRoot::PublicObjectProperty {
-                object: object_name.to_string(),
-                property: property.to_string(),
-            },
-            keys: Vec::new(),
-        };
-
-        match self.read_storage_named(object_name) {
-            Some(Value::Object(object)) => match object.read_public_property(property) {
-                Ok(_) => {}
-                Err(error)
-                    if matches!(error.kind(), RuntimeErrorKind::UndefinedProperty { .. }) =>
-                {
-                    object
-                        .write_dynamic_public_property(property, Value::Null)
-                        .map_err(|error| runtime_error(span, error))?;
-                }
-                Err(error) => return Err(runtime_error(span, error)),
-            },
-            Some(other) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::invalid_property_access(format!(
-                        "cannot read property ${property} on {}",
-                        other.type_name()
-                    )),
-                ));
-            }
-            None => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::undefined_variable(object_name),
-                ));
-            }
-        }
-
-        self.bind_static_to_array_offset_alias(target, alias);
-        Ok(())
-    }
-
     fn bind_static_to_array_offset_alias(&mut self, target: &str, alias: ArrayOffsetAlias) {
         self.bind_static_to_array_offset_aliases(target, vec![alias]);
     }
@@ -4916,9 +4868,20 @@ impl Interpreter {
             }
         };
 
-        let visibility = object
-            .property_visibility_from_context(property, current_class_id, &protected_class_ids)
-            .map_err(|error| runtime_error(span, error))?;
+        let visibility = match object.property_visibility_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(visibility) => visibility,
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                object
+                    .bind_dynamic_public_property_reference_cell(property)
+                    .map_err(|_| runtime_error(span, error))?;
+                Visibility::Public
+            }
+            Err(error) => return Err(runtime_error(span, error)),
+        };
 
         Ok(if visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
@@ -4955,9 +4918,20 @@ impl Interpreter {
             }
         };
 
-        let visibility = object
-            .property_visibility_from_context(property, current_class_id, &protected_class_ids)
-            .map_err(|error| runtime_error(span, error))?;
+        let visibility = match object.property_visibility_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(visibility) => visibility,
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                object
+                    .bind_dynamic_public_property_reference_cell(property)
+                    .map_err(|_| runtime_error(span, error))?;
+                Visibility::Public
+            }
+            Err(error) => return Err(runtime_error(span, error)),
+        };
 
         Ok(if visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
@@ -10969,9 +10943,20 @@ impl Interpreter {
             }
         };
 
-        let visibility = object
-            .property_visibility_from_context(property, current_class_id, &protected_class_ids)
-            .map_err(|error| runtime_error(span, error))?;
+        let visibility = match object.property_visibility_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(visibility) => visibility,
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                object
+                    .bind_dynamic_public_property_reference_cell(property)
+                    .map_err(|_| runtime_error(span, error))?;
+                Visibility::Public
+            }
+            Err(error) => return Err(runtime_error(span, error)),
+        };
 
         Ok(if visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
@@ -11338,9 +11323,20 @@ impl Interpreter {
             }
         };
 
-        let visibility = object
-            .property_visibility_from_context(property, current_class_id, &protected_class_ids)
-            .map_err(|error| runtime_error(span, error))?;
+        let visibility = match object.property_visibility_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(visibility) => visibility,
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                object
+                    .bind_dynamic_public_property_reference_cell(property)
+                    .map_err(|_| runtime_error(span, error))?;
+                Visibility::Public
+            }
+            Err(error) => return Err(runtime_error(span, error)),
+        };
 
         let root = if visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
@@ -11384,9 +11380,20 @@ impl Interpreter {
             }
         };
 
-        let visibility = object
-            .property_visibility_from_context(property, current_class_id, &protected_class_ids)
-            .map_err(|error| runtime_error(span, error))?;
+        let visibility = match object.property_visibility_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(visibility) => visibility,
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                object
+                    .bind_dynamic_public_property_reference_cell(property)
+                    .map_err(|_| runtime_error(span, error))?;
+                Visibility::Public
+            }
+            Err(error) => return Err(runtime_error(span, error)),
+        };
 
         let root = if visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
@@ -11803,7 +11810,7 @@ impl Interpreter {
                 }
 
                 let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object, property, span)?
+                    self.call_magic_get_reference_return_cell(object.clone(), property, span)?
                 else {
                     return Ok(None);
                 };
@@ -12373,7 +12380,7 @@ impl Interpreter {
             Ok(_) => Ok(None),
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
                 let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object, property, span)?
+                    self.call_magic_get_reference_return_cell(object.clone(), property, span)?
                 else {
                     return Ok(None);
                 };
@@ -13277,12 +13284,16 @@ impl Interpreter {
             }
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
                 if let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object, property, span)?
+                    self.call_magic_get_reference_return_cell(object.clone(), property, span)?
                 {
                     scope.bind_static_to_cell(target_name, cell);
                     Ok(())
                 } else {
-                    Err(runtime_error(span, error))
+                    let cell = object
+                        .bind_dynamic_public_property_reference_cell(property)
+                        .map_err(|_| runtime_error(span, error))?;
+                    scope.bind_static_to_cell(target_name, cell);
+                    Ok(())
                 }
             }
             Err(error) => Err(runtime_error(span, error)),
@@ -13325,12 +13336,16 @@ impl Interpreter {
             }
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
                 if let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object, property, span)?
+                    self.call_magic_get_reference_return_cell(object.clone(), property, span)?
                 {
                     scope.bind_static_to_cell(target_name, cell);
                     Ok(())
                 } else {
-                    Err(runtime_error(span, error))
+                    let cell = object
+                        .bind_dynamic_public_property_reference_cell(property)
+                        .map_err(|_| runtime_error(span, error))?;
+                    scope.bind_static_to_cell(target_name, cell);
+                    Ok(())
                 }
             }
             Err(error) => Err(runtime_error(span, error)),
@@ -13373,17 +13388,16 @@ impl Interpreter {
             }
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
                 if let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object, property, span)?
+                    self.call_magic_get_reference_return_cell(object.clone(), property, span)?
                 {
                     scope.bind_static_to_cell(target_name, cell);
                     Ok(())
                 } else {
-                    scope.bind_static_to_dynamic_object_property(
-                        target_name,
-                        object_name,
-                        property,
-                        span,
-                    )
+                    let cell = object
+                        .bind_dynamic_public_property_reference_cell(property)
+                        .map_err(|_| runtime_error(span, error))?;
+                    scope.bind_static_to_cell(target_name, cell);
+                    Ok(())
                 }
             }
             Err(error) => Err(runtime_error(span, error)),

@@ -19591,6 +19591,22 @@ handled.
   lifetime/detach behavior, string COW identity, and native reference lowering
   named as unsupported.
 
+## Lane 1740-C: Dynamic Property Reference Cell Materialization
+
+- [x] Runtime/interpreter/tests/docs lane: materialize missing named,
+  dynamic, and function-return expression-root property reference sources on
+  dynamic-capable objects such as `stdClass` as real runtime
+  `PhpReferenceCell` properties. Cover alias writes, property writes, and
+  clone-time shared reference identity with a system-PHP comparison fixture.
+  Also cover direct array-offset and append reference sources below a missing
+  dynamic property, materializing that property as an array and preserving the
+  nested reference through clones.
+  Keep declared classes that do not allow dynamic public properties as the
+  current undefined-property boundary, and keep typed-property reference write
+  enforcement, arbitrary dynamic-property policy, complete alias
+  lifetime/detach behavior, string COW identity, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
