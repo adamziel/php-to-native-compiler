@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1695/magic_property_mixed_arrayaccess_by_value_outer_nested_append_offsetget_reference_slot_cow.php
+stdout:
+via-by-value-outer-arrayaccess-append|via-by-value-outer-arrayaccess-label|via-by-value-outer-arrayaccess-append|via-by-value-outer-arrayaccess-label|1|plain|plain|1|0
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

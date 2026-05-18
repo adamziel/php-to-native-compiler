@@ -11319,15 +11319,6 @@ impl Interpreter {
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
-        if !function.returns_by_reference {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "reference assignment",
-                    "ArrayAccess offset reference sources require by-reference offsetGet() returning $this->property[$offset] in the current subset",
-                ),
-            ));
-        }
         ensure_user_function_arity(function, 1, span)?;
         ensure_supported_reference_return_function_metadata(function, span)?;
 
@@ -11347,9 +11338,45 @@ impl Interpreter {
                 object: object_name.clone(),
                 property: property.clone(),
                 current_class_id: Some(class_id),
-                protected_class_ids,
+                protected_class_ids: protected_class_ids.clone(),
             }
         };
+
+        if !function.returns_by_reference {
+            if keys.len() > 1 {
+                let first_alias = ArrayOffsetAlias {
+                    root: root.clone(),
+                    keys: vec![keys[0].clone()],
+                };
+                if let Some(Value::Object(nested_object)) =
+                    scope.read_array_offset_alias(&first_alias)
+                {
+                    if self
+                        .classes
+                        .implements_interface(nested_object.class_id(), "ArrayAccess")
+                    {
+                        let hidden_name =
+                            self.hidden_array_access_reference_object_name(&nested_object);
+                        scope.write_static(&hidden_name, Value::Object(nested_object.clone()));
+                        return self.evaluate_array_access_reference_source_alias_for_object(
+                            nested_object,
+                            hidden_name,
+                            keys[1..].to_vec(),
+                            span,
+                            scope,
+                        );
+                    }
+                }
+            }
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "ArrayAccess offset reference sources require by-reference offsetGet() returning $this->property[$offset] in the current subset",
+                ),
+            ));
+        }
+
         if keys.len() > 1 {
             let first_alias = ArrayOffsetAlias {
                 root: root.clone(),

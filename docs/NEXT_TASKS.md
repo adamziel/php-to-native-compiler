@@ -18885,6 +18885,23 @@ handled.
   parity, full references/COW, native reference lowering, and exact alias
   destruction/destructor ordering named as unsupported.
 
+## Lane 1695-C: By-Value Outer Mixed Magic ArrayAccess Append Mutation
+
+- [x] Runtime/tests/docs lane: parse and execute the focused mixed nested
+  `ArrayAccess` append store below a magic property when the outer
+  `ArrayAccess::offsetGet($offset)` returns the intermediate inner
+  `ArrayAccess` object by value, and the inner object uses the exact public
+  by-reference `offsetGet()` backing-property bridge. The covered direct
+  shape is `$box->missing["outer"]["inner"][] = $array`; the runtime follows
+  the by-value object handle to the inner object, appends into the inner
+  selected backing bucket, and preserves copied-bucket nested reference-slot
+  provenance. Keep by-value terminal/plain-array mutation, arbitrary/longer
+  mixed chains, side-effecting or broader `offsetGet()` bodies, broader
+  `__get()` return bodies, method-return or factory holder roots, scalar
+  parent overwrite/error parity, full references/COW, native reference
+  lowering, and exact alias destruction/destructor ordering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

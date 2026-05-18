@@ -954,8 +954,11 @@ exact by-reference `offsetGet($offset) { return $this->items[$offset]; }`
 bridge, the resolver recurses and the append lands in the inner object's
 selected backing bucket. Copied-bucket reads such as
 `$box->missing["outer"]["inner"][0]` can then mirror the stored bucket's
-nested reference metadata. Broader mixed chains, by-value intermediate
-objects, and side-effecting `offsetGet()` bodies remain outside the current
+nested reference metadata. A by-value outer `offsetGet()` can also serve as
+that intermediate object hop when it returns the nested `ArrayAccess` object
+handle; the inner object still needs the exact by-reference `offsetGet()`
+bridge for mutation. Broader mixed chains, by-value terminal/plain-array
+mutation, and side-effecting `offsetGet()` bodies remain outside the current
 model.
 The same magic append-store helper also covers the focused plain-array route
 when visible public `__get($name)` returns a direct variable by reference and

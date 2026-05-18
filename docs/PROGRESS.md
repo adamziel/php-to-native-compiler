@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Lane 1695-C focused by-value outer mixed magic-property `ArrayAccess`
+  append mutation for the COW shape where visible public `__get($name)`
+  returns an outer `ArrayAccess` object, the outer exact public by-value
+  `offsetGet($offset)` returns an intermediate inner `ArrayAccess` object
+  handle, and that inner object exposes the exact public by-reference
+  `offsetGet($offset)` backing-property bridge. Direct
+  `$box->missing["outer"]["inner"][] = $array` now follows the by-value
+  object handle to the inner by-reference bucket, appends into that selected
+  backing bucket, and preserves nested reference-slot provenance for later
+  copied-bucket reads. This does not add by-value terminal/plain-array
+  mutation, arbitrary/longer mixed chains, side-effecting or broader
+  `offsetGet()` bodies, broader `__get()` return bodies, method-return or
+  factory holder roots, full references/COW, native reference lowering, or
+  exact alias destruction/destructor ordering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, `cargo check -q -p phpc` passed, the `milestone1695`
+  `functions_and_scopes` filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1695`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+  `cargo fmt --check`, `git diff --check`, the adjacent `milestone1694`
+  `functions_and_scopes` filter, and adjacent `milestone1694` fixture
+  comparison also passed.
+
 - Added Lane 1694-C focused mixed nested magic-property `ArrayAccess` append
   mutation for the by-reference `offsetGet()` COW shape. When visible public
   `__get($name)` returns an outer `ArrayAccess` object whose exact public

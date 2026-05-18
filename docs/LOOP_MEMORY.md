@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T11:45:00+02:00
+
+- Checkpoint before this task: `23a2fd80 runtime: preserve mixed magic
+  ArrayAccess append references`, pushed to `origin/master`.
+- Task attempted: Lane 1695-C by-value outer mixed magic-property
+  `ArrayAccess` append mutation for the focused COW shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1695/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax check passed for the
+  new milestone1695 fixture; `cargo check -q -p phpc` passed; the
+  `milestone1695` `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1695`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+  `cargo fmt --check`, `git diff --check`, the adjacent `milestone1694`
+  `functions_and_scopes` filter, and adjacent `milestone1694` fixture
+  comparison also passed.
+- Semantic gap reduced: direct
+  `$box->missing["outer"]["inner"][] = $array` now works when the outer
+  `ArrayAccess::offsetGet()` returns the intermediate inner `ArrayAccess`
+  object by value, while the inner object uses the exact by-reference
+  backing-property bridge. The append lands in the inner object's selected
+  backing bucket and copied-bucket reads preserve nested reference slots.
+- Remaining semantic gaps: by-value terminal/plain-array mutation,
+  arbitrary/longer mixed chains, side-effecting or broader `offsetGet()`
+  bodies, broader `__get()` return bodies, method-return or factory holder
+  roots, full references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering remain unsupported.
+- Next concrete task: run the checkpoint full gate and commit this lane if it
+  passes.
+
 ## Loop Event 2026-05-18T11:20:00+02:00
 
 - Checkpoint before this task: `c00aa10c runtime: preserve deeper magic
