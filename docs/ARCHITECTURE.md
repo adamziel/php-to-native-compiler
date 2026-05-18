@@ -820,10 +820,15 @@ direct visible holder property or dynamic holder property, such as
 `$holder->hook[10]` or `$holder->{$name}[10]`; the same evaluated-index
 provenance also covers non-direct holder and expression-root holder reads such
 as `$holders["box"]->hook[10]` and `make_holder($hook)->hook[10]` when the
-final selected object has the exact bridge shape. By-value `offsetGet()` used
-as a reference source is still a boundary: PHP emits an indirect-modification
-notice, creates only a detached local alias/value, and leaves the backing
-element unchanged, while phpc currently rejects the shape before execution.
+final selected object has the exact bridge shape. Direct by-value
+`offsetGet()` used as a reference source follows PHP's bounded
+indirect-modification notice/no-op path for the same exact bridge instead of
+creating a backing alias. Statement-form reference assignment from a direct
+object root such as `$alias =& $bag[$key]` or a covered nested child suffix
+such as `$alias =& $bag["outer"]["slot"]` snapshots the selected value into a
+detached local variable, emits the bounded indirect-modification `E_NOTICE`,
+and leaves the backing `ArrayAccess` storage unchanged when the alias is later
+written.
 Function-parameter propagation of copied bucket provenance is covered for the
 same direct-object, direct property-held, array-held, and expression-root
 holder paths when the copied bucket is passed as a direct variable to a

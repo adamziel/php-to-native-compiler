@@ -8678,6 +8678,17 @@ impl Interpreter {
                 } = source
                 {
                     let key = self.evaluate_array_key(index, scope)?;
+                    if let Some(value) = self
+                        .evaluate_direct_array_access_by_value_reference_source_value(
+                            array_name,
+                            vec![key.clone()],
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.write_static(name, value);
+                        return Ok(());
+                    }
                     if let Some((alias, _)) = self
                         .evaluate_direct_array_access_reference_source_alias(
                             array_name,
@@ -8701,6 +8712,17 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if let Some(value) = self
+                        .evaluate_direct_array_access_by_value_reference_source_value(
+                            array_name,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.write_static(name, value);
+                        return Ok(());
+                    }
                     if let Some((alias, _)) = self
                         .evaluate_direct_array_access_reference_source_alias(
                             array_name,
@@ -10203,6 +10225,35 @@ impl Interpreter {
         .map(Some)
     }
 
+    fn evaluate_direct_array_access_by_value_reference_source_value(
+        &mut self,
+        object_name: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        if keys.is_empty() {
+            return Ok(None);
+        }
+        let Some(Value::Object(object)) = scope.read_named(object_name) else {
+            return Ok(None);
+        };
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return Ok(None);
+        }
+
+        self.evaluate_array_access_by_value_reference_source_value_for_object(
+            object,
+            object_name.to_string(),
+            keys,
+            span,
+            scope,
+        )
+    }
+
     fn evaluate_object_property_array_access_append_reference_source_alias(
         &mut self,
         object_name: &str,
@@ -10572,6 +10623,88 @@ impl Interpreter {
             )
         })?;
         Ok((alias, value))
+    }
+
+    fn evaluate_array_access_by_value_reference_source_value_for_object(
+        &mut self,
+        object: PhpObject,
+        object_name: String,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "offsetGet")
+        else {
+            return Ok(None);
+        };
+        if is_static || visibility != Visibility::Public {
+            return Ok(None);
+        }
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        if function.returns_by_reference {
+            return Ok(None);
+        }
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+
+        let property = self.array_access_offset_get_reference_property(function, span)?;
+
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        let property_visibility = object
+            .property_visibility_from_context(&property, Some(class_id), &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+        let root = if property_visibility == Visibility::Public {
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.clone(),
+                property: property.clone(),
+            }
+        } else {
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object: object_name.clone(),
+                property: property.clone(),
+                current_class_id: Some(class_id),
+                protected_class_ids,
+            }
+        };
+
+        if keys.len() > 1 {
+            let first_alias = ArrayOffsetAlias {
+                root: root.clone(),
+                keys: vec![keys[0].clone()],
+            };
+            if let Some(Value::Object(nested_object)) = scope.read_array_offset_alias(&first_alias)
+            {
+                if self
+                    .classes
+                    .implements_interface(nested_object.class_id(), "ArrayAccess")
+                {
+                    let hidden_name =
+                        self.hidden_array_access_reference_object_name(&nested_object);
+                    scope.write_static(&hidden_name, Value::Object(nested_object.clone()));
+                    return self.evaluate_array_access_by_value_reference_source_value_for_object(
+                        nested_object,
+                        hidden_name,
+                        keys[1..].to_vec(),
+                        span,
+                        scope,
+                    );
+                }
+            }
+        }
+
+        self.emit_notice(
+            "ArrayAccess::offsetGet()",
+            format!("Indirect modification of overloaded element of {class_name} has no effect"),
+            span,
+        )?;
+
+        let alias = ArrayOffsetAlias { root, keys };
+        Ok(Some(
+            scope.read_array_offset_alias(&alias).unwrap_or(Value::Null),
+        ))
     }
 
     fn hidden_array_access_reference_object_name(&self, object: &PhpObject) -> String {

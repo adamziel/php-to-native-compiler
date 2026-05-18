@@ -662,13 +662,14 @@
   `offsetGet()` bucket reads, whether the method returns by value or by
   reference, can mirror covered nested public object-property reference-slot
   provenance into a copied direct array variable when the selected key is
-  side-effect-free; this is copy provenance only, not by-reference source
-  support for by-value `offsetGet()`. In system PHP, by-value `offsetGet()`
-  used as a reference source such as `$alias =& $bag[$key]` emits an
-  `E_NOTICE` that indirect modification has no effect, produces only a
-  detached local alias/value, and does not mutate the backing element; phpc
-  currently keeps this as a hard runtime boundary instead of modeling that
-  notice/no-op path. `offsetGet()` bodies with side effects or broader return
+  side-effect-free. Direct by-value `offsetGet()` used as a reference source
+  such as `$alias =& $bag[$key]` or `$alias =& $bag["outer"]["slot"]` follows
+  PHP's bounded notice/no-op path for that same exact direct-object bridge:
+  it emits the indirect-modification `E_NOTICE`, initializes the target as a
+  detached local value, and does not mutate the backing element when the
+  target is later written. Property-held by-value reference-source roots,
+  append-source by-value `offsetGet(null)`, and `offsetGet()` bodies with side
+  effects or broader return
   expressions, dynamic property-held sources on non-direct holder expressions
   or outside visible property access, broader property-held alias lifetime
   after replacing non-direct/dynamic containing properties, append
@@ -826,7 +827,8 @@
   for current integer and float values by reading through `offsetGet($key)`
   and applying the update to PHP's current by-value temporary result without
   dispatching `offsetSet($key, $value)`. By-reference `offsetGet()` mutation
-  and indirect-modification notice fidelity remain unsupported.
+  and broader indirect-modification fidelity outside the documented by-value
+  reference-source slice remain unsupported.
 - direct static-variable compound assignment `$name += expr`,
   `$name -= expr`, `$name *= expr`, `$name /= expr`, `$name %= expr`,
   `$name .= expr`, `$name &= expr`, `$name |= expr`, `$name ^= expr`,

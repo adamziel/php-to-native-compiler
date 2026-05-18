@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T08:10:00+02:00
+
+- Checkpoint before this task: `42dbe7ed runtime: detach replaced ArrayAccess
+  bucket parameter slots`, pushed to `origin/master`.
+- Task attempted: Lane 1675 focused on by-value
+  `ArrayAccess::offsetGet()` reference-source notice/no-op/detached-alias
+  behavior for direct object roots.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1092/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `docs/queue/review/lane-1675-c-by-value-offsetget-reference-source.md`,
+  `docs/queue/review/lane-1675-d-arrayaccess-by-value-reference-source.md`,
+  and this memory file.
+- Tests run and result with isolated
+  `CARGO_TARGET_DIR=/tmp/phpc-target-1675-local` and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: focused direct and nested
+  `functions_and_scopes` tests passed; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1092` passed `1` fixture with `1`
+  system PHP comparison and `0` skips.
+- Semantic gap reduced: direct by-value exact-bridge `offsetGet()` reference
+  sources such as `$alias =& $bag[$key]` and covered nested child sources now
+  emit the bounded indirect-modification notice, initialize the target as a
+  detached local value, and leave backing `ArrayAccess` storage unchanged.
+- Remaining semantic gaps: property-held by-value reference-source roots,
+  append-source `offsetGet(null)` behavior unless separately proven,
+  side-effecting or broader `offsetGet()` bodies, arbitrary nested reference
+  slots stored inside `ArrayAccess` buckets, broader mixed `ArrayAccess`
+  chains, general PHP reference containers, broad COW identity, native
+  reference lowering, and exact alias destruction/destructor ordering.
+
 ## Loop Event 2026-05-18T07:35:00+02:00
 
 - Checkpoint before this task: `41bcfdf7`, pushed to `origin/master`.

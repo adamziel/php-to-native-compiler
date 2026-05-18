@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Lane 1675 by-value `ArrayAccess::offsetGet()` reference-source
+  notice/no-op fidelity for the focused exact direct-object bridge. Statement
+  form reference assignment from a by-value exact-bridge source such as
+  `$alias =& $bag[$key]` or a covered nested child source such as
+  `$alias =& $bag["outer"]["slot"]` now emits the bounded
+  indirect-modification `E_NOTICE`, initializes the target from the selected
+  value as a detached local variable, and leaves the backing `ArrayAccess`
+  storage unchanged when the target is later written. The old Milestone 1092
+  phpc-only boundary fixture is now PHP-comparable. This does not add
+  property-held by-value reference-source roots, append-source by-value
+  `offsetGet(null)`, side-effecting or broader `offsetGet()` bodies,
+  arbitrary nested reference slots stored inside `ArrayAccess` buckets,
+  broader mixed `ArrayAccess` chains, general PHP reference containers, broad
+  COW identity, native reference lowering, or exact alias
+  destruction/destructor ordering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-1675-local CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test functions_and_scopes
+  reference_assignment_array_access_offset_source_by_value_detaches_with_notice
+  -- --test-threads=1` passed `1` test; `cargo test -q -p phpc --test
+  functions_and_scopes
+  reference_assignment_array_access_nested_offset_source_by_value_detaches_with_notice
+  -- --test-threads=1` passed `1` test; and `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1092` passed `1` fixture with `1`
+  system PHP comparison and `0` skips.
+
 - Fixed the helper-parameter replacement detachment gap for the focused
   `ArrayAccess` copied-bucket COW shape. By-value helper parameters still
   receive covered copied-bucket provenance and can write through mirrored

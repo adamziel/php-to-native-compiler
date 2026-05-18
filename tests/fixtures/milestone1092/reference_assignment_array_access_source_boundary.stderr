@@ -1,2 +1,0 @@
-runtime error at 11:1: unsupported call reference assignment: ArrayAccess offset reference sources require by-reference offsetGet() returning $this->property[$offset] in the current subset
-

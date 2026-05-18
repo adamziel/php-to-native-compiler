@@ -18455,6 +18455,22 @@ handled.
   preserves the earlier nested write that PHP preserves. The former phpc-only
   helper parameter replacement probe now matches PHP and is comparable.
 
+## Lane 1675: By-Value `offsetGet()` Reference-Source Notice/No-op
+
+- [x] Runtime/tests/docs lanes: implement the focused by-value
+  `ArrayAccess::offsetGet()` reference-source notice/no-op/detached-alias
+  slice for direct object roots. `$alias =& $bag[$key]` and covered nested
+  child sources such as `$alias =& $bag["outer"]["slot"]` against by-value
+  exact-bridge `offsetGet()` now emit the bounded indirect-modification
+  notice, initialize only a detached local alias/value, and leave backing
+  `ArrayAccess` storage unchanged. Keep property-held by-value
+  reference-source roots, append-source `offsetGet(null)` behavior unless
+  separately proven, side-effecting or broader `offsetGet()` bodies, arbitrary
+  nested reference slots stored inside `ArrayAccess` buckets, broader mixed
+  `ArrayAccess` chains, real reference containers, broad COW identity, native
+  reference lowering, and exact alias destruction/destructor ordering named
+  as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

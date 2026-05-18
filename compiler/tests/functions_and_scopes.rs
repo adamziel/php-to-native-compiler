@@ -3405,26 +3405,71 @@ echo $bag["created"]["leaf"], "|", $missing;
 }
 
 #[test]
-fn reference_assignment_array_access_offset_source_by_value_reports_stable_boundary() {
-    let error = runtime_error(
+fn reference_assignment_array_access_offset_source_by_value_detaches_with_notice() {
+    let execution = run_source(
         r#"<?php
+function notice_handler($errno, $message, $file, $line) {
+    echo "notice:", $message, "\n";
+    return true;
+}
+set_error_handler("notice_handler", E_NOTICE);
+
 class Bag implements ArrayAccess {
+    public $items = ["name" => "seed"];
     public function offsetExists($offset) { return false; }
-    public function offsetGet($offset) { return null; }
-    public function offsetSet($offset, $value) { }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
     public function offsetUnset($offset) { }
 }
 $bag = new Bag();
-$alias =& $bag["name"];
+$key = "name";
+$alias =& $bag[$key];
+$alias = "changed";
+echo $alias, "|", $bag->items[$key];
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 9);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call reference assignment: ArrayAccess offset reference sources require by-reference offsetGet() returning $this->property[$offset] in the current subset"
+        execution.stdout,
+        "notice:Indirect modification of overloaded element of Bag has no effect\nchanged|seed"
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_array_access_nested_offset_source_by_value_detaches_with_notice() {
+    let execution = run_source(
+        r#"<?php
+function notice_handler($errno, $message, $file, $line) {
+    echo "notice:", $message, "\n";
+    return true;
+}
+set_error_handler("notice_handler", E_NOTICE);
+
+class Bag implements ArrayAccess {
+    public $items = ["outer" => ["slot" => "seed"]];
+    public function offsetExists($offset) { return false; }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { }
+}
+$bag = new Bag();
+$key = "outer";
+$alias =& $bag[$key]["slot"];
+$alias = "changed";
+echo $alias, "|", $bag->items[$key]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "notice:Indirect modification of overloaded element of Bag has no effect\nchanged|seed"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
