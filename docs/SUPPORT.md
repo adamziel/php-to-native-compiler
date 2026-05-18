@@ -4410,12 +4410,16 @@
   for this storage shape. Interpreter direct variable cells and by-reference
   closure captures also use the runtime reference-cell primitive for their
   internal shared cell identity. Direct array element reference bindings of
-  the form `$array[$key] =& $var` and `$array[] =& $var` now store
-  reference-backed array slots for direct variable sources while retaining the
-  existing alias side table for broader paths. These are substrate for later
-  PHP-visible reference containers and COW separation; broad nested/mixed array
-  element bindings, complete alias lifetime/detach parity, string COW
-  identity, and native reference lowering remain unsupported.
+  the form `$array[$key] =& $var`, `$array[] =& $var`,
+  `$array["outer"]["slot"] =& $var`, `$array["outer"][] =& $var`,
+  `$object->items["slot"] =& $var`, and
+  `$object->items["outer"][] =& $var` now store reference-backed array slots
+  for direct variable sources while retaining the existing alias side table
+  for broader paths. These are substrate for later PHP-visible reference
+  containers and COW separation; method-local `$this` object-property targets,
+  alias-backed sources, broader non-direct, magic, and mixed array element
+  bindings, complete alias lifetime/detach parity, string COW identity, and
+  native reference lowering remain unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

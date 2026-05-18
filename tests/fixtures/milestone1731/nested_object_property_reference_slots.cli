@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1731/nested_object_property_reference_slots.php

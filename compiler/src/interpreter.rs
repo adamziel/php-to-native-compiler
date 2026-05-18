@@ -2768,6 +2768,7 @@ impl SymbolTable {
         }
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
+        let source_cell = self.direct_reference_cell_for_static_source(source_name);
         let alias = ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::StaticArray {
                 name: array_name.to_string(),
@@ -2776,7 +2777,12 @@ impl SymbolTable {
         };
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
         self.materialize_array_offset_alias(&alias, span)?;
-        if !self.write_array_offset_alias(&alias, source_value) {
+        let wrote_alias = if let Some(source_cell) = source_cell {
+            self.write_array_offset_alias_reference(&alias, source_cell)
+        } else {
+            self.write_array_offset_alias(&alias, source_value)
+        };
+        if !wrote_alias {
             return Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
@@ -2796,13 +2802,19 @@ impl SymbolTable {
         let (global_name, keys) = Self::split_globals_reference_path(keys, span)?;
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
+        let source_cell = self.direct_reference_cell_for_static_source(source_name);
         let alias = ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
             keys,
         };
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
         self.materialize_array_offset_alias(&alias, span)?;
-        if !self.write_array_offset_alias(&alias, source_value) {
+        let wrote_alias = if let Some(source_cell) = source_cell {
+            self.write_array_offset_alias_reference(&alias, source_cell)
+        } else {
+            self.write_array_offset_alias(&alias, source_value)
+        };
+        if !wrote_alias {
             return Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
@@ -2870,11 +2882,21 @@ impl SymbolTable {
             self.ensure_array_offset_reference_target_source(object, source_name, span)?;
         }
 
-        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias { root, keys };
+        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
+        let source_cell = if Self::alias_root_allows_reference_slot_fast_path(&alias.root) {
+            self.direct_reference_cell_for_static_source(source_name)
+        } else {
+            None
+        };
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
         self.materialize_array_offset_alias(&alias, span)?;
-        if !self.write_array_offset_alias(&alias, source_value) {
+        let wrote_alias = if let Some(source_cell) = source_cell {
+            self.write_array_offset_alias_reference(&alias, source_cell)
+        } else {
+            self.write_array_offset_alias(&alias, source_value)
+        };
+        if !wrote_alias {
             return Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
@@ -3041,8 +3063,20 @@ impl SymbolTable {
                 ));
             }
         };
-        let alias_keys =
-            Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?;
+        let alias_keys = if Self::alias_root_allows_reference_slot_fast_path(&root) {
+            if let Some(source_cell) = self.direct_reference_cell_for_static_source(source_name) {
+                Self::append_nested_array_offset_alias_reference(
+                    &mut array,
+                    &keys,
+                    source_cell,
+                    span,
+                )?
+            } else {
+                Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?
+            }
+        } else {
+            Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?
+        };
         self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
         self.bind_direct_alias_group_to_array_offset_alias(
             source_name,
@@ -3109,8 +3143,13 @@ impl SymbolTable {
                 ));
             }
         };
-        let alias_keys =
-            Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?;
+        let alias_keys = if let Some(source_cell) =
+            self.direct_reference_cell_for_static_source(source_name)
+        {
+            Self::append_nested_array_offset_alias_reference(&mut array, &keys, source_cell, span)?
+        } else {
+            Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?
+        };
         self.write_storage_named(array_name, Value::Array(array));
         self.bind_direct_alias_group_to_array_offset_alias(
             source_name,
@@ -3152,8 +3191,13 @@ impl SymbolTable {
                 ));
             }
         };
-        let alias_keys =
-            Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?;
+        let alias_keys = if let Some(source_cell) =
+            self.direct_reference_cell_for_static_source(source_name)
+        {
+            Self::append_nested_array_offset_alias_reference(&mut array, &keys, source_cell, span)?
+        } else {
+            Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?
+        };
         self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
         self.bind_direct_alias_group_to_array_offset_alias(
             source_name,
@@ -3207,6 +3251,15 @@ impl SymbolTable {
         }
 
         Ok(())
+    }
+
+    fn alias_root_allows_reference_slot_fast_path(root: &ArrayOffsetAliasRoot) -> bool {
+        !matches!(
+            root,
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, .. }
+                | ArrayOffsetAliasRoot::ContextObjectProperty { object, .. }
+                if object == "this"
+        )
     }
 
     fn direct_reference_cell_for_static_source(
@@ -3930,6 +3983,41 @@ impl SymbolTable {
         let mut alias_keys = vec![key.clone()];
         alias_keys.extend(Self::append_nested_array_offset_alias(
             &mut child, rest, value, span,
+        )?);
+        array.insert(key.clone(), Value::Array(child));
+        Ok(alias_keys)
+    }
+
+    fn append_nested_array_offset_alias_reference(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        reference: VariableCell,
+        span: Span,
+    ) -> CompileResult<Vec<ArrayKey>> {
+        let Some((key, rest)) = keys.split_first() else {
+            let appended = array
+                .append_reference(reference)
+                .map_err(|error| runtime_error(span, error))?;
+            return Ok(vec![appended]);
+        };
+
+        let mut child = match array.get_cloned(key.clone()) {
+            Some(Value::Array(child)) => child,
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let mut alias_keys = vec![key.clone()];
+        alias_keys.extend(Self::append_nested_array_offset_alias_reference(
+            &mut child, rest, reference, span,
         )?);
         array.insert(key.clone(), Value::Array(child));
         Ok(alias_keys)
@@ -5644,7 +5732,7 @@ impl Interpreter {
                     return None;
                 };
                 let key = Self::side_effect_free_array_key(index, scope)?;
-                array.get(key)?.clone()
+                array.get_cloned(key)?
             }
             _ => return None,
         })
@@ -16027,8 +16115,7 @@ impl Interpreter {
             .filter_map(|(index, name)| {
                 name.as_ref().map(|name| {
                     let element = array
-                        .get(ArrayKey::Int(index as i64))
-                        .cloned()
+                        .get_cloned(ArrayKey::Int(index as i64))
                         .unwrap_or(Value::Null);
                     (name.clone(), element)
                 })
@@ -16789,9 +16876,9 @@ impl Interpreter {
             } => {
                 let key = self.evaluate_array_key(index, scope)?;
                 let should_assign = match scope.read_named(name) {
-                    Some(Value::Array(array)) => match array.get(key.clone()) {
+                    Some(Value::Array(array)) => match array.get_cloned(key.clone()) {
                         Some(value) if !matches!(value, Value::Null) => {
-                            return Ok(value.clone());
+                            return Ok(value);
                         }
                         _ => true,
                     },
@@ -42159,13 +42246,13 @@ impl Interpreter {
     }
 
     fn array_path_isset(value: &Value, keys: &[ArrayKey]) -> bool {
-        let mut current = value;
+        let mut current = value.clone();
 
         for key in keys {
-            let Value::Array(array) = current else {
+            let Value::Array(array) = &current else {
                 return false;
             };
-            let Some(next) = array.get(key.clone()) else {
+            let Some(next) = array.get_cloned(key.clone()) else {
                 return false;
             };
             current = next;
@@ -42175,26 +42262,26 @@ impl Interpreter {
     }
 
     fn array_path_value(value: &Value, keys: &[ArrayKey]) -> Option<Value> {
-        let mut current = value;
+        let mut current = value.clone();
 
         for key in keys {
-            let Value::Array(array) = current else {
+            let Value::Array(array) = &current else {
                 return None;
             };
-            current = array.get(key.clone())?;
+            current = array.get_cloned(key.clone())?;
         }
 
-        Some(current.clone())
+        Some(current)
     }
 
     fn array_path_empty(value: &Value, keys: &[ArrayKey]) -> bool {
-        let mut current = value;
+        let mut current = value.clone();
 
         for key in keys {
-            let Value::Array(array) = current else {
+            let Value::Array(array) = &current else {
                 return true;
             };
-            let Some(next) = array.get(key.clone()) else {
+            let Some(next) = array.get_cloned(key.clone()) else {
                 return true;
             };
             current = next;
@@ -56046,6 +56133,133 @@ mod tests {
     }
 
     #[test]
+    fn symbol_table_nested_and_object_property_reference_targets_use_reference_slots() {
+        let mut symbols = SymbolTable::new();
+        let span = Span::new(7, 3);
+
+        symbols.write_static("source", Value::Int(10));
+        let source_cell = symbols.read_cell("source").unwrap();
+        symbols.write_static("items", Value::Array(PhpArray::new()));
+        symbols
+            .bind_nested_array_offset_to_static_source(
+                "items",
+                vec![
+                    ArrayKey::String("outer".to_string()),
+                    ArrayKey::String("slot".to_string()),
+                ],
+                "source",
+                span,
+            )
+            .unwrap();
+
+        let Value::Array(array) = symbols.read_static("items", span).unwrap() else {
+            panic!("expected array");
+        };
+        let Some(Value::Array(outer)) = array.get_cloned("outer") else {
+            panic!("expected nested array");
+        };
+        assert_eq!(
+            outer.get_slot("slot").unwrap().reference_cell_id(),
+            Some(source_cell.id())
+        );
+
+        symbols.write_static("source", Value::Int(11));
+        let Value::Array(array) = symbols.read_static("items", span).unwrap() else {
+            panic!("expected array");
+        };
+        let Some(Value::Array(outer)) = array.get_cloned("outer") else {
+            panic!("expected nested array");
+        };
+        assert_eq!(outer.get_cloned("slot"), Some(Value::Int(11)));
+
+        symbols.write_static("appended", Value::String("nested".to_string()));
+        let appended_cell = symbols.read_cell("appended").unwrap();
+        symbols
+            .append_nested_array_offset_to_static_source(
+                "items",
+                vec![ArrayKey::String("outer".to_string())],
+                "appended",
+                span,
+            )
+            .unwrap();
+        let Value::Array(array) = symbols.read_static("items", span).unwrap() else {
+            panic!("expected array");
+        };
+        let Some(Value::Array(outer)) = array.get_cloned("outer") else {
+            panic!("expected nested array");
+        };
+        assert_eq!(
+            outer.get_slot(0).unwrap().reference_cell_id(),
+            Some(appended_cell.id())
+        );
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .write_public_property("items", Value::Array(PhpArray::new()))
+            .unwrap();
+        symbols.write_static("box", Value::Object(object));
+
+        symbols.write_static("property_source", Value::String("property".to_string()));
+        let property_source_cell = symbols.read_cell("property_source").unwrap();
+        let root = ArrayOffsetAliasRoot::PublicObjectProperty {
+            object: "box".to_string(),
+            property: "items".to_string(),
+        };
+        symbols
+            .bind_object_property_array_offset_alias_root_to_static_source(
+                root.clone(),
+                vec![ArrayKey::String("slot".to_string())],
+                "property_source",
+                span,
+            )
+            .unwrap();
+
+        let Value::Object(object) = symbols.read_static("box", span).unwrap() else {
+            panic!("expected object");
+        };
+        let Value::Array(items) = object.read_public_property("items").unwrap() else {
+            panic!("expected property array");
+        };
+        assert_eq!(
+            items.get_slot("slot").unwrap().reference_cell_id(),
+            Some(property_source_cell.id())
+        );
+
+        symbols.write_static(
+            "property_append",
+            Value::String("property-append".to_string()),
+        );
+        let property_append_cell = symbols.read_cell("property_append").unwrap();
+        symbols
+            .append_object_property_array_offset_alias_root_to_static_source(
+                root,
+                vec![ArrayKey::String("outer".to_string())],
+                "property_append",
+                span,
+            )
+            .unwrap();
+        let Value::Object(object) = symbols.read_static("box", span).unwrap() else {
+            panic!("expected object");
+        };
+        let Value::Array(items) = object.read_public_property("items").unwrap() else {
+            panic!("expected property array");
+        };
+        let Some(Value::Array(outer)) = items.get_cloned("outer") else {
+            panic!("expected nested property array");
+        };
+        assert_eq!(
+            outer.get_slot(0).unwrap().reference_cell_id(),
+            Some(property_append_cell.id())
+        );
+    }
+
+    #[test]
     fn symbol_table_static_unset_removes_existing_symbol_and_ignores_missing_names() {
         let mut symbols = SymbolTable::new();
         let span = Span::new(7, 3);
@@ -56086,7 +56300,7 @@ mod tests {
 
         assert_eq!(array.len(), 1);
         assert_eq!(
-            array.get(0).cloned(),
+            array.get_cloned(0),
             Some(Value::String("first".to_string()))
         );
     }

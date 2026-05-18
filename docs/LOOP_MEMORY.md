@@ -302,6 +302,36 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: use reference slots for direct array bindings"`
   if the full gate passes.
 
+## Loop Event 2026-05-18T18:25:00+02:00
+
+- Checkpoint before this task: `7ef0d333 runtime: use reference slots for
+  direct array bindings`, pushed to `origin/master`.
+- Task attempted: Lane 1731-C nested direct array and direct object-property
+  array reference-backed slot wiring for direct variable sources.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1731/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new fixture;
+  `cargo test -q -p phpc
+  symbol_table_nested_and_object_property_reference_targets_use_reference_slots`
+  passed the focused compiler unit test; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1731`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: direct variable sources now install
+  reference-backed `ArraySlot`s for nested direct array targets and direct
+  object-property array target/appends such as
+  `$array["outer"]["slot"] =& $var`, `$array["outer"][] =& $var`,
+  `$object->items["slot"] =& $var`, and
+  `$object->items["outer"][] =& $var`.
+- Remaining semantic gaps: method-local `$this` object-property targets,
+  alias-backed sources, broader non-direct/magic/mixed roots, alias side-table
+  removal, complete PHP alias lifetime/detach parity, string COW identity, and
+  native reference lowering remain unsupported.
+- Next concrete task: run adjacent regression checks, `cargo check`,
+  `cargo fmt --check`, `git diff --check`, and then one full checkpoint with
+  `tools/checkpoint.sh "runtime: wire nested reference array slots"` if the
+  full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

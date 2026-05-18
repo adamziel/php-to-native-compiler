@@ -19483,6 +19483,17 @@ handled.
   lifetime/detach behavior, string COW identity, and native reference lowering
   named as unsupported.
 
+## Lane 1731-C: Nested/Object Property Reference-Backed Slot Wiring
+
+- [x] Runtime/interpreter/tests/docs lane: route direct variable sources for
+  nested direct array targets and direct object-property array targets/appends
+  through reference-backed `ArraySlot`s. Prove source `PhpReferenceCell`
+  identity for nested keyed and append paths, and add a system-PHP comparison
+  fixture for the CLI-visible alias behavior. Keep method-local `$this`
+  object-property targets, alias-backed sources, broader
+  non-direct/magic/mixed roots, complete alias lifetime/detach behavior,
+  string COW identity, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

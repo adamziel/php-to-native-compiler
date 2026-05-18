@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1731-C nested/object-property array element reference-slot
+  wiring for direct variable sources. Nested direct array reference targets
+  and direct object-property array target/appends now install
+  reference-backed `ArraySlot`s carrying the source `PhpReferenceCell`
+  identity for shapes such as `$array["outer"]["slot"] =& $var`,
+  `$array["outer"][] =& $var`, `$object->items["slot"] =& $var`, and
+  `$object->items["outer"][] =& $var`. Method-local `$this` object-property
+  targets remain on the alias-scaffolding path to preserve existing
+  by-value `ArrayAccess` bucket reuse parity. Alias-backed sources, broader
+  non-direct/magic/mixed roots, complete alias lifetime/detach behavior,
+  string COW identity, and native reference lowering remain unsupported.
+  Focused verification: raw system PHP output matched the new fixture;
+  `cargo test -q -p phpc
+  symbol_table_nested_and_object_property_reference_targets_use_reference_slots`
+  passed the focused compiler unit test; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1731`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1730-C focused array element reference-slot wiring. `PhpArray`
   now exposes cloned reads and reference-slot insertion/append helpers, and
   the interpreter uses reference-backed `ArraySlot`s for direct
