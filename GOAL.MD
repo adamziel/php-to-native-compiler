@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1762:
+The current in-progress implementation frontier is Lane 1763:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -406,6 +406,11 @@ The current in-progress implementation frontier is Lane 1762:
   and append reference targets when a visible/context property root is
   provably `false`, while leaving inaccessible and magic fallback cases on
   their existing bounded paths.
+- Lane 1763 starts the string COW identity slice for bounded ASCII integer
+  offsets: direct variable, visible/context object-property, and array-bucket
+  string offset reads/writes now preserve by-value copy isolation and
+  by-reference write-through, including negative in-range offsets and
+  out-of-range space padding.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

@@ -19861,6 +19861,18 @@ handled.
   exact PHP stderr formatting, string COW identity, and native reference
   lowering named as unsupported.
 
+## Lane 1763-C: ASCII String Offset COW
+
+- [x] Runtime/interpreter/tests/docs lane: support bounded ASCII integer
+  string offset reads/writes for direct variables, visible/context
+  object-property roots, and array buckets. Preserve PHP's by-value copy
+  isolation and by-reference write-through for direct aliases, property
+  aliases, and array-slot aliases; cover negative in-range offsets and
+  out-of-range positive offset padding with a system-PHP fixture. Keep
+  binary/multibyte strings, non-integer string offset keys, broader
+  warning/fatal text parity, magic/`ArrayAccess` string-offset paths, and
+  native reference/string COW lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -6906,6 +6906,122 @@ impl Interpreter {
         )
     }
 
+    fn string_offset_index(
+        key: &ArrayKey,
+        byte_len: usize,
+        operation: &str,
+        span: Span,
+    ) -> CompileResult<usize> {
+        let ArrayKey::Int(offset) = key else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!("cannot {operation} offset on string")),
+            ));
+        };
+
+        let resolved = if *offset < 0 {
+            byte_len as i64 + *offset
+        } else {
+            *offset
+        };
+        if resolved < 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "string offset",
+                    "negative offsets before the start of the string are not implemented",
+                ),
+            ));
+        }
+        Ok(resolved as usize)
+    }
+
+    fn read_ascii_string_offset(
+        &mut self,
+        value: &str,
+        key: &ArrayKey,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if !value.is_ascii() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "string offset",
+                    "binary and multibyte string offset reads are not implemented",
+                ),
+            ));
+        }
+
+        let index = Self::string_offset_index(key, value.len(), "read", span)?;
+        let Some(byte) = value.as_bytes().get(index) else {
+            self.emit_warning(
+                "string offset",
+                format!("Uninitialized string offset {}", key.display_key()),
+                span,
+            )?;
+            return Ok(Value::String(String::new()));
+        };
+        Ok(Value::String(char::from(*byte).to_string()))
+    }
+
+    fn write_ascii_string_offset(
+        &mut self,
+        value: &mut String,
+        key: &ArrayKey,
+        replacement: Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        if !value.is_ascii() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "string offset",
+                    "binary and multibyte string offset writes are not implemented",
+                ),
+            ));
+        }
+
+        let index = Self::string_offset_index(key, value.len(), "write", span)?;
+        let replacement = self.value_to_echo_string(replacement, span)?;
+        if replacement.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot assign an empty string to a string offset".to_string(),
+                ),
+            ));
+        }
+        if !replacement.is_ascii() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "string offset",
+                    "binary and multibyte replacement strings are not implemented",
+                ),
+            ));
+        }
+        if replacement.len() > 1 {
+            self.emit_warning(
+                "string offset",
+                "Only the first byte will be assigned to the string offset",
+                span,
+            )?;
+        }
+
+        let replacement = replacement.as_bytes()[0];
+        let mut bytes = value.as_bytes().to_vec();
+        if index > bytes.len() {
+            bytes.resize(index, b' ');
+            bytes.push(replacement);
+        } else if index == bytes.len() {
+            bytes.push(replacement);
+        } else {
+            bytes[index] = replacement;
+        }
+        *value = String::from_utf8(bytes).expect("ASCII string offset writes remain valid UTF-8");
+        Ok(())
+    }
+
     fn emit_runtime_diagnostic(
         &mut self,
         function: &str,
@@ -14648,6 +14764,13 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
+                if let Some(key) = key.as_ref() {
+                    if let Some(Value::String(mut string)) = scope.read_named(name) {
+                        self.write_ascii_string_offset(&mut string, key, value.clone(), *span)?;
+                        scope.write_static(name, Value::String(string));
+                        return Ok(value);
+                    }
+                }
                 if name == "GLOBALS" {
                     let Some(key) = key.as_ref() else {
                         return Err(runtime_error(
@@ -14873,6 +14996,17 @@ impl Interpreter {
                                 .map_err(|error| runtime_error(*span, error))?;
                         }
                     },
+                    Value::String(string) => {
+                        let Some(key) = key.as_ref() else {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::invalid_array_access(
+                                    "cannot append offset on string".to_string(),
+                                ),
+                            ));
+                        };
+                        self.write_ascii_string_offset(string, key, value.clone(), *span)?;
+                    }
                     other => {
                         return Err(runtime_error(
                             *span,
@@ -17544,6 +17678,20 @@ impl Interpreter {
         }
 
         match &mut slot {
+            Value::String(string) if keys.len() == 1 => {
+                self.write_ascii_string_offset(string, &keys[0], value, span)?;
+                object
+                    .write_property_from_context_with_object_type_resolver(
+                        property,
+                        slot,
+                        current_class_id,
+                        &protected_class_ids,
+                        |object, type_name| {
+                            self.object_satisfies_live_property_type(object, type_name)
+                        },
+                    )
+                    .map_err(|error| runtime_error(span, error))
+            }
             Value::Array(array) => {
                 self.write_nested_array_value(array, keys, value, span)?;
                 object
@@ -17731,7 +17879,7 @@ impl Interpreter {
     }
 
     fn write_nested_array_value(
-        &self,
+        &mut self,
         array: &mut PhpArray,
         keys: &[ArrayKey],
         value: Value,
@@ -17760,6 +17908,19 @@ impl Interpreter {
 
         let mut child = match array.get_cloned(key.clone()) {
             Some(Value::Array(child)) => child,
+            Some(Value::String(mut string)) if rest.len() == 1 => {
+                self.write_ascii_string_offset(&mut string, &rest[0], value, span)?;
+                array
+                    .insert_checked_with_object_type_resolver(
+                        key.clone(),
+                        Value::String(string),
+                        |object, type_name| {
+                            self.object_satisfies_live_property_type(object, type_name)
+                        },
+                    )
+                    .map_err(|error| runtime_error(span, error))?;
+                return Ok(());
+            }
             Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
@@ -25126,6 +25287,11 @@ impl Interpreter {
                     None
                 };
                 Ok((value, source))
+            }
+            Value::String(value) => {
+                let key = self.evaluate_array_key(index, scope)?;
+                let value = self.read_ascii_string_offset(&value, &key, span)?;
+                Ok((value, None))
             }
             Value::Object(object) => {
                 let key_value = self.evaluate(index, scope)?;

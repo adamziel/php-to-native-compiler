@@ -18,6 +18,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T22:15:41+02:00
+
+- Checkpoint before this task: `749424da runtime: emit object false reference
+  deprecations`, pushed to `origin/master`.
+- Task attempted: Lane 1763-C, starting bounded string COW identity support
+  for ASCII integer string offsets on direct variables, visible/context
+  object-property roots, and array buckets.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/string_offsets.rs`, `tests/fixtures/milestone1763/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1763/ascii_string_offset_cow.php`; `cargo run -q
+  -p phpc -- test --compare-php tests/fixtures/milestone1763` passed `1`
+  fixture with `1` system PHP comparison and `0` skips; focused
+  `cargo test -q -p phpc --test string_offsets` passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies,
+  non-literal/dynamic backing key variables, arbitrary closure capture roots,
+  broader scalar parent matrices and false-parent deprecation coverage in
+  magic/`ArrayAccess` paths, broader complex alias sinks, broader alias
+  lifetime/detach ordering, exact PHP stderr/fatal text, binary/multibyte and
+  non-integer-key string offset behavior, and native reference/string COW
+  lowering.
+- Next concrete task: run formatting, diff, check, adjacent string/scalar COW
+  regressions, then checkpoint with
+  `tools/checkpoint.sh "runtime: support ASCII string offset COW"` if the
+  full gate passes.
+
 ## Loop Event 2026-05-18T22:08:00+02:00
 
 - Checkpoint before this task: `a003e447 runtime: emit root false array

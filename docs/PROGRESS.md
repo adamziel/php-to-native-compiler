@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 1763-C for bounded ASCII string offset COW parity. Direct
+  variables, visible/context object properties, and array buckets now support
+  integer string offset reads and writes for ASCII strings, preserving
+  by-value copy isolation and by-reference write-through across direct
+  aliases, property aliases, and array-slot aliases. Covered writes include
+  negative in-range offsets and PHP-style space padding for out-of-range
+  positive offsets. Binary/multibyte strings, non-integer string offset keys,
+  broader warning/fatal text parity, magic/`ArrayAccess` string-offset paths,
+  and native reference/string COW lowering remain unsupported. Focused
+  verification: raw system PHP output matched the new `milestone1763`
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1763` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; focused `string_offsets` tests passed.
+
 - Added Lane 1762-C for the object-property side of bounded false-to-array
   reference-target diagnostics. Covered object-property array-offset and
   append reference targets now emit PHP's `Automatic conversion of false to
