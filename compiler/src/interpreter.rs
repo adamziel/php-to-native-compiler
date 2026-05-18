@@ -13651,13 +13651,26 @@ impl Interpreter {
         }
     }
 
-    fn reference_return_alias_for_caller(
+    fn reference_return_alias_for_caller_from_scope(
         &self,
         alias: &ArrayOffsetAlias,
-        object: &PhpObject,
+        local_scope: &SymbolTable,
         caller_scope: &mut SymbolTable,
     ) -> ArrayOffsetAlias {
-        self.object_property_reference_return_alias_for_caller(alias, object, caller_scope)
+        match &alias.root {
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, .. }
+            | ArrayOffsetAliasRoot::ContextObjectProperty { object, .. } => {
+                if let Some(Value::Object(object)) = local_scope.read_named(object) {
+                    return self.object_property_reference_return_alias_for_caller(
+                        alias,
+                        &object,
+                        caller_scope,
+                    );
+                }
+                alias.clone()
+            }
+            _ => alias.clone(),
+        }
     }
 
     fn array_access_offset_get_reference_target(
@@ -14700,11 +14713,16 @@ impl Interpreter {
             } => self.call_reference_return_dynamic_static_method(
                 target, method, args, *call_span, scope,
             ),
+            Expr::DynamicCall {
+                callee,
+                args,
+                span: call_span,
+            } => self.call_reference_return_dynamic_function(callee, args, *call_span, scope),
             _ => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "reference assignment",
-                    "only direct function-call, object method-call, named static method-call, self:: static method-call, parent:: static method-call, static:: late-static method-call, and dynamic static receiver method-call reference-return sources are implemented in the current subset",
+                    "only direct function-call, dynamic string function-call, object method-call, named static method-call, self:: static method-call, parent:: static method-call, static:: late-static method-call, and dynamic static receiver method-call reference-return sources are implemented in the current subset",
                 ),
             )),
         }
@@ -35129,6 +35147,86 @@ impl Interpreter {
         )
     }
 
+    fn call_reference_return_dynamic_function(
+        &mut self,
+        callee: &Expr,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnBinding> {
+        let callee_value = self.evaluate(callee, caller_scope)?;
+        let name = match callee_value {
+            Value::String(name) => name,
+            Value::Closure(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "dynamic function call",
+                        "closure reference-return sources are not implemented in the current subset",
+                    ),
+                ));
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "dynamic function call",
+                        format!(
+                            "callable expression must evaluate to string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let callable = self.lookup_function_exact(&name).ok_or_else(|| {
+            runtime_error(span, RuntimeError::undefined_function(callable_name(&name)))
+        })?;
+        let Callable::User(function) = callable else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&name),
+                    "builtin functions cannot be used as reference-return sources in the current subset",
+                ),
+            ));
+        };
+
+        let function = function.as_ref();
+        if !function.returns_by_reference {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "function does not return by reference",
+                ),
+            ));
+        }
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let (values, reference_bindings) = self
+            .evaluate_user_function_call_arguments_with_options(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
+
+        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+            function,
+            values,
+            None,
+            None,
+            None,
+            reference_bindings,
+            caller_scope,
+        )
+    }
+
     fn call_reference_return_instance_method(
         &mut self,
         target: &Expr,
@@ -35726,7 +35824,6 @@ impl Interpreter {
             self.called_class_context.push(called_class_context);
         }
         let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
-        let returned_this_object = this_object.clone();
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
         }
@@ -35883,21 +35980,20 @@ impl Interpreter {
                         )
                     })
             }
-            ReferenceReturnLocalBinding::ArrayOffsetAliases(aliases) => {
-                returned_this_object.as_ref().map(|object| {
-                    aliases
-                        .iter()
-                        .map(|alias| {
-                            self.reference_return_alias_for_caller(alias, object, caller_scope)
-                        })
-                        .collect()
-                })
-            }
-            ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(alias) => {
-                returned_this_object.as_ref().map(|object| {
-                    vec![self.reference_return_alias_for_caller(alias, object, caller_scope)]
-                })
-            }
+            ReferenceReturnLocalBinding::ArrayOffsetAliases(aliases) => Some(
+                aliases
+                    .iter()
+                    .map(|alias| {
+                        self.reference_return_alias_for_caller_from_scope(
+                            alias,
+                            &local_scope,
+                            caller_scope,
+                        )
+                    })
+                    .collect(),
+            ),
+            ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(alias) => Some(vec![self
+                .reference_return_alias_for_caller_from_scope(alias, &local_scope, caller_scope)]),
         });
         let writeback_result = if result.is_ok() {
             let mut writeback_result = Ok(());
@@ -37203,7 +37299,8 @@ impl Interpreter {
             | Expr::SelfMethodCall { .. }
             | Expr::ParentMethodCall { .. }
             | Expr::LateStaticMethodCall { .. }
-            | Expr::ObjectStaticMethodCall { .. } => {
+            | Expr::ObjectStaticMethodCall { .. }
+            | Expr::DynamicCall { .. } => {
                 let binding = self.evaluate_reference_return_call_binding(value, span, scope)?;
                 let cell = self.reference_return_binding_cell(function, binding, span, scope)?;
                 Ok(ReferenceReturnLocalBinding::Cell(cell))
@@ -37317,11 +37414,23 @@ impl Interpreter {
                         alias,
                     ));
                 }
+                if let Expr::Variable(object_name, _) = target.as_ref() {
+                    let root =
+                        self.context_object_property_alias_root(object_name, property, span, scope)?;
+                    let alias = ArrayOffsetAlias {
+                        root,
+                        keys: Vec::new(),
+                    };
+                    scope.materialize_array_offset_alias(&alias, span)?;
+                    return Ok(ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(
+                        alias,
+                    ));
+                }
                 Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         callable_name(&function.name),
-                        "reference-return property expressions are only implemented for bounded $this->property roots in the current subset",
+                        "reference-return property expressions are only implemented for bounded direct object-property roots in the current subset",
                     ),
                 ))
             }
@@ -37340,11 +37449,28 @@ impl Interpreter {
                         alias,
                     ));
                 }
+                if let Expr::Variable(object_name, _) = target.as_ref() {
+                    let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                    let root = self.context_object_property_alias_root(
+                        object_name,
+                        &property,
+                        span,
+                        scope,
+                    )?;
+                    let alias = ArrayOffsetAlias {
+                        root,
+                        keys: Vec::new(),
+                    };
+                    scope.materialize_array_offset_alias(&alias, span)?;
+                    return Ok(ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(
+                        alias,
+                    ));
+                }
                 Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         callable_name(&function.name),
-                        "reference-return dynamic-property expressions are only implemented for bounded $this->{$name} roots in the current subset",
+                        "reference-return dynamic-property expressions are only implemented for bounded direct object-property roots in the current subset",
                     ),
                 ))
             }

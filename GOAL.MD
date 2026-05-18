@@ -32,7 +32,15 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1796:
+The current in-progress implementation frontier is Lane 1799:
+
+- Lanes 1797 through 1799 add dynamic string function-call delegation in the
+  executed magic/`ArrayAccess` reference-return body path. Covered bodies can
+  now assign a helper name to a local variable and `return $fn(...)` when that
+  helper returns a covered lvalue by reference. The same bundle also maps
+  object-property roots returned from helper local scopes, such as
+  `return $box->store`, back to a stable caller-visible object root before
+  caller suffix keys are applied.
 
 - Lanes 1794 through 1796 let supported magic/`ArrayAccess`
   reference-return bodies delegate their returned lvalue through another

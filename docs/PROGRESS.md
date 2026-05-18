@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1797-C through Lane 1799-C for dynamic string function-call
+  delegation inside the executed magic/`ArrayAccess` COW bridge. Supported
+  public by-reference `__get()` and `ArrayAccess::offsetGet()` bodies can now
+  assign a helper name to a local variable and `return $fn(...)` when the
+  resolved helper returns a covered lvalue by reference. Returned
+  object-property roots from helper local scopes, such as `return
+  $box->store`, are remapped back to a caller-visible object root before
+  caller suffix keys are applied, preserving copied reference-slot
+  write-through. This does not claim closure reference-return sources,
+  arbitrary dynamic callables, arbitrary PHP syntax or side effects outside
+  the executed interpreter subset, incompatible typed signatures, full
+  exception unwinding, exact PHP diagnostics, or native reference lowering.
+  Focused verification: raw system PHP output matched the new
+  `milestone1797`, `milestone1798`, and `milestone1799` fixtures; `cargo run
+  -q -p phpc -- test --compare-php` passed each new fixture directory with
+  `1` fixture, `1` system PHP comparison, and `0` skips; focused
+  `functions_and_scopes` milestone tests passed.
+
 - Added Lane 1794-C through Lane 1796-C for delegated reference-return call
   expressions inside the executed magic/`ArrayAccess` COW bridge. Supported
   public by-reference `__get()` and `ArrayAccess::offsetGet()` bodies can now

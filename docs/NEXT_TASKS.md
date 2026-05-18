@@ -20072,6 +20072,21 @@ handled.
   subset, incompatible typed signatures, full exception unwinding, exact PHP
   diagnostics, and native reference lowering named as unsupported.
 
+## Lane 1797-C through Lane 1799-C: Dynamic Helper Reference Returns
+
+- [x] Runtime/interpreter/tests/docs bundle: allow supported
+  magic/`ArrayAccess` reference-return bodies to return a dynamic string
+  function call such as `$fn(...)` when the resolved helper returns a covered
+  lvalue by reference. Cover public by-reference `__get()` and
+  `ArrayAccess::offsetGet()` helpers over selected backing buckets, plus a
+  helper that returns a direct object-property root such as `$box->store` and
+  remaps that local helper root back to a caller-visible object root before
+  suffix keys are applied. Keep closure reference-return sources, arbitrary
+  dynamic callables, arbitrary PHP syntax and side effects outside the
+  executed method-body subset, incompatible typed signatures, full exception
+  unwinding, exact PHP diagnostics, and native reference lowering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

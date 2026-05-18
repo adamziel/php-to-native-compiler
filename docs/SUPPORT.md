@@ -1169,7 +1169,12 @@
   through a supported reference-returning call expression, including
   `$this->helper()` methods that return a backing property root or selected
   backing bucket by reference, and direct helper calls that return a covered
-  by-reference object-property array argument. The exact
+  by-reference object-property array argument. Dynamic string function-call
+  delegation is also covered for the same helper shapes when the callable name
+  is stored in a supported local string variable, such as `return $fn(...)`.
+  If the helper returns a direct object-property root from its local scope,
+  such as `return $box->store`, the returned alias is remapped to a
+  caller-visible object root before caller suffix keys are applied. The exact
   `__get()`/`offsetGet()` backing
   analyzer accepts one local copy of the magic/offset parameter before the
   return, such as `$slot = $name; return $this->store[$slot];` or
