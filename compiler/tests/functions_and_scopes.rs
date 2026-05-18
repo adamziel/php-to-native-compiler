@@ -4309,6 +4309,174 @@ echo $inner->read("slot"), "\n", $inner->read("created"), "|", $alias;
 }
 
 #[test]
+fn reference_assignment_magic_get_array_access_source_by_value_detaches_with_notice() {
+    let execution = run_source(
+        r#"<?php
+function notice_handler($errno, $message, $file, $line) {
+    echo "notice:", $message, "\n";
+    return true;
+}
+set_error_handler("notice_handler", E_NOTICE);
+
+class MagicByValueBag implements ArrayAccess {
+    public $items = ["name" => "seed", "outer" => ["slot" => "nested"], "" => "empty"];
+    public function offsetExists($offset) { return false; }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { }
+}
+
+$valueBag = new MagicByValueBag();
+$refBag = new MagicByValueBag();
+
+class MagicObjectByValueGetBox {
+    public function __get($name) {
+        global $valueBag;
+        return $valueBag;
+    }
+}
+
+class MagicObjectByReferenceGetBox {
+    public function &__get($name) {
+        global $refBag;
+        return $refBag;
+    }
+}
+
+$box = new MagicObjectByValueGetBox();
+$key = "name";
+$alias =& $box->missing[$key];
+$alias = "changed";
+echo "value-offset:", $alias, "|", $valueBag->items[$key], "\n";
+
+$nested =& $box->missing["outer"]["slot"];
+$nested = "nested-changed";
+echo "value-nested:", $nested, "|", $valueBag->items["outer"]["slot"], "\n";
+
+$property = "dynamicMissing";
+$dynamic =& $box->{$property}[$key];
+$dynamic = "dynamic-changed";
+echo "value-dynamic:", $dynamic, "|", $valueBag->items[$key], "\n";
+
+$append =& $box->missing[];
+$append = "append-changed";
+echo "value-append:", $append, "|", $valueBag->items[""], "\n";
+
+$refBox = new MagicObjectByReferenceGetBox();
+$refAlias =& $refBox->missing[$key];
+$refAlias = "ref-changed";
+echo "ref-offset:", $refAlias, "|", $refBag->items[$key], "\n";
+
+$refNested =& $refBox->missing["outer"]["slot"];
+$refNested = "ref-nested-changed";
+echo "ref-nested:", $refNested, "|", $refBag->items["outer"]["slot"], "\n";
+
+$refProperty = "dynamicMissing";
+$refDynamic =& $refBox->{$refProperty}[$key];
+$refDynamic = "ref-dynamic-changed";
+echo "ref-dynamic:", $refDynamic, "|", $refBag->items[$key], "\n";
+
+$refAppend =& $refBox->missing[];
+$refAppend = "ref-append-changed";
+echo "ref-append:", $refAppend, "|", $refBag->items[""];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
+            "value-offset:changed|seed\n",
+            "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
+            "value-nested:nested-changed|nested\n",
+            "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
+            "value-dynamic:dynamic-changed|seed\n",
+            "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
+            "value-append:append-changed|empty\n",
+            "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
+            "ref-offset:ref-changed|seed\n",
+            "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
+            "ref-nested:ref-nested-changed|nested\n",
+            "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
+            "ref-dynamic:ref-dynamic-changed|seed\n",
+            "notice:Indirect modification of overloaded element of MagicByValueBag has no effect\n",
+            "ref-append:ref-append-changed|empty"
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_magic_get_reference_source_fallbacks_still_alias() {
+    let execution = run_source(
+        r#"<?php
+class MagicReferenceBag implements ArrayAccess {
+    public $items = ["slot" => "seed", "" => "empty"];
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+$refBag = new MagicReferenceBag();
+$plainStorage = ["slot" => "plain", "nested" => ["leaf" => "inside"]];
+
+class MagicReferenceArrayAccessBox {
+    public function &__get($name) {
+        global $refBag;
+        return $refBag;
+    }
+}
+
+class MagicPlainArrayBox {
+    public function &__get($name) {
+        global $plainStorage;
+        return $plainStorage;
+    }
+}
+
+$box = new MagicReferenceArrayAccessBox();
+$alias =& $box->missing["slot"];
+$alias = "changed";
+echo "ref-offset:", $alias, "|", $refBag->items["slot"], "\n";
+
+$append =& $box->missing[];
+$append = "append-changed";
+echo "ref-append:", $append, "|", $refBag->items[""], "\n";
+
+$plainBox = new MagicPlainArrayBox();
+$plain =& $plainBox->missing["slot"];
+$plain = "plain-changed";
+echo "plain-offset:", $plain, "|", $plainStorage["slot"], "\n";
+
+$nested =& $plainBox->missing["nested"]["leaf"];
+$nested = "nested-changed";
+echo "plain-nested:", $nested, "|", $plainStorage["nested"]["leaf"], "\n";
+
+$plainAppend =& $plainBox->missing[];
+$plainAppend = "plain-append";
+echo "plain-append:", $plainAppend, "|", $plainStorage[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "ref-offset:changed|changed\n",
+            "ref-append:append-changed|append-changed\n",
+            "plain-offset:plain-changed|plain-changed\n",
+            "plain-nested:nested-changed|nested-changed\n",
+            "plain-append:plain-append|plain-append"
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_parameter_accepts_non_direct_holder_magic_get_array_offset_source() {
     let execution = run_source(
         r#"<?php

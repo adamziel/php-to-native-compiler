@@ -187,24 +187,33 @@
   reference-return body shape; the read snapshots the returned cell by value
   and does not bind the read result as an alias. Statement-form reference
   assignment to a direct variable now also accepts direct named and dynamic
-  object-property array-offset and append-offset sources below those magic properties, such as
-  `$alias =& $object->missing["slot"];` and
+  object-property array-offset and append-offset sources below those magic
+  properties, such as `$alias =& $object->missing["slot"];` and
   `$alias =& $object->{$name}["outer"]["slot"];`, plus
-  `$alias =& $object->missing[];` and `$alias =& $object->{$name}[];`, when visible public
-  `__get($name)` returns a direct variable by reference; the assigned alias
-  binds to the selected or appended slot under the returned array cell. The
-  selected non-append slot may also be supplied by the same bounded
-  `ArrayAccess` object returned through that direct-variable cell and exact
-  public by-reference `offsetGet()` bridge. Named
+  `$alias =& $object->missing[];` and `$alias =& $object->{$name}[];`, when
+  visible public `__get($name)` returns a direct variable by reference; the
+  assigned alias binds to the selected or appended slot under the returned
+  array cell. The selected non-append slot may also be supplied by the same
+  bounded `ArrayAccess` object returned through that direct-variable cell and
+  exact public by-reference `offsetGet()` bridge. When visible public
+  `__get($name)` returns an `ArrayAccess` object by value or by reference and
+  that object exposes the exact public by-value `offsetGet()` bridge, selected
+  and append reference-source forms such as
+  `$alias =& $object->missing["slot"];`,
+  `$alias =& $object->{$name}["outer"]["slot"];`, and
+  `$alias =& $object->missing[];` follow PHP's bounded
+  indirect-modification notice/no-op behavior: the assigned variable receives
+  a detached local value and later writes do not mutate the backing
+  `ArrayAccess` storage. Named
   and dynamic non-direct holder array-offset sources such as
   `$alias =& $holders["box"]->missing["slot"];` and
   `$alias =& $holders["box"]->{$name}["outer"]["slot"];` are also accepted for
   direct-variable reference assignment through the same temporary holder root.
-  This does not add non-direct holder magic-property append offsets, magic
-  property roots without an array offset, magic `__get()` bodies that return
-  properties, offsets, or expressions, by-value or arbitrary
-  `ArrayAccess::offsetGet()` bodies, mixed nested `ArrayAccess` object
-  chains, broad same-container identity for reference-returning function,
+  This does not add magic property roots without an array offset, magic
+  `__get()` bodies that return properties, offsets, or expressions,
+  side-effecting or broader `ArrayAccess::offsetGet()` bodies, mixed nested
+  `ArrayAccess` object chains, broad same-container identity for
+  reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,
   arbitrary reference expressions,
   broader `__get()` return body shapes, or a general in-call PHP reference
@@ -684,16 +693,22 @@
   `$alias =& $registry->holder()->bag[]`, and
   `$alias =& make_holder($bag)->bag[]` use the same notice/no-op path through
   PHP's `offsetGet(null)` behavior and snapshot the exact bridge's
-  empty-string backing key as a detached value. `offsetGet()` bodies with side
-  effects or broader return expressions, dynamic property-held sources outside
-  visible property access, magic-property roots, broader property-held alias
-  lifetime after replacing non-direct/dynamic containing properties, append
-  `ArrayAccess` sources outside the exact direct/property-held/non-direct
-  visible property-held `offsetGet(null)` bridge, mixed nested `ArrayAccess`
-  chains beyond the documented one-level bridge, arbitrary nested reference
-  slots copied from `ArrayAccess` storage, full references/COW, native
-  lowering, exact alias destruction/destructor ordering, and real runtime
-  reference containers remain unsupported. Direct
+  empty-string backing key as a detached value. Magic-property roots are also
+  covered for selected and append sources such as
+  `$alias =& $object->missing[$key]`,
+  `$alias =& $object->{$name}["outer"]["slot"]`, and
+  `$alias =& $object->missing[]` when visible public `__get($name)` returns
+  an `ArrayAccess` object by value or by reference and that object exposes the
+  same exact public by-value `offsetGet()` bridge. `offsetGet()` bodies with
+  side effects or broader return expressions, dynamic property-held sources
+  outside visible property access, broader property-held alias lifetime after
+  replacing non-direct/dynamic containing properties, append `ArrayAccess`
+  sources outside the exact documented direct/property-held/non-direct
+  visible property-held/magic-property `offsetGet(null)` bridge, mixed nested
+  `ArrayAccess` chains beyond the documented one-level bridge, arbitrary
+  nested reference slots copied from `ArrayAccess` storage, full
+  references/COW, native lowering, exact alias destruction/destructor
+  ordering, and real runtime reference containers remain unsupported. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`

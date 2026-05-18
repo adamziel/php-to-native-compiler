@@ -18536,6 +18536,24 @@ handled.
   `ArrayAccess` chains, full references/COW, native reference lowering, and
   exact alias destruction/destructor ordering named as unsupported.
 
+## Lane 1680-C: Magic-Property By-Value `ArrayAccess` Reference-Source No-op
+
+- [x] Runtime/tests/docs lane: extended the focused by-value
+  `ArrayAccess::offsetGet()` and append-source `offsetGet(null)`
+  reference-source notice/no-op/detached-alias slice to magic-property roots
+  such as `$alias =& $box->missing[$key]`,
+  `$alias =& $box->{$name}["outer"]["slot"]`, and
+  `$alias =& $box->missing[]` when visible magic `__get()` returns an
+  `ArrayAccess` object with the exact by-value
+  `return $this->property[$offset];` bridge. The lane also preserves
+  by-reference `offsetGet()` and by-reference `__get()` plain-array alias
+  fallbacks, including append. Keep side-effecting or broader
+  `offsetGet()` bodies, by-value `__get()` plain-array notice/no-op roots,
+  arbitrary nested reference slots stored inside `ArrayAccess` buckets,
+  broader mixed `ArrayAccess` chains, full references/COW, native reference
+  lowering, and exact alias destruction/destructor ordering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

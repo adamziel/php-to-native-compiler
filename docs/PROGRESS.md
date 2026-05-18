@@ -4,6 +4,44 @@
 
 Implemented:
 
+- Added Lane 1680-C magic-property root by-value
+  `ArrayAccess::offsetGet()` and append-source `offsetGet(null)`
+  reference-source notice/no-op fidelity for the focused exact bridge.
+  Statement-form reference assignment from magic-property sources such as
+  `$alias =& $box->missing[$key]`,
+  `$alias =& $box->{$name}["outer"]["slot"]`, and
+  `$alias =& $box->missing[]` now handles visible `__get()` methods that
+  return an `ArrayAccess` object by value or by reference: the target receives
+  the selected value as a detached local, the bounded indirect-modification
+  `E_NOTICE` is emitted for by-value `offsetGet()`, and later writes to the
+  target leave backing `ArrayAccess` storage unchanged. The same lane
+  preserved by-reference `ArrayAccess::offsetGet()` aliasing and
+  by-reference `__get()` plain-array selected and append alias fallbacks,
+  including appending at the returned array cell's next integer key instead
+  of binding the empty-string key. This does not add side-effecting or
+  broader `offsetGet()` bodies, by-value `__get()` plain-array notice/no-op
+  roots, arbitrary nested reference slots stored inside `ArrayAccess`
+  buckets, broader mixed `ArrayAccess` chains, full references/COW, native
+  reference lowering, or exact alias destruction/destructor ordering. Focused
+  verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test
+  functions_and_scopes
+  reference_assignment_magic_get_array_access_source_by_value_detaches_with_notice
+  -- --test-threads=1` passed `1` test; `cargo test -q -p phpc --test
+  functions_and_scopes
+  reference_assignment_magic_get_reference_source_fallbacks_still_alias --
+  --test-threads=1` passed `1` test; and `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1680` passed `1` fixture with `1`
+  system PHP comparison and `0` skips. Broader verification passed `cargo
+  fmt --check`, `git diff --check`, the full `functions_and_scopes` test
+  file with `205` tests, the `foreach` test file with `39` tests, the
+  `call_user_func_builtin` test file with `41` tests, and the adjacent
+  `milestone1678`, `milestone1679`, and `milestone1680` fixture directories
+  with `1` PHP comparison each and `0` skips. The checkpoint full gate passed
+  with `1721` fixture tests, `1029` system PHP comparisons, and `692`
+  phpc-only skips before commit
+  `656c54aa runtime: detach magic ArrayAccess reference sources`.
+
 - Added Lane 1679 non-direct holder append-source by-value
   `ArrayAccess::offsetGet(null)` reference-source notice/no-op fidelity for the
   focused exact visible property-held bridge. Statement-form reference

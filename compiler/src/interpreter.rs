@@ -8834,6 +8834,27 @@ impl Interpreter {
                         scope.bind_static_to_array_offset_alias(name, alias);
                         return Ok(());
                     }
+                    if let Some(binding) = self
+                        .evaluate_magic_get_array_access_reference_source_binding(
+                            object,
+                            property,
+                            vec![key.clone()],
+                            span,
+                            scope,
+                            true,
+                            false,
+                        )?
+                    {
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
+                        return Ok(());
+                    }
                     if let Some((alias, _)) = self.evaluate_magic_get_array_reference_source_alias(
                         object,
                         property,
@@ -8886,6 +8907,27 @@ impl Interpreter {
                         )?
                     {
                         scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
+                    if let Some(binding) = self
+                        .evaluate_magic_get_array_access_reference_source_binding(
+                            object,
+                            &property,
+                            vec![key.clone()],
+                            span,
+                            scope,
+                            true,
+                            false,
+                        )?
+                    {
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
                         return Ok(());
                     }
                     if let Some((alias, _)) = self.evaluate_magic_get_array_reference_source_alias(
@@ -8944,6 +8986,27 @@ impl Interpreter {
                         scope.bind_static_to_array_offset_alias(name, alias);
                         return Ok(());
                     }
+                    if let Some(binding) = self
+                        .evaluate_magic_get_array_access_reference_source_binding(
+                            object,
+                            property,
+                            keys.clone(),
+                            span,
+                            scope,
+                            true,
+                            false,
+                        )?
+                    {
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
+                        return Ok(());
+                    }
                     if let Some((alias, _)) = self.evaluate_magic_get_array_reference_source_alias(
                         object,
                         property,
@@ -8996,6 +9059,27 @@ impl Interpreter {
                         scope.bind_static_to_array_offset_alias(name, alias);
                         return Ok(());
                     }
+                    if let Some(binding) = self
+                        .evaluate_magic_get_array_access_reference_source_binding(
+                            object,
+                            &property,
+                            keys.clone(),
+                            span,
+                            scope,
+                            true,
+                            false,
+                        )?
+                    {
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
+                        return Ok(());
+                    }
                     if let Some((alias, _)) = self.evaluate_magic_get_array_reference_source_alias(
                         object,
                         &property,
@@ -9042,6 +9126,27 @@ impl Interpreter {
                             )?
                         {
                             scope.bind_static_to_array_offset_alias(name, alias);
+                            return Ok(());
+                        }
+                        if let Some(binding) = self
+                            .evaluate_magic_get_array_access_reference_source_binding(
+                                object,
+                                property,
+                                Vec::new(),
+                                span,
+                                scope,
+                                true,
+                                true,
+                            )?
+                        {
+                            match binding {
+                                NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                    scope.write_detached_static(name, value);
+                                }
+                                NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                    scope.bind_static_to_array_offset_alias(name, alias);
+                                }
+                            }
                             return Ok(());
                         }
                     }
@@ -9094,6 +9199,27 @@ impl Interpreter {
                             )?
                         {
                             scope.bind_static_to_array_offset_alias(name, alias);
+                            return Ok(());
+                        }
+                        if let Some(binding) = self
+                            .evaluate_magic_get_array_access_reference_source_binding(
+                                object,
+                                &property,
+                                Vec::new(),
+                                span,
+                                scope,
+                                true,
+                                true,
+                            )?
+                        {
+                            match binding {
+                                NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                    scope.write_detached_static(name, value);
+                                }
+                                NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                    scope.bind_static_to_array_offset_alias(name, alias);
+                                }
+                            }
                             return Ok(());
                         }
                     }
@@ -10621,6 +10747,188 @@ impl Interpreter {
         }
     }
 
+    fn evaluate_magic_get_array_access_reference_source_binding(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+        allow_array_fallback: bool,
+        append_array_fallback: bool,
+    ) -> CompileResult<Option<NonDirectReferenceSourceBinding>> {
+        if keys.is_empty() && !append_array_fallback {
+            return Ok(None);
+        }
+        let array_access_keys = if append_array_fallback {
+            vec![Self::array_access_append_reference_key()]
+        } else {
+            keys.clone()
+        };
+        let Some(Value::Object(holder)) = scope.read_named(object_name) else {
+            return Ok(None);
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match holder.read_property_from_context(property, current_class_id, &protected_class_ids) {
+            Ok(_) => Ok(None),
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(holder.class_id(), "__get")
+                else {
+                    return Ok(None);
+                };
+
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::__get()"),
+                            "static magic instance methods are not implemented in the current subset",
+                        ),
+                    ));
+                }
+
+                self.ensure_instance_method_visible(
+                    class_id,
+                    &class_name,
+                    "__get",
+                    visibility,
+                    span,
+                )?;
+
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+                ensure_user_function_arity(function, 1, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                let called_class_id = holder.class_id();
+
+                if function.returns_by_reference {
+                    ensure_supported_reference_return_function_metadata(function, span)?;
+                    let cell = self.call_reference_return_function_with_checked_values(
+                        function,
+                        vec![Value::String(property.to_string())],
+                        Some(holder),
+                        Some(class_id),
+                        Some(called_class_id),
+                        Vec::new(),
+                        None,
+                    )?;
+                    if let Value::Object(object) = cell.borrow().clone() {
+                        if self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess")
+                        {
+                            let hidden_name =
+                                self.hidden_array_access_reference_object_name(&object);
+                            scope.write_static(&hidden_name, Value::Object(object.clone()));
+                            if let Some(value) = self
+                                .evaluate_array_access_by_value_reference_source_value_for_object(
+                                    object,
+                                    hidden_name.clone(),
+                                    array_access_keys.clone(),
+                                    span,
+                                    scope,
+                                )?
+                            {
+                                return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(
+                                    value,
+                                )));
+                            }
+                            if let Some((alias, _)) = self
+                                .evaluate_direct_array_access_reference_source_alias(
+                                    &hidden_name,
+                                    array_access_keys,
+                                    span,
+                                    scope,
+                                )?
+                            {
+                                return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(
+                                    alias,
+                                )));
+                            }
+                            return Ok(None);
+                        }
+                    }
+
+                    if !allow_array_fallback {
+                        return Ok(None);
+                    }
+                    let temp_name = self.next_foreach_temporary_array_name();
+                    scope.bind_static_to_cell(&temp_name, cell);
+                    let alias = if append_array_fallback {
+                        scope.append_array_offset_reference_alias(
+                            &temp_name,
+                            keys,
+                            Value::Null,
+                            span,
+                        )?
+                    } else {
+                        let alias = ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::StaticArray { name: temp_name },
+                            keys,
+                        };
+                        scope.materialize_array_offset_alias(&alias, span)?;
+                        alias
+                    };
+                    if scope.read_array_offset_alias(&alias).is_none() {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::invalid_array_access(
+                                "cannot bind missing magic __get array offset reference source"
+                                    .to_string(),
+                            ),
+                        ));
+                    }
+                    return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)));
+                }
+
+                ensure_supported_function_signature(function, 1, span)?;
+                let value = self.call_user_function_with_this(
+                    function,
+                    holder,
+                    vec![Value::String(property.to_string())],
+                    Some(class_id),
+                    Some(called_class_id),
+                )?;
+                let Value::Object(object) = value else {
+                    return Ok(None);
+                };
+                if !self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess")
+                {
+                    return Ok(None);
+                }
+
+                let hidden_name = self.hidden_array_access_reference_object_name(&object);
+                scope.write_static(&hidden_name, Value::Object(object.clone()));
+                if let Some(value) = self
+                    .evaluate_array_access_by_value_reference_source_value_for_object(
+                        object,
+                        hidden_name.clone(),
+                        array_access_keys.clone(),
+                        span,
+                        scope,
+                    )?
+                {
+                    return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(value)));
+                }
+                if let Some((alias, _)) = self.evaluate_direct_array_access_reference_source_alias(
+                    &hidden_name,
+                    array_access_keys,
+                    span,
+                    scope,
+                )? {
+                    return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)));
+                }
+                Ok(None)
+            }
+            Err(error) => Err(runtime_error(span, error)),
+        }
+    }
+
     fn evaluate_non_direct_holder_object_property_array_reference_source_binding(
         &mut self,
         holder: &Expr,
@@ -10670,6 +10978,17 @@ impl Interpreter {
             )?
         {
             return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)));
+        }
+        if let Some(binding) = self.evaluate_magic_get_array_access_reference_source_binding(
+            &temp_name,
+            property,
+            keys.clone(),
+            span,
+            scope,
+            true,
+            false,
+        )? {
+            return Ok(Some(binding));
         }
         if let Some((alias, _)) = self.evaluate_magic_get_array_reference_source_alias(
             &temp_name,
@@ -10814,6 +11133,17 @@ impl Interpreter {
                 )?
             {
                 return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)));
+            }
+            if let Some(binding) = self.evaluate_magic_get_array_access_reference_source_binding(
+                &temp_name,
+                property,
+                keys.clone(),
+                span,
+                scope,
+                true,
+                true,
+            )? {
+                return Ok(Some(binding));
             }
         }
 

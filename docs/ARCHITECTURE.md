@@ -88,18 +88,19 @@ runtime boundary; the current runtime does not invent aliases for object array
 dimensions.
 Statement-form reference assignment from by-value exact-bridge `ArrayAccess`
 offset sources follows PHP's indirect-modification notice/no-op behavior for
-direct object roots, visible direct property-held roots, and bounded
-non-direct holder roots that evaluate once to a visible property-held object,
-such as `$holders["box"]->bag[$key]`,
+direct object roots, visible direct property-held roots, bounded non-direct
+holder roots that evaluate once to a visible property-held object, and bounded
+magic-property roots whose visible `__get()` returns such an `ArrayAccess`
+object. Shapes such as `$holders["box"]->bag[$key]`,
 `$holders["box"]->{$name}["outer"]["slot"]`,
-`$registry->holder()->bag[$key]`, and
-`make_holder($bag)->bag[$key]`: the target receives only a detached local
-value and later writes do not mutate the backing `ArrayAccess` storage. The
-same focused by-value notice/no-op bridge covers non-direct holder append
-sources such as `$holders["box"]->bag[]`,
-`$holders["box"]->{$name}[]`, `$registry->holder()->bag[]`, and
-`make_holder($bag)->bag[]`, using PHP's `offsetGet(null)` behavior and the
-exact bridge's empty-string backing key.
+`$registry->holder()->bag[$key]`, `make_holder($bag)->bag[$key]`,
+`$box->missing[$key]`, and `$box->{$name}["outer"]["slot"]` receive only a
+detached local value and later writes do not mutate the backing `ArrayAccess`
+storage. The same focused by-value notice/no-op bridge covers append sources
+such as `$holders["box"]->bag[]`, `$holders["box"]->{$name}[]`,
+`$registry->holder()->bag[]`, `make_holder($bag)->bag[]`,
+`$box->missing[]`, and `$box->{$name}[]`, using PHP's `offsetGet(null)`
+behavior and the exact bridge's empty-string backing key.
 Statement-form reference assignment can also bind expression-root
 object-property array sources such as `factory()->items["slot"]` and
 non-direct magic `__get()` append sources such as
@@ -248,10 +249,10 @@ intentionally limited to the existing direct-variable reference-return body
 shape, selected array offsets, direct user-function or direct-variable
 reference-assignment paths, and the exact bounded ArrayAccess bridge. General
 magic container identity, normal property-read magic fallback breadth,
-magic-property append offsets on non-direct holders, arbitrary `__get()`
-return expressions, by-value or side-effecting `ArrayAccess::offsetGet()`
-bodies, mixed nested `ArrayAccess` object chains, and copy-on-write semantics
-still belong to the future reference-container model.
+arbitrary `__get()` return expressions, side-effecting or broader
+`ArrayAccess::offsetGet()` bodies, mixed nested `ArrayAccess` object chains,
+and copy-on-write semantics still belong to the future reference-container
+model.
 Reference-returning `call_user_func_array()` sources use the same caller-cell
 binding path as direct reference-returning function and method calls for the
 current literal argument-array direct-variable and direct array-slot reference
@@ -295,13 +296,17 @@ Statement-form direct-variable reference assignment from append offsets below
 reference-returning magic `__get()` properties, such as
 `$alias =& $object->missing[]` and `$alias =& $object->{$name}[]`, temporarily
 roots the returned direct-variable cell and appends through the same bounded
-array-offset alias metadata used for direct array append references. It
-does not make stored callback argument arrays from magic `__get()` roots,
-non-public object-property array bridges, magic-property `ArrayAccess` roots,
-dynamic ArrayAccess roots beyond the documented visible property-held sources,
-mixed nested `ArrayAccess` chains, general magic-property reference containers,
-arbitrary append ArrayAccess bodies, or stored array-offset metadata into
-general runtime reference containers. By-reference
+array-offset alias metadata used for direct array append references. When that
+visible `__get()` returns an `ArrayAccess` object with the exact by-value
+`offsetGet($offset) { return $this->property[$offset]; }` bridge, selected
+offset and append roots follow the bounded PHP notice/no-op path instead of
+creating a backing alias. It does not make stored callback argument arrays
+from magic `__get()` roots, non-public object-property array bridges, dynamic
+ArrayAccess roots beyond the documented visible property-held and
+magic-property sources, mixed nested `ArrayAccess` chains, general
+magic-property reference containers, arbitrary append ArrayAccess bodies, or
+stored array-offset metadata into general runtime reference containers.
+By-reference
 `foreach` currently consumes direct non-`Traversable` object variables for
 initialized public-property by-reference iteration, direct visible named and
 dynamic object-property array roots, bounded non-direct named and dynamic
@@ -852,13 +857,13 @@ child suffix snapshots the selected value into a detached local variable.
 Append source forms such as `$alias =& $bag[]`, `$alias =& $holder->bag[]`,
 `$alias =& $holder->{$name}[]`, `$alias =& $holders["box"]->bag[]`,
 `$alias =& $holders["box"]->{$name}[]`,
-`$alias =& $registry->holder()->bag[]`, and
-`$alias =& make_holder($bag)->bag[]` use PHP's `offsetGet(null)` path and
-snapshot the backing empty-string key value for the exact bridge. These
-by-value reference-source forms emit the bounded indirect-modification
-`E_NOTICE` and leave the backing `ArrayAccess` storage unchanged when the
-alias is later written. Magic-property roots and broader side-effecting or
-mixed `ArrayAccess` chains remain outside that notice/no-op slice.
+`$alias =& $registry->holder()->bag[]`, `$alias =& make_holder($bag)->bag[]`,
+`$alias =& $box->missing[]`, and `$alias =& $box->{$name}[]` use PHP's
+`offsetGet(null)` path and snapshot the backing empty-string key value for
+the exact bridge. These by-value reference-source forms emit the bounded
+indirect-modification `E_NOTICE` and leave the backing `ArrayAccess` storage
+unchanged when the alias is later written. Broader side-effecting or mixed
+`ArrayAccess` chains remain outside that notice/no-op slice.
 Function-parameter propagation of copied bucket provenance is covered for the
 same direct-object, direct property-held, array-held, and expression-root
 holder paths when the copied bucket is passed as a direct variable to a

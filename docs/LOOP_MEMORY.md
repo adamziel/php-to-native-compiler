@@ -26,6 +26,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T11:55:00+02:00
+
+- Checkpoint before this task: `2a66ac88 runtime: detach non-direct
+  ArrayAccess append sources`.
+- Task attempted: Lane 1680-C magic-property roots for the by-value
+  `ArrayAccess::offsetGet()` and append-source `offsetGet(null)`
+  reference-source notice/no-op slice.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1680/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `docs/queue/review/lane-1680-d-magic-property-by-value-arrayaccess-reference-source.md`,
+  and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: the focused
+  `reference_assignment_magic_get_array_access_source_by_value_detaches_with_notice`
+  and `reference_assignment_magic_get_reference_source_fallbacks_still_alias`
+  `functions_and_scopes` filters passed; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1680` passed `1` fixture with `1`
+  system PHP comparison and `0` skips; `cargo fmt --check`, `git diff
+  --check`, full `functions_and_scopes` (`205` tests), `foreach` (`39`
+  tests), `call_user_func_builtin` (`41` tests), and adjacent
+  `milestone1678`/`milestone1679`/`milestone1680` fixture comparisons all
+  passed. The checkpoint full gate passed with `1721` fixture tests, `1029`
+  system PHP comparisons, and `692` phpc-only skips before commit
+  `656c54aa runtime: detach magic ArrayAccess reference sources`.
+- Semantic gap reduced: direct and dynamic magic-property reference sources
+  such as `$alias =& $box->missing[$key]`,
+  `$alias =& $box->{$name}["outer"]["slot"]`, and
+  `$alias =& $box->missing[]` now handle visible `__get()` methods that
+  return an exact-bridge `ArrayAccess` object by value or by reference. The
+  assigned target receives a detached local value, by-value `offsetGet()`
+  emits the bounded indirect-modification notice, and later writes leave
+  backing `ArrayAccess` storage unchanged. By-reference `offsetGet()` and
+  by-reference `__get()` plain-array selected/append alias fallbacks remain
+  covered; the plain-array append fallback appends at the next integer key
+  instead of binding the empty-string key.
+- Remaining semantic gaps: side-effecting or broader `offsetGet()` bodies,
+  by-value `__get()` plain-array notice/no-op roots, arbitrary nested
+  reference slots stored inside `ArrayAccess` buckets, broader mixed
+  `ArrayAccess` chains, full references/COW, native reference lowering, and
+  exact alias destruction/destructor ordering remain unsupported.
+- Next concrete task: focus the next COW lane on the largest remaining
+  unsupported `ArrayAccess` reference-source/COW shape.
+
 ## Loop Event 2026-05-18T10:55:00+02:00
 
 - Checkpoint before this task: `fc6bd34a runtime: detach non-direct
