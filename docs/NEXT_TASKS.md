@@ -18554,6 +18554,22 @@ handled.
   lowering, and exact alias destruction/destructor ordering named as
   unsupported.
 
+## Lane 1681-C: ArrayAccess `offsetSet()` Stored-Bucket Reference Slots
+
+- [x] Runtime/tests/docs lane: preserve nested reference slots when a direct
+  `ArrayAccess` object stores an array literal or copied array into a keyed
+  bucket through the exact public `offsetSet($offset, $value) {
+  $this->property[$offset] = $value; }` bridge, then a later exact
+  `offsetGet($offset) { return $this->property[$offset]; }` bucket copy is
+  mutated. The focused slice covers public and method-context
+  private/protected backing properties, binds array literal reference metadata
+  onto the backing bucket, and mirrors copied-array alias metadata for copied
+  array values. Keep append `offsetSet(null)` stored-bucket reference slots,
+  non-direct receiver `offsetSet()` storage, side-effecting or broader
+  `offsetSet()`/`offsetGet()` bodies, broader mixed `ArrayAccess` chains,
+  full references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

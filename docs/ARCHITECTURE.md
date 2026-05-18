@@ -875,6 +875,14 @@ provenance when the stored slot was populated from a direct copied-bucket
 variable, such as `$args = [$bucket, "label"]`; the callback parameter imports
 mirrored nested aliases from the stored argument slot and writes those nested
 reference-slot updates back through the original copied-bucket alias group.
+When a direct `ArrayAccess` object stores an array literal or copied array into
+a keyed bucket through the exact public `offsetSet($offset, $value) {
+$this->property[$offset] = $value; }` bridge, the interpreter binds the array
+literal's reference slots or mirrors the copied array's alias metadata onto
+that backing bucket. Later exact by-value or by-reference
+`offsetGet($offset) { return $this->property[$offset]; }` bucket copies can
+therefore preserve those nested reference slots, including private/protected
+backing properties reached through the method's declaring-class context.
 By-value helper parameters that import copied-bucket provenance detach those
 mirrored static-array provenance paths when the parameter variable is replaced:
 writes through the copied bucket before replacement still write back to the
@@ -887,8 +895,9 @@ copied bucket match the focused PHP probes. Broader alias lifetime after
 replacing non-direct containing properties, side-effecting or broader
 `offsetGet()` bodies, mixed nested
 ArrayAccess chains beyond the documented one-level bridge, append sources,
-arbitrary nested reference slots copied from ArrayAccess storage, and real
-reference containers remain future work.
+arbitrary nested reference slots copied from ArrayAccess storage outside the
+exact `offsetSet()`/`offsetGet()` bridge, and real reference containers remain
+future work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or

@@ -2483,7 +2483,10 @@ impl SymbolTable {
             .values()
             .flat_map(|aliases| aliases.iter())
         {
-            let ArrayOffsetAliasRoot::PublicObjectProperty { object, property } = &alias.root
+            let (ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+            | ArrayOffsetAliasRoot::ContextObjectProperty {
+                object, property, ..
+            }) = &alias.root
             else {
                 continue;
             };
@@ -5399,13 +5402,9 @@ impl Interpreter {
             .array_access_offset_get_reference_property(function, span)
             .ok()?;
         let protected_class_ids = self.protected_class_ids_for_context(class_id);
-        if object
+        object
             .property_visibility_from_context(&property, Some(class_id), &protected_class_ids)
-            .ok()?
-            != Visibility::Public
-        {
-            return None;
-        }
+            .ok()?;
         Some(PublicObjectPropertyArrayCopySource {
             object,
             property,
@@ -11550,6 +11549,73 @@ impl Interpreter {
         Ok(property.clone())
     }
 
+    fn array_access_offset_set_alias_root_for_object(
+        &mut self,
+        object: PhpObject,
+        object_name: &str,
+        span: Span,
+    ) -> CompileResult<Option<ArrayOffsetAliasRoot>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "offsetSet")
+        else {
+            return Ok(None);
+        };
+        if is_static || visibility != Visibility::Public {
+            return Ok(None);
+        }
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        let Some(offset_param) = function.params.first() else {
+            return Ok(None);
+        };
+        let Some(value_param) = function.params.get(1) else {
+            return Ok(None);
+        };
+        let [Stmt::Assign {
+            target:
+                AssignTarget::ObjectPropertyArrayIndex {
+                    object: target_object,
+                    property,
+                    indices,
+                    ..
+                },
+            expr,
+            ..
+        }] = function.body.as_slice()
+        else {
+            return Ok(None);
+        };
+        if target_object != "this" || indices.len() != 1 {
+            return Ok(None);
+        }
+        if !matches!(&indices[0], Expr::Variable(name, _) if name == &offset_param.name) {
+            return Ok(None);
+        }
+        if !matches!(expr, Expr::Variable(name, _) if name == &value_param.name) {
+            return Ok(None);
+        }
+
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        let property_visibility = object
+            .property_visibility_from_context(property, Some(class_id), &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+        let root = if property_visibility == Visibility::Public {
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property: property.clone(),
+            }
+        } else {
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object: object_name.to_string(),
+                property: property.clone(),
+                current_class_id: Some(class_id),
+                protected_class_ids,
+            }
+        };
+        Ok(Some(root))
+    }
+
     fn bind_static_to_context_property_or_magic_get(
         &mut self,
         target_name: &str,
@@ -12251,11 +12317,35 @@ impl Interpreter {
 
                 if let Value::Object(object) = slot {
                     self.call_array_access_method(
-                        object,
+                        object.clone(),
                         "offsetSet",
                         vec![Self::array_key_value(key), value.clone()],
                         *span,
                     )?;
+                    if let Some(key) = target_key {
+                        if matches!(value, Value::Array(_)) {
+                            if let Some(root) =
+                                self.array_access_offset_set_alias_root_for_object(object, name, *span)?
+                            {
+                                if array_literal_references.is_empty() {
+                                    self.mirror_copied_array_aliases_to_alias_root(
+                                        expr,
+                                        root,
+                                        std::slice::from_ref(&key),
+                                        scope,
+                                    );
+                                } else {
+                                    self.bind_array_literal_references_to_alias_root_with_prefix(
+                                        root,
+                                        vec![key],
+                                        array_literal_references,
+                                        expr.span(),
+                                        scope,
+                                    )?;
+                                }
+                            }
+                        }
+                    }
                     return Ok(value);
                 }
 

@@ -4,6 +4,35 @@
 
 Implemented:
 
+- Added Lane 1681-C `ArrayAccess::offsetSet()` stored-bucket reference-slot
+  propagation for the focused copied-bucket COW shape. When a direct
+  `ArrayAccess` object stores an array literal or copied array into a keyed
+  bucket through the exact public `offsetSet($offset, $value) {
+  $this->property[$offset] = $value; }` bridge, nested reference metadata is
+  now bound or mirrored onto that backing bucket. A later exact
+  `offsetGet($offset) { return $this->property[$offset]; }` by-value bucket
+  copy preserves those nested reference slots, including private/protected
+  backing properties reached through the `ArrayAccess` method's declaring
+  class context, while ordinary copied fields remain detached. This does not
+  add append `offsetSet(null)` stored-bucket reference slots, non-direct
+  receiver `offsetSet()` storage, side-effecting or broader
+  `offsetSet()`/`offsetGet()` bodies, broader mixed `ArrayAccess` chains,
+  full references/COW, native reference lowering, or exact alias
+  destruction/destructor ordering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  `cargo test -q -p phpc --test functions_and_scopes
+  array_access_offset_set_bucket_copy_preserves_arbitrary_nested_reference_slots
+  -- --test-threads=1` passed `1` test, and `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1681` passed `1` fixture with `1`
+  system PHP comparison and `0` skips. Broader verification passed `cargo
+  fmt --check`, `git diff --check`, the full `functions_and_scopes` test
+  file with `207` tests, the `foreach` test file with `39` tests, the
+  `call_user_func_builtin` test file with `41` tests, and the adjacent
+  `milestone1673c` fixture directory with `4` PHP comparisons and `0` skips.
+  The checkpoint full gate passed with `1722` fixture tests, `1030` system
+  PHP comparisons, and `692` phpc-only skips before commit
+  `bda464d6 runtime: preserve ArrayAccess offsetSet bucket references`.
+
 - Added Lane 1680-C magic-property root by-value
   `ArrayAccess::offsetGet()` and append-source `offsetGet(null)`
   reference-source notice/no-op fidelity for the focused exact bridge.
@@ -40,7 +69,7 @@ Implemented:
   with `1` PHP comparison each and `0` skips. The checkpoint full gate passed
   with `1721` fixture tests, `1029` system PHP comparisons, and `692`
   phpc-only skips before commit
-  `656c54aa runtime: detach magic ArrayAccess reference sources`.
+  `127b418b runtime: detach magic ArrayAccess reference sources`.
 
 - Added Lane 1679 non-direct holder append-source by-value
   `ArrayAccess::offsetGet(null)` reference-source notice/no-op fidelity for the

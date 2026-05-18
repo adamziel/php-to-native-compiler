@@ -26,6 +26,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T12:45:00+02:00
+
+- Checkpoint before this task: `127b418b runtime: detach magic ArrayAccess
+  reference sources`, pushed to `origin/master`.
+- Task attempted: Lane 1681-C `ArrayAccess::offsetSet()` stored-bucket
+  reference-slot propagation for the focused copied-bucket COW shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1681/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, the lane
+  review note, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  `array_access_offset_set_bucket_copy_preserves_arbitrary_nested_reference_slots`
+  passed in `functions_and_scopes`, and `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1681` passed `1` fixture with `1`
+  system PHP comparison and `0` skips. `cargo fmt --check`, `git diff
+  --check`, full `functions_and_scopes` (`207` tests), `foreach` (`39`
+  tests), `call_user_func_builtin` (`41` tests), and the adjacent
+  `milestone1673c` fixture comparison (`4` fixtures, `4` PHP comparisons)
+  also passed. The checkpoint full gate passed with `1722` fixture tests,
+  `1030` system PHP comparisons, and `692` phpc-only skips before commit
+  `bda464d6 runtime: preserve ArrayAccess offsetSet bucket references`.
+- Semantic gap reduced: direct keyed `ArrayAccess::offsetSet()` with the
+  exact public `$this->property[$offset] = $value;` body now binds array
+  literal reference metadata, or mirrors copied-array alias metadata, onto the
+  backing bucket. Later exact `offsetGet()` bucket copies preserve those
+  nested reference slots through public or method-context private/protected
+  backing properties while ordinary copied fields remain detached.
+- Remaining semantic gaps: append `offsetSet(null)` stored-bucket reference
+  slots, non-direct receiver `offsetSet()` storage, side-effecting or broader
+  `offsetSet()`/`offsetGet()` bodies, by-value `__get()` plain-array
+  notice/no-op roots, broader mixed `ArrayAccess` chains, full references/COW,
+  native reference lowering, and exact alias destruction/destructor ordering
+  remain unsupported.
+- Next concrete task: continue with append/non-direct `offsetSet()` storage or
+  the by-value `__get()` plain-array notice/no-op lane.
+
 ## Loop Event 2026-05-18T11:55:00+02:00
 
 - Checkpoint before this task: `2a66ac88 runtime: detach non-direct
@@ -51,7 +89,7 @@ injects this file into every prompt. Each Codex pass should update it with:
   `milestone1678`/`milestone1679`/`milestone1680` fixture comparisons all
   passed. The checkpoint full gate passed with `1721` fixture tests, `1029`
   system PHP comparisons, and `692` phpc-only skips before commit
-  `656c54aa runtime: detach magic ArrayAccess reference sources`.
+  `127b418b runtime: detach magic ArrayAccess reference sources`.
 - Semantic gap reduced: direct and dynamic magic-property reference sources
   such as `$alias =& $box->missing[$key]`,
   `$alias =& $box->{$name}["outer"]["slot"]`, and

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1681/arrayaccess_offsetset_bucket_arbitrary_reference_slot_cow.php
+stdout:
+via-copy|via-copy|1|plain
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

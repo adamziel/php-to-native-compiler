@@ -1,6 +1,8 @@
 use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::{run_source, run_source_with_source_file};
+use std::path::Path;
+use std::process::Command;
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -12,6 +14,10 @@ fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Parse);
     error
+}
+
+fn system_php_available() -> bool {
+    Command::new("php").arg("-v").output().is_ok()
 }
 
 #[test]
@@ -3075,6 +3081,49 @@ echo $target, "|", $holder->hook[10]["id"]["function"], "|", $bucket["id"]["func
     .unwrap();
 
     assert_eq!(execution.stdout, "first|first|first");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn system_php_preserves_array_access_offset_set_bucket_arbitrary_reference_slots() {
+    if !system_php_available() {
+        return;
+    }
+
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../tests/fixtures/milestone1681/arrayaccess_offsetset_bucket_arbitrary_reference_slot_cow.php",
+    );
+    let expected = std::fs::read_to_string(fixture.with_extension("stdout"))
+        .expect("read ArrayAccess offsetSet stored-bucket COW probe expectation");
+    let output = Command::new("php")
+        .arg(&fixture)
+        .output()
+        .expect("run system PHP ArrayAccess offsetSet stored-bucket COW probe");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        expected.trim_end_matches('\n')
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn array_access_offset_set_bucket_copy_preserves_arbitrary_nested_reference_slots() {
+    let source = include_str!(
+        "../../tests/fixtures/milestone1681/arrayaccess_offsetset_bucket_arbitrary_reference_slot_cow.php"
+    );
+    let expected = include_str!(
+        "../../tests/fixtures/milestone1681/arrayaccess_offsetset_bucket_arbitrary_reference_slot_cow.stdout"
+    );
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
+    assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
 
