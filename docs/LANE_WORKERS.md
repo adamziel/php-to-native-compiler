@@ -52,15 +52,18 @@ disjoint:
 - Native runtime ABI lane for runtime helper ABI, generated-code helper-call
   probes, owned buffers/handles, and explicit native lowering boundaries.
 
-Current next queue after the 1641-1646 checkpoint:
+Current next queue after the COW-focused 1648/1652-1656 checkpoint:
 
 - Milestone 1647: object lifecycle WordPress blocker.
-- Milestone 1648: reference/COW WordPress blocker.
+- Milestone 1648 and COW slices 1652-1656: completed for the current
+  COW-focused batch.
+- Milestone 1657: next reference/COW container blocker; keep all available
+  lanes focused here until the next bounded COW slice is proven.
 - Milestone 1649: request/SAPI/filesystem/stream WordPress blocker.
 - Milestone 1650: WordPress DB/bootstrap evidence blocker.
 - Milestone 1651: native runtime ABI/execution blocker.
-- Milestone 1652: tests/docs integration, full gate, checkpoint, push, and
-  cleanup.
+- Milestone 1652: COW tests/docs integration, full gate, checkpoint, push, and
+  cleanup completed.
 
 Parser lane:
 
@@ -256,6 +259,10 @@ current split is:
 - Tests/docs lane: Milestone 1598 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
+Milestone 1648 plus COW slices 1652-1656 closed the current COW-focused
+batch; Milestone 1652 refreshed the queue and recorded the full-gate result.
+Milestones 1641 through 1646 closed the previous WordPress-focused
+implementation/native batch.
 Milestones 1587 through 1591 closed the latest WordPress-focused
 implementation and native lanes; Milestone 1592 refreshed the queue and
 recorded the full-gate result.

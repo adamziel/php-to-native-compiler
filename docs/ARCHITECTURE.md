@@ -111,9 +111,14 @@ or declared public object-property array that contains a referenced direct slot
 preserves that slot's reference identity across a copied direct array. Copying
 a literal-key direct nested array path, including auto-global request paths
 such as `$_REQUEST["payload"]`, also mirrors covered reference slots below the
-copied path into the destination direct array variable. Variable, dynamic,
-append, and side-effecting copied path keys remain outside this bounded mirror
-and still require the future reference/COW value model. When an
+copied path into the destination direct array variable. By-reference `foreach`
+over that copied direct array consults the mirrored element alias group before
+falling back to a plain copied slot, so loop writes and the post-loop lingering
+reference update the original referenced slot for covered direct and
+request-bag copied-path aliases while non-reference copied elements remain
+ordinary copied values. Variable, dynamic, append, and side-effecting copied
+path keys remain outside this bounded mirror and still require the future
+reference/COW value model. When an
 array-offset or visible named object-property array-offset reference target is
 bound from a direct variable that already shares a direct variable-to-variable
 cell, the interpreter rewires every direct name in that small source cell
@@ -199,8 +204,13 @@ variable is itself backed by the bounded array-offset alias metadata, the
 callee parameter now receives the alias group instead of looking for a normal
 symbol-table cell, so returned child-slot suffixes remain attached to the
 underlying request/global/array/property slot. Literal callback argument
-arrays can also bind direct, named property-held, and direct dynamic
-property-held `ArrayAccess` elements,
+arrays can also bind array-offset reference elements below direct named or
+dynamic magic `__get()` properties when visible public `__get($name)` returns
+a direct variable by reference; the interpreter temporarily roots that returned
+cell and reuses the same copy-in/writeback alias path for normal
+`call_user_func_array()` invocation and covered reference-return callback
+sources. Literal callback argument arrays can also bind direct, named
+property-held, and direct dynamic property-held `ArrayAccess` elements,
 including method-context `$this->{$name}` roots for visible private or
 protected holder properties and nested offset elements, when public by-reference
 `offsetGet($offset)` has the exact bounded `return $this->property[$offset];`
@@ -214,12 +224,12 @@ reference-returning magic `__get()` properties, such as
 `$alias =& $object->missing[]` and `$alias =& $object->{$name}[]`, temporarily
 roots the returned direct-variable cell and appends through the same bounded
 array-offset alias metadata used for direct array append references. It
-does not make callback argument arrays, non-public object-property
-array bridges, dynamic ArrayAccess roots beyond direct dynamic property-held
-sources, non-direct holder expressions, mixed nested `ArrayAccess` chains,
-general magic-property reference containers, arbitrary append ArrayAccess bodies,
-or stored array-offset metadata into general runtime reference
-containers. By-reference
+does not make stored callback argument arrays from magic `__get()` roots,
+non-public object-property array bridges, dynamic ArrayAccess roots beyond
+direct dynamic property-held sources, non-direct holder expressions, mixed
+nested `ArrayAccess` chains, general magic-property reference containers,
+arbitrary append ArrayAccess bodies, or stored array-offset metadata into
+general runtime reference containers. By-reference
 `foreach` currently consumes direct visible named and dynamic object-property
 array roots, bounded non-direct named and dynamic property holder expressions that
 evaluate to objects, direct free-function, direct visible
@@ -253,14 +263,26 @@ object-property roots for that object name. Direct dynamic-property assignment
 from a reference array literal uses the evaluated property name as the public
 or context-aware non-public object-property alias root, so later stored-array
 callback use can reuse covered reference elements when the current method
-context can see the property. Direct array-offset `unset(...)` paths, direct
+context can see the property. Direct array-offset and direct visible
+object-property array-offset assignment detach covered child aliases below the
+explicit assigned path before overwriting that slot. When the assigned value is
+a direct array variable or covered literal-key array/property path whose
+elements already have bounded reference alias metadata, the assignment mirrors
+those child reference slots into the target array/property slot so stored
+argument arrays remain usable by the current `call_user_func_array()` reference
+path. This is still path metadata for explicit keys, not PHP's general COW
+container graph; dynamic, magic, side-effecting, and mixed `ArrayAccess`
+source or target paths remain outside this mirror. Direct array-offset `unset(...)` paths, direct
 visible object-property array-offset `unset(...)` paths, and direct visible
 object-property `unset(...)` paths remove covered alias metadata for the
 removed slot/property, and for child aliases below a removed parent slot or
 property, while storing the last observed alias value back into the detached
-direct alias variable. This models the bounded PHP behavior where unsetting a
-referenced container slot or containing property deletes the container entry
-without deleting the remaining reference variable. Direct variable
+direct alias variables. When multiple direct names shared the same covered
+array/property-slot alias metadata before detachment, those names are rebound
+to one shared cell so later writes through one detached name remain visible
+through the other detached names. This models the bounded PHP behavior where
+unsetting a referenced container slot or containing property deletes the
+container entry without deleting the remaining reference variables. Direct variable
 `unset($name)` also detaches covered aliases rooted below the removed direct
 array/object variable.
 Arbitrary nested copied reference slots beyond the literal copied path slice,

@@ -2049,6 +2049,53 @@ echo $entry, "|", $items["slot"], "|", $other;
 }
 
 #[test]
+fn alias_graph_path_writes_sync_changed_slot_when_group_spans_same_root() {
+    let execution = run_source(
+        r#"<?php
+$items = array("root" => array("slot" => "old"), "source" => "source-old");
+$root =& $items["root"];
+$source =& $items["source"];
+$same =& $source;
+$root["slot"] =& $source;
+$source = "source-write";
+echo $items["root"]["slot"], "|", $same, "|";
+$items["root"]["slot"] = "slot-write";
+echo $source, "|", $same, "|", $items["source"], "\n";
+
+$_REQUEST["payload"] = array("root" => array("slot" => "old"), "source" => "request-old");
+$requestRoot =& $_REQUEST["payload"]["root"];
+$requestSource =& $_REQUEST["payload"]["source"];
+$requestSame =& $requestSource;
+$requestRoot["slot"] =& $requestSource;
+$requestSource = "request-source";
+echo $_REQUEST["payload"]["root"]["slot"], "|", $requestSame, "|";
+$_REQUEST["payload"]["root"]["slot"] = "request-slot";
+echo $requestSource, "|", $requestSame, "|", $_REQUEST["payload"]["source"], "\n";
+
+class AliasGraphBox {
+    public $items = array("root" => array("slot" => "old"), "source" => "box-old");
+}
+$box = new AliasGraphBox();
+$boxRoot =& $box->items["root"];
+$boxSource =& $box->items["source"];
+$boxSame =& $boxSource;
+$boxRoot["slot"] =& $boxSource;
+$boxSource = "box-source";
+echo $box->items["root"]["slot"], "|", $boxSame, "|";
+$box->items["root"]["slot"] = "box-slot";
+echo $boxSource, "|", $boxSame, "|", $box->items["source"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "source-write|source-write|slot-write|slot-write|slot-write\nrequest-source|request-source|request-slot|request-slot|request-slot\nbox-source|box-source|box-slot|box-slot|box-slot"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_array_variable_source_to_variable_executes_current_subset() {
     let execution = run_source(
         r#"<?php
@@ -4000,6 +4047,50 @@ echo $alias;
     .unwrap();
 
     assert_eq!(execution.stdout, "from-alias|from-slot");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_rebinds_alias_backed_array_slots_to_new_sources() {
+    let execution = run_source(
+        r#"<?php
+$_REQUEST["payload"] = array("slot" => "request-old", "append" => array());
+$payload =& $_REQUEST["payload"];
+$value = "request-new";
+$payload["slot"] =& $value;
+$value = "request-source";
+echo $_REQUEST["payload"]["slot"], "|";
+$_REQUEST["payload"]["slot"] = "request-target";
+echo $value, "\n";
+
+class ReferenceAssignmentBox {
+    public $items = array("slot" => "box-old", "nested" => array("slot" => "nested-old"));
+}
+
+$box = new ReferenceAssignmentBox();
+$slot =& $box->items["slot"];
+$boxValue = "box-new";
+$slot =& $boxValue;
+$boxValue = "box-source";
+echo $box->items["slot"], "|";
+$box->items["slot"] = "box-target";
+echo $boxValue, "\n";
+
+$nested =& $box->items["nested"];
+$nestedValue = "nested-new";
+$nested["slot"] =& $nestedValue;
+$nestedValue = "nested-source";
+echo $box->items["nested"]["slot"], "|";
+$box->items["nested"]["slot"] = "nested-target";
+echo $nestedValue;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "request-source|request-target\nbox-old|box-source\nnested-source|nested-target"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

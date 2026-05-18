@@ -1710,47 +1710,46 @@ impl SymbolTable {
         self.array_offset_aliases.get(name).cloned()
     }
 
-    fn array_offset_alias_group_for_direct_array_slot(
-        &self,
-        array_name: &str,
-        key: &ArrayKey,
-    ) -> Option<Vec<ArrayOffsetAlias>> {
-        self.array_offset_aliases
-            .values()
-            .find(|aliases| {
-                aliases.iter().any(|alias| {
-                    matches!(
-                        alias,
-                        ArrayOffsetAlias {
-                            root: ArrayOffsetAliasRoot::StaticArray { name },
-                            keys,
-                        } if name == array_name && keys.as_slice() == std::slice::from_ref(key)
-                    )
-                })
-            })
-            .cloned()
-    }
-
     fn array_offset_alias_group_for_stored_array_slot(
         &self,
         array_name: &str,
         key: &ArrayKey,
     ) -> Option<Vec<ArrayOffsetAlias>> {
-        if let Some(aliases) = self.array_offset_alias_group_for_direct_array_slot(array_name, key)
-        {
-            return Some(aliases);
-        }
-        let candidates =
-            self.array_offset_aliases_for_name_with_suffix(array_name, std::slice::from_ref(key))?;
+        self.array_offset_alias_group_for_stored_array_path(array_name, std::slice::from_ref(key))
+    }
+
+    fn array_offset_alias_group_for_stored_array_path(
+        &self,
+        array_name: &str,
+        keys: &[ArrayKey],
+    ) -> Option<Vec<ArrayOffsetAlias>> {
+        let direct_candidate = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: array_name.to_string(),
+            },
+            keys: keys.to_vec(),
+        };
+        let candidates = self.array_offset_aliases_for_name_with_suffix(array_name, keys);
+        self.array_offset_alias_group_for_stored_root_path(direct_candidate, candidates)
+    }
+
+    fn array_offset_alias_group_for_stored_root_path(
+        &self,
+        direct_candidate: ArrayOffsetAlias,
+        candidates: Option<Vec<ArrayOffsetAlias>>,
+    ) -> Option<Vec<ArrayOffsetAlias>> {
         self.array_offset_aliases
             .values()
             .find(|aliases| {
-                candidates
-                    .iter()
-                    .any(|candidate| aliases.contains(candidate))
+                aliases.contains(&direct_candidate)
+                    || candidates.as_ref().is_some_and(|candidates| {
+                        candidates
+                            .iter()
+                            .any(|candidate| aliases.contains(candidate))
+                    })
             })
             .cloned()
-            .or(Some(candidates))
+            .or(candidates)
     }
 
     fn array_offset_alias_group_for_stored_object_property_slot(
@@ -1783,11 +1782,13 @@ impl SymbolTable {
 
     fn remove_static_root_from_array_offset_aliases(&mut self, root_name: &str) {
         let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+        let mut detached_groups = Vec::new();
 
         for alias_name in alias_names {
             let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
                 continue;
             };
+            let previous_aliases = existing_aliases.clone();
             let fallback_value = existing_aliases
                 .iter()
                 .find(|alias| {
@@ -1809,9 +1810,12 @@ impl SymbolTable {
 
             if aliases.is_empty() {
                 self.array_offset_aliases.remove(&alias_name);
-                if let Some(value) = fallback_value {
-                    self.write_storage_named(&alias_name, value);
-                }
+                self.bind_detached_array_offset_alias_fallback(
+                    &alias_name,
+                    &previous_aliases,
+                    fallback_value,
+                    &mut detached_groups,
+                );
             } else {
                 self.array_offset_aliases.insert(alias_name, aliases);
             }
@@ -1855,11 +1859,13 @@ impl SymbolTable {
         fallbacks: &HashMap<String, Value>,
     ) {
         let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+        let mut detached_groups = Vec::new();
 
         for alias_name in alias_names {
             let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
                 continue;
             };
+            let previous_aliases = existing_aliases.clone();
             let aliases: Vec<_> = existing_aliases
                 .into_iter()
                 .filter(|alias| {
@@ -1870,9 +1876,12 @@ impl SymbolTable {
 
             if aliases.is_empty() {
                 self.array_offset_aliases.remove(&alias_name);
-                if let Some(value) = fallbacks.get(&alias_name) {
-                    self.write_storage_named(&alias_name, value.clone());
-                }
+                self.bind_detached_array_offset_alias_fallback(
+                    &alias_name,
+                    &previous_aliases,
+                    fallbacks.get(&alias_name).cloned(),
+                    &mut detached_groups,
+                );
             } else {
                 self.array_offset_aliases.insert(alias_name, aliases);
             }
@@ -1885,11 +1894,13 @@ impl SymbolTable {
         fallbacks: &HashMap<String, Value>,
     ) {
         let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+        let mut detached_groups = Vec::new();
 
         for alias_name in alias_names {
             let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
                 continue;
             };
+            let previous_aliases = existing_aliases.clone();
             let aliases: Vec<_> = existing_aliases
                 .into_iter()
                 .filter(|alias| !alias.root.matches_object(object_name))
@@ -1897,9 +1908,12 @@ impl SymbolTable {
 
             if aliases.is_empty() {
                 self.array_offset_aliases.remove(&alias_name);
-                if let Some(value) = fallbacks.get(&alias_name) {
-                    self.write_storage_named(&alias_name, value.clone());
-                }
+                self.bind_detached_array_offset_alias_fallback(
+                    &alias_name,
+                    &previous_aliases,
+                    fallbacks.get(&alias_name).cloned(),
+                    &mut detached_groups,
+                );
             } else {
                 self.array_offset_aliases.insert(alias_name, aliases);
             }
@@ -1912,6 +1926,75 @@ impl SymbolTable {
         }
 
         let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+        let mut detached_groups = Vec::new();
+        for alias_name in alias_names {
+            let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
+                continue;
+            };
+            let previous_aliases = existing_aliases.clone();
+            let mut fallback_value = None;
+            let mut aliases = Vec::new();
+
+            for alias in existing_aliases {
+                let should_detach = unset_paths.iter().any(|unset_path| {
+                    alias.root == unset_path.root && alias.keys.starts_with(&unset_path.keys)
+                });
+                if should_detach {
+                    if fallback_value.is_none() {
+                        fallback_value = self.read_array_offset_alias(&alias);
+                    }
+                } else {
+                    aliases.push(alias);
+                }
+            }
+
+            if aliases.is_empty() {
+                self.array_offset_aliases.remove(&alias_name);
+                self.bind_detached_array_offset_alias_fallback(
+                    &alias_name,
+                    &previous_aliases,
+                    fallback_value,
+                    &mut detached_groups,
+                );
+            } else {
+                self.array_offset_aliases.insert(alias_name, aliases);
+            }
+        }
+    }
+
+    fn bind_detached_array_offset_alias_fallback(
+        &mut self,
+        alias_name: &str,
+        previous_aliases: &[ArrayOffsetAlias],
+        fallback_value: Option<Value>,
+        detached_groups: &mut Vec<(Vec<ArrayOffsetAlias>, VariableCell)>,
+    ) {
+        let Some(value) = fallback_value else {
+            return;
+        };
+
+        let cell = detached_groups
+            .iter()
+            .find_map(|(aliases, cell)| {
+                (aliases.as_slice() == previous_aliases).then(|| cell.clone())
+            })
+            .unwrap_or_else(|| {
+                let cell = value_cell(value);
+                detached_groups.push((previous_aliases.to_vec(), cell.clone()));
+                cell
+            });
+        self.bind_static_to_cell(alias_name, cell);
+    }
+
+    fn detach_array_offset_aliases_below_assignment_paths(
+        &mut self,
+        assigned_paths: &[ArrayOffsetAlias],
+    ) {
+        if assigned_paths.is_empty() {
+            return;
+        }
+
+        let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
         for alias_name in alias_names {
             let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
                 continue;
@@ -1920,8 +2003,10 @@ impl SymbolTable {
             let mut aliases = Vec::new();
 
             for alias in existing_aliases {
-                let should_detach = unset_paths.iter().any(|unset_path| {
-                    alias.root == unset_path.root && alias.keys.starts_with(&unset_path.keys)
+                let should_detach = assigned_paths.iter().any(|assigned_path| {
+                    alias.root == assigned_path.root
+                        && alias.keys.starts_with(&assigned_path.keys)
+                        && alias.keys.len() > assigned_path.keys.len()
                 });
                 if should_detach {
                     if fallback_value.is_none() {
@@ -1986,9 +2071,57 @@ impl SymbolTable {
         }
     }
 
+    fn mirror_static_array_offset_aliases_from_copy_to_alias_root(
+        &mut self,
+        target_root: ArrayOffsetAliasRoot,
+        target_keys: &[ArrayKey],
+        source_name: &str,
+    ) {
+        self.mirror_array_offset_aliases_from_path_copy_to_alias_root(
+            target_root.clone(),
+            target_keys,
+            &ArrayOffsetAliasRoot::StaticArray {
+                name: source_name.to_string(),
+            },
+            &[],
+            true,
+        );
+
+        if let Some(source_aliases) = self.array_offset_aliases.get(source_name).cloned() {
+            for source_alias in source_aliases {
+                self.mirror_array_offset_aliases_from_path_copy_to_alias_root(
+                    target_root.clone(),
+                    target_keys,
+                    &source_alias.root,
+                    &source_alias.keys,
+                    false,
+                );
+            }
+        }
+    }
+
     fn mirror_array_offset_aliases_from_path_copy(
         &mut self,
         target_name: &str,
+        source_root: &ArrayOffsetAliasRoot,
+        source_keys: &[ArrayKey],
+        include_exact_path: bool,
+    ) {
+        self.mirror_array_offset_aliases_from_path_copy_to_alias_root(
+            ArrayOffsetAliasRoot::StaticArray {
+                name: target_name.to_string(),
+            },
+            &[],
+            source_root,
+            source_keys,
+            include_exact_path,
+        );
+    }
+
+    fn mirror_array_offset_aliases_from_path_copy_to_alias_root(
+        &mut self,
+        target_root: ArrayOffsetAliasRoot,
+        target_keys: &[ArrayKey],
         source_root: &ArrayOffsetAliasRoot,
         source_keys: &[ArrayKey],
         include_exact_path: bool,
@@ -1997,18 +2130,19 @@ impl SymbolTable {
             .array_offset_aliases
             .iter()
             .flat_map(|(alias_name, aliases)| {
+                let target_root = target_root.clone();
                 aliases.iter().filter_map(move |alias| match &alias.root {
                     root if root == source_root
                         && alias.keys.starts_with(source_keys)
                         && (include_exact_path || alias.keys.len() > source_keys.len()) =>
                     {
+                        let mut keys = target_keys.to_vec();
+                        keys.extend(alias.keys[source_keys.len()..].iter().cloned());
                         Some((
                             alias_name.clone(),
                             ArrayOffsetAlias {
-                                root: ArrayOffsetAliasRoot::StaticArray {
-                                    name: target_name.to_string(),
-                                },
-                                keys: alias.keys[source_keys.len()..].to_vec(),
+                                root: target_root.clone(),
+                                keys,
                             },
                         ))
                     }
@@ -2307,6 +2441,40 @@ impl SymbolTable {
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias { root, keys };
+        self.materialize_array_offset_alias(&alias, span)?;
+        if !self.write_array_offset_alias(&alias, source_value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
+            ));
+        }
+        self.bind_direct_alias_group_to_array_offset_alias(source_name, alias);
+        Ok(())
+    }
+
+    fn bind_array_offset_alias_root_to_static_source(
+        &mut self,
+        alias: ArrayOffsetAlias,
+        source_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        match &alias.root {
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, .. }
+            | ArrayOffsetAliasRoot::ContextObjectProperty { object, .. }
+                if object == source_name =>
+            {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "array-offset reference targets cannot use the same direct variable as source and array root in the current subset",
+                    ),
+                ));
+            }
+            _ => {}
+        }
+
+        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         self.materialize_array_offset_alias(&alias, span)?;
         if !self.write_array_offset_alias(&alias, source_value) {
             return Err(runtime_error(
@@ -2826,21 +2994,62 @@ impl SymbolTable {
 
     fn sync_alias_roots(&mut self, aliases: &[ArrayOffsetAlias]) {
         for alias in aliases {
-            match &alias.root {
-                ArrayOffsetAliasRoot::StaticArray { name } => {
-                    self.sync_array_offset_aliases_for_static_root(name);
-                }
-                ArrayOffsetAliasRoot::GlobalArray { name } => {
-                    self.sync_array_offset_aliases_for_global_root(name);
-                }
-                ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
-                | ArrayOffsetAliasRoot::ContextObjectProperty {
-                    object, property, ..
-                } => {
-                    self.sync_array_offset_aliases_for_object_property_root(object, property);
-                }
+            self.sync_array_offset_aliases_for_root_path(&alias.root, &alias.keys);
+        }
+    }
+
+    fn sync_array_offset_aliases_for_root_path(
+        &mut self,
+        root: &ArrayOffsetAliasRoot,
+        keys: &[ArrayKey],
+    ) {
+        let syncs: Vec<(String, Vec<ArrayOffsetAlias>, Value)> = self
+            .array_offset_aliases
+            .iter()
+            .filter_map(|(alias_name, aliases)| {
+                let touched_alias = Self::best_alias_for_changed_root_path(aliases, root, keys)?;
+                self.read_array_offset_alias(touched_alias)
+                    .map(|value| (alias_name.clone(), aliases.clone(), value))
+            })
+            .collect();
+
+        for (alias_name, aliases, value) in syncs {
+            if !self.write_array_offset_aliases(&aliases, value) {
+                self.array_offset_aliases.remove(&alias_name);
             }
         }
+    }
+
+    fn best_alias_for_changed_root_path<'a>(
+        aliases: &'a [ArrayOffsetAlias],
+        root: &ArrayOffsetAliasRoot,
+        keys: &[ArrayKey],
+    ) -> Option<&'a ArrayOffsetAlias> {
+        if let Some(alias) = aliases
+            .iter()
+            .find(|alias| alias.root == *root && alias.keys.as_slice() == keys)
+        {
+            return Some(alias);
+        }
+
+        if let Some(alias) = aliases
+            .iter()
+            .filter(|alias| {
+                alias.root == *root
+                    && keys.starts_with(alias.keys.as_slice())
+                    && alias.keys.len() < keys.len()
+            })
+            .max_by_key(|alias| alias.keys.len())
+        {
+            return Some(alias);
+        }
+
+        aliases
+            .iter()
+            .filter(|alias| {
+                alias.root == *root && alias.keys.starts_with(keys) && keys.len() < alias.keys.len()
+            })
+            .min_by_key(|alias| alias.keys.len())
     }
 
     fn read_alias_root_value(
@@ -3110,6 +3319,11 @@ fn bind_foreach_lingering_reference(
     span: Span,
 ) -> CompileResult<()> {
     if let Some(key) = key {
+        if let Some(aliases) = foreach_root_slot_aliases(scope, root, &key) {
+            scope.bind_static_to_existing_array_offset_aliases(value, aliases, span)?;
+            return Ok(());
+        }
+
         match root {
             ForeachArrayRoot::Static { name, keys } => {
                 let mut alias_keys = keys.clone();
@@ -3147,6 +3361,89 @@ fn bind_foreach_lingering_reference(
         }
     }
     Ok(())
+}
+
+fn foreach_root_slot_aliases(
+    scope: &SymbolTable,
+    root: &ForeachArrayRoot,
+    key: &ArrayKey,
+) -> Option<Vec<ArrayOffsetAlias>> {
+    match root {
+        ForeachArrayRoot::Static { name, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            scope.array_offset_alias_group_for_stored_array_path(name, &alias_keys)
+        }
+        ForeachArrayRoot::Global { name, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            scope.array_offset_alias_group_for_stored_root_path(
+                ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::GlobalArray { name: name.clone() },
+                    keys: alias_keys,
+                },
+                None,
+            )
+        }
+        ForeachArrayRoot::Alias { root, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            scope.array_offset_alias_group_for_stored_root_path(
+                ArrayOffsetAlias {
+                    root: root.clone(),
+                    keys: alias_keys,
+                },
+                None,
+            )
+        }
+        ForeachArrayRoot::Aliases { aliases } => Some(
+            aliases
+                .iter()
+                .map(|alias| {
+                    let mut alias = alias.clone();
+                    alias.keys.push(key.clone());
+                    alias
+                })
+                .collect(),
+        ),
+    }
+}
+
+fn bind_foreach_reference_to_key(
+    scope: &mut SymbolTable,
+    value: &str,
+    root: &ForeachArrayRoot,
+    key: &ArrayKey,
+    span: Span,
+) -> CompileResult<()> {
+    if let Some(aliases) = foreach_root_slot_aliases(scope, root, key) {
+        scope.bind_static_to_existing_array_offset_aliases(value, aliases, span)?;
+        return Ok(());
+    }
+
+    match root {
+        ForeachArrayRoot::Static { name, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            scope.bind_static_to_existing_nested_array_offset(value, name, alias_keys, span)
+        }
+        ForeachArrayRoot::Global { name, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            scope.bind_static_to_existing_global_nested_array_offset(value, name, alias_keys, span)
+        }
+        ForeachArrayRoot::Alias { root, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            scope.bind_static_to_existing_array_offset_alias_root(
+                value,
+                root.clone(),
+                alias_keys,
+                span,
+            )
+        }
+        ForeachArrayRoot::Aliases { .. } => Ok(()),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -5046,45 +5343,7 @@ impl Interpreter {
                         if let Some(key) = key {
                             scope.write_static(key, value_from_array_key(&entry_key));
                         }
-                        match &root {
-                            ForeachArrayRoot::Static { name, keys } => {
-                                let mut alias_keys = keys.clone();
-                                alias_keys.push(entry_key.clone());
-                                scope.bind_static_to_existing_nested_array_offset(
-                                    value, name, alias_keys, *span,
-                                )?;
-                            }
-                            ForeachArrayRoot::Global { name, keys } => {
-                                let mut alias_keys = keys.clone();
-                                alias_keys.push(entry_key.clone());
-                                scope.bind_static_to_existing_global_nested_array_offset(
-                                    value, name, alias_keys, *span,
-                                )?;
-                            }
-                            ForeachArrayRoot::Alias { root, keys } => {
-                                let mut alias_keys = keys.clone();
-                                alias_keys.push(entry_key.clone());
-                                scope.bind_static_to_existing_array_offset_alias_root(
-                                    value,
-                                    root.clone(),
-                                    alias_keys,
-                                    *span,
-                                )?;
-                            }
-                            ForeachArrayRoot::Aliases { aliases } => {
-                                let aliases = aliases
-                                    .iter()
-                                    .map(|alias| {
-                                        let mut alias = alias.clone();
-                                        alias.keys.push(entry_key.clone());
-                                        alias
-                                    })
-                                    .collect();
-                                scope.bind_static_to_existing_array_offset_aliases(
-                                    value, aliases, *span,
-                                )?;
-                            }
-                        }
+                        bind_foreach_reference_to_key(scope, value, &root, &entry_key, *span)?;
                         self.active_foreach_references.push(ActiveForeachReference {
                             root: root.clone(),
                             value_name: value.clone(),
@@ -5094,42 +5353,42 @@ impl Interpreter {
                         self.active_foreach_references.pop();
                         let flow = flow_result?;
 
-                        let value_still_bound = match &root {
-                            ForeachArrayRoot::Static { name, keys } => {
-                                let mut alias_keys = keys.clone();
-                                alias_keys.push(entry_key.clone());
-                                scope.is_static_bound_to_array_offset_path(value, name, &alias_keys)
-                            }
-                            ForeachArrayRoot::Global { name, keys } => {
-                                let mut alias_keys = keys.clone();
-                                alias_keys.push(entry_key.clone());
-                                scope.is_static_bound_to_global_array_offset_path(
-                                    value,
-                                    name,
-                                    &alias_keys,
-                                )
-                            }
-                            ForeachArrayRoot::Alias { root, keys } => {
-                                let mut alias_keys = keys.clone();
-                                alias_keys.push(entry_key.clone());
-                                scope.is_static_bound_to_array_offset_alias_root(
-                                    value,
-                                    root,
-                                    &alias_keys,
-                                )
-                            }
-                            ForeachArrayRoot::Aliases { aliases } => {
-                                let expected_aliases: Vec<_> = aliases
-                                    .iter()
-                                    .map(|alias| {
-                                        let mut alias = alias.clone();
-                                        alias.keys.push(entry_key.clone());
-                                        alias
-                                    })
-                                    .collect();
-                                scope
-                                    .array_offset_aliases_for_name(value)
-                                    .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
+                        let value_still_bound = if let Some(expected_aliases) =
+                            foreach_root_slot_aliases(scope, &root, &entry_key)
+                        {
+                            scope
+                                .array_offset_aliases_for_name(value)
+                                .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
+                        } else {
+                            match &root {
+                                ForeachArrayRoot::Static { name, keys } => {
+                                    let mut alias_keys = keys.clone();
+                                    alias_keys.push(entry_key.clone());
+                                    scope.is_static_bound_to_array_offset_path(
+                                        value,
+                                        name,
+                                        &alias_keys,
+                                    )
+                                }
+                                ForeachArrayRoot::Global { name, keys } => {
+                                    let mut alias_keys = keys.clone();
+                                    alias_keys.push(entry_key.clone());
+                                    scope.is_static_bound_to_global_array_offset_path(
+                                        value,
+                                        name,
+                                        &alias_keys,
+                                    )
+                                }
+                                ForeachArrayRoot::Alias { root, keys } => {
+                                    let mut alias_keys = keys.clone();
+                                    alias_keys.push(entry_key.clone());
+                                    scope.is_static_bound_to_array_offset_alias_root(
+                                        value,
+                                        root,
+                                        &alias_keys,
+                                    )
+                                }
+                                ForeachArrayRoot::Aliases { .. } => false,
                             }
                         };
                         let array = Self::read_foreach_root_array(&root, scope, *span)?;
@@ -7566,11 +7825,26 @@ impl Interpreter {
                 ..
             } => {
                 let key = self.evaluate_array_key(index, scope)?;
+                self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                 if let ReferenceSource::Variable {
                     name: source_name, ..
                 } = source
                 {
-                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
+                    if let Some((target_alias, _)) = self
+                        .evaluate_direct_array_access_reference_source_alias(
+                            name,
+                            vec![key.clone()],
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_array_offset_alias_root_to_static_source(
+                            target_alias,
+                            source_name,
+                            span,
+                        )?;
+                        return Ok(());
+                    }
                     if name == "GLOBALS" {
                         let Some(global_name) = globals_offset_name(&key) else {
                             return Err(runtime_error(
@@ -7590,7 +7864,22 @@ impl Interpreter {
                 if let Some((source_alias, value)) =
                     self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
-                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
+                    if let Some((target_alias, _)) = self
+                        .evaluate_direct_array_access_reference_source_alias(
+                            name,
+                            vec![key.clone()],
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_array_offset_alias_to_reference_alias(
+                            target_alias,
+                            source_alias,
+                            value,
+                            span,
+                        )?;
+                        return Ok(());
+                    }
                     let target_alias = if name == "GLOBALS" {
                         let Some(global_name) = globals_offset_name(&key) else {
                             return Err(runtime_error(
@@ -7664,11 +7953,23 @@ impl Interpreter {
             AssignTarget::ArrayIndex {
                 name, index: None, ..
             } => {
+                self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                 if let ReferenceSource::Variable {
                     name: source_name, ..
                 } = source
                 {
-                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
+                    if let Some((target_alias, _)) = self
+                        .evaluate_direct_array_access_append_reference_source_alias(
+                            name, span, scope,
+                        )?
+                    {
+                        scope.bind_array_offset_alias_root_to_static_source(
+                            target_alias,
+                            source_name,
+                            span,
+                        )?;
+                        return Ok(());
+                    }
                     if name == "GLOBALS" {
                         return Err(runtime_error(
                             span,
@@ -7684,7 +7985,19 @@ impl Interpreter {
                 if let Some((source_alias, value)) =
                     self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
-                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
+                    if let Some((target_alias, _)) = self
+                        .evaluate_direct_array_access_append_reference_source_alias(
+                            name, span, scope,
+                        )?
+                    {
+                        scope.bind_array_offset_alias_to_reference_alias(
+                            target_alias,
+                            source_alias,
+                            value,
+                            span,
+                        )?;
+                        return Ok(());
+                    }
                     if name == "GLOBALS" {
                         return Err(runtime_error(
                             span,
@@ -7712,15 +8025,30 @@ impl Interpreter {
                 Err(unsupported())
             }
             AssignTarget::NestedArrayIndex { name, indices, .. } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                 if let ReferenceSource::Variable {
                     name: source_name, ..
                 } = source
                 {
-                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
-                    let keys = indices
-                        .iter()
-                        .map(|index| self.evaluate_array_key(index, scope))
-                        .collect::<CompileResult<Vec<_>>>()?;
+                    if let Some((target_alias, _)) = self
+                        .evaluate_direct_array_access_reference_source_alias(
+                            name,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_array_offset_alias_root_to_static_source(
+                            target_alias,
+                            source_name,
+                            span,
+                        )?;
+                        return Ok(());
+                    }
                     if name == "GLOBALS" {
                         scope.bind_global_nested_array_offset_to_static_source(
                             keys,
@@ -7740,11 +8068,22 @@ impl Interpreter {
                 if let Some((source_alias, value)) =
                     self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
-                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
-                    let keys = indices
-                        .iter()
-                        .map(|index| self.evaluate_array_key(index, scope))
-                        .collect::<CompileResult<Vec<_>>>()?;
+                    if let Some((target_alias, _)) = self
+                        .evaluate_direct_array_access_reference_source_alias(
+                            name,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_array_offset_alias_to_reference_alias(
+                            target_alias,
+                            source_alias,
+                            value,
+                            span,
+                        )?;
+                        return Ok(());
+                    }
                     let target_alias = if name == "GLOBALS" {
                         let (global_name, keys) =
                             SymbolTable::split_globals_reference_path(keys, span)?;
@@ -9311,7 +9650,12 @@ impl Interpreter {
                         ));
                     };
                     scope.write_global_name(global_name, value.clone());
-                    scope.sync_array_offset_aliases_for_global_root(global_name);
+                    scope.sync_array_offset_aliases_for_root_path(
+                        &ArrayOffsetAliasRoot::GlobalArray {
+                            name: global_name.to_string(),
+                        },
+                        &[],
+                    );
                     if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                         self.bind_array_literal_references_to_alias_root_with_prefix(
                             ArrayOffsetAliasRoot::GlobalArray {
@@ -9334,6 +9678,14 @@ impl Interpreter {
                     )? {
                         return Ok(value);
                     }
+                }
+                if let Some(key) = key.as_ref() {
+                    scope.detach_array_offset_aliases_below_assignment_paths(&[ArrayOffsetAlias {
+                        root: ArrayOffsetAliasRoot::StaticArray {
+                            name: name.to_string(),
+                        },
+                        keys: vec![key.clone()],
+                    }]);
                 }
                 if key.is_none()
                     && matches!(value, Value::Array(_))
@@ -9396,7 +9748,16 @@ impl Interpreter {
                     }
                 }
                 scope.write_static(name, slot);
-                scope.sync_array_offset_aliases_for_static_root(name);
+                if let Some(key) = target_key.as_ref() {
+                    scope.sync_array_offset_aliases_for_root_path(
+                        &ArrayOffsetAliasRoot::StaticArray {
+                            name: name.to_string(),
+                        },
+                        std::slice::from_ref(key),
+                    );
+                } else {
+                    scope.sync_array_offset_aliases_for_static_root(name);
+                }
                 if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                     let Some(key) = target_key else {
                         return Err(runtime_error(
@@ -9416,6 +9777,15 @@ impl Interpreter {
                         expr.span(),
                         scope,
                     )?;
+                } else if let (Some(key), Value::Array(_)) = (target_key.as_ref(), &value) {
+                    self.mirror_copied_array_aliases_to_alias_root(
+                        expr,
+                        ArrayOffsetAliasRoot::StaticArray {
+                            name: name.to_string(),
+                        },
+                        std::slice::from_ref(key),
+                        scope,
+                    );
                 }
 
                 Ok(value)
@@ -9455,6 +9825,12 @@ impl Interpreter {
                 if scope.write_alias_backed_array_offset(name, &keys, value.clone(), *span)? {
                     return Ok(value);
                 }
+                scope.detach_array_offset_aliases_below_assignment_paths(&[ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::StaticArray {
+                        name: name.to_string(),
+                    },
+                    keys: keys.clone(),
+                }]);
                 Self::write_nested_array_assignment(name, &keys, value.clone(), *span, scope)?;
                 if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                     self.bind_array_literal_references_to_alias_root_with_prefix(
@@ -9466,6 +9842,15 @@ impl Interpreter {
                         expr.span(),
                         scope,
                     )?;
+                } else if matches!(value, Value::Array(_)) {
+                    self.mirror_copied_array_aliases_to_alias_root(
+                        expr,
+                        ArrayOffsetAliasRoot::StaticArray {
+                            name: name.to_string(),
+                        },
+                        &keys,
+                        scope,
+                    );
                 }
                 Ok(value)
             }
@@ -9610,7 +9995,20 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let value = self.evaluate(expr, scope)?;
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
+                let root =
+                    self.context_object_property_alias_root(object, property, *span, scope)?;
+                scope.detach_array_offset_aliases_below_assignment_paths(&[ArrayOffsetAlias {
+                    root: root.clone(),
+                    keys: keys.clone(),
+                }]);
                 self.write_object_property_nested_array_assignment(
                     object,
                     property,
@@ -9619,7 +10017,18 @@ impl Interpreter {
                     *span,
                     scope,
                 )?;
-                scope.sync_array_offset_aliases_for_object_property_root(object, property);
+                scope.sync_array_offset_aliases_for_root_path(&root, &keys);
+                if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
+                    self.bind_array_literal_references_to_alias_root_with_prefix(
+                        root.clone(),
+                        keys.clone(),
+                        array_literal_references,
+                        expr.span(),
+                        scope,
+                    )?;
+                } else if matches!(value, Value::Array(_)) {
+                    self.mirror_copied_array_aliases_to_alias_root(expr, root, &keys, scope);
+                }
                 Ok(value)
             }
             AssignTarget::ObjectPropertyArrayAppend {
@@ -9767,6 +10176,95 @@ impl Interpreter {
         }
     }
 
+    fn mirror_copied_array_aliases_to_alias_root(
+        &mut self,
+        expr: &Expr,
+        target_root: ArrayOffsetAliasRoot,
+        target_keys: &[ArrayKey],
+        scope: &mut SymbolTable,
+    ) {
+        match expr {
+            Expr::Variable(source_name, _) => {
+                scope.mirror_static_array_offset_aliases_from_copy_to_alias_root(
+                    target_root,
+                    target_keys,
+                    source_name,
+                );
+            }
+            Expr::Index { target, index, .. } => {
+                if let Some((source_name, indices)) =
+                    Self::collect_direct_variable_array_index_path(target, index)
+                {
+                    if let Some(keys) = Self::literal_array_key_path(&indices) {
+                        if source_name == "GLOBALS" {
+                            if let Ok((global_name, keys)) =
+                                SymbolTable::split_globals_reference_path(keys, expr.span())
+                            {
+                                scope.mirror_array_offset_aliases_from_path_copy_to_alias_root(
+                                    target_root,
+                                    target_keys,
+                                    &ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+                                    &keys,
+                                    false,
+                                );
+                            }
+                        } else {
+                            scope.mirror_array_offset_aliases_from_path_copy_to_alias_root(
+                                target_root,
+                                target_keys,
+                                &ArrayOffsetAliasRoot::StaticArray {
+                                    name: source_name.to_string(),
+                                },
+                                &keys,
+                                false,
+                            );
+                        }
+                    }
+                } else if let Some((object_name, property, indices)) =
+                    Self::collect_direct_object_property_array_index_path(target, index)
+                {
+                    if let Some(keys) = Self::literal_array_key_path(&indices) {
+                        if let Ok(source_root) = self.foreach_object_property_alias_root(
+                            object_name,
+                            property,
+                            scope,
+                            expr.span(),
+                        ) {
+                            scope.mirror_array_offset_aliases_from_path_copy_to_alias_root(
+                                target_root,
+                                target_keys,
+                                &source_root,
+                                &keys,
+                                false,
+                            );
+                        }
+                    }
+                }
+            }
+            Expr::Property {
+                target, property, ..
+            } => {
+                if let Expr::Variable(object_name, _) = target.as_ref() {
+                    if let Ok(source_root) = self.context_object_property_alias_root(
+                        object_name,
+                        property,
+                        expr.span(),
+                        scope,
+                    ) {
+                        scope.mirror_array_offset_aliases_from_path_copy_to_alias_root(
+                            target_root,
+                            target_keys,
+                            &source_root,
+                            &[],
+                            true,
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn write_nested_array_assignment(
         name: &str,
         keys: &[ArrayKey],
@@ -9786,7 +10284,12 @@ impl Interpreter {
             Value::Array(array) => {
                 Self::write_nested_array_value(array, keys, value, span)?;
                 scope.write_static(name, slot);
-                scope.sync_array_offset_aliases_for_static_root(name);
+                scope.sync_array_offset_aliases_for_root_path(
+                    &ArrayOffsetAliasRoot::StaticArray {
+                        name: name.to_string(),
+                    },
+                    keys,
+                );
                 Ok(())
             }
             other => Err(runtime_error(
@@ -9818,7 +10321,12 @@ impl Interpreter {
             Value::Array(array) => {
                 Self::write_nested_array_value(array, &keys, value, span)?;
                 scope.write_global_name(&global_name, slot);
-                scope.sync_array_offset_aliases_for_global_root(&global_name);
+                scope.sync_array_offset_aliases_for_root_path(
+                    &ArrayOffsetAliasRoot::GlobalArray {
+                        name: global_name.clone(),
+                    },
+                    &keys,
+                );
                 Ok(())
             }
             other => Err(runtime_error(
@@ -23403,6 +23911,16 @@ impl Interpreter {
                         });
                         continue;
                     }
+                    if let Some((alias, value)) =
+                        self.evaluate_magic_get_array_reference_argument(&item.value, caller_scope)?
+                    {
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target: ReferenceBindingTarget::ArrayOffset(alias),
+                        });
+                        continue;
+                    }
                     if let Some((alias, value)) = self
                         .evaluate_visible_object_property_array_reference_argument(
                             &item.value,
@@ -23868,6 +24386,14 @@ impl Interpreter {
                         param_name: param.name.clone(),
                         target: ReferenceBindingTarget::ArrayOffset(alias),
                     });
+                } else if let Some((alias, value)) =
+                    self.evaluate_magic_get_array_reference_argument(&item.value, caller_scope)?
+                {
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                    });
                 } else if let Some((alias, value)) = self
                     .evaluate_visible_object_property_array_reference_argument(
                         &item.value,
@@ -24143,6 +24669,14 @@ impl Interpreter {
                         param_name: param.name.clone(),
                         target: ReferenceBindingTarget::ArrayOffset(alias),
                     });
+                } else if let Some((alias, value)) =
+                    self.evaluate_magic_get_array_reference_argument(&item.value, caller_scope)?
+                {
+                    values_by_param[param_index] = Some(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                    });
                 } else if let Some((alias, value)) = self
                     .evaluate_visible_object_property_array_reference_argument(
                         &item.value,
@@ -24203,33 +24737,61 @@ impl Interpreter {
                 Ok(Some(StoredArgumentArrayRoot::ObjectProperty(root)))
             }
             Expr::Index { target, index, .. } => {
-                let Some((name, indices)) =
+                if let Some((name, indices)) =
                     Self::collect_direct_variable_array_index_path(target, index)
-                else {
-                    return Ok(None);
-                };
-                let mut keys = Vec::with_capacity(indices.len());
-                for index in indices {
-                    keys.push(self.evaluate_array_key(index, caller_scope)?);
-                }
-                if name == "GLOBALS" {
-                    let (global_name, keys) =
-                        SymbolTable::split_globals_reference_path(keys, span)?;
+                {
+                    let mut keys = Vec::with_capacity(indices.len());
+                    for index in indices {
+                        keys.push(self.evaluate_array_key(index, caller_scope)?);
+                    }
+                    if name == "GLOBALS" {
+                        let (global_name, keys) =
+                            SymbolTable::split_globals_reference_path(keys, span)?;
+                        return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
+                            ArrayOffsetAlias {
+                                root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+                                keys,
+                            },
+                        )));
+                    }
+                    if let Some((alias, _)) = self
+                        .evaluate_direct_array_access_reference_source_alias(
+                            name,
+                            keys.clone(),
+                            span,
+                            caller_scope,
+                        )?
+                    {
+                        return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(alias)));
+                    }
                     return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
                         ArrayOffsetAlias {
-                            root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+                            root: ArrayOffsetAliasRoot::StaticArray {
+                                name: name.to_string(),
+                            },
                             keys,
                         },
                     )));
                 }
-                return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
-                    ArrayOffsetAlias {
-                        root: ArrayOffsetAliasRoot::StaticArray {
-                            name: name.to_string(),
-                        },
-                        keys,
-                    },
-                )));
+                if let Some((object_name, property, indices)) =
+                    Self::collect_direct_object_property_array_index_path(target, index)
+                {
+                    let mut keys = Vec::with_capacity(indices.len());
+                    for index in indices {
+                        keys.push(self.evaluate_array_key(index, caller_scope)?);
+                    }
+                    let root = self.context_object_property_alias_root(
+                        object_name,
+                        property,
+                        span,
+                        caller_scope,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
+                        ArrayOffsetAlias { root, keys },
+                    )));
+                }
+
+                Ok(None)
             }
             _ => Ok(None),
         }

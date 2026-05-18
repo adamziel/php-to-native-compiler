@@ -1,0 +1,4 @@
+array-copy=seed:mark|seed:mark
+array-detach=fresh|changed
+property-copy=property:mark|property:mark
+property-detach=property-fresh|property-changed

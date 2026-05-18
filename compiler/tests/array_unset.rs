@@ -137,6 +137,37 @@ echo "|leaf=", $leaf;
 }
 
 #[test]
+fn unset_array_offsets_preserves_detached_direct_alias_groups() {
+    let source = r#"<?php
+$items = ["slot" => "seed", "outer" => ["leaf" => "nested"]];
+$alias =& $items["slot"];
+$second =& $alias;
+
+unset($items["slot"]);
+$alias = "after";
+echo array_key_exists("slot", $items) ? "slot:set:" . $items["slot"] : "slot:unset";
+echo "|alias=", $alias, "|second=", $second, "\n";
+$second = "again";
+echo array_key_exists("slot", $items) ? "slot:set:" . $items["slot"] : "slot:unset";
+echo "|alias=", $alias, "|second=", $second, "\n";
+
+$leaf =& $items["outer"]["leaf"];
+$other =& $leaf;
+unset($items["outer"]);
+$leaf = "changed";
+echo array_key_exists("outer", $items) ? "outer:set" : "outer:unset";
+echo "|leaf=", $leaf, "|other=", $other;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "slot:unset|alias=after|second=after\nslot:unset|alias=again|second=again\nouter:unset|leaf=changed|other=changed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unset_object_property_array_offsets_detaches_covered_reference_aliases() {
     let source = r#"<?php
 class RefcowUnsetAliasBag {
@@ -166,6 +197,41 @@ echo "|leaf=", $leaf;
     assert_eq!(
         execution.stdout,
         "slot:unset|alias=seed\nslot:unset|alias=after\nouter:unset|leaf=nested\nouter:unset|leaf=changed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unset_object_property_array_offsets_preserves_detached_direct_alias_groups() {
+    let source = r#"<?php
+class RefcowUnsetAliasGroupBag {
+    public $items = ["slot" => "seed", "outer" => ["leaf" => "nested"]];
+}
+
+$bag = new RefcowUnsetAliasGroupBag();
+$alias =& $bag->items["slot"];
+$second =& $alias;
+
+unset($bag->items["slot"]);
+$alias = "after";
+echo array_key_exists("slot", $bag->items) ? "slot:set:" . $bag->items["slot"] : "slot:unset";
+echo "|alias=", $alias, "|second=", $second, "\n";
+$second = "again";
+echo array_key_exists("slot", $bag->items) ? "slot:set:" . $bag->items["slot"] : "slot:unset";
+echo "|alias=", $alias, "|second=", $second, "\n";
+
+$leaf =& $bag->items["outer"]["leaf"];
+$other =& $leaf;
+unset($bag->items["outer"]);
+$leaf = "changed";
+echo array_key_exists("outer", $bag->items) ? "outer:set" : "outer:unset";
+echo "|leaf=", $leaf, "|other=", $other;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "slot:unset|alias=after|second=after\nslot:unset|alias=again|second=again\nouter:unset|leaf=changed|other=changed"
     );
     assert_eq!(execution.exit_code, 0);
 }

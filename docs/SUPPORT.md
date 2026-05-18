@@ -209,6 +209,12 @@
   copy-in/writeback path. Visible named object-property roots include public
   properties and private/protected properties reached from a valid method
   visibility context, such as `array(&$this->privateItems["slot"], ...)`.
+  Literal callback argument arrays also accept array offsets below a missing
+  or inaccessible direct named or dynamic object property when visible public
+  `__get($name)` returns a direct variable by reference, such as
+  `array(&$object->missing["slot"], ...)` and
+  `array("value" => &$object->{$name}["outer"]["slot"], ...)`; callback
+  writes route through the array cell returned by `__get()`.
   Literal callback argument arrays also accept direct `ArrayAccess` reference
   elements such as `array(&$bag[$key], ...)` and nested direct elements such
   as `array(&$bag["outer"]["slot"], ...)` when the direct object variable
@@ -282,6 +288,11 @@
   `$alias =& call_user_func_array("tag", array(&$value));` or
   `$alias =& call_user_func_array("tag", array(&$_REQUEST["mode"]));` or
   `$alias =& call_user_func_array("tag", array(&$object->items[$key]));`.
+  Literal array-offset reference elements below the same bounded magic
+  `__get()` property bridge are accepted for this reference-return path, so
+  `$alias =& call_user_func_array("tag", array(&$object->missing["slot"]));`
+  binds the result back through the returned array cell when the callback
+  returns the reached parameter or a covered child offset.
   A direct variable element that is already backed by covered array-offset
   alias metadata is also accepted for this literal argument-array path, so a
   returned child slot such as `return $payload[$key];` can bind back to the
@@ -327,12 +338,28 @@
   assignment targets may also already be backed by covered array-offset alias
   metadata, such as
   `$args =& $registry["args"]; $args = array(&$value);`.
+  Copying a direct array variable that contains covered reference elements into
+  a direct array-offset target or direct visible named object-property
+  array-offset target with explicit keys also mirrors those covered reference
+  slots, for example
+  `$registry["args"] = $args; call_user_func_array($callback,
+  $registry["args"]);` and
+  `$store->groups["args"] = $args; call_user_func_array($callback,
+  $store->groups["args"]);`. Reassigning those explicit array or
+  object-property array slots detaches covered child aliases below the replaced
+  slot so later writes through the old referenced value do not recreate or
+  overwrite the new slot value, while exact aliases to the replaced slot remain
+  write-through in the current bounded model.
   Dynamic-property append-offset targets, `ArrayAccess` append targets,
   `ArrayAccess` roots outside the direct `offsetGet()` bridge, reference
   array literals assigned into other non-variable targets, reference
-  elements from arbitrary expressions, direct stored arrays whose reached slots were not
-  assigned by reference, non-direct stored array expressions beyond direct
-  array offsets and direct visible named object-property arrays, direct reference assignment between
+  elements from arbitrary expressions, stored callback argument arrays whose
+  reached slots are magic `__get()` array offsets, direct stored arrays whose
+  reached slots were not assigned by reference, non-direct stored array
+  expressions beyond direct array offsets and direct visible named
+  object-property arrays, copied reference arrays from dynamic-keyed,
+  side-effecting, magic-property, or mixed `ArrayAccess` source paths, direct
+  reference assignment between
   non-append object-property array offsets without an intermediate alias variable,
   dynamic static receiver, executing duplicate or unknown string-keyed
   callback argument names beyond the stable diagnostic path, positional
@@ -366,7 +393,15 @@
   `unset($value)` detaches only that name without deleting the shared cell
   while another alias still points at it. Direct variable sources holding
   current object values may also be assigned into direct array offsets under
-  the existing object-handle value model. Direct free-function and direct
+  the existing object-handle value model. A direct array-offset target whose
+  root is already backed by the current covered alias metadata can also be
+  rebound to a direct variable source or to another covered array/property slot
+  source, such as `$payload =& $_REQUEST["payload"]; $payload["slot"] =&
+  $value;` and `$nested =& $object->items["nested"]; $nested["slot"] =&
+  $value;`. The selected target
+  slot is materialized when needed and then joins the source alias group, so
+  later writes through either side observe the same value. Direct free-function
+  and direct
   object method-call sources, direct named static method-call sources, and
   `self::` static method-call sources, `parent::` static method-call sources,
   `static::` late-static method-call sources, and dynamic static receiver
@@ -383,7 +418,8 @@
   dynamic-property, and bounded reference-return iterable roots, broader
   reference returns,
   reference-parameter forms beyond direct variable arguments, source/target
-  rebinding beyond direct names and the documented array-offset slices, PHP
+  rebinding beyond direct names and the documented array-offset slices,
+  append targets, self-referential array/property target roots, PHP
   reference-container edge cases, copy-on-write, and native lowering remain
   unsupported. Direct array-offset reference sources such as
   `$alias =& $array[$key];` execute when the source is a direct array variable
@@ -396,6 +432,9 @@
   the selected direct array slot, or an explicit parent direct array slot that
   contains a covered child alias, detaches the direct alias variable with its
   last value so later alias writes do not recreate the removed array slot.
+  When multiple direct names share the same covered array-slot alias group,
+  the detach path keeps those remaining direct names aliased to each other
+  after the container slot or parent slot is removed.
   Nested direct array-offset reference sources such as
   `$alias =& $array[$outer][$inner];` also execute for explicit key paths,
   materializing missing intermediate containers and selected slots. Append
@@ -421,7 +460,10 @@
   Unsetting the selected visible object-property array slot, or an explicit
   parent slot containing a covered child alias, detaches the direct alias
   variable with its last value so later alias writes do not recreate the
-  removed property array slot.
+  removed property array slot. When multiple direct names share the same
+  covered object-property array-slot alias group, the detach path keeps those
+  remaining direct names aliased to each other after the property array slot or
+  parent slot is removed.
   Nested object-property source paths such as
   `$alias =& $object->items[$outer][$inner];` execute for explicit key paths
   with the same visible-property root materialization. Append source paths such
@@ -473,9 +515,27 @@
   mirrored to the cloned variable
   so writes through the original property, the clone property, or the alias
   observe the same bounded reference slot for the covered direct clone slice.
+  Covered alias groups may now include multiple direct variable names plus
+  multiple exact slots under the same static array root, request/autoglobal
+  root, or visible object-property array root. For supported by-value writes
+  to a concrete direct array/property path, such as
+  `$items["root"]["slot"] = $value`,
+  `$_REQUEST["payload"]["root"]["slot"] = $value`, or
+  `$object->items["root"]["slot"] = $value`, the interpreter synchronizes
+  the alias group from that changed path instead of from a sibling slot in
+  the same root. This covers the bounded shape where an alias-backed parent
+  slot and an alias-backed source slot are joined by reference and then
+  mutated through the original array/property path. Append-offset path
+  selection, arbitrary expression roots, reference containers with destruction
+  ordering, and broader copy-on-write identity remain unsupported.
   Non-public clone mirroring is limited to aliases that were created through a
   valid method visibility context, such as private `$this->property` or
-  protected same-class/child peer-object property sources. Arbitrary nested
+  protected same-class/child peer-object property sources. By-reference
+  `foreach` over a direct copied array produced from those covered direct
+  array-offset or literal-key nested copied-path slices reuses the copied
+  element's alias group, so loop writes to the copied referenced element and
+  the post-loop lingering reference update the original referenced slot while
+  non-reference copied elements remain ordinary copied values. Arbitrary nested
   copied reference slots beyond the covered direct array-offset and literal
   copied-path slices,
   dynamic non-public clone mirroring, magic-property clone alias mirroring,

@@ -18220,12 +18220,50 @@ handled.
 
 ## Milestone 1648: References/COW WordPress Blocker
 
-- [ ] Reference/COW lane: close one bounded executable slice from real PHP
-  reference cells, array/object copy-on-write, alias destruction ordering,
-  by-reference function/method returns, by-reference captures beyond the
-  current direct alias-backed slots, foreach-by-reference, array-offset/
-  property/ArrayAccess reference roots, superglobal reference lifetime breadth,
-  or callable/reference parity. Keep native reference lowering explicit.
+- [x] Reference/COW lane: closed a bounded alias-backed reference-assignment
+  target slice. A direct array-offset target whose root is already backed by
+  covered alias metadata can now be rebound by reference to a direct variable
+  or another covered array/property slot source, including request/object-
+  property roots. Real PHP reference containers, broad
+  copy-on-write, alias destruction ordering, arbitrary expression roots,
+  append targets, self-referential target roots, ArrayAccess/magic/dynamic
+  roots beyond the covered slices, and native reference lowering remain future
+  work.
+
+- [x] Milestone 1652 alias-graph slice: synchronize covered alias groups from
+  the concrete changed array/property path when one group spans multiple direct
+  variable names and multiple exact slots under the same static array,
+  request/autoglobal, or visible object-property array root. The executable
+  fixture covers PHP-comparable static array, `$_REQUEST`, and public
+  object-property array roots; append-offset path selection, arbitrary
+  expression roots, full reference containers, broader copy-on-write identity,
+  and native lowering remain unsupported.
+
+- [x] Milestone 1653 copied-reference-array assignment slice: mirror covered
+  reference slots when a direct array containing references is copied into an
+  explicit array-offset target or public object-property array-offset target,
+  and detach covered child aliases below that replaced slot on reassignment.
+  Dynamic keys, magic-property containers, mixed `ArrayAccess` chains, exact
+  alias destruction ordering, and native lowering remain unsupported.
+
+- [x] Milestone 1654 alias-lifetime slice: when covered array-slot aliases are
+  removed by unsetting the slot or an explicit parent slot, remaining direct
+  alias names rebind to one shared detached cell while the container entry
+  stays removed. Full lifecycle/destructor ordering, magic-property and
+  `ArrayAccess` detach breadth, and native lowering remain unsupported.
+
+- [x] Milestone 1655 foreach-by-reference copied-array slice: by-reference
+  `foreach` over direct copied nested arrays and request-bag copies can bind
+  through covered copied reference slots. Dynamic/side-effecting copied paths,
+  arbitrary copied reference slots, object/Traversable foreach, and native
+  lowering remain unsupported.
+
+- [x] Milestone 1656 magic call-boundary slice: literal
+  `call_user_func_array()` argument arrays can pass by-reference arguments
+  below magic `__get()` array roots when visible public `__get()` returns a
+  direct variable by reference. Stored magic-root callback argument arrays,
+  general magic-property reference containers, arbitrary `__get()` bodies,
+  mixed `ArrayAccess` chains, and native lowering remain unsupported.
 
 ## Milestone 1649: Request/SAPI/Filesystem/Stream Blocker
 
@@ -18255,12 +18293,26 @@ handled.
   handle use. Keep interpreter-only support and native lowering boundaries
   explicit.
 
-## Milestone 1652: WordPress-Focused Queue Refresh
+## Milestone 1652: COW-Focused Queue Refresh
 
-- [ ] Tests/docs lane: integrate Milestones 1647-1651, refresh support docs,
-  progress, lane-worker queue, and loop memory; record focused verification;
-  run the serialized full gate; checkpoint the batch; push; and clean lane
-  worktrees and target directories.
+- [x] Tests/docs lane: integrate Milestone 1648 and the COW-only
+  Milestones 1652-1656, refresh support docs, progress, lane-worker queue, and
+  loop memory; record focused verification; run the serialized full gate;
+  checkpoint the batch; push; and clean COW lane worktrees and target
+  directories. Full gate passed with `1691` fixture tests, `0` failures,
+  `998` system PHP comparisons, and `693` `phpc-only` skipped fixtures before
+  checkpoint.
+
+## Milestone 1657: References/COW Container Blocker
+
+- [ ] Reference/COW lane: close the next bounded executable slice toward real
+  PHP reference containers and copy-on-write identity. Prioritize one of:
+  shared reference container identity for array/object slots, exact alias
+  destruction after unset/rebind, magic-property reference containers beyond
+  direct-variable `__get()` returns, mixed `ArrayAccess`/magic reference
+  chains, object/Traversable by-reference iteration, superglobal lifetime
+  breadth, or native reference-lowering diagnostics. Keep every unsupported
+  edge named and PHP-comparable.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

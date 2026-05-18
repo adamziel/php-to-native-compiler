@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1653/copied_reference_array_slot_detach.php

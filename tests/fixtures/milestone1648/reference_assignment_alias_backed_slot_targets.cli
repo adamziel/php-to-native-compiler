@@ -1,0 +1,1 @@
+args: run tests/fixtures/milestone1648/reference_assignment_alias_backed_slot_targets.php

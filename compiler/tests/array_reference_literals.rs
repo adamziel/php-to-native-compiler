@@ -101,6 +101,62 @@ echo $items["slot"], "|", $args[0], "|", $registry["args"][0], "|", $copy[0];
 }
 
 #[test]
+fn copied_reference_arrays_assigned_to_array_offsets_preserve_and_detach_slots() {
+    let execution = run_source(
+        r#"<?php
+function mark_refcow_copied_offset(&$value) {
+    $value = $value . ":mark";
+}
+
+$value = "seed";
+$args = array(&$value);
+$registry = [];
+$registry["args"] = $args;
+call_user_func_array("mark_refcow_copied_offset", $registry["args"]);
+echo $value, "|", $registry["args"][0], "\n";
+
+$registry["args"] = ["fresh"];
+$value = "changed";
+echo $registry["args"][0], "|", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "seed:mark|seed:mark\nfresh|changed");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn copied_reference_arrays_assigned_to_object_property_offsets_preserve_and_detach_slots() {
+    let execution = run_source(
+        r#"<?php
+class RefcowCopiedPropertyOffsetStore {
+    public $groups = [];
+}
+
+function mark_refcow_copied_property_offset(&$value) {
+    $value = $value . ":mark";
+}
+
+$value = "seed";
+$args = array(&$value);
+$store = new RefcowCopiedPropertyOffsetStore();
+$store->groups["args"] = $args;
+call_user_func_array("mark_refcow_copied_property_offset", $store->groups["args"]);
+echo $value, "|", $store->groups["args"][0], "\n";
+
+$store->groups["args"] = ["fresh"];
+$value = "changed";
+echo $store->groups["args"][0], "|", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "seed:mark|seed:mark\nfresh|changed");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_reference_literals_assigned_to_object_property_feed_call_user_func_array() {
     let execution = run_source(
         r#"<?php

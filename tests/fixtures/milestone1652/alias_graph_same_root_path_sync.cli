@@ -1,0 +1,1 @@
+args: run tests/fixtures/milestone1652/alias_graph_same_root_path_sync.php
