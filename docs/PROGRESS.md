@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Lane 1720-C focused keyed-store support for non-direct
+  magic-property-provided `ArrayAccess` objects while preserving the existing
+  non-direct append path. The assignment-target AST and parser now distinguish
+  `$holders["box"]->missing["leaf"] = $array` from
+  `$holders["box"]->missing[] = $array`, including dynamic property spellings
+  such as `$holders["box"]->{$name}["leaf"] = $array`. The runtime evaluates
+  the holder once into a temporary object root, obtains the `ArrayAccess`
+  object through visible public `__get($name)`, and uses the covered one-key
+  `offsetSet()` or exact by-reference `offsetGet()` parent-bucket bridge to
+  attach array-literal reference slots or copied-array alias metadata to the
+  backing bucket. This does not add dynamic direct magic keyed property names,
+  by-value terminal/plain-array nested mutation, unsupported
+  `offsetSet()`/`offsetGet()`/`__get()` body shapes, broader mixed nested
+  `ArrayAccess` chains, scalar parent overwrite/error parity, full
+  references/COW, or native reference lowering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: PHP syntax and system PHP output checks passed for
+  the new fixture, `cargo check -q -p phpc` passed, the `milestone1720`
+  `functions_and_scopes` filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1720`
+  passed `1` fixture with `1` system PHP comparison and `0` skips. Adjacent
+  `milestone1719` runtime and system-PHP comparison checks also passed.
+
 - Added Lane 1719-C focused keyed-store support for direct
   magic-property-provided `ArrayAccess` objects. Direct stores such as
   `$box->missing["leaf"] = $array` now call visible public `__get($name)` to

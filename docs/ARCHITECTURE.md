@@ -955,11 +955,16 @@ object-level helpers after `__get()` returns the object handle. For
 metadata to the recognized backing bucket. For
 `$box->missing["outer"]["leaf"] = $array`, it asks the exact public
 by-reference `offsetGet()` bridge for the parent bucket and writes the nested
-plain-array leaf through that alias. Non-direct magic keyed stores are still
-not split from non-direct magic append stores in the assignment target shape,
-so they remain outside this path along with dynamic direct magic keyed
-property names, by-value terminal/plain-array nested mutation, unsupported
-`offsetSet()`/`offsetGet()`/`__get()` bodies, and native lowering.
+plain-array leaf through that alias. Non-direct magic keyed stores now have
+distinct assignment-target variants from non-direct magic append stores, so
+named and dynamic holder forms such as
+`$holders["box"]->missing["leaf"] = $array`,
+`$holders["box"]->missing["outer"]["leaf"] = $array`, and
+`$holders["box"]->{$name}["leaf"] = $array` evaluate the holder once into a
+temporary object root and reuse the same magic keyed bridge. Dynamic direct
+magic keyed property names, by-value terminal/plain-array nested mutation,
+unsupported `offsetSet()`/`offsetGet()`/`__get()` bodies, broader mixed
+chains, and native lowering remain outside this path.
 Direct magic-property append stores such as `$box->missing[] = $array` and
 `$box->{$name}[] = $array` are a separate store path from magic append
 reference sources. For the covered store shape, the runtime calls visible

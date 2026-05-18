@@ -2803,7 +2803,9 @@ impl Parser {
                     | AssignTarget::NestedArrayAppend { .. }
                     | AssignTarget::ObjectPropertyArrayIndex { .. }
                     | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+                    | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
                     | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+                    | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
                     | AssignTarget::ObjectPropertyArrayAppend { .. }
                     | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
                     | AssignTarget::DynamicProperty { .. }
@@ -3176,7 +3178,16 @@ impl Parser {
                             unsupported_assignment_expression_target_message(),
                         ));
                     } else {
-                        let indices = self.parse_object_property_array_indices_or_append()?;
+                        let (indices, is_append) =
+                            self.parse_object_property_array_indices_or_append()?;
+                        if is_append {
+                            return Ok(AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+                                holder,
+                                property,
+                                indices,
+                                span: property_span,
+                            });
+                        }
                         return Ok(AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
                             holder,
                             property,
@@ -3193,7 +3204,16 @@ impl Parser {
                             span: operator_span,
                         });
                     } else {
-                        let indices = self.parse_object_property_array_indices_or_append()?;
+                        let (indices, is_append) =
+                            self.parse_object_property_array_indices_or_append()?;
+                        if is_append {
+                            return Ok(AssignTarget::NonDirectObjectPropertyArrayAppend {
+                                holder,
+                                property,
+                                indices,
+                                span: operator_span,
+                            });
+                        }
                         return Ok(AssignTarget::NonDirectObjectPropertyArrayIndex {
                             holder,
                             property,
@@ -3288,7 +3308,9 @@ impl Parser {
         expr
     }
 
-    fn parse_object_property_array_indices_or_append(&mut self) -> CompileResult<Vec<Expr>> {
+    fn parse_object_property_array_indices_or_append(
+        &mut self,
+    ) -> CompileResult<(Vec<Expr>, bool)> {
         if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
             return Err(self.error_at(
                 self.peek().span,
@@ -3296,18 +3318,18 @@ impl Parser {
             ));
         }
         if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), true));
         }
         let mut indices = vec![self.parse_expression()?];
         self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
         while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
             if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
-                return Ok(indices);
+                return Ok((indices, true));
             }
             indices.push(self.parse_expression()?);
             self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
         }
-        Ok(indices)
+        Ok((indices, false))
     }
 
     fn ensure_supported_compound_assignment_target(
@@ -3327,7 +3349,9 @@ impl Parser {
             | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayIndex { .. }
@@ -3355,7 +3379,9 @@ impl Parser {
             | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayIndex { .. }
@@ -3593,7 +3619,7 @@ impl Parser {
                         target.as_ref(),
                     )
                 {
-                    return Ok(AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+                    return Ok(AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
                         holder,
                         property,
                         indices,
@@ -3603,7 +3629,7 @@ impl Parser {
                 if let Some((holder, property, indices, _)) =
                     Self::non_direct_object_property_array_append_target_from_expr(target.as_ref())
                 {
-                    return Ok(AssignTarget::NonDirectObjectPropertyArrayIndex {
+                    return Ok(AssignTarget::NonDirectObjectPropertyArrayAppend {
                         holder,
                         property,
                         indices,

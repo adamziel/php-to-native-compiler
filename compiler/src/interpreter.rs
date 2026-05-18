@@ -9950,6 +9950,7 @@ impl Interpreter {
 
                 Err(unsupported())
             }
+            AssignTarget::NonDirectObjectPropertyArrayAppend { .. } => Err(unsupported()),
             AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
                 holder,
                 property,
@@ -9995,6 +9996,7 @@ impl Interpreter {
 
                 Err(unsupported())
             }
+            AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. } => Err(unsupported()),
             AssignTarget::ObjectPropertyArrayAppend {
                 object,
                 property,
@@ -13605,6 +13607,61 @@ impl Interpreter {
                     return Ok(value);
                 }
                 if matches!(value, Value::Array(_))
+                    && self.write_magic_get_array_access_keyed_with_reference_propagation(
+                        &temp_name,
+                        property,
+                        keys,
+                        value.clone(),
+                        expr,
+                        array_literal_references,
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
+                Err(runtime_error(
+                    *span,
+                    RuntimeError::unsupported_call(
+                        "assignment",
+                        "non-direct object-property array assignment targets are only implemented for visible ArrayAccess keyed reference propagation in the current subset",
+                    ),
+                ))
+            }
+            AssignTarget::NonDirectObjectPropertyArrayAppend {
+                holder,
+                property,
+                indices,
+                span,
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let holder_value = self.evaluate(holder, scope)?;
+                let holder_object = match holder_value {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot read property ${property} on {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Object(holder_object));
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
+                if matches!(value, Value::Array(_))
                     && keys.is_empty()
                     && self.write_object_property_array_access_append_with_reference_propagation(
                         &temp_name,
@@ -13636,7 +13693,7 @@ impl Interpreter {
                     *span,
                     RuntimeError::unsupported_call(
                         "assignment",
-                        "non-direct object-property array assignment targets are only implemented for visible ArrayAccess append reference propagation in the current subset",
+                        "non-direct object-property append assignment targets are only implemented for visible ArrayAccess append reference propagation in the current subset",
                     ),
                 ))
             }
@@ -13706,6 +13763,62 @@ impl Interpreter {
                     return Ok(value);
                 }
                 if matches!(value, Value::Array(_))
+                    && self.write_magic_get_array_access_keyed_with_reference_propagation(
+                        &temp_name,
+                        &property,
+                        keys,
+                        value.clone(),
+                        expr,
+                        array_literal_references,
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
+                Err(runtime_error(
+                    *span,
+                    RuntimeError::unsupported_call(
+                        "assignment",
+                        "non-direct dynamic object-property array assignment targets are only implemented for visible ArrayAccess keyed reference propagation in the current subset",
+                    ),
+                ))
+            }
+            AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+                holder,
+                property,
+                indices,
+                span,
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let holder_value = self.evaluate(holder, scope)?;
+                let holder_object = match holder_value {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot read dynamic property on {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Object(holder_object));
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
+                if matches!(value, Value::Array(_))
                     && keys.is_empty()
                     && self.write_object_property_array_access_append_with_reference_propagation(
                         &temp_name,
@@ -13737,7 +13850,7 @@ impl Interpreter {
                     *span,
                     RuntimeError::unsupported_call(
                         "assignment",
-                        "non-direct dynamic object-property array assignment targets are only implemented for visible ArrayAccess append reference propagation in the current subset",
+                        "non-direct dynamic object-property append assignment targets are only implemented for visible ArrayAccess append reference propagation in the current subset",
                     ),
                 ))
             }
@@ -15571,7 +15684,9 @@ impl Interpreter {
             AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. } => Err(runtime_error(
                 span,
@@ -16017,7 +16132,9 @@ impl Interpreter {
             AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. } => Err(runtime_error(
                 span,
@@ -16273,7 +16390,9 @@ impl Interpreter {
             | AssignTarget::NestedArrayAppend { span, .. }
             | AssignTarget::ObjectPropertyArrayIndex { span, .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::NonDirectObjectPropertyArrayAppend { span, .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { span, .. }
             | AssignTarget::ObjectPropertyArrayAppend { span, .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { span, .. } => Err(runtime_error(
                 *span,

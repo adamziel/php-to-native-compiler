@@ -19342,6 +19342,24 @@ handled.
   `ArrayAccess` chains, scalar parent overwrite/error parity, full
   references/COW, and native reference lowering named as unsupported.
 
+## Lane 1720-C: Non-Direct Magic ArrayAccess Keyed Store COW
+
+- [x] Runtime/tests/docs lane: split non-direct magic-property-provided
+  `ArrayAccess` keyed stores from non-direct append stores in the assignment
+  target AST/parser/runtime, then preserve stored-bucket reference metadata
+  for covered assignments such as `$holders["box"]->missing["leaf"] =
+  $array`, `$holders["box"]->missing["outer"]["leaf"] = $array`, and
+  `$holders["box"]->{$name}["leaf"] = $array`. The runtime evaluates the
+  holder and dynamic property expression once, obtains the `ArrayAccess`
+  object through visible public `__get($name)`, and reuses the covered
+  one-key `offsetSet()` or exact by-reference `offsetGet()` parent-bucket
+  bridge while keeping `$holders["box"]->missing[] = $array` on the
+  append-specific route. Keep dynamic direct magic keyed property names,
+  by-value terminal/plain-array nested mutation, unsupported
+  `offsetSet()`/`offsetGet()`/`__get()` body shapes, broader mixed nested
+  `ArrayAccess` chains, scalar parent overwrite/error parity, full
+  references/COW, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

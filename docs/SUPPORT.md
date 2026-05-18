@@ -916,11 +916,18 @@
   through exact public by-reference
   `offsetGet($offset) { return $this->property[$offset]; }`, write the
   nested plain-array leaf there, and attach metadata to that leaf path.
-  Non-direct magic-property keyed stores still share the same AST shape as
-  non-direct magic append stores and remain outside this keyed slice, as do
-  dynamic direct magic keyed property names, by-value terminal/plain-array
-  nested mutation, unsupported `offsetSet()`/`offsetGet()`/`__get()` body
-  shapes, and native lowering. Direct magic-property append stores
+  Non-direct magic-property keyed stores are split from non-direct append
+  stores in the assignment-target path and now cover named and dynamic holder
+  forms such as `$holders["box"]->missing["leaf"] = $array`,
+  `$holders["box"]->missing["outer"]["leaf"] = $array`, and
+  `$holders["box"]->{$name}["leaf"] = $array`; the holder and dynamic
+  property expression are evaluated once, `__get()` obtains the
+  `ArrayAccess` object, and the same one-key `offsetSet()` or exact
+  by-reference `offsetGet()` parent-bucket bridges attach metadata to the
+  backing bucket. Dynamic direct magic keyed property names, by-value
+  terminal/plain-array nested mutation, unsupported
+  `offsetSet()`/`offsetGet()`/`__get()` body shapes, broader mixed chains,
+  and native lowering remain unsupported. Direct magic-property append stores
   such as `$box->missing[] = $array` and `$box->{$name}[] = $array` are also
   supported for this focused stored-bucket COW shape when visible public
   `__get($name)` returns an `ArrayAccess` object; `__get()` is called once

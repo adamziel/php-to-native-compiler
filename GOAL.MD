@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1719:
+The current in-progress implementation frontier is Lane 1720:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -163,6 +163,14 @@ The current in-progress implementation frontier is Lane 1719:
   `$box->missing["outer"]["leaf"] = $array`, while leaving non-direct magic
   keyed stores for a future parser/runtime split because those shapes still
   share the same AST as non-direct append stores.
+- Lane 1720 splits non-direct magic `ArrayAccess` keyed stores from append
+  stores in the assignment-target AST and runtime. Non-direct named and
+  dynamic holder forms such as `$holders["box"]->missing["leaf"] = $array`,
+  `$holders["box"]->missing["outer"]["leaf"] = $array`, and
+  `$holders["box"]->{$name}["leaf"] = $array` now preserve copied nested
+  reference-slot metadata through the same tested magic/`ArrayAccess`
+  backing-bucket bridges, while non-direct append stores continue through
+  their append-specific path.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
