@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1710/arrayaccess_offsetget_literal_bucket_reference_source_cow.php

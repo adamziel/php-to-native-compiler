@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T14:14:00+02:00
+
+- Checkpoint before this task: `ac7f7019 runtime: pin nondirect magic backing
+  array sources`, pushed to `origin/master`.
+- Task attempted: Lane 1710-C focused literal prefix/suffix bucket support
+  for exact public `ArrayAccess::offsetGet()` backing-property reference
+  sources.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1710/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: temporary PHP/`phpc run` probes
+  for both `return $this->items["bucket"][$offset];` and
+  `return $this->items[$offset]["bucket"];` passed and matched system PHP;
+  `cargo check -q -p phpc` passed after the implementation edit.
+- Semantic gap reduced: the exact ArrayAccess reference-source bridge can now
+  recognize one literal-key prefix or suffix family around the single
+  `offsetGet()` parameter, so covered mixed magic/ArrayAccess statement
+  sources bind to the intended backing bucket instead of stopping at the
+  narrower `$this->property[$offset]` body.
+- Remaining semantic gaps: dynamic or repeated `offsetGet()` parameter keys,
+  non-literal `offsetGet()` path keys, arbitrary side-effecting or broader
+  `offsetGet()` bodies, broader mixed nested `ArrayAccess` chains, broader
+  `__get()` return expressions, by-value terminal/plain-array mutation,
+  scalar parent overwrite/error parity, full references/COW, and native
+  reference lowering remain unsupported.
+- Next concrete task: run PHP syntax checks, focused milestone1710 tests,
+  milestone1710 fixture comparison, `cargo check`, `cargo fmt --check`,
+  `git diff --check`, adjacent lane checks, then checkpoint with
+  `tools/checkpoint.sh "runtime: support ArrayAccess literal bucket sources"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T13:43:00+02:00
 
 - Checkpoint before this task: `5d71eee7 runtime: support magic backing array

@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1709:
+The current in-progress implementation frontier is Lane 1710:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -116,6 +116,11 @@ The current in-progress implementation frontier is Lane 1709:
   `$alias =& $holders["box"]->{$property}["outer"];`, with the temporary
   holder root canonicalized back to the same object-property backing slot for
   later method-local synchronization.
+- Lane 1710 widens the exact `ArrayAccess::offsetGet()` reference-source
+  bridge from only `return $this->items[$offset];` to the same bounded
+  literal-key family used by the magic `__get()` work, such as
+  `return $this->items["bucket"][$offset];` and
+  `return $this->items[$offset]["bucket"];`.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
@@ -146,6 +151,26 @@ unsupported edges:
   misleading native code.
 
 ## Missing Before WordPress Can Run
+
+The path from the current bounded bridges to full PHP/WordPress support is:
+
+1. Collapse the targeted reference/COW bridges into a coherent value model
+   with real PHP reference containers, array/object/string COW identity, and
+   alias lifetime semantics across calls, includes, iterators, magic methods,
+   shutdown, and errors.
+2. Finish dynamic PHP execution: exceptions, object lifecycle, autoloading,
+   namespaces/imports, traits/interfaces/enums/anonymous classes, reflection,
+   dynamic dispatch, and internal class catalogs.
+3. Expand the SAPI/runtime substrate from deterministic CLI seeds to realistic
+   request, stream, filesystem, upload, output-buffer, header, cookie, session,
+   and shutdown behavior.
+4. Replace `wpdb` placeholder islands with real database semantics: MySQL
+   connection state, charset/collation, arbitrary SQL, results, transactions,
+   persistence, errors, and cache invalidation.
+5. Run actual WordPress flows end to end and make unsupported gaps observable:
+   front-end, admin, AJAX, REST, cron, XML-RPC, install/update, plugins,
+   themes, blocks, media, localization, auth, nonces, roles, rewrite rules,
+   HTTP API, and CLI-like maintenance paths.
 
 ### 1. PHP Reference and COW Model
 

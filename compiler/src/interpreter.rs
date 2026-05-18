@@ -4057,6 +4057,12 @@ struct ThisPropertyReferenceTarget {
     prefix_keys: Vec<ArrayKey>,
 }
 
+struct ArrayAccessOffsetGetReferenceTarget {
+    property: String,
+    prefix_keys: Vec<ArrayKey>,
+    suffix_keys: Vec<ArrayKey>,
+}
+
 #[derive(Debug, Clone)]
 struct ClosureAliasCapture {
     name: String,
@@ -5505,17 +5511,22 @@ impl Interpreter {
         if function.params.len() != 1 {
             return None;
         }
-        let property = self
-            .array_access_offset_get_reference_property(function, span)
+        let return_target = self
+            .array_access_offset_get_reference_target(function, span)
             .ok()?;
         let protected_class_ids = self.protected_class_ids_for_context(class_id);
         object
-            .property_visibility_from_context(&property, Some(class_id), &protected_class_ids)
+            .property_visibility_from_context(
+                &return_target.property,
+                Some(class_id),
+                &protected_class_ids,
+            )
             .ok()?;
+        let keys = Self::array_access_offset_get_reference_keys(&return_target, &[key]);
         Some(PublicObjectPropertyArrayCopySource {
             object,
-            property,
-            keys: vec![key],
+            property: return_target.property,
+            keys,
             include_exact_path: false,
         })
     }
@@ -11577,21 +11588,25 @@ impl Interpreter {
         ensure_user_function_arity(function, 1, span)?;
         ensure_supported_reference_return_function_metadata(function, span)?;
 
-        let property = self.array_access_offset_get_reference_property(function, span)?;
+        let return_target = self.array_access_offset_get_reference_target(function, span)?;
 
         let protected_class_ids = self.protected_class_ids_for_context(class_id);
         let property_visibility = object
-            .property_visibility_from_context(&property, Some(class_id), &protected_class_ids)
+            .property_visibility_from_context(
+                &return_target.property,
+                Some(class_id),
+                &protected_class_ids,
+            )
             .map_err(|error| runtime_error(span, error))?;
         let root = if property_visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
                 object: object_name.clone(),
-                property: property.clone(),
+                property: return_target.property.clone(),
             }
         } else {
             ArrayOffsetAliasRoot::ContextObjectProperty {
                 object: object_name.clone(),
-                property: property.clone(),
+                property: return_target.property.clone(),
                 current_class_id: Some(class_id),
                 protected_class_ids: protected_class_ids.clone(),
             }
@@ -11599,9 +11614,11 @@ impl Interpreter {
 
         if !function.returns_by_reference {
             if keys.len() > 1 {
+                let first_keys =
+                    Self::array_access_offset_get_reference_keys(&return_target, &keys[..1]);
                 let first_alias = ArrayOffsetAlias {
                     root: root.clone(),
-                    keys: vec![keys[0].clone()],
+                    keys: first_keys,
                 };
                 if let Some(Value::Object(nested_object)) =
                     scope.read_array_offset_alias(&first_alias)
@@ -11633,9 +11650,11 @@ impl Interpreter {
         }
 
         if keys.len() > 1 {
+            let first_keys =
+                Self::array_access_offset_get_reference_keys(&return_target, &keys[..1]);
             let first_alias = ArrayOffsetAlias {
                 root: root.clone(),
-                keys: vec![keys[0].clone()],
+                keys: first_keys,
             };
             scope.materialize_array_offset_alias(&first_alias, span)?;
             if let Some(Value::Object(nested_object)) = scope.read_array_offset_alias(&first_alias)
@@ -11657,6 +11676,7 @@ impl Interpreter {
                 }
             }
         }
+        let keys = Self::array_access_offset_get_reference_keys(&return_target, &keys);
         let alias = ArrayOffsetAlias { root, keys };
         scope.materialize_array_offset_alias(&alias, span)?;
         let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
@@ -11695,30 +11715,36 @@ impl Interpreter {
         ensure_user_function_arity(function, 1, span)?;
         ensure_supported_reference_return_function_metadata(function, span)?;
 
-        let property = self.array_access_offset_get_reference_property(function, span)?;
+        let return_target = self.array_access_offset_get_reference_target(function, span)?;
 
         let protected_class_ids = self.protected_class_ids_for_context(class_id);
         let property_visibility = object
-            .property_visibility_from_context(&property, Some(class_id), &protected_class_ids)
+            .property_visibility_from_context(
+                &return_target.property,
+                Some(class_id),
+                &protected_class_ids,
+            )
             .map_err(|error| runtime_error(span, error))?;
         let root = if property_visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
                 object: object_name.clone(),
-                property: property.clone(),
+                property: return_target.property.clone(),
             }
         } else {
             ArrayOffsetAliasRoot::ContextObjectProperty {
                 object: object_name.clone(),
-                property: property.clone(),
+                property: return_target.property.clone(),
                 current_class_id: Some(class_id),
                 protected_class_ids,
             }
         };
 
         if keys.len() > 1 {
+            let first_keys =
+                Self::array_access_offset_get_reference_keys(&return_target, &keys[..1]);
             let first_alias = ArrayOffsetAlias {
                 root: root.clone(),
-                keys: vec![keys[0].clone()],
+                keys: first_keys,
             };
             if let Some(Value::Object(nested_object)) = scope.read_array_offset_alias(&first_alias)
             {
@@ -11746,6 +11772,7 @@ impl Interpreter {
             span,
         )?;
 
+        let keys = Self::array_access_offset_get_reference_keys(&return_target, &keys);
         let alias = ArrayOffsetAlias { root, keys };
         Ok(Some(
             scope.read_array_offset_alias(&alias).unwrap_or(Value::Null),
@@ -11801,11 +11828,11 @@ impl Interpreter {
         }
     }
 
-    fn array_access_offset_get_reference_property(
+    fn array_access_offset_get_reference_target(
         &self,
         function: &FunctionDecl,
         span: Span,
-    ) -> CompileResult<String> {
+    ) -> CompileResult<ArrayAccessOffsetGetReferenceTarget> {
         let Some(param) = function.params.first() else {
             return Err(runtime_error(
                 span,
@@ -11824,43 +11851,86 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     "reference assignment",
-                    "ArrayAccess offset reference sources require offsetGet() to contain only return $this->property[$offset] in the current subset",
+                    "ArrayAccess offset reference sources require offsetGet() to contain only return $this->property[$offset] with optional literal prefix or suffix keys in the current subset",
                 ),
             ));
         };
 
-        let Expr::Property {
-            target, property, ..
-        } = target.as_ref()
+        let Some((property, indices)) =
+            Self::collect_this_property_index_return_path(target, index)
         else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "reference assignment",
-                    "ArrayAccess offset reference sources require offsetGet() to return $this->property[$offset] in the current subset",
+                    "ArrayAccess offset reference sources require offsetGet() to return $this->property[$offset] with optional literal prefix or suffix keys in the current subset",
                 ),
             ));
         };
-        if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "reference assignment",
-                    "ArrayAccess offset reference sources require offsetGet() to return $this->property[$offset] in the current subset",
-                ),
-            ));
+
+        let mut prefix_keys = Vec::new();
+        let mut suffix_keys = Vec::new();
+        let mut saw_offset_param = false;
+        for index in indices {
+            if matches!(index, Expr::Variable(name, _) if name == &param.name) {
+                if saw_offset_param {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "reference assignment",
+                            "ArrayAccess offset reference sources may use the offset parameter only once in the current subset",
+                        ),
+                    ));
+                }
+                saw_offset_param = true;
+                continue;
+            }
+
+            let Some(key) = Self::literal_reference_return_array_key(index) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "ArrayAccess offset reference sources require exactly one offset parameter index and otherwise literal int or string keys in the current subset",
+                    ),
+                ));
+            };
+            if saw_offset_param {
+                suffix_keys.push(key);
+            } else {
+                prefix_keys.push(key);
+            }
         }
-        if !matches!(index.as_ref(), Expr::Variable(name, _) if name == &param.name) {
+        if !saw_offset_param {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "reference assignment",
-                    "ArrayAccess offset reference sources require offsetGet() to index by its offset parameter in the current subset",
+                    "ArrayAccess offset reference sources require one index to be the offset parameter in the current subset",
                 ),
             ));
         }
 
-        Ok(property.clone())
+        Ok(ArrayAccessOffsetGetReferenceTarget {
+            property: property.to_string(),
+            prefix_keys,
+            suffix_keys,
+        })
+    }
+
+    fn array_access_offset_get_reference_keys(
+        target: &ArrayAccessOffsetGetReferenceTarget,
+        keys: &[ArrayKey],
+    ) -> Vec<ArrayKey> {
+        let mut target_keys = target.prefix_keys.clone();
+        if let Some((first, rest)) = keys.split_first() {
+            target_keys.push(first.clone());
+            target_keys.extend(target.suffix_keys.iter().cloned());
+            target_keys.extend(rest.iter().cloned());
+        } else {
+            target_keys.extend(target.suffix_keys.iter().cloned());
+        }
+        target_keys
     }
 
     fn array_access_offset_set_alias_for_object(
@@ -41142,7 +41212,8 @@ impl Interpreter {
                 }
                 ensure_user_function_arity(function, args.len(), span)?;
                 ensure_supported_reference_return_function_metadata(function, span)?;
-                let property = self.array_access_offset_get_reference_property(function, span)?;
+                let return_target =
+                    self.array_access_offset_get_reference_target(function, span)?;
                 let key_value = args.first().ok_or_else(|| {
                     runtime_error(
                         span,
@@ -41168,7 +41239,11 @@ impl Interpreter {
                 };
                 let protected_class_ids = self.protected_class_ids_for_context(class_id);
                 let property_value = object
-                    .read_property_from_context(&property, Some(class_id), &protected_class_ids)
+                    .read_property_from_context(
+                        &return_target.property,
+                        Some(class_id),
+                        &protected_class_ids,
+                    )
                     .map_err(|error| runtime_error(span, error))?;
                 let Value::Array(array) = property_value else {
                     return Err(runtime_error(
@@ -41179,7 +41254,9 @@ impl Interpreter {
                         )),
                     ));
                 };
-                return Ok(array.get(key).cloned().unwrap_or(Value::Null));
+                let keys = Self::array_access_offset_get_reference_keys(&return_target, &[key]);
+                return Ok(SymbolTable::read_nested_array_offset_alias(&array, &keys)
+                    .unwrap_or(Value::Null));
             }
 
             if method_name.eq_ignore_ascii_case("offsetGet")
@@ -41189,12 +41266,16 @@ impl Interpreter {
                 && args.len() == 1
                 && matches!(args.first(), Some(Value::Null))
             {
-                if let Ok(property) =
-                    self.array_access_offset_get_reference_property(function, span)
+                if let Ok(return_target) =
+                    self.array_access_offset_get_reference_target(function, span)
                 {
                     let protected_class_ids = self.protected_class_ids_for_context(class_id);
                     let property_value = object
-                        .read_property_from_context(&property, Some(class_id), &protected_class_ids)
+                        .read_property_from_context(
+                            &return_target.property,
+                            Some(class_id),
+                            &protected_class_ids,
+                        )
                         .map_err(|error| runtime_error(span, error))?;
                     let Value::Array(array) = property_value else {
                         return Err(runtime_error(
@@ -41205,9 +41286,11 @@ impl Interpreter {
                             )),
                         ));
                     };
-                    return Ok(array
-                        .get(Self::array_access_append_reference_key())
-                        .cloned()
+                    let keys = Self::array_access_offset_get_reference_keys(
+                        &return_target,
+                        &[Self::array_access_append_reference_key()],
+                    );
+                    return Ok(SymbolTable::read_nested_array_offset_alias(&array, &keys)
                         .unwrap_or(Value::Null));
                 }
             }

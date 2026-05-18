@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Lane 1710-C focused literal-bucket support for the exact public
+  `ArrayAccess::offsetGet()` backing-property reference-source bridge.
+  `offsetGet($offset)` may now return
+  `$this->items["bucket"][$offset]` or
+  `$this->items[$offset]["bucket"]` in the covered single-offset-parameter
+  shape. Mixed magic-property/`ArrayAccess` statement sources such as
+  `$alias =& $box->missing["outer"]["leaf"]; $alias[] = $array` now bind
+  through by-value outer `ArrayAccess` object hops to the terminal backing
+  bucket under the literal prefix or suffix and preserve copied nested
+  reference slots for later backing-property writes. This does not add dynamic
+  or repeated `offsetGet()` parameter keys, non-literal `offsetGet()` path
+  keys, arbitrary side-effecting or broader `offsetGet()` bodies, broader
+  mixed nested `ArrayAccess` chains, broader `__get()` return expressions,
+  by-value terminal/plain-array mutation, scalar parent overwrite/error
+  parity, full references/COW, or native reference lowering. Focused
+  verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1710` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1710`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1709-C focused non-direct dynamic holder coverage for the
   statement-form magic `__get()` backing-array offset reference-source path.
   `$alias =& $holders["box"]->{$property}["outer"]; $alias[] = $array` now

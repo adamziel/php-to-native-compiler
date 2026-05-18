@@ -171,8 +171,10 @@
   user-function path also covers the bounded mixed magic/ArrayAccess shape
   `handler($object->missing["slot"])` when public by-reference
   `offsetGet($offset)` has the exact body
-  `return $this->property[$offset];`; writes route to the selected backing
-  property array slot. Direct user-function by-reference calls also accept
+  `return $this->property[$offset];`, or the same single-offset-parameter
+  body with literal int/string prefix or suffix buckets; writes route to the
+  selected backing property array slot. Direct user-function by-reference
+  calls also accept
   named and dynamic magic-property array-offset
   paths on non-direct holders such as
   `handler($holders["box"]->missing["slot"])` and
@@ -195,7 +197,11 @@
   assigned alias binds to the selected or appended slot under the returned
   array cell. The selected non-append slot may also be supplied by the same
   bounded `ArrayAccess` object returned through that direct-variable cell and
-  exact public by-reference `offsetGet()` bridge. When visible public
+  exact public by-reference `offsetGet()` bridge. That bridge recognizes
+  `return $this->property[$offset];` plus literal int/string prefix or suffix
+  buckets around the single offset parameter, such as
+  `return $this->property["bucket"][$offset];` and
+  `return $this->property[$offset]["bucket"];`. When visible public
   `__get($name)` returns an `ArrayAccess` object by value or by reference and
   that object exposes the exact public by-value `offsetGet()` bridge, selected
   and append reference-source forms such as
@@ -211,7 +217,9 @@
   direct-variable reference assignment through the same temporary holder root.
   This does not add magic property roots without an array offset, magic
   `__get()` bodies that return properties, offsets, or expressions,
-  side-effecting or broader `ArrayAccess::offsetGet()` bodies, mixed nested
+  dynamic or repeated `offsetGet()` parameter keys, non-literal
+  `offsetGet()` path keys, side-effecting or broader `ArrayAccess::offsetGet()`
+  bodies, mixed nested
   `ArrayAccess` object chains, broad same-container identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,

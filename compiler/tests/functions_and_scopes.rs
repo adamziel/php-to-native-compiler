@@ -4756,6 +4756,22 @@ fn milestone1709_magic_get_nondirect_dynamic_offset_reference_source_fixture_mat
 }
 
 #[test]
+fn milestone1710_system_php_arrayaccess_literal_bucket_reference_source_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1710/arrayaccess_offsetget_literal_bucket_reference_source_cow.php",
+        "../tests/fixtures/milestone1710/arrayaccess_offsetget_literal_bucket_reference_source_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1710_arrayaccess_literal_bucket_reference_source_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1710/arrayaccess_offsetget_literal_bucket_reference_source_cow.php",
+        "../tests/fixtures/milestone1710/arrayaccess_offsetget_literal_bucket_reference_source_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

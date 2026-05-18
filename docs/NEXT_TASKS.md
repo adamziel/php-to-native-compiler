@@ -19162,6 +19162,25 @@ handled.
   parent overwrite/error parity, full references/COW, and native reference
   lowering named as unsupported.
 
+## Lane 1710-C: ArrayAccess Literal Bucket `offsetGet()` Source
+
+- [x] Runtime/tests/docs lane: extend the exact public
+  `ArrayAccess::offsetGet()` backing-property reference-source bridge beyond
+  `return $this->items[$offset];` to the bounded single-offset-parameter
+  literal-key family, including
+  `return $this->items["bucket"][$offset];` and
+  `return $this->items[$offset]["bucket"];`. The covered mixed
+  magic-property/`ArrayAccess` statement-source shape binds
+  `$alias =& $box->missing["outer"]["leaf"]; $alias[] = $array` to the
+  selected backing bucket under the literal prefix or suffix and preserves
+  copied nested reference slots for later backing-property writes. Keep
+  dynamic or repeated `offsetGet()` parameter keys, non-literal
+  `offsetGet()` path keys, arbitrary side-effecting or broader
+  `offsetGet()` bodies, broader mixed nested `ArrayAccess` chains, broader
+  `__get()` return expressions, by-value terminal/plain-array mutation,
+  scalar parent overwrite/error parity, full references/COW, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
