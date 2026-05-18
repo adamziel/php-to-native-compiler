@@ -1,5 +1,26 @@
 # Progress Log
 
+## 2026-05-19
+
+Implemented:
+
+- Added Lane 1785-C through Lane 1787-C for caught thrown-object paths inside
+  the supported magic/`ArrayAccess` reference-return method-body executor.
+  Public by-reference `ArrayAccess::offsetGet()` and covered by-reference
+  `__get()` bodies can now throw an object inside a `try`, match a catch type
+  by class or subclass, bind the catch variable, run catch statements, execute
+  `finally`, and return a covered lvalue from the catch body while preserving
+  copied COW reference-slot write-through. This remains a bounded
+  method-body path, not full PHP exception unwinding or global `throw`
+  support. Uncaught throws, non-object throws, exact PHP exception diagnostics,
+  arbitrary magic/`ArrayAccess` method bodies outside the interpreter subset,
+  and native exception/reference lowering remain unsupported. Focused
+  verification: raw system PHP output matched the new `milestone1785`,
+  `milestone1786`, and `milestone1787` fixtures; `cargo run -q -p phpc --
+  test --compare-php` passed each new fixture directory with `1` fixture,
+  `1` system PHP comparison, and `0` skips; focused
+  `functions_and_scopes` milestone tests passed.
+
 ## 2026-05-18
 
 Implemented:

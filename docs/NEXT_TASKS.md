@@ -20020,6 +20020,18 @@ handled.
   thrown values, exact PHP diagnostics, and native reference lowering named as
   unsupported.
 
+## Lane 1785-C through Lane 1787-C: Caught Reference-Return Throws
+
+- [x] Runtime/interpreter/tests/docs bundle: preserve reference-return lvalues
+  through caught thrown-object paths inside public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies. Cover
+  class/subclass catch matching, catch variable binding, `finally` execution,
+  and nested supported catch-body control before returning the selected COW
+  backing bucket. Keep full PHP exception unwinding, uncaught exception
+  propagation, non-object throws, exact PHP diagnostics, arbitrary
+  magic/`ArrayAccess` method bodies outside the interpreter subset, and native
+  exception/reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

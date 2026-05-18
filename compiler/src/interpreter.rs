@@ -18,9 +18,9 @@ use php_runtime::{
 use sha2::Sha256;
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
-    ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp,
-    EnumDecl, Expr, ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp,
+    ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, ClassConstantDecl, ClassDecl,
+    ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
+    CompoundAssignOp, EnumDecl, Expr, ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp,
     IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment,
     InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span,
     StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl, TypeDecl, UnaryOp,
@@ -4749,6 +4749,7 @@ enum ReferenceReturnBodyFlow {
     Break { depth: usize, span: Span },
     Continue { depth: usize, span: Span },
     Goto { label: String, span: Span },
+    Throw { object: PhpObject, span: Span },
     Return(ReferenceReturnLocalBinding),
 }
 
@@ -36343,6 +36344,16 @@ impl Interpreter {
             ReferenceReturnBodyFlow::Goto { label, span } => {
                 Err(undefined_goto_label_error(span, &label))
             }
+            ReferenceReturnBodyFlow::Throw { object, span } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    format!(
+                        "uncaught {} during reference-return evaluation is not implemented",
+                        object.class_name()
+                    ),
+                ),
+            )),
         }
     }
 
@@ -36385,6 +36396,26 @@ impl Interpreter {
         if let Stmt::Goto { label, span } = stmt {
             return Ok(ReferenceReturnBodyFlow::Goto {
                 label: label.clone(),
+                span: *span,
+            });
+        }
+
+        if let Stmt::Throw { expr, span } = stmt {
+            let thrown = self.evaluate(expr, scope)?;
+            let Value::Object(object) = thrown else {
+                return Err(runtime_error(
+                    *span,
+                    RuntimeError::unsupported_call(
+                        "throw",
+                        format!(
+                            "throwing {} values during reference-return evaluation is not implemented",
+                            thrown.type_name()
+                        ),
+                    ),
+                ));
+            };
+            return Ok(ReferenceReturnBodyFlow::Throw {
+                object,
                 span: *span,
             });
         }
@@ -36437,6 +36468,7 @@ impl Interpreter {
                         });
                     }
                     flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                    | ReferenceReturnBodyFlow::Throw { .. }
                     | ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
                 }
             }
@@ -36471,6 +36503,7 @@ impl Interpreter {
                         });
                     }
                     flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                    | ReferenceReturnBodyFlow::Throw { .. }
                     | ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
                 }
 
@@ -36525,6 +36558,7 @@ impl Interpreter {
                         });
                     }
                     flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                    | ReferenceReturnBodyFlow::Throw { .. }
                     | ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
                 }
 
@@ -36604,11 +36638,21 @@ impl Interpreter {
         }
 
         if let Stmt::Try {
-            body, finally_body, ..
+            body,
+            catches,
+            finally_body,
+            ..
         } = stmt
         {
             let try_flow =
                 self.execute_reference_return_assignment_statement_list(function, body, scope)?;
+            let try_flow = match try_flow {
+                ReferenceReturnBodyFlow::Throw { object, span } => self
+                    .execute_reference_return_assignment_catch_flow(
+                        function, object, span, catches, scope,
+                    )?,
+                flow => flow,
+            };
             if let Some(finally_body) = finally_body {
                 let finally_flow = self.execute_reference_return_assignment_statement_list(
                     function,
@@ -36648,6 +36692,52 @@ impl Interpreter {
         }
     }
 
+    fn execute_reference_return_assignment_catch_flow(
+        &mut self,
+        function: &FunctionDecl,
+        object: PhpObject,
+        span: Span,
+        catches: &[CatchClause],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnBodyFlow> {
+        for catch in catches {
+            if !self.reference_return_catch_matches(&object, catch)? {
+                continue;
+            }
+            if let Some(variable) = &catch.variable {
+                scope.write_static(variable, Value::Object(object));
+            }
+            return self.execute_reference_return_assignment_statement_list(
+                function,
+                &catch.body,
+                scope,
+            );
+        }
+
+        Ok(ReferenceReturnBodyFlow::Throw { object, span })
+    }
+
+    fn reference_return_catch_matches(
+        &self,
+        object: &PhpObject,
+        catch: &CatchClause,
+    ) -> CompileResult<bool> {
+        for catch_type in &catch.types {
+            let Some(class) = self.classes.lookup_class(&catch_type.name) else {
+                return Err(runtime_error(
+                    catch_type.span,
+                    RuntimeError::undefined_class(&catch_type.name),
+                ));
+            };
+            if object.class_id() == class.id()
+                || self.classes.is_subclass_of(object.class_id(), class.id())
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn execute_reference_return_assignment_foreach_flow(
         &mut self,
         function: &FunctionDecl,
@@ -36672,9 +36762,9 @@ impl Interpreter {
                     span,
                 }))
             }
-            flow @ (ReferenceReturnBodyFlow::Goto { .. } | ReferenceReturnBodyFlow::Return(_)) => {
-                Ok(Some(flow))
-            }
+            flow @ (ReferenceReturnBodyFlow::Goto { .. }
+            | ReferenceReturnBodyFlow::Throw { .. }
+            | ReferenceReturnBodyFlow::Return(_)) => Ok(Some(flow)),
         }
     }
 
@@ -36773,6 +36863,7 @@ impl Interpreter {
                 }
                 Some(
                     flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                    | ReferenceReturnBodyFlow::Throw { .. }
                     | ReferenceReturnBodyFlow::Return(_)),
                 ) => return Ok(flow),
             }
@@ -36816,6 +36907,7 @@ impl Interpreter {
                     });
                 }
                 flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                | ReferenceReturnBodyFlow::Throw { .. }
                 | ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
             }
         }
@@ -36953,6 +37045,16 @@ impl Interpreter {
                     )?;
                     return Ok(flow);
                 }
+                flow @ ReferenceReturnBodyFlow::Throw { .. } => {
+                    bind_foreach_lingering_reference(
+                        scope,
+                        value,
+                        &root,
+                        lingering_reference_key,
+                        span,
+                    )?;
+                    return Ok(flow);
+                }
                 flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
             }
         }
@@ -37016,6 +37118,7 @@ impl Interpreter {
                         ));
                     }
                     flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                    | ReferenceReturnBodyFlow::Throw { .. }
                     | ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
                 }
             }

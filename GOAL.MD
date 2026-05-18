@@ -32,7 +32,15 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1784:
+The current in-progress implementation frontier is Lane 1787:
+
+- Lanes 1785 through 1787 cover thrown-object catch paths inside the supported
+  magic/`ArrayAccess` reference-return body executor. Public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies can
+  now throw an object inside a `try`, match a supported catch type by class or
+  subclass, bind the catch variable, run catch statements, execute `finally`,
+  and return a covered lvalue from the catch body while preserving copied COW
+  reference-slot write-through.
 
 - Lanes 1782 through 1784 preserve by-reference closure captures when the
   captured local is backed by covered magic/`ArrayAccess` array-offset alias

@@ -262,6 +262,11 @@
   `finally` cleanup still runs before the jump resolves, and by-reference
   `foreach` keeps the lingering loop-value binding needed to return the
   selected slot.
+  Caught thrown-object paths are covered inside this same reference-return
+  body executor: a `try` body may throw an object, `catch` clauses match by
+  supported class or subclass names, the catch variable is bound to the thrown
+  object, catch statements execute, `finally` statements execute, and the
+  catch body may return a supported lvalue.
   Public by-reference `__get()` uses the same assignment-capable return path
   for covered array-offset returns such as `return $this->store[$name];`.
   Covered return expressions may also use a dynamically selected `$this`
@@ -282,9 +287,10 @@
   such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
   This does not add magic property roots without an array offset, magic
   `__get()` roots beyond the covered direct variable/property/backing-offset
-  returns; exception unwinding or catch execution for thrown values inside
-  reference-return bodies; arbitrary side-effect analysis or non-executed
-  static bridge inference for every dynamic backing-key shape; arbitrary
+  returns; full exception unwinding, uncaught exception propagation, non-object
+  throws, exact exception diagnostics, or global `throw` support outside this
+  method-body executor; arbitrary side-effect analysis or non-executed static
+  bridge inference for every dynamic backing-key shape; arbitrary
   Iterator side effects, arbitrary PHP syntax outside the interpreter subset;
   arbitrary mixed nested `ArrayAccess` object chains; broad same-container
   identity for

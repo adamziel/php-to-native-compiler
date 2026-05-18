@@ -5368,6 +5368,54 @@ fn milestone1784_closure_escaping_reference_capture_fixture_matches_runtime() {
 }
 
 #[test]
+fn milestone1785_system_php_catch_reference_return_arrayaccess_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1785/catch_reference_return_arrayaccess_cow.php",
+        "../tests/fixtures/milestone1785/catch_reference_return_arrayaccess_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1785_catch_reference_return_arrayaccess_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1785/catch_reference_return_arrayaccess_cow.php",
+        "../tests/fixtures/milestone1785/catch_reference_return_arrayaccess_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1786_system_php_catch_finally_reference_return_magic_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1786/catch_finally_reference_return_magic_cow.php",
+        "../tests/fixtures/milestone1786/catch_finally_reference_return_magic_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1786_catch_finally_reference_return_magic_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1786/catch_finally_reference_return_magic_cow.php",
+        "../tests/fixtures/milestone1786/catch_finally_reference_return_magic_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1787_system_php_nested_catch_reference_return_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1787/nested_catch_reference_return_cow.php",
+        "../tests/fixtures/milestone1787/nested_catch_reference_return_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1787_nested_catch_reference_return_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1787/nested_catch_reference_return_cow.php",
+        "../tests/fixtures/milestone1787/nested_catch_reference_return_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

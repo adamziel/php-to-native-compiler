@@ -18,6 +18,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T00:10:08+02:00
+
+- Checkpoint before this task: `2c78e019 runtime: preserve closure alias
+  captures`, pushed to `origin/master`.
+- Task attempted: Lane 1785-C through Lane 1787-C bundle, covering caught
+  thrown-object paths inside the supported magic/`ArrayAccess`
+  reference-return body executor.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1785/*`, `tests/fixtures/milestone1786/*`,
+  `tests/fixtures/milestone1787/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched the new `milestone1785`, `milestone1786`, and `milestone1787`
+  fixtures; `cargo run -q -p phpc -- test --compare-php` passed each new
+  fixture directory with `1` fixture, `1` system PHP comparison, and `0`
+  skips; focused `cargo test -q -p phpc --test functions_and_scopes
+  milestone178` passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies beyond the
+  executed interpreter subset, full exception unwinding and uncaught
+  exception propagation, unsupported PHP syntax inside reference-return
+  bodies, arbitrary Iterator side effects, arbitrary closure capture roots,
+  broader complex alias sinks and alias lifetime ordering, exact PHP
+  stderr/fatal text, binary/multibyte string offset behavior, and native
+  reference/string COW lowering.
+- Next concrete task: run adjacent regressions, formatting/diff/check gates,
+  then the full `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T00:03:52+02:00
 
 - Checkpoint before this task: `4eb4b28f runtime: cover computed reference
