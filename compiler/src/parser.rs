@@ -3153,14 +3153,25 @@ impl Parser {
                 Some(index)
             };
             let Some(index) = index else {
-                return Ok(AssignTarget::ArrayIndex { name, index, span });
+                let suffix_indices = self.parse_append_suffix_indices_after_append()?;
+                if suffix_indices.is_empty() {
+                    return Ok(AssignTarget::ArrayIndex { name, index, span });
+                }
+                return Ok(AssignTarget::NestedArrayAppend {
+                    name,
+                    indices: Vec::new(),
+                    suffix_indices,
+                    span,
+                });
             };
             let mut indices = vec![index];
             while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
                 if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+                    let suffix_indices = self.parse_append_suffix_indices_after_append()?;
                     return Ok(AssignTarget::NestedArrayAppend {
                         name,
                         indices,
+                        suffix_indices,
                         span,
                     });
                 }
@@ -3179,13 +3190,14 @@ impl Parser {
                             unsupported_assignment_expression_target_message(),
                         ));
                     } else {
-                        let (indices, is_append) =
+                        let (indices, suffix_indices, is_append) =
                             self.parse_object_property_array_indices_or_append()?;
                         if is_append {
                             return Ok(AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
                                 holder,
                                 property,
                                 indices,
+                                suffix_indices,
                                 span: property_span,
                             });
                         }
@@ -3205,13 +3217,14 @@ impl Parser {
                             span: operator_span,
                         });
                     } else {
-                        let (indices, is_append) =
+                        let (indices, suffix_indices, is_append) =
                             self.parse_object_property_array_indices_or_append()?;
                         if is_append {
                             return Ok(AssignTarget::NonDirectObjectPropertyArrayAppend {
                                 holder,
                                 property,
                                 indices,
+                                suffix_indices,
                                 span: operator_span,
                             });
                         }
@@ -3246,14 +3259,14 @@ impl Parser {
                     return Ok(AssignTarget::Variable { name, span });
                 }
                 if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
-                    let (indices, is_append) =
+                    let (indices, suffix_indices, is_append) =
                         self.parse_object_property_array_indices_or_append()?;
                     if is_append {
                         return Ok(AssignTarget::DynamicObjectPropertyArrayAppend {
                             object: name,
                             property,
                             indices,
-                            suffix_indices: Vec::new(),
+                            suffix_indices,
                             span,
                         });
                     }
@@ -3276,11 +3289,12 @@ impl Parser {
             }
             if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
                 if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+                    let suffix_indices = self.parse_append_suffix_indices_after_append()?;
                     return Ok(AssignTarget::ObjectPropertyArrayAppend {
                         object: name,
                         property,
                         indices: Vec::new(),
-                        suffix_indices: Vec::new(),
+                        suffix_indices,
                         span,
                     });
                 }
@@ -3288,11 +3302,12 @@ impl Parser {
                 self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
                 while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
                     if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+                        let suffix_indices = self.parse_append_suffix_indices_after_append()?;
                         return Ok(AssignTarget::ObjectPropertyArrayAppend {
                             object: name,
                             property,
                             indices,
-                            suffix_indices: Vec::new(),
+                            suffix_indices,
                             span,
                         });
                     }
@@ -3330,7 +3345,7 @@ impl Parser {
 
     fn parse_object_property_array_indices_or_append(
         &mut self,
-    ) -> CompileResult<(Vec<Expr>, bool)> {
+    ) -> CompileResult<(Vec<Expr>, Vec<Expr>, bool)> {
         if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
             return Err(self.error_at(
                 self.peek().span,
@@ -3338,18 +3353,35 @@ impl Parser {
             ));
         }
         if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
-            return Ok((Vec::new(), true));
+            let suffix_indices = self.parse_append_suffix_indices_after_append()?;
+            return Ok((Vec::new(), suffix_indices, true));
         }
         let mut indices = vec![self.parse_expression()?];
         self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
         while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
             if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
-                return Ok((indices, true));
+                let suffix_indices = self.parse_append_suffix_indices_after_append()?;
+                return Ok((indices, suffix_indices, true));
             }
             indices.push(self.parse_expression()?);
             self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
         }
-        Ok((indices, false))
+        Ok((indices, Vec::new(), false))
+    }
+
+    fn parse_append_suffix_indices_after_append(&mut self) -> CompileResult<Vec<Expr>> {
+        let mut suffix_indices = Vec::new();
+        while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+                return Err(self.error_at(
+                    self.previous().span,
+                    unsupported_assignment_expression_target_message(),
+                ));
+            }
+            suffix_indices.push(self.parse_expression()?);
+            self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+        }
+        Ok(suffix_indices)
     }
 
     fn ensure_supported_compound_assignment_target(
@@ -3498,11 +3530,56 @@ impl Parser {
             Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
             Expr::Index { .. } => {
                 if let Some((object, property, indices, suffix_indices, span)) =
+                    Self::dynamic_object_property_array_append_suffix_target_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::DynamicObjectPropertyArrayAppend {
+                        object,
+                        property,
+                        indices,
+                        suffix_indices,
+                        span,
+                    });
+                }
+                if let Some((object, property, indices, suffix_indices, span)) =
                     Self::object_property_array_append_suffix_target_from_expr(&expr)
                 {
                     return Ok(AssignTarget::ObjectPropertyArrayAppend {
                         object,
                         property,
+                        indices,
+                        suffix_indices,
+                        span,
+                    });
+                }
+                if let Some((holder, property, indices, suffix_indices, span)) =
+                    Self::non_direct_dynamic_object_property_array_append_suffix_target_from_expr(
+                        &expr,
+                    )
+                {
+                    return Ok(AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+                        holder,
+                        property,
+                        indices,
+                        suffix_indices,
+                        span,
+                    });
+                }
+                if let Some((holder, property, indices, suffix_indices, span)) =
+                    Self::non_direct_object_property_array_append_suffix_target_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::NonDirectObjectPropertyArrayAppend {
+                        holder,
+                        property,
+                        indices,
+                        suffix_indices,
+                        span,
+                    });
+                }
+                if let Some((name, indices, suffix_indices, span)) =
+                    Self::array_append_suffix_target_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::NestedArrayAppend {
+                        name,
                         indices,
                         suffix_indices,
                         span,
@@ -3577,11 +3654,56 @@ impl Parser {
             Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
             Expr::Index { .. } => {
                 if let Some((object, property, indices, suffix_indices, span)) =
+                    Self::dynamic_object_property_array_append_suffix_target_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::DynamicObjectPropertyArrayAppend {
+                        object,
+                        property,
+                        indices,
+                        suffix_indices,
+                        span,
+                    });
+                }
+                if let Some((object, property, indices, suffix_indices, span)) =
                     Self::object_property_array_append_suffix_target_from_expr(&expr)
                 {
                     return Ok(AssignTarget::ObjectPropertyArrayAppend {
                         object,
                         property,
+                        indices,
+                        suffix_indices,
+                        span,
+                    });
+                }
+                if let Some((holder, property, indices, suffix_indices, span)) =
+                    Self::non_direct_dynamic_object_property_array_append_suffix_target_from_expr(
+                        &expr,
+                    )
+                {
+                    return Ok(AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+                        holder,
+                        property,
+                        indices,
+                        suffix_indices,
+                        span,
+                    });
+                }
+                if let Some((holder, property, indices, suffix_indices, span)) =
+                    Self::non_direct_object_property_array_append_suffix_target_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::NonDirectObjectPropertyArrayAppend {
+                        holder,
+                        property,
+                        indices,
+                        suffix_indices,
+                        span,
+                    });
+                }
+                if let Some((name, indices, suffix_indices, span)) =
+                    Self::array_append_suffix_target_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::NestedArrayAppend {
+                        name,
                         indices,
                         suffix_indices,
                         span,
@@ -3655,6 +3777,7 @@ impl Parser {
                         holder,
                         property,
                         indices,
+                        suffix_indices: Vec::new(),
                         span,
                     });
                 }
@@ -3665,6 +3788,7 @@ impl Parser {
                         holder,
                         property,
                         indices,
+                        suffix_indices: Vec::new(),
                         span,
                     });
                 }
@@ -3680,6 +3804,7 @@ impl Parser {
                         Ok(AssignTarget::NestedArrayAppend {
                             name,
                             indices,
+                            suffix_indices: Vec::new(),
                             span,
                         })
                     }
@@ -3915,6 +4040,54 @@ impl Parser {
     fn object_property_array_append_suffix_target_from_expr(
         expr: &Expr,
     ) -> Option<(String, String, Vec<Expr>, Vec<Expr>, Span)> {
+        let (target, suffix_indices, span) = Self::append_suffix_target_from_expr(expr)?;
+        let (object, property, indices, _) =
+            Self::object_property_array_append_target_from_expr(target)?;
+        Some((object, property, indices, suffix_indices, span))
+    }
+
+    fn dynamic_object_property_array_append_suffix_target_from_expr(
+        expr: &Expr,
+    ) -> Option<(String, Expr, Vec<Expr>, Vec<Expr>, Span)> {
+        let (target, suffix_indices, span) = Self::append_suffix_target_from_expr(expr)?;
+        let (object, property, indices, _) =
+            Self::dynamic_object_property_array_append_target_from_expr(target)?;
+        Some((object, property, indices, suffix_indices, span))
+    }
+
+    fn non_direct_object_property_array_append_suffix_target_from_expr(
+        expr: &Expr,
+    ) -> Option<(Expr, String, Vec<Expr>, Vec<Expr>, Span)> {
+        let (target, suffix_indices, span) = Self::append_suffix_target_from_expr(expr)?;
+        let (holder, property, indices, _) =
+            Self::non_direct_object_property_array_append_target_from_expr(target)?;
+        Some((holder, property, indices, suffix_indices, span))
+    }
+
+    fn non_direct_dynamic_object_property_array_append_suffix_target_from_expr(
+        expr: &Expr,
+    ) -> Option<(Expr, Expr, Vec<Expr>, Vec<Expr>, Span)> {
+        let (target, suffix_indices, span) = Self::append_suffix_target_from_expr(expr)?;
+        let (holder, property, indices, _) =
+            Self::non_direct_dynamic_object_property_array_append_target_from_expr(target)?;
+        Some((holder, property, indices, suffix_indices, span))
+    }
+
+    fn array_append_suffix_target_from_expr(
+        expr: &Expr,
+    ) -> Option<(String, Vec<Expr>, Vec<Expr>, Span)> {
+        let (target, suffix_indices, span) = Self::append_suffix_target_from_expr(expr)?;
+        match target {
+            Expr::Variable(name, _) => Some((name.clone(), Vec::new(), suffix_indices, span)),
+            Expr::Index { .. } => {
+                let (name, indices, _) = Self::array_index_path_from_expr(target.clone())?;
+                Some((name, indices, suffix_indices, span))
+            }
+            _ => None,
+        }
+    }
+
+    fn append_suffix_target_from_expr(expr: &Expr) -> Option<(&Expr, Vec<Expr>, Span)> {
         let mut suffix_indices = Vec::new();
         let mut current = expr;
         while let Expr::Index { target, index, .. } = current {
@@ -3929,9 +4102,7 @@ impl Parser {
         if suffix_indices.is_empty() {
             return None;
         }
-        let (object, property, indices, _) =
-            Self::object_property_array_append_target_from_expr(target.as_ref())?;
-        Some((object, property, indices, suffix_indices, *span))
+        Some((target.as_ref(), suffix_indices, *span))
     }
 
     fn dynamic_object_property_array_append_target_from_expr(

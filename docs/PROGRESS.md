@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 1749-C for the remaining parsed suffix syntax over proven
+  `ArrayAccess` append backing buckets. Direct roots such as
+  `$bag["outer"][]["leaf"] = $value`, direct dynamic property roots,
+  non-direct holder roots, dynamic non-direct holder roots, and non-direct
+  magic-provided `ArrayAccess` roots now parse as append-suffix assignment
+  targets and route through the same by-reference `offsetGet()` backing
+  bucket path. Array literal payloads with copied nested references are
+  preserved under the suffix leaf. Arbitrary `ArrayAccess` method bodies,
+  exact PHP fatal text, complete alias lifetime/detach behavior, string COW
+  identity, and native reference lowering remain unsupported. Focused
+  verification: raw system PHP output matched the new `milestone1749`
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1749` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent
+  `arrayaccess_append_suffix_syntax_routes_to_backing_buckets` passed.
+
 - Added Lane 1748-C for scalar nested `ArrayAccess` append writes and the
   currently parsed direct object-property suffix shape after `[]`. Direct
   `ArrayAccess`, property-held `ArrayAccess`, non-direct holder, dynamic

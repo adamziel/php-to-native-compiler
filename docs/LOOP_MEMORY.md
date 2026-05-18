@@ -18,6 +18,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-18T20:02:10+02:00
+
+- Checkpoint before this task: `22e3a921 runtime: write scalar ArrayAccess
+  append backing slots`, pushed to `origin/master`.
+- Task attempted: Lane 1749-C, direct-root and non-direct append-suffix syntax
+  for statically proven `ArrayAccess` by-reference backing buckets.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone1749/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched
+  `tests/fixtures/milestone1749/arrayaccess_append_suffix_syntax_cow.php`;
+  `cargo check -q -p phpc` passed with isolated
+  `CARGO_TARGET_DIR=target/cow-1749-check`;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1749`
+  passed `1` fixture with `1` system PHP comparison and `0` skips; focused
+  `arrayaccess_append_suffix_syntax_routes_to_backing_buckets` passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies, broader
+  complex alias sinks, exact PHP fatal text, complete alias lifetime/detach
+  behavior, string COW identity, and native reference lowering.
+- Next concrete task: run formatting, diff, check, adjacent milestone1748 and
+  milestone1747 regressions, then checkpoint with
+  `tools/checkpoint.sh "parser: route ArrayAccess append suffix targets"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T19:53:51+02:00
 
 - Checkpoint before this task: `57df0670 runtime: write scalar nested

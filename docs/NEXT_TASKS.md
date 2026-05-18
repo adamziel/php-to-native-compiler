@@ -19693,8 +19693,20 @@ handled.
   payloads and the currently parsed direct object-property suffix shape after
   `[]`. Cover direct `ArrayAccess`, property-held, non-direct holder, dynamic
   non-direct holder, and magic-provided `ArrayAccess` roots with system-PHP
-  fixture comparison, plus a focused object-model regression. Keep direct root
-  suffix syntax, non-direct suffix syntax, arbitrary `ArrayAccess` method
+  fixture comparison, plus a focused object-model regression. Later Lane
+  1749 covers the remaining direct-root and non-direct suffix syntax. Keep
+  arbitrary `ArrayAccess` method bodies, exact PHP fatal text, complete alias
+  lifetime/detach behavior, string COW identity, and native reference lowering
+  named as unsupported.
+
+## Lane 1749-C: ArrayAccess Append Suffix Syntax
+
+- [x] Parser/runtime/interpreter/tests/docs lane: parse and execute the
+  remaining suffix-offset syntax over proven `ArrayAccess` append backing
+  buckets. Cover direct roots, direct dynamic property roots, non-direct
+  holder roots, dynamic non-direct holder roots, and non-direct
+  magic-provided `ArrayAccess` roots with system-PHP fixture comparison, plus
+  a focused object-model regression. Keep arbitrary `ArrayAccess` method
   bodies, exact PHP fatal text, complete alias lifetime/detach behavior,
   string COW identity, and native reference lowering named as unsupported.
 

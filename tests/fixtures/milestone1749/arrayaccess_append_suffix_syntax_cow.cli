@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1749/arrayaccess_append_suffix_syntax_cow.php

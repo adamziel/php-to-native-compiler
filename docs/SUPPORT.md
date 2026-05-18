@@ -4495,9 +4495,10 @@
   plain-array targets can bind through the existing supported `__get()`
   backing bucket for the same keyed false-parent materialization shape. These
   are substrate for later PHP-visible reference containers and COW separation;
-  broader non-direct append target forms, direct root and non-direct suffix
-  syntax after `[]`,
-  arbitrary magic/`ArrayAccess` method bodies, scalar nested `ArrayAccess`
+  broader append target forms outside the currently parsed direct,
+  dynamic-property, non-direct holder, dynamic non-direct holder, and
+  magic-provided `ArrayAccess` suffix shapes after `[]`, arbitrary
+  magic/`ArrayAccess` method bodies, scalar nested `ArrayAccess`
   writes outside the current proven backing-bucket paths, broader mixed array element
   bindings, arbitrary writes through remaining complex typed-property alias
   sinks, exact PHP fatal text for invalid typed-reference writes, arbitrary

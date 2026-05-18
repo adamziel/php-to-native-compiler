@@ -6862,6 +6862,57 @@ echo $bag->items["outer"][0],
 }
 
 #[test]
+fn arrayaccess_append_suffix_syntax_routes_to_backing_buckets() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = array();
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    #[ReturnTypeWillChange]
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+class Holder {
+    public $bag;
+    public $dynamicBag;
+}
+
+$bag = new Bag();
+$bag->items["outer"] = array();
+$bag["outer"][]["leaf"] = "direct-root";
+$holder = new Holder();
+$holder->bag = $bag;
+$holder->dynamicBag = $bag;
+$property = "dynamicBag";
+$holder->{$property}["outer"][]["leaf"] = "direct-dynamic";
+$holders = array("box" => $holder);
+$holders["box"]->bag["outer"][]["leaf"] = "non-direct";
+$holders["box"]->{$property}["outer"][]["leaf"] = "non-direct-dynamic";
+echo $bag->items["outer"][0]["leaf"],
+    "|",
+    $bag->items["outer"][1]["leaf"],
+    "|",
+    $bag->items["outer"][2]["leaf"],
+    "|",
+    $bag->items["outer"][3]["leaf"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "direct-root|direct-dynamic|non-direct|non-direct-dynamic"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn typed_property_reference_writes_use_live_class_alias_metadata() {
     let execution = run_source(
         r#"<?php

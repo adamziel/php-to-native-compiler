@@ -283,6 +283,7 @@ pub enum AssignTarget {
     NestedArrayAppend {
         name: String,
         indices: Vec<Expr>,
+        suffix_indices: Vec<Expr>,
         span: Span,
     },
     Property {
@@ -317,6 +318,7 @@ pub enum AssignTarget {
         holder: Expr,
         property: String,
         indices: Vec<Expr>,
+        suffix_indices: Vec<Expr>,
         span: Span,
     },
     NonDirectDynamicObjectPropertyArrayIndex {
@@ -329,6 +331,7 @@ pub enum AssignTarget {
         holder: Expr,
         property: Expr,
         indices: Vec<Expr>,
+        suffix_indices: Vec<Expr>,
         span: Span,
     },
     ObjectPropertyArrayAppend {

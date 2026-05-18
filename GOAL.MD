@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1748:
+The current in-progress implementation frontier is Lane 1749:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -344,6 +344,11 @@ The current in-progress implementation frontier is Lane 1748:
   and magic-provided `ArrayAccess` append paths, with suffix payloads such as
   `$holder->bag["outer"][]["leaf"] = $value` preserving copied nested
   reference slots.
+- Lane 1749 closes the remaining parsed-syntax gap for those suffix payloads:
+  direct roots such as `$bag["outer"][]["leaf"] = $value`, direct dynamic
+  property roots, non-direct holder roots, dynamic non-direct holder roots,
+  and non-direct magic-provided `ArrayAccess` roots now parse and route to the
+  same proven by-reference backing-bucket append path.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
