@@ -805,9 +805,9 @@
   applying the update to PHP's current by-value temporary result without
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
   compound assignment through object-property `ArrayAccess`, ArrayAccess
-  iteration, function-parameter propagation for copied bucket provenance,
-  non-public backing properties, side-effecting or broader `offsetGet()` bodies, built-in
-  interface enforcement/signature
+  iteration, stored-argument-array `call_user_func_array()` propagation for
+  copied bucket provenance, non-public backing properties, side-effecting or broader
+  `offsetGet()` bodies, built-in interface enforcement/signature
   validation, typed method invocation, broad references/copy-on-write, exact
   warning/visibility diagnostics, and native lowering remain unsupported.
   Direct `$object[$key] op= expr`

@@ -1142,6 +1142,89 @@ echo $refCallback, "|", $refHook->callbacks[10]["id"]["function"], "|", $refHook
 }
 
 #[test]
+fn foreach_by_reference_over_array_access_bucket_helper_parameter_preserves_nested_reference_slots()
+{
+    let execution = run_source(
+        r#"<?php
+class RefCowForeachArrayAccessBucketHelperHook implements ArrayAccess {
+    public $callbacks = [];
+
+    public function add($priority, &$callback) {
+        $this->callbacks[$priority] = [
+            "id" => ["function" => &$callback, "accepted_args" => 1],
+            "plain" => ["function" => "plain", "accepted_args" => 1],
+        ];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        return isset($this->callbacks[$offset]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetGet($offset) {
+        return $this->callbacks[$offset];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        $this->callbacks[$offset] = $value;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {
+        unset($this->callbacks[$offset]);
+    }
+}
+
+class RefCowForeachArrayAccessBucketHelperHolder {
+    public $hook;
+}
+
+function make_array_access_bucket_helper_holder($hook) {
+    $holder = new RefCowForeachArrayAccessBucketHelperHolder();
+    $holder->hook = $hook;
+    return $holder;
+}
+
+function mutate_array_access_bucket_helper_copy($bucket, $label) {
+    foreach ($bucket as $id => &$node) {
+        if ($id === "id") {
+            $node["function"] = $label . ":helper";
+            $node["accepted_args"] = 2;
+        } else {
+            $node["function"] = $label . ":plain-helper";
+        }
+    }
+    unset($node);
+}
+
+$callback = "seed";
+$holder = new RefCowForeachArrayAccessBucketHelperHolder();
+$holder->hook = new RefCowForeachArrayAccessBucketHelperHook();
+$holder->hook->add(10, $callback);
+$bucket = $holder->hook[10];
+mutate_array_access_bucket_helper_copy($bucket, "property");
+echo $callback, "|", $holder->hook->callbacks[10]["id"]["function"], "|", $holder->hook->callbacks[10]["id"]["accepted_args"], "|", $holder->hook->callbacks[10]["plain"]["function"], "\n";
+
+$exprCallback = "seed";
+$exprHook = new RefCowForeachArrayAccessBucketHelperHook();
+$exprHook->add(10, $exprCallback);
+$exprBucket = make_array_access_bucket_helper_holder($exprHook)->hook[10];
+mutate_array_access_bucket_helper_copy($exprBucket, "expr");
+echo $exprCallback, "|", $exprHook->callbacks[10]["id"]["function"], "|", $exprHook->callbacks[10]["id"]["accepted_args"], "|", $exprHook->callbacks[10]["plain"]["function"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "property:helper|property:helper|1|plain\nexpr:helper|expr:helper|1|plain"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_binds_non_direct_holder_array_access_reference_roots() {
     let execution = run_source(
         r#"<?php

@@ -1,0 +1,10 @@
+$ phpc run tests/fixtures/milestone1672/arrayaccess_bucket_param_propagation_boundary.php
+--- stdout begin ---
+direct-fn:direct-fn:ref|direct-fn:ref|1|plain
+closure:closure:ref|closure:ref|1|plain
+cuf:cuf:ref|cuf:ref|1|plain
+cufa:cufa:ref|cufa:ref|1|plain
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit code: 0

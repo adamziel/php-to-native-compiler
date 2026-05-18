@@ -4,6 +4,35 @@
 
 Implemented:
 
+- Added Milestone 1672 copied-bucket function-parameter propagation for the
+  focused `ArrayAccess` COW shape. System PHP preserves nested
+  reference slots when an exact-bridge `ArrayAccess` bucket copy is passed by
+  value through a direct user-function parameter, closure parameter,
+  `call_user_func()`, or `call_user_func_array()`: writes to the nested
+  referenced callback slot reach the original callback variable and backing
+  bucket, while ordinary copied fields remain detached. Copied buckets from
+  the covered direct-object, direct property-held, array-held, and
+  expression-root holder paths now carry their covered nested public-property
+  reference slots into direct by-value user-function parameters, direct closure
+  parameters, string-user-function `call_user_func()` parameters, and
+  positional literal `call_user_func_array()` parameters, while ordinary
+  copied fields remain detached. This does not change the separate
+  by-value `offsetGet()` reference-source indirect-modification notice/no-op
+  boundary, and does not add stored-argument-array `call_user_func_array()`
+  propagation, side-effecting or broader `offsetGet()` bodies, arbitrary
+  nested reference slots stored inside `ArrayAccess` buckets, broader mixed
+  `ArrayAccess` chains, general PHP reference containers, broad COW identity,
+  native reference lowering, or exact alias destruction/destructor ordering.
+  Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  `cargo test -q -p phpc --test functions_and_scopes --
+  --test-threads=1` passed `187` tests; `cargo test -q -p phpc --test
+  foreach -- --test-threads=1` passed `39` tests; `cargo test -q -p phpc
+  --test call_user_func_builtin -- --test-threads=1` passed `39` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1672`
+  passed `2` fixtures with `2` system PHP comparisons and `0` skips. `cargo
+  fmt --check` and `git diff --check` passed.
+
 - Added Milestone 1671-A/1671-D coverage for remaining `ArrayAccess` COW
   boundaries without implementing PHP-incompatible aliasing. System PHP probes
   show that `$alias =& $bag[$key]` against by-value `offsetGet()` emits an

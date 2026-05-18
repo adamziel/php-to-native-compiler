@@ -824,12 +824,18 @@ final selected object has the exact bridge shape. By-value `offsetGet()` used
 as a reference source is still a boundary: PHP emits an indirect-modification
 notice, creates only a detached local alias/value, and leaves the backing
 element unchanged, while phpc currently rejects the shape before execution.
-Function-parameter propagation of copied bucket provenance, broader alias
-lifetime after replacing non-direct containing properties, side-effecting or
-broader `offsetGet()` bodies, mixed nested ArrayAccess chains beyond the
-documented one-level bridge, append sources, arbitrary nested reference slots
-copied from ArrayAccess storage, and real reference containers remain future
-work.
+Function-parameter propagation of copied bucket provenance is covered for the
+same direct-object, direct property-held, array-held, and expression-root
+holder paths when the copied bucket is passed as a direct variable to a
+by-value direct user-function parameter, direct closure parameter,
+string-user-function `call_user_func()` parameter, or positional literal
+`call_user_func_array()` parameter. Stored `call_user_func_array()` argument
+arrays remain a future COW propagation target. Broader alias lifetime after
+replacing non-direct containing properties, side-effecting or broader
+`offsetGet()` bodies, mixed nested
+ArrayAccess chains beyond the documented one-level bridge, append sources,
+arbitrary nested reference slots copied from ArrayAccess storage, and real
+reference containers remain future work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or

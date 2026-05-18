@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1672/wp_hook_array_access_bucket_helper_cow.php
+--- stdout begin ---
+property:helper|property:helper|1|plain
+array-holder:helper|array-holder:helper|1|plain
+expr-holder:helper|expr-holder:helper|1|plain
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit code: 0

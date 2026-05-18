@@ -18427,6 +18427,21 @@ handled.
   `make_holder($hook)->hook[10]` now preserve covered nested public-property
   reference slots when copied into a direct variable.
 
+## Milestone 1672: ArrayAccess Function-Parameter Propagation
+
+- [x] Tests/docs lane: probe PHP and phpc behavior for copied `ArrayAccess`
+  buckets passed by value through direct user-function parameters, closure
+  parameters, `call_user_func()`, and `call_user_func_array()`. PHP preserves
+  the copied bucket's nested reference slots through all four call forms.
+- [x] Runtime lane: carry copied bucket provenance through by-value direct
+  user-function, direct closure, string-user-function `call_user_func()`, and
+  positional literal `call_user_func_array()` parameter binding for the
+  covered copied-bucket sources.
+- [ ] Runtime lane: carry copied bucket provenance through stored
+  `call_user_func_array()` argument arrays and reused alias variables after
+  replacement/detachment
+  without broadening the existing `offsetGet()` reference source boundary.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

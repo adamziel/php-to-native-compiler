@@ -2167,8 +2167,8 @@ impl SymbolTable {
         target_name: &str,
         source_name: &str,
         source_scope: &SymbolTable,
-    ) {
-        self.import_array_offset_aliases_from_path_copy(
+    ) -> Vec<ArrayOffsetAlias> {
+        let mut imported = self.import_array_offset_aliases_from_path_copy(
             target_name,
             source_scope,
             &ArrayOffsetAliasRoot::StaticArray {
@@ -2180,15 +2180,23 @@ impl SymbolTable {
 
         if let Some(source_aliases) = source_scope.array_offset_aliases.get(source_name).cloned() {
             for source_alias in source_aliases {
-                self.import_array_offset_aliases_from_path_copy(
+                imported.extend(self.import_array_offset_aliases_from_path_copy(
                     target_name,
                     source_scope,
                     &source_alias.root,
                     &source_alias.keys,
                     false,
-                );
+                ));
             }
         }
+
+        let mut unique_imports = Vec::new();
+        for alias in imported {
+            if !unique_imports.contains(&alias) {
+                unique_imports.push(alias);
+            }
+        }
+        unique_imports
     }
 
     fn import_array_offset_aliases_from_path_copy(
@@ -2198,36 +2206,83 @@ impl SymbolTable {
         source_root: &ArrayOffsetAliasRoot,
         source_keys: &[ArrayKey],
         include_exact_path: bool,
-    ) {
+    ) -> Vec<ArrayOffsetAlias> {
         let additions: Vec<(String, ArrayOffsetAlias)> = source_scope
             .array_offset_aliases
             .iter()
             .flat_map(|(alias_name, aliases)| {
-                aliases.iter().filter_map(move |alias| match &alias.root {
-                    root if root == source_root
+                let matched = aliases.iter().any(|alias| {
+                    alias.root == *source_root
                         && alias.keys.starts_with(source_keys)
-                        && (include_exact_path || alias.keys.len() > source_keys.len()) =>
-                    {
-                        Some((
-                            alias_name.clone(),
-                            ArrayOffsetAlias {
-                                root: ArrayOffsetAliasRoot::StaticArray {
-                                    name: target_name.to_string(),
+                        && (include_exact_path || alias.keys.len() > source_keys.len())
+                });
+                if !matched {
+                    return Vec::new();
+                }
+
+                aliases
+                    .iter()
+                    .filter_map(|alias| {
+                        if alias.root == *source_root
+                            && alias.keys.starts_with(source_keys)
+                            && (include_exact_path || alias.keys.len() > source_keys.len())
+                        {
+                            return Some((
+                                alias_name.clone(),
+                                ArrayOffsetAlias {
+                                    root: ArrayOffsetAliasRoot::StaticArray {
+                                        name: target_name.to_string(),
+                                    },
+                                    keys: alias.keys[source_keys.len()..].to_vec(),
                                 },
-                                keys: alias.keys[source_keys.len()..].to_vec(),
-                            },
-                        ))
-                    }
-                    _ => None,
-                })
+                            ));
+                        }
+
+                        let imported_alias =
+                            self.imported_sibling_array_offset_alias(alias, source_scope)?;
+                        Some((alias_name.clone(), imported_alias))
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect();
+
+        let imported = additions
+            .iter()
+            .map(|(_, alias)| alias.clone())
+            .collect::<Vec<_>>();
 
         for (alias_name, alias) in additions {
             let aliases = self.array_offset_aliases.entry(alias_name).or_default();
             if !aliases.contains(&alias) {
                 aliases.push(alias);
             }
+        }
+
+        imported
+    }
+
+    fn imported_sibling_array_offset_alias(
+        &mut self,
+        alias: &ArrayOffsetAlias,
+        source_scope: &SymbolTable,
+    ) -> Option<ArrayOffsetAlias> {
+        match &alias.root {
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
+                let Value::Object(source_object) = source_scope.read_storage_named(object)? else {
+                    return None;
+                };
+                let local_object = format!("\0phpc_imported_object_{}", source_object.id());
+                self.write_static(&local_object, Value::Object(source_object));
+                Some(ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                        object: local_object,
+                        property: property.clone(),
+                    },
+                    keys: alias.keys.clone(),
+                })
+            }
+            ArrayOffsetAliasRoot::GlobalArray { .. } => Some(alias.clone()),
+            _ => None,
         }
     }
 
@@ -21235,6 +21290,8 @@ impl Interpreter {
         self.ensure_user_function_call_depth(function, span)?;
         let (values, reference_bindings) =
             self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call(function, args);
         let prebound_locals = self.closure_prebound_locals(&closure);
         self.call_user_function_with_checked_values_and_locals(
             function,
@@ -21245,7 +21302,7 @@ impl Interpreter {
             reference_bindings,
             Some(caller_scope),
             prebound_locals,
-            Vec::new(),
+            by_value_array_copy_bindings,
         )
     }
 
@@ -24876,6 +24933,8 @@ impl Interpreter {
 
         let values =
             self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call(function, args);
         if function.returns_by_reference {
             return self.call_reference_return_function_value_with_checked_values(
                 function,
@@ -24888,14 +24947,16 @@ impl Interpreter {
             );
         }
 
-        self.call_user_function_with_checked_values(
+        self.call_user_function_with_checked_values_and_locals(
             function,
             values,
             None,
             None,
             None,
             Vec::new(),
-            None,
+            Some(caller_scope),
+            Vec::new(),
+            by_value_array_copy_bindings,
         )
     }
 
@@ -24935,6 +24996,8 @@ impl Interpreter {
         self.ensure_user_function_call_depth(function, span)?;
         let values =
             self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call(function, args);
         let prebound_locals = self.closure_prebound_locals(&closure);
         self.call_user_function_with_checked_values_and_locals(
             function,
@@ -24943,9 +25006,9 @@ impl Interpreter {
             None,
             None,
             Vec::new(),
-            None,
+            Some(caller_scope),
             prebound_locals,
-            Vec::new(),
+            by_value_array_copy_bindings,
         )
     }
 
@@ -25118,6 +25181,11 @@ impl Interpreter {
             span,
             caller_scope,
         )?;
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
+                function,
+                argument_expr,
+            );
         let prebound_locals = self.closure_prebound_locals(&closure);
         self.call_user_function_with_checked_values_and_locals(
             function,
@@ -25128,7 +25196,7 @@ impl Interpreter {
             reference_bindings,
             Some(caller_scope),
             prebound_locals,
-            Vec::new(),
+            by_value_array_copy_bindings,
         )
     }
 
@@ -25197,9 +25265,14 @@ impl Interpreter {
             span,
             caller_scope,
         )?;
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
+                function,
+                argument_expr,
+            );
         self.ensure_user_function_call_depth(function, span)?;
 
-        self.call_user_function_with_checked_values(
+        self.call_user_function_with_checked_values_and_locals(
             function,
             values,
             None,
@@ -25207,6 +25280,8 @@ impl Interpreter {
             None,
             reference_bindings,
             Some(caller_scope),
+            Vec::new(),
+            by_value_array_copy_bindings,
         )
     }
 
@@ -28515,6 +28590,35 @@ impl Interpreter {
             .collect()
     }
 
+    fn by_value_array_copy_bindings_for_call_user_func_array_literal(
+        function: &FunctionDecl,
+        argument_expr: &Expr,
+    ) -> Vec<(String, String)> {
+        let Expr::Array { items, .. } = argument_expr else {
+            return Vec::new();
+        };
+
+        let mut bindings = Vec::new();
+        let mut param_index = 0usize;
+        for item in items {
+            if item.key.is_some() {
+                return Vec::new();
+            }
+            let Some(param) = function.params.get(param_index) else {
+                break;
+            };
+            param_index += 1;
+            if param.by_reference || param.is_variadic {
+                continue;
+            }
+            let Expr::Variable(source_name, _) = &item.value else {
+                continue;
+            };
+            bindings.push((param.name.clone(), source_name.clone()));
+        }
+        bindings
+    }
+
     fn call_reference_return_function_for_reference_assignment(
         &mut self,
         name: &str,
@@ -30559,6 +30663,35 @@ impl Interpreter {
         Ok(())
     }
 
+    fn write_back_by_value_array_copy_aliases(
+        &mut self,
+        alias_writebacks: &[(String, Vec<ArrayOffsetAlias>)],
+        local_scope: &SymbolTable,
+        caller_scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<()> {
+        for (source_name, local_aliases) in alias_writebacks {
+            for local_alias in local_aliases {
+                let ArrayOffsetAliasRoot::StaticArray { .. } = &local_alias.root else {
+                    continue;
+                };
+                if local_alias.keys.is_empty() {
+                    continue;
+                }
+                let Some(value) = local_scope.read_array_offset_alias(local_alias) else {
+                    continue;
+                };
+                let Some(caller_aliases) = caller_scope
+                    .array_offset_alias_group_for_stored_array_path(source_name, &local_alias.keys)
+                else {
+                    continue;
+                };
+                self.write_back_array_offset_aliases(&caller_aliases, value, caller_scope, span)?;
+            }
+        }
+        Ok(())
+    }
+
     fn write_back_reference_parameter_object_aliases(
         &mut self,
         reference_bindings: &[ReferenceBinding],
@@ -30774,6 +30907,8 @@ impl Interpreter {
             local_scope.write_static("this", Value::Object(this_object));
         }
         let mut captured_array_offset_binding_cells = Vec::new();
+        let mut by_value_array_copy_alias_writebacks: Vec<(String, Vec<ArrayOffsetAlias>)> =
+            Vec::new();
         for local in prebound_locals {
             match local {
                 PreboundLocal::Value { name, value } => local_scope.write_static(&name, value),
@@ -30907,11 +31042,20 @@ impl Interpreter {
                     .iter()
                     .find(|(param_name, _)| param_name == &param.name)
                 {
-                    local_scope.import_static_array_offset_aliases_from_copy(
-                        &param.name,
-                        source_name,
-                        source_scope,
-                    );
+                    let imported_aliases = local_scope
+                        .import_static_array_offset_aliases_from_copy(
+                            &param.name,
+                            source_name,
+                            source_scope,
+                        );
+                    let imported_aliases: Vec<_> = imported_aliases
+                        .into_iter()
+                        .filter(|alias| !alias.keys.is_empty())
+                        .collect();
+                    if !imported_aliases.is_empty() {
+                        by_value_array_copy_alias_writebacks
+                            .push((source_name.clone(), imported_aliases));
+                    }
                 }
                 if let Some(Value::Object(object)) = local_scope.read_named(&param.name) {
                     local_scope.import_public_object_property_aliases_for_object_value(
@@ -30940,13 +31084,23 @@ impl Interpreter {
                 if let Err(error) = result {
                     Err(error)
                 } else {
-                    self.write_back_reference_parameter_object_aliases(
+                    let result = self.write_back_reference_parameter_object_aliases(
                         &reference_bindings,
                         &local_scope,
                         reference_scope,
                         this_object_for_alias_transfer.as_ref(),
                         function.span,
-                    )
+                    );
+                    if let Err(error) = result {
+                        Err(error)
+                    } else {
+                        self.write_back_by_value_array_copy_aliases(
+                            &by_value_array_copy_alias_writebacks,
+                            &local_scope,
+                            reference_scope,
+                            function.span,
+                        )
+                    }
                 }
             } else {
                 Ok(())

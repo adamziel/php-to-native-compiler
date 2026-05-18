@@ -2991,6 +2991,50 @@ echo $target, "|", $bag->items["outer"]["id"]["function"], "|", $bag->items["out
 }
 
 #[test]
+fn array_access_bucket_copy_helper_parameter_preserves_nested_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class HookStore implements ArrayAccess {
+    public $hook = array();
+    public function offsetExists($offset) { return isset($this->hook[$offset]); }
+    public function offsetGet($offset) { return $this->hook[$offset]; }
+    public function offsetSet($offset, $value) { $this->hook[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->hook[$offset]); }
+}
+
+function helper($bucket) {
+    foreach ($bucket as $id => &$node) {
+        if ($id === "id") {
+            $node["function"] = "via-helper";
+            $node["accepted_args"] = 2;
+        } else {
+            $node["function"] = "plain-copy";
+        }
+    }
+    unset($node);
+}
+
+$target = "seed";
+$holder = new HookStore();
+$holder->hook[10] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+    "plain" => array("function" => "plain", "accepted_args" => 1),
+);
+$holder->hook[10]["id"]["function"] =& $target;
+
+$bucket = $holder[10];
+helper($bucket);
+
+echo $target, "|", $holder->hook[10]["id"]["function"], "|", $holder->hook[10]["id"]["accepted_args"], "|", $holder->hook[10]["plain"]["function"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "via-helper|via-helper|1|plain");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php
@@ -3082,6 +3126,110 @@ echo $target, "|", $bag->items["outer"]["id"]["function"], "|", $bag->items["out
     .unwrap();
 
     assert_eq!(execution.stdout, "via-dynamic|via-dynamic|1|plain");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn function_parameter_preserves_property_held_array_access_bucket_copy_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = array();
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+class Holder {
+    public $hook;
+}
+
+function mutate_bucket($bucket) {
+    foreach ($bucket as $id => &$node) {
+        if ($id === "id") {
+            $node["function"] = "via-helper";
+            $node["accepted_args"] = 2;
+        } else {
+            $node["function"] = "plain-helper";
+        }
+    }
+    unset($node);
+}
+
+$target = "seed";
+$bag = new Bag();
+$bag->items[10] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+    "plain" => array("function" => "plain", "accepted_args" => 1),
+);
+$bag->items[10]["id"]["function"] =& $target;
+
+$holder = new Holder();
+$holder->hook = $bag;
+$bucket = $holder->hook[10];
+mutate_bucket($bucket);
+
+echo $target, "|", $bag->items[10]["id"]["function"], "|", $bag->items[10]["id"]["accepted_args"], "|", $bag->items[10]["plain"]["function"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "via-helper|via-helper|1|plain");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn function_parameter_preserves_dynamic_property_held_array_access_bucket_copy_reference_slots() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = array();
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    public function offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+class Holder {
+    public $dynamicHook;
+}
+
+function mutate_dynamic_bucket($bucket) {
+    foreach ($bucket as $id => &$node) {
+        if ($id === "id") {
+            $node["function"] = "via-dynamic-helper";
+            $node["accepted_args"] = 2;
+        } else {
+            $node["function"] = "plain-helper";
+        }
+    }
+    unset($node);
+}
+
+$target = "seed";
+$bag = new Bag();
+$bag->items[10] = array(
+    "id" => array("function" => "placeholder", "accepted_args" => 1),
+    "plain" => array("function" => "plain", "accepted_args" => 1),
+);
+$bag->items[10]["id"]["function"] =& $target;
+
+$holder = new Holder();
+$holder->dynamicHook = $bag;
+$property = "dynamicHook";
+$bucket = $holder->{$property}[10];
+mutate_dynamic_bucket($bucket);
+
+echo $target, "|", $bag->items[10]["id"]["function"], "|", $bag->items[10]["id"]["accepted_args"], "|", $bag->items[10]["plain"]["function"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "via-dynamic-helper|via-dynamic-helper|1|plain"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

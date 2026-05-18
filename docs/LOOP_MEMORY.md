@@ -26,6 +26,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T06:18:00+02:00
+
+- Checkpoint before this task: `f3ea22c5 runtime: preserve holder
+  ArrayAccess bucket reference slots`, pushed to `origin/master`.
+- Task attempted: Milestone 1672 focused on `ArrayAccess` copied-bucket
+  function-parameter COW propagation.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `compiler/tests/foreach.rs`,
+  `tests/fixtures/milestone1672/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run and result with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -q -p phpc --test
+  functions_and_scopes -- --test-threads=1` passed `187` tests; `cargo test
+  -q -p phpc --test foreach -- --test-threads=1` passed `39` tests; `cargo
+  test -q -p phpc --test call_user_func_builtin -- --test-threads=1` passed
+  `39` tests; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1672` passed `2` fixtures with `2` system PHP
+  comparisons and `0` skips.
+- Semantic gap reduced: copied buckets from the covered direct-object,
+  property-held, array-held, and expression-root holder sources carry covered
+  nested public-property reference slots into direct by-value user-function
+  parameters, direct closure parameters, string-user-function
+  `call_user_func()` parameters, and positional literal
+  `call_user_func_array()` parameters.
+- Remaining semantic gaps: stored-argument-array `call_user_func_array()`
+  propagation, exact alias detachment after replacing variables that previously
+  mirrored copied-bucket reference slots, by-value `offsetGet()` reference
+  source notice/no-op fidelity, non-public backing properties, side-effecting
+  or broader `offsetGet()` bodies, arbitrary nested reference slots stored
+  inside `ArrayAccess` buckets, broader mixed `ArrayAccess` chains, general PHP
+  reference containers, broad COW identity, native reference lowering, and
+  exact alias destruction/destructor ordering.
+- Next concrete task: run formatting and diff checks, then checkpoint and push
+  Milestone 1672 if the full checkpoint gate passes.
+
 ## Loop Event 2026-05-18T05:35:00+02:00
 
 - Checkpoint before this task: `165dadc7 runtime: preserve ArrayAccess bucket
