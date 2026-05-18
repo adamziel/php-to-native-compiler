@@ -960,6 +960,14 @@ handle; the inner object still needs the exact by-reference `offsetGet()`
 bridge for mutation. Broader mixed chains, by-value terminal/plain-array
 mutation, and side-effecting `offsetGet()` bodies remain outside the current
 model.
+The same recursive resolver is used for statement-form reference assignment
+sources when magic `__get()` itself returns a supported direct variable by
+reference. For a source such as
+`$alias =& $box->missing["outer"]["inner"]`, the alias can bind to the inner
+`ArrayAccess` backing bucket even when the outer `offsetGet()` returns the
+intermediate object by value. Direct append writes through that bound variable
+use the alias-backed append helper, so `$alias[] = $array` mutates the inner
+bucket instead of materializing a detached local array.
 The same magic append-store helper also covers the focused plain-array route
 when visible public `__get($name)` returns a direct variable by reference and
 that returned cell currently holds an array or `null`. The runtime binds the

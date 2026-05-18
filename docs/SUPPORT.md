@@ -901,7 +901,13 @@
   still followed to the inner by-reference `offsetGet()` bucket for the same
   focused append/provenance behavior. By-value terminal or plain-array
   `offsetGet()` keeps PHP's indirect-modification notice/no-op behavior for
-  these nested append shapes. Magic-property
+  these nested append shapes. Statement-form reference assignment through the
+  same by-value outer/magic-property mixed chain is also covered when visible
+  public by-reference `__get($name)` returns a direct variable holding the
+  outer `ArrayAccess` object: `$alias =& $box->missing["outer"]["inner"]`
+  binds to the inner selected backing bucket, and later `$alias[] = $array`
+  appends through that alias-backed bucket while preserving nested reference
+  slots. Magic-property
   append stores below plain arrays are also
   supported for the focused by-reference `__get()`
   shape when visible public `__get($name)` returns a direct variable by
@@ -937,8 +943,8 @@
   empty append and focused one-key and two-key parent append shapes,
   magic-property `ArrayAccess` nested append paths beyond the focused
   by-reference or by-value-object intermediate `offsetGet()` bucket, tested
-  plain-array suffix shapes, and the one tested mixed nested `ArrayAccess`
-  chain, dynamic
+  plain-array suffix shapes, the one tested mixed nested `ArrayAccess` append
+  chain, and the one tested mixed nested reference-source chain, dynamic
   non-direct
   whole-property setup assignment, method-return or factory holder roots for
   dynamic non-direct append stores, non-empty nested append paths below

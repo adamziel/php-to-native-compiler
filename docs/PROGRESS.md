@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Lane 1696-C focused by-value outer mixed magic-property `ArrayAccess`
+  reference-source binding for the COW shape where visible public
+  by-reference `__get($name)` returns a direct variable holding an outer
+  `ArrayAccess` object, the outer exact public by-value
+  `offsetGet($offset)` returns an intermediate inner `ArrayAccess` object
+  handle, and that inner object exposes the exact public by-reference
+  `offsetGet($offset)` backing-property bridge. Direct
+  `$alias =& $box->missing["outer"]["inner"]; $alias[] = $array;` now follows
+  the by-value object handle, binds the alias to the inner selected backing
+  bucket, appends through that alias-backed bucket, and preserves nested
+  reference-slot provenance for later copied-bucket reads. The runtime now
+  handles append writes through variables bound to array-offset aliases before
+  materializing a fresh local append target. This does not add by-value
+  terminal/plain-array mutation, by-value `__get()` reference-source binding,
+  arbitrary/longer mixed chains, side-effecting or broader `offsetGet()`
+  bodies, broader `__get()` return bodies, method-return or factory holder
+  roots, full references/COW, native reference lowering, or exact alias
+  destruction/destructor ordering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  PHP syntax checks passed for the new fixture, `cargo check -q -p phpc`
+  passed, the `milestone1696` `functions_and_scopes` filter passed `2`
+  tests, and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1696` passed `1` fixture with `1` system PHP
+  comparison and `0` skips. `cargo fmt`, `git diff --check`, the adjacent
+  `milestone1695` `functions_and_scopes` filter, and adjacent
+  `milestone1695` fixture comparison also passed.
+
 - Added Lane 1695-C focused by-value outer mixed magic-property `ArrayAccess`
   append mutation for the COW shape where visible public `__get($name)`
   returns an outer `ArrayAccess` object, the outer exact public by-value

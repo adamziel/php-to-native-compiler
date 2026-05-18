@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T12:05:00+02:00
+
+- Checkpoint before this task: `ef1844dc runtime: preserve by-value outer mixed
+  ArrayAccess append references`, pushed to `origin/master`.
+- Task attempted: Lane 1696-C by-value outer mixed magic-property
+  `ArrayAccess` reference-source binding plus alias-backed append writes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1696/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax check passed for the
+  new milestone1696 fixture; `cargo check -q -p phpc` passed; the
+  `milestone1696` `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1696`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+  `cargo fmt`, `git diff --check`, the adjacent `milestone1695`
+  `functions_and_scopes` filter, and adjacent `milestone1695` fixture
+  comparison also passed.
+- Semantic gap reduced: direct
+  `$alias =& $box->missing["outer"]["inner"]; $alias[] = $array;` now works
+  when by-reference `__get()` returns a direct variable holding an outer
+  `ArrayAccess` object, the outer by-value `offsetGet()` returns the inner
+  object handle, and the inner object uses the exact by-reference
+  backing-property bridge. The append through `$alias[]` now mutates the
+  alias-backed inner bucket instead of creating a detached local array.
+- Remaining semantic gaps: by-value terminal/plain-array mutation, by-value
+  `__get()` reference-source binding, arbitrary/longer mixed chains,
+  side-effecting or broader `offsetGet()` bodies, broader `__get()` return
+  bodies, method-return or factory holder roots, full references/COW, native
+  reference lowering, and exact alias destruction/destructor ordering remain
+  unsupported.
+- Next concrete task: run the checkpoint full gate and commit this lane if it
+  passes.
+
 ## Loop Event 2026-05-18T11:45:00+02:00
 
 - Checkpoint before this task: `23a2fd80 runtime: preserve mixed magic

@@ -3473,6 +3473,48 @@ impl SymbolTable {
         Ok(true)
     }
 
+    fn append_alias_backed_array_offset(
+        &mut self,
+        array_name: &str,
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Option<ArrayOffsetAlias>> {
+        let Some(aliases) = self.array_offset_aliases_for_name_with_suffix(array_name, keys) else {
+            return Ok(None);
+        };
+        let Some(first_alias) = aliases.first().cloned() else {
+            return Ok(None);
+        };
+        let root_alias = ArrayOffsetAlias {
+            root: first_alias.root.clone(),
+            keys: Vec::new(),
+        };
+        let mut array = match self.read_alias_root_value(&root_alias, span)? {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let alias_keys =
+            Self::append_nested_array_offset_alias(&mut array, &first_alias.keys, value, span)?;
+        self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
+        let appended_alias = ArrayOffsetAlias {
+            root: first_alias.root,
+            keys: alias_keys,
+        };
+        self.sync_array_offset_aliases_for_root_path(&appended_alias.root, &appended_alias.keys);
+        self.sync_alias_roots(&aliases);
+        Ok(Some(appended_alias))
+    }
+
     fn bind_alias_backed_array_offset_to_static_source(
         &mut self,
         array_name: &str,
@@ -12502,6 +12544,18 @@ impl Interpreter {
                     && !is_direct_array_access_append
                 {
                     self.reject_array_access_reference_target_if_needed(name, *span, scope)?;
+                    if let Some(target_alias) =
+                        scope.append_alias_backed_array_offset(name, &[], value.clone(), *span)?
+                    {
+                        self.bind_array_literal_references_to_alias_root_with_prefix(
+                            target_alias.root,
+                            target_alias.keys,
+                            array_literal_references,
+                            expr.span(),
+                            scope,
+                        )?;
+                        return Ok(value);
+                    }
                     let target_alias = scope.append_array_offset_reference_alias(
                         name,
                         Vec::new(),
@@ -12515,6 +12569,13 @@ impl Interpreter {
                         expr.span(),
                         scope,
                     )?;
+                    return Ok(value);
+                }
+                if key.is_none()
+                    && scope
+                        .append_alias_backed_array_offset(name, &[], value.clone(), *span)?
+                        .is_some()
+                {
                     return Ok(value);
                 }
                 let target_key = key.clone();
@@ -12771,6 +12832,18 @@ impl Interpreter {
                 }
                 if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                     self.reject_array_access_reference_target_if_needed(name, *span, scope)?;
+                    if let Some(target_alias) =
+                        scope.append_alias_backed_array_offset(name, &keys, value.clone(), *span)?
+                    {
+                        self.bind_array_literal_references_to_alias_root_with_prefix(
+                            target_alias.root,
+                            target_alias.keys,
+                            array_literal_references,
+                            expr.span(),
+                            scope,
+                        )?;
+                        return Ok(value);
+                    }
                     let target_alias = scope.append_array_offset_reference_alias(
                         name,
                         keys,
@@ -12784,6 +12857,12 @@ impl Interpreter {
                         expr.span(),
                         scope,
                     )?;
+                    return Ok(value);
+                }
+                if scope
+                    .append_alias_backed_array_offset(name, &keys, value.clone(), *span)?
+                    .is_some()
+                {
                     return Ok(value);
                 }
                 Self::write_nested_array_append(name, &keys, value.clone(), *span, scope)?;
