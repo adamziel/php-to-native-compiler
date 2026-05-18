@@ -936,8 +936,12 @@
   supports a by-reference `__get()` body that directly returns a visible
   `$this->store` property; the runtime appends into that object-property root
   and mirrors copied reference slots for later direct backing-property writes.
-  Private `$this` property returns and method-scope backing writes remain
-  outside that focused slice. The same focused route supports one
+  The visible `$this` property route is tested for both a one-key parent path
+  and a two-key parent path, including
+  `$box->missing["outer"]["inner"][] = $array` appending into
+  `$box->store["outer"]["inner"]`. Private `$this` property returns and
+  method-scope backing writes remain outside that focused slice. The same
+  focused route supports one
   tested string-keyed parent path before the append, such as
   `$box->missing["outer"][] = $array`,
   `$box->{$name}["outer"][] = $array`,
@@ -975,7 +979,7 @@
   nested append paths below
   property-held or magic-property `ArrayAccess`, magic `__get()` bodies that
   return unsupported expressions beyond direct variables and the focused
-  visible `$this` property append route, dynamic property names that trigger
+  visible `$this` property append routes, dynamic property names that trigger
   unsupported fallback or inaccessible properties, append compound assignment
   through object-property
   `ArrayAccess`, ArrayAccess iteration, broader

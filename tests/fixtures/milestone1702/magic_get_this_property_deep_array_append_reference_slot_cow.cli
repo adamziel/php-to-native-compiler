@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1702/magic_get_this_property_deep_array_append_reference_slot_cow.php
+stdout:
+via-this-property-deep-magic-append|via-this-property-deep-magic-label|via-this-property-deep-magic-append|via-this-property-deep-magic-label|6|plain-deep-mutated|plain-deep-mutated
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

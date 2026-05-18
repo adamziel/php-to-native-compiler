@@ -19012,6 +19012,23 @@ handled.
   parent overwrite/error parity, full references/COW, and native reference
   lowering named as unsupported.
 
+## Lane 1702-C: Magic `$this` Property Deep Append
+
+- [x] Runtime/tests/docs lane: pin the visible `$this` property magic append
+  route through a two-key parent path. The covered shape is
+  `$box->missing["outer"]["inner"][] = $array` where by-reference
+  `__get($name)` directly returns visible `$this->store`; the append mutates
+  `$box->store["outer"]["inner"]`, mirrors copied nested reference-slot
+  provenance for the appended array literal, and later direct writes through
+  `$box->store["outer"]["inner"][0]...` synchronize the copied reference
+  slots with their original variables. Keep private `$this` property
+  reference returns, method-local backing writes, arbitrary `__get()` return
+  expressions, broader/dynamic parent paths for this `$this` property route,
+  arbitrary method-return/factory-root variants, by-value terminal/plain-array
+  mutation, arbitrary side-effecting or broader `offsetGet()` bodies, scalar
+  parent overwrite/error parity, full references/COW, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

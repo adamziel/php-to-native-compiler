@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1701:
+The current in-progress implementation frontier is Lane 1702:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -74,6 +74,10 @@ The current in-progress implementation frontier is Lane 1701:
 - Lane 1701 broadens the magic plain-array append route so by-reference
   `__get()` may return a visible `$this->store` property, not only a direct
   variable/global, for the focused append-and-copied-reference-slot shape.
+- Lane 1702 pins the same visible `$this->store` route through a tested
+  two-key parent append path, so `$box->missing["outer"]["inner"][] = $array`
+  appends into `$box->store["outer"]["inner"]` and preserves copied reference
+  slots for later direct backing-property writes.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

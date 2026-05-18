@@ -1004,9 +1004,12 @@ shape, the helper recognizes a single direct `return $this->property;` body
 when that property is visible to the caller's later backing write. It appends
 into the corresponding object-property alias root and mirrors copied
 reference-slot metadata there, without creating a general object-property cell
-model. Private `$this` property reference returns and method-local backing
-writes remain explicit boundaries. For the focused nested append shapes, the
-same helper passes the complete parent key path into the array append-alias
+model. The same object-property-root path is tested through a two-key parent
+append, so `$box->missing["outer"]["inner"][]` attaches metadata below
+`$box->store["outer"]["inner"]`. Private `$this` property reference returns
+and method-local backing writes remain explicit boundaries. For the focused
+nested append shapes, the same helper passes the complete parent key path
+into the array append-alias
 machinery, so one-key paths such as `$box->missing["outer"][]` and
 `$holders["box"]->{$name}["outer"][]`, plus the tested two-key paths such as
 `$box->missing["outer"]["inner"][]` and

@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T14:45:00+02:00
+
+- Checkpoint before this task: `2d4396c6 runtime: support magic get this
+  property appends`, pushed to `origin/master`.
+- Task attempted: Lane 1702-C focused visible `$this` property magic append
+  coverage for a deeper two-key parent path.
+- Files changed so far: `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1702/*`, `GOAL.MD`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax check passed for the
+  new milestone1702 fixture; the `milestone1702` `functions_and_scopes`
+  filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1702`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+  `cargo check -q -p phpc`, `cargo fmt --check`, `git diff --check`, the
+  adjacent `milestone1701` `functions_and_scopes` filter, and adjacent
+  `milestone1701` fixture comparison also passed.
+- Semantic gap reduced: by-reference `__get($name)` may now directly return a
+  visible `$this->store` property for
+  `$box->missing["outer"]["inner"][] = $array`. The runtime appends into
+  `$box->store["outer"]["inner"]` and mirrors copied nested reference-slot
+  provenance so later direct writes through
+  `$box->store["outer"]["inner"][0]...` synchronize with the original
+  variables.
+- Remaining semantic gaps: private `$this` property reference returns,
+  method-local backing writes, arbitrary `__get()` return expressions,
+  broader/dynamic parent paths for this `$this` property route, arbitrary
+  method-return/factory-root variants, by-value terminal/plain-array mutation,
+  arbitrary side-effecting or broader `offsetGet()` bodies, scalar parent
+  overwrite/error parity, full references/COW, and native reference lowering
+  remain unsupported.
+- Next concrete task: checkpoint with
+  `tools/checkpoint.sh "runtime: pin magic get this property deep appends"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T14:15:00+02:00
 
 - Checkpoint before this task: `8e77aa90 runtime: pin magic ArrayAccess alias
