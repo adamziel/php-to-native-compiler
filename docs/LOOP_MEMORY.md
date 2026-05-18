@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T14:25:02+02:00
+
+- Checkpoint before this task: `94ebaf2e runtime: support ArrayAccess if else
+  keyed stores`, pushed to `origin/master`.
+- Task attempted: Lane 1717-C focused visible property-held `ArrayAccess`
+  keyed store COW propagation.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1717/*`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc` passed;
+  PHP syntax and system PHP output checks passed for the new fixture; the
+  `milestone1717` `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1717`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: direct property-held keyed stores, non-direct named
+  holder keyed stores, and non-direct dynamic holder keyed stores now dispatch
+  `offsetSet($key, $value)` on the held `ArrayAccess` object and attach
+  copied nested reference-slot metadata to the recognized backing bucket for
+  exact non-branchy and `if/else` keyed `offsetSet()` bodies.
+- Remaining semantic gaps: multi-key property-held keyed stores, keyed stores
+  through magic-property-provided containers, unsupported `offsetSet()` bodies,
+  broader mixed nested `ArrayAccess` chains, broader `__get()` return
+  expressions, by-value terminal/plain-array mutation, scalar parent
+  overwrite/error parity, full references/COW, and native reference lowering
+  remain unsupported.
+- Next concrete task: run adjacent milestone1716 checks, `cargo fmt --check`,
+  `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "runtime: support property-held ArrayAccess keyed stores"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T14:13:34+02:00
 
 - Checkpoint before this task: `086aeab4 runtime: support ArrayAccess repeated

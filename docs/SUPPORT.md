@@ -890,7 +890,18 @@
   context. The non-direct holder append path evaluates the holder once; the
   dynamic-property append path also evaluates the property-name expression
   once. The narrow setup assignment `$holders["box"]->bag = $value` is
-  supported for visible named properties. Direct magic-property append stores
+  supported for visible named properties. Direct visible property-held keyed
+  stores such as `$holder->bag["leaf"] = $array` now reuse that held-object
+  bridge after dispatching `offsetSet($key, $value)`, so exact non-branchy
+  and `if/else` keyed backing-property `offsetSet()` bodies attach array
+  literal reference slots or copied-array alias metadata to the selected
+  backing bucket. Non-direct named and dynamic holder forms such as
+  `$holders["box"]->bag["leaf"] = $array` and
+  `$holders["box"]->{$name}["leaf"] = $array` evaluate the holder and
+  property name once before using that same keyed bridge. Multi-key
+  property-held keyed stores, keyed stores through magic-property-provided
+  containers, unsupported `offsetSet()` body shapes, and native lowering
+  remain outside this keyed COW slice. Direct magic-property append stores
   such as `$box->missing[] = $array` and `$box->{$name}[] = $array` are also
   supported for this focused stored-bucket COW shape when visible public
   `__get($name)` returns an `ArrayAccess` object; `__get()` is called once

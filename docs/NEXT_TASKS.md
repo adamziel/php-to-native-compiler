@@ -19290,6 +19290,23 @@ handled.
   terminal/plain-array mutation, scalar parent overwrite/error parity, full
   references/COW, and native reference lowering named as unsupported.
 
+## Lane 1717-C: Property-Held ArrayAccess Keyed Store COW
+
+- [x] Runtime/tests/docs lane: extend visible property-held `ArrayAccess`
+  keyed stores to preserve stored-bucket reference metadata for covered
+  one-key assignments such as `$holder->bag["leaf"] = $array`,
+  `$holders["box"]->bag["leaf"] = $array`, and
+  `$holders["box"]->{$name}["leaf"] = $array`. The runtime dispatches
+  `offsetSet($key, $value)` on the held object, then attaches array-literal
+  reference slots or copied-array alias metadata to the recognized backing
+  bucket for exact non-branchy and `if/else` keyed public `offsetSet()`
+  backing-property bodies. Keep multi-key property-held keyed stores, keyed
+  stores through magic-property-provided containers, unsupported
+  `offsetSet()` bodies, broader mixed nested `ArrayAccess` chains, broader
+  `__get()` return expressions, by-value terminal/plain-array mutation,
+  scalar parent overwrite/error parity, full references/COW, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

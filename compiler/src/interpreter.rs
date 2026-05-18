@@ -13466,6 +13466,21 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
+                if matches!(value, Value::Array(_))
+                    && keys.len() == 1
+                    && self.write_object_property_array_access_keyed_with_reference_propagation(
+                        object,
+                        property,
+                        keys[0].clone(),
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
                 let root =
                     self.context_object_property_alias_root(object, property, *span, scope)?;
                 let root = scope.canonical_equivalent_object_property_alias_root(&root);
@@ -13528,6 +13543,21 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
+                if matches!(value, Value::Array(_))
+                    && keys.len() == 1
+                    && self.write_object_property_array_access_keyed_with_reference_propagation(
+                        &temp_name,
+                        property,
+                        keys[0].clone(),
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
                 if matches!(value, Value::Array(_))
                     && keys.is_empty()
                     && self.write_object_property_array_access_append_with_reference_propagation(
@@ -13598,6 +13628,21 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
+                if matches!(value, Value::Array(_))
+                    && keys.len() == 1
+                    && self.write_object_property_array_access_keyed_with_reference_propagation(
+                        &temp_name,
+                        &property,
+                        keys[0].clone(),
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        *span,
+                        scope,
+                    )?
+                {
+                    return Ok(value);
+                }
                 if matches!(value, Value::Array(_))
                     && keys.is_empty()
                     && self.write_object_property_array_access_append_with_reference_propagation(
@@ -14039,6 +14084,49 @@ impl Interpreter {
 
         self.write_array_access_object_append_with_reference_propagation(
             array_access_object,
+            value,
+            expr,
+            array_literal_references,
+            span,
+            scope,
+        )
+    }
+
+    fn write_object_property_array_access_keyed_with_reference_propagation(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        key: ArrayKey,
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some(Value::Object(holder)) = scope.read_named(object_name) else {
+            return Ok(false);
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let Value::Object(array_access_object) = (match holder.read_property_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(value) => value,
+            Err(_) => return Ok(false),
+        }) else {
+            return Ok(false);
+        };
+        if !self
+            .classes
+            .implements_interface(array_access_object.class_id(), "ArrayAccess")
+        {
+            return Ok(false);
+        }
+
+        self.write_array_access_object_keyed_with_reference_propagation(
+            array_access_object,
+            key,
             value,
             expr,
             array_literal_references,
@@ -14563,6 +14651,44 @@ impl Interpreter {
             array_access_object.clone(),
             &hidden_name,
             None,
+            true,
+            span,
+            scope,
+        )? {
+            self.bind_or_mirror_array_references_to_alias_root(
+                expr,
+                root,
+                reference_keys,
+                array_literal_references,
+                scope,
+            )?;
+        }
+        Ok(true)
+    }
+
+    fn write_array_access_object_keyed_with_reference_propagation(
+        &mut self,
+        array_access_object: PhpObject,
+        key: ArrayKey,
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let hidden_name = self.hidden_array_access_reference_object_name(&array_access_object);
+        scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
+
+        self.call_array_access_method(
+            array_access_object.clone(),
+            "offsetSet",
+            vec![Self::array_key_value(Some(key.clone())), value],
+            span,
+        )?;
+        if let Some((root, reference_keys)) = self.array_access_offset_set_alias_for_object(
+            array_access_object,
+            &hidden_name,
+            Some(key),
             true,
             span,
             scope,

@@ -931,6 +931,18 @@ the holder expression is evaluated once, the dynamic property-name expression
 is evaluated once, and the selected visible property reuses the property-held
 append bridge. This does not add dynamic non-direct whole-property setup
 assignment; that remains outside the COW append slice.
+Visible property-held keyed stores use the same hidden-root machinery for the
+held `ArrayAccess` object. Direct stores such as
+`$holder->bag["leaf"] = $array` and non-direct named or dynamic holder stores
+such as `$holders["box"]->bag["leaf"] = $array` or
+`$holders["box"]->{$name}["leaf"] = $array` dispatch
+`offsetSet($key, $value)` first, then ask the bounded `offsetSet()` backing
+bucket recognizer for the concrete root and keys. When the exact non-branchy
+or `if/else` keyed recognizer succeeds, array-literal reference slots or
+copied-array alias metadata are attached to that backing bucket. Multi-key
+property-held keyed stores, magic-property-provided keyed containers,
+unsupported `offsetSet()` bodies, and native lowering remain outside this
+path.
 Direct magic-property append stores such as `$box->missing[] = $array` and
 `$box->{$name}[] = $array` are a separate store path from magic append
 reference sources. For the covered store shape, the runtime calls visible

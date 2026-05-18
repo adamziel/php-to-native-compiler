@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Lane 1717-C focused keyed-store support for visible property-held
+  `ArrayAccess` objects. Direct stores such as
+  `$holder->bag["leaf"] = $array`, non-direct named holder stores such as
+  `$holders["box"]->bag["leaf"] = $array`, and non-direct dynamic holder
+  stores such as `$holders["box"]->{$name}["leaf"] = $array` now dispatch
+  `offsetSet($key, $value)` on the held object and then attach array-literal
+  reference slots or copied-array alias metadata to the recognized backing
+  bucket for exact non-branchy and `if/else` keyed public `offsetSet()`
+  backing-property bodies. This does not add multi-key property-held keyed
+  stores, keyed stores through magic-property-provided containers, unsupported
+  `offsetSet()` bodies, broader mixed nested `ArrayAccess` chains, broader
+  `__get()` return expressions, by-value terminal/plain-array mutation,
+  scalar parent overwrite/error parity, full references/COW, or native
+  reference lowering. Focused verification used isolated `CARGO_TARGET_DIR`
+  values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax and system
+  PHP output checks passed for the new fixture, `cargo check -q -p phpc`
+  passed, the `milestone1717` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1717`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1716-C focused keyed-store support for the public
   `ArrayAccess::offsetSet()` `if/else` body shape. Direct
   `$bag["leaf"] = $array` now preserves copied nested reference-slot metadata
