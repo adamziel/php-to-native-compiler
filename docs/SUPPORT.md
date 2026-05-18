@@ -256,6 +256,12 @@
   covered when the loop body returns one of the supported lvalue shapes.
   Same-block labels and `goto` in the reference-return method-body statement
   list are covered when control reaches a supported returned lvalue.
+  `goto` may also propagate out of nested supported reference-return body
+  lists, including `if`, loop, switch, by-value `foreach`, by-reference
+  `foreach`, and `try` bodies, before resolving to a method-body label.
+  `finally` cleanup still runs before the jump resolves, and by-reference
+  `foreach` keeps the lingering loop-value binding needed to return the
+  selected slot.
   Public by-reference `__get()` uses the same assignment-capable return path
   for covered array-offset returns such as `return $this->store[$name];`.
   Covered return expressions may also use a dynamically selected `$this`
@@ -272,9 +278,9 @@
   `__get()` roots beyond the covered direct variable/property/backing-offset
   returns; exception unwinding or catch execution for thrown values inside
   reference-return bodies; arbitrary dynamic/non-literal backing-key analysis;
-  nested cross-block `goto`, arbitrary Iterator side effects, arbitrary PHP
-  syntax outside the interpreter subset; arbitrary mixed nested `ArrayAccess`
-  object chains; broad same-container identity for
+  arbitrary Iterator side effects, arbitrary PHP syntax outside the
+  interpreter subset; arbitrary mixed nested `ArrayAccess` object chains;
+  broad same-container identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,
   arbitrary reference expressions,

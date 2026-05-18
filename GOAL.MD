@@ -32,7 +32,15 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1775:
+The current in-progress implementation frontier is Lane 1778:
+
+- Lanes 1776 through 1778 propagate `goto` across nested supported
+  reference-return body lists. Public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies now
+  preserve returned lvalues after jumps out of nested `if`, loop, switch,
+  by-value `foreach`, by-reference `foreach`, and `try` bodies, including
+  `finally` cleanup and by-reference foreach lingering-slot binding before
+  the selected backing bucket is returned.
 
 - Lanes 1773 through 1775 widen the supported magic/`ArrayAccess`
   reference-return method-body executor. Public by-reference

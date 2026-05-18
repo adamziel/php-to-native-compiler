@@ -4741,6 +4741,7 @@ enum ReferenceReturnBodyFlow {
     Normal,
     Break { depth: usize, span: Span },
     Continue { depth: usize, span: Span },
+    Goto { label: String, span: Span },
     Return(ReferenceReturnLocalBinding),
 }
 
@@ -36332,6 +36333,9 @@ impl Interpreter {
                 span,
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
+            ReferenceReturnBodyFlow::Goto { label, span } => {
+                Err(undefined_goto_label_error(span, &label))
+            }
         }
     }
 
@@ -36367,6 +36371,13 @@ impl Interpreter {
         if let Stmt::Continue { depth, span } = stmt {
             return Ok(ReferenceReturnBodyFlow::Continue {
                 depth: *depth,
+                span: *span,
+            });
+        }
+
+        if let Stmt::Goto { label, span } = stmt {
+            return Ok(ReferenceReturnBodyFlow::Goto {
+                label: label.clone(),
                 span: *span,
             });
         }
@@ -36418,7 +36429,8 @@ impl Interpreter {
                             span,
                         });
                     }
-                    flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
+                    flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                    | ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
                 }
             }
         }
@@ -36451,7 +36463,8 @@ impl Interpreter {
                             span,
                         });
                     }
-                    flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
+                    flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                    | ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
                 }
 
                 if !self.evaluate(condition, scope)?.is_truthy() {
@@ -36504,7 +36517,8 @@ impl Interpreter {
                             span,
                         });
                     }
-                    flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
+                    flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                    | ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
                 }
 
                 for increment in increments {
@@ -36623,7 +36637,7 @@ impl Interpreter {
                     "exit during reference-return evaluation is not implemented",
                 ),
             )),
-            Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
+            Flow::Goto { label, span } => Ok(ReferenceReturnBodyFlow::Goto { label, span }),
         }
     }
 
@@ -36651,7 +36665,9 @@ impl Interpreter {
                     span,
                 }))
             }
-            flow @ ReferenceReturnBodyFlow::Return(_) => Ok(Some(flow)),
+            flow @ (ReferenceReturnBodyFlow::Goto { .. } | ReferenceReturnBodyFlow::Return(_)) => {
+                Ok(Some(flow))
+            }
         }
     }
 
@@ -36748,7 +36764,10 @@ impl Interpreter {
                 Some(ReferenceReturnBodyFlow::Break { depth, span }) => {
                     return Ok(ReferenceReturnBodyFlow::Break { depth, span });
                 }
-                Some(flow @ ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
+                Some(
+                    flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                    | ReferenceReturnBodyFlow::Return(_)),
+                ) => return Ok(flow),
             }
         }
 
@@ -36789,7 +36808,8 @@ impl Interpreter {
                         span,
                     });
                 }
-                flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
+                flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                | ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
             }
         }
 
@@ -36916,6 +36936,16 @@ impl Interpreter {
                         span: flow_span,
                     });
                 }
+                flow @ ReferenceReturnBodyFlow::Goto { .. } => {
+                    bind_foreach_lingering_reference(
+                        scope,
+                        value,
+                        &root,
+                        lingering_reference_key,
+                        span,
+                    )?;
+                    return Ok(flow);
+                }
                 flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
             }
         }
@@ -36978,7 +37008,8 @@ impl Interpreter {
                             ),
                         ));
                     }
-                    flow @ ReferenceReturnBodyFlow::Return(_) => return Ok(flow),
+                    flow @ (ReferenceReturnBodyFlow::Goto { .. }
+                    | ReferenceReturnBodyFlow::Return(_)) => return Ok(flow),
                 }
             }
             index += 1;
@@ -37005,15 +37036,26 @@ impl Interpreter {
             let stmt = &statements[index];
             if let Stmt::Goto { label, span } = stmt {
                 let Some(target) = labels.get(label) else {
-                    return Err(undefined_goto_label_error(*span, label));
+                    return Ok(ReferenceReturnBodyFlow::Goto {
+                        label: label.clone(),
+                        span: *span,
+                    });
                 };
                 index = *target;
                 continue;
             }
 
             let flow = self.execute_reference_return_assignment_statement(function, stmt, scope)?;
-            if !matches!(flow, ReferenceReturnBodyFlow::Normal) {
-                return Ok(flow);
+            match flow {
+                ReferenceReturnBodyFlow::Normal => {}
+                ReferenceReturnBodyFlow::Goto { label, span } => {
+                    let Some(target) = labels.get(&label) else {
+                        return Ok(ReferenceReturnBodyFlow::Goto { label, span });
+                    };
+                    index = *target;
+                    continue;
+                }
+                flow => return Ok(flow),
             }
             index += 1;
         }

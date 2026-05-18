@@ -19983,6 +19983,19 @@ handled.
   syntax, broader dynamic backing keys, arbitrary Iterator side effects, and
   native reference lowering named as unsupported.
 
+## Lane 1776-C through Lane 1778-C: Cross-Block `goto` Reference Returns
+
+- [x] Runtime/interpreter/tests/docs bundle: propagate `goto` across nested
+  supported reference-return body lists in public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies,
+  covering jumps out of nested `if`, loop, switch, by-value `foreach`,
+  by-reference `foreach`, and `try` bodies before a method-body label returns
+  a supported lvalue. Include `finally` cleanup before jump resolution and
+  by-reference foreach lingering-slot binding. Keep exception
+  unwinding/catch execution for thrown values, arbitrary unsupported PHP
+  syntax, broader dynamic backing keys, arbitrary Iterator side effects, and
+  native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 1776-C through Lane 1778-C for cross-block `goto`
+  propagation in the supported magic/`ArrayAccess` reference-return
+  method-body executor. Public by-reference `ArrayAccess::offsetGet()` and
+  covered by-reference `__get()` bodies can now jump from nested `if`, loop,
+  switch, by-value `foreach`, by-reference `foreach`, and `try` bodies to a
+  method-body label before returning a covered lvalue. `finally` cleanup still
+  runs before the jump resolves, and by-reference `foreach` preserves the
+  lingering loop-value binding needed to return the selected slot. Returned
+  backing buckets keep copied reference-slot write-through. Exception
+  unwinding/catch execution for thrown values, unsupported PHP syntax, broader
+  dynamic backing keys, arbitrary Iterator side effects, and native reference
+  lowering remain unsupported. Focused verification: raw system PHP output
+  matched the new `milestone1776`, `milestone1777`, and `milestone1778`
+  fixtures; `cargo run -q -p phpc -- test --compare-php` passed each new
+  fixture directory with `1` fixture, `1` system PHP comparison, and `0`
+  skips; focused `functions_and_scopes` milestone tests passed.
+
 - Added Lane 1773-C through Lane 1775-C as a bundled reference-return
   method-body widening for the supported magic/`ArrayAccess` COW path. Public
   by-reference `ArrayAccess::offsetGet()` and covered by-reference `__get()`
