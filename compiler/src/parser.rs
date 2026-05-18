@@ -2807,6 +2807,7 @@ impl Parser {
                     | AssignTarget::ObjectPropertyArrayAppend { .. }
                     | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
                     | AssignTarget::DynamicProperty { .. }
+                    | AssignTarget::NonDirectProperty { .. }
                     | AssignTarget::ObjectStaticProperty { .. }
                     | AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
@@ -3184,9 +3185,13 @@ impl Parser {
                 } else {
                     let (property, _) = self.consume_object_property_name(operator_span)?;
                     if !self.check(|kind| matches!(kind, TokenKind::LBracket)) {
-                        self.current = before_object_operator;
+                        return Ok(AssignTarget::NonDirectProperty {
+                            holder,
+                            property,
+                            span: operator_span,
+                        });
                     } else {
-                        let indices = self.parse_required_object_property_array_indices()?;
+                        let indices = self.parse_object_property_array_indices_or_append()?;
                         return Ok(AssignTarget::NonDirectObjectPropertyArrayIndex {
                             holder,
                             property,
@@ -3307,6 +3312,28 @@ impl Parser {
         Ok(indices)
     }
 
+    fn parse_object_property_array_indices_or_append(&mut self) -> CompileResult<Vec<Expr>> {
+        if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_assignment_expression_target_message(),
+            ));
+        }
+        if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+            return Ok(Vec::new());
+        }
+        let mut indices = vec![self.parse_expression()?];
+        self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+        while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+                return Ok(indices);
+            }
+            indices.push(self.parse_expression()?);
+            self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+        }
+        Ok(indices)
+    }
+
     fn ensure_supported_compound_assignment_target(
         target: &AssignTarget,
     ) -> Result<(), &'static str> {
@@ -3321,6 +3348,7 @@ impl Parser {
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
+            | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -3348,6 +3376,7 @@ impl Parser {
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
+            | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -3554,6 +3583,16 @@ impl Parser {
                 {
                     return Ok(AssignTarget::ObjectPropertyArrayAppend {
                         object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+                if let Some((holder, property, indices, _)) =
+                    Self::non_direct_object_property_array_append_target_from_expr(target.as_ref())
+                {
+                    return Ok(AssignTarget::NonDirectObjectPropertyArrayIndex {
+                        holder,
                         property,
                         indices,
                         span,

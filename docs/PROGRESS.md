@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Lane 1685-C non-direct holder visible property-held `ArrayAccess`
+  append `offsetSet(null, $value)` stored-bucket reference-slot propagation
+  for the focused copied-bucket COW shape. The parser now accepts
+  `$holders["box"]->bag = $value` as a narrow visible property setup path and
+  `$holders["box"]->bag[] = $array` as a non-direct holder append target. The
+  interpreter evaluates the holder once, routes through the visible named
+  property holding the `ArrayAccess` object, and preserves nested reference
+  slots for the same exact empty-string-key and branchy append-key
+  `offsetSet()` bridges used by the direct and property-held lanes. Later
+  exact by-value `offsetGet($offset) { return $this->property[$offset]; }`
+  bucket copies preserve those nested reference slots while ordinary copied
+  fields remain detached. Native lowering still rejects these targets with
+  explicit object-property or array-access lowering boundaries. This does not
+  add dynamic non-direct property append stores, magic-property append
+  stores, non-empty nested append paths such as `$holder->bag["x"][]`,
+  inaccessible properties, side-effecting or broader `offsetSet()`/
+  `offsetGet()` bodies, mixed nested `ArrayAccess` chains, full
+  references/COW, native reference lowering, or exact alias
+  destruction/destructor ordering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  `cargo check -q -p phpc` passed, the non-direct holder property-held
+  `ArrayAccess` append `functions_and_scopes` filter passed `4` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1685`
+  passed `2` fixtures with `2` system PHP comparisons and `0` skips.
+
 - Added Lane 1684-C direct visible dynamic property-held `ArrayAccess` append
   `offsetSet(null, $value)` stored-bucket reference-slot propagation for the
   focused copied-bucket COW shape. The parser now accepts

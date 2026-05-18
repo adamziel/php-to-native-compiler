@@ -1589,7 +1589,9 @@ impl LlvmGenerator {
             | AssignTarget::DynamicObjectPropertyArrayAppend { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION))
             }
-            AssignTarget::Property { span, .. } | AssignTarget::DynamicProperty { span, .. } => {
+            AssignTarget::Property { span, .. }
+            | AssignTarget::NonDirectProperty { span, .. }
+            | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_PROPERTY_REJECTION))
             }
             AssignTarget::StaticProperty { span, .. }
@@ -4629,7 +4631,9 @@ impl CGenerator {
             | AssignTarget::DynamicObjectPropertyArrayAppend { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION))
             }
-            AssignTarget::Property { span, .. } | AssignTarget::DynamicProperty { span, .. } => {
+            AssignTarget::Property { span, .. }
+            | AssignTarget::NonDirectProperty { span, .. }
+            | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_PROPERTY_REJECTION))
             }
             AssignTarget::StaticProperty { span, .. }

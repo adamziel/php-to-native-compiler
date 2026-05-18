@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1685/non_direct_holder_property_held_arrayaccess_append_offsetset_bucket_reference_slot_cow.php
+stdout:
+via-non-direct-append|via-non-direct-label|via-non-direct-append|via-non-direct-label|1|plain|plain
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

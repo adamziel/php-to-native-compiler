@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T08:39:17+02:00
+
+- Checkpoint before this task: `2c496440 runtime: preserve dynamic
+  property-held ArrayAccess append offsetSet references`, pushed to
+  `origin/master`.
+- Task attempted: Lane 1685-C non-direct holder visible property-held
+  `ArrayAccess` append `offsetSet(null, $value)` stored-bucket reference-slot
+  propagation for the focused copied-bucket COW shape.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1685/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, the lane
+  review note, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc`
+  passed; the non-direct holder property-held `ArrayAccess` append
+  `functions_and_scopes` filter passed `4` tests; and `cargo run -q -p phpc
+  -- test --compare-php tests/fixtures/milestone1685` passed `2` fixtures
+  with `2` system PHP comparisons and `0` skips.
+- Semantic gap reduced: `$holders["box"]->bag[] = $array` now evaluates the
+  holder once, writes through the visible named property-held `ArrayAccess`
+  object, and preserves nested reference slots for both the exact
+  empty-string-key and branchy append-key `offsetSet(null, $value)` bridges.
+  The lane also supports narrow non-direct visible property setup writes such
+  as `$holders["box"]->bag = $value`.
+- Remaining semantic gaps: dynamic non-direct property append stores,
+  magic-property append stores, non-empty nested append paths, dynamic
+  property names that trigger magic fallback or inaccessible properties,
+  side-effecting or broader `offsetSet()`/`offsetGet()` bodies, mixed nested
+  `ArrayAccess` chains, full references/COW, native reference lowering, and
+  exact alias destruction/destructor ordering remain unsupported.
+- Next concrete task: after checkpointing this lane, continue the COW receiver
+  ladder with the next append stored-bucket gap instead of switching areas.
+
 ## Loop Event 2026-05-18T15:05:00+02:00
 
 - Checkpoint before this task: `8a8d4aa3 runtime: preserve property-held

@@ -898,6 +898,13 @@ Direct visible dynamic property-held append stores such as
 `$holder->{$name}[] = $array` evaluate the property name once, select the same
 concrete visible property, and reuse that property-held hidden-root path before
 attaching metadata to the held object's backing bucket.
+Non-direct holder visible property-held append stores such as
+`$holders["box"]->bag[] = $array` evaluate the holder expression once into a
+temporary object root, then reuse the same property-held `ArrayAccess` append
+bridge for the selected visible named property. The narrow setup assignment
+`$holders["box"]->bag = $value` writes through that evaluated holder object so
+fixtures can establish the held `ArrayAccess` object without claiming broader
+compound, dynamic, magic, or native property support.
 By-value helper parameters that import copied-bucket provenance detach those
 mirrored static-array provenance paths when the parameter variable is replaced:
 writes through the copied bucket before replacement still write back to the
@@ -909,8 +916,8 @@ copied bucket loop, and mutating two distinct nested reference slots in one
 copied bucket match the focused PHP probes. Broader alias lifetime after
 replacing non-direct containing properties, side-effecting or broader
 `offsetGet()` bodies, mixed nested
-ArrayAccess chains beyond the documented one-level bridge, non-direct or
-magic-property append `offsetSet(null)` stored-bucket receivers, dynamic
+ArrayAccess chains beyond the documented one-level bridge, dynamic non-direct
+or magic-property append `offsetSet(null)` stored-bucket receivers, dynamic
 property names that trigger magic fallback or inaccessible properties,
 arbitrary nested reference slots copied from ArrayAccess storage outside the
 exact `offsetSet()`/`offsetGet()` bridge, and real reference containers remain

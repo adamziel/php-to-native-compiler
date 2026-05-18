@@ -12805,6 +12805,40 @@ impl Interpreter {
                     )),
                 }
             }
+            AssignTarget::NonDirectProperty {
+                holder,
+                property,
+                span,
+            } => {
+                let holder_value = self.evaluate(holder, scope)?;
+                let holder_object = match holder_value {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot write property ${property} on {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let value = self.evaluate(expr, scope)?;
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                holder_object
+                    .write_property_from_context_with_object_type_resolver(
+                        property,
+                        value.clone(),
+                        current_class_id,
+                        &protected_class_ids,
+                        |object, type_name| {
+                            self.object_satisfies_live_property_type(object, type_name)
+                        },
+                    )
+                    .map_err(|error| runtime_error(*span, error))?;
+                Ok(value)
+            }
             AssignTarget::ObjectPropertyArrayIndex {
                 object,
                 property,
@@ -12851,8 +12885,60 @@ impl Interpreter {
                 }
                 Ok(value)
             }
-            AssignTarget::NonDirectObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. } => {
+            AssignTarget::NonDirectObjectPropertyArrayIndex {
+                holder,
+                property,
+                indices,
+                span,
+            } => {
+                if indices.is_empty() {
+                    let holder_value = self.evaluate(holder, scope)?;
+                    let holder_object = match holder_value {
+                        Value::Object(object) => object,
+                        other => {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::invalid_property_access(format!(
+                                    "cannot read property ${property} on {}",
+                                    other.type_name()
+                                )),
+                            ));
+                        }
+                    };
+                    let temp_name = self.next_foreach_temporary_array_name();
+                    scope.write_static(&temp_name, Value::Object(holder_object));
+                    let (value, array_literal_references) = match expr {
+                        Expr::Array { items, span } => {
+                            let (value, references) =
+                                self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                            (value, references)
+                        }
+                        _ => (self.evaluate(expr, scope)?, Vec::new()),
+                    };
+                    if matches!(value, Value::Array(_))
+                        && self
+                            .write_object_property_array_access_append_with_reference_propagation(
+                                &temp_name,
+                                property,
+                                value.clone(),
+                                expr,
+                                array_literal_references,
+                                *span,
+                                scope,
+                            )?
+                    {
+                        return Ok(value);
+                    }
+                }
+                Err(runtime_error(
+                    *span,
+                    RuntimeError::unsupported_call(
+                        "assignment",
+                        "non-direct object-property array assignment targets are only implemented for visible ArrayAccess append reference propagation in the current subset",
+                    ),
+                ))
+            }
+            AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. } => {
                 Err(runtime_error(
                     *span,
                     RuntimeError::unsupported_call(
@@ -13919,13 +14005,15 @@ impl Interpreter {
                     RuntimeError::undefined_variable(object),
                 )),
             },
-            AssignTarget::DynamicProperty { .. } => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "compound assignment",
-                    "dynamic property targets are not implemented",
-                ),
-            )),
+            AssignTarget::DynamicProperty { .. } | AssignTarget::NonDirectProperty { .. } => {
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "compound assignment",
+                        "dynamic property targets are not implemented",
+                    ),
+                ))
+            }
             AssignTarget::ObjectStaticProperty { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -14349,13 +14437,15 @@ impl Interpreter {
                     RuntimeError::undefined_variable(object),
                 )),
             },
-            AssignTarget::DynamicProperty { .. } => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "increment/decrement",
-                    "dynamic property targets are not implemented",
-                ),
-            )),
+            AssignTarget::DynamicProperty { .. } | AssignTarget::NonDirectProperty { .. } => {
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "increment/decrement",
+                        "dynamic property targets are not implemented",
+                    ),
+                ))
+            }
             AssignTarget::ObjectStaticProperty { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -14552,7 +14642,8 @@ impl Interpreter {
                     unreachable!("non-null object properties return before assignment")
                 }
             }
-            AssignTarget::DynamicProperty { span, .. } => Err(runtime_error(
+            AssignTarget::DynamicProperty { span, .. }
+            | AssignTarget::NonDirectProperty { span, .. } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_call(
                     "??=",

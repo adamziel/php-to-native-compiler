@@ -18565,10 +18565,11 @@ handled.
   private/protected backing properties, binds array literal reference metadata
   onto the backing bucket, and mirrors copied-array alias metadata for copied
   array values. Lane 1682-C extends the same direct stored-bucket shape to
-  append `offsetSet(null)` stores. Lanes 1683-C and 1684-C extend that append
-  stored-bucket shape to direct visible named and dynamic property-held
-  receivers. Keep non-direct receiver `offsetSet()` storage,
-  side-effecting or broader
+  append `offsetSet(null)` stores. Lanes 1683-C, 1684-C, and 1685-C extend
+  that append stored-bucket shape to direct visible named/dynamic
+  property-held receivers and non-direct holder visible named property-held
+  receivers. Keep dynamic non-direct receiver `offsetSet()` storage,
+  magic-property append storage, side-effecting or broader
   `offsetSet()`/`offsetGet()` bodies, broader mixed `ArrayAccess` chains,
   full references/COW, native reference lowering, and exact alias
   destruction/destructor ordering named as unsupported.
@@ -18585,13 +18586,15 @@ handled.
   the actual appended integer key after the method call. Later exact
   by-value `offsetGet($offset) { return $this->property[$offset]; }` bucket
   copies preserve nested reference slots. Lane 1683-C extends the same
-  append stored-bucket shape to direct visible named property-held receivers.
-  Lane 1684-C extends it to direct visible dynamic property-held receivers.
-  Keep non-direct and magic-property append stores, dynamic property names
-  that trigger magic fallback or inaccessible properties, side-effecting or
-  broader `offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess`
-  chains, full references/COW, native reference lowering, and exact alias
-  destruction/destructor ordering named as unsupported.
+  append stored-bucket shape to direct visible named property-held receivers,
+  Lane 1684-C extends it to direct visible dynamic property-held receivers,
+  and Lane 1685-C extends it to non-direct holder visible named
+  property-held receivers. Keep dynamic non-direct and magic-property append
+  stores, dynamic property names that trigger magic fallback or inaccessible
+  properties, side-effecting or broader `offsetSet()`/`offsetGet()` bodies,
+  mixed nested `ArrayAccess` chains, full references/COW, native reference
+  lowering, and exact alias destruction/destructor ordering named as
+  unsupported.
 
 ## Lane 1683-C: Property-Held ArrayAccess Append `offsetSet(null)` Stored-Bucket Reference Slots
 
@@ -18606,12 +18609,14 @@ handled.
   appended integer key after the method call. Later exact by-value
   `offsetGet($offset) { return $this->property[$offset]; }` bucket copies
   preserve nested reference slots. Lane 1684-C extends the same append
-  stored-bucket shape to direct visible dynamic property-held receivers. Keep
-  non-direct and magic-property append stores, dynamic property names that
-  trigger magic fallback or inaccessible properties, side-effecting or broader
-  `offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess` chains, full
-  references/COW, native reference lowering, and exact alias
-  destruction/destructor ordering named as unsupported.
+  stored-bucket shape to direct visible dynamic property-held receivers, and
+  Lane 1685-C extends it to non-direct holder visible named property-held
+  receivers. Keep dynamic non-direct and magic-property append stores,
+  dynamic property names that trigger magic fallback or inaccessible
+  properties, side-effecting or broader `offsetSet()`/`offsetGet()` bodies,
+  mixed nested `ArrayAccess` chains, full references/COW, native reference
+  lowering, and exact alias destruction/destructor ordering named as
+  unsupported.
 
 ## Lane 1684-C: Dynamic Property-Held ArrayAccess Append `offsetSet(null)` Stored-Bucket Reference Slots
 
@@ -18625,10 +18630,33 @@ handled.
   bridge attaches metadata to the actual appended integer key after the method
   call. Later exact by-value `offsetGet($offset) { return
   $this->property[$offset]; }` bucket copies preserve nested reference slots.
-  Keep non-direct and magic-property append stores, dynamic property names
-  that trigger magic fallback or inaccessible properties, side-effecting or
-  broader `offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess`
-  chains, full references/COW, native reference lowering, and exact alias
+  Lane 1685-C extends the same append stored-bucket shape to non-direct
+  holder visible named property-held receivers. Keep dynamic non-direct and
+  magic-property append stores, dynamic property names that trigger magic
+  fallback or inaccessible properties, side-effecting or broader
+  `offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess` chains, full
+  references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering named as unsupported.
+
+## Lane 1685-C: Non-Direct Holder Property-Held ArrayAccess Append `offsetSet(null)` Stored-Bucket Reference Slots
+
+- [x] Runtime/tests/docs lane: parse and execute non-direct holder visible
+  named property-held `$holders["box"]->bag[] = $array` stores when the
+  evaluated holder object exposes a visible property holding an `ArrayAccess`
+  object using the same focused `offsetSet(null, $value)` stored-bucket
+  reference-slot propagation as the direct receiver lanes. The holder
+  expression is evaluated once, then the exact
+  `$this->property[$offset] = $value;` bridge stores under PHP's empty-string
+  key for null offsets, while the branchy append bridge attaches metadata to
+  the actual appended integer key after the method call. Later exact by-value
+  `offsetGet($offset) { return $this->property[$offset]; }` bucket copies
+  preserve nested reference slots. The lane also supports narrow setup writes
+  such as `$holders["box"]->bag = $value` for visible named properties. Keep
+  dynamic non-direct property append stores, magic-property append stores,
+  non-empty nested append paths, dynamic property names that trigger magic
+  fallback or inaccessible properties, side-effecting or broader
+  `offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess` chains, full
+  references/COW, native reference lowering, and exact alias
   destruction/destructor ordering named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations

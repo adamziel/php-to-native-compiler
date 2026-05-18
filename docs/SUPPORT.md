@@ -850,10 +850,14 @@
   integer key. The same focused append stored-bucket propagation is supported
   when a direct visible named or dynamic property holds the `ArrayAccess`
   object, such as `$holder->bag[] = $array` or
-  `$holder->{$name}[] = $array`, for both the exact empty-string-key bridge
-  and the branchy append-key bridge. These stored-bucket COW bridges cover
-  public plus private/protected backing properties reached through the
-  `ArrayAccess` method's declaring-class context. Direct
+  `$holder->{$name}[] = $array`, and when a non-direct holder expression
+  exposes a visible named property holding the `ArrayAccess` object, such as
+  `$holders["box"]->bag[] = $array`, for both the exact empty-string-key
+  bridge and the branchy append-key bridge. These stored-bucket COW bridges
+  cover public plus private/protected backing properties reached through the
+  `ArrayAccess` method's declaring-class context. The non-direct holder path
+  evaluates the holder once and also supports the narrow setup assignment
+  `$holders["box"]->bag = $value` for visible named properties. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
   and writing the result back through `offsetSet($key, $value)`. Direct
@@ -862,9 +866,10 @@
   current integer and float values by reading through `offsetGet($key)` and
   applying the update to PHP's current by-value temporary result without
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
-  `offsetSet(null, $value)` storage through non-direct or magic-property
-  receivers, dynamic property names that trigger magic fallback or inaccessible
-  properties, append compound assignment through object-property
+  `offsetSet(null, $value)` storage through dynamic non-direct or
+  magic-property receivers, non-empty nested append paths below property-held
+  `ArrayAccess`, dynamic property names that trigger magic fallback or
+  inaccessible properties, append compound assignment through object-property
   `ArrayAccess`, ArrayAccess iteration, broader
   stored-argument-array
   `call_user_func_array()` propagation beyond direct positional copied-bucket

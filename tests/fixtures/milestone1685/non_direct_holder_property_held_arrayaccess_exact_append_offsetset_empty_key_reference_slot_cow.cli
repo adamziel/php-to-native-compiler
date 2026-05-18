@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1685/non_direct_holder_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php
+stdout:
+via-non-direct-empty-key|via-non-direct-empty-label|via-non-direct-empty-key|via-non-direct-empty-label|1|plain|plain
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
