@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 1748-C for scalar nested `ArrayAccess` append writes and the
+  currently parsed direct object-property suffix shape after `[]`. Direct
+  `ArrayAccess`, property-held `ArrayAccess`, non-direct holder, dynamic
+  non-direct holder, and magic-provided `ArrayAccess` roots now append scalar
+  values through statically proven by-reference backing buckets instead of
+  falling into plain-array/object errors. Direct object-property suffix
+  payloads such as `$holder->bag["outer"][]["leaf"] = $value` and the same
+  magic-provided `ArrayAccess` shape wrap the appended value correctly and
+  preserve copied nested reference slots. Direct root suffix syntax,
+  non-direct suffix syntax, arbitrary `ArrayAccess` method bodies, exact PHP
+  fatal text, complete alias lifetime/detach behavior, string COW identity,
+  and native reference lowering remain unsupported. Focused verification: raw
+  system PHP output matched the new `milestone1748` fixture; `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone1748` passed `1` fixture
+  with `1` system PHP comparison and `0` skips; adjacent
+  `scalar_arrayaccess_nested_appends_support_suffix_payloads` passed.
+
 - Added Lane 1747-C for scalar nested writes through currently proven
   `ArrayAccess` backing buckets. Direct `ArrayAccess`, property-held
   `ArrayAccess`, dynamic property-held `ArrayAccess`, non-direct holder,

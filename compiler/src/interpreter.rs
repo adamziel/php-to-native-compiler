@@ -14666,6 +14666,24 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
+                if let Some(Value::Object(array_access_object)) = scope.read_named(name) {
+                    if self
+                        .classes
+                        .implements_interface(array_access_object.class_id(), "ArrayAccess")
+                        && self.write_array_access_object_nested_append_with_reference_propagation(
+                            array_access_object,
+                            keys.clone(),
+                            &[],
+                            value.clone(),
+                            expr,
+                            array_literal_references.clone(),
+                            *span,
+                            scope,
+                        )?
+                    {
+                        return Ok(value);
+                    }
+                }
                 Self::write_nested_array_append(name, &keys, value.clone(), *span, scope)?;
                 Ok(value)
             }
@@ -15070,11 +15088,11 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
-                if matches!(value, Value::Array(_))
-                    && keys.is_empty()
+                if keys.is_empty()
                     && self.write_object_property_array_access_append_with_reference_propagation(
                         &temp_name,
                         property,
+                        &[],
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
@@ -15084,13 +15102,13 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && !keys.is_empty()
+                if !keys.is_empty()
                     && self
                         .write_object_property_array_access_nested_append_with_reference_propagation(
                             &temp_name,
                             property,
                             keys.clone(),
+                            &[],
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
@@ -15100,18 +15118,17 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && self.write_magic_get_array_access_append_with_reference_propagation(
-                        &temp_name,
-                        property,
-                        keys,
-                        value.clone(),
-                        expr,
-                        array_literal_references,
-                        *span,
-                        scope,
-                    )?
-                {
+                if self.write_magic_get_array_access_append_with_reference_propagation(
+                    &temp_name,
+                    property,
+                    keys,
+                    &[],
+                    value.clone(),
+                    expr,
+                    array_literal_references,
+                    *span,
+                    scope,
+                )? {
                     return Ok(value);
                 }
                 Err(runtime_error(
@@ -15239,11 +15256,11 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
-                if matches!(value, Value::Array(_))
-                    && keys.is_empty()
+                if keys.is_empty()
                     && self.write_object_property_array_access_append_with_reference_propagation(
                         &temp_name,
                         &property,
+                        &[],
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
@@ -15253,13 +15270,13 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && !keys.is_empty()
+                if !keys.is_empty()
                     && self
                         .write_object_property_array_access_nested_append_with_reference_propagation(
                             &temp_name,
                             &property,
                             keys.clone(),
+                            &[],
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
@@ -15269,18 +15286,17 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && self.write_magic_get_array_access_append_with_reference_propagation(
-                        &temp_name,
-                        &property,
-                        keys,
-                        value.clone(),
-                        expr,
-                        array_literal_references,
-                        *span,
-                        scope,
-                    )?
-                {
+                if self.write_magic_get_array_access_append_with_reference_propagation(
+                    &temp_name,
+                    &property,
+                    keys,
+                    &[],
+                    value.clone(),
+                    expr,
+                    array_literal_references,
+                    *span,
+                    scope,
+                )? {
                     return Ok(value);
                 }
                 Err(runtime_error(
@@ -15314,12 +15330,11 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
-                if suffix_keys.is_empty()
-                    && keys.is_empty()
-                    && matches!(value, Value::Array(_))
+                if keys.is_empty()
                     && self.write_object_property_array_access_append_with_reference_propagation(
                         object,
                         property,
+                        &suffix_keys,
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
@@ -15329,14 +15344,13 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if suffix_keys.is_empty()
-                    && !keys.is_empty()
-                    && matches!(value, Value::Array(_))
+                if !keys.is_empty()
                     && self
                         .write_object_property_array_access_nested_append_with_reference_propagation(
                             object,
                             property,
                             keys.clone(),
+                            &suffix_keys,
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
@@ -15346,19 +15360,17 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if suffix_keys.is_empty()
-                    && matches!(value, Value::Array(_))
-                    && self.write_magic_get_array_access_append_with_reference_propagation(
-                        object,
-                        property,
-                        keys.clone(),
-                        value.clone(),
-                        expr,
-                        array_literal_references.clone(),
-                        *span,
-                        scope,
-                    )?
-                {
+                if self.write_magic_get_array_access_append_with_reference_propagation(
+                    object,
+                    property,
+                    keys.clone(),
+                    &suffix_keys,
+                    value.clone(),
+                    expr,
+                    array_literal_references.clone(),
+                    *span,
+                    scope,
+                )? {
                     return Ok(value);
                 }
                 if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
@@ -15439,10 +15451,10 @@ impl Interpreter {
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
                 if keys.is_empty()
-                    && matches!(value, Value::Array(_))
                     && self.write_object_property_array_access_append_with_reference_propagation(
                         object,
                         &property,
+                        &[],
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
@@ -15453,12 +15465,12 @@ impl Interpreter {
                     return Ok(value);
                 }
                 if !keys.is_empty()
-                    && matches!(value, Value::Array(_))
                     && self
                         .write_object_property_array_access_nested_append_with_reference_propagation(
                             object,
                             &property,
                             keys.clone(),
+                            &[],
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
@@ -15468,18 +15480,17 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
-                    && self.write_magic_get_array_access_append_with_reference_propagation(
-                        object,
-                        &property,
-                        keys.clone(),
-                        value.clone(),
-                        expr,
-                        array_literal_references.clone(),
-                        *span,
-                        scope,
-                    )?
-                {
+                if self.write_magic_get_array_access_append_with_reference_propagation(
+                    object,
+                    &property,
+                    keys.clone(),
+                    &[],
+                    value.clone(),
+                    expr,
+                    array_literal_references.clone(),
+                    *span,
+                    scope,
+                )? {
                     return Ok(value);
                 }
                 Err(runtime_error(
@@ -15700,6 +15711,7 @@ impl Interpreter {
         &mut self,
         object_name: &str,
         property: &str,
+        suffix_keys: &[ArrayKey],
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
@@ -15729,6 +15741,7 @@ impl Interpreter {
 
         self.write_array_access_object_append_with_reference_propagation(
             array_access_object,
+            suffix_keys,
             value,
             expr,
             array_literal_references,
@@ -15742,6 +15755,7 @@ impl Interpreter {
         object_name: &str,
         property: &str,
         keys: Vec<ArrayKey>,
+        suffix_keys: &[ArrayKey],
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
@@ -15776,6 +15790,7 @@ impl Interpreter {
         self.write_array_access_object_nested_append_with_reference_propagation(
             array_access_object,
             keys,
+            suffix_keys,
             value,
             expr,
             array_literal_references,
@@ -15875,6 +15890,7 @@ impl Interpreter {
         object_name: &str,
         property: &str,
         keys: Vec<ArrayKey>,
+        suffix_keys: &[ArrayKey],
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
@@ -15957,16 +15973,20 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?
                 {
                     Value::Array(_) | Value::Null => {
+                        let stored_value =
+                            Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
                         let alias = scope.append_object_property_array_offset_reference_alias(
                             root,
                             target_keys,
-                            value,
+                            stored_value,
                             span,
                         )?;
+                        let mut reference_keys = alias.keys;
+                        reference_keys.extend(suffix_keys.iter().cloned());
                         self.bind_or_mirror_array_references_to_alias_root(
                             expr,
                             alias.root,
-                            alias.keys,
+                            reference_keys,
                             array_literal_references,
                             scope,
                         )?;
@@ -15980,6 +16000,7 @@ impl Interpreter {
                     {
                         return self.write_array_access_object_append_with_reference_propagation(
                             object,
+                            suffix_keys,
                             value,
                             expr,
                             array_literal_references,
@@ -15997,6 +16018,7 @@ impl Interpreter {
                             .write_array_access_object_nested_append_with_reference_propagation(
                                 object,
                                 keys,
+                                suffix_keys,
                                 value,
                                 expr,
                                 array_literal_references,
@@ -16022,6 +16044,7 @@ impl Interpreter {
                 {
                     self.write_array_access_object_append_with_reference_propagation(
                         object,
+                        suffix_keys,
                         value,
                         expr,
                         array_literal_references,
@@ -16038,6 +16061,7 @@ impl Interpreter {
                     self.write_array_access_object_nested_append_with_reference_propagation(
                         object,
                         keys,
+                        suffix_keys,
                         value,
                         expr,
                         array_literal_references,
@@ -16049,13 +16073,20 @@ impl Interpreter {
                 Value::Array(_) | Value::Null => {
                     let temp_name = self.next_foreach_temporary_array_name();
                     scope.bind_static_to_cell(&temp_name, cell);
-                    let alias =
-                        scope.append_array_offset_reference_alias(&temp_name, keys, value, span)?;
+                    let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
+                    let alias = scope.append_array_offset_reference_alias(
+                        &temp_name,
+                        keys,
+                        stored_value,
+                        span,
+                    )?;
                     let root = scope.canonical_equivalent_static_array_alias_root(&alias.root);
+                    let mut reference_keys = alias.keys;
+                    reference_keys.extend(suffix_keys.iter().cloned());
                     self.bind_or_mirror_array_references_to_alias_root(
                         expr,
                         root,
-                        alias.keys,
+                        reference_keys,
                         array_literal_references,
                         scope,
                     )?;
@@ -16073,6 +16104,7 @@ impl Interpreter {
                 {
                     self.write_array_access_object_append_with_reference_propagation(
                         object,
+                        suffix_keys,
                         value,
                         expr,
                         array_literal_references,
@@ -16089,6 +16121,7 @@ impl Interpreter {
                     self.write_array_access_object_nested_append_with_reference_propagation(
                         object,
                         keys,
+                        suffix_keys,
                         value,
                         expr,
                         array_literal_references,
@@ -16529,6 +16562,7 @@ impl Interpreter {
         &mut self,
         array_access_object: PhpObject,
         keys: Vec<ArrayKey>,
+        suffix_keys: &[ArrayKey],
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
@@ -16562,16 +16596,19 @@ impl Interpreter {
             span,
             scope,
         )?;
+        let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
         let target_alias = scope.append_object_property_array_offset_reference_alias(
             parent_alias.root,
             parent_alias.keys,
-            value,
+            stored_value,
             span,
         )?;
+        let mut reference_keys = target_alias.keys;
+        reference_keys.extend(suffix_keys.iter().cloned());
         self.bind_or_mirror_array_references_to_alias_root(
             expr,
             target_alias.root,
-            target_alias.keys,
+            reference_keys,
             array_literal_references,
             scope,
         )?;
@@ -16581,6 +16618,7 @@ impl Interpreter {
     fn write_array_access_object_append_with_reference_propagation(
         &mut self,
         array_access_object: PhpObject,
+        suffix_keys: &[ArrayKey],
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
@@ -16603,9 +16641,10 @@ impl Interpreter {
                 keys: reference_keys.clone(),
             };
             scope.materialize_array_offset_alias(&alias, span)?;
+            let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, value.clone(), span)?;
             if !scope.write_array_offset_alias_checked_with_object_type_resolver(
                 &alias,
-                value.clone(),
+                stored_value,
                 span,
                 &|object, type_name| self.object_satisfies_live_property_type(object, type_name),
             )? {
@@ -16617,20 +16656,23 @@ impl Interpreter {
                     ),
                 ));
             }
+            let mut target_keys = reference_keys.clone();
+            target_keys.extend(suffix_keys.iter().cloned());
             self.bind_or_mirror_array_references_to_alias_root(
                 expr,
                 root,
-                reference_keys,
+                target_keys,
                 array_literal_references,
                 scope,
             )?;
             return Ok(true);
         }
 
+        let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
         self.call_array_access_method(
             array_access_object.clone(),
             "offsetSet",
-            vec![Self::array_key_value(None), value],
+            vec![Self::array_key_value(None), stored_value],
             span,
         )?;
         if let Some((root, reference_keys)) = self.array_access_offset_set_alias_for_object(
@@ -16641,10 +16683,12 @@ impl Interpreter {
             span,
             scope,
         )? {
+            let mut target_keys = reference_keys.clone();
+            target_keys.extend(suffix_keys.iter().cloned());
             self.bind_or_mirror_array_references_to_alias_root(
                 expr,
                 root,
-                reference_keys,
+                target_keys,
                 array_literal_references,
                 scope,
             )?;

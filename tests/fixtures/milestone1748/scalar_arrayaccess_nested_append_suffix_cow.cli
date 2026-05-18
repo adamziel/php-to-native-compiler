@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1748/scalar_arrayaccess_nested_append_suffix_cow.php

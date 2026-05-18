@@ -19686,6 +19686,18 @@ handled.
   after `[]`, exact PHP fatal text, complete alias lifetime/detach behavior,
   string COW identity, and native reference lowering named as unsupported.
 
+## Lane 1748-C: Scalar Nested ArrayAccess Appends and Direct Suffix Payloads
+
+- [x] Runtime/interpreter/tests/docs lane: broaden nested append writes through
+  currently proven by-reference `ArrayAccess` backing buckets to scalar
+  payloads and the currently parsed direct object-property suffix shape after
+  `[]`. Cover direct `ArrayAccess`, property-held, non-direct holder, dynamic
+  non-direct holder, and magic-provided `ArrayAccess` roots with system-PHP
+  fixture comparison, plus a focused object-model regression. Keep direct root
+  suffix syntax, non-direct suffix syntax, arbitrary `ArrayAccess` method
+  bodies, exact PHP fatal text, complete alias lifetime/detach behavior,
+  string COW identity, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

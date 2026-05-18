@@ -6805,6 +6805,63 @@ $bag["outer"]["copy"] = array("bad");
 }
 
 #[test]
+fn scalar_arrayaccess_nested_appends_support_suffix_payloads() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = array();
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    #[ReturnTypeWillChange]
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+class Holder {
+    public $bag;
+}
+
+class MagicHolder {
+    public $bag;
+    public function __get($name) { return $this->bag; }
+}
+
+$bag = new Bag();
+$bag->items["outer"] = array();
+$bag["outer"][] = "direct";
+$holder = new Holder();
+$holder->bag = $bag;
+$holder->bag["outer"][] = "property";
+$holder->bag["outer"][]["leaf"] = "suffix";
+$magic = new MagicHolder();
+$magic->bag = $bag;
+$magic->missing["outer"][] = "magic";
+$magic->missing["outer"][]["leaf"] = "magic-suffix";
+echo $bag->items["outer"][0],
+    "|",
+    $bag->items["outer"][1],
+    "|",
+    $bag->items["outer"][2]["leaf"],
+    "|",
+    $bag->items["outer"][3],
+    "|",
+    $bag->items["outer"][4]["leaf"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "direct|property|suffix|magic|magic-suffix"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn typed_property_reference_writes_use_live_class_alias_metadata() {
     let execution = run_source(
         r#"<?php

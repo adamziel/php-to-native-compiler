@@ -1084,9 +1084,11 @@
   empty append and focused one-key and two-key parent append shapes,
   property-held `ArrayAccess` nested append paths are covered for direct,
   non-direct, and dynamic holder roots when the parent bucket is selected
-  through the exact public by-reference `offsetGet()` bridge and the append
-  has no suffix offsets after `[]`. Magic-property `ArrayAccess` nested
-  append paths beyond the focused
+  through the exact public by-reference `offsetGet()` bridge. The covered
+  append path accepts scalar payloads, array payloads with copied nested
+  references, and the currently parsed direct object-property suffix payload
+  shape after `[]`, such as `$holder->bag["outer"][]["leaf"] = $value`.
+  Magic-property `ArrayAccess` nested append paths beyond the focused
   by-reference or by-value-object intermediate `offsetGet()` bucket, tested
   plain-array suffix shapes, the one tested mixed nested `ArrayAccess` append
   chain, and the tested mixed nested by-reference/by-value magic
@@ -4493,7 +4495,8 @@
   plain-array targets can bind through the existing supported `__get()`
   backing bucket for the same keyed false-parent materialization shape. These
   are substrate for later PHP-visible reference containers and COW separation;
-  broader non-direct append target forms, append suffixes after `[]`,
+  broader non-direct append target forms, direct root and non-direct suffix
+  syntax after `[]`,
   arbitrary magic/`ArrayAccess` method bodies, scalar nested `ArrayAccess`
   writes outside the current proven backing-bucket paths, broader mixed array element
   bindings, arbitrary writes through remaining complex typed-property alias
