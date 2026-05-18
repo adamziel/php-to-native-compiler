@@ -19120,6 +19120,27 @@ handled.
   overwrite/error parity, full references/COW, and native reference lowering
   named as unsupported.
 
+## Lane 1708-C: Magic Backing Array Reference Source Alias
+
+- [x] Runtime/tests/docs lane: extend the analyzed backing-array
+  by-reference `__get()` body to statement-form selected reference sources,
+  such as `$alias =& $box->missing["outer"]; $alias[] = $array;`, when
+  `__get($name)` has the bounded body
+  `return $this->store[$name];`. The covered shape binds the local alias to
+  the object-property backing slot under private `$store` before later
+  same-class method writes through
+  `$this->store["missing"]["outer"][0]...` resynchronize copied nested
+  reference slots with their original variables. Keep append reference-source
+  variants for this exact body, literal prefix/suffix reference-source
+  variants, dynamic or repeated parameter keys, non-literal keys, broader
+  backing-array offset return expressions, dynamic property-return
+  expressions beyond the exact `__get()` parameter form, broader
+  private/protected `$this` routes, arbitrary `__get()` return expressions,
+  broader method-local alias lifetimes, arbitrary method-return/factory-root
+  variants, by-value terminal/plain-array mutation, arbitrary side-effecting
+  or broader `offsetGet()` bodies, scalar parent overwrite/error parity, full
+  references/COW, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

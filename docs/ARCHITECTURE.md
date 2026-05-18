@@ -1014,7 +1014,12 @@ plus literal keys before or after that parameter, such as
 requested magic property are prepended under that backing property before
 applying the append path. It appends into the corresponding
 object-property alias root and mirrors copied reference-slot metadata there,
-without creating a general object-property cell model. The same
+without creating a general object-property cell model. Statement-form
+reference sources below the same analyzed backing-array `__get()` body, such
+as `$alias =& $box->missing["outer"];`, now reuse that object-property alias
+root and prefix-key analysis before binding the local alias, instead of
+executing the reference return body through the direct-variable-only fallback.
+The same
 object-property-root path is tested through a two-key parent append, so
 `$box->missing["outer"]["inner"][]` attaches metadata below
 `$box->store["outer"]["inner"]`. For the private route, instance-method

@@ -10840,6 +10840,8 @@ impl Interpreter {
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
+                ensure_user_function_arity(function, 1, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
 
                 if !function.returns_by_reference {
                     match self.call_magic_get_property_value(object, property, span)? {
@@ -10874,6 +10876,63 @@ impl Interpreter {
                                 ),
                             ));
                         }
+                    }
+                }
+                ensure_supported_reference_return_function_metadata(function, span)?;
+
+                if let Some(return_target) =
+                    self.reference_return_this_property_name(function, property, span)?
+                {
+                    let protected_class_ids = self.protected_class_ids_for_context(class_id);
+                    let property_visibility = object
+                        .property_visibility_from_context(
+                            &return_target.property,
+                            Some(class_id),
+                            &protected_class_ids,
+                        )
+                        .map_err(|error| runtime_error(span, error))?;
+                    let root = if property_visibility == Visibility::Public {
+                        ArrayOffsetAliasRoot::PublicObjectProperty {
+                            object: object_name.to_string(),
+                            property: return_target.property.clone(),
+                        }
+                    } else {
+                        ArrayOffsetAliasRoot::ContextObjectProperty {
+                            object: object_name.to_string(),
+                            property: return_target.property.clone(),
+                            current_class_id: Some(class_id),
+                            protected_class_ids: protected_class_ids.clone(),
+                        }
+                    };
+                    let root = scope.canonical_equivalent_object_property_alias_root(&root);
+                    let mut target_keys = return_target.prefix_keys.clone();
+                    target_keys.extend(keys.iter().cloned());
+                    match object
+                        .read_property_from_context(
+                            &return_target.property,
+                            Some(class_id),
+                            &protected_class_ids,
+                        )
+                        .map_err(|error| runtime_error(span, error))?
+                    {
+                        Value::Array(_) | Value::Null => {
+                            let alias = ArrayOffsetAlias {
+                                root,
+                                keys: target_keys,
+                            };
+                            scope.materialize_array_offset_alias(&alias, span)?;
+                            let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
+                                runtime_error(
+                                    span,
+                                    RuntimeError::invalid_array_access(
+                                        "cannot bind missing magic __get object-property array offset reference source"
+                                            .to_string(),
+                                    ),
+                                )
+                            })?;
+                            return Ok(Some((alias, value)));
+                        }
+                        _ => {}
                     }
                 }
 
@@ -10973,6 +11032,66 @@ impl Interpreter {
 
                 if function.returns_by_reference {
                     ensure_supported_reference_return_function_metadata(function, span)?;
+                    if allow_array_fallback && !append_array_fallback {
+                        if let Some(return_target) =
+                            self.reference_return_this_property_name(function, property, span)?
+                        {
+                            let protected_class_ids =
+                                self.protected_class_ids_for_context(class_id);
+                            let property_visibility = holder
+                                .property_visibility_from_context(
+                                    &return_target.property,
+                                    Some(class_id),
+                                    &protected_class_ids,
+                                )
+                                .map_err(|error| runtime_error(span, error))?;
+                            let root = if property_visibility == Visibility::Public {
+                                ArrayOffsetAliasRoot::PublicObjectProperty {
+                                    object: object_name.to_string(),
+                                    property: return_target.property.clone(),
+                                }
+                            } else {
+                                ArrayOffsetAliasRoot::ContextObjectProperty {
+                                    object: object_name.to_string(),
+                                    property: return_target.property.clone(),
+                                    current_class_id: Some(class_id),
+                                    protected_class_ids: protected_class_ids.clone(),
+                                }
+                            };
+                            let root = scope.canonical_equivalent_object_property_alias_root(&root);
+                            let mut target_keys = return_target.prefix_keys.clone();
+                            target_keys.extend(keys.iter().cloned());
+                            match holder
+                                .read_property_from_context(
+                                    &return_target.property,
+                                    Some(class_id),
+                                    &protected_class_ids,
+                                )
+                                .map_err(|error| runtime_error(span, error))?
+                            {
+                                Value::Array(_) | Value::Null => {
+                                    let alias = ArrayOffsetAlias {
+                                        root,
+                                        keys: target_keys,
+                                    };
+                                    scope.materialize_array_offset_alias(&alias, span)?;
+                                    if scope.read_array_offset_alias(&alias).is_none() {
+                                        return Err(runtime_error(
+                                            span,
+                                            RuntimeError::invalid_array_access(
+                                                "cannot bind missing magic __get object-property array offset reference source"
+                                                    .to_string(),
+                                            ),
+                                        ));
+                                    }
+                                    return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(
+                                        alias,
+                                    )));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                     let cell = self.call_reference_return_function_with_checked_values(
                         function,
                         vec![Value::String(property.to_string())],

@@ -26,6 +26,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T13:18:00+02:00
+
+- Checkpoint before this task: `dcf6903a runtime: support magic get backing
+  prefix writes`, pushed to `origin/master`.
+- Task attempted: Lane 1708-C focused statement-form reference-source support
+  for magic `__get()` backing-array offset bodies,
+  `return $this->store[$name];`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1708/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: a temporary PHP/`phpc run` probe
+  for `$alias =& $box->missing["outer"]; $alias[] = $array` passed and
+  matched system PHP.
+- Semantic gap reduced: direct statement-form selected reference sources
+  below the analyzed backing-array `__get()` body can now bind to the private
+  object-property backing slot under `$this->store[$name]`, so later
+  same-class method writes resynchronize copied nested reference slots with
+  their original variables.
+- Remaining semantic gaps: append reference-source variants for this exact
+  body, literal prefix/suffix reference-source variants, dynamic or repeated
+  parameter keys, non-literal keys, broader backing-array offset return
+  expressions, dynamic property-return expressions beyond the exact `__get()`
+  parameter form, broader private/protected `$this` routes, arbitrary
+  `__get()` return expressions, broader method-local alias lifetimes,
+  arbitrary method-return/factory-root variants, by-value terminal/plain-array
+  mutation, arbitrary side-effecting or broader `offsetGet()` bodies, scalar
+  parent overwrite/error parity, full references/COW, and native reference
+  lowering remain unsupported.
+- Next concrete task: run PHP syntax checks, focused milestone1708 tests,
+  milestone1708 fixture comparison, `cargo check`, `cargo fmt --check`,
+  `git diff --check`, adjacent lane checks, then checkpoint with
+  `tools/checkpoint.sh "runtime: support magic backing array reference sources"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T12:47:05+02:00
 
 - Checkpoint before this task: `4187471e runtime: support magic get backing

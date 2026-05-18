@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Lane 1708-C focused statement-form reference-source support for the
+  magic `__get()` backing-array offset body
+  `return $this->store[$name];`. Direct
+  `$alias =& $box->missing["outer"]; $alias[] = $array` now binds the alias
+  to the analyzed private object-property backing slot
+  `$this->store["missing"]["outer"]`, stores copied nested reference-slot
+  metadata there, and later same-class method writes through that path
+  resynchronize the original referenced variables. This does not add append
+  reference-source variants for this exact body, literal prefix/suffix
+  reference-source variants, dynamic or repeated parameter keys, non-literal
+  keys, broader backing-array offset return expressions, dynamic
+  property-return expressions beyond the exact `__get()` parameter form,
+  broader private/protected `$this` routes, arbitrary `__get()` return
+  expressions, broader method-local alias lifetimes, arbitrary
+  method-return/factory-root variants, by-value terminal/plain-array
+  mutation, arbitrary side-effecting or broader `offsetGet()` bodies, scalar
+  parent overwrite/error parity, full references/COW, or native reference
+  lowering. Focused verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1708` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1708`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1707-C focused `__get()` backing-array offset return support with
   a literal prefix bucket before the magic property key. A by-reference
   `__get($name)` body of `return $this->store["bucket"][$name];` is now

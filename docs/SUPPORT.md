@@ -953,7 +953,11 @@
   or string keys before or after the `$name` parameter are also covered, such
   as `return $this->store["bucket"][$name];` and
   `return $this->store[$name]["bucket"];`, with those literals preserved in
-  the backing-property prefix path. Broader
+  the backing-property prefix path. Statement-form reference sources below
+  that same backing-array body are also covered for selected array offsets,
+  such as `$alias =& $box->missing["outer"]; $alias[] = $array`; the alias
+  binds directly to the analyzed object-property backing slot before later
+  method-local writes synchronize copied nested reference slots. Broader
   private/protected
   `$this` property routes, dynamic property-return expressions beyond that
   exact parameter form, backing-array offset return expressions beyond that
