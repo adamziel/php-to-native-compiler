@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1746/typed_property_reference_arrayaccess_backing_error.php

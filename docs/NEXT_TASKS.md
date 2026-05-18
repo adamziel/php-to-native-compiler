@@ -19663,6 +19663,18 @@ handled.
   behavior, string COW identity, and native reference lowering named as
   unsupported.
 
+## Lane 1746-C: Checked Magic/ArrayAccess Backing-Bucket Writes
+
+- [x] Runtime/interpreter/tests/docs lane: route covered statically proven
+  magic/`ArrayAccess` backing-bucket writes through the checked alias helper.
+  Cover a property-held `ArrayAccess` nested backing write that reaches an
+  `int` typed-property reference slot and rejects an array value, with raw
+  system-PHP failure evidence and a phpc-only fixture because exact PHP fatal
+  text remains unsupported. Keep broader scalar nested `ArrayAccess` writes,
+  arbitrary magic/`ArrayAccess` method bodies, exact PHP fatal text, complete
+  alias lifetime/detach behavior, string COW identity, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

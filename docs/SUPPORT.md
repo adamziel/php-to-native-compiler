@@ -4467,7 +4467,11 @@
   reference-backed array slot through a local alias variable, by-reference
   function writeback, `$GLOBALS` alias root, or alias-rooted array-offset
   write now routes through the same typed-reference check for the covered
-  direct/nested/object-property array slot shapes. Unsetting a covered
+  direct/nested/object-property array slot shapes. The same checked helper is
+  also used by the covered statically proven magic/`ArrayAccess`
+  backing-bucket writes; focused evidence covers a property-held
+  `ArrayAccess` nested backing write rejecting an array value before it can
+  overwrite an `int` typed-property reference slot. Unsetting a covered
   promoted reference-backed object property detaches that property slot from
   the alias cell instead of writing through the alias. Covered public,
   typed public, clone-shared public, and method-local private property aliases
@@ -4486,7 +4490,8 @@
   backing bucket for the same keyed false-parent materialization shape. These
   are substrate for later PHP-visible reference containers and COW separation;
   broader non-direct append target forms, append suffixes after `[]`,
-  arbitrary magic/`ArrayAccess` method bodies, broader mixed array element
+  arbitrary magic/`ArrayAccess` method bodies, scalar nested `ArrayAccess`
+  writes outside the current covered paths, broader mixed array element
   bindings, arbitrary writes through remaining complex typed-property alias
   sinks, exact PHP fatal text for invalid typed-reference writes, arbitrary
   dynamic-property policy beyond the current dynamic-capable object subset,

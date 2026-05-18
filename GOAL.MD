@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1745:
+The current in-progress implementation frontier is Lane 1746:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -327,6 +327,11 @@ The current in-progress implementation frontier is Lane 1745:
   function writeback into such slots, `$GLOBALS` alias roots, and alias-rooted
   array-offset writes now coerce or reject through the original typed-property
   reference constraint instead of overwriting the cell unchecked.
+- Lane 1746 extends that checked-write path to statically proven
+  magic/`ArrayAccess` backing-bucket writes that reuse the same alias helper.
+  The covered evidence pins property-held `ArrayAccess` nested backing writes
+  that would otherwise overwrite an `int` typed-property reference slot with
+  an array value.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

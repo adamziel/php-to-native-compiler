@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 1746-C for checked typed-reference failures through a statically
+  proven property-held `ArrayAccess` backing bucket. The exact backing-bucket
+  alias writes used by covered magic/`ArrayAccess` bridges now call the
+  checked alias helper, so a property-held `ArrayAccess` nested write that
+  reaches an `int` typed-property reference slot rejects an array value
+  instead of overwriting unchecked. Raw system PHP fails the same assignment
+  with its native fatal text; the fixture is `phpc-only` because exact PHP
+  fatal text remains unsupported. Broader scalar nested `ArrayAccess` writes,
+  arbitrary magic/`ArrayAccess` method bodies, exact PHP fatal text, complete
+  alias lifetime/detach behavior, string COW identity, and native reference
+  lowering remain unsupported. Focused verification: raw system PHP failed
+  `tests/fixtures/milestone1746/typed_property_reference_arrayaccess_backing_error.php`
+  with a typed-reference fatal; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1746` passed; adjacent
+  `typed_property_reference_arrayaccess_backing_writes_keep_property_enforcement`
+  passed.
+
 - Added Lane 1745-C for checked writes through alias-backed array-slot paths
   that reuse typed property reference cells. Local variables bound to
   reference-backed array slots, by-reference function writeback into those

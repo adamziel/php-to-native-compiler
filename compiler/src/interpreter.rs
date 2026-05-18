@@ -14362,7 +14362,14 @@ impl Interpreter {
                                 keys: reference_keys.clone(),
                             };
                             scope.materialize_array_offset_alias(&alias, *span)?;
-                            if !scope.write_array_offset_alias(&alias, value.clone()) {
+                            if !scope.write_array_offset_alias_checked_with_object_type_resolver(
+                                &alias,
+                                value.clone(),
+                                *span,
+                                &|object, type_name| {
+                                    self.object_satisfies_live_property_type(object, type_name)
+                                },
+                            )? {
                                 return Err(runtime_error(
                                     *span,
                                     RuntimeError::invalid_array_access(
@@ -16196,7 +16203,14 @@ impl Interpreter {
                             keys: target_keys.clone(),
                         };
                         scope.materialize_array_offset_alias(&alias, span)?;
-                        if !scope.write_array_offset_alias(&alias, value.clone()) {
+                        if !scope.write_array_offset_alias_checked_with_object_type_resolver(
+                            &alias,
+                            value.clone(),
+                            span,
+                            &|object, type_name| {
+                                self.object_satisfies_live_property_type(object, type_name)
+                            },
+                        )? {
                             return Err(runtime_error(
                                 span,
                                 RuntimeError::invalid_array_access(
@@ -16240,7 +16254,14 @@ impl Interpreter {
                             keys: keys.clone(),
                         };
                         scope.materialize_array_offset_alias(&alias, span)?;
-                        if !scope.write_array_offset_alias(&alias, value.clone()) {
+                        if !scope.write_array_offset_alias_checked_with_object_type_resolver(
+                            &alias,
+                            value.clone(),
+                            span,
+                            &|object, type_name| {
+                                self.object_satisfies_live_property_type(object, type_name)
+                            },
+                        )? {
                             return Err(runtime_error(
                                 span,
                                 RuntimeError::invalid_array_access(
@@ -16578,7 +16599,12 @@ impl Interpreter {
                 keys: reference_keys.clone(),
             };
             scope.materialize_array_offset_alias(&alias, span)?;
-            if !scope.write_array_offset_alias(&alias, value.clone()) {
+            if !scope.write_array_offset_alias_checked_with_object_type_resolver(
+                &alias,
+                value.clone(),
+                span,
+                &|object, type_name| self.object_satisfies_live_property_type(object, type_name),
+            )? {
                 return Err(runtime_error(
                     span,
                     RuntimeError::invalid_array_access(
@@ -16697,7 +16723,12 @@ impl Interpreter {
             span,
             scope,
         )?;
-        if !scope.write_array_offset_alias(&target_alias, value) {
+        if !scope.write_array_offset_alias_checked_with_object_type_resolver(
+            &target_alias,
+            value,
+            span,
+            &|object, type_name| self.object_satisfies_live_property_type(object, type_name),
+        )? {
             return Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access(
