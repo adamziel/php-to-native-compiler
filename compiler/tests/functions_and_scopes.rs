@@ -7021,7 +7021,7 @@ $alias =& $box->missing;
     assert_eq!(error.column, 9);
     assert_eq!(
         error.message,
-        "unsupported call __get(): reference returns are only implemented for direct variable return expressions"
+        "unsupported call __get(): reference returns are only implemented for direct variable and direct array-offset return expressions"
     );
 }
 

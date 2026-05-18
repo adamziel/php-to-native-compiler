@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
@@ -8549,13 +8550,15 @@ struct TempPath {
 #[cfg(unix)]
 impl TempPath {
     fn with_cc_only(workspace_root: &Path, cc_path: &Path) -> Self {
+        static TEMP_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock is after Unix epoch")
             .as_nanos();
+        let counter = TEMP_PATH_COUNTER.fetch_add(1, Ordering::Relaxed);
         let path = workspace_root.join("target").join(format!(
-            "native-assembly-cc-fallback-{}-{timestamp}",
-            std::process::id()
+            "native-assembly-cc-fallback-{}-{timestamp}-{counter}",
+            std::process::id(),
         ));
         fs::create_dir_all(&path).expect("temporary cc-only PATH directory can be created");
         std::os::unix::fs::symlink(cc_path, path.join("cc"))

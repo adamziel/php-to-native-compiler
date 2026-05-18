@@ -19884,6 +19884,17 @@ handled.
   magic/`ArrayAccess` string-offset paths, and native reference/string COW
   lowering named as unsupported.
 
+## Lane 1765-C: Dynamic Magic/ArrayAccess Reference-Return Bodies
+
+- [x] Runtime/interpreter/tests/docs lane: route public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` array-offset
+  returns through the assignment-capable reference-return executor, so
+  supported top-level method-body statements, side effects, missing-bucket
+  initialization, and local backing aliases execute before the returned bucket
+  is bound. Keep nested-control-flow returns, arbitrary unsupported PHP
+  syntax, broader magic roots, and native reference lowering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

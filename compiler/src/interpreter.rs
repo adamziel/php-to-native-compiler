@@ -4732,6 +4732,7 @@ enum ReferenceReturnLocalBinding {
         root_name: String,
         keys: Vec<ArrayKey>,
     },
+    ArrayOffsetAliases(Vec<ArrayOffsetAlias>),
     ObjectPropertyArrayOffset(ArrayOffsetAlias),
 }
 
@@ -13050,31 +13051,29 @@ impl Interpreter {
         ensure_user_function_arity(function, 1, span)?;
         ensure_supported_reference_return_function_metadata(function, span)?;
 
-        let return_target = self.array_access_offset_get_reference_target(function, span)?;
-
-        let protected_class_ids = self.protected_class_ids_for_context(class_id);
-        let property_visibility = object
-            .property_visibility_from_context(
-                &return_target.property,
-                Some(class_id),
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))?;
-        let root = if property_visibility == Visibility::Public {
-            ArrayOffsetAliasRoot::PublicObjectProperty {
-                object: object_name.clone(),
-                property: return_target.property.clone(),
-            }
-        } else {
-            ArrayOffsetAliasRoot::ContextObjectProperty {
-                object: object_name.clone(),
-                property: return_target.property.clone(),
-                current_class_id: Some(class_id),
-                protected_class_ids: protected_class_ids.clone(),
-            }
-        };
-
         if !function.returns_by_reference {
+            let return_target = self.array_access_offset_get_reference_target(function, span)?;
+            let protected_class_ids = self.protected_class_ids_for_context(class_id);
+            let property_visibility = object
+                .property_visibility_from_context(
+                    &return_target.property,
+                    Some(class_id),
+                    &protected_class_ids,
+                )
+                .map_err(|error| runtime_error(span, error))?;
+            let root = if property_visibility == Visibility::Public {
+                ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: object_name.clone(),
+                    property: return_target.property.clone(),
+                }
+            } else {
+                ArrayOffsetAliasRoot::ContextObjectProperty {
+                    object: object_name.clone(),
+                    property: return_target.property.clone(),
+                    current_class_id: Some(class_id),
+                    protected_class_ids: protected_class_ids.clone(),
+                }
+            };
             if keys.len() > 1 {
                 let first_keys =
                     Self::array_access_offset_get_reference_keys(&return_target, &keys[..1]);
@@ -13110,6 +13109,110 @@ impl Interpreter {
                 ),
             ));
         }
+
+        let first_key = keys.first().cloned().ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind empty ArrayAccess reference source".to_string(),
+                ),
+            )
+        })?;
+        let binding = match self.call_array_access_offset_get_reference_return_binding(
+            object.clone(),
+            function,
+            Self::array_key_value(Some(first_key)),
+            class_id,
+            span,
+            scope,
+        ) {
+            Ok(binding) => binding,
+            Err(dynamic_error) => {
+                if let Ok(result) = self.static_array_access_reference_source_alias_for_object(
+                    object.clone(),
+                    object_name.clone(),
+                    keys.clone(),
+                    function,
+                    class_id,
+                    span,
+                    scope,
+                ) {
+                    return Ok(result);
+                }
+                return Err(dynamic_error);
+            }
+        };
+        let first_value = self.read_reference_return_binding_value(function, &binding, scope)?;
+        if keys.len() > 1 {
+            if let Value::Object(nested_object) = first_value {
+                if self
+                    .classes
+                    .implements_interface(nested_object.class_id(), "ArrayAccess")
+                {
+                    let hidden_name =
+                        self.hidden_array_access_reference_object_name(&nested_object);
+                    scope.write_static(&hidden_name, Value::Object(nested_object.clone()));
+                    return self.evaluate_array_access_reference_source_alias_for_object(
+                        nested_object,
+                        hidden_name,
+                        keys[1..].to_vec(),
+                        span,
+                        scope,
+                    );
+                }
+            }
+        }
+        let alias = self.reference_return_binding_array_alias_with_suffix(
+            binding,
+            &keys[1..],
+            span,
+            scope,
+        )?;
+        scope.materialize_array_offset_alias(&alias, span)?;
+        let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind missing ArrayAccess reference source".to_string(),
+                ),
+            )
+        })?;
+        Ok((alias, value))
+    }
+
+    fn static_array_access_reference_source_alias_for_object(
+        &mut self,
+        object: PhpObject,
+        object_name: String,
+        keys: Vec<ArrayKey>,
+        function: &FunctionDecl,
+        class_id: ClassId,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(ArrayOffsetAlias, Value)> {
+        let return_target = self.array_access_offset_get_reference_target(function, span)?;
+
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        let property_visibility = object
+            .property_visibility_from_context(
+                &return_target.property,
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        let root = if property_visibility == Visibility::Public {
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.clone(),
+                property: return_target.property.clone(),
+            }
+        } else {
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object: object_name.clone(),
+                property: return_target.property.clone(),
+                current_class_id: Some(class_id),
+                protected_class_ids: protected_class_ids.clone(),
+            }
+        };
 
         if keys.len() > 1 {
             let first_keys =
@@ -13150,6 +13253,230 @@ impl Interpreter {
             )
         })?;
         Ok((alias, value))
+    }
+
+    fn call_array_access_offset_get_reference_return_binding(
+        &mut self,
+        object: PhpObject,
+        function: &FunctionDecl,
+        key: Value,
+        class_context: ClassId,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnBinding> {
+        self.ensure_user_function_call_depth(function, span)?;
+        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+            function,
+            vec![key],
+            Some(object.clone()),
+            Some(class_context),
+            Some(object.class_id()),
+            Vec::new(),
+            caller_scope,
+        )
+    }
+
+    fn read_reference_return_binding_value(
+        &self,
+        function: &FunctionDecl,
+        binding: &ReferenceReturnBinding,
+        scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        match binding {
+            ReferenceReturnBinding::Cell(cell) => Ok(cell.value_cloned()),
+            ReferenceReturnBinding::ArrayOffset(alias) => {
+                scope.read_array_offset_alias(alias).ok_or_else(|| {
+                    runtime_error(
+                        function.span,
+                        RuntimeError::invalid_array_access(
+                            "cannot read reference-return array-offset result".to_string(),
+                        ),
+                    )
+                })
+            }
+            ReferenceReturnBinding::ArrayOffsets(aliases) => {
+                let alias = aliases.first().ok_or_else(|| {
+                    runtime_error(
+                        function.span,
+                        RuntimeError::invalid_array_access(
+                            "cannot read empty reference-return array-offset result".to_string(),
+                        ),
+                    )
+                })?;
+                scope.read_array_offset_alias(alias).ok_or_else(|| {
+                    runtime_error(
+                        function.span,
+                        RuntimeError::invalid_array_access(
+                            "cannot read reference-return array-offset result".to_string(),
+                        ),
+                    )
+                })
+            }
+        }
+    }
+
+    fn reference_return_binding_cell(
+        &self,
+        function: &FunctionDecl,
+        binding: ReferenceReturnBinding,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        match binding {
+            ReferenceReturnBinding::Cell(cell) => Ok(cell),
+            ReferenceReturnBinding::ArrayOffset(alias) => {
+                scope.materialize_array_offset_alias(&alias, span)?;
+                scope
+                    .reference_cell_for_array_offset_alias_group(std::slice::from_ref(&alias))
+                    .ok_or_else(|| {
+                        runtime_error(
+                            function.span,
+                            RuntimeError::invalid_array_access(
+                                "cannot bind reference-return array-offset result".to_string(),
+                            ),
+                        )
+                    })
+            }
+            ReferenceReturnBinding::ArrayOffsets(aliases) => {
+                let alias = aliases.first().ok_or_else(|| {
+                    runtime_error(
+                        function.span,
+                        RuntimeError::invalid_array_access(
+                            "cannot bind empty reference-return array-offset result".to_string(),
+                        ),
+                    )
+                })?;
+                scope.materialize_array_offset_alias(alias, span)?;
+                scope
+                    .reference_cell_for_array_offset_alias_group(&aliases)
+                    .ok_or_else(|| {
+                        runtime_error(
+                            function.span,
+                            RuntimeError::invalid_array_access(
+                                "cannot bind reference-return array-offset result".to_string(),
+                            ),
+                        )
+                    })
+            }
+        }
+    }
+
+    fn reference_return_local_binding_cell(
+        &self,
+        function: &FunctionDecl,
+        binding: ReferenceReturnLocalBinding,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        match binding {
+            ReferenceReturnLocalBinding::Cell(cell) => Ok(cell),
+            ReferenceReturnLocalBinding::ArrayOffset { root_name, keys } => {
+                let alias = ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::StaticArray { name: root_name },
+                    keys,
+                };
+                self.reference_return_alias_cell(function, alias, span, scope)
+            }
+            ReferenceReturnLocalBinding::ArrayOffsetAliases(aliases) => {
+                self.reference_return_aliases_cell(function, aliases, span, scope)
+            }
+            ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(alias) => {
+                self.reference_return_alias_cell(function, alias, span, scope)
+            }
+        }
+    }
+
+    fn reference_return_alias_cell(
+        &self,
+        function: &FunctionDecl,
+        alias: ArrayOffsetAlias,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        self.reference_return_aliases_cell(function, vec![alias], span, scope)
+    }
+
+    fn reference_return_aliases_cell(
+        &self,
+        function: &FunctionDecl,
+        aliases: Vec<ArrayOffsetAlias>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        if aliases.is_empty() {
+            return Err(runtime_error(
+                function.span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind empty reference-return array-offset result".to_string(),
+                ),
+            ));
+        }
+        for alias in &aliases {
+            scope.materialize_array_offset_alias(alias, span)?;
+        }
+        scope
+            .reference_cell_for_array_offset_alias_group(&aliases)
+            .or_else(|| {
+                let reference = aliases
+                    .iter()
+                    .find_map(|alias| scope.read_array_offset_alias_reference_cell(alias))
+                    .or_else(|| {
+                        aliases
+                            .iter()
+                            .find_map(|alias| scope.read_array_offset_alias(alias))
+                            .map(PhpReferenceCell::new)
+                    })?;
+                for alias in &aliases {
+                    if !scope.promote_array_offset_alias_to_reference_cell(alias, reference.clone())
+                    {
+                        return None;
+                    }
+                }
+                Some(reference)
+            })
+            .ok_or_else(|| {
+                runtime_error(
+                    function.span,
+                    RuntimeError::invalid_array_access(
+                        "cannot bind reference-return array-offset result".to_string(),
+                    ),
+                )
+            })
+    }
+
+    fn reference_return_binding_array_alias_with_suffix(
+        &mut self,
+        binding: ReferenceReturnBinding,
+        suffix_keys: &[ArrayKey],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ArrayOffsetAlias> {
+        match binding {
+            ReferenceReturnBinding::Cell(cell) => {
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.bind_static_to_cell(&temp_name, cell);
+                Ok(ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::StaticArray { name: temp_name },
+                    keys: suffix_keys.to_vec(),
+                })
+            }
+            ReferenceReturnBinding::ArrayOffset(mut alias) => {
+                alias.keys.extend(suffix_keys.iter().cloned());
+                Ok(alias)
+            }
+            ReferenceReturnBinding::ArrayOffsets(mut aliases) => {
+                let Some(mut alias) = aliases.pop() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(
+                            "cannot bind empty reference-return array-offset result".to_string(),
+                        ),
+                    ));
+                };
+                alias.keys.extend(suffix_keys.iter().cloned());
+                Ok(alias)
+            }
+        }
     }
 
     fn evaluate_array_access_by_value_reference_source_value_for_object(
@@ -13288,6 +13615,15 @@ impl Interpreter {
             root: caller_scope.canonical_equivalent_object_property_alias_root(&root),
             keys: alias.keys.clone(),
         }
+    }
+
+    fn reference_return_alias_for_caller(
+        &self,
+        alias: &ArrayOffsetAlias,
+        object: &PhpObject,
+        caller_scope: &mut SymbolTable,
+    ) -> ArrayOffsetAlias {
+        self.object_property_reference_return_alias_for_caller(alias, object, caller_scope)
     }
 
     fn array_access_offset_get_reference_target(
@@ -25751,16 +26087,21 @@ impl Interpreter {
         self.ensure_user_function_call_depth(function, span)?;
 
         let called_class_id = object.class_id();
-        self.call_reference_return_function_with_checked_values(
-            function,
-            vec![Value::String(property.to_string())],
-            Some(object),
-            Some(class_id),
-            Some(called_class_id),
-            Vec::new(),
-            None,
-        )
-        .map(Some)
+        let hidden_name = self.hidden_reference_return_object_name(&object);
+        let mut temp_scope = SymbolTable::new_child(self.global_symbols.clone());
+        temp_scope.write_static(&hidden_name, Value::Object(object.clone()));
+        let binding = self
+            .call_reference_return_function_with_checked_values_for_reference_assignment(
+                function,
+                vec![Value::String(property.to_string())],
+                Some(object),
+                Some(class_id),
+                Some(called_class_id),
+                Vec::new(),
+                &mut temp_scope,
+            )?;
+        self.reference_return_binding_cell(function, binding, span, &mut temp_scope)
+            .map(Some)
     }
 
     fn call_magic_instance_method_with_values(
@@ -35508,13 +35849,19 @@ impl Interpreter {
                         )
                     })
             }
+            ReferenceReturnLocalBinding::ArrayOffsetAliases(aliases) => {
+                returned_this_object.as_ref().map(|object| {
+                    aliases
+                        .iter()
+                        .map(|alias| {
+                            self.reference_return_alias_for_caller(alias, object, caller_scope)
+                        })
+                        .collect()
+                })
+            }
             ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(alias) => {
                 returned_this_object.as_ref().map(|object| {
-                    vec![self.object_property_reference_return_alias_for_caller(
-                        alias,
-                        object,
-                        caller_scope,
-                    )]
+                    vec![self.reference_return_alias_for_caller(alias, object, caller_scope)]
                 })
             }
         });
@@ -35608,6 +35955,13 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         callable_name(&function.name),
                         "reference-return array-offset expressions require a covered by-reference array-slot argument in the current subset",
+                    ),
+                )),
+                ReferenceReturnLocalBinding::ArrayOffsetAliases(_) => Err(runtime_error(
+                    function.span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "reference-return local array-offset aliases require a covered object-property root in the current subset",
                     ),
                 )),
                 ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(_) => Err(runtime_error(
@@ -35806,7 +36160,16 @@ impl Interpreter {
 
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
-        let result = self.execute_reference_return_statements(function, &mut local_scope);
+        let local_binding_result =
+            self.execute_reference_return_assignment_statements(function, &mut local_scope);
+        let result = local_binding_result.and_then(|binding| {
+            self.reference_return_local_binding_cell(
+                function,
+                binding,
+                function.span,
+                &mut local_scope,
+            )
+        });
         let writeback_result = if result.is_ok() {
             let mut writeback_result = Ok(());
             if let Some(target_scope) = writeback_scope.as_deref_mut() {
@@ -35954,6 +36317,9 @@ impl Interpreter {
                 };
                 match value {
                     Expr::Variable(name, variable_span) => {
+                        if let Some(aliases) = scope.array_offset_aliases_for_name(name) {
+                            return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(aliases));
+                        }
                         return scope
                             .read_cell(name)
                             .map(ReferenceReturnLocalBinding::Cell)
@@ -35972,6 +36338,11 @@ impl Interpreter {
                                 .iter()
                                 .map(|index| self.evaluate_array_key(index, scope))
                                 .collect::<CompileResult<Vec<_>>>()?;
+                            if let Some(aliases) = scope.array_offset_aliases_for_name(root_name) {
+                                return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(
+                                    Self::array_offset_aliases_with_suffix(&aliases, &keys),
+                                ));
+                            }
                             let alias = ArrayOffsetAlias {
                                 root: ArrayOffsetAliasRoot::StaticArray {
                                     name: root_name.to_string(),
@@ -36066,75 +36437,6 @@ impl Interpreter {
             RuntimeError::unsupported_call(
                 callable_name(&function.name),
                 "reference-return functions must return a direct variable or direct array offset in the current subset",
-            ),
-        ))
-    }
-
-    fn execute_reference_return_statements(
-        &mut self,
-        function: &FunctionDecl,
-        scope: &mut SymbolTable,
-    ) -> CompileResult<VariableCell> {
-        for stmt in &function.body {
-            self.tick(stmt.span())?;
-            if let Stmt::Return { value, span } = stmt {
-                let Some(Expr::Variable(name, variable_span)) = value else {
-                    return Err(runtime_error(
-                        *span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "reference returns are only implemented for direct variable return expressions",
-                        ),
-                    ));
-                };
-                return scope.read_cell(name).ok_or_else(|| {
-                    runtime_error(*variable_span, RuntimeError::undefined_variable(name))
-                });
-            }
-
-            match self.execute_statement(stmt, scope)? {
-                Flow::Normal => {}
-                Flow::Return(_) => {
-                    return Err(runtime_error(
-                        stmt.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "reference returns through nested control flow are not implemented",
-                        ),
-                    ));
-                }
-                Flow::Break { span, .. } => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
-                    ));
-                }
-                Flow::Continue { span, .. } => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::invalid_loop_control(
-                            "continue cannot be used outside a loop",
-                        ),
-                    ));
-                }
-                Flow::Exit(_) => {
-                    return Err(runtime_error(
-                        stmt.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "exit during reference-return evaluation is not implemented",
-                        ),
-                    ));
-                }
-                Flow::Goto { label, span } => return Err(undefined_goto_label_error(span, &label)),
-            }
-        }
-
-        Err(runtime_error(
-            function.span,
-            RuntimeError::unsupported_call(
-                callable_name(&function.name),
-                "reference-return functions must return a direct variable in the current subset",
             ),
         ))
     }
@@ -44744,8 +45046,6 @@ impl Interpreter {
                 }
                 ensure_user_function_arity(function, args.len(), span)?;
                 ensure_supported_reference_return_function_metadata(function, span)?;
-                let return_target =
-                    self.array_access_offset_get_reference_target(function, span)?;
                 let key_value = args.first().ok_or_else(|| {
                     runtime_error(
                         span,
@@ -44756,39 +45056,18 @@ impl Interpreter {
                         ),
                     )
                 })?;
-                let key = match key_value {
-                    Value::Int(value) => ArrayKey::Int(*value),
-                    Value::String(value) => ArrayKey::string(value.clone()),
-                    other => {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::invalid_array_key(format!(
-                                "ArrayAccess reference offsetGet() key must be int or string in the current subset, got {}",
-                                other.type_name()
-                            )),
-                        ));
-                    }
-                };
-                let protected_class_ids = self.protected_class_ids_for_context(class_id);
-                let property_value = object
-                    .read_property_from_context(
-                        &return_target.property,
-                        Some(class_id),
-                        &protected_class_ids,
-                    )
-                    .map_err(|error| runtime_error(span, error))?;
-                let Value::Array(array) = property_value else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::invalid_array_access(format!(
-                            "cannot read offset on {}",
-                            property_value.type_name()
-                        )),
-                    ));
-                };
-                let keys = Self::array_access_offset_get_reference_keys(&return_target, &[key]);
-                return Ok(SymbolTable::read_nested_array_offset_alias(&array, &keys)
-                    .unwrap_or(Value::Null));
+                let hidden_name = self.hidden_array_access_reference_object_name(&object);
+                let mut temp_scope = SymbolTable::new_child(self.global_symbols.clone());
+                temp_scope.write_static(&hidden_name, Value::Object(object.clone()));
+                let binding = self.call_array_access_offset_get_reference_return_binding(
+                    object,
+                    function,
+                    key_value.clone(),
+                    class_id,
+                    span,
+                    &mut temp_scope,
+                )?;
+                return self.read_reference_return_binding_value(function, &binding, &temp_scope);
             }
 
             if method_name.eq_ignore_ascii_case("offsetGet")

@@ -221,6 +221,14 @@
   `$alias =& $holders["box"]->missing["slot"];` and
   `$alias =& $holders["box"]->{$name}["outer"]["slot"];` are also accepted for
   direct-variable reference assignment through the same temporary holder root.
+  Public by-reference `ArrayAccess::offsetGet()` reference sources now execute
+  supported top-level method-body statements before the return, so side
+  effects, missing-bucket initialization, and local aliases can participate in
+  the returned bucket binding. Covered examples include
+  `$this->hits[] = $offset; if (!isset($this->items[$offset])) { ... }`
+  followed by `$bucket =& $this->items[$offset]; return $bucket[$leaf];`.
+  Public by-reference `__get()` uses the same assignment-capable return path
+  for covered array-offset returns such as `return $this->store[$name];`.
   The bounded `__get()` and `offsetGet()` backing analyzers also accept one
   local variable bound by reference to an indexed `$this->property[...]`
   backing bucket, followed by returning that local or a literal child below
@@ -228,13 +236,10 @@
   Backing paths may also use locals initialized from literal int/string keys,
   such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
   This does not add magic property roots without an array offset, magic
-  `__get()` bodies beyond direct variable/property/backing-offset returns,
-  one local parameter-copy return, one local indexed backing-alias return, and
-  local literal-key aliases; dynamic `offsetGet()` parameter keys, non-literal
-  `offsetGet()` path keys, side-effecting or broader `ArrayAccess::offsetGet()`
-  bodies beyond one local offset-parameter copy, one local indexed
-  backing-alias return, and local literal-key aliases; arbitrary mixed nested
-  `ArrayAccess` object chains, broad same-container identity for
+  `__get()` roots beyond the covered direct variable/property/backing-offset
+  returns; nested-control-flow reference returns; arbitrary PHP syntax outside
+  the interpreter subset; arbitrary mixed nested `ArrayAccess` object chains;
+  broad same-container identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,
   arbitrary reference expressions,

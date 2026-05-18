@@ -32,7 +32,14 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1764:
+The current in-progress implementation frontier is Lane 1765:
+
+- Lane 1765 routes public by-reference `ArrayAccess::offsetGet()` and covered
+  by-reference `__get()` array-offset returns through the assignment-capable
+  reference-return executor. Supported top-level method-body statements now
+  run before binding the returned bucket, including side effects,
+  missing-bucket initialization, and local backing aliases in the covered
+  return forms.
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference

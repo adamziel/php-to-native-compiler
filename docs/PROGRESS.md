@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 1765-C for dynamic magic/`ArrayAccess` reference-return method
+  bodies in the supported top-level statement subset. Public by-reference
+  `ArrayAccess::offsetGet()` reference sources now execute the method body
+  before binding the returned bucket, including side effects, missing-bucket
+  initialization, and local aliases such as
+  `$bucket =& $this->items[$offset]; return $bucket[$leaf];`. By-reference
+  `__get()` now uses the same assignment-capable reference-return executor for
+  array-offset returns such as `return $this->store[$name];`. Nested
+  control-flow returns, arbitrary PHP syntax outside the interpreter subset,
+  dynamic/non-literal backing-key variables beyond evaluated return
+  expressions, and native reference lowering remain unsupported. Focused
+  verification: raw system PHP output matched the new `milestone1765`
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1765` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; focused `object_model` regression passed.
+
 - Added Lane 1764-C for integer-form string offset keys in the bounded ASCII
   string COW path. Direct variable, visible/context object-property, and
   array-bucket string offset reads/writes now accept decimal integer strings
