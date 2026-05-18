@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1667/iterator_and_public_object_foreach.php

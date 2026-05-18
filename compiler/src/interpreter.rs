@@ -4416,6 +4416,229 @@ impl Interpreter {
         }
     }
 
+    fn execute_foreach_by_value_iterable(
+        &mut self,
+        iterable: Value,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Flow> {
+        match iterable {
+            Value::Array(array) => self.execute_foreach_array_by_value(
+                array, key, value, body, span, scope,
+            ),
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "Iterator") =>
+            {
+                self.execute_foreach_iterator_by_value(object, key, value, body, span, scope)
+            }
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "IteratorAggregate") =>
+            {
+                let iterator =
+                    self.call_required_iterator_method(object, "getIterator", span)?;
+                match iterator {
+                    Value::Object(iterator)
+                        if self
+                            .classes
+                            .implements_interface(iterator.class_id(), "Iterator") =>
+                    {
+                        self.execute_foreach_iterator_by_value(
+                            iterator, key, value, body, span, scope,
+                        )
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_foreach(format!(
+                            "IteratorAggregate::getIterator() must return an Iterator object in the current subset, got {}",
+                            other.type_name()
+                        )),
+                    )),
+                }
+            }
+            Value::Object(object) if !self.is_traversable_object(&object) => {
+                self.execute_foreach_public_object_by_value(object, key, value, body, span, scope)
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_foreach(format!(
+                    "can only iterate arrays, ordinary public-property objects, or bounded Iterator objects in the current subset, got {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn execute_foreach_array_by_value(
+        &mut self,
+        array: PhpArray,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Flow> {
+        for entry in array.entries() {
+            self.tick(span)?;
+            if let Some(key) = key {
+                scope.write_static(key, value_from_array_key(&entry.key));
+            }
+            scope.write_static(value, entry.value_cloned());
+            match self.execute_statements(body, scope)? {
+                Flow::Normal => {}
+                Flow::Continue { depth, .. } if depth <= 1 => {}
+                Flow::Continue { depth, span } => {
+                    return Ok(Flow::Continue {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                Flow::Break { depth, .. } if depth <= 1 => break,
+                Flow::Break { depth, span } => {
+                    return Ok(Flow::Break {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                    return Ok(flow);
+                }
+            }
+        }
+
+        Ok(Flow::Normal)
+    }
+
+    fn execute_foreach_public_object_by_value(
+        &mut self,
+        object: PhpObject,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Flow> {
+        let property_names: Vec<String> = object
+            .properties()
+            .into_iter()
+            .filter(|property| {
+                property.visibility() == Visibility::Public && property.is_initialized()
+            })
+            .map(|property| property.name().to_string())
+            .collect();
+
+        for property in property_names {
+            self.tick(span)?;
+            if let Some(key) = key {
+                scope.write_static(key, Value::String(property.clone()));
+            }
+            scope.write_static(value, object.read_public_property(&property)?);
+            match self.execute_statements(body, scope)? {
+                Flow::Normal => {}
+                Flow::Continue { depth, .. } if depth <= 1 => {}
+                Flow::Continue { depth, span } => {
+                    return Ok(Flow::Continue {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                Flow::Break { depth, .. } if depth <= 1 => break,
+                Flow::Break { depth, span } => {
+                    return Ok(Flow::Break {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                    return Ok(flow);
+                }
+            }
+        }
+
+        Ok(Flow::Normal)
+    }
+
+    fn call_required_iterator_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        self.call_magic_instance_method_with_values(object.clone(), method_name, Vec::new(), span)?
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{}::{method_name}()",
+                        object.class_name()
+                    )),
+                )
+            })
+    }
+
+    fn execute_foreach_iterator_by_value(
+        &mut self,
+        object: PhpObject,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Flow> {
+        self.call_required_iterator_method(object.clone(), "rewind", span)?;
+
+        loop {
+            if !self
+                .call_required_iterator_method(object.clone(), "valid", span)?
+                .is_truthy()
+            {
+                break;
+            }
+
+            self.tick(span)?;
+            let current = self.call_required_iterator_method(object.clone(), "current", span)?;
+            if let Some(key) = key {
+                let iterator_key =
+                    self.call_required_iterator_method(object.clone(), "key", span)?;
+                scope.write_static(key, iterator_key);
+            }
+            scope.write_static(value, current);
+
+            match self.execute_statements(body, scope)? {
+                Flow::Normal => {
+                    self.call_required_iterator_method(object.clone(), "next", span)?;
+                }
+                Flow::Continue { depth, .. } if depth <= 1 => {
+                    self.call_required_iterator_method(object.clone(), "next", span)?;
+                }
+                Flow::Continue { depth, span } => {
+                    return Ok(Flow::Continue {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                Flow::Break { depth, .. } if depth <= 1 => break,
+                Flow::Break { depth, span } => {
+                    return Ok(Flow::Break {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                    return Ok(flow);
+                }
+            }
+        }
+
+        Ok(Flow::Normal)
+    }
+
     fn public_object_properties_as_foreach_array(object: &PhpObject) -> PhpArray {
         let mut array = PhpArray::new();
         for property in object.properties() {
@@ -5641,48 +5864,7 @@ impl Interpreter {
                     return Ok(Flow::Normal);
                 }
                 let iterable = self.evaluate(iterable, scope)?;
-                let array = match iterable {
-                    Value::Array(array) => array,
-                    other => {
-                        return Err(runtime_error(
-                            *span,
-                            RuntimeError::invalid_foreach(format!(
-                                "can only iterate arrays in the current subset, got {}",
-                                other.type_name()
-                            )),
-                        ));
-                    }
-                };
-
-                for entry in array.entries() {
-                    self.tick(*span)?;
-                    if let Some(key) = key {
-                        scope.write_static(key, value_from_array_key(&entry.key));
-                    }
-                    scope.write_static(value, entry.value_cloned());
-                    match self.execute_statements(body, scope)? {
-                        Flow::Normal => {}
-                        Flow::Continue { depth, .. } if depth <= 1 => {}
-                        Flow::Continue { depth, span } => {
-                            return Ok(Flow::Continue {
-                                depth: depth - 1,
-                                span,
-                            });
-                        }
-                        Flow::Break { depth, .. } if depth <= 1 => break,
-                        Flow::Break { depth, span } => {
-                            return Ok(Flow::Break {
-                                depth: depth - 1,
-                                span,
-                            });
-                        }
-                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
-                            return Ok(flow);
-                        }
-                    }
-                }
-
-                Ok(Flow::Normal)
+                self.execute_foreach_by_value_iterable(iterable, key, value, body, *span, scope)
             }
             Stmt::UnsetVariable { name, .. } => {
                 scope.unset_static(name);

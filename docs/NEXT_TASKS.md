@@ -18373,7 +18373,16 @@ handled.
   tests, `0` failures, `1006` system PHP comparisons, and `693` `phpc-only`
   skipped fixtures before checkpoint.
 
-## Milestone 1667: References/COW Remaining Container Blocker
+## Milestone 1667: Object Iteration Compatibility Slice
+
+- [x] Runtime semantics lane: add bounded by-value object iteration for
+  ordinary public-property objects and userland `Iterator` objects, with
+  `IteratorAggregate::getIterator()` accepted when it returns one of those
+  bounded `Iterator` objects. Keep by-reference iterator iteration, direct
+  `Traversable`, generators, SPL iterators, non-public/magic-property object
+  iteration, and native lowering named as unsupported.
+
+## Milestone 1668: References/COW Remaining Container Blocker
 
 - [ ] Reference/COW lane: keep all active lanes on the next large COW gap.
   Prioritize general PHP reference containers, broad array/object copy-on-write

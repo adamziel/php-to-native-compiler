@@ -49,7 +49,15 @@ object's currently initialized public properties into ordered foreach entries
 and binds each visited property through a public object-property alias root.
 Loop writes therefore mutate the object's public properties, and the
 post-loop value variable remains routed to the last visited public property
-until `unset($value)`. Bounded non-direct named and dynamic property holder expressions in
+until `unset($value)`. By-value `foreach` over ordinary non-`Traversable`
+objects snapshots the initialized public property names and reads each
+property value when that name is reached, matching the current PHP-observed
+behavior where a mutation to a later public property is visible when the loop
+arrives at that property. By-value `foreach` over bounded userland
+`Iterator` objects dispatches public `rewind()`, `valid()`, `current()`,
+`key()`, and `next()` in PHP order through the existing method-call path;
+`IteratorAggregate::getIterator()` is bounded to returning one of those
+`Iterator` objects. Bounded non-direct named and dynamic property holder expressions in
 by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
 `$holders["bag"]->{$name}["child"]`, method-context
 `$this->holder()->items`, or `$this->holder()->{$name}`, evaluate the holder
@@ -69,8 +77,9 @@ foreach array-slot alias machinery. This is still a
 materialized-symbol-table model, not PHP's full reference-backed alias,
 recursive `$GLOBALS` array, copy-on-write, dynamic global-name, broader
 ArrayAccess iteration, `Iterator`/`IteratorAggregate`/`Traversable` object
-iteration, non-public or magic-property object iteration, arbitrary dynamic
-object-property iterable roots, or included-file scope model.
+by-reference iteration, non-public or magic-property object iteration,
+arbitrary dynamic object-property iterable roots, or included-file scope
+model.
 `$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded in the
 same root symbol table and route direct function-scope reads and writes through
 that root storage. `$_SESSION` is materialized lazily into the same root symbol

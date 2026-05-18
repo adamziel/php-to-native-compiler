@@ -11,7 +11,8 @@ The current project has two execution surfaces:
 - `phpc compile`, a narrower native-code path that emits LLVM IR or assembly for
   straight-line programs and rejects unsupported lowering with structured errors.
 
-For exact support boundaries, read `docs/SUPPORT.md`. For design notes, read
+For the long-term compatibility target, read `GOAL.md`. For exact support
+boundaries, read `docs/SUPPORT.md`. For design notes, read
 `docs/ARCHITECTURE.md`. For the chronological proof log, read
 `docs/PROGRESS.md`.
 

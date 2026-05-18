@@ -1,2 +1,2 @@
-runtime error at 2:1: invalid foreach: can only iterate arrays in the current subset, got int
+runtime error at 2:1: invalid foreach: can only iterate arrays, ordinary public-property objects, or bounded Iterator objects in the current subset, got int
 

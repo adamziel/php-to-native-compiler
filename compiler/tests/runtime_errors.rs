@@ -256,7 +256,7 @@ fn foreach_non_array_iterable_has_stable_runtime_error() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid foreach: can only iterate arrays in the current subset, got int"
+        "invalid foreach: can only iterate arrays, ordinary public-property objects, or bounded Iterator objects in the current subset, got int"
     );
 }
 

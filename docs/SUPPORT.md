@@ -905,7 +905,17 @@
   current scalar loose-comparison subset, including `case`, `default`, `:` or
   `;` case/default separators, fallthrough, and `break;` to exit the switch
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
-  ordered arrays. By-reference value forms over a direct array variable, such
+  ordered arrays. By-value `foreach` also executes over ordinary
+  non-`Traversable` objects by iterating initialized public property names in
+  object property order and reading each property value when the property is
+  reached, so earlier loop-body mutations to a later public property are
+  observed. By-value `foreach` over bounded userland `Iterator` objects calls
+  public `rewind()`, `valid()`, `current()`, `key()`, and `next()` methods in
+  PHP order, writes the key variable from `key()`, writes the value variable
+  from `current()`, and observes iterator object mutations made by the loop
+  body before later iterations. `IteratorAggregate` is recognized only when
+  `getIterator()` returns one of those bounded `Iterator` objects. By-reference
+  value forms over a direct array variable, such
   as `foreach ($array as &$value)` and
   `foreach ($array as $key => &$value)`, execute as a bounded direct-slot and
   lingering-reference slice: each iteration reads the active entry from the
@@ -983,9 +993,11 @@
   variable remains routed to the last
   successfully iterated existing slot until `unset($value)` detaches it. Empty
   array iteration creates no lingering reference. This is still not full PHP
-  by-reference iteration: broad array reordering/replacement semantics, full
-  reference containers, copy-on-write, by-value object iteration,
+  foreach or by-reference iteration: broad array reordering/replacement
+  semantics, full reference containers, copy-on-write, by-reference
   `Iterator`/`IteratorAggregate`/`Traversable` object iteration,
+  `IteratorAggregate` returns outside the bounded userland `Iterator` object
+  path, direct `Traversable` implementations,
   ArrayAccess roots outside the exact direct/property-held/non-direct-holder
   `offsetGet()` bridge, non-direct property holder expressions outside
   the documented object-result named/dynamic property foreach slice and this

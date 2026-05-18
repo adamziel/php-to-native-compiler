@@ -1119,6 +1119,77 @@ echo $holders["dynamic"]->dynamicBag["outer"]["c"], "|", $value;
 }
 
 #[test]
+fn foreach_by_value_iterates_public_object_properties_and_iterator_objects() {
+    let execution = run_source(
+        r#"<?php
+class PublicBag {
+    public $first = "one";
+    public $second = "two";
+    public $dynamic = "dyn";
+    private $hidden = "secret";
+}
+
+$bag = new PublicBag();
+foreach ($bag as $key => $value) {
+    echo $key, "=", $value, ";";
+    if ($key === "first") {
+        $bag->second = "mutated";
+    }
+}
+echo "|", $bag->second, "\n";
+
+class HookIterator implements Iterator {
+    public $items = array("first" => "alpha", "second" => "beta");
+    public $keys = array("first", "second");
+    public $pos = 0;
+
+    #[ReturnTypeWillChange]
+    public function rewind() {
+        $this->pos = 0;
+    }
+
+    #[ReturnTypeWillChange]
+    public function valid() {
+        return isset($this->keys[$this->pos]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function current() {
+        $key = $this->keys[$this->pos];
+        return $this->items[$key];
+    }
+
+    #[ReturnTypeWillChange]
+    public function key() {
+        return $this->keys[$this->pos];
+    }
+
+    #[ReturnTypeWillChange]
+    public function next() {
+        $this->pos = $this->pos + 1;
+    }
+}
+
+$iterator = new HookIterator();
+foreach ($iterator as $key => $value) {
+    echo $key, "=", $value, ";";
+    if ($key === "first") {
+        $iterator->items["second"] = "changed";
+    }
+}
+echo "|", $iterator->pos;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "first=one;second=mutated;dynamic=dyn;|mutated\nfirst=alpha;second=changed;|2"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_key_value_requires_array_iterable() {
     let error = runtime_error(
         r#"<?php
@@ -1132,27 +1203,32 @@ foreach (42 as $key => $value) {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid foreach: can only iterate arrays in the current subset, got int"
+        "invalid foreach: can only iterate arrays, ordinary public-property objects, or bounded Iterator objects in the current subset, got int"
     );
 }
 
 #[test]
-fn foreach_key_value_rejects_object_iteration() {
+fn foreach_key_value_rejects_traversable_without_iterator_execution() {
     let error = runtime_error(
         r#"<?php
-class Box {}
-$box = new Box();
+class BagAggregate implements IteratorAggregate {
+    #[ReturnTypeWillChange]
+    public function getIterator() {
+        return "not-iterator";
+    }
+}
+$box = new BagAggregate();
 foreach ($box as $key => $value) {
     echo $key, $value;
 }
 "#,
     );
 
-    assert_eq!(error.line, 4);
+    assert_eq!(error.line, 9);
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid foreach: can only iterate arrays in the current subset, got object"
+        "invalid foreach: IteratorAggregate::getIterator() must return an Iterator object in the current subset, got string"
     );
 }
 
@@ -1170,6 +1246,6 @@ foreach (42 as $value) {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid foreach: can only iterate arrays in the current subset, got int"
+        "invalid foreach: can only iterate arrays, ordinary public-property objects, or bounded Iterator objects in the current subset, got int"
     );
 }

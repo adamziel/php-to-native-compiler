@@ -4,6 +4,37 @@
 
 Implemented:
 
+- Added `GOAL.md` to reconcile the work so far into the explicit long-term
+  target: full PHP and WordPress compatibility, including the difficult
+  missing pieces rather than only the currently bounded subset.
+
+- Added Milestone 1667, a bounded object-iteration compatibility slice.
+  By-value `foreach` now executes over ordinary non-`Traversable` objects by
+  iterating initialized public properties, and over bounded userland
+  `Iterator` objects by dispatching public `rewind()`, `valid()`, `current()`,
+  `key()`, and `next()` in PHP order. `IteratorAggregate::getIterator()` is
+  recognized when it returns one of those bounded `Iterator` objects. The new
+  `milestone1667` fixture proves the `phpc run` CLI path and matches system
+  PHP for public object property iteration and live iterator object mutation.
+  This does not add by-reference `Iterator`/`IteratorAggregate`/`Traversable`
+  iteration, direct `Traversable` implementations, generator objects,
+  non-public or magic-property object iteration, broader `IteratorAggregate`
+  return shapes, exact SPL iterator classes, exception behavior during
+  iterator calls, or native lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-iterator-1667 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test foreach --
+  --test-threads=1` passed `32` tests; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1667` passed `1` fixture with `0` failures; and
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1667` passed `1` fixture with `0` failures and
+  compared `1` system PHP fixture with `0` skips. The full gate passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-iterator-1667 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: Rust tests completed
+  successfully, `phpc test` reported `1700` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1700` fixture tests
+  passed with `0` failures, `1007` system PHP comparisons, and `693`
+  `phpc-only` skipped fixtures.
+
 - Integrated Milestones 1662-1665 as a third COW-focused checkpoint batch.
   The batch advances bounded reference/COW behavior for non-direct
   magic-property holder array-offset paths, mixed magic `__get()` plus

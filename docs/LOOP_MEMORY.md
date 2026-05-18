@@ -26,6 +26,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T04:08:00+02:00
+
+- Checkpoint before this task:
+  `8723c90d runtime: advance COW magic holders arrayaccess rebind targets and object foreach`,
+  pushed to `origin/master`.
+- Task attempted: reconcile the long-running PHP/WordPress compatibility goal
+  into `GOAL.md`, then land Milestone 1667 as the next bounded iteration slice
+  without claiming full PHP or WordPress support.
+- Files changed so far: `GOAL.md`, `README.md`, `compiler/src/interpreter.rs`,
+  `compiler/tests/foreach.rs`, `compiler/tests/runtime_errors.rs`,
+  `tests/fixtures/milestone1667/*`,
+  `tests/fixtures/runtime_errors/foreach_non_array.*`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`, and this memory file.
+- Tests run and result: focused foreach and milestone fixture checks passed,
+  the changed runtime-error snapshot checks passed, and the manual full gate
+  passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-iterator-1667 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: Rust tests completed
+  successfully, `phpc test` reported `1700` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1700` fixture tests
+  passed with `0` failures, `1007` system PHP comparisons, and `693`
+  `phpc-only` skipped fixtures.
+- Remaining semantic gaps: by-reference
+  `Iterator`/`IteratorAggregate`/`Traversable` iteration, direct `Traversable`
+  implementations, generators, SPL iterators, broader reference containers,
+  broad array/object COW identity, destructor side effects during alias
+  destruction, arbitrary expression-root references, superglobal lifetime
+  breadth, native reference lowering, and the broader WordPress bootstrap,
+  object lifecycle, SAPI/streams, DB/cache, plugin/theme/admin/REST, and
+  native execution blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean the 1667 target directories, then focus all available COW
+  lanes on Milestone 1668: by-reference iterator/reference-container behavior
+  before moving to the next large missing area.
+
 ## Loop Event 2026-05-18T03:34:13+02:00
 
 - Checkpoint before this task:
