@@ -473,6 +473,39 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: support this property reference slots"` if
   the full gate passes.
 
+## Loop Event 2026-05-18T21:20:00+02:00
+
+- Checkpoint before this task: `d1f528a0 runtime: support this property
+  reference slots`, pushed to `origin/master`.
+- Task attempted: Lanes 1737-C and 1738-C, by-value plain-array nested append
+  no-op parity plus property-held `ArrayAccess`/magic reference-target scalar
+  parent bindings.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1737/*`, `tests/fixtures/milestone1738/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new milestone1737 and
+  milestone1738 fixtures; `cargo check -q -p phpc` passed; `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone1737` and
+  `tests/fixtures/milestone1738` each passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent `milestone1723`, `milestone1724`, and
+  `milestone1725` system-PHP comparisons passed.
+- Semantic gap reduced: by-value nested append through covered
+  plain-array/`ArrayAccess` terminals is pinned as no-op, and supported
+  by-reference `offsetGet()`/`__get()` backing buckets now accept explicit
+  reference targets with false-parent materialization for direct,
+  dynamic-property, and non-direct holder keyed forms plus direct parent
+  appends.
+- Remaining semantic gaps: non-direct append reference targets, append suffix
+  targets after `[]`, arbitrary `offsetGet()`/`__get()` bodies, broader
+  mixed roots, alias side-table removal, complete PHP alias lifetime/detach
+  parity, string COW identity, and native reference lowering remain
+  unsupported.
+- Next concrete task: run `cargo fmt --check`, `cargo check -q -p phpc`,
+  `git diff --check`, then one full checkpoint with
+  `tools/checkpoint.sh "runtime: support arrayaccess reference targets"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

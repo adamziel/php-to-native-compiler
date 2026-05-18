@@ -4434,11 +4434,21 @@
   `$this->items["slot"] =& $var`, `$this->items["outer"][] =& $var`, and the
   same dynamic-property/private-property forms; `$this` array-literal
   reference propagation still uses alias scaffolding to preserve by-value
-  `ArrayAccess` bucket reuse parity. These are substrate for later
-  PHP-visible reference containers and COW separation; broader non-direct,
-  magic, and mixed array element bindings, complete alias lifetime/detach
-  parity, string COW identity, and native reference lowering remain
-  unsupported.
+  `ArrayAccess` bucket reuse parity. By-value terminal/plain-array nested
+  appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
+  and by-value magic plain-array roots follow PHP's
+  indirect-modification/no-op behavior for the covered nested append shape.
+  Property-held `ArrayAccess` reference targets can bind through exact public
+  by-reference `offsetGet($offset) { return $this->property[$offset]; }`
+  backing buckets for keyed targets and parent appends, including direct,
+  dynamic-property, and non-direct holder keyed forms. By-reference magic
+  plain-array targets can bind through the existing supported `__get()`
+  backing bucket for the same keyed false-parent materialization shape. These
+  are substrate for later PHP-visible reference containers and COW separation;
+  broader non-direct append target forms, append suffixes after `[]`,
+  arbitrary magic/`ArrayAccess` method bodies, broader mixed array element
+  bindings, complete alias lifetime/detach parity, string COW identity, and
+  native reference lowering remain unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

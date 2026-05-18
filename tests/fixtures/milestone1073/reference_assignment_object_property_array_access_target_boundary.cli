@@ -3,5 +3,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone1073/reference_assignment_object_property_array_access_target_boundary.php:14:1: unsupported call reference assignment: ArrayAccess object offsets cannot be assigned by reference in the current runtime
+runtime error at tests/fixtures/milestone1073/reference_assignment_object_property_array_access_target_boundary.php:14:1: unsupported call reference assignment: ArrayAccess offset reference sources require offsetGet() to contain only return $this->property[$offset] with optional literal prefix or suffix keys in the current subset
 --- stderr end ---

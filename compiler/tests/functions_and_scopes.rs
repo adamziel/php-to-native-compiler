@@ -2971,7 +2971,7 @@ $holder->bag["name"] =& $value;
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call reference assignment: ArrayAccess object offsets cannot be assigned by reference in the current runtime"
+        "unsupported call reference assignment: ArrayAccess offset reference sources require offsetGet() to contain only return $this->property[$offset] with optional literal prefix or suffix keys in the current subset"
     );
 }
 

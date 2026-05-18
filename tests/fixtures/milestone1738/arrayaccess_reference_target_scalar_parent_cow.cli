@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1738/arrayaccess_reference_target_scalar_parent_cow.php

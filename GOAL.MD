@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1736:
+The current in-progress implementation frontier is Lane 1738:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -271,6 +271,18 @@ The current in-progress implementation frontier is Lane 1736:
   reference-backed slots, while array-literal reference propagation through
   `$this` stays on the alias scaffold to preserve by-value `ArrayAccess`
   bucket reuse parity.
+- Lane 1737 pins by-value terminal/plain-array nested append no-op parity for
+  property-held `ArrayAccess`, magic-provided `ArrayAccess`, and by-value
+  magic plain-array roots.
+- Lane 1738 implements the matching reference-target bridge for supported
+  property-held `ArrayAccess` and by-reference magic plain-array roots:
+  keyed targets and parent appends such as
+  `$holder->bag["parent"]["leaf"] =& $var` and
+  `$holder->bag["parent"][] =& $var` now bind through exact by-reference
+  `offsetGet()`/`__get()` backing buckets, materializing false parents like
+  PHP. Direct, dynamic-property, and non-direct holder keyed forms are covered;
+  broader append suffixes and arbitrary method bodies remain outside the
+  subset.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

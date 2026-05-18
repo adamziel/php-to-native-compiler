@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Lanes 1737-C and 1738-C for scalar-parent/reference-target COW
+  parity around property-held `ArrayAccess` and magic roots. Lane 1737 pins
+  by-value terminal/plain-array nested append no-op behavior for
+  property-held `ArrayAccess`, magic-provided `ArrayAccess`, and by-value
+  magic plain-array roots. Lane 1738 lets explicit reference targets such as
+  `$holder->bag["parent"]["leaf"] =& $var`,
+  `$holder->bag["parent"][] =& $var`, dynamic-property targets, non-direct
+  holder keyed targets, and by-reference magic plain-array targets bind
+  through exact by-reference `offsetGet()`/`__get()` backing buckets while
+  materializing false parents like PHP. Broader non-direct append target
+  forms, append suffixes after `[]`, arbitrary `offsetGet()`/`__get()` method
+  bodies, complete alias lifetime/detach behavior, string COW identity, and
+  native reference lowering remain unsupported. Focused verification:
+  raw system PHP output matched the new milestone1737 and milestone1738
+  fixtures; `cargo check -q -p phpc` passed; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1737` and
+  `tests/fixtures/milestone1738` each passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent `milestone1723`, `milestone1724`, and
+  `milestone1725` system-PHP comparisons passed.
+
 - Added Lane 1736-C method-local `$this` object-property reference-slot
   wiring for direct variable sources. Explicit reference targets such as
   `$this->items["slot"] =& $var`, `$this->items["outer"][] =& $var`, and the

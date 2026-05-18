@@ -19555,6 +19555,27 @@ handled.
   lifetime/detach behavior, string COW identity, and native reference lowering
   named as unsupported.
 
+## Lane 1737-C: By-Value Plain-Array Nested Append No-Op Parity
+
+- [x] Runtime/tests/docs lane: pin PHP's indirect-modification/no-op behavior
+  for nested append writes below by-value terminal/plain-array roots in the
+  currently covered property-held `ArrayAccess`, magic-provided
+  `ArrayAccess`, and by-value magic plain-array shapes. Keep this as
+  no-mutation coverage, not arbitrary by-value COW mutation support.
+
+## Lane 1738-C: ArrayAccess Reference Target Scalar Parents
+
+- [x] Runtime/interpreter/tests/docs lane: support explicit reference targets
+  through property-held `ArrayAccess` and by-reference magic plain-array roots
+  when the backing bucket is statically proven by exact by-reference
+  `offsetGet()`/`__get()` analysis. Cover keyed targets, dynamic-property
+  targets, non-direct holder keyed targets, and parent appends that
+  materialize false parents before binding the reference slot. Keep
+  non-direct append targets, append suffixes after `[]`, arbitrary
+  `offsetGet()`/`__get()` bodies, broader mixed roots, complete alias
+  lifetime/detach behavior, string COW identity, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

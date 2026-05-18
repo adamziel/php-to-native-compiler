@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1737/by_value_plain_array_nested_append_noop_cow.php

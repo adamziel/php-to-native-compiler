@@ -10205,17 +10205,27 @@ impl Interpreter {
                 indices,
                 ..
             } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
                 if let ReferenceSource::Variable {
                     name: source_name, ..
                 } = source
                 {
+                    if self.bind_object_property_array_access_reference_target_to_static_source(
+                        object,
+                        property,
+                        keys.clone(),
+                        source_name,
+                        span,
+                        scope,
+                    )? {
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, property, span, scope,
                     )?;
-                    let keys = indices
-                        .iter()
-                        .map(|index| self.evaluate_array_key(index, scope))
-                        .collect::<CompileResult<Vec<_>>>()?;
                     let root =
                         self.context_object_property_alias_root(object, property, span, scope)?;
                     scope.bind_object_property_array_offset_alias_root_to_static_source(
@@ -10229,13 +10239,20 @@ impl Interpreter {
                 if let Some((source_alias, value)) =
                     self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
+                    if self.bind_object_property_array_access_reference_target_to_reference_alias(
+                        object,
+                        property,
+                        keys.clone(),
+                        source_alias.clone(),
+                        value.clone(),
+                        span,
+                        scope,
+                    )? {
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, property, span, scope,
                     )?;
-                    let keys = indices
-                        .iter()
-                        .map(|index| self.evaluate_array_key(index, scope))
-                        .collect::<CompileResult<Vec<_>>>()?;
                     let root =
                         self.context_object_property_alias_root(object, property, span, scope)?;
                     let target_alias = ArrayOffsetAlias { root, keys };
@@ -10257,17 +10274,27 @@ impl Interpreter {
                 ..
             } => {
                 let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
                 if let ReferenceSource::Variable {
                     name: source_name, ..
                 } = source
                 {
+                    if self.bind_object_property_array_access_reference_target_to_static_source(
+                        object,
+                        &property,
+                        keys.clone(),
+                        source_name,
+                        span,
+                        scope,
+                    )? {
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, &property, span, scope,
                     )?;
-                    let keys = indices
-                        .iter()
-                        .map(|index| self.evaluate_array_key(index, scope))
-                        .collect::<CompileResult<Vec<_>>>()?;
                     let root =
                         self.context_object_property_alias_root(object, &property, span, scope)?;
                     scope.bind_object_property_array_offset_alias_root_to_static_source(
@@ -10281,13 +10308,20 @@ impl Interpreter {
                 if let Some((source_alias, value)) =
                     self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
+                    if self.bind_object_property_array_access_reference_target_to_reference_alias(
+                        object,
+                        &property,
+                        keys.clone(),
+                        source_alias.clone(),
+                        value.clone(),
+                        span,
+                        scope,
+                    )? {
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, &property, span, scope,
                     )?;
-                    let keys = indices
-                        .iter()
-                        .map(|index| self.evaluate_array_key(index, scope))
-                        .collect::<CompileResult<Vec<_>>>()?;
                     let root =
                         self.context_object_property_alias_root(object, &property, span, scope)?;
                     let target_alias = ArrayOffsetAlias { root, keys };
@@ -10315,6 +10349,21 @@ impl Interpreter {
                 let (temp_name, root) = self.non_direct_object_property_alias_root_with_temp(
                     holder, property, scope, span,
                 )?;
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    if self.bind_object_property_array_access_reference_target_to_static_source(
+                        &temp_name,
+                        property,
+                        keys.clone(),
+                        source_name,
+                        span,
+                        scope,
+                    )? {
+                        return Ok(());
+                    }
+                }
                 self.reject_object_property_array_access_reference_target_if_needed(
                     &temp_name, property, span, scope,
                 )?;
@@ -10361,6 +10410,21 @@ impl Interpreter {
                 let (temp_name, root) = self.non_direct_object_property_alias_root_with_temp(
                     holder, &property, scope, span,
                 )?;
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    if self.bind_object_property_array_access_reference_target_to_static_source(
+                        &temp_name,
+                        &property,
+                        keys.clone(),
+                        source_name,
+                        span,
+                        scope,
+                    )? {
+                        return Ok(());
+                    }
+                }
                 self.reject_object_property_array_access_reference_target_if_needed(
                     &temp_name, &property, span, scope,
                 )?;
@@ -10410,17 +10474,27 @@ impl Interpreter {
                     ));
                 }
                 let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
                 if let ReferenceSource::Variable {
                     name: source_name, ..
                 } = source
                 {
+                    if self.append_object_property_array_access_reference_target_to_static_source(
+                        object,
+                        &property,
+                        keys.clone(),
+                        source_name,
+                        span,
+                        scope,
+                    )? {
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, &property, span, scope,
                     )?;
-                    let keys = indices
-                        .iter()
-                        .map(|index| self.evaluate_array_key(index, scope))
-                        .collect::<CompileResult<Vec<_>>>()?;
                     let root =
                         self.context_object_property_alias_root(object, &property, span, scope)?;
                     scope.append_object_property_array_offset_alias_root_to_static_source(
@@ -10434,13 +10508,22 @@ impl Interpreter {
                 if let Some((source_alias, value)) =
                     self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
+                    if self
+                        .append_object_property_array_access_reference_target_to_reference_alias(
+                            object,
+                            &property,
+                            keys.clone(),
+                            source_alias.clone(),
+                            value.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, &property, span, scope,
                     )?;
-                    let keys = indices
-                        .iter()
-                        .map(|index| self.evaluate_array_key(index, scope))
-                        .collect::<CompileResult<Vec<_>>>()?;
                     let root =
                         self.context_object_property_alias_root(object, &property, span, scope)?;
                     let target_alias = scope.append_object_property_array_offset_reference_alias(
@@ -10476,17 +10559,27 @@ impl Interpreter {
                         ),
                     ));
                 }
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
                 if let ReferenceSource::Variable {
                     name: source_name, ..
                 } = source
                 {
+                    if self.append_object_property_array_access_reference_target_to_static_source(
+                        object,
+                        property,
+                        keys.clone(),
+                        source_name,
+                        span,
+                        scope,
+                    )? {
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, property, span, scope,
                     )?;
-                    let keys = indices
-                        .iter()
-                        .map(|index| self.evaluate_array_key(index, scope))
-                        .collect::<CompileResult<Vec<_>>>()?;
                     let root =
                         self.context_object_property_alias_root(object, property, span, scope)?;
                     scope.append_object_property_array_offset_alias_root_to_static_source(
@@ -10500,13 +10593,22 @@ impl Interpreter {
                 if let Some((source_alias, value)) =
                     self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
+                    if self
+                        .append_object_property_array_access_reference_target_to_reference_alias(
+                            object,
+                            property,
+                            keys.clone(),
+                            source_alias.clone(),
+                            value.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, property, span, scope,
                     )?;
-                    let keys = indices
-                        .iter()
-                        .map(|index| self.evaluate_array_key(index, scope))
-                        .collect::<CompileResult<Vec<_>>>()?;
                     let root =
                         self.context_object_property_alias_root(object, property, span, scope)?;
                     let target_alias = scope.append_object_property_array_offset_reference_alias(
@@ -10552,6 +10654,282 @@ impl Interpreter {
             self.reject_array_access_reference_source_value(&value, span)?;
         }
         Ok(())
+    }
+
+    fn bind_object_property_array_access_reference_target_to_static_source(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        source_name: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        if self
+            .evaluate_object_property_array_access_by_value_reference_source_value(
+                object_name,
+                property,
+                keys.clone(),
+                span,
+                scope,
+            )?
+            .is_some()
+        {
+            return Ok(true);
+        }
+
+        if let Some((target_alias, _)) = self
+            .evaluate_object_property_array_access_reference_source_alias(
+                object_name,
+                property,
+                keys.clone(),
+                span,
+                scope,
+            )?
+        {
+            scope.bind_array_offset_alias_root_to_static_source(target_alias, source_name, span)?;
+            return Ok(true);
+        }
+
+        if let Some(binding) = self.evaluate_magic_get_array_access_reference_source_binding(
+            object_name,
+            property,
+            keys,
+            span,
+            scope,
+            true,
+            false,
+        )? {
+            match binding {
+                NonDirectReferenceSourceBinding::DetachedValue(_) => return Ok(true),
+                NonDirectReferenceSourceBinding::ArrayOffset(target_alias) => {
+                    scope.bind_array_offset_alias_root_to_static_source(
+                        target_alias,
+                        source_name,
+                        span,
+                    )?;
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    fn bind_object_property_array_access_reference_target_to_reference_alias(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        source_alias: ArrayOffsetAlias,
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        if self
+            .evaluate_object_property_array_access_by_value_reference_source_value(
+                object_name,
+                property,
+                keys.clone(),
+                span,
+                scope,
+            )?
+            .is_some()
+        {
+            return Ok(true);
+        }
+
+        if let Some((target_alias, _)) = self
+            .evaluate_object_property_array_access_reference_source_alias(
+                object_name,
+                property,
+                keys.clone(),
+                span,
+                scope,
+            )?
+        {
+            scope.bind_array_offset_alias_to_reference_alias(
+                target_alias,
+                source_alias,
+                value,
+                span,
+            )?;
+            return Ok(true);
+        }
+
+        if let Some(binding) = self.evaluate_magic_get_array_access_reference_source_binding(
+            object_name,
+            property,
+            keys,
+            span,
+            scope,
+            true,
+            false,
+        )? {
+            match binding {
+                NonDirectReferenceSourceBinding::DetachedValue(_) => return Ok(true),
+                NonDirectReferenceSourceBinding::ArrayOffset(target_alias) => {
+                    scope.bind_array_offset_alias_to_reference_alias(
+                        target_alias,
+                        source_alias,
+                        value,
+                        span,
+                    )?;
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    fn append_object_property_array_access_reference_target_to_static_source(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        source_name: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let mut by_value_keys = keys.clone();
+        by_value_keys.push(Self::array_access_append_reference_key());
+        if self
+            .evaluate_object_property_array_access_by_value_reference_source_value(
+                object_name,
+                property,
+                by_value_keys,
+                span,
+                scope,
+            )?
+            .is_some()
+        {
+            return Ok(true);
+        }
+
+        if let Some((parent_alias, _)) = self
+            .evaluate_object_property_array_access_reference_source_alias(
+                object_name,
+                property,
+                keys.clone(),
+                span,
+                scope,
+            )?
+        {
+            scope.append_object_property_array_offset_alias_root_to_static_source(
+                parent_alias.root,
+                parent_alias.keys,
+                source_name,
+                span,
+            )?;
+            return Ok(true);
+        }
+
+        if let Some(binding) = self.evaluate_magic_get_array_access_reference_source_binding(
+            object_name,
+            property,
+            keys,
+            span,
+            scope,
+            true,
+            false,
+        )? {
+            match binding {
+                NonDirectReferenceSourceBinding::DetachedValue(_) => return Ok(true),
+                NonDirectReferenceSourceBinding::ArrayOffset(parent_alias) => {
+                    scope.append_object_property_array_offset_alias_root_to_static_source(
+                        parent_alias.root,
+                        parent_alias.keys,
+                        source_name,
+                        span,
+                    )?;
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    fn append_object_property_array_access_reference_target_to_reference_alias(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        source_alias: ArrayOffsetAlias,
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let mut by_value_keys = keys.clone();
+        by_value_keys.push(Self::array_access_append_reference_key());
+        if self
+            .evaluate_object_property_array_access_by_value_reference_source_value(
+                object_name,
+                property,
+                by_value_keys,
+                span,
+                scope,
+            )?
+            .is_some()
+        {
+            return Ok(true);
+        }
+
+        if let Some((parent_alias, _)) = self
+            .evaluate_object_property_array_access_reference_source_alias(
+                object_name,
+                property,
+                keys.clone(),
+                span,
+                scope,
+            )?
+        {
+            let target_alias = scope.append_object_property_array_offset_reference_alias(
+                parent_alias.root,
+                parent_alias.keys,
+                value.clone(),
+                span,
+            )?;
+            scope.bind_array_offset_alias_to_reference_alias(
+                target_alias,
+                source_alias,
+                value,
+                span,
+            )?;
+            return Ok(true);
+        }
+
+        if let Some(binding) = self.evaluate_magic_get_array_access_reference_source_binding(
+            object_name,
+            property,
+            keys,
+            span,
+            scope,
+            true,
+            false,
+        )? {
+            match binding {
+                NonDirectReferenceSourceBinding::DetachedValue(_) => return Ok(true),
+                NonDirectReferenceSourceBinding::ArrayOffset(parent_alias) => {
+                    let target_alias = scope.append_object_property_array_offset_reference_alias(
+                        parent_alias.root,
+                        parent_alias.keys,
+                        value.clone(),
+                        span,
+                    )?;
+                    scope.bind_array_offset_alias_to_reference_alias(
+                        target_alias,
+                        source_alias,
+                        value,
+                        span,
+                    )?;
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
     }
 
     fn reject_object_property_array_access_reference_target_if_needed(
