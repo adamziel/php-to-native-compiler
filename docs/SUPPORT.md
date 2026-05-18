@@ -916,6 +916,11 @@
   `$alias =& $box->missing["outer"]["middle"]["leaf"]; $alias[] = $array`,
   where by-value intermediate `offsetGet()` calls return nested
   `ArrayAccess` objects before the terminal by-reference backing bucket.
+  One factory-return holder-root variant is also covered for that focused
+  object-handle bridge: `$alias =& factory()->missing["outer"]["leaf"];
+  $alias[] = $array` binds to the leaf bucket, and later direct writes through
+  the visible backing property such as `$leaf->items["leaf"][0]...` sync with
+  aliases that were reached through hidden magic/`ArrayAccess` object handles.
   Magic-property
   append stores below plain arrays are also
   supported for the focused by-reference `__get()`
@@ -956,8 +961,9 @@
   chain, and the tested mixed nested by-reference/by-value magic
   reference-source chains including the three-object chain, dynamic
   non-direct
-  whole-property setup assignment, method-return or factory holder roots for
-  dynamic non-direct append stores, non-empty nested append paths below
+  whole-property setup assignment, broader method-return or factory holder
+  roots beyond the focused reference-source backing-write shape, non-empty
+  nested append paths below
   property-held or magic-property `ArrayAccess`, magic `__get()` bodies that
   return unsupported expressions, dynamic property names that trigger
   unsupported fallback or inaccessible properties, append compound assignment

@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T13:20:00+02:00
+
+- Checkpoint before this task: `b04d3f95 runtime: preserve longer mixed
+  ArrayAccess reference sources`, pushed to `origin/master`.
+- Task attempted: Lane 1699-C factory-root magic-property mixed `ArrayAccess`
+  reference-source backing-write synchronization for the focused COW shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1699/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax check passed for the
+  new milestone1699 fixture; the `milestone1699` `functions_and_scopes`
+  filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1699`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+  `cargo check -q -p phpc`, `cargo fmt --check`, `git diff --check`, the
+  adjacent `milestone1698` `functions_and_scopes` filter, and adjacent
+  `milestone1698` fixture comparison also passed.
+- Semantic gap reduced: direct
+  `$alias =& factory()->missing["outer"]["leaf"]; $alias[] = $array;` is now
+  covered when by-value `__get()` returns an outer `ArrayAccess` object
+  handle, the outer by-value `offsetGet()` returns the leaf object handle, and
+  the terminal leaf uses the exact by-reference backing-property bridge.
+  Object-property array writes canonicalize equivalent object-handle alias
+  roots before descendant detach/sync, so direct backing writes through
+  `$leaf->items[...]` update aliases reached through hidden magic/`ArrayAccess`
+  roots and preserve copied-bucket nested reference-slot provenance.
+- Remaining semantic gaps: arbitrary method-return/factory-root variants,
+  by-value terminal/plain-array mutation, arbitrary side-effecting or broader
+  `offsetGet()` bodies, broader `__get()` return bodies, scalar parent
+  overwrite/error parity, full references/COW, native reference lowering, and
+  exact alias destruction/destructor ordering remain unsupported.
+- Next concrete task: checkpoint with
+  `tools/checkpoint.sh "runtime: sync factory ArrayAccess backing references"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T12:45:00+02:00
 
 - Checkpoint before this task: `19ccd512 runtime: preserve by-value magic

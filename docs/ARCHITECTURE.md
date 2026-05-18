@@ -979,6 +979,12 @@ buckets before binding to the terminal by-reference leaf bucket. The remaining
 boundary is arbitrary side-effecting/broader `offsetGet()` semantics and
 non-object or by-value terminal containers, not the mechanical recursion depth
 of the current exact bridge.
+Because these bridges often store equivalent object handles under hidden
+runtime names, object-property array writes canonicalize their alias root
+before detaching descendants and syncing aliases. That keeps direct backing
+writes through a visible object name coherent with aliases originally reached
+through a factory-return holder, magic `__get()`, and nested `ArrayAccess`
+object handles.
 The same magic append-store helper also covers the focused plain-array route
 when visible public `__get($name)` returns a direct variable by reference and
 that returned cell currently holds an array or `null`. The runtime binds the

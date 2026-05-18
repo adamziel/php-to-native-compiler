@@ -4580,6 +4580,22 @@ fn milestone1698_magic_property_long_mixed_reference_source_fixture_matches_runt
 }
 
 #[test]
+fn milestone1699_system_php_factory_magic_arrayaccess_backing_write_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1699/factory_magic_arrayaccess_reference_source_backing_write_cow.php",
+        "../tests/fixtures/milestone1699/factory_magic_arrayaccess_reference_source_backing_write_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1699_factory_magic_arrayaccess_backing_write_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1699/factory_magic_arrayaccess_reference_source_backing_write_cow.php",
+        "../tests/fixtures/milestone1699/factory_magic_arrayaccess_reference_source_backing_write_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

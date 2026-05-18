@@ -18959,6 +18959,26 @@ handled.
   references/COW, native reference lowering, and exact alias
   destruction/destructor ordering named as unsupported.
 
+## Lane 1699-C: Factory Magic ArrayAccess Backing Write Sync
+
+- [x] Runtime/tests/docs lane: cover a factory-return holder root for the
+  focused by-value magic-property mixed `ArrayAccess` reference-source bridge
+  and keep equivalent object-property roots synchronized. The covered shape is
+  `$alias =& factory()->missing["outer"]["leaf"]; $alias[] = $array;` where
+  by-value `__get($name)` returns the outer `ArrayAccess` object handle, the
+  outer exact public by-value `offsetGet($offset)` returns the leaf
+  `ArrayAccess` object handle, and the terminal leaf uses the exact public
+  by-reference `offsetGet()` backing-property bridge. Later direct writes
+  through the visible backing property, such as
+  `$leaf->items["leaf"][0]["id"]["function"] = $value`, now synchronize with
+  aliases reached through hidden magic/`ArrayAccess` object-handle roots and
+  preserve copied-bucket nested reference-slot provenance. Keep arbitrary
+  method-return/factory-root variants, by-value terminal/plain-array mutation,
+  arbitrary side-effecting or broader `offsetGet()` bodies, broader `__get()`
+  return bodies, scalar parent overwrite/error parity, full references/COW,
+  native reference lowering, and exact alias destruction/destructor ordering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

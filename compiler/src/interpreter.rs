@@ -13058,6 +13058,7 @@ impl Interpreter {
                 };
                 let root =
                     self.context_object_property_alias_root(object, property, *span, scope)?;
+                let root = scope.canonical_equivalent_object_property_alias_root(&root);
                 scope.detach_array_offset_aliases_below_assignment_paths(&[ArrayOffsetAlias {
                     root: root.clone(),
                     keys: keys.clone(),

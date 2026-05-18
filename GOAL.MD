@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1698:
+The current in-progress implementation frontier is Lane 1699:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -63,6 +63,10 @@ The current in-progress implementation frontier is Lane 1698:
 - Lane 1698 proves the same reference-source machinery through a longer
   three-object mixed chain, with two by-value intermediate `ArrayAccess`
   object handles before the terminal by-reference backing bucket.
+- Lane 1699 extends the focused reference-source path to a factory-return
+  holder root and fixes equivalent object-property alias synchronization, so
+  writes through the visible backing object property update aliases that were
+  originally reached through hidden magic/`ArrayAccess` object handles.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
@@ -221,7 +225,8 @@ Highest-value concrete candidates:
   including by-value terminal/plain-array mutation and arbitrary mixed-chain
   shapes beyond the currently tested object-handle recursion.
 - Broader but still proven `offsetGet()` and `__get()` return-body shapes.
-- Method-return or factory expression roots for covered reference/COW paths.
+- Broader method-return or factory expression roots beyond the one covered
+  magic/`ArrayAccess` reference-source backing-write shape.
 - Explicit lifetime/detach tests for covered magic and `ArrayAccess` aliases.
 - Native diagnostics for any reference/COW path that remains interpreter-only.
 

@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Lane 1699-C factory-root magic-property mixed `ArrayAccess`
+  reference-source backing-write synchronization for the focused COW shape
+  where a factory return is used as the holder root,
+  `$alias =& factory()->missing["outer"]["leaf"]; $alias[] = $array;`, visible
+  public `__get($name)` returns an outer `ArrayAccess` object handle by value,
+  the outer exact public by-value `offsetGet($offset)` returns a terminal leaf
+  `ArrayAccess` object handle, and the terminal leaf exposes the exact public
+  by-reference `offsetGet($offset)` backing-property bridge. Object-property
+  array writes now canonicalize equivalent object-handle alias roots before
+  descendant detach/sync, so later direct writes through the visible backing
+  property, such as `$leaf->items["leaf"][0]["id"]["function"] = $value`,
+  update aliases that were reached through hidden magic/`ArrayAccess` object
+  names and preserve nested reference-slot provenance. This does not add
+  arbitrary method-return/factory roots, by-value terminal/plain-array
+  mutation, arbitrary side-effecting or broader `offsetGet()` bodies, broader
+  `__get()` return bodies, full references/COW, native reference lowering, or
+  exact alias destruction/destructor ordering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1699` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1699`
+  passed `1` fixture with `1` system PHP comparison and `0` skips. Before
+  checkpointing, `cargo check -q -p phpc`, `cargo fmt --check`,
+  `git diff --check`, the adjacent `milestone1698` `functions_and_scopes`
+  filter, and adjacent `milestone1698` fixture comparison also passed.
+
 - Added Lane 1698-C longer by-value magic-property mixed `ArrayAccess`
   reference-source coverage for the COW shape where visible public
   `__get($name)` returns an outer `ArrayAccess` object handle by value, the

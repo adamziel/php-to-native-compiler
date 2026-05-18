@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1699/factory_magic_arrayaccess_reference_source_backing_write_cow.php
+stdout:
+via-factory-backing-source|via-factory-backing-label|via-factory-backing-source|via-factory-backing-label|3|plain-direct|plain-direct|1|0
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
