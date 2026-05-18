@@ -199,9 +199,11 @@
   bounded `ArrayAccess` object returned through that direct-variable cell and
   exact public by-reference `offsetGet()` bridge. That bridge recognizes
   `return $this->property[$offset];` plus literal int/string prefix or suffix
-  buckets around the single offset parameter, such as
+  buckets around one or more uses of the offset parameter, such as
   `return $this->property["bucket"][$offset];` and
-  `return $this->property[$offset]["bucket"];`. When visible public
+  `return $this->property[$offset]["bucket"];`; repeated offset-parameter
+  paths such as `return $this->property[$offset][$offset];` are also covered.
+  When visible public
   `__get($name)` returns an `ArrayAccess` object by value or by reference and
   that object exposes the exact public by-value `offsetGet()` bridge, selected
   and append reference-source forms such as
@@ -217,7 +219,7 @@
   direct-variable reference assignment through the same temporary holder root.
   This does not add magic property roots without an array offset, magic
   `__get()` bodies that return properties, offsets, or expressions,
-  dynamic or repeated `offsetGet()` parameter keys, non-literal
+  dynamic `offsetGet()` parameter keys, non-literal
   `offsetGet()` path keys, side-effecting or broader `ArrayAccess::offsetGet()`
   bodies, mixed nested
   `ArrayAccess` object chains, broad same-container identity for
@@ -847,10 +849,12 @@
   assignment also preserves nested reference slots when the value is an array
   literal or copied array containing references, the receiver is a direct
   `ArrayAccess` object, public `offsetSet($offset, $value)` has the exact
-  `$this->property[$offset] = $value;` body or the same single-offset-parameter
-  body with literal int/string prefix or suffix buckets, such as
+  `$this->property[$offset] = $value;` body or the same bounded
+  offset-parameter body with literal int/string prefix or suffix buckets, such as
   `$this->property["bucket"][$offset] = $value;` and
-  `$this->property[$offset]["bucket"] = $value;`, and later bucket copies use
+  `$this->property[$offset]["bucket"] = $value;`. Repeated offset-parameter
+  paths such as `$this->property[$offset][$offset] = $value;` are also
+  covered for that exact non-branchy bridge, and later bucket copies use
   the exact public `return $this->property[$offset];` `offsetGet()` bridge.
   Direct
   append `$bag[] = $array` preserves the same nested reference slots for two
@@ -1038,8 +1042,8 @@
   variables, non-public backing properties outside the exact method-context
   bridges, `elseif`, extra statements in either `offsetSet()` branch,
   fall-through append bodies without `else`/`return`, mismatched append/keyed
-  paths, dynamic or repeated `offsetSet()` parameter
-  keys, non-literal `offsetSet()` path keys, side-effecting or broader
+  paths, dynamic `offsetSet()` parameter keys, repeated offset parameters in
+  branchy append bridges, non-literal `offsetSet()` path keys, side-effecting or broader
   `offsetSet()`/`offsetGet()` bodies,
   built-in interface enforcement/signature validation, typed method
   invocation, broad references/copy-on-write, exact warning/visibility

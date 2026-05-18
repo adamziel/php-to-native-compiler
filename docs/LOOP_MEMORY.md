@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T14:01:11+02:00
+
+- Checkpoint before this task: `833fe10d runtime: support ArrayAccess if else
+  append stores`, pushed to `origin/master`.
+- Task attempted: Lane 1715-C focused repeated-offset-parameter support for
+  exact public `ArrayAccess::offsetGet()` and non-branchy `offsetSet()`
+  backing paths.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1715/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc` passed;
+  PHP syntax check passed for the new fixture; the `milestone1715`
+  `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1715`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: exact public `offsetGet()` and non-branchy
+  `offsetSet()` backing paths can now substitute the selected offset key in
+  more than one position, so direct stores and copied-bucket reads keep nested
+  reference-slot metadata under repeated-key backing buckets.
+- Remaining semantic gaps: dynamic `offsetGet()`/`offsetSet()` parameter keys,
+  repeated offset parameters in branchy append bridges, non-literal path keys,
+  side-effecting or broader `offsetSet()`/`offsetGet()` bodies, broader mixed
+  nested `ArrayAccess` chains, broader `__get()` return expressions, by-value
+  terminal/plain-array mutation, scalar parent overwrite/error parity, full
+  references/COW, and native reference lowering remain unsupported.
+- Next concrete task: run adjacent milestone1714 checks, `cargo fmt --check`,
+  `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "runtime: support ArrayAccess repeated offset keys"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T13:52:55+02:00
 
 - Checkpoint before this task: `c78572a0 runtime: support ArrayAccess literal

@@ -240,9 +240,9 @@ cell and reusing the existing array-offset copy-in/writeback alias path. If
 that returned direct-variable cell currently holds an `ArrayAccess` object,
 the same temporary root may instead use the bounded public by-reference
 `offsetGet($offset) { return $this->property[$offset]; }` bridge, now with the
-same bounded literal int/string prefix or suffix key analysis around the
-single offset parameter, and write through the selected backing property array
-slot. Named and dynamic
+same bounded literal int/string prefix or suffix key analysis around one or
+more uses of the offset parameter, and write through the selected backing
+property array slot. Named and dynamic
 array-offset paths below magic properties on non-direct holders, such as
 `$holders["box"]->missing["slot"]`, evaluate the holder expression once into a
 temporary object root before reusing that same bridge for direct user-function
@@ -251,8 +251,8 @@ intentionally limited to the existing direct-variable reference-return body
 shape, selected array offsets, direct user-function or direct-variable
 reference-assignment paths, and the exact bounded ArrayAccess bridge. General
 magic container identity, normal property-read magic fallback breadth,
-arbitrary `__get()` return expressions, dynamic or repeated `offsetGet()`
-parameter keys, non-literal `offsetGet()` path keys, side-effecting or broader
+arbitrary `__get()` return expressions, dynamic `offsetGet()` parameter keys,
+non-literal `offsetGet()` path keys, side-effecting or broader
 `ArrayAccess::offsetGet()` bodies, mixed nested `ArrayAccess` object chains,
 and copy-on-write semantics still belong to the future reference-container
 model.
@@ -1080,7 +1080,8 @@ dynamic property names that trigger unsupported fallback or inaccessible
 properties,
 arbitrary nested reference slots copied from ArrayAccess storage outside the
 exact `offsetSet()`/`offsetGet()` bridge, dynamic or repeated
-`offsetSet()`/`offsetGet()` parameter keys, non-literal bridge path keys, and
+`offsetSet()` parameters in branchy append bridges, dynamic `offsetGet()`
+parameter keys, non-literal bridge path keys, and
 real reference containers remain future work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and

@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1714:
+The current in-progress implementation frontier is Lane 1715:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -142,6 +142,11 @@ The current in-progress implementation frontier is Lane 1714:
   else { $this->items["outer"][$offset]["leaf"] = $value; }`, preserving
   copied reference-slot metadata under the actual appended key for the same
   literal prefix/suffix family.
+- Lane 1715 accepts repeated uses of the `ArrayAccess` offset parameter in
+  exact non-branchy `offsetGet()`/`offsetSet()` backing paths, such as
+  `return $this->items[$offset][$offset];` and
+  `$this->items[$offset][$offset] = $value;`, so copied reference slots bind
+  to the repeated-key backing bucket.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

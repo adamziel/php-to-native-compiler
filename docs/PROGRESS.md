@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Lane 1715-C focused repeated-offset-parameter support for exact
+  public `ArrayAccess::offsetGet()` and non-branchy `offsetSet()` backing
+  paths. Direct `$bag["leaf"] = $array` and `$copy = $bag["leaf"]` now
+  preserve copied nested reference-slot metadata when the methods use shapes
+  such as `return $this->items[$offset][$offset];` and
+  `$this->items[$offset][$offset] = $value`, so later backing-property writes
+  and copied-bucket writes resynchronize the original referenced variables.
+  This does not add dynamic `offsetGet()`/`offsetSet()` parameter keys,
+  repeated offset parameters in branchy append bridges, non-literal path keys,
+  arbitrary side-effecting or broader `offsetSet()`/`offsetGet()` bodies,
+  broader mixed nested `ArrayAccess` chains, broader `__get()` return
+  expressions, by-value terminal/plain-array mutation, scalar parent
+  overwrite/error parity, full references/COW, or native reference lowering.
+  Focused verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1715` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1715`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1714-C focused `if/else` support for the branchy public
   `ArrayAccess::offsetSet(null, $value)` append bridge. Direct
   `$bag[] = $array` now preserves copied nested reference-slot metadata when

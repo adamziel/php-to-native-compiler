@@ -19253,6 +19253,24 @@ handled.
   terminal/plain-array mutation, scalar parent overwrite/error parity, full
   references/COW, and native reference lowering named as unsupported.
 
+## Lane 1715-C: ArrayAccess Repeated Offset Parameter Paths
+
+- [x] Runtime/tests/docs lane: extend exact public
+  `ArrayAccess::offsetGet()` and non-branchy `offsetSet()` backing-property
+  bridges to repeated uses of the offset parameter, such as
+  `return $this->items[$offset][$offset];` and
+  `$this->items[$offset][$offset] = $value;`. The covered direct
+  `$bag["leaf"] = $array` and `$copy = $bag["leaf"]` shapes now store and
+  copy nested reference-slot metadata under the repeated-key backing bucket,
+  so later backing-property writes and copied-bucket writes resynchronize the
+  original referenced variables. Keep dynamic `offsetGet()`/`offsetSet()`
+  parameter keys, repeated offset parameters in branchy append bridges,
+  non-literal path keys, side-effecting or broader `offsetSet()`/`offsetGet()`
+  bodies, broader mixed nested `ArrayAccess` chains, broader `__get()` return
+  expressions, by-value terminal/plain-array mutation, scalar parent
+  overwrite/error parity, full references/COW, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

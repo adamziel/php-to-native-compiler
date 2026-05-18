@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1715/arrayaccess_repeated_offset_parameter_reference_slot_cow.php

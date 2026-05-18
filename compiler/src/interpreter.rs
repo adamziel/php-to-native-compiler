@@ -4058,10 +4058,14 @@ struct ThisPropertyReferenceTarget {
     suffix_keys: Vec<ArrayKey>,
 }
 
+enum ArrayAccessOffsetKeyPart {
+    Literal(ArrayKey),
+    Offset,
+}
+
 struct ArrayAccessOffsetGetReferenceTarget {
     property: String,
-    prefix_keys: Vec<ArrayKey>,
-    suffix_keys: Vec<ArrayKey>,
+    key_parts: Vec<ArrayAccessOffsetKeyPart>,
 }
 
 #[derive(Debug, Clone)]
@@ -11879,21 +11883,12 @@ impl Interpreter {
             ));
         };
 
-        let mut prefix_keys = Vec::new();
-        let mut suffix_keys = Vec::new();
+        let mut key_parts = Vec::new();
         let mut saw_offset_param = false;
         for index in indices {
             if matches!(index, Expr::Variable(name, _) if name == &param.name) {
-                if saw_offset_param {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "reference assignment",
-                            "ArrayAccess offset reference sources may use the offset parameter only once in the current subset",
-                        ),
-                    ));
-                }
                 saw_offset_param = true;
+                key_parts.push(ArrayAccessOffsetKeyPart::Offset);
                 continue;
             }
 
@@ -11906,11 +11901,7 @@ impl Interpreter {
                     ),
                 ));
             };
-            if saw_offset_param {
-                suffix_keys.push(key);
-            } else {
-                prefix_keys.push(key);
-            }
+            key_parts.push(ArrayAccessOffsetKeyPart::Literal(key));
         }
         if !saw_offset_param {
             return Err(runtime_error(
@@ -11924,8 +11915,7 @@ impl Interpreter {
 
         Ok(ArrayAccessOffsetGetReferenceTarget {
             property: property.to_string(),
-            prefix_keys,
-            suffix_keys,
+            key_parts,
         })
     }
 
@@ -11933,13 +11923,21 @@ impl Interpreter {
         target: &ArrayAccessOffsetGetReferenceTarget,
         keys: &[ArrayKey],
     ) -> Vec<ArrayKey> {
-        let mut target_keys = target.prefix_keys.clone();
+        let mut target_keys = Vec::new();
         if let Some((first, rest)) = keys.split_first() {
-            target_keys.push(first.clone());
-            target_keys.extend(target.suffix_keys.iter().cloned());
+            for part in &target.key_parts {
+                match part {
+                    ArrayAccessOffsetKeyPart::Literal(key) => target_keys.push(key.clone()),
+                    ArrayAccessOffsetKeyPart::Offset => target_keys.push(first.clone()),
+                }
+            }
             target_keys.extend(rest.iter().cloned());
         } else {
-            target_keys.extend(target.suffix_keys.iter().cloned());
+            for part in &target.key_parts {
+                if let ArrayAccessOffsetKeyPart::Literal(key) = part {
+                    target_keys.push(key.clone());
+                }
+            }
         }
         target_keys
     }
@@ -11949,13 +11947,21 @@ impl Interpreter {
         offset_param: &str,
         selected_key: ArrayKey,
     ) -> Option<Vec<ArrayKey>> {
-        let (prefix_keys, suffix_keys) =
-            Self::array_access_offset_parameter_key_parts(indices, offset_param)?;
         let mut keys = Vec::new();
-        keys.extend(prefix_keys);
-        keys.push(selected_key);
-        keys.extend(suffix_keys);
-        Some(keys)
+        let mut saw_offset_param = false;
+        for index in indices {
+            if matches!(index, Expr::Variable(name, _) if name == offset_param) {
+                saw_offset_param = true;
+                keys.push(selected_key.clone());
+                continue;
+            }
+            keys.push(Self::literal_reference_return_array_key(index)?);
+        }
+        if saw_offset_param {
+            Some(keys)
+        } else {
+            None
+        }
     }
 
     fn array_access_offset_parameter_key_parts(
