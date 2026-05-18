@@ -4443,6 +4443,62 @@ fn milestone1692_magic_property_array_access_nested_append_fixtures_match_runtim
 }
 
 #[test]
+fn milestone1693_system_php_magic_property_array_access_two_key_nested_append_fixtures_match() {
+    for (fixture, expected) in [
+        (
+            "../tests/fixtures/milestone1693/magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1693/magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1693/dynamic_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1693/dynamic_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1693/non_direct_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1693/non_direct_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1693/dynamic_non_direct_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1693/dynamic_non_direct_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1693/magic_property_arrayaccess_two_key_nested_append_by_value_offsetget_noop.php",
+            "../tests/fixtures/milestone1693/magic_property_arrayaccess_two_key_nested_append_by_value_offsetget_noop.stdout",
+        ),
+    ] {
+        assert_system_php_fixture_matches_stdout(fixture, expected);
+    }
+}
+
+#[test]
+fn milestone1693_magic_property_array_access_two_key_nested_append_fixtures_match_runtime() {
+    for (fixture, expected) in [
+        (
+            "../tests/fixtures/milestone1693/magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1693/magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1693/dynamic_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1693/dynamic_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1693/non_direct_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1693/non_direct_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1693/dynamic_non_direct_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.php",
+            "../tests/fixtures/milestone1693/dynamic_non_direct_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.stdout",
+        ),
+        (
+            "../tests/fixtures/milestone1693/magic_property_arrayaccess_two_key_nested_append_by_value_offsetget_noop.php",
+            "../tests/fixtures/milestone1693/magic_property_arrayaccess_two_key_nested_append_by_value_offsetget_noop.stdout",
+        ),
+    ] {
+        assert_run_source_fixture_path_matches_stdout(fixture, expected);
+    }
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

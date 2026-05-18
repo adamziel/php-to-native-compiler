@@ -881,9 +881,18 @@
   `__get($name)` once, select the parent bucket through exact public
   by-reference `offsetGet($offset) { return $this->items[$offset]; }`, append
   into that backing bucket without calling `offsetSet()` or `__set()`, and
-  preserve nested reference slots for copied buckets. By-value `offsetGet()`
-  keeps PHP's indirect-modification notice/no-op behavior for this nested
-  append shape. Magic-property append stores below plain arrays are also
+  preserve nested reference slots for copied buckets. The same route covers
+  the focused two-key parent path with a plain-array suffix below the
+  selected `offsetGet()` bucket, such as
+  `$box->missing["outer"]["inner"][] = $array`,
+  `$box->{$name}["outer"]["inner"][] = $array`,
+  `$holders["box"]->missing["outer"]["inner"][] = $array`, and
+  `$holders["box"]->{$name}["outer"]["inner"][] = $array`; the first key is
+  selected through `offsetGet("outer")`, then the remaining parent path is
+  materialized and appended as plain array storage inside that backing
+  bucket. By-value `offsetGet()` keeps PHP's indirect-modification
+  notice/no-op behavior for these nested append shapes. Magic-property
+  append stores below plain arrays are also
   supported for the focused by-reference `__get()`
   shape when visible public `__get($name)` returns a direct variable by
   reference and that cell holds an array or `null`: direct named/dynamic and
@@ -915,8 +924,9 @@
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
   paths below plain arrays returned by magic `__get()` beyond the direct
   empty append and focused one-key and two-key parent append shapes,
-  magic-property `ArrayAccess` nested append paths beyond the focused one-key
-  by-reference `offsetGet()` bridge, dynamic non-direct
+  magic-property `ArrayAccess` nested append paths beyond the focused
+  first-`offsetGet()` bucket plus tested plain-array suffix shapes, dynamic
+  non-direct
   whole-property setup assignment, method-return or factory holder roots for
   dynamic non-direct append stores, non-empty nested append paths below
   property-held or magic-property `ArrayAccess`, magic `__get()` bodies that

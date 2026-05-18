@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T10:45:33+02:00
+
+- Checkpoint before this task: `6d2cc837 runtime: preserve magic
+  ArrayAccess nested append references`, pushed to `origin/master`.
+- Task attempted: Lane 1693-C deeper magic-property `ArrayAccess` nested
+  append mutation for the focused by-reference `offsetGet()` COW shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1693/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, the lane
+  review note, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for
+  `tests/fixtures/milestone1693/*.php`; `cargo check -q -p phpc` passed;
+  `cargo fmt --check` passed; the `milestone1693` `functions_and_scopes`
+  filter passed `2` tests; and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1693` passed `5` fixtures with `5` system PHP
+  comparisons and `0` skips.
+- Semantic gap reduced: direct named/dynamic and non-direct named/dynamic
+  `$...->missing["outer"]["inner"][] = $array` forms now mutate a
+  plain-array suffix inside the backing bucket returned by public
+  by-reference `offsetGet("outer")` when visible public `__get($name)`
+  returns an `ArrayAccess` object, and copied-bucket reads preserve nested
+  reference slots. By-value `offsetGet()` remains the PHP notice/no-op
+  boundary for this covered deeper append shape.
+- Remaining semantic gaps: mixed nested `ArrayAccess` chains, side-effecting
+  or broader `offsetGet()` bodies, arbitrary `__get()` return bodies outside
+  the tested object/plain-array shapes, method-return or factory holder
+  roots, scalar parent overwrite/error parity beyond tested array/null
+  suffixes, by-value mutation, full references/COW, native reference
+  lowering, and exact alias destruction/destructor ordering remain
+  unsupported.
+- Next concrete task: run adjacent regressions and checkpoint this lane; then
+  keep lanes focused on the next COW gap after PHP probes.
+
 ## Loop Event 2026-05-18T10:30:24+02:00
 
 - Checkpoint before this task: `a3634363 runtime: preserve deeper plain-array

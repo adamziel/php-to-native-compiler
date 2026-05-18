@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1693/dynamic_magic_property_arrayaccess_two_key_nested_append_offsetget_reference_slot_cow.php
+stdout:
+via-dynamic-magic-arrayaccess-two-key-append|via-dynamic-magic-arrayaccess-two-key-label|via-dynamic-magic-arrayaccess-two-key-append|via-dynamic-magic-arrayaccess-two-key-label|1|plain|plain|1|0
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

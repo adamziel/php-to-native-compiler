@@ -4,6 +4,36 @@
 
 Implemented:
 
+- Added Lane 1693-C deeper magic-property `ArrayAccess` nested append
+  mutation for the focused by-reference `offsetGet()` COW shape. Direct
+  `$box->missing["outer"]["inner"][] = $array`, direct dynamic
+  `$box->{$name}["outer"]["inner"][] = $array`, non-direct
+  `$holders["box"]->missing["outer"]["inner"][] = $array`, and dynamic
+  non-direct `$holders["box"]->{$name}["outer"]["inner"][] = $array` now
+  append below a plain-array suffix inside the backing array bucket selected
+  by public by-reference `offsetGet("outer")` when visible public
+  `__get($name)` returns an `ArrayAccess` object. The magic `ArrayAccess`
+  nested append helper now dispatches only the first parent key through the
+  exact public `offsetGet($offset) { return $this->items[$offset]; }`
+  bridge, then appends through the remaining plain-array parent path and
+  attaches array-literal or copied-array reference metadata to the actual
+  appended backing bucket. Later copied-bucket reads such as
+  `$box->missing["outer"]["inner"][0]` preserve nested reference slots while
+  ordinary copied fields remain detached. By-value `offsetGet()` keeps PHP's
+  indirect-modification notice/no-op behavior for the covered deeper append
+  shape. This does not add mixed nested `ArrayAccess` chains, side-effecting
+  or broader `offsetGet()` bodies beyond the exact public backing-property
+  bridge, scalar parent overwrite/error parity beyond tested array/null
+  suffixes, method-return or factory holder roots, by-value mutation, full
+  references/COW, native reference lowering, or exact alias
+  destruction/destructor ordering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  PHP syntax checks passed for the new fixtures, `cargo check -q -p phpc`
+  passed, the `milestone1693` `functions_and_scopes` filter passed `2`
+  tests, and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1693` passed `5` fixtures with `5` system PHP
+  comparisons and `0` skips.
+
 - Added Lane 1692-C magic-property `ArrayAccess` nested append mutation for
   the focused by-reference `offsetGet()` COW shape. Direct
   `$box->missing["outer"][] = $array`, direct dynamic
@@ -26,7 +56,9 @@ Implemented:
   side-effecting or broader `offsetGet()` bodies beyond the exact public
   backing-property bridge, method-return or factory holder roots,
   by-value mutation, full references/COW, native reference lowering, or exact
-  alias destruction/destructor ordering. Focused verification used isolated
+  alias destruction/destructor ordering. Lane 1693-C extends the same first
+  `offsetGet()` bucket route to the focused two-key parent shape with a
+  plain-array suffix below the selected bucket. Focused verification used isolated
   `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
   PHP syntax checks passed for the new fixtures, `cargo check -q -p phpc`
   passed, the `milestone1692` `functions_and_scopes` filter passed `2`

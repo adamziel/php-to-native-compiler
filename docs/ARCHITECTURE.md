@@ -943,6 +943,13 @@ appended bucket. Nested array reads preserve provenance from an inner
 `$box->missing["outer"][0]` can mirror the stored bucket's nested reference
 metadata. By-value `offsetGet()` remains the PHP notice/no-op boundary for
 this lane.
+For the focused deeper magic `ArrayAccess` append shape, such as
+`$box->missing["outer"]["inner"][] = $array`, the runtime still dispatches
+only the first parent key through `offsetGet("outer")`. The selected backing
+bucket then becomes the alias root for the remaining plain-array suffix
+before the final append. This keeps mixed nested `ArrayAccess` chains outside
+the lane while preserving reference metadata for copied buckets read back via
+`$box->missing["outer"]["inner"][0]`.
 The same magic append-store helper also covers the focused plain-array route
 when visible public `__get($name)` returns a direct variable by reference and
 that returned cell currently holds an array or `null`. The runtime binds the
