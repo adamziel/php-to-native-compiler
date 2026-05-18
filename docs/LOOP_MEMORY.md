@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T14:13:34+02:00
+
+- Checkpoint before this task: `086aeab4 runtime: support ArrayAccess repeated
+  offset keys`, pushed to `origin/master`.
+- Task attempted: Lane 1716-C focused keyed-store support for public
+  `ArrayAccess::offsetSet()` `if/else` bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1716/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc` passed;
+  PHP syntax check passed for the new fixture; the `milestone1716`
+  `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1716`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: non-null keyed stores such as `$bag["leaf"] = $array`
+  now map `if/else` `offsetSet()` bodies to the non-null branch's backing
+  bucket and preserve copied nested reference-slot metadata there.
+- Remaining semantic gaps: `elseif`, extra statements in either branch,
+  mismatched append/keyed paths for append stores, dynamic
+  `offsetGet()`/`offsetSet()` parameter keys, repeated offset parameters in
+  branchy append bridges, non-literal path keys, side-effecting or broader
+  `offsetSet()`/`offsetGet()` bodies, broader mixed nested `ArrayAccess`
+  chains, broader `__get()` return expressions, by-value terminal/plain-array
+  mutation, scalar parent overwrite/error parity, full references/COW, and
+  native reference lowering remain unsupported.
+- Next concrete task: run adjacent milestone1715 checks, `cargo fmt --check`,
+  `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "runtime: support ArrayAccess if else keyed stores"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T14:01:11+02:00
 
 - Checkpoint before this task: `833fe10d runtime: support ArrayAccess if else

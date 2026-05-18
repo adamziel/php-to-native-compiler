@@ -12021,32 +12021,19 @@ impl Interpreter {
             return Ok(None);
         };
         let (property, keys) = if let Some(key) = key {
-            let [Stmt::Assign {
-                target:
-                    AssignTarget::ObjectPropertyArrayIndex {
-                        object: target_object,
-                        property,
-                        indices,
-                        ..
-                    },
-                expr,
-                ..
-            }] = function.body.as_slice()
-            else {
+            let Some((property, indices)) = Self::offset_set_keyed_assignment_target(
+                function.body.as_slice(),
+                &offset_param.name,
+                &value_param.name,
+            ) else {
                 return Ok(None);
             };
-            if target_object != "this" {
-                return Ok(None);
-            }
-            if !matches!(expr, Expr::Variable(name, _) if name == &value_param.name) {
-                return Ok(None);
-            }
             let Some(keys) =
-                Self::array_access_offset_parameter_keys(indices, &offset_param.name, key)
+                Self::array_access_offset_parameter_keys(&indices, &offset_param.name, key)
             else {
                 return Ok(None);
             };
-            (property.clone(), keys)
+            (property, keys)
         } else if let [Stmt::Assign {
             target:
                 AssignTarget::ObjectPropertyArrayIndex {
@@ -12268,6 +12255,54 @@ impl Interpreter {
             return None;
         }
         Some((object.clone(), property.clone(), indices.clone()))
+    }
+
+    fn offset_set_keyed_assignment_target(
+        body: &[Stmt],
+        offset_param: &str,
+        value_param: &str,
+    ) -> Option<(String, Vec<Expr>)> {
+        if let [assignment] = body {
+            if let Some((object, property, indices)) =
+                Self::offset_set_index_assignment_target(assignment, value_param)
+            {
+                return (object == "this").then_some((property, indices));
+            }
+        }
+
+        if let [Stmt::If {
+            condition,
+            then_branch: _,
+            else_branch,
+            ..
+        }, keyed_assignment] = body
+        {
+            if !else_branch.is_empty() || !Self::is_null_offset_guard(condition, offset_param) {
+                return None;
+            }
+            let (object, property, indices) =
+                Self::offset_set_index_assignment_target(keyed_assignment, value_param)?;
+            return (object == "this").then_some((property, indices));
+        }
+
+        if let [Stmt::If {
+            condition,
+            else_branch,
+            ..
+        }] = body
+        {
+            if !Self::is_null_offset_guard(condition, offset_param) {
+                return None;
+            }
+            let [keyed_assignment] = else_branch.as_slice() else {
+                return None;
+            };
+            let (object, property, indices) =
+                Self::offset_set_index_assignment_target(keyed_assignment, value_param)?;
+            return (object == "this").then_some((property, indices));
+        }
+
+        None
     }
 
     fn last_array_access_backing_key(

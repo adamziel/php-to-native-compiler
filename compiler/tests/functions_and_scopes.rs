@@ -4852,6 +4852,22 @@ fn milestone1715_arrayaccess_repeated_offset_parameter_fixture_matches_runtime()
 }
 
 #[test]
+fn milestone1716_system_php_arrayaccess_if_else_keyed_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1716/arrayaccess_offsetset_if_else_keyed_reference_slot_cow.php",
+        "../tests/fixtures/milestone1716/arrayaccess_offsetset_if_else_keyed_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1716_arrayaccess_if_else_keyed_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1716/arrayaccess_offsetset_if_else_keyed_reference_slot_cow.php",
+        "../tests/fixtures/milestone1716/arrayaccess_offsetset_if_else_keyed_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

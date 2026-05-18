@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1715:
+The current in-progress implementation frontier is Lane 1716:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -147,6 +147,10 @@ The current in-progress implementation frontier is Lane 1715:
   `return $this->items[$offset][$offset];` and
   `$this->items[$offset][$offset] = $value;`, so copied reference slots bind
   to the repeated-key backing bucket.
+- Lane 1716 applies the `if/else` `offsetSet()` body recognizer to keyed
+  stores such as `$bag["leaf"] = $array`, preserving copied reference-slot
+  metadata when the non-null branch writes through the same literal
+  prefix/suffix family.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

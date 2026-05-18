@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Lane 1716-C focused keyed-store support for the public
+  `ArrayAccess::offsetSet()` `if/else` body shape. Direct
+  `$bag["leaf"] = $array` now preserves copied nested reference-slot metadata
+  when the non-null branch writes through the same literal prefix/suffix path
+  used by append stores, such as
+  `if ($offset === null) { $this->items["outer"][]["leaf"] = $value; }
+  else { $this->items["outer"][$offset]["leaf"] = $value; }`, so later direct
+  writes through `$this->items["outer"]["leaf"]["leaf"]...` resynchronize the
+  original referenced variables. This does not add `elseif`, extra statements
+  in either branch, mismatched append/keyed paths for append stores, dynamic
+  `offsetGet()`/`offsetSet()` parameter keys, repeated offset parameters in
+  branchy append bridges, non-literal path keys, arbitrary side-effecting or
+  broader `offsetSet()`/`offsetGet()` bodies, broader mixed nested
+  `ArrayAccess` chains, broader `__get()` return expressions, by-value
+  terminal/plain-array mutation, scalar parent overwrite/error parity, full
+  references/COW, or native reference lowering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: PHP syntax checks passed for the new fixture, the
+  `milestone1716` `functions_and_scopes` filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1716`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1715-C focused repeated-offset-parameter support for exact
   public `ArrayAccess::offsetGet()` and non-branchy `offsetSet()` backing
   paths. Direct `$bag["leaf"] = $array` and `$copy = $bag["leaf"]` now

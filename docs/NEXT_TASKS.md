@@ -19271,6 +19271,25 @@ handled.
   overwrite/error parity, full references/COW, and native reference lowering
   named as unsupported.
 
+## Lane 1716-C: ArrayAccess If/Else Keyed Store
+
+- [x] Runtime/tests/docs lane: extend the public `ArrayAccess::offsetSet()`
+  `if/else` body recognizer to non-null keyed stores such as
+  `$bag["leaf"] = $array`, where the `else` branch writes through the same
+  literal prefix/suffix path used by append stores:
+  `if ($offset === null) { $this->items["outer"][]["leaf"] = $value; }
+  else { $this->items["outer"][$offset]["leaf"] = $value; }`. The covered
+  keyed store now attaches copied nested reference-slot metadata to the
+  non-null branch's backing bucket, so later backing-property writes
+  resynchronize the original referenced variables. Keep `elseif`, extra
+  statements in either branch, mismatched append/keyed paths for append
+  stores, dynamic `offsetGet()`/`offsetSet()` parameter keys, repeated offset
+  parameters in branchy append bridges, non-literal path keys,
+  side-effecting or broader `offsetSet()`/`offsetGet()` bodies, broader mixed
+  nested `ArrayAccess` chains, broader `__get()` return expressions, by-value
+  terminal/plain-array mutation, scalar parent overwrite/error parity, full
+  references/COW, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

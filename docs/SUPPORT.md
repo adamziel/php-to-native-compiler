@@ -873,7 +873,10 @@
   accepts the equivalent `if/else` body without the `return`, including the
   same literal prefix/suffix family, such as
   `if ($offset === null) { $this->property["outer"][]["leaf"] = $value; }
-  else { $this->property["outer"][$offset]["leaf"] = $value; }`. The same focused append
+  else { $this->property["outer"][$offset]["leaf"] = $value; }`. Keyed
+  stores such as `$bag["leaf"] = $array` also preserve copied reference-slot
+  metadata through that same `if/else` body by recognizing the non-null
+  branch's keyed backing assignment. The same focused append
   stored-bucket propagation is supported
   when a direct visible named or dynamic property holds the `ArrayAccess`
   object, such as `$holder->bag[] = $array` or
