@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1766-C for nested `if` reference-return control flow in the
+  supported magic/`ArrayAccess` method-body subset. By-reference
+  `ArrayAccess::offsetGet()` and `__get()` bodies can now return covered
+  lvalues from executed `if`/`else` branches while preserving side effects,
+  missing-bucket initialization, and copied reference-slot write-through.
+  Loop/switch/try-style reference returns, unsupported PHP syntax inside the
+  body, broader dynamic backing-key variables, and native reference lowering
+  remain unsupported. Focused verification: raw system PHP output matched the
+  new `milestone1766` fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1766` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; focused `functions_and_scopes` milestone tests
+  passed.
+
 - Added Lane 1765-C for dynamic magic/`ArrayAccess` reference-return method
   bodies in the supported top-level statement subset. Public by-reference
   `ArrayAccess::offsetGet()` reference sources now execute the method body

@@ -227,6 +227,11 @@
   the returned bucket binding. Covered examples include
   `$this->hits[] = $offset; if (!isset($this->items[$offset])) { ... }`
   followed by `$bucket =& $this->items[$offset]; return $bucket[$leaf];`.
+  Covered reference-return bodies may also return from executed `if`/`else`
+  branches when the returned expression is one of the supported lvalue shapes,
+  so branch-selected backing buckets such as
+  `if ($offset === "left") { return $this->left[$offset]; } return $this->right[$offset];`
+  bind through the selected bucket.
   Public by-reference `__get()` uses the same assignment-capable return path
   for covered array-offset returns such as `return $this->store[$name];`.
   The bounded `__get()` and `offsetGet()` backing analyzers also accept one
@@ -237,9 +242,9 @@
   such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
   This does not add magic property roots without an array offset, magic
   `__get()` roots beyond the covered direct variable/property/backing-offset
-  returns; nested-control-flow reference returns; arbitrary PHP syntax outside
-  the interpreter subset; arbitrary mixed nested `ArrayAccess` object chains;
-  broad same-container identity for
+  returns; loop/switch/try-style reference returns; arbitrary PHP syntax
+  outside the interpreter subset; arbitrary mixed nested `ArrayAccess` object
+  chains; broad same-container identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,
   arbitrary reference expressions,

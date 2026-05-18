@@ -36304,131 +36304,10 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<ReferenceReturnLocalBinding> {
         for stmt in &function.body {
-            self.tick(stmt.span())?;
-            if let Stmt::Return { value, span } = stmt {
-                let Some(value) = value else {
-                    return Err(runtime_error(
-                        *span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "reference-return functions must return a value in the current subset",
-                        ),
-                    ));
-                };
-                match value {
-                    Expr::Variable(name, variable_span) => {
-                        if let Some(aliases) = scope.array_offset_aliases_for_name(name) {
-                            return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(aliases));
-                        }
-                        return scope
-                            .read_cell(name)
-                            .map(ReferenceReturnLocalBinding::Cell)
-                            .ok_or_else(|| {
-                                runtime_error(
-                                    *variable_span,
-                                    RuntimeError::undefined_variable(name),
-                                )
-                            });
-                    }
-                    Expr::Index { target, index, .. } => {
-                        if let Some((root_name, indices)) =
-                            Self::collect_direct_variable_array_index_path(target, index)
-                        {
-                            let keys = indices
-                                .iter()
-                                .map(|index| self.evaluate_array_key(index, scope))
-                                .collect::<CompileResult<Vec<_>>>()?;
-                            if let Some(aliases) = scope.array_offset_aliases_for_name(root_name) {
-                                return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(
-                                    Self::array_offset_aliases_with_suffix(&aliases, &keys),
-                                ));
-                            }
-                            let alias = ArrayOffsetAlias {
-                                root: ArrayOffsetAliasRoot::StaticArray {
-                                    name: root_name.to_string(),
-                                },
-                                keys: keys.clone(),
-                            };
-                            scope.materialize_array_offset_alias(&alias, *span)?;
-                            return Ok(ReferenceReturnLocalBinding::ArrayOffset {
-                                root_name: root_name.to_string(),
-                                keys,
-                            });
-                        }
-
-                        if let Some((property, indices)) =
-                            Self::collect_this_property_array_index_path(target, index)
-                        {
-                            let keys = indices
-                                .iter()
-                                .map(|index| self.evaluate_array_key(index, scope))
-                                .collect::<CompileResult<Vec<_>>>()?;
-                            let root =
-                                self.this_object_property_alias_root(property, scope, *span)?;
-                            let alias = ArrayOffsetAlias { root, keys };
-                            scope.materialize_array_offset_alias(&alias, *span)?;
-                            return Ok(ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(
-                                alias,
-                            ));
-                        }
-
-                        {
-                            return Err(runtime_error(
-                                *span,
-                                RuntimeError::unsupported_call(
-                                    callable_name(&function.name),
-                                    "reference-return array-offset expressions are only implemented for direct variable roots and bounded $this->property roots in the current subset",
-                                ),
-                            ));
-                        }
-                    }
-                    _ => {
-                        return Err(runtime_error(
-                            *span,
-                            RuntimeError::unsupported_call(
-                                callable_name(&function.name),
-                                "reference returns are only implemented for direct variable and direct array-offset return expressions",
-                            ),
-                        ));
-                    }
-                }
-            }
-
-            match self.execute_statement(stmt, scope)? {
-                Flow::Normal => {}
-                Flow::Return(_) => {
-                    return Err(runtime_error(
-                        stmt.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "reference returns through nested control flow are not implemented",
-                        ),
-                    ));
-                }
-                Flow::Break { span, .. } => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
-                    ));
-                }
-                Flow::Continue { span, .. } => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::invalid_loop_control(
-                            "continue cannot be used outside a loop",
-                        ),
-                    ));
-                }
-                Flow::Exit(_) => {
-                    return Err(runtime_error(
-                        stmt.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "exit during reference-return evaluation is not implemented",
-                        ),
-                    ));
-                }
-                Flow::Goto { label, span } => return Err(undefined_goto_label_error(span, &label)),
+            if let Some(binding) =
+                self.execute_reference_return_assignment_statement(function, stmt, scope)?
+            {
+                return Ok(binding);
             }
         }
 
@@ -36439,6 +36318,164 @@ impl Interpreter {
                 "reference-return functions must return a direct variable or direct array offset in the current subset",
             ),
         ))
+    }
+
+    fn execute_reference_return_assignment_statement(
+        &mut self,
+        function: &FunctionDecl,
+        stmt: &Stmt,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnLocalBinding>> {
+        self.tick(stmt.span())?;
+        if let Stmt::Return { value, span } = stmt {
+            let Some(value) = value else {
+                return Err(runtime_error(
+                    *span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "reference-return functions must return a value in the current subset",
+                    ),
+                ));
+            };
+            return self
+                .reference_return_local_binding_from_expr(function, value, *span, scope)
+                .map(Some);
+        }
+
+        if let Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+            ..
+        } = stmt
+        {
+            let branch = if self.evaluate(condition, scope)?.is_truthy() {
+                then_branch
+            } else {
+                else_branch
+            };
+            return self
+                .execute_reference_return_assignment_statement_list(function, branch, scope);
+        }
+
+        match self.execute_statement(stmt, scope)? {
+            Flow::Normal => Ok(None),
+            Flow::Return(_) => Err(runtime_error(
+                stmt.span(),
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "reference returns through this control-flow form are not implemented",
+                ),
+            )),
+            Flow::Break { span, .. } => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+            )),
+            Flow::Continue { span, .. } => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
+            )),
+            Flow::Exit(_) => Err(runtime_error(
+                stmt.span(),
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "exit during reference-return evaluation is not implemented",
+                ),
+            )),
+            Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
+        }
+    }
+
+    fn execute_reference_return_assignment_statement_list(
+        &mut self,
+        function: &FunctionDecl,
+        statements: &[Stmt],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnLocalBinding>> {
+        for stmt in statements {
+            if let Some(binding) =
+                self.execute_reference_return_assignment_statement(function, stmt, scope)?
+            {
+                return Ok(Some(binding));
+            }
+        }
+        Ok(None)
+    }
+
+    fn reference_return_local_binding_from_expr(
+        &mut self,
+        function: &FunctionDecl,
+        value: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnLocalBinding> {
+        match value {
+            Expr::Variable(name, variable_span) => {
+                if let Some(aliases) = scope.array_offset_aliases_for_name(name) {
+                    return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(aliases));
+                }
+                scope
+                    .read_cell(name)
+                    .map(ReferenceReturnLocalBinding::Cell)
+                    .ok_or_else(|| runtime_error(*variable_span, RuntimeError::undefined_variable(name)))
+            }
+            Expr::Index { target, index, .. } => {
+                if let Some((root_name, indices)) =
+                    Self::collect_direct_variable_array_index_path(target, index)
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    if let Some(aliases) = scope.array_offset_aliases_for_name(root_name) {
+                        return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(
+                            Self::array_offset_aliases_with_suffix(&aliases, &keys),
+                        ));
+                    }
+                    let alias = ArrayOffsetAlias {
+                        root: ArrayOffsetAliasRoot::StaticArray {
+                            name: root_name.to_string(),
+                        },
+                        keys: keys.clone(),
+                    };
+                    scope.materialize_array_offset_alias(&alias, span)?;
+                    return Ok(ReferenceReturnLocalBinding::ArrayOffset {
+                        root_name: root_name.to_string(),
+                        keys,
+                    });
+                }
+
+                if let Some((property, indices)) =
+                    Self::collect_this_property_array_index_path(target, index)
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let root = self.this_object_property_alias_root(property, scope, span)?;
+                    let alias = ArrayOffsetAlias { root, keys };
+                    scope.materialize_array_offset_alias(&alias, span)?;
+                    return Ok(ReferenceReturnLocalBinding::ObjectPropertyArrayOffset(
+                        alias,
+                    ));
+                }
+
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "reference-return array-offset expressions are only implemented for direct variable roots and bounded $this->property roots in the current subset",
+                    ),
+                ))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "reference returns are only implemented for direct variable and direct array-offset return expressions",
+                ),
+            )),
+        }
     }
 
     fn call_user_function_with_values(

@@ -19891,8 +19891,18 @@ handled.
   returns through the assignment-capable reference-return executor, so
   supported top-level method-body statements, side effects, missing-bucket
   initialization, and local backing aliases execute before the returned bucket
-  is bound. Keep nested-control-flow returns, arbitrary unsupported PHP
-  syntax, broader magic roots, and native reference lowering named as
+  is bound. Keep nested-control-flow returns outside the covered branch form,
+  arbitrary unsupported PHP syntax, broader magic roots, and native reference
+  lowering named as unsupported.
+
+## Lane 1766-C: Branch Reference-Return Bodies
+
+- [x] Runtime/interpreter/tests/docs lane: preserve reference-return lvalues
+  through executed `if`/`else` branches in public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies, so
+  branch-selected backing buckets keep copied reference-slot write-through.
+  Keep loop/switch/try-style reference returns, arbitrary unsupported PHP
+  syntax, broader dynamic backing keys, and native reference lowering named as
   unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations

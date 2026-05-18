@@ -32,7 +32,12 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1765:
+The current in-progress implementation frontier is Lane 1766:
+
+- Lane 1766 preserves reference-return lvalues through executed `if`/`else`
+  branches in public by-reference `ArrayAccess::offsetGet()` and covered
+  by-reference `__get()` bodies, so branch-selected backing buckets keep COW
+  reference-slot write-through.
 
 - Lane 1765 routes public by-reference `ArrayAccess::offsetGet()` and covered
   by-reference `__get()` array-offset returns through the assignment-capable
