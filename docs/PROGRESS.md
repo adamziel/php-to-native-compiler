@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1794-C through Lane 1796-C for delegated reference-return call
+  expressions inside the executed magic/`ArrayAccess` COW bridge. Supported
+  public by-reference `__get()` and `ArrayAccess::offsetGet()` bodies can now
+  return a by-reference helper call such as `$this->storeRef()`,
+  `$this->slotRef($offset)`, or a direct helper that returns a covered
+  by-reference object-property array argument. The returned helper binding is
+  promoted through the same reference-cell path as direct lvalue returns
+  before caller suffix keys are applied, preserving copied reference-slot
+  write-through. This does not claim arbitrary call expressions, non-static
+  `self::`/`parent::`/`static::` delegation, arbitrary PHP syntax or side
+  effects outside the executed interpreter subset, incompatible typed
+  signatures, full exception unwinding, exact PHP diagnostics, or native
+  reference lowering. Focused verification: raw system PHP output matched the
+  new `milestone1794`, `milestone1795`, and `milestone1796` fixtures; `cargo
+  run -q -p phpc -- test --compare-php` passed each new fixture directory
+  with `1` fixture, `1` system PHP comparison, and `0` skips; focused
+  `functions_and_scopes` milestone tests passed.
+
 - Added Lane 1791-C through Lane 1793-C for property-root reference returns
   in the executed magic/`ArrayAccess` COW bridge. Public by-reference
   `__get()` bodies can now execute supported side effects and return

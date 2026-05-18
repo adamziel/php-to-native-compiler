@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T00:34:00+02:00
+
+- Checkpoint before this task: `603a1dda runtime: support property root
+  reference returns`, pushed to `origin/master`.
+- Task attempted: Lane 1794-C through Lane 1796-C bundle, allowing executed
+  magic/`ArrayAccess` reference-return bodies to delegate the returned lvalue
+  through supported by-reference helper call expressions.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1794/*`, `tests/fixtures/milestone1795/*`,
+  `tests/fixtures/milestone1796/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched the new `milestone1794`, `milestone1795`, and `milestone1796`
+  fixtures; `cargo run -q -p phpc -- test --compare-php` passed each new
+  fixture directory with `1` fixture, `1` system PHP comparison, and `0`
+  skips; focused `cargo test -q -p phpc --test functions_and_scopes
+  milestone179` passed.
+- Remaining COW gaps: arbitrary call expressions and unsupported delegation
+  forms inside magic/`ArrayAccess` reference-return bodies, unsupported PHP
+  syntax and side effects outside the executed method-body subset, arbitrary
+  type enforcement and incompatible typed reference-return signatures, full
+  exception unwinding and uncaught exception propagation, arbitrary Iterator
+  side effects, arbitrary closure capture roots, broader complex alias sinks
+  and alias lifetime ordering, exact PHP stderr/fatal text, binary/multibyte
+  string offset behavior, and native reference/string COW lowering.
+- Next concrete task: run adjacent regressions, formatting/diff/check gates,
+  then the full `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T00:22:00+02:00
 
 - Checkpoint before this task: `2b7c4d82 runtime: accept typed reference

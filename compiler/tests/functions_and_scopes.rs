@@ -5512,6 +5512,54 @@ fn milestone1793_arrayaccess_return_property_root_fixture_matches_runtime() {
 }
 
 #[test]
+fn milestone1794_system_php_magic_get_return_method_call_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1794/magic_get_return_method_call_cow.php",
+        "../tests/fixtures/milestone1794/magic_get_return_method_call_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1794_magic_get_return_method_call_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1794/magic_get_return_method_call_cow.php",
+        "../tests/fixtures/milestone1794/magic_get_return_method_call_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1795_system_php_arrayaccess_return_method_call_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1795/arrayaccess_return_method_call_cow.php",
+        "../tests/fixtures/milestone1795/arrayaccess_return_method_call_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1795_arrayaccess_return_method_call_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1795/arrayaccess_return_method_call_cow.php",
+        "../tests/fixtures/milestone1795/arrayaccess_return_method_call_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1796_system_php_magic_get_return_helper_call_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1796/magic_get_return_helper_call_cow.php",
+        "../tests/fixtures/milestone1796/magic_get_return_helper_call_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1796_magic_get_return_helper_call_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1796/magic_get_return_helper_call_cow.php",
+        "../tests/fixtures/milestone1796/magic_get_return_helper_call_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

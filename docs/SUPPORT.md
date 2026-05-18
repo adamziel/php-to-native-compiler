@@ -1164,7 +1164,12 @@
   preserving copied reference-slot metadata. The same executed
   reference-return path covers public by-reference
   `ArrayAccess::offsetGet()` returning a whole `$this->property` backing root
-  before the caller suffix selects the final bucket. The exact
+  before the caller suffix selects the final bucket. Within that same
+  executed reference-return subset, the returned lvalue may also be delegated
+  through a supported reference-returning call expression, including
+  `$this->helper()` methods that return a backing property root or selected
+  backing bucket by reference, and direct helper calls that return a covered
+  by-reference object-property array argument. The exact
   `__get()`/`offsetGet()` backing
   analyzer accepts one local copy of the magic/offset parameter before the
   return, such as `$slot = $name; return $this->store[$slot];` or

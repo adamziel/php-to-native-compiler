@@ -32,7 +32,16 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1793:
+The current in-progress implementation frontier is Lane 1796:
+
+- Lanes 1794 through 1796 let supported magic/`ArrayAccess`
+  reference-return bodies delegate their returned lvalue through another
+  reference-returning call expression. Covered bodies can now `return
+  $this->helper()`, where the helper returns a backing property root or
+  selected backing bucket by reference, and can also `return helper(...)` when
+  a direct helper returns a covered by-reference object-property array
+  argument. The delegated result is promoted to the same reference-cell path
+  used by direct lvalue returns before caller suffix keys are applied.
 
 - Lanes 1791 through 1793 add property-root reference-return bridges for
   executed magic/`ArrayAccess` method bodies. Covered public by-reference

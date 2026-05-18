@@ -20057,6 +20057,21 @@ handled.
   incompatible typed signatures, full exception unwinding, exact PHP
   diagnostics, and native reference lowering named as unsupported.
 
+## Lane 1794-C through Lane 1796-C: Delegated Reference-Return Calls
+
+- [x] Runtime/interpreter/tests/docs bundle: allow supported
+  magic/`ArrayAccess` reference-return bodies to return a by-reference helper
+  call expression and promote that delegated binding through the same
+  reference-cell path as direct lvalue returns. Cover public by-reference
+  `__get()` returning `$this->helper()` for a backing property root, public
+  by-reference `ArrayAccess::offsetGet()` returning `$this->helper($offset)`
+  for a selected backing bucket, and `__get()` returning a direct helper call
+  over a covered by-reference object-property array argument. Keep arbitrary
+  call expressions, non-static `self::`/`parent::`/`static::` delegation,
+  arbitrary PHP syntax and side effects outside the executed method-body
+  subset, incompatible typed signatures, full exception unwinding, exact PHP
+  diagnostics, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

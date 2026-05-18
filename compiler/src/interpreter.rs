@@ -13387,38 +13387,10 @@ impl Interpreter {
         match binding {
             ReferenceReturnBinding::Cell(cell) => Ok(cell),
             ReferenceReturnBinding::ArrayOffset(alias) => {
-                scope.materialize_array_offset_alias(&alias, span)?;
-                scope
-                    .reference_cell_for_array_offset_alias_group(std::slice::from_ref(&alias))
-                    .ok_or_else(|| {
-                        runtime_error(
-                            function.span,
-                            RuntimeError::invalid_array_access(
-                                "cannot bind reference-return array-offset result".to_string(),
-                            ),
-                        )
-                    })
+                self.reference_return_alias_cell(function, alias, span, scope)
             }
             ReferenceReturnBinding::ArrayOffsets(aliases) => {
-                let alias = aliases.first().ok_or_else(|| {
-                    runtime_error(
-                        function.span,
-                        RuntimeError::invalid_array_access(
-                            "cannot bind empty reference-return array-offset result".to_string(),
-                        ),
-                    )
-                })?;
-                scope.materialize_array_offset_alias(alias, span)?;
-                scope
-                    .reference_cell_for_array_offset_alias_group(&aliases)
-                    .ok_or_else(|| {
-                        runtime_error(
-                            function.span,
-                            RuntimeError::invalid_array_access(
-                                "cannot bind reference-return array-offset result".to_string(),
-                            ),
-                        )
-                    })
+                self.reference_return_aliases_cell(function, aliases, span, scope)
             }
         }
     }
@@ -37225,6 +37197,17 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<ReferenceReturnLocalBinding> {
         match value {
+            Expr::Call { .. }
+            | Expr::MethodCall { .. }
+            | Expr::StaticMethodCall { .. }
+            | Expr::SelfMethodCall { .. }
+            | Expr::ParentMethodCall { .. }
+            | Expr::LateStaticMethodCall { .. }
+            | Expr::ObjectStaticMethodCall { .. } => {
+                let binding = self.evaluate_reference_return_call_binding(value, span, scope)?;
+                let cell = self.reference_return_binding_cell(function, binding, span, scope)?;
+                Ok(ReferenceReturnLocalBinding::Cell(cell))
+            }
             Expr::Variable(name, variable_span) => {
                 if let Some(aliases) = scope.array_offset_aliases_for_name(name) {
                     return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(aliases));
