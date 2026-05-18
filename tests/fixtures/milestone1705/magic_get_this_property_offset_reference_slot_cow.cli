@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1705/magic_get_this_property_offset_reference_slot_cow.php

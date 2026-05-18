@@ -4052,6 +4052,11 @@ struct ReferenceBinding {
     target: ReferenceBindingTarget,
 }
 
+struct ThisPropertyReferenceTarget {
+    property: String,
+    prefix_keys: Vec<ArrayKey>,
+}
+
 #[derive(Debug, Clone)]
 struct ClosureAliasCapture {
     name: String,
@@ -13683,13 +13688,13 @@ impl Interpreter {
             ensure_user_function_arity(function, 1, span)?;
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
-            if let Some(return_property) =
+            if let Some(return_target) =
                 self.reference_return_this_property_name(function, property, span)?
             {
                 let protected_class_ids = self.protected_class_ids_for_context(class_id);
                 let property_visibility = holder
                     .property_visibility_from_context(
-                        &return_property,
+                        &return_target.property,
                         Some(class_id),
                         &protected_class_ids,
                     )
@@ -13697,20 +13702,22 @@ impl Interpreter {
                 let root = if property_visibility == Visibility::Public {
                     ArrayOffsetAliasRoot::PublicObjectProperty {
                         object: object_name.to_string(),
-                        property: return_property.clone(),
+                        property: return_target.property.clone(),
                     }
                 } else {
                     ArrayOffsetAliasRoot::ContextObjectProperty {
                         object: object_name.to_string(),
-                        property: return_property.clone(),
+                        property: return_target.property.clone(),
                         current_class_id: Some(class_id),
                         protected_class_ids: protected_class_ids.clone(),
                     }
                 };
                 let root = scope.canonical_equivalent_object_property_alias_root(&root);
+                let mut target_keys = return_target.prefix_keys.clone();
+                target_keys.extend(keys.iter().cloned());
                 match holder
                     .read_property_from_context(
-                        &return_property,
+                        &return_target.property,
                         Some(class_id),
                         &protected_class_ids,
                     )
@@ -13718,7 +13725,10 @@ impl Interpreter {
                 {
                     Value::Array(_) | Value::Null => {
                         let alias = scope.append_object_property_array_offset_reference_alias(
-                            root, keys, value, span,
+                            root,
+                            target_keys,
+                            value,
+                            span,
                         )?;
                         self.bind_or_mirror_array_references_to_alias_root(
                             expr,
@@ -13873,7 +13883,7 @@ impl Interpreter {
         function: &FunctionDecl,
         requested_property: &str,
         span: Span,
-    ) -> CompileResult<Option<String>> {
+    ) -> CompileResult<Option<ThisPropertyReferenceTarget>> {
         let [Stmt::Return {
             value: Some(value), ..
         }] = function.body.as_slice()
@@ -13894,7 +13904,10 @@ impl Interpreter {
                         ),
                     ));
                 }
-                Ok(Some(property.clone()))
+                Ok(Some(ThisPropertyReferenceTarget {
+                    property: property.clone(),
+                    prefix_keys: Vec::new(),
+                }))
             }
             Expr::DynamicProperty {
                 target, property, ..
@@ -13920,7 +13933,43 @@ impl Interpreter {
                         ),
                     ));
                 }
-                Ok(Some(requested_property.to_string()))
+                Ok(Some(ThisPropertyReferenceTarget {
+                    property: requested_property.to_string(),
+                    prefix_keys: Vec::new(),
+                }))
+            }
+            Expr::Index { target, index, .. } => {
+                let Expr::Property {
+                    target, property, ..
+                } = target.as_ref()
+                else {
+                    return Ok(None);
+                };
+                if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "reference-return $this property offset expressions require return $this->property[$name] in the current subset",
+                        ),
+                    ));
+                }
+                let Some(param) = function.params.first() else {
+                    return Ok(None);
+                };
+                if !matches!(index.as_ref(), Expr::Variable(name, _) if name == &param.name) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "reference-return $this property offset expressions require return $this->property[$name] where $name is the __get parameter in the current subset",
+                        ),
+                    ));
+                }
+                Ok(Some(ThisPropertyReferenceTarget {
+                    property: property.clone(),
+                    prefix_keys: vec![ArrayKey::String(requested_property.to_string())],
+                }))
             }
             _ => Ok(None),
         }

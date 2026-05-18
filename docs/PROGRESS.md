@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Lane 1705-C focused `__get()` backing-array offset return support for
+  the append/method-write COW shape. A by-reference `__get($name)` body of
+  `return $this->store[$name];` is now recognized when `$name` is the
+  `__get()` parameter. The runtime prepends the requested magic property as a
+  key under the private `$store` backing array, appends through
+  `$box->missing["outer"][]`, stores copied nested reference-slot metadata
+  under `$this->store["missing"]["outer"]`, and later same-class method writes
+  through `$this->store["missing"]["outer"][0]...` resynchronize the original
+  referenced variables. This does not add backing-array offset return
+  expressions beyond that exact parameter-key shape, broader arbitrary
+  `__get()` return expressions, broader method-local alias lifetimes, full
+  references/COW, or native reference lowering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1705` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1705`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1704-C focused dynamic private `$this->{$name}` magic return
   support for the append/method-write COW shape. A by-reference `__get($name)`
   body of `return $this->{$name};` is now recognized when `$name` is the

@@ -1006,7 +1006,10 @@ one focused private `$this->property` route where a same-class method later
 mutates that private backing bucket. The same focused private route also
 recognizes `return $this->{$name};` when `$name` is the `__get()` parameter,
 using the requested inaccessible property name as the backing property. It
-appends into the corresponding
+also recognizes the exact backing-array offset shape
+`return $this->property[$name];`, where `$name` is the `__get()` parameter,
+and prepends the requested magic property as a key under that backing
+property before applying the append path. It appends into the corresponding
 object-property alias root and mirrors copied reference-slot metadata there,
 without creating a general object-property cell model. The same
 object-property-root path is tested through a two-key parent append, so

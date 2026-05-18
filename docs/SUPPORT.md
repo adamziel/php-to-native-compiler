@@ -946,9 +946,14 @@
   resynchronize after the method returns. The focused dynamic private-property
   return body `return $this->{$name};` is also covered when `$name` is the
   `__get()` parameter and the selected inaccessible property is the private
-  backing array. Broader private/protected
+  backing array. The focused backing-array offset return body
+  `return $this->store[$name];` is also covered when `$name` is the
+  `__get()` parameter; the requested magic property is prepended as a key
+  under `$this->store` before appending into the returned bucket. Broader
+  private/protected
   `$this` property routes, dynamic property-return expressions beyond that
-  exact parameter form, and
+  exact parameter form, backing-array offset return expressions beyond that
+  exact parameter-key shape, and
   arbitrary method-local alias lifetimes remain outside that focused slice.
   The same
   focused route supports one
