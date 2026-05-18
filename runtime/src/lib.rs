@@ -1280,6 +1280,23 @@ impl PhpArray {
         key
     }
 
+    pub fn insert_checked(
+        &mut self,
+        key: impl Into<ArrayKey>,
+        value: Value,
+    ) -> RuntimeResult<ArrayKey> {
+        let key = key.into().normalized();
+        self.bump_next_auto_index(&key);
+
+        if let Some(slot) = self.get_slot_mut(key.clone()) {
+            slot.set_value_checked(value)?;
+            return Ok(key);
+        }
+
+        self.entries.push(ArrayEntry::new(key.clone(), value));
+        Ok(key)
+    }
+
     pub fn insert_reference(
         &mut self,
         key: impl Into<ArrayKey>,
@@ -2411,6 +2428,20 @@ impl ArraySlot {
         match &self.storage {
             ArraySlotStorage::Value(_) => self.cell_mut_for_by_value_write().set_value(value),
             ArraySlotStorage::Reference(reference) => reference.set_value(value),
+        }
+    }
+
+    pub fn set_value_checked(&mut self, value: Value) -> RuntimeResult<()> {
+        match &self.storage {
+            ArraySlotStorage::Value(_) => {
+                self.cell_mut_for_by_value_write().set_value(value);
+                Ok(())
+            }
+            ArraySlotStorage::Reference(reference) => {
+                let value = reference.coerce_value_for_write(value)?;
+                reference.set_value(value);
+                Ok(())
+            }
         }
     }
 

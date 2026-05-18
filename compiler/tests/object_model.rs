@@ -6602,6 +6602,50 @@ $alias = "bad";
 }
 
 #[test]
+fn typed_property_reference_array_slot_writes_keep_property_enforcement() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public int $id;
+}
+
+$box = new Box();
+$box->id = 1;
+$alias =& $box->id;
+$target = array();
+$target["copy"] =& $alias;
+$target["copy"] = "2";
+echo gettype($box->id), ":", $box->id, "|", gettype($target["copy"]), ":", $target["copy"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "integer:2|integer:2");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    public int $id;
+}
+
+$box = new Box();
+$box->id = 1;
+$alias =& $box->id;
+$target = array();
+$target["copy"] =& $alias;
+$target["copy"] = "bad";
+"#,
+    );
+    assert_eq!(error.line, 11);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid property access: typed property Box::$id expects int, got string"
+    );
+}
+
+#[test]
 fn typed_properties_accept_inherited_class_name_assignments() {
     let execution = run_source(
         r#"<?php

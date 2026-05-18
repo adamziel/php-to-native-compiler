@@ -9986,7 +9986,9 @@ impl Interpreter {
 
                 match &mut slot {
                     Value::Array(array) => {
-                        array.insert(key, value);
+                        array
+                            .insert_checked(key, value)
+                            .map_err(|error| runtime_error(span, error))?;
                         scope.write_static(name, slot);
                         Ok(())
                     }
@@ -14152,7 +14154,9 @@ impl Interpreter {
                 match &mut slot {
                     Value::Array(array) => match key {
                         Some(key) => {
-                            array.insert(key, value.clone());
+                            array
+                                .insert_checked(key, value.clone())
+                                .map_err(|error| runtime_error(*span, error))?;
                         }
                         None => {
                             array
@@ -16705,7 +16709,9 @@ impl Interpreter {
         };
 
         if rest.is_empty() {
-            array.insert(key.clone(), value);
+            array
+                .insert_checked(key.clone(), value)
+                .map_err(|error| runtime_error(span, error))?;
             return Ok(());
         }
 
@@ -17162,12 +17168,14 @@ impl Interpreter {
     ) -> CompileResult<()> {
         match place {
             CompoundAssignmentPlace::Variable(name) => {
-                scope.write_static(&name, value);
+                scope.write_static_checked(&name, value, span)?;
                 Ok(())
             }
             CompoundAssignmentPlace::ArrayIndex { name, key } => match scope.read_named(&name) {
                 Some(Value::Array(mut array)) => {
-                    array.insert(key, value);
+                    array
+                        .insert_checked(key, value)
+                        .map_err(|error| runtime_error(span, error))?;
                     scope.write_static(&name, Value::Array(array));
                     Ok(())
                 }
@@ -17678,7 +17686,9 @@ impl Interpreter {
 
                     match &mut slot {
                         Value::Array(array) => {
-                            array.insert(key, value.clone());
+                            array
+                                .insert_checked(key, value.clone())
+                                .map_err(|error| runtime_error(*span, error))?;
                             scope.write_static(name, slot);
                             Ok(value)
                         }

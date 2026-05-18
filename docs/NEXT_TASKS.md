@@ -19619,6 +19619,17 @@ handled.
   is attached, string COW identity, and native reference lowering named as
   unsupported.
 
+## Lane 1742-C: Typed Property Reference Slot Sink Enforcement
+
+- [x] Runtime/interpreter/tests/docs lane: carry typed-property reference-cell
+  constraints through reference-backed array slots. Cover direct array,
+  nested array, public object-property array, and compound-assignment writes
+  to slots that reuse a typed property reference cell, with system-PHP
+  fixture comparison and invalid-write regression. Keep broader complex alias
+  sinks, exact PHP fatal text, live class/interface alias changes after a
+  reference constraint is attached, string COW identity, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

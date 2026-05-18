@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 1742-C for typed-property reference constraints through
+  reference-backed array slot sinks. Array slot updates now have a checked
+  write path for reused `PhpReferenceCell`s, and covered interpreter
+  assignments route through it for direct array indexes, nested array indexes,
+  public object-property array indexes, and compound assignment results.
+  A typed property reference cell stored into those slots now coerces scalar
+  writes or reports the stable typed-property error instead of accepting an
+  unchecked value. Broader complex alias sinks, exact PHP fatal text, live
+  class/interface alias changes after a reference constraint is attached,
+  string COW identity, and native reference lowering remain unsupported.
+  Focused verification: `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1742` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent
+  `typed_property_reference_array_slot_writes_keep_property_enforcement`
+  passed.
+
 - Added Lane 1741-C for bounded typed-property enforcement on promoted object
   property reference cells. Runtime `PhpReferenceCell`s can now carry
   property type constraints, and direct variable assignment through aliases

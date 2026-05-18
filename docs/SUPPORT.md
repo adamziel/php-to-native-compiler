@@ -4456,7 +4456,10 @@
   by-reference parameter writes through such an alias coerce or reject writes
   like ordinary typed-property assignment for the covered scalar/class
   subset, including reference-backed property clones and method-local private
-  property references. By-value
+  property references. Reference-backed array slots that reuse one of those
+  typed property reference cells also enforce the constraint for the covered
+  direct array, nested array, public object-property array, and compound
+  assignment write paths. By-value
   terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's
@@ -4470,9 +4473,9 @@
   are substrate for later PHP-visible reference containers and COW separation;
   broader non-direct append target forms, append suffixes after `[]`,
   arbitrary magic/`ArrayAccess` method bodies, broader mixed array element
-  bindings, arbitrary writes through every complex typed-property alias sink,
-  exact PHP fatal text for invalid typed-reference writes, live class/interface
-  alias changes after a reference constraint is attached, arbitrary
+  bindings, arbitrary writes through every remaining complex typed-property
+  alias sink, exact PHP fatal text for invalid typed-reference writes, live
+  class/interface alias changes after a reference constraint is attached, arbitrary
   dynamic-property policy beyond the current dynamic-capable object subset,
   complete alias lifetime/detach parity, string COW identity, and native
   reference lowering remain unsupported.

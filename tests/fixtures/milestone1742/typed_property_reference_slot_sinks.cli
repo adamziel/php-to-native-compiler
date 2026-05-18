@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1742/typed_property_reference_slot_sinks.php

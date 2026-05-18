@@ -60,6 +60,37 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "runtime: enforce typed property reference cells"` if
   the full gate passes.
 
+## Loop Event 2026-05-18T18:58:00+02:00
+
+- Checkpoint before this task: `f39b3bab runtime: enforce typed property
+  reference cells`, pushed to `origin/master`.
+- Task attempted: Lane 1742-C typed-property reference constraints through
+  reference-backed array slot sinks.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1742/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new milestone1742
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1742` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; `cargo fmt --check` passed; adjacent
+  `typed_property_reference_array_slot_writes_keep_property_enforcement`
+  passed.
+- Semantic gap reduced: typed-property reference cells reused by direct
+  array, nested array, public object-property array, and compound-assignment
+  slot writes now coerce or reject through the property constraint instead of
+  accepting unchecked values.
+- Remaining semantic gaps: broader complex typed-property alias sinks, exact
+  PHP fatal text, live class/interface alias changes after a reference
+  constraint is attached, arbitrary dynamic-property policy, complete alias
+  lifetime/detach behavior, string COW identity, and native reference
+  lowering remain unsupported.
+- Next concrete task: run `cargo check`, `git diff --check`, adjacent
+  milestone1741 comparisons and typed/object reference regressions, then one
+  full checkpoint with
+  `tools/checkpoint.sh "runtime: enforce typed reference slot writes"` if the
+  full gate passes.
+
 ## Loop Event 2026-05-18T22:10:00+02:00
 
 - Checkpoint before this task: `23714182 runtime: support arrayaccess
