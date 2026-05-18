@@ -866,7 +866,13 @@
   `__get($name)` returns an `ArrayAccess` object; `__get()` is called once
   and `offsetSet(null, $value)` receives the append value. This store path is
   separate from magic `ArrayAccess` append reference sources, which keep their
-  existing `offsetGet(null)` notice/no-op behavior. Direct
+  existing `offsetGet(null)` notice/no-op behavior. Non-direct magic-property
+  append stores such as `$holders["box"]->missing[] = $array` and
+  `$holders["box"]->{$name}[] = $array` are supported for the same focused
+  shape when the evaluated holder is an object whose visible public
+  `__get($name)` returns an `ArrayAccess` object; the holder is evaluated
+  once, `__get()` is called once for the append store, and `__set()` is not
+  called for the covered object case. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
   and writing the result back through `offsetSet($key, $value)`. Direct
@@ -875,8 +881,8 @@
   current integer and float values by reading through `offsetGet($key)` and
   applying the update to PHP's current by-value temporary result without
   dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
-  `offsetSet(null, $value)` storage through non-direct magic-property
-  receivers, plain-array magic append mutation, dynamic non-direct
+  `offsetSet(null, $value)` storage through plain arrays returned by magic
+  `__get()`, plain-array magic append mutation, dynamic non-direct
   whole-property setup assignment, method-return or factory holder roots for
   dynamic non-direct append stores, non-empty nested append paths below
   property-held or magic-property `ArrayAccess`, magic `__get()` bodies that

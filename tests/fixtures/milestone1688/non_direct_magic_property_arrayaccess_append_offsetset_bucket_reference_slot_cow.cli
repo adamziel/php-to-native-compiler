@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1688/non_direct_magic_property_arrayaccess_append_offsetset_bucket_reference_slot_cow.php
+stdout:
+via-non-direct-magic-append|via-non-direct-magic-label|via-non-direct-magic-append|via-non-direct-magic-label|1|plain|plain|1|0
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

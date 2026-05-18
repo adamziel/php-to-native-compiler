@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T09:28:30+02:00
+
+- Checkpoint before this task: `3dca6b26 runtime: preserve magic ArrayAccess
+  append references`, pushed to `origin/master`.
+- Task attempted: Lane 1688-C non-direct magic-property `ArrayAccess` append
+  `offsetSet(null, $value)` stored-bucket reference-slot propagation for the
+  focused copied-bucket COW shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1688/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, the lane
+  review note, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc`
+  passed; the non-direct magic-property `ArrayAccess` append
+  `functions_and_scopes` filter passed `8` tests; the adjacent direct
+  magic-property append filter passed `8` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1688`
+  passed `4` fixtures with `4` system PHP comparisons and `0` skips.
+- Semantic gap reduced: `$holders["box"]->missing[] = $array` and
+  `$holders["box"]->{$name}[] = $array` now evaluate the holder once, call
+  visible public `__get($name)` once, avoid `__set()` for the covered object
+  append case, use the returned `ArrayAccess` object, and preserve nested
+  reference slots for both the exact empty-string-key and branchy append-key
+  `offsetSet(null, $value)` bridges.
+- Remaining semantic gaps: plain-array magic append mutation, non-empty nested
+  append paths, method-return or factory holder roots, side-effecting or
+  broader `__get()`/`offsetSet()`/`offsetGet()` bodies, mixed nested
+  `ArrayAccess` chains, full references/COW, native reference lowering, and
+  exact alias destruction/destructor ordering remain unsupported.
+- Next concrete task: run broader verification and checkpoint this lane; then
+  keep all lanes focused on the next largest remaining COW gap, starting with
+  plain-array magic append mutation unless local probes show a higher-impact
+  COW blocker.
+
 ## Loop Event 2026-05-18T09:14:44+02:00
 
 - Checkpoint before this task: `36e65ba7 runtime: preserve dynamic

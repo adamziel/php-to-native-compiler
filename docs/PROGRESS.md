@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added Lane 1688-C non-direct magic-property `ArrayAccess` append
+  `offsetSet(null, $value)` stored-bucket reference-slot propagation for the
+  focused copied-bucket COW shape. Non-direct holder forms
+  `$holders["box"]->missing[] = $array` and
+  `$holders["box"]->{$name}[] = $array` now evaluate the holder once, call
+  visible public `__get($name)` once on the evaluated holder object, avoid
+  `__set()` for the covered object append case, use the returned
+  `ArrayAccess` object, and preserve nested reference slots for the same
+  exact empty-string-key and branchy append-key `offsetSet()` bridges used by
+  the direct magic-property lane. Later exact by-value `offsetGet($offset) {
+  return $this->property[$offset]; }` bucket copies preserve those nested
+  reference slots while ordinary copied fields remain detached. Native
+  lowering still rejects these targets with explicit object-property or
+  array-access lowering boundaries. This does not add plain-array magic
+  append mutation, non-empty nested append paths such as
+  `$holders["box"]->missing["x"][]`, method-return or factory holder roots,
+  magic `__set()` interaction beyond proving it is not used for the covered
+  object case, side-effecting or broader
+  `__get()`/`offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess`
+  chains, full references/COW, native reference lowering, or exact alias
+  destruction/destructor ordering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  `cargo check -q -p phpc` passed, the non-direct magic-property
+  `ArrayAccess` append `functions_and_scopes` filter passed `8` tests, the
+  adjacent direct magic-property append filter passed `8` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1688`
+  passed `4` fixtures with `4` system PHP comparisons and `0` skips.
+
 - Added Lane 1687-C direct magic-property `ArrayAccess` append
   `offsetSet(null, $value)` stored-bucket reference-slot propagation for the
   focused copied-bucket COW shape. Direct `$box->missing[] = $array` and
@@ -18,9 +46,10 @@ Implemented:
   append stores call `offsetSet(null, $value)` and do not use the
   `offsetGet(null)` reference-source fallback. Native lowering still rejects
   this target with explicit object-property or array-access lowering
-  boundaries. This does not add non-direct magic-property append stores such
-  as `$holders["box"]->missing[]`, plain-array magic append mutation,
-  non-empty nested append paths such as `$box->missing["x"][]`, magic
+  boundaries. Lane 1688-C extends this same focused append-store bridge to
+  non-direct holder magic-property forms. This does not add plain-array magic
+  append mutation, non-empty nested append paths such as
+  `$box->missing["x"][]`, magic
   `__set()` interaction beyond not using it for the covered object case,
   side-effecting or broader `__get()`/`offsetSet()`/`offsetGet()` bodies,
   mixed nested `ArrayAccess` chains, full references/COW, native reference

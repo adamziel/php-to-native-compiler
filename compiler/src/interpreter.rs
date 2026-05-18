@@ -12922,10 +12922,23 @@ impl Interpreter {
                                 property,
                                 value.clone(),
                                 expr,
-                                array_literal_references,
+                                array_literal_references.clone(),
                                 *span,
                                 scope,
                             )?
+                    {
+                        return Ok(value);
+                    }
+                    if matches!(value, Value::Array(_))
+                        && self.write_magic_get_array_access_append_with_reference_propagation(
+                            &temp_name,
+                            property,
+                            value.clone(),
+                            expr,
+                            array_literal_references,
+                            *span,
+                            scope,
+                        )?
                     {
                         return Ok(value);
                     }
@@ -12976,10 +12989,23 @@ impl Interpreter {
                                 &property,
                                 value.clone(),
                                 expr,
-                                array_literal_references,
+                                array_literal_references.clone(),
                                 *span,
                                 scope,
                             )?
+                    {
+                        return Ok(value);
+                    }
+                    if matches!(value, Value::Array(_))
+                        && self.write_magic_get_array_access_append_with_reference_propagation(
+                            &temp_name,
+                            &property,
+                            value.clone(),
+                            expr,
+                            array_literal_references,
+                            *span,
+                            scope,
+                        )?
                     {
                         return Ok(value);
                     }
