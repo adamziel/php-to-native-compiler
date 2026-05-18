@@ -1538,7 +1538,7 @@ impl SymbolTable {
 
         let mut array = match self.read_storage_named(array_name) {
             Some(Value::Array(array)) => array,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -1573,7 +1573,7 @@ impl SymbolTable {
         };
         let mut array = match self.read_alias_root_value(&root_alias, span)? {
             Some(Value::Array(array)) => array,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -2817,7 +2817,7 @@ impl SymbolTable {
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let mut array = match self.read_storage_named(array_name) {
             Some(Value::Array(array)) => array,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -3017,7 +3017,7 @@ impl SymbolTable {
         };
         let mut array = match self.read_alias_root_value(&root_alias, span)? {
             Some(Value::Array(array)) => array,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -3054,7 +3054,7 @@ impl SymbolTable {
         };
         let mut array = match self.read_alias_root_value(&root_alias, span)? {
             Some(Value::Array(array)) => array,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -3085,7 +3085,7 @@ impl SymbolTable {
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let mut array = match self.read_storage_named(array_name) {
             Some(Value::Array(array)) => array,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -3128,7 +3128,7 @@ impl SymbolTable {
         };
         let mut array = match self.read_alias_root_value(&root_alias, span)? {
             Some(Value::Array(array)) => array,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -3421,7 +3421,7 @@ impl SymbolTable {
 
         let mut array = match self.read_alias_root_value(alias, span)? {
             Some(Value::Array(array)) => array,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -3520,7 +3520,7 @@ impl SymbolTable {
         };
         let mut array = match self.read_alias_root_value(&root_alias, span)? {
             Some(Value::Array(array)) => array,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -3769,7 +3769,7 @@ impl SymbolTable {
 
         let mut child = match array.get(key.clone()).cloned() {
             Some(Value::Array(child)) => child,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -3841,7 +3841,7 @@ impl SymbolTable {
 
         let mut child = match array.get(key.clone()).cloned() {
             Some(Value::Array(child)) => child,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -10570,7 +10570,7 @@ impl Interpreter {
         };
         let mut array = match scope.read_alias_root_value(&root_alias, span)? {
             Some(Value::Array(array)) => array,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -11860,11 +11860,20 @@ impl Interpreter {
                 ),
             ));
         };
-        let [Stmt::Return {
-            value: Some(Expr::Index { target, index, .. }),
-            ..
-        }] = function.body.as_slice()
-        else {
+        let (return_value, local_offset_aliases) =
+            match Self::single_return_with_parameter_copy_aliases(function, &param.name) {
+                Some((value, aliases)) => (value, aliases),
+                None => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "reference assignment",
+                            "ArrayAccess offset reference sources require offsetGet() to contain only return $this->property[$offset] with optional literal prefix or suffix keys in the current subset",
+                        ),
+                    ));
+                }
+            };
+        let Expr::Index { target, index, .. } = return_value else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -11889,7 +11898,7 @@ impl Interpreter {
         let mut key_parts = Vec::new();
         let mut saw_offset_param = false;
         for index in indices {
-            if matches!(index, Expr::Variable(name, _) if name == &param.name) {
+            if Self::expr_is_parameter_or_local_copy(index, &param.name, &local_offset_aliases) {
                 saw_offset_param = true;
                 key_parts.push(ArrayAccessOffsetKeyPart::Offset);
                 continue;
@@ -11995,6 +12004,37 @@ impl Interpreter {
         } else {
             None
         }
+    }
+
+    fn single_return_with_parameter_copy_aliases<'a>(
+        function: &'a FunctionDecl,
+        param_name: &str,
+    ) -> Option<(&'a Expr, Vec<String>)> {
+        let mut aliases = Vec::new();
+        let mut statements = function.body.as_slice();
+        if let [Stmt::Assign {
+            target: AssignTarget::Variable { name, .. },
+            expr: Expr::Variable(source, _),
+            ..
+        }, rest @ ..] = statements
+        {
+            if source == param_name {
+                aliases.push(name.clone());
+                statements = rest;
+            }
+        }
+
+        let [Stmt::Return {
+            value: Some(value), ..
+        }] = statements
+        else {
+            return None;
+        };
+        Some((value, aliases))
+    }
+
+    fn expr_is_parameter_or_local_copy(expr: &Expr, param_name: &str, aliases: &[String]) -> bool {
+        matches!(expr, Expr::Variable(name, _) if name == param_name || aliases.iter().any(|alias| alias == name))
     }
 
     fn array_access_offset_set_alias_for_object(
@@ -14747,6 +14787,29 @@ impl Interpreter {
                 self.reference_return_this_property_name(function, property, span)?
             {
                 let protected_class_ids = self.protected_class_ids_for_context(class_id);
+                let property_visibility = holder
+                    .property_visibility_from_context(
+                        &return_target.property,
+                        Some(class_id),
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))?;
+                let root = if property_visibility == Visibility::Public {
+                    ArrayOffsetAliasRoot::PublicObjectProperty {
+                        object: object_name.to_string(),
+                        property: return_target.property.clone(),
+                    }
+                } else {
+                    ArrayOffsetAliasRoot::ContextObjectProperty {
+                        object: object_name.to_string(),
+                        property: return_target.property.clone(),
+                        current_class_id: Some(class_id),
+                        protected_class_ids: protected_class_ids.clone(),
+                    }
+                };
+                let root = scope.canonical_equivalent_object_property_alias_root(&root);
+                let mut target_keys = return_target.prefix_keys.clone();
+                target_keys.extend(keys.iter().cloned());
                 match holder
                     .read_property_from_context(
                         &return_target.property,
@@ -14755,6 +14818,29 @@ impl Interpreter {
                     )
                     .map_err(|error| runtime_error(span, error))?
                 {
+                    Value::Array(_) | Value::Null | Value::Bool(false) => {
+                        let alias = ArrayOffsetAlias {
+                            root: root.clone(),
+                            keys: target_keys.clone(),
+                        };
+                        scope.materialize_array_offset_alias(&alias, span)?;
+                        if !scope.write_array_offset_alias(&alias, value.clone()) {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::invalid_array_access(
+                                    "cannot write magic __get() backing array bucket".to_string(),
+                                ),
+                            ));
+                        }
+                        self.bind_or_mirror_array_references_to_alias_root(
+                            expr,
+                            root,
+                            target_keys,
+                            array_literal_references,
+                            scope,
+                        )?;
+                        return Ok(true);
+                    }
                     Value::Object(object)
                         if self
                             .classes
@@ -14772,6 +14858,34 @@ impl Interpreter {
                 };
                 let current_value = cell.borrow().clone();
                 match current_value {
+                    Value::Array(_) | Value::Null | Value::Bool(false) => {
+                        let temp_name = self.next_foreach_temporary_array_name();
+                        scope.bind_static_to_cell(&temp_name, cell);
+                        let alias = ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::StaticArray {
+                                name: temp_name.clone(),
+                            },
+                            keys: keys.clone(),
+                        };
+                        scope.materialize_array_offset_alias(&alias, span)?;
+                        if !scope.write_array_offset_alias(&alias, value.clone()) {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::invalid_array_access(
+                                    "cannot write magic __get() returned array bucket".to_string(),
+                                ),
+                            ));
+                        }
+                        let root = scope.canonical_equivalent_static_array_alias_root(&alias.root);
+                        self.bind_or_mirror_array_references_to_alias_root(
+                            expr,
+                            root,
+                            keys.clone(),
+                            array_literal_references,
+                            scope,
+                        )?;
+                        return Ok(true);
+                    }
                     Value::Object(object)
                         if self
                             .classes
@@ -14790,6 +14904,16 @@ impl Interpreter {
                         .implements_interface(object.class_id(), "ArrayAccess") =>
                 {
                     Some(object)
+                }
+                Some(Value::Array(_)) | Some(Value::Null) => {
+                    self.emit_notice(
+                        "__get()",
+                        format!(
+                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
+                        ),
+                        span,
+                    )?;
+                    return Ok(true);
                 }
                 _ => None,
             }
@@ -14828,9 +14952,11 @@ impl Interpreter {
         requested_property: &str,
         span: Span,
     ) -> CompileResult<Option<ThisPropertyReferenceTarget>> {
-        let [Stmt::Return {
-            value: Some(value), ..
-        }] = function.body.as_slice()
+        let Some(param) = function.params.first() else {
+            return Ok(None);
+        };
+        let Some((value, local_param_aliases)) =
+            Self::single_return_with_parameter_copy_aliases(function, &param.name)
         else {
             return Ok(None);
         };
@@ -14866,10 +14992,11 @@ impl Interpreter {
                         ),
                     ));
                 }
-                let Some(param) = function.params.first() else {
-                    return Ok(None);
-                };
-                if !matches!(property.as_ref(), Expr::Variable(name, _) if name == &param.name) {
+                if !Self::expr_is_parameter_or_local_copy(
+                    property.as_ref(),
+                    &param.name,
+                    &local_param_aliases,
+                ) {
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -14890,6 +15017,7 @@ impl Interpreter {
                     target,
                     index,
                     requested_property,
+                    &local_param_aliases,
                     span,
                 )
             }
@@ -14902,6 +15030,7 @@ impl Interpreter {
         target: &Expr,
         index: &Expr,
         requested_property: &str,
+        local_param_aliases: &[String],
         span: Span,
     ) -> CompileResult<Option<ThisPropertyReferenceTarget>> {
         let Some((property, indices)) =
@@ -14915,7 +15044,7 @@ impl Interpreter {
         let mut prefix_keys = Vec::new();
         let mut used_requested_property = false;
         for index in indices {
-            if matches!(index, Expr::Variable(name, _) if name == &param.name) {
+            if Self::expr_is_parameter_or_local_copy(index, &param.name, local_param_aliases) {
                 if used_requested_property {
                     return Err(runtime_error(
                         span,
@@ -15492,7 +15621,7 @@ impl Interpreter {
 
         let mut child = match array.get(key.clone()).cloned() {
             Some(Value::Array(child)) => child,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,
@@ -15624,7 +15753,7 @@ impl Interpreter {
 
         let mut child = match array.get(key.clone()).cloned() {
             Some(Value::Array(child)) => child,
-            Some(Value::Null) | None => PhpArray::new(),
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
             Some(other) => {
                 return Err(runtime_error(
                     span,

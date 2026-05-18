@@ -4948,6 +4948,22 @@ fn milestone1721_dynamic_magic_arrayaccess_keyed_fixture_matches_runtime() {
 }
 
 #[test]
+fn milestone1722_system_php_cow_fasttrack_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1722/cow_fasttrack_magic_arrayaccess_plain_nested.php",
+        "../tests/fixtures/milestone1722/cow_fasttrack_magic_arrayaccess_plain_nested.stdout",
+    );
+}
+
+#[test]
+fn milestone1722_cow_fasttrack_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1722/cow_fasttrack_magic_arrayaccess_plain_nested.php",
+        "../tests/fixtures/milestone1722/cow_fasttrack_magic_arrayaccess_plain_nested.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

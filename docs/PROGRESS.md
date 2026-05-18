@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Lane 1722-C fast-track COW bundle. By-reference magic `__get()`
+  keyed/nested plain-array stores now write through the returned backing
+  array cell and preserve copied reference-slot metadata; by-value magic
+  `__get()` plain-array keyed/nested stores now follow PHP's indirect
+  modification notice/no-op behavior. Covered nested array writes and
+  reference/append aliases now treat `false` parents like PHP's bounded
+  false-to-array conversion while keeping other scalar parents as errors.
+  The bounded `__get()`/`offsetGet()` return-body analyzer now accepts one
+  local copy of the magic/offset parameter before the return, such as
+  `$slot = $name; return $this->store[$slot];`, and the same analyzer is
+  exercised through a mixed by-value outer/by-reference inner `ArrayAccess`
+  chain. This does not add arbitrary side-effecting method bodies,
+  non-literal backing keys, broad scalar-parent diagnostics, full
+  references/COW, or native reference lowering. Focused verification used
+  isolated `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo check -q -p phpc` passed, the `milestone1722`
+  `functions_and_scopes` filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1722`
+  passed `1` fixture with `1` system PHP comparison and `0` skips. Adjacent
+  `milestone1718` through `milestone1721` runtime and system-PHP comparison
+  checks also passed.
+
 - Added Lane 1721-C focused keyed-store support for direct dynamic
   magic-property-provided `ArrayAccess` objects. A new direct dynamic
   object-property array-index assignment target distinguishes

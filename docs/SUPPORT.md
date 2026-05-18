@@ -218,10 +218,11 @@
   `$alias =& $holders["box"]->{$name}["outer"]["slot"];` are also accepted for
   direct-variable reference assignment through the same temporary holder root.
   This does not add magic property roots without an array offset, magic
-  `__get()` bodies that return properties, offsets, or expressions,
+  `__get()` bodies beyond direct variable/property/backing-offset returns
+  and one local parameter-copy return,
   dynamic `offsetGet()` parameter keys, non-literal
   `offsetGet()` path keys, side-effecting or broader `ArrayAccess::offsetGet()`
-  bodies, mixed nested
+  bodies beyond one local offset-parameter copy, arbitrary mixed nested
   `ArrayAccess` object chains, broad same-container identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,
@@ -1053,7 +1054,13 @@
   returned-cell mutation and nested reference-slot propagation. By-value
   `__get()` returning a plain array or `null` follows PHP's
   indirect-modification notice/no-op behavior for the covered array RHS
-  shapes and leaves backing storage unchanged. Direct
+  append and keyed/nested keyed shapes and leaves backing storage unchanged.
+  By-reference `__get()` keyed/nested keyed stores with an array RHS also
+  write through the returned plain-array cell for the same direct, dynamic,
+  and non-direct holder roots. The exact `__get()`/`offsetGet()` backing
+  analyzer accepts one local copy of the magic/offset parameter before the
+  return, such as `$slot = $name; return $this->store[$slot];` or
+  `$slot = $offset; return $this->items[$slot];`. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
   and writing the result back through `offsetSet($key, $value)`. Direct
@@ -1075,8 +1082,9 @@
   roots beyond the focused reference-source backing-write shape, non-empty
   nested append paths below
   property-held or magic-property `ArrayAccess`, magic `__get()` bodies that
-  return unsupported expressions beyond direct variables and the focused
-  visible/private `$this` property append routes, dynamic property names that trigger
+  return unsupported expressions beyond direct variables, one local
+  parameter-copy return, and the focused visible/private `$this` property
+  append/keyed routes, dynamic property names that trigger
   unsupported fallback or inaccessible properties, append compound assignment
   through object-property
   `ArrayAccess`, ArrayAccess iteration, broader

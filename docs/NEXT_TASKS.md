@@ -19376,6 +19376,18 @@ handled.
   `ArrayAccess` chains, scalar parent overwrite/error parity, full
   references/COW, and native reference lowering named as unsupported.
 
+## Lane 1722-C: Fast-Track Magic/ArrayAccess Plain Nested COW Bundle
+
+- [x] Runtime/tests/docs lane: bundle by-reference magic `__get()`
+  keyed/nested plain-array stores, by-value magic/property-held `ArrayAccess`
+  plain-array no-op parity, false-parent conversion for covered nested
+  write/reference/append paths, one statically proven mixed by-value
+  outer/by-reference inner `ArrayAccess` chain, and one local parameter-copy
+  broadening for exact `__get()`/`offsetGet()` backing return bodies. Keep
+  arbitrary side-effecting method bodies, non-literal backing keys, broad
+  scalar-parent diagnostics, full references/COW, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -52,6 +52,39 @@ next run, batch work aggressively:
      effects.
 - Escalate only blockers that prevent all of the above. Otherwise keep coding.
 
+## Loop Event 2026-05-18T15:55:00+02:00
+
+- Checkpoint before this task: `27e238d2` on `master`.
+- Task attempted: Lane 1722-C fast-track COW bundle for magic/plain-array
+  keyed stores, by-value no-op parity, scalar false-parent conversion, mixed
+  `ArrayAccess` chains, and a bounded local parameter-copy
+  `__get()`/`offsetGet()` return-body analyzer broadening.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1722/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc`
+  passed; the `milestone1722` `functions_and_scopes` filter passed `2`
+  tests; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1722` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; adjacent `milestone1718` through
+  `milestone1721` runtime filters and system-PHP fixture comparisons passed.
+- Semantic gap reduced: covered by-reference magic `__get()` keyed/nested
+  plain-array stores now mutate the returned backing array cell with copied
+  reference-slot metadata; by-value magic/property-held `ArrayAccess`
+  plain-array keyed stores now no-op with PHP's indirect-modification notice;
+  `false` parents convert to arrays in the covered nested write/reference
+  helpers; and exact return-body analysis accepts one local copy of the
+  magic/offset parameter.
+- Remaining semantic gaps: arbitrary side-effecting `__get()`/`offsetGet()`
+  bodies, non-literal backing keys, broad scalar-parent diagnostics, full
+  references/COW, and native reference lowering remain unsupported.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, then one
+  full checkpoint with
+  `tools/checkpoint.sh "runtime: broaden magic ArrayAccess COW compatibility"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

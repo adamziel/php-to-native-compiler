@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1721:
+The current in-progress implementation frontier is Lane 1722:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -177,8 +177,18 @@ The current in-progress implementation frontier is Lane 1721:
   object-property array-index assignment target and routing it through the
   same visible property-held and magic `ArrayAccess` keyed bridges. Direct
   dynamic append stores remain on their append-specific route.
+- Lane 1722 bundles several related fast-track COW slices: by-reference magic
+  `__get()` keyed/nested plain-array stores mutate the returned backing array
+  cell and preserve copied nested reference slots; by-value magic and
+  property-held `ArrayAccess` plain-array keyed/nested stores use PHP's
+  indirect-modification notice/no-op behavior; covered nested write,
+  reference, and append helpers convert `false` parents to arrays while other
+  scalar parents remain errors; and exact `__get()`/`offsetGet()` backing
+  analyzers accept one local copy of the magic/offset parameter before the
+  return. The same analyzer broadening is tested through a mixed by-value
+  outer/by-reference inner `ArrayAccess` chain.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
-  verification for this lane. Before a checkpoint commit, use
+  verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
 
 ## Fast-Track Build Plan
