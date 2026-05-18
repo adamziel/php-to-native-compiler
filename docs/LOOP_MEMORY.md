@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T12:15:30+02:00
+
+- Checkpoint before this task: `bfd22112 runtime: pin magic get this property
+  deep appends`, pushed to `origin/master`.
+- Task attempted: Lane 1703-C focused private `$this` property magic append
+  plus method-local backing write synchronization.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1703/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax check passed for the
+  new milestone1703 fixture; the `milestone1703` `functions_and_scopes`
+  filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1703`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: by-reference `__get($name)` may now directly return a
+  private `$this->store` property for the focused
+  `$box->missing["outer"][] = $array` append shape, and a same-class method
+  write through `$this->store["outer"][0]...` resynchronizes caller-side
+  aliases with the original referenced variables after the method returns.
+- Remaining semantic gaps: broader private/protected `$this` routes,
+  arbitrary `__get()` return expressions, dynamic property-return
+  expressions, broader method-local alias lifetimes, arbitrary
+  method-return/factory-root variants, by-value terminal/plain-array mutation,
+  arbitrary side-effecting or broader `offsetGet()` bodies, scalar parent
+  overwrite/error parity, full references/COW, and native reference lowering
+  remain unsupported.
+- Next concrete task: run `cargo check`, `cargo fmt --check`, `git diff
+  --check`, adjacent lane checks, then checkpoint with
+  `tools/checkpoint.sh "runtime: sync private magic get property writes"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T14:45:00+02:00
 
 - Checkpoint before this task: `2d4396c6 runtime: support magic get this

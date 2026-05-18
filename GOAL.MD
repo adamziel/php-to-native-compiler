@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1702:
+The current in-progress implementation frontier is Lane 1703:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -78,6 +78,12 @@ The current in-progress implementation frontier is Lane 1702:
   two-key parent append path, so `$box->missing["outer"]["inner"][] = $array`
   appends into `$box->store["outer"]["inner"]` and preserves copied reference
   slots for later direct backing-property writes.
+- Lane 1703 extends the focused route to a private `$this->store` property
+  returned by by-reference `__get()`: an outside append through
+  `$box->missing["outer"][] = $array` stores reference-slot metadata under the
+  private backing property, and a later same-class method write through
+  `$this->store["outer"][0]...` resynchronizes caller-visible aliases with the
+  original referenced variables.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this lane. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.
@@ -118,7 +124,9 @@ Still missing:
 - References inside arrays and object properties without special-case bridges.
 - Arbitrary expression-root reference targets and sources.
 - Mixed and arbitrary nested `ArrayAccess` chains.
-- Broader magic `__get()`/`__set()`/`__isset()`/`__unset()` behavior.
+- Broader magic `__get()`/`__set()`/`__isset()`/`__unset()` behavior beyond
+  the tested direct-variable, visible `$this->property`, and private
+  `$this->property` method-write append slices.
 - Alias detach, destructor, shutdown, and error-ordering parity.
 - Reference/COW semantics across function calls, returns, includes,
   superglobals, iterators, and native lowering.

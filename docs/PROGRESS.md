@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Lane 1703-C focused private `$this` property magic append/method-write
+  synchronization. A by-reference `__get($name)` body that directly returns
+  private `$this->store` is now covered for
+  `$box->missing["outer"][] = $array` followed by a same-class method mutating
+  `$this->store["outer"][0]...`. Instance-method return now resynchronizes
+  caller-side object-property alias groups for the receiver object, so nested
+  reference slots copied into the private backing bucket update the original
+  referenced variables after method-local writes. This does not add broader
+  private/protected `$this` routes, arbitrary `__get()` return expressions,
+  dynamic property-return expressions, broader method-local alias lifetimes,
+  arbitrary method-return/factory-root variants, by-value terminal/plain-array
+  mutation, full references/COW, or native reference lowering. Focused
+  verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1703` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1703`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1702-C focused visible `$this` property magic append coverage for
   a deeper two-key parent path. The direct body
   `public function &__get($name) { return $this->store; }` is now pinned for

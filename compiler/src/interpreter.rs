@@ -2655,6 +2655,34 @@ impl SymbolTable {
         }
     }
 
+    fn sync_array_offset_aliases_for_object_value(&mut self, source_object: &PhpObject) {
+        let mut roots = Vec::new();
+        for aliases in self.array_offset_aliases.values() {
+            for alias in aliases {
+                let (ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                | ArrayOffsetAliasRoot::ContextObjectProperty {
+                    object, property, ..
+                }) = &alias.root
+                else {
+                    continue;
+                };
+                match self.read_storage_named(object) {
+                    Some(Value::Object(candidate)) if candidate == *source_object => {
+                        let root = (object.clone(), property.clone());
+                        if !roots.contains(&root) {
+                            roots.push(root);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        for (object, property) in roots {
+            self.sync_array_offset_aliases_for_object_property_root(&object, &property);
+        }
+    }
+
     fn sync_array_offset_aliases_for_global_root(&mut self, global_name: &str) {
         let syncs: Vec<(String, Value)> = self
             .array_offset_aliases
@@ -33436,12 +33464,19 @@ impl Interpreter {
                     if let Err(error) = result {
                         Err(error)
                     } else {
-                        self.write_back_by_value_array_copy_aliases(
+                        let result = self.write_back_by_value_array_copy_aliases(
                             &by_value_array_copy_alias_writebacks,
                             &local_scope,
                             reference_scope,
                             function.span,
-                        )
+                        );
+                        if result.is_ok() {
+                            if let Some(this_object) = this_object_for_alias_transfer.as_ref() {
+                                reference_scope
+                                    .sync_array_offset_aliases_for_object_value(this_object);
+                            }
+                        }
+                        result
                     }
                 }
             } else {

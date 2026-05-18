@@ -19029,6 +19029,22 @@ handled.
   parent overwrite/error parity, full references/COW, and native reference
   lowering named as unsupported.
 
+## Lane 1703-C: Private Magic `$this` Property Method Write Sync
+
+- [x] Runtime/tests/docs lane: extend the focused by-reference magic
+  `__get($name) { return $this->store; }` append route to one private
+  `$this->store` backing-property shape. The covered shape appends through
+  `$box->missing["outer"][] = $array`, stores nested reference-slot metadata
+  under the private object-property root, then calls a same-class method that
+  mutates `$this->store["outer"][0]...`; method return sync updates the
+  caller-side aliases and the original referenced variables. Keep broader
+  private/protected `$this` routes, arbitrary `__get()` return expressions,
+  dynamic property-return expressions, broader method-local alias lifetimes,
+  arbitrary method-return/factory-root variants, by-value terminal/plain-array
+  mutation, arbitrary side-effecting or broader `offsetGet()` bodies, scalar
+  parent overwrite/error parity, full references/COW, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

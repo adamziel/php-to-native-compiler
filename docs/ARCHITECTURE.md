@@ -1001,13 +1001,19 @@ array reference metadata. That keeps later reads such as `$storage[0]`
 connected to nested reference slots created through `$box->missing[]` or
 `$holders["box"]->missing[]`. For one broader by-reference `__get()` body
 shape, the helper recognizes a single direct `return $this->property;` body
-when that property is visible to the caller's later backing write. It appends
-into the corresponding object-property alias root and mirrors copied
-reference-slot metadata there, without creating a general object-property cell
-model. The same object-property-root path is tested through a two-key parent
-append, so `$box->missing["outer"]["inner"][]` attaches metadata below
-`$box->store["outer"]["inner"]`. Private `$this` property reference returns
-and method-local backing writes remain explicit boundaries. For the focused
+when that property is visible to the caller's later backing write, and for
+one focused private `$this->property` route where a same-class method later
+mutates that private backing bucket. It appends into the corresponding
+object-property alias root and mirrors copied reference-slot metadata there,
+without creating a general object-property cell model. The same
+object-property-root path is tested through a two-key parent append, so
+`$box->missing["outer"]["inner"][]` attaches metadata below
+`$box->store["outer"]["inner"]`. For the private route, instance-method
+return sync now resynchronizes caller-side alias groups for the receiver
+object after method-local writes through `$this->store...`, so nested
+references copied into the private bucket update their original variables.
+Broader private/protected `$this` property reference returns and arbitrary
+method-local alias lifetimes remain explicit boundaries. For the focused
 nested append shapes, the same helper passes the complete parent key path
 into the array append-alias
 machinery, so one-key paths such as `$box->missing["outer"][]` and

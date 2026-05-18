@@ -939,8 +939,14 @@
   The visible `$this` property route is tested for both a one-key parent path
   and a two-key parent path, including
   `$box->missing["outer"]["inner"][] = $array` appending into
-  `$box->store["outer"]["inner"]`. Private `$this` property returns and
-  method-scope backing writes remain outside that focused slice. The same
+  `$box->store["outer"]["inner"]`. The same exact `return $this->store;`
+  body is also covered when `$store` is a private property and a same-class
+  method later mutates the private backing bucket through `$this->store...`;
+  caller-side aliases for nested references copied into the appended bucket
+  resynchronize after the method returns. Broader private/protected
+  `$this` property routes, dynamic property-return expressions, and
+  arbitrary method-local alias lifetimes remain outside that focused slice.
+  The same
   focused route supports one
   tested string-keyed parent path before the append, such as
   `$box->missing["outer"][] = $array`,
@@ -979,7 +985,7 @@
   nested append paths below
   property-held or magic-property `ArrayAccess`, magic `__get()` bodies that
   return unsupported expressions beyond direct variables and the focused
-  visible `$this` property append routes, dynamic property names that trigger
+  visible/private `$this` property append routes, dynamic property names that trigger
   unsupported fallback or inaccessible properties, append compound assignment
   through object-property
   `ArrayAccess`, ArrayAccess iteration, broader
