@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement tested behavior and
   checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T22:10:00+02:00
+
+- Checkpoint before this task: `23714182 runtime: support arrayaccess
+  reference targets`, pushed to `origin/master`.
+- Task attempted: Lane 1739-C whole object-property reference source
+  promotion onto runtime `PhpReferenceCell` storage, including existing
+  property reads from function-return expression roots.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1739/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new milestone1739
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1739` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; `cargo check -q -p phpc` passed; adjacent
+  `clone_expression_mirrors_public_property_reference_slots`,
+  `clone_expression_mirrors_context_property_reference_slots`, and
+  `object_properties_can_hold_reference_cells_and_share_writes` passed.
+- Semantic gap reduced: `$items =& $box->items`, `$items =& $box->{$name}`,
+  method-local `$hidden =& $this->hidden`, `$items =& make()->items`, and
+  `$items =& make()->{$name}` now promote the object property itself to a
+  reference-backed property, so clones preserve shared property reference
+  identity without relying only on array-offset alias metadata. Explicit
+  reference targets reached through alias-backed array roots now install the
+  source reference cell for the statically known alias path.
+- Remaining semantic gaps: typed-property reference write enforcement,
+  missing-property dynamic creation for expression-root property references,
+  complete alias lifetime/detach behavior, string COW identity, and native
+  reference lowering remain unsupported.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, adjacent
+  1734/1736/1738 fixture comparisons, and then one full checkpoint with
+  `tools/checkpoint.sh "runtime: promote object property reference cells"` if
+  the full gate passes.
+
 ## Fast-Track Directive 2026-05-18T15:15:00+02:00
 
 The previous loop was correct but too slow for the current 1-2 hour build

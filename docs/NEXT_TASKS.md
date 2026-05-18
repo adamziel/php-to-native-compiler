@@ -19576,6 +19576,21 @@ handled.
   lifetime/detach behavior, string COW identity, and native reference lowering
   named as unsupported.
 
+## Lane 1739-C: Object-Property Reference Cell Sources
+
+- [x] Runtime/interpreter/tests/docs lane: promote supported whole
+  object-property reference sources to real runtime `PhpReferenceCell` storage
+  instead of only array-offset alias side metadata. Cover public named
+  properties, dynamic property names, method-local private/context
+  properties, and existing property reads from function-return expression
+  roots with a system-PHP comparison fixture proving clone-time shared
+  reference identity. Also install source reference cells for explicit
+  reference targets reached through statically known alias-backed array roots.
+  Keep typed-property reference write enforcement, missing-property dynamic
+  creation for expression-root property references, complete alias
+  lifetime/detach behavior, string COW identity, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

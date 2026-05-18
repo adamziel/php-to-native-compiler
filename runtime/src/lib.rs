@@ -4010,6 +4010,23 @@ impl PhpObject {
         Ok(())
     }
 
+    pub fn bind_property_reference_cell_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<PhpReferenceCell> {
+        let mut properties = self.properties.borrow_mut();
+        let property = self.context_property_mut(
+            &mut properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?;
+
+        property.reference_cell()
+    }
+
     pub fn write_property_from_context_with_object_type_resolver<F>(
         &self,
         name: &str,
@@ -4350,6 +4367,24 @@ impl ObjectProperty {
 
     fn set_reference_cell(&mut self, reference: PhpReferenceCell) {
         self.storage = ObjectPropertyStorage::Reference(reference);
+    }
+
+    fn reference_cell(&mut self) -> RuntimeResult<PhpReferenceCell> {
+        if !self.initialized {
+            return Err(RuntimeError::uninitialized_typed_property(
+                self.declaring_class_name.clone(),
+                self.name.clone(),
+            ));
+        }
+
+        match &self.storage {
+            ObjectPropertyStorage::Reference(reference) => Ok(reference.clone()),
+            ObjectPropertyStorage::Value(cell) => {
+                let reference = PhpReferenceCell::new(cell.value_cloned());
+                self.storage = ObjectPropertyStorage::Reference(reference.clone());
+                Ok(reference)
+            }
+        }
     }
 }
 

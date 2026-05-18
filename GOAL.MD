@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1738:
+The current in-progress implementation frontier is Lane 1739:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -283,6 +283,16 @@ The current in-progress implementation frontier is Lane 1738:
   PHP. Direct, dynamic-property, and non-direct holder keyed forms are covered;
   broader append suffixes and arbitrary method bodies remain outside the
   subset.
+- Lane 1739 moves whole object-property reference sources onto real runtime
+  `PhpReferenceCell` storage for supported visible/context property reads.
+  Statement-form aliases such as `$items =& $box->items`,
+  `$items =& $box->{$name}`, method-local `$hidden =& $this->hidden`, and
+  function-return expression roots such as `$items =& make()->items` now
+  promote the property itself to a reference-backed object property, so object
+  clones preserve PHP's shared property reference identity instead of relying
+  only on array-offset alias side metadata. Alias-backed array target roots
+  also install source reference cells when binding through a statically known
+  alias path.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

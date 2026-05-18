@@ -4434,7 +4434,17 @@
   `$this->items["slot"] =& $var`, `$this->items["outer"][] =& $var`, and the
   same dynamic-property/private-property forms; `$this` array-literal
   reference propagation still uses alias scaffolding to preserve by-value
-  `ArrayAccess` bucket reuse parity. By-value terminal/plain-array nested
+  `ArrayAccess` bucket reuse parity. Whole object-property reference sources
+  for supported visible/context property reads, such as
+  `$items =& $box->items`, `$items =& $box->{$name}`, method-local
+  `$hidden =& $this->hidden`, and expression roots such as
+  `$items =& make()->items` and `$items =& make()->{$name}`, now promote the
+  property itself to a runtime `PhpReferenceCell`, so object clones preserve
+  shared property-reference identity for the covered public/dynamic/private
+  context shapes. Explicit reference targets reached through alias-backed
+  array roots also install source reference cells for the statically known
+  alias path. By-value
+  terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's
   indirect-modification/no-op behavior for the covered nested append shape.
@@ -4447,8 +4457,10 @@
   are substrate for later PHP-visible reference containers and COW separation;
   broader non-direct append target forms, append suffixes after `[]`,
   arbitrary magic/`ArrayAccess` method bodies, broader mixed array element
-  bindings, complete alias lifetime/detach parity, string COW identity, and
-  native reference lowering remain unsupported.
+  bindings, typed-property reference write enforcement, missing-property
+  dynamic creation for expression-root property references, complete alias
+  lifetime/detach parity, string COW identity, and native reference lowering
+  remain unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

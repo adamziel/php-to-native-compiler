@@ -1592,29 +1592,6 @@ impl SymbolTable {
         })
     }
 
-    fn bind_static_to_existing_context_object_property(
-        &mut self,
-        target: &str,
-        object_name: &str,
-        property: &str,
-        current_class_id: Option<ClassId>,
-        protected_class_ids: Vec<ClassId>,
-        span: Span,
-    ) -> CompileResult<()> {
-        let alias = ArrayOffsetAlias {
-            root: ArrayOffsetAliasRoot::ContextObjectProperty {
-                object: object_name.to_string(),
-                property: property.to_string(),
-                current_class_id,
-                protected_class_ids,
-            },
-            keys: Vec::new(),
-        };
-        self.read_alias_root_value(&alias, span)?;
-        self.bind_static_to_array_offset_alias(target, alias);
-        Ok(())
-    }
-
     fn bind_static_to_dynamic_object_property(
         &mut self,
         target: &str,
@@ -3791,11 +3768,19 @@ impl SymbolTable {
             return Ok(false);
         };
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
+        let source_cell = self.reference_cell_for_static_source(source_name);
         self.detach_array_offset_aliases_for_unset_paths(&aliases);
         for alias in &aliases {
             self.materialize_array_offset_alias(alias, span)?;
         }
-        if !self.write_array_offset_aliases(&aliases, source_value) {
+        let wrote_aliases = if let Some(source_cell) = source_cell {
+            aliases
+                .iter()
+                .all(|alias| self.write_array_offset_alias_reference(alias, source_cell.clone()))
+        } else {
+            self.write_array_offset_aliases(&aliases, source_value)
+        };
+        if !wrote_aliases {
             return Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access(
@@ -9815,9 +9800,14 @@ impl Interpreter {
                             name, object, property, span, scope,
                         )?;
                     } else {
-                        let value = self
-                            .evaluate_direct_variable_reference_source_value(source, span, scope)?;
-                        scope.write_static(name, value);
+                        let target_value = self.evaluate(target, scope)?;
+                        self.bind_static_to_object_property_or_magic_get(
+                            name,
+                            target_value,
+                            property,
+                            span,
+                            scope,
+                        )?;
                     }
                 } else if let ReferenceSource::Property {
                     expr:
@@ -9834,9 +9824,16 @@ impl Interpreter {
                             name, object, &property, span, scope,
                         )?;
                     } else {
-                        let value = self
-                            .evaluate_direct_variable_reference_source_value(source, span, scope)?;
-                        scope.write_static(name, value);
+                        let property =
+                            self.evaluate_dynamic_property_name(property, span, scope)?;
+                        let target_value = self.evaluate(target, scope)?;
+                        self.bind_static_to_object_property_or_magic_get(
+                            name,
+                            target_value,
+                            &property,
+                            span,
+                            scope,
+                        )?;
                     }
                 } else if let ReferenceSource::MethodCall { expr, .. } = source {
                     match self.evaluate_reference_return_call_binding(expr, span, scope)? {
@@ -13268,14 +13265,62 @@ impl Interpreter {
 
         match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => {
-                scope.bind_static_to_existing_context_object_property(
-                    target_name,
-                    object_name,
-                    property,
-                    current_class_id,
-                    protected_class_ids,
+                let cell = object
+                    .bind_property_reference_cell_from_context(
+                        property,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))?;
+                scope.bind_static_to_cell(target_name, cell);
+                Ok(())
+            }
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                if let Some(cell) =
+                    self.call_magic_get_reference_return_cell(object, property, span)?
+                {
+                    scope.bind_static_to_cell(target_name, cell);
+                    Ok(())
+                } else {
+                    Err(runtime_error(span, error))
+                }
+            }
+            Err(error) => Err(runtime_error(span, error)),
+        }
+    }
+
+    fn bind_static_to_object_property_or_magic_get(
+        &mut self,
+        target_name: &str,
+        target_value: Value,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let object = match target_value {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
                     span,
-                )?;
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
+            Ok(_) => {
+                let cell = object
+                    .bind_property_reference_cell_from_context(
+                        property,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))?;
+                scope.bind_static_to_cell(target_name, cell);
                 Ok(())
             }
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
@@ -13316,14 +13361,14 @@ impl Interpreter {
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
         match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => {
-                scope.bind_static_to_existing_context_object_property(
-                    target_name,
-                    object_name,
-                    property,
-                    current_class_id,
-                    protected_class_ids,
-                    span,
-                )?;
+                let cell = object
+                    .bind_property_reference_cell_from_context(
+                        property,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))?;
+                scope.bind_static_to_cell(target_name, cell);
                 Ok(())
             }
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => {

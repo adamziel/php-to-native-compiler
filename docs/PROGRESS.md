@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Lane 1739-C for whole object-property reference source promotion.
+  Supported visible/context property reference sources such as
+  `$items =& $box->items`, `$items =& $box->{$name}`, and method-local
+  `$hidden =& $this->hidden` now bind the target variable to a real runtime
+  `PhpReferenceCell` stored on the object property. The same cell path covers
+  existing property reads from expression roots such as
+  `$items =& make()->items` and `$items =& make()->{$name}`. This fixes
+  clone-time COW identity for property references: clones of objects with
+  reference-backed properties keep shared writes through the original property
+  alias, the clone, and any array target rebound to the alias. Typed-property
+  reference write enforcement, missing-property dynamic creation for
+  expression roots, complete alias lifetime/detach behavior, string COW
+  identity, and native reference lowering remain unsupported. The same lane
+  also installs source reference cells when explicit reference targets are
+  reached through alias-backed array roots, rather than first writing only the
+  source value. Focused verification:
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1739`
+  passed `1` fixture with `1` system PHP comparison and `0` skips;
+  `cargo check -q -p phpc` passed; adjacent
+  `clone_expression_mirrors_public_property_reference_slots`,
+  `clone_expression_mirrors_context_property_reference_slots`, and
+  `object_properties_can_hold_reference_cells_and_share_writes` passed.
+
 - Added Lanes 1737-C and 1738-C for scalar-parent/reference-target COW
   parity around property-held `ArrayAccess` and magic roots. Lane 1737 pins
   by-value terminal/plain-array nested append no-op behavior for
