@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1727-C runtime value-model substrate for reference-backed array
+  slots. `ArraySlot` now stores either a by-value PHP value cell or a PHP
+  reference cell; cloning a reference-backed slot keeps the same reference
+  container, `set_value()` writes through that container, and `into_value()`
+  reads the current referenced value. Existing by-value slots keep
+  clone-by-value and detach-on-write behavior. This still does not wire
+  interpreter-wide PHP-visible references/COW through all array operations,
+  nested lvalues, object properties, strings, or native lowering. Focused
+  verification: `cargo check -q -p phpc` passed and
+  `cargo test -q -p php_runtime
+  array_slots_can_hold_reference_cells_without_value_clone_detach` passed `1`
+  test.
+
 - Added Lane 1726-C as the first post-bridge value-model refactor slice.
   Runtime array slots and object properties now share a common internal PHP
   value-cell primitive with stable cell identity, value-based equality, and

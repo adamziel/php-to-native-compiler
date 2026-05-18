@@ -19438,6 +19438,17 @@ handled.
   COW separation, array/object/string alias lifetime parity, and native
   reference lowering named as unsupported.
 
+## Lane 1727-C: Reference-Backed Array Slot Storage
+
+- [x] Runtime/tests/docs lane: wire the PHP reference-cell substrate into
+  `ArraySlot` storage so an array slot can hold either a by-value PHP value
+  cell or a PHP reference cell. Prove cloned reference-backed slots preserve
+  shared container identity and write-through behavior while existing by-value
+  slot clone/detach semantics remain intact. Keep interpreter-wide
+  PHP-visible references/COW, nested lvalue wiring, object-property reference
+  slots, string COW identity, and native reference lowering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

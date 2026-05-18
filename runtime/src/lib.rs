@@ -2267,68 +2267,141 @@ impl ArrayEntry {
 
 #[derive(Debug, PartialEq)]
 pub struct ArraySlot {
-    cell: Rc<PhpValueCell>,
+    storage: ArraySlotStorage,
 }
 
 impl Clone for ArraySlot {
     fn clone(&self) -> Self {
-        Self {
-            cell: Rc::new(self.cell.clone_by_value()),
+        match &self.storage {
+            ArraySlotStorage::Value(cell) => Self {
+                storage: ArraySlotStorage::Value(Rc::new(cell.clone_by_value())),
+            },
+            ArraySlotStorage::Reference(reference) => Self {
+                storage: ArraySlotStorage::Reference(reference.clone()),
+            },
         }
     }
+}
+
+#[derive(Debug, PartialEq)]
+enum ArraySlotStorage {
+    Value(Rc<PhpValueCell>),
+    Reference(PhpReferenceCell),
 }
 
 impl ArraySlot {
     pub fn new(value: Value) -> Self {
         Self {
-            cell: Rc::new(ArraySlotCell::new(value)),
+            storage: ArraySlotStorage::Value(Rc::new(ArraySlotCell::new(value))),
+        }
+    }
+
+    pub fn from_reference_cell(reference: PhpReferenceCell) -> Self {
+        Self {
+            storage: ArraySlotStorage::Reference(reference),
         }
     }
 
     pub fn cell_id(&self) -> ArraySlotCellId {
-        self.cell.id()
+        match &self.storage {
+            ArraySlotStorage::Value(cell) => cell.id(),
+            ArraySlotStorage::Reference(reference) => PhpValueCellId(reference.id().as_i64()),
+        }
+    }
+
+    pub fn reference_cell_id(&self) -> Option<PhpReferenceCellId> {
+        match &self.storage {
+            ArraySlotStorage::Value(_) => None,
+            ArraySlotStorage::Reference(reference) => Some(reference.id()),
+        }
+    }
+
+    pub fn is_reference(&self) -> bool {
+        matches!(self.storage, ArraySlotStorage::Reference(_))
+    }
+
+    pub fn shares_reference_with(&self, other: &Self) -> bool {
+        match (&self.storage, &other.storage) {
+            (ArraySlotStorage::Reference(left), ArraySlotStorage::Reference(right)) => {
+                left.shares_reference_with(right)
+            }
+            _ => false,
+        }
     }
 
     pub fn shares_cell_with(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.cell, &other.cell)
+        match (&self.storage, &other.storage) {
+            (ArraySlotStorage::Value(left), ArraySlotStorage::Value(right)) => {
+                Rc::ptr_eq(left, right)
+            }
+            _ => false,
+        }
     }
 
     pub fn value(&self) -> &Value {
-        self.cell.value()
+        match &self.storage {
+            ArraySlotStorage::Value(cell) => cell.value(),
+            ArraySlotStorage::Reference(_) => {
+                panic!("reference-backed array slots require value_cloned() reads")
+            }
+        }
     }
 
     pub fn value_mut(&mut self) -> &mut Value {
-        self.cell_mut_for_by_value_write().value_mut()
+        match &self.storage {
+            ArraySlotStorage::Value(_) => self.cell_mut_for_by_value_write().value_mut(),
+            ArraySlotStorage::Reference(_) => {
+                panic!("reference-backed array slots cannot expose direct mutable value borrows")
+            }
+        }
     }
 
     pub fn value_cloned(&self) -> Value {
-        self.cell.value_cloned()
+        match &self.storage {
+            ArraySlotStorage::Value(cell) => cell.value_cloned(),
+            ArraySlotStorage::Reference(reference) => reference.value_cloned(),
+        }
     }
 
     pub fn set_value(&mut self, value: Value) {
-        self.cell_mut_for_by_value_write().set_value(value);
+        match &self.storage {
+            ArraySlotStorage::Value(_) => self.cell_mut_for_by_value_write().set_value(value),
+            ArraySlotStorage::Reference(reference) => reference.set_value(value),
+        }
     }
 
     pub fn into_value(self) -> Value {
-        match Rc::try_unwrap(self.cell) {
-            Ok(cell) => cell.into_value(),
-            Err(cell) => cell.value_cloned(),
+        match self.storage {
+            ArraySlotStorage::Value(cell) => match Rc::try_unwrap(cell) {
+                Ok(cell) => cell.into_value(),
+                Err(cell) => cell.value_cloned(),
+            },
+            ArraySlotStorage::Reference(reference) => reference.value_cloned(),
         }
     }
 
     #[allow(dead_code)]
     pub(crate) fn share_cell_from(source: &Self) -> Self {
-        Self {
-            cell: Rc::clone(&source.cell),
+        match &source.storage {
+            ArraySlotStorage::Value(cell) => Self {
+                storage: ArraySlotStorage::Value(Rc::clone(cell)),
+            },
+            ArraySlotStorage::Reference(reference) => Self {
+                storage: ArraySlotStorage::Reference(reference.clone()),
+            },
         }
     }
 
     fn cell_mut_for_by_value_write(&mut self) -> &mut ArraySlotCell {
-        if Rc::strong_count(&self.cell) > 1 {
-            self.cell = Rc::new(self.cell.clone_by_value());
+        let ArraySlotStorage::Value(cell) = &mut self.storage else {
+            panic!("reference-backed array slots do not expose by-value cells");
+        };
+
+        if Rc::strong_count(cell) > 1 {
+            *cell = Rc::new(cell.clone_by_value());
         }
 
-        Rc::get_mut(&mut self.cell)
+        Rc::get_mut(cell)
             .expect("array slot by-value writes must detach shared cells before mutation")
     }
 }
@@ -6270,6 +6343,36 @@ mod tests {
             distinct.value_cloned(),
             Value::String("original".to_string())
         );
+    }
+
+    #[test]
+    fn array_slots_can_hold_reference_cells_without_value_clone_detach() {
+        let reference = PhpReferenceCell::new(Value::String("original".to_string()));
+        let mut slot = ArraySlot::from_reference_cell(reference.clone());
+        let mut cloned = slot.clone();
+
+        assert!(slot.is_reference());
+        assert_eq!(slot.reference_cell_id(), Some(reference.id()));
+        assert!(slot.shares_reference_with(&cloned));
+        assert_eq!(slot.value_cloned(), Value::String("original".to_string()));
+
+        cloned.set_value(Value::String("changed-through-clone".to_string()));
+
+        assert_eq!(
+            reference.value_cloned(),
+            Value::String("changed-through-clone".to_string())
+        );
+        assert_eq!(
+            slot.value_cloned(),
+            Value::String("changed-through-clone".to_string())
+        );
+        assert_eq!(
+            cloned.into_value(),
+            Value::String("changed-through-clone".to_string())
+        );
+
+        slot.set_value(Value::Int(42));
+        assert_eq!(reference.value_cloned(), Value::Int(42));
     }
 
     #[test]

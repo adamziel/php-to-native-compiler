@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1726:
+The current in-progress implementation frontier is Lane 1727:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -214,6 +214,11 @@ The current in-progress implementation frontier is Lane 1726:
   primitive with shared identity and write-through alias behavior. This is
   substrate for later COW separation and interpreter wiring, not PHP-visible
   general references yet.
+- Lane 1727 wires that reference-cell substrate into array slot storage:
+  `ArraySlot` can now hold either a by-value cell or a PHP reference cell.
+  Cloning a reference-backed slot preserves the reference container and writes
+  through either slot update the shared container, while ordinary value-backed
+  slots keep clone-by-value and detach-on-write behavior.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

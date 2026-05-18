@@ -197,6 +197,30 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: share value cells across array and object slots"`
   if the full gate passes.
 
+## Loop Event 2026-05-18T18:05:00+02:00
+
+- Checkpoint before this task: `58f52747 runtime: add PHP reference cell
+  substrate`, pushed to `origin/master`.
+- Task attempted: Lane 1727-C reference-backed array slot storage.
+- Files changed so far: `runtime/src/lib.rs`, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc` passed and
+  `cargo test -q -p php_runtime
+  array_slots_can_hold_reference_cells_without_value_clone_detach` passed `1`
+  focused runtime test.
+- Semantic gap reduced: `ArraySlot` can now store either a by-value PHP value
+  cell or a PHP reference cell; cloned reference-backed slots preserve shared
+  container identity and writes flow through either slot.
+- Remaining semantic gaps: interpreter-wide PHP-visible references/COW,
+  nested lvalue wiring, object-property reference slots, string COW identity,
+  exact alias lifetime/error-order parity, and native reference lowering remain
+  unsupported.
+- Next concrete task: run full runtime checks, `cargo fmt --check`,
+  `git diff --check`, and then one full checkpoint with
+  `tools/checkpoint.sh "runtime: support reference-backed array slots"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic
