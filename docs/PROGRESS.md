@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Lane 1732-C dynamic object-property array reference target wiring for
+  direct variable sources. Reference assignment targets of the form
+  `$object->{$name}["slot"] =& $var` and
+  `$object->{$name}["outer"][] =& $var` now evaluate the property name once,
+  route through the same context object-property alias root as named
+  properties, and install reference-backed slots for direct variable sources
+  outside the method-local `$this` boundary. Focused verification: raw system
+  PHP output matched the expanded milestone1731 fixture;
+  `cargo check -q -p phpc` passed; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1731`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1731-C nested/object-property array element reference-slot
   wiring for direct variable sources. Nested direct array reference targets
   and direct object-property array target/appends now install

@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1731:
+The current in-progress implementation frontier is Lane 1732:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -244,6 +244,10 @@ The current in-progress implementation frontier is Lane 1731:
   mixed/magic roots still use the bounded alias scaffolding. Method-local
   `$this` object-property targets also stay on that scaffolding to preserve
   existing by-value `ArrayAccess` bucket reuse parity.
+- Lane 1732 covers the same direct object-property reference target path when
+  the property name is evaluated dynamically, such as
+  `$object->{$name}["slot"] =& $var` and
+  `$object->{$name}["outer"][] =& $var`.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

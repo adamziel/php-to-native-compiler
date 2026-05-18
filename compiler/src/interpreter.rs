@@ -10073,7 +10073,58 @@ impl Interpreter {
 
                 Err(unsupported())
             }
-            AssignTarget::DynamicObjectPropertyArrayIndex { .. } => Err(unsupported()),
+            AssignTarget::DynamicObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    self.reject_object_property_array_access_reference_target_if_needed(
+                        object, &property, span, scope,
+                    )?;
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let root =
+                        self.context_object_property_alias_root(object, &property, span, scope)?;
+                    scope.bind_object_property_array_offset_alias_root_to_static_source(
+                        root,
+                        keys,
+                        source_name,
+                        span,
+                    )?;
+                    return Ok(());
+                }
+                if let Some((source_alias, value)) =
+                    self.evaluate_storable_reference_source_alias(source, span, scope)?
+                {
+                    self.reject_object_property_array_access_reference_target_if_needed(
+                        object, &property, span, scope,
+                    )?;
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let root =
+                        self.context_object_property_alias_root(object, &property, span, scope)?;
+                    let target_alias = ArrayOffsetAlias { root, keys };
+                    scope.bind_array_offset_alias_to_reference_alias(
+                        target_alias,
+                        source_alias,
+                        value,
+                        span,
+                    )?;
+                    return Ok(());
+                }
+
+                Err(unsupported())
+            }
             AssignTarget::NonDirectObjectPropertyArrayIndex {
                 holder,
                 property,
@@ -10165,6 +10216,73 @@ impl Interpreter {
                 Err(unsupported())
             }
             AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. } => Err(unsupported()),
+            AssignTarget::DynamicObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                suffix_indices,
+                ..
+            } => {
+                if !suffix_indices.is_empty() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "reference assignment",
+                            "dynamic object-property array append targets with suffix offsets are not implemented for reference assignment in the current subset",
+                        ),
+                    ));
+                }
+                let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    self.reject_object_property_array_access_reference_target_if_needed(
+                        object, &property, span, scope,
+                    )?;
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let root =
+                        self.context_object_property_alias_root(object, &property, span, scope)?;
+                    scope.append_object_property_array_offset_alias_root_to_static_source(
+                        root,
+                        keys,
+                        source_name,
+                        span,
+                    )?;
+                    return Ok(());
+                }
+                if let Some((source_alias, value)) =
+                    self.evaluate_storable_reference_source_alias(source, span, scope)?
+                {
+                    self.reject_object_property_array_access_reference_target_if_needed(
+                        object, &property, span, scope,
+                    )?;
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let root =
+                        self.context_object_property_alias_root(object, &property, span, scope)?;
+                    let target_alias = scope.append_object_property_array_offset_reference_alias(
+                        root,
+                        keys,
+                        value.clone(),
+                        span,
+                    )?;
+                    scope.bind_array_offset_alias_to_reference_alias(
+                        target_alias,
+                        source_alias,
+                        value,
+                        span,
+                    )?;
+                    return Ok(());
+                }
+
+                Err(unsupported())
+            }
             AssignTarget::ObjectPropertyArrayAppend {
                 object,
                 property,

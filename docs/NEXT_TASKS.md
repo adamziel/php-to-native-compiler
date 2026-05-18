@@ -19494,6 +19494,17 @@ handled.
   non-direct/magic/mixed roots, complete alias lifetime/detach behavior,
   string COW identity, and native reference lowering named as unsupported.
 
+## Lane 1732-C: Dynamic Object Property Reference Target Wiring
+
+- [x] Runtime/interpreter/tests/docs lane: route direct dynamic
+  object-property array reference targets and appends, such as
+  `$object->{$name}["slot"] =& $var` and
+  `$object->{$name}["outer"][] =& $var`, through the same context property
+  root and reference-backed slot storage used by named properties. Keep
+  method-local `$this` object-property targets, alias-backed sources, broader
+  non-direct/magic/mixed roots, complete alias lifetime/detach behavior,
+  string COW identity, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

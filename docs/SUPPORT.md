@@ -4415,11 +4415,14 @@
   `$object->items["slot"] =& $var`, and
   `$object->items["outer"][] =& $var` now store reference-backed array slots
   for direct variable sources while retaining the existing alias side table
-  for broader paths. These are substrate for later PHP-visible reference
-  containers and COW separation; method-local `$this` object-property targets,
-  alias-backed sources, broader non-direct, magic, and mixed array element
-  bindings, complete alias lifetime/detach parity, string COW identity, and
-  native reference lowering remain unsupported.
+  for broader paths. The same direct object-property target path also accepts
+  dynamically evaluated property names such as
+  `$object->{$name}["slot"] =& $var` and
+  `$object->{$name}["outer"][] =& $var`. These are substrate for later
+  PHP-visible reference containers and COW separation; method-local `$this`
+  object-property targets, alias-backed sources, broader non-direct, magic,
+  and mixed array element bindings, complete alias lifetime/detach parity,
+  string COW identity, and native reference lowering remain unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

@@ -332,6 +332,32 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: wire nested reference array slots"` if the
   full gate passes.
 
+## Loop Event 2026-05-18T18:45:00+02:00
+
+- Checkpoint before this task: `dba328a7 runtime: wire nested reference array
+  slots`, pushed to `origin/master`.
+- Task attempted: Lane 1732-C direct dynamic object-property array reference
+  target wiring.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1731/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the expanded
+  milestone1731 fixture; `cargo check -q -p phpc` passed; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1731`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: dynamic property-name target forms such as
+  `$object->{$name}["slot"] =& $var` and
+  `$object->{$name}["outer"][] =& $var` now use the same object-property
+  reference-backed slot route as direct named properties.
+- Remaining semantic gaps: method-local `$this` object-property targets,
+  alias-backed sources, broader non-direct/magic/mixed roots, alias side-table
+  removal, complete PHP alias lifetime/detach parity, string COW identity, and
+  native reference lowering remain unsupported.
+- Next concrete task: run adjacent regression checks, `cargo fmt --check`,
+  `git diff --check`, and then one full checkpoint with
+  `tools/checkpoint.sh "runtime: support dynamic reference property slots"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic
