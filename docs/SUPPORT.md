@@ -166,7 +166,19 @@
   accepts array offsets below those magic properties, such as
   `handler($object->missing["slot"])` and
   `handler($object->{$name}["outer"]["slot"])`, as a bounded copy-in/writeback
-  bridge through the array cell returned by `__get()`. Direct free-function,
+  bridge through the array cell returned by `__get()`. If that returned
+  direct-variable cell holds an `ArrayAccess` object, the direct
+  user-function path also covers the bounded mixed magic/ArrayAccess shape
+  `handler($object->missing["slot"])` when public by-reference
+  `offsetGet($offset)` has the exact body
+  `return $this->property[$offset];`; writes route to the selected backing
+  property array slot. Direct user-function by-reference calls also accept
+  named and dynamic magic-property array-offset
+  paths on non-direct holders such as
+  `handler($holders["box"]->missing["slot"])` and
+  `handler($holders["box"]->{$name}["outer"]["slot"])`; the holder expression
+  is evaluated once into a temporary object root before the same
+  direct-variable-returning `__get()` bridge is applied. Direct free-function,
   direct visible object-method, direct named static method, and dynamic static
   receiver calls that return by reference use that same bridge for normal
   invocation when the returned reference is discarded. Normal named and
@@ -180,8 +192,18 @@
   `$alias =& $object->{$name}["outer"]["slot"];`, plus
   `$alias =& $object->missing[];` and `$alias =& $object->{$name}[];`, when visible public
   `__get($name)` returns a direct variable by reference; the assigned alias
-  binds to the selected or appended slot under the returned array cell. This does not add
-  non-direct magic-property holder expressions, mixed nested `ArrayAccess`
+  binds to the selected or appended slot under the returned array cell. The
+  selected non-append slot may also be supplied by the same bounded
+  `ArrayAccess` object returned through that direct-variable cell and exact
+  public by-reference `offsetGet()` bridge. Named
+  and dynamic non-direct holder array-offset sources such as
+  `$alias =& $holders["box"]->missing["slot"];` and
+  `$alias =& $holders["box"]->{$name}["outer"]["slot"];` are also accepted for
+  direct-variable reference assignment through the same temporary holder root.
+  This does not add non-direct holder magic-property append offsets, magic
+  property roots without an array offset, magic `__get()` bodies that return
+  properties, offsets, or expressions, by-value or arbitrary
+  `ArrayAccess::offsetGet()` bodies, mixed nested `ArrayAccess` object
   chains, broad same-container identity for reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,
   arbitrary reference expressions,
@@ -383,16 +405,22 @@
   side-effecting, magic-property, or mixed `ArrayAccess` source paths, direct
   reference assignment between
   non-append object-property array offsets without an intermediate alias variable,
+  non-direct object-holder reference-assignment targets outside visible
+  named/dynamic property array slots such as
+  `$holders["bag"]->items["slot"] =& $new` and
+  `$holders["bag"]->{$property}["slot"] =& $new`,
   dynamic static receiver, executing duplicate or unknown string-keyed
   callback argument names beyond the stable diagnostic path, positional
   arguments after a string-keyed named argument, variadic named callback
   arguments, dynamic key expressions in the literal
   reference named-argument path, dynamic `ArrayAccess` roots beyond direct
   dynamic property-held sources, non-direct holder expressions outside the
-  documented slice, invisible selected properties, magic-property references,
+  documented slice, invisible selected properties, magic-property references
+  outside the documented direct and non-direct holder array-offset slices,
   mixed nested `ArrayAccess` chains, alias cleanup beyond covered unset
   container-slot detachment, broad copy-on-write, destructor side effects
-  during alias destruction, dynamic or expression-root rebind ordering,
+  during alias destruction, arbitrary dynamic or expression-root rebind
+  ordering outside the bounded non-direct object-holder slot slice,
   broader by-reference `foreach` expansion, append-offset `ArrayAccess`
   source roots outside the exact direct/property-held
   `offsetGet(null)` bridge, `ArrayAccess` bridges outside
@@ -406,10 +434,12 @@
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& identity($value);`,
   `$alias =& $object->method();`, and direct object-property array-offset
-  targets such as `$object->items[$key] =& $value` parses in statement
-  position for direct variable, direct array-offset, direct function-call, and
-  method-call sources plus the documented direct object-property array-offset
-  target shape. The executing subset includes direct variable-to-variable
+  targets such as `$object->items[$key] =& $value` plus bounded non-direct
+  object-holder targets such as `$holders["bag"]->items["slot"] =& $value`
+  parses in statement position for direct variable, direct array-offset,
+  direct function-call, and method-call sources plus the documented direct and
+  non-direct object-property array-offset target shapes. The executing subset
+  includes direct variable-to-variable
   sources and targets in the current scope/global-routing model:
   `$alias =& $value;` binds both names to the same mutable cell, so assignment
   through either direct name updates the other, and `unset($alias)` or
@@ -421,7 +451,10 @@
   rebound to a direct variable source or to another covered array/property slot
   source, such as `$payload =& $_REQUEST["payload"]; $payload["slot"] =&
   $value;` and `$nested =& $object->items["nested"]; $nested["slot"] =&
-  $value;`. The selected target
+  $value;`. The same bounded rebind path covers non-direct object holder
+  expressions with visible named or dynamic property array slots when the
+  holder evaluates once to an object already represented by covered
+  object-property alias metadata. The selected target
   slot is materialized when needed and then joins the source alias group, so
   later writes through either side observe the same value. Direct free-function
   and direct
@@ -893,7 +926,14 @@
   `foreach ($_REQUEST["payload"] as &$value)`, and string-keyed `$GLOBALS`
   paths such as `foreach ($GLOBALS["bag"]["child"] as $key => &$value)` also
   route the loop value to the selected nested array slot, including from
-  function scope for root superglobals. Direct visible object-property array
+  function scope for root superglobals. By-reference forms over an ordinary
+  direct object variable, such as
+  `foreach ($object as $key => &$value)`, execute for initialized public
+  properties on non-`Traversable` objects. Each visited public property is
+  routed through the same public object-property alias root used by direct
+  property references, so loop-body writes mutate the object property and the
+  loop value remains a lingering reference to the last visited public property
+  until `unset($value)`. Direct visible object-property array
   roots such as `foreach ($object->items as &$value)` and nested direct
   object-property array roots such as
   `foreach ($object->items["child"] as &$value)` route the loop value to the
@@ -944,12 +984,13 @@
   successfully iterated existing slot until `unset($value)` detaches it. Empty
   array iteration creates no lingering reference. This is still not full PHP
   by-reference iteration: broad array reordering/replacement semantics, full
-  reference containers, copy-on-write, object/Traversable iteration,
+  reference containers, copy-on-write, by-value object iteration,
+  `Iterator`/`IteratorAggregate`/`Traversable` object iteration,
   ArrayAccess roots outside the exact direct/property-held/non-direct-holder
   `offsetGet()` bridge, non-direct property holder expressions outside
   the documented object-result named/dynamic property foreach slice and this
   property-held `ArrayAccess` slice,
-  invisible selected dynamic properties, magic-property reference containers,
+  non-public object-property iteration, magic-property reference containers,
   non-string-keyed `$GLOBALS` roots, reference-return iterables that return
   properties, array offsets, expressions, or nested-control-flow returns,
   callback forms outside the bounded `call_user_func_array()` slice, magic

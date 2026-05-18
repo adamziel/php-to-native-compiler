@@ -741,6 +741,54 @@ echo $box->items["slot"], "|", $rootCopy["slot"];
 }
 
 #[test]
+fn foreach_by_reference_mutates_public_object_properties_and_lingers() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $first = "one";
+    public $second = "two";
+}
+
+$box = new Box();
+foreach ($box as $key => &$value) {
+    $value = $value . ":" . $key;
+}
+echo $box->first, "|", $box->second, "|", $value, "|", $key, "\n";
+$box->second = "direct";
+echo $value, "|";
+$value = "tail";
+echo $box->second, "|", $value, "\n";
+unset($value);
+
+$std = new stdClass();
+$alpha = "alpha";
+$beta = "beta";
+$gamma = "gamma";
+$std->{$alpha} = "a";
+$std->{$beta} = "b";
+foreach ($std as $key => &$value) {
+    $value = $key . "=" . $value;
+    if ($key === "alpha") {
+        $std->{$gamma} = "g";
+    }
+}
+echo $std->alpha, "|", $std->beta, "|", $std->gamma, "|", $value, "|", $key, "\n";
+$std->{$gamma} = "direct-g";
+echo $value, "|";
+$value = "tail-g";
+echo $std->gamma, "|", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "one:first|two:second|two:second|second\ndirect|tail|tail\nalpha=a|beta=b|gamma=g|gamma=g|gamma\ndirect-g|tail-g|tail-g"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_binds_method_reference_return_iterables_to_caller_cell() {
     let execution = run_source(
         r#"<?php

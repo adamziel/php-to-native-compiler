@@ -43,7 +43,13 @@ object-property array roots such as `$object->items` and
 `$object->{$name}` and `$object->{$name}["child"]` when the evaluated property
 is visible in the current public/private/protected context, using the existing
 public/context property alias root instead of a general PHP reference
-container. Bounded non-direct named and dynamic property holder expressions in
+container. By-reference `foreach` over an ordinary direct non-`Traversable`
+object variable, such as `foreach ($object as $key => &$value)`, snapshots the
+object's currently initialized public properties into ordered foreach entries
+and binds each visited property through a public object-property alias root.
+Loop writes therefore mutate the object's public properties, and the
+post-loop value variable remains routed to the last visited public property
+until `unset($value)`. Bounded non-direct named and dynamic property holder expressions in
 by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
 `$holders["bag"]->{$name}["child"]`, method-context
 `$this->holder()->items`, or `$this->holder()->{$name}`, evaluate the holder
@@ -62,8 +68,9 @@ private temporary root to that returned cell before applying the existing
 foreach array-slot alias machinery. This is still a
 materialized-symbol-table model, not PHP's full reference-backed alias,
 recursive `$GLOBALS` array, copy-on-write, dynamic global-name, broader
-ArrayAccess iteration, arbitrary dynamic object-property iterable roots, or
-included-file scope model.
+ArrayAccess iteration, `Iterator`/`IteratorAggregate`/`Traversable` object
+iteration, non-public or magic-property object iteration, arbitrary dynamic
+object-property iterable roots, or included-file scope model.
 `$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded in the
 same root symbol table and route direct function-scope reads and writes through
 that root storage. `$_SESSION` is materialized lazily into the same root symbol
@@ -184,11 +191,23 @@ shares that returned cell with the callee parameter for the duration of the
 call. Direct user-function by-reference parameters can also bind array offsets
 below that magic property, such as `$object->missing["slot"]` or
 `$object->private["slot"]`, by temporarily rooting the returned direct-variable
-cell and reusing the existing array-offset copy-in/writeback alias path. This
-is intentionally limited to the existing direct-variable reference-return body
-shape and direct user-function calls; general magic container identity, normal
-property-read magic fallback breadth, arbitrary expressions, and copy-on-write
-semantics still belong to the future reference-container model.
+cell and reusing the existing array-offset copy-in/writeback alias path. If
+that returned direct-variable cell currently holds an `ArrayAccess` object,
+the same temporary root may instead use the bounded public by-reference
+`offsetGet($offset) { return $this->property[$offset]; }` bridge and write
+through the selected backing property array slot. Named and dynamic
+array-offset paths below magic properties on non-direct holders, such as
+`$holders["box"]->missing["slot"]`, evaluate the holder expression once into a
+temporary object root before reusing that same bridge for direct user-function
+by-reference parameters and direct-variable reference assignment. This is
+intentionally limited to the existing direct-variable reference-return body
+shape, selected array offsets, direct user-function or direct-variable
+reference-assignment paths, and the exact bounded ArrayAccess bridge. General
+magic container identity, normal property-read magic fallback breadth,
+magic-property append offsets on non-direct holders, arbitrary `__get()`
+return expressions, by-value or side-effecting `ArrayAccess::offsetGet()`
+bodies, mixed nested `ArrayAccess` object chains, and copy-on-write semantics
+still belong to the future reference-container model.
 Reference-returning `call_user_func_array()` sources use the same caller-cell
 binding path as direct reference-returning function and method calls for the
 current literal argument-array direct-variable and direct array-slot reference
@@ -237,8 +256,10 @@ direct dynamic property-held sources, non-direct holder expressions, mixed
 nested `ArrayAccess` chains, general magic-property reference containers,
 arbitrary append ArrayAccess bodies, or stored array-offset metadata into
 general runtime reference containers. By-reference
-`foreach` currently consumes direct visible named and dynamic object-property
-array roots, bounded non-direct named and dynamic property holder expressions that
+`foreach` currently consumes direct non-`Traversable` object variables for
+initialized public-property by-reference iteration, direct visible named and
+dynamic object-property array roots, bounded non-direct named and dynamic
+property holder expressions that
 evaluate to objects, direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
@@ -258,7 +279,8 @@ current bounded alias group coherent.
 Non-direct property holders outside that object-result foreach slice,
 non-direct holder `ArrayAccess` roots outside the exact visible property-held
 bridge, invisible selected properties, mixed nested `ArrayAccess` chains,
-magic-property containers, property-return, array-offset-return beyond that
+`Iterator`/`IteratorAggregate`/`Traversable` objects, non-public or
+magic-property object iteration, property-return, array-offset-return beyond that
 assignment-only covered parent-slot suffix shape, expression-return, magic
 `__callStatic`, and callback forms outside the bounded
 `call_user_func_array()` slice remain outside the executable foreach slice.
@@ -275,7 +297,12 @@ object-property array-offset assignment detach covered child aliases below the
 explicit assigned path before overwriting that slot. Reference assignment that
 rebinds an already covered direct array slot or public object-property array
 slot detaches the old direct alias variables with their last observed value
-before the slot joins the new direct-variable or storable slot source. When the
+before the slot joins the new direct-variable or storable slot source. The same
+detach-before-join ordering is covered for bounded non-direct object holder
+expressions such as `$holders["bag"]->items["slot"] =& $new` and
+`$holders["bag"]->{$property}["slot"] =& $new` when the holder evaluates once
+to an object whose selected visible property array slot is already represented
+by the current object-property alias metadata. When the
 assigned value is a direct array variable or covered literal-key array/property
 path whose elements already have bounded reference alias metadata, the
 assignment mirrors those child reference slots into the target array/property
@@ -302,9 +329,10 @@ alias mirroring, dynamic ArrayAccess references, arbitrary ArrayAccess append
 bodies, reference array literals outside direct variable, direct array-offset,
 direct visible object-property, and direct dynamic-property assignment targets,
 plain object-property `unset(...)` alias cleanup outside visible properties,
-destructor side effects during alias destruction, dynamic or expression-root
-rebind ordering, and native lowering still require the future runtime
-reference/COW value model.
+destructor side effects during alias destruction, arbitrary expression-root
+rebind ordering outside the bounded visible non-direct object-holder slot
+slice, and native lowering still require the future runtime reference/COW value
+model.
 
 ## Compiler Crate
 
@@ -790,12 +818,15 @@ recording alias metadata for the read result. Direct-variable reference
 assignment from named and dynamic array offsets below those magic properties
 temporarily roots the returned cell in the symbol table and reuses the
 existing array-offset alias metadata for the selected slot. That is still a
-bounded alias bridge, not a general runtime reference container. Append
-offsets below magic properties, non-direct magic-property holders, broader
-`__get()` return bodies such as properties, offsets, expressions, or
-nested-control-flow returns, mixed nested `ArrayAccess` chains, and arbitrary
-reference-return invocations still report stable runtime boundaries before any
-by-value return is produced.
+bounded alias bridge, not a general runtime reference container. Non-direct
+holder array offsets below magic properties are limited to direct
+user-function by-reference parameters and direct-variable reference
+assignment. Append offsets below magic properties, non-direct magic-property
+holders outside that selected array-offset slice, broader `__get()` return
+bodies such as properties, offsets, expressions, or nested-control-flow
+returns, mixed nested `ArrayAccess` chains, and arbitrary reference-return
+invocations still report stable runtime boundaries before any by-value return
+is produced.
 By-reference parameters are also metadata-first: omitted optional
 by-reference parameters can use their defaults as ordinary local values, while
 provided direct-variable by-reference arguments bind the callee parameter name

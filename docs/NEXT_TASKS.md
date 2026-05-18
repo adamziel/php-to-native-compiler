@@ -18357,13 +18357,32 @@ handled.
 
 ## Milestone 1662: References/COW Remaining Container Blocker
 
+- [x] Reference/COW lane: keep all active lanes on the next large COW gap.
+  The focused batch closed bounded non-direct magic-property holder
+  array-offset paths, mixed magic `__get()` plus `ArrayAccess` reference
+  chains, non-direct object-holder rebind detachment, and by-reference
+  foreach over ordinary public object properties. Full gate and checkpoint
+  are handled by the follow-up COW refresh slot.
+
+## Milestone 1666: COW-Focused Queue Refresh
+
+- [x] Tests/docs lane: integrate Milestones 1662-1665, refresh support docs,
+  progress, lane-worker queue, and loop memory; record focused verification;
+  run the serialized full gate; checkpoint the batch; push; and clean COW
+  lane worktrees and target directories. Full gate passed with `1699` fixture
+  tests, `0` failures, `1006` system PHP comparisons, and `693` `phpc-only`
+  skipped fixtures before checkpoint.
+
+## Milestone 1667: References/COW Remaining Container Blocker
+
 - [ ] Reference/COW lane: keep all active lanes on the next large COW gap.
   Prioritize general PHP reference containers, broad array/object copy-on-write
-  identity, destructor side effects during alias destruction, dynamic or
-  expression-root rebind ordering, non-direct magic-property holders, mixed
-  `ArrayAccess`/magic reference chains, object/Traversable by-reference
-  iteration, superglobal lifetime breadth, or native reference-lowering
-  diagnostics. Keep every unsupported edge named and PHP-comparable.
+  identity, destructor side effects during alias destruction, arbitrary
+  expression-root reference targets, general magic-property and mixed
+  `ArrayAccess` reference containers, real `Iterator`/`IteratorAggregate`/
+  `Traversable` by-reference iteration, superglobal lifetime breadth, or
+  native reference-lowering diagnostics. Keep every unsupported edge named and
+  PHP-comparable.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

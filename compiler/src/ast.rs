@@ -296,6 +296,18 @@ pub enum AssignTarget {
         indices: Vec<Expr>,
         span: Span,
     },
+    NonDirectObjectPropertyArrayIndex {
+        holder: Expr,
+        property: String,
+        indices: Vec<Expr>,
+        span: Span,
+    },
+    NonDirectDynamicObjectPropertyArrayIndex {
+        holder: Expr,
+        property: Expr,
+        indices: Vec<Expr>,
+        span: Span,
+    },
     ObjectPropertyArrayAppend {
         object: String,
         property: String,
@@ -384,6 +396,18 @@ pub enum ReferenceSource {
     },
     DynamicObjectPropertyNestedArrayIndex {
         object: String,
+        property: Expr,
+        indices: Vec<Expr>,
+        span: Span,
+    },
+    NonDirectObjectPropertyNestedArrayIndex {
+        holder: Expr,
+        property: String,
+        indices: Vec<Expr>,
+        span: Span,
+    },
+    NonDirectDynamicObjectPropertyNestedArrayIndex {
+        holder: Expr,
         property: Expr,
         indices: Vec<Expr>,
         span: Span,
@@ -516,6 +540,8 @@ impl AssignTarget {
             | AssignTarget::NestedArrayAppend { span, .. }
             | AssignTarget::Property { span, .. }
             | AssignTarget::ObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::NonDirectObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. }
             | AssignTarget::ObjectPropertyArrayAppend { span, .. }
             | AssignTarget::DynamicProperty { span, .. }
             | AssignTarget::ObjectStaticProperty { span, .. }

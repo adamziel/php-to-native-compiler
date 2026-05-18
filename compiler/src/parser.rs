@@ -2802,6 +2802,8 @@ impl Parser {
                     AssignTarget::NestedArrayIndex { .. }
                     | AssignTarget::NestedArrayAppend { .. }
                     | AssignTarget::ObjectPropertyArrayIndex { .. }
+                    | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+                    | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
                     | AssignTarget::ObjectPropertyArrayAppend { .. }
                     | AssignTarget::DynamicProperty { .. }
                     | AssignTarget::ObjectStaticProperty { .. }
@@ -2898,6 +2900,30 @@ impl Parser {
                     }
                     return Ok(ReferenceSource::ObjectPropertyNestedArrayIndex {
                         object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+
+                if let Some((holder, property, indices, span)) =
+                    Self::non_direct_dynamic_object_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(
+                        ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+                            holder,
+                            property,
+                            indices,
+                            span,
+                        },
+                    );
+                }
+
+                if let Some((holder, property, indices, span)) =
+                    Self::non_direct_object_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+                        holder,
                         property,
                         indices,
                         span,
@@ -3114,6 +3140,39 @@ impl Parser {
                 indices.push(self.parse_expression()?);
                 self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
             }
+            let before_object_operator = self.current;
+            if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
+                let holder = Self::array_index_expr_from_parts(&name, span, &indices);
+                let operator_span = self.previous().span;
+                if matches!(self.peek().kind, TokenKind::Variable(_) | TokenKind::LBrace) {
+                    let property = self.parse_dynamic_property_name_expr(operator_span)?;
+                    let property_span = property.span();
+                    if !self.check(|kind| matches!(kind, TokenKind::LBracket)) {
+                        self.current = before_object_operator;
+                    } else {
+                        let indices = self.parse_required_object_property_array_indices()?;
+                        return Ok(AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+                            holder,
+                            property,
+                            indices,
+                            span: property_span,
+                        });
+                    }
+                } else {
+                    let (property, _) = self.consume_object_property_name(operator_span)?;
+                    if !self.check(|kind| matches!(kind, TokenKind::LBracket)) {
+                        self.current = before_object_operator;
+                    } else {
+                        let indices = self.parse_required_object_property_array_indices()?;
+                        return Ok(AssignTarget::NonDirectObjectPropertyArrayIndex {
+                            holder,
+                            property,
+                            indices,
+                            span: operator_span,
+                        });
+                    }
+                }
+            }
             if indices.len() == 1 {
                 return Ok(AssignTarget::ArrayIndex {
                     name,
@@ -3185,6 +3244,46 @@ impl Parser {
         Ok(AssignTarget::Variable { name, span })
     }
 
+    fn array_index_expr_from_parts(name: &str, span: Span, indices: &[Expr]) -> Expr {
+        let mut expr = Expr::Variable(name.to_string(), span);
+        for index in indices {
+            expr = Expr::Index {
+                target: Box::new(expr),
+                index: Box::new(index.clone()),
+                span: index.span(),
+            };
+        }
+        expr
+    }
+
+    fn parse_required_object_property_array_indices(&mut self) -> CompileResult<Vec<Expr>> {
+        if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_assignment_expression_target_message(),
+            ));
+        }
+        if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_assignment_expression_target_message(),
+            ));
+        }
+        let mut indices = vec![self.parse_expression()?];
+        self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+        while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_assignment_expression_target_message(),
+                ));
+            }
+            indices.push(self.parse_expression()?);
+            self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+        }
+        Ok(indices)
+    }
+
     fn ensure_supported_compound_assignment_target(
         target: &AssignTarget,
     ) -> Result<(), &'static str> {
@@ -3200,6 +3299,8 @@ impl Parser {
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
@@ -3224,6 +3325,8 @@ impl Parser {
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
@@ -3571,6 +3674,74 @@ impl Parser {
                         Self::dynamic_object_property_array_index_path_from_expr(target.as_ref())?;
                     indices.push((**index).clone());
                     Some((object, property, indices, *span))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn non_direct_object_property_array_index_path_from_expr(
+        expr: &Expr,
+    ) -> Option<(Expr, String, Vec<Expr>, Span)> {
+        match expr {
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => match target.as_ref() {
+                Expr::Property {
+                    target, property, ..
+                } => match target.as_ref() {
+                    Expr::Variable(_, _) => None,
+                    _ => Some((
+                        (**target).clone(),
+                        property.clone(),
+                        vec![(**index).clone()],
+                        *span,
+                    )),
+                },
+                Expr::Index { .. } => {
+                    let (holder, property, mut indices, _) =
+                        Self::non_direct_object_property_array_index_path_from_expr(
+                            target.as_ref(),
+                        )?;
+                    indices.push((**index).clone());
+                    Some((holder, property, indices, *span))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn non_direct_dynamic_object_property_array_index_path_from_expr(
+        expr: &Expr,
+    ) -> Option<(Expr, Expr, Vec<Expr>, Span)> {
+        match expr {
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => match target.as_ref() {
+                Expr::DynamicProperty {
+                    target, property, ..
+                } => match target.as_ref() {
+                    Expr::Variable(_, _) => None,
+                    _ => Some((
+                        (**target).clone(),
+                        (**property).clone(),
+                        vec![(**index).clone()],
+                        *span,
+                    )),
+                },
+                Expr::Index { .. } => {
+                    let (holder, property, mut indices, _) =
+                        Self::non_direct_dynamic_object_property_array_index_path_from_expr(
+                            target.as_ref(),
+                        )?;
+                    indices.push((**index).clone());
+                    Some((holder, property, indices, *span))
                 }
                 _ => None,
             },
@@ -6792,7 +6963,7 @@ fn unsupported_array_destructuring_assignment_message() -> &'static str {
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {
-    "unsupported reference assignment: only direct variable, direct/nested/append array-offset, direct/nested/append object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
+    "unsupported reference assignment: only direct variable, direct/nested/append array-offset, direct/nested/append object-property array-offset, bounded non-direct object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
 }
 
 fn unsupported_first_class_callable_message() -> &'static str {

@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1663/magic_get_array_access_reference_chain.php

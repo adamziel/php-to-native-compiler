@@ -1,0 +1,4 @@
+one:first|two:second|two:second|second
+direct|tail|tail
+alpha=a|beta=b|gamma=g|gamma=g|gamma
+direct-g|tail-g|tail-g

@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1664/non_direct_holder_rebind_detaches_old_alias_group.php

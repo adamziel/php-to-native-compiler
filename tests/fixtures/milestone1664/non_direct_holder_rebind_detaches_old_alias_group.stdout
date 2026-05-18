@@ -1,0 +1,4 @@
+holder-rebind=changed|old|old|changed
+holder-old=changed|old-write|old-write|changed
+dynamic-rebind=dynamic-changed|old|old|dynamic-changed
+dynamic-old=dynamic-changed|dynamic-old-write|dynamic-old-write|dynamic-changed

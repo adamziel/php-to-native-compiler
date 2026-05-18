@@ -2168,6 +2168,47 @@ echo $box->items["slot"], "|", $propertyOld, "|", $propertySame, "|", $propertyN
 }
 
 #[test]
+fn reference_assignment_rebinds_non_direct_object_holder_slot_detaching_old_aliases() {
+    let execution = run_source(
+        r#"<?php
+class NonDirectRebindBag {
+    public $items = array("slot" => "old");
+}
+
+$holders = array("bag" => new NonDirectRebindBag(), "dynamic" => new NonDirectRebindBag());
+
+$bag = $holders["bag"];
+$old =& $bag->items["slot"];
+$same =& $old;
+$new = "new";
+$holders["bag"]->items["slot"] =& $new;
+$new = "changed";
+echo "holder-rebind=", $bag->items["slot"], "|", $old, "|", $same, "|", $new, "\n";
+$same = "old-write";
+echo "holder-old=", $bag->items["slot"], "|", $old, "|", $same, "|", $new, "\n";
+
+$property = "items";
+$dynamicBag = $holders["dynamic"];
+$dynamicOld =& $dynamicBag->items["slot"];
+$dynamicSame =& $dynamicOld;
+$dynamicNew = "dynamic-new";
+$holders["dynamic"]->{$property}["slot"] =& $dynamicNew;
+$dynamicNew = "dynamic-changed";
+echo "dynamic-rebind=", $dynamicBag->items["slot"], "|", $dynamicOld, "|", $dynamicSame, "|", $dynamicNew, "\n";
+$dynamicSame = "dynamic-old-write";
+echo "dynamic-old=", $dynamicBag->items["slot"], "|", $dynamicOld, "|", $dynamicSame, "|", $dynamicNew;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "holder-rebind=changed|old|old|changed\nholder-old=changed|old-write|old-write|changed\ndynamic-rebind=dynamic-changed|old|old|dynamic-changed\ndynamic-old=dynamic-changed|dynamic-old-write|dynamic-old-write|dynamic-changed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_array_variable_source_to_variable_executes_current_subset() {
     let execution = run_source(
         r#"<?php
@@ -3078,6 +3119,97 @@ echo $dynamicStorage["created"];
     assert_eq!(
         execution.stdout,
         "initial:plain\ninside:nested\nnull:selected"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn magic_get_array_access_reference_chain_reaches_backing_storage() {
+    let execution = run_source(
+        r#"<?php
+class MagicArrayAccessBag implements ArrayAccess {
+    private $storage = ["slot" => "seed"];
+
+    public function offsetExists($offset) { return isset($this->storage[$offset]); }
+    public function &offsetGet($offset) { return $this->storage[$offset]; }
+    public function offsetSet($offset, $value) { $this->storage[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->storage[$offset]); }
+    public function read($offset) { return $this->storage[$offset]; }
+}
+
+$bag = new MagicArrayAccessBag();
+
+class MagicArrayAccessBox {
+    public function &__get($name) {
+        global $bag;
+        return $bag;
+    }
+}
+
+function touch_magic_array_access(&$value, $suffix) {
+    $value = ($value === null ? "null" : $value) . ":" . $suffix;
+}
+
+$box = new MagicArrayAccessBox();
+touch_magic_array_access($box->missing["slot"], "arg");
+
+$alias =& $box->missing["created"];
+$alias = "via-alias";
+
+echo $bag->read("slot"), "\n", $bag->read("created"), "|", $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "seed:arg\nvia-alias|via-alias");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_parameter_accepts_non_direct_holder_magic_get_array_offset_source() {
+    let execution = run_source(
+        r#"<?php
+$storage = ["slot" => "initial", "nested" => ["leaf" => "inside"], "dynamic" => "selected"];
+
+class NonDirectMagicArrayBox {
+    public function &__get($name) {
+        echo "get:$name\n";
+        global $storage;
+        return $storage;
+    }
+}
+
+function touch_non_direct_magic_slot(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+}
+
+$holders = ["box" => new NonDirectMagicArrayBox()];
+touch_non_direct_magic_slot($holders["box"]->missing["slot"], "param");
+echo $storage["slot"], "\n";
+
+$alias =& $holders["box"]->missing["nested"]["leaf"];
+$alias = $alias . ":alias";
+echo $storage["nested"]["leaf"], "|";
+$storage["nested"]["leaf"] = $storage["nested"]["leaf"] . ":store";
+echo $alias, "\n";
+
+$property = "dynamicMissing";
+touch_non_direct_magic_slot($holders["box"]->{$property}["dynamic"], "dynamic");
+echo $storage["dynamic"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "get:missing\n",
+            "initial:param\n",
+            "get:missing\n",
+            "inside:alias|inside:alias:store\n",
+            "get:dynamicMissing\n",
+            "selected:dynamic"
+        )
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4168,7 +4300,7 @@ echo $nestedValue;
 
 #[test]
 fn reference_assignment_complex_object_property_array_source_boundary_is_stable() {
-    let error = parse_error(
+    let error = runtime_error(
         r#"<?php
 $alias =& make_box()->items[0];
 "#,
@@ -4176,10 +4308,7 @@ $alias =& make_box()->items[0];
 
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 11);
-    assert_eq!(
-        error.message,
-        "unsupported reference assignment: only direct variable, direct/nested/append array-offset, direct/nested/append object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
-    );
+    assert_eq!(error.message, "undefined function make_box()");
 }
 
 #[test]

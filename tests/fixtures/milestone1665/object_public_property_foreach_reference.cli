@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1665/object_public_property_foreach_reference.php

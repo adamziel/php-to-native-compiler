@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1662/non_direct_magic_get_reference_holder.php
