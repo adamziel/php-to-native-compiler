@@ -19217,6 +19217,23 @@ handled.
   scalar parent overwrite/error parity, full references/COW, and native
   reference lowering named as unsupported.
 
+## Lane 1713-C: ArrayAccess Literal Suffix Append Store
+
+- [x] Runtime/tests/docs lane: extend the branchy public
+  `ArrayAccess::offsetSet(null, $value)` append bridge to literal suffix
+  buckets after the append slot, such as
+  `if ($offset === null) { $this->items[]["bucket"] = $value; return; }
+  $this->items[$offset]["bucket"] = $value;`. The covered direct
+  `$bag[] = $array` shape now stores copied nested reference-slot metadata
+  under the actual appended key plus literal suffix bucket, so later direct
+  backing-property writes resynchronize the original referenced variables.
+  Keep dynamic or repeated `offsetSet()` parameter keys, non-literal
+  `offsetSet()` path keys, side-effecting or broader `offsetSet()` bodies,
+  broader mixed nested `ArrayAccess` chains, broader `__get()` return
+  expressions, by-value terminal/plain-array mutation, scalar parent
+  overwrite/error parity, full references/COW, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -899,8 +899,10 @@ method call to the actual appended integer key. That branchy append-key bridge
 can use the same literal prefix before both the append and the offset
 parameter, such as
 `if ($offset === null) { $this->property["bucket"][] = $value; return; }
-$this->property["bucket"][$offset] = $value;`; suffix paths after the append
-slot remain outside this bounded recognizer. Direct visible property-held
+$this->property["bucket"][$offset] = $value;`, and the same literal suffix
+after both the append slot and offset parameter, such as
+`if ($offset === null) { $this->property[]["bucket"] = $value; return; }
+$this->property[$offset]["bucket"] = $value;`. Direct visible property-held
 append stores such as `$holder->bag[] = $array` reuse the same hidden
 `ArrayAccess` object root used by property-held reference-source bridges, then
 attach literal-reference or copied-array alias metadata to the held object's

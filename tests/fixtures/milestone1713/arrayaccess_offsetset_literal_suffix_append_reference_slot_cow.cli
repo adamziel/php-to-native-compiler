@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1713/arrayaccess_offsetset_literal_suffix_append_reference_slot_cow.php

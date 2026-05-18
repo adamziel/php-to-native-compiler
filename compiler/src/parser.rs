@@ -3240,6 +3240,7 @@ impl Parser {
                         object: name,
                         property,
                         indices: Vec::new(),
+                        suffix_indices: Vec::new(),
                         span,
                     });
                 }
@@ -3251,6 +3252,7 @@ impl Parser {
                             object: name,
                             property,
                             indices,
+                            suffix_indices: Vec::new(),
                             span,
                         });
                     }
@@ -3447,6 +3449,17 @@ impl Parser {
         match expr {
             Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
             Expr::Index { .. } => {
+                if let Some((object, property, indices, suffix_indices, span)) =
+                    Self::object_property_array_append_suffix_target_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::ObjectPropertyArrayAppend {
+                        object,
+                        property,
+                        indices,
+                        suffix_indices,
+                        span,
+                    });
+                }
                 if let Some((object, property, indices, span)) =
                     Self::object_property_array_index_path_from_expr(&expr)
                 {
@@ -3515,6 +3528,17 @@ impl Parser {
         match expr {
             Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
             Expr::Index { .. } => {
+                if let Some((object, property, indices, suffix_indices, span)) =
+                    Self::object_property_array_append_suffix_target_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::ObjectPropertyArrayAppend {
+                        object,
+                        property,
+                        indices,
+                        suffix_indices,
+                        span,
+                    });
+                }
                 if let Some((object, property, indices, span)) =
                     Self::object_property_array_index_path_from_expr(&expr)
                 {
@@ -3549,6 +3573,7 @@ impl Parser {
                         object,
                         property,
                         indices,
+                        suffix_indices: Vec::new(),
                         span,
                     });
                 }
@@ -3559,6 +3584,7 @@ impl Parser {
                         object,
                         property,
                         indices,
+                        suffix_indices: Vec::new(),
                         span,
                     });
                 }
@@ -3826,6 +3852,28 @@ impl Parser {
             Expr::Index { .. } => Self::object_property_array_index_path_from_expr(expr),
             _ => None,
         }
+    }
+
+    fn object_property_array_append_suffix_target_from_expr(
+        expr: &Expr,
+    ) -> Option<(String, String, Vec<Expr>, Vec<Expr>, Span)> {
+        let mut suffix_indices = Vec::new();
+        let mut current = expr;
+        while let Expr::Index { target, index, .. } = current {
+            suffix_indices.push((**index).clone());
+            current = target.as_ref();
+        }
+        suffix_indices.reverse();
+
+        let Expr::AppendIndex { target, span } = current else {
+            return None;
+        };
+        if suffix_indices.is_empty() {
+            return None;
+        }
+        let (object, property, indices, _) =
+            Self::object_property_array_append_target_from_expr(target.as_ref())?;
+        Some((object, property, indices, suffix_indices, *span))
     }
 
     fn dynamic_object_property_array_append_target_from_expr(

@@ -317,12 +317,14 @@ pub enum AssignTarget {
         object: String,
         property: String,
         indices: Vec<Expr>,
+        suffix_indices: Vec<Expr>,
         span: Span,
     },
     DynamicObjectPropertyArrayAppend {
         object: String,
         property: Expr,
         indices: Vec<Expr>,
+        suffix_indices: Vec<Expr>,
         span: Span,
     },
     DynamicProperty {

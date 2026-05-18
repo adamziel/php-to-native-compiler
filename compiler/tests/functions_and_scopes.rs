@@ -4804,6 +4804,22 @@ fn milestone1712_arrayaccess_literal_prefix_append_fixture_matches_runtime() {
 }
 
 #[test]
+fn milestone1713_system_php_arrayaccess_literal_suffix_append_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1713/arrayaccess_offsetset_literal_suffix_append_reference_slot_cow.php",
+        "../tests/fixtures/milestone1713/arrayaccess_offsetset_literal_suffix_append_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1713_arrayaccess_literal_suffix_append_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1713/arrayaccess_offsetset_literal_suffix_append_reference_slot_cow.php",
+        "../tests/fixtures/milestone1713/arrayaccess_offsetset_literal_suffix_append_reference_slot_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

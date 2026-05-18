@@ -862,7 +862,10 @@
   integer key. The branchy append bridge also accepts literal int/string
   prefix buckets before the append and offset parameter, such as
   `if ($offset === null) { $this->property["bucket"][] = $value; return; }
-  $this->property["bucket"][$offset] = $value;`. The same focused append
+  $this->property["bucket"][$offset] = $value;`, and literal int/string
+  suffix buckets after the append slot and offset parameter, such as
+  `if ($offset === null) { $this->property[]["bucket"] = $value; return; }
+  $this->property[$offset]["bucket"] = $value;`. The same focused append
   stored-bucket propagation is supported
   when a direct visible named or dynamic property holds the `ArrayAccess`
   object, such as `$holder->bag[] = $array` or
@@ -1029,8 +1032,7 @@
   stored-argument-array
   `call_user_func_array()` propagation beyond direct positional copied-bucket
   variables, non-public backing properties outside the exact method-context
-  bridges, suffix buckets after branchy append offsets such as
-  `$this->property[]["bucket"]`, dynamic or repeated `offsetSet()` parameter
+  bridges, dynamic or repeated `offsetSet()` parameter
   keys, non-literal `offsetSet()` path keys, side-effecting or broader
   `offsetSet()`/`offsetGet()` bodies,
   built-in interface enforcement/signature validation, typed method

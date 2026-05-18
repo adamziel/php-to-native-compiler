@@ -4055,6 +4055,7 @@ struct ReferenceBinding {
 struct ThisPropertyReferenceTarget {
     property: String,
     prefix_keys: Vec<ArrayKey>,
+    suffix_keys: Vec<ArrayKey>,
 }
 
 struct ArrayAccessOffsetGetReferenceTarget {
@@ -9994,8 +9995,18 @@ impl Interpreter {
                 object,
                 property,
                 indices,
+                suffix_indices,
                 ..
             } => {
+                if !suffix_indices.is_empty() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "reference assignment",
+                            "object-property array append targets with suffix offsets are not implemented for reference assignment in the current subset",
+                        ),
+                    ));
+                }
                 if let ReferenceSource::Variable {
                     name: source_name, ..
                 } = source
@@ -12091,9 +12102,6 @@ impl Interpreter {
             else {
                 return Ok(None);
             };
-            if !assign_suffix_keys.is_empty() {
-                return Ok(None);
-            }
             let Some(append_target) =
                 Self::offset_set_append_target(then_branch, &value_param.name)
             else {
@@ -12101,6 +12109,7 @@ impl Interpreter {
             };
             if &append_target.property != property
                 || append_target.prefix_keys != assign_prefix_keys
+                || append_target.suffix_keys != assign_suffix_keys
             {
                 return Ok(None);
             }
@@ -12116,6 +12125,7 @@ impl Interpreter {
                 .map(|key| {
                     let mut keys = append_target.prefix_keys.clone();
                     keys.push(key);
+                    keys.extend(append_target.suffix_keys.iter().cloned());
                     keys
                 })
                 .unwrap_or_default();
@@ -12163,17 +12173,24 @@ impl Interpreter {
         then_branch: &[Stmt],
         value_param: &str,
     ) -> Option<ThisPropertyReferenceTarget> {
-        let [Stmt::Assign {
-            target:
-                AssignTarget::ObjectPropertyArrayAppend {
-                    object,
-                    property,
-                    indices,
-                    ..
-                },
-            expr,
+        let [assignment, Stmt::Return { value: None, .. }] = then_branch else {
+            return None;
+        };
+        let (target, expr) = match assignment {
+            Stmt::Assign { target, expr, .. } => (target, expr),
+            Stmt::Expr {
+                expr: Expr::Assign { target, expr, .. },
+                ..
+            } => (target.as_ref(), expr.as_ref()),
+            _ => return None,
+        };
+        let AssignTarget::ObjectPropertyArrayAppend {
+            object,
+            property,
+            indices,
+            suffix_indices,
             ..
-        }, Stmt::Return { value: None, .. }] = then_branch
+        } = target
         else {
             return None;
         };
@@ -12184,9 +12201,14 @@ impl Interpreter {
                 .iter()
                 .map(Self::literal_reference_return_array_key)
                 .collect::<Option<Vec<_>>>()?;
+            let suffix_keys = suffix_indices
+                .iter()
+                .map(Self::literal_reference_return_array_key)
+                .collect::<Option<Vec<_>>>()?;
             Some(ThisPropertyReferenceTarget {
                 property: property.clone(),
                 prefix_keys,
+                suffix_keys,
             })
         }
     }
@@ -13524,9 +13546,14 @@ impl Interpreter {
                 object,
                 property,
                 indices,
+                suffix_indices,
                 span,
             } => {
                 let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let suffix_keys = suffix_indices
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
@@ -13538,7 +13565,8 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
-                if keys.is_empty()
+                if suffix_keys.is_empty()
+                    && keys.is_empty()
                     && matches!(value, Value::Array(_))
                     && self.write_object_property_array_access_append_with_reference_propagation(
                         object,
@@ -13552,7 +13580,8 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                if matches!(value, Value::Array(_))
+                if suffix_keys.is_empty()
+                    && matches!(value, Value::Array(_))
                     && self.write_magic_get_array_access_append_with_reference_propagation(
                         object,
                         property,
@@ -13572,29 +13601,45 @@ impl Interpreter {
                     )?;
                     let root =
                         self.context_object_property_alias_root(object, property, *span, scope)?;
+                    let stored_value =
+                        Self::wrap_value_in_array_suffix(&suffix_keys, value.clone(), *span)?;
                     let target_alias = scope.append_object_property_array_offset_reference_alias(
                         root,
                         keys,
-                        value.clone(),
+                        stored_value,
                         *span,
                     )?;
+                    let mut reference_keys = target_alias.keys;
+                    reference_keys.extend(suffix_keys.iter().cloned());
                     self.bind_array_literal_references_to_alias_root_with_prefix(
                         target_alias.root,
-                        target_alias.keys,
+                        reference_keys,
                         array_literal_references,
                         expr.span(),
                         scope,
                     )?;
                     return Ok(value);
                 }
-                self.write_object_property_nested_array_append(
-                    object,
-                    property,
-                    &keys,
-                    value.clone(),
-                    *span,
-                    scope,
-                )?;
+                if suffix_keys.is_empty() {
+                    self.write_object_property_nested_array_append(
+                        object,
+                        property,
+                        &keys,
+                        value.clone(),
+                        *span,
+                        scope,
+                    )?;
+                } else {
+                    self.write_object_property_nested_array_append_with_suffix(
+                        object,
+                        property,
+                        &keys,
+                        &suffix_keys,
+                        value.clone(),
+                        *span,
+                        scope,
+                    )?;
+                }
                 scope.sync_array_offset_aliases_for_object_property_root(object, property);
                 Ok(value)
             }
@@ -13602,8 +13647,18 @@ impl Interpreter {
                 object,
                 property,
                 indices,
+                suffix_indices,
                 span,
             } => {
+                if !suffix_indices.is_empty() {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "assignment",
+                            "dynamic object-property append assignment targets with suffix offsets are not implemented in the current subset",
+                        ),
+                    ));
+                }
                 let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
                 let keys = indices
                     .iter()
@@ -14170,6 +14225,7 @@ impl Interpreter {
                 Ok(Some(ThisPropertyReferenceTarget {
                     property: property.clone(),
                     prefix_keys: Vec::new(),
+                    suffix_keys: Vec::new(),
                 }))
             }
             Expr::DynamicProperty {
@@ -14199,6 +14255,7 @@ impl Interpreter {
                 Ok(Some(ThisPropertyReferenceTarget {
                     property: requested_property.to_string(),
                     prefix_keys: Vec::new(),
+                    suffix_keys: Vec::new(),
                 }))
             }
             Expr::Index { target, index, .. } => {
@@ -14271,6 +14328,7 @@ impl Interpreter {
         Ok(Some(ThisPropertyReferenceTarget {
             property: property.to_string(),
             prefix_keys,
+            suffix_keys: Vec::new(),
         }))
     }
 
@@ -14648,6 +14706,48 @@ impl Interpreter {
                 )),
             )),
         }
+    }
+
+    fn write_object_property_nested_array_append_with_suffix(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: &[ArrayKey],
+        suffix_keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        self.reject_object_property_array_access_reference_target_if_needed(
+            object_name,
+            property,
+            span,
+            scope,
+        )?;
+        let root = self.context_object_property_alias_root(object_name, property, span, scope)?;
+        let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
+        let appended_alias = scope.append_object_property_array_offset_reference_alias(
+            root,
+            keys.to_vec(),
+            stored_value,
+            span,
+        )?;
+        scope.sync_array_offset_aliases_for_root_path(&appended_alias.root, &appended_alias.keys);
+        Ok(())
+    }
+
+    fn wrap_value_in_array_suffix(
+        suffix_keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if suffix_keys.is_empty() {
+            return Ok(value);
+        }
+
+        let mut array = PhpArray::new();
+        Self::write_nested_array_value(&mut array, suffix_keys, value, span)?;
+        Ok(Value::Array(array))
     }
 
     fn write_nested_array_value(
