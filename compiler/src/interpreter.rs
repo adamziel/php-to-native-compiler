@@ -36444,6 +36444,26 @@ impl Interpreter {
             }
         }
 
+        if let Stmt::Try {
+            body, finally_body, ..
+        } = stmt
+        {
+            let try_binding =
+                self.execute_reference_return_assignment_statement_list(function, body, scope)?;
+            if let Some(finally_body) = finally_body {
+                if let Some(finally_binding) = self
+                    .execute_reference_return_assignment_statement_list(
+                        function,
+                        finally_body,
+                        scope,
+                    )?
+                {
+                    return Ok(Some(finally_binding));
+                }
+            }
+            return Ok(try_binding);
+        }
+
         if let Stmt::Switch { value, cases, .. } = stmt {
             return self.execute_reference_return_assignment_switch(function, value, cases, scope);
         }

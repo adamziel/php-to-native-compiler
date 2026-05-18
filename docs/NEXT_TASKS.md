@@ -19925,6 +19925,18 @@ handled.
   unsupported PHP syntax, broader dynamic backing keys, and native reference
   lowering named as unsupported.
 
+## Lane 1769-C: Try/Finally Reference-Return Bodies
+
+- [x] Runtime/interpreter/tests/docs lane: preserve reference-return lvalues
+  through `try` bodies, skipped catch clauses when no exception is thrown, and
+  optional `finally` bodies in public by-reference `ArrayAccess::offsetGet()`
+  and covered by-reference `__get()` bodies. `finally` side effects run
+  before the returned bucket is bound, and a supported lvalue returned from
+  `finally` overrides an earlier try return. Keep exception unwinding, catch
+  execution for thrown values, multi-level loop control, arbitrary unsupported
+  PHP syntax, broader dynamic backing keys, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

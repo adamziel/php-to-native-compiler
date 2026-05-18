@@ -32,7 +32,14 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1768:
+The current in-progress implementation frontier is Lane 1769:
+
+- Lane 1769 preserves reference-return lvalues through `try` bodies, skipped
+  catch clauses when no exception is thrown, and `finally` bodies in public
+  by-reference `ArrayAccess::offsetGet()` and covered by-reference `__get()`
+  bodies. `finally` side effects run before binding the returned bucket, and a
+  supported lvalue returned from `finally` overrides an earlier try return,
+  preserving COW reference-slot write-through.
 
 - Lane 1768 preserves reference-return lvalues through `while`, `do while`,
   and `for` bodies in public by-reference `ArrayAccess::offsetGet()` and

@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 1769-C for `try`/`finally` reference-return control flow in the
+  supported magic/`ArrayAccess` method-body subset. By-reference
+  `ArrayAccess::offsetGet()` and `__get()` bodies can now return covered
+  lvalues from `try` bodies, skip catch bodies when no exception is thrown,
+  run `finally` side effects before binding the returned bucket, and let a
+  supported lvalue returned from `finally` override an earlier try return
+  while preserving copied reference-slot write-through. Exception unwinding,
+  catch execution for thrown values, multi-level loop control inside those
+  bodies, unsupported PHP syntax, broader dynamic backing keys, and native
+  reference lowering remain unsupported. Focused
+  verification: raw system PHP output matched the new `milestone1769`
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1769` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; focused `functions_and_scopes` milestone tests
+  passed.
+
 - Added Lane 1768-C for loop reference-return control flow in the supported
   magic/`ArrayAccess` method-body subset. By-reference
   `ArrayAccess::offsetGet()` and `__get()` bodies can now return covered
