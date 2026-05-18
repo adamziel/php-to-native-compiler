@@ -2391,6 +2391,17 @@ impl ArraySlot {
         }
     }
 
+    pub fn promote_to_reference_cell(&mut self) -> PhpReferenceCell {
+        match &self.storage {
+            ArraySlotStorage::Reference(reference) => reference.clone(),
+            ArraySlotStorage::Value(cell) => {
+                let reference = PhpReferenceCell::new(cell.value_cloned());
+                self.storage = ArraySlotStorage::Reference(reference.clone());
+                reference
+            }
+        }
+    }
+
     pub fn is_reference(&self) -> bool {
         matches!(self.storage, ArraySlotStorage::Reference(_))
     }

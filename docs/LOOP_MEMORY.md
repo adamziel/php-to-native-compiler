@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T01:49:53+02:00
+
+- Checkpoint before this task: `3efbf493 parser: accept dynamic reference
+  call sources`, pushed to `origin/master`.
+- Task attempted: Lane 1815-C through Lane 1817-C bundle, allowing bounded
+  by-reference bodies to return selected buckets from declared static property
+  arrays through named, `self::`, `static::`, and dynamic class-string static
+  property expressions.
+- Files changed so far: `compiler/src/interpreter.rs`, `runtime/src/lib.rs`,
+  `tests/fixtures/milestone1815/*`, `tests/fixtures/milestone1816/*`,
+  `tests/fixtures/milestone1817/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new `milestone1815`,
+  `milestone1816`, and `milestone1817` fixtures; `cargo run -q -p phpc --
+  test --compare-php` passed each new fixture directory and adjacent
+  `milestone1809` through `milestone1814`; focused `functions_and_scopes`
+  reference-return tests and `object_model` static-property tests passed.
+- Remaining COW gaps: whole static-property reference roots, arbitrary
+  static-property reference containers, typed static-property enforcement
+  through returned aliases, arbitrary callable arrays, builtin callbacks as
+  reference-return sources, unsupported PHP syntax and side effects outside
+  the executed method-body subset, arbitrary type enforcement and incompatible
+  typed reference-return signatures, full exception unwinding and uncaught
+  exception propagation, arbitrary Iterator side effects, broader complex
+  alias sinks and alias lifetime ordering, exact PHP stderr/fatal text,
+  binary/multibyte string offset behavior, and native reference/string COW
+  lowering.
+- Next concrete task: run formatting, diff, adjacent checks, then the full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T01:41:25+02:00
 
 - Checkpoint before this task: `40376732 runtime: support magic callstatic

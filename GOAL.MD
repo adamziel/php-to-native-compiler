@@ -32,7 +32,18 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1814:
+The current in-progress implementation frontier is Lane 1817:
+
+- Lanes 1815 through 1817 add bounded static-property array-offset roots to
+  reference-return execution. Covered by-reference functions and magic/static
+  methods can now return named, `self::`, `static::`, and dynamic class-string
+  static property slots such as `return self::$slots[$key];` and
+  `return $class::$slots["nested"][$key];`, with the selected bucket promoted
+  to the shared reference-cell path. This still does not claim whole
+  static-property reference roots, arbitrary static-property reference
+  containers, typed static-property enforcement through returned aliases,
+  arbitrary PHP syntax or side effects outside the executed interpreter
+  subset, exact PHP diagnostics, or native reference lowering.
 
 - Lanes 1812 through 1814 parse and execute direct dynamic-call
   reference-assignment sources. `$fn(...)` can now bind a returned reference
@@ -42,8 +53,8 @@ The current in-progress implementation frontier is Lane 1814:
   claim arbitrary callable arrays, builtin callbacks as reference-return
   sources, arbitrary PHP syntax or side effects outside the executed
   interpreter subset, incompatible typed signatures, full exception unwinding,
-  exact PHP diagnostics, static-property reference roots, or native reference
-  lowering.
+  exact PHP diagnostics, whole static-property reference roots, or native
+  reference lowering.
 
 - Lanes 1809 through 1811 add bounded magic `__callStatic()` reference-return
   sources. Missing named static, `self::`, `static::`, and dynamic static

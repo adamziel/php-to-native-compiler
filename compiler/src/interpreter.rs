@@ -29302,6 +29302,153 @@ impl Interpreter {
         self.read_resolved_static_property(called_class_id, &called_class_name, property, span)
     }
 
+    fn static_property_array_offset_reference_cell_from_expr(
+        &mut self,
+        expr: &Expr,
+        keys: &[ArrayKey],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        let (class_id, class_name, property) = match expr {
+            Expr::StaticProperty {
+                class_name,
+                property,
+                ..
+            } => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                })?;
+                (class_id, class_name.clone(), property.clone())
+            }
+            Expr::ObjectStaticProperty {
+                target, property, ..
+            } => {
+                let (class_id, class_name) =
+                    self.resolve_dynamic_static_receiver(target, property, span, scope)?;
+                (class_id, class_name, property.clone())
+            }
+            Expr::SelfStaticProperty { property, .. } => {
+                let Some(current_class_id) = self.class_context.last().copied() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("self::${property}"),
+                            "self static property access requires instance method context",
+                        ),
+                    ));
+                };
+                let class_name = self
+                    .classes
+                    .get(current_class_id)
+                    .expect("active class context should resolve to class metadata")
+                    .name()
+                    .to_string();
+                (current_class_id, class_name, property.clone())
+            }
+            Expr::ParentStaticProperty { property, .. } => {
+                let (parent_class_id, parent_class_name) =
+                    self.resolve_parent_static_property_context(property, span)?;
+                (parent_class_id, parent_class_name, property.clone())
+            }
+            Expr::LateStaticProperty { property, .. } => {
+                let (called_class_id, called_class_name) =
+                    self.resolve_late_static_property_context(property, span)?;
+                (called_class_id, called_class_name, property.clone())
+            }
+            _ => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference return",
+                        "static property array-offset reference roots require a static property expression",
+                    ),
+                ));
+            }
+        };
+
+        let (declaring_class_id, declaring_class_name) =
+            self.resolve_static_property_storage(class_id, &class_name, &property, span)?;
+        let value = self
+            .static_properties
+            .get_mut(&(declaring_class_id, property.clone()))
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::uninitialized_typed_property(declaring_class_name, &property),
+                )
+            })?;
+
+        let array = match value {
+            Value::Array(array) => array,
+            Value::Null | Value::Bool(false) => {
+                *value = Value::Array(PhpArray::new());
+                let Value::Array(array) = value else {
+                    unreachable!("static property was just initialized as array")
+                };
+                array
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot read offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        Self::static_property_array_offset_reference_cell(array, keys, span)
+    }
+
+    fn static_property_array_offset_reference_cell(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        span: Span,
+    ) -> CompileResult<VariableCell> {
+        let Some((key, rest)) = keys.split_first() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference return",
+                    "static property array-offset reference roots require at least one key",
+                ),
+            ));
+        };
+
+        if rest.is_empty() {
+            if array.get_slot(key.clone()).is_none() {
+                array.insert(key.clone(), Value::Null);
+            }
+            let slot = array.get_slot_mut(key.clone()).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(
+                        "cannot bind static property array-offset reference".to_string(),
+                    ),
+                )
+            })?;
+            return Ok(slot.promote_to_reference_cell());
+        }
+
+        let mut child = match array.get_cloned(key.clone()) {
+            Some(Value::Array(child)) => child,
+            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot read offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let cell = Self::static_property_array_offset_reference_cell(&mut child, rest, span)?;
+        array.insert(key.clone(), Value::Array(child));
+        Ok(cell)
+    }
+
     fn write_named_static_property(
         &mut self,
         class_name: &str,
@@ -38290,6 +38437,22 @@ impl Interpreter {
                     }
                 }
 
+                if let Some((static_property, indices)) =
+                    Self::collect_static_property_array_index_path(target, index)
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let cell = self.static_property_array_offset_reference_cell_from_expr(
+                        static_property,
+                        &keys,
+                        span,
+                        scope,
+                    )?;
+                    return Ok(ReferenceReturnLocalBinding::Cell(cell));
+                }
+
                 Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -46573,6 +46736,32 @@ impl Interpreter {
                     }
                     indices.reverse();
                     return Some((property, indices));
+                }
+                Expr::Index { target, index, .. } => {
+                    indices.push(index);
+                    current = target;
+                }
+                _ => return None,
+            }
+        }
+    }
+
+    fn collect_static_property_array_index_path<'a>(
+        target: &'a Expr,
+        index: &'a Expr,
+    ) -> Option<(&'a Expr, Vec<&'a Expr>)> {
+        let mut indices = vec![index];
+        let mut current = target;
+
+        loop {
+            match current {
+                Expr::StaticProperty { .. }
+                | Expr::ObjectStaticProperty { .. }
+                | Expr::SelfStaticProperty { .. }
+                | Expr::ParentStaticProperty { .. }
+                | Expr::LateStaticProperty { .. } => {
+                    indices.reverse();
+                    return Some((current, indices));
                 }
                 Expr::Index { target, index, .. } => {
                     indices.push(index);

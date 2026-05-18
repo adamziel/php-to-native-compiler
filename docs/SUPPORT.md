@@ -69,7 +69,13 @@
   unsupported. Bounded magic `__callStatic()` reference-return sources are
   supported for missing named static, `self::`, `static::`, and dynamic static
   receiver calls when public static `__callStatic()` returns by reference and
-  its executed body returns a proven lvalue.
+  its executed body returns a proven lvalue. The same reference-return path
+  supports bounded static-property array-offset roots for declared static
+  property arrays reached through named, `self::`, `parent::`, `static::`, and
+  dynamic class-string static property expressions, including nested selected
+  buckets such as `$class::$slots["nested"][$key]`. Whole static-property
+  reference roots, arbitrary static-property reference containers, and typed
+  static-property enforcement through returned aliases remain unsupported.
   Direct free-function, direct visible object-method, direct named static
   method, `self::` static method, `parent::` static method,
   `static::` late-static method, and dynamic static receiver reference-return
@@ -561,7 +567,8 @@
   `static::` late-static method-call sources, and dynamic static receiver
   method-call sources are executable only for the bounded direct-variable
   reference-return shapes documented above. Magic `__callStatic`
-  reference-return method sources report the explicit runtime boundary
+  reference-return method sources and static-property array-offset
+  reference-return roots are limited to the explicit runtime boundaries
   documented above. By-reference `foreach` also consumes the narrow
   multi-alias reference-return child-array shape where a direct variable
   shares a cell with another direct name, a by-reference function returns
@@ -1197,6 +1204,16 @@
   direct `$cb(...)` reference-assignment sources, `call_user_func($cb, ...)`,
   and `call_user_func_array($cb, ...)`. Arbitrary callable arrays and builtin
   callbacks remain unsupported for reference-return sources.
+  Bounded static-property array-offset roots are accepted when the executed
+  by-reference body returns a selected bucket from a declared static property
+  array through a named, `self::`, `parent::`, `static::`, or dynamic
+  class-string static property expression. The bridge materializes missing
+  selected buckets as `null` and promotes the slot to a shared reference cell;
+  nested selected buckets are covered when each parent value is an array,
+  `null`, `false`, or absent. Whole static-property reference roots,
+  arbitrary static-property reference containers, typed static-property
+  enforcement through returned aliases, and object-receiver static property
+  roots remain unsupported.
   Bounded magic
   `__call()` is supported for direct missing instance method calls and object
   array-callable paths when `__call()` is public, returns by reference, and

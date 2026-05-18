@@ -20154,8 +20154,22 @@ handled.
   callable arrays, builtin callbacks as reference-return sources, arbitrary
   PHP syntax and side effects outside the executed method-body subset,
   incompatible typed signatures, full exception unwinding, exact PHP
-  diagnostics, static-property reference roots, and native reference lowering
-  named as unsupported.
+  diagnostics, whole static-property reference roots, and native reference
+  lowering named as unsupported.
+
+## Lane 1815-C through Lane 1817-C: Static Property Slot Reference Roots
+
+- [x] Runtime/tests/docs bundle: allow bounded reference-return bodies to
+  return selected declared static property array buckets through named,
+  `self::`, `static::`, and dynamic class-string static property expressions.
+  Cover magic `__callStatic()` returning `self::$slots[$key]`, late-static
+  child storage through `static::$slots[$key]`, and dynamic class-string
+  nested roots such as `$class::$slots["nested"][$key]`. Keep whole
+  static-property reference roots, arbitrary static-property reference
+  containers, typed static-property enforcement through returned aliases,
+  arbitrary PHP syntax and side effects outside the executed method-body
+  subset, exact PHP diagnostics, and native reference lowering named as
+  unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
