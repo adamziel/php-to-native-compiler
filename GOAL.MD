@@ -32,7 +32,7 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1725:
+The current in-progress implementation frontier is Lane 1726:
 
 - Lane 1693 focused COW work covers deeper magic-property `ArrayAccess`
   nested append mutation for exact public by-reference
@@ -207,6 +207,11 @@ The current in-progress implementation frontier is Lane 1725:
   the existing literal/parameter-copy index rules. A focused fixture covers
   by-reference magic plain-array writes and a by-value magic/mixed
   `ArrayAccess` nested append chain using that local backing alias.
+- Lane 1726 starts the real value-model refactor after the bridge bundles:
+  array slots and object properties now share a common internal PHP value-cell
+  primitive with stable cell identity, value-based equality, and clone-by-value
+  behavior. This is runtime substrate for later reference containers and COW
+  separation, not PHP-visible general references yet.
 - `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` record the focused
   verification for this bundle. Before a checkpoint commit, use
   `tools/checkpoint.sh`, which runs the full project gate.

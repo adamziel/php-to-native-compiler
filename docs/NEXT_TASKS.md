@@ -19425,6 +19425,17 @@ handled.
   `ArrayAccess` objects through property offsets, non-literal backing keys,
   full references/COW, and native reference lowering named as unsupported.
 
+## Lane 1726-C: Shared PHP Value Cell Substrate
+
+- [x] Runtime/tests/docs lane: start the real value-model refactor by moving
+  runtime array slots and object properties onto a shared internal PHP
+  value-cell primitive with stable identity, value-based equality, and
+  clone-by-value behavior. Add focused runtime coverage proving object clones
+  allocate independent property value cells and keep later writes separated.
+  Keep PHP-visible reference containers, broad COW separation,
+  array/object/string alias lifetime parity, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

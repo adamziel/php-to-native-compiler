@@ -171,6 +171,30 @@ next run, batch work aggressively:
   with `tools/checkpoint.sh "runtime: broaden magic ArrayAccess backing aliases"`
   if the full gate passes.
 
+## Loop Event 2026-05-18T17:35:00+02:00
+
+- Checkpoint before this task: `61087cdc runtime: broaden magic ArrayAccess
+  backing aliases`, pushed to `origin/master`.
+- Task attempted: Lane 1726-C first real value-model refactor slice after the
+  COW bridge bundles.
+- Files changed so far: `runtime/src/lib.rs`, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc` passed and
+  `cargo test -q -p php_runtime
+  object_property_slots_use_value_cells_and_clone_by_value` passed `1`
+  focused runtime test.
+- Semantic gap reduced: runtime array slots and object properties now share a
+  common internal PHP value-cell primitive with stable identity, value-based
+  equality, and clone-by-value behavior.
+- Remaining semantic gaps: PHP-visible reference containers, broad COW
+  separation, array/object/string alias lifetime parity, arbitrary expression
+  reference roots, and native reference lowering remain unsupported.
+- Next concrete task: run adjacent runtime/object checks, `cargo fmt --check`,
+  `git diff --check`, then one full checkpoint with
+  `tools/checkpoint.sh "runtime: share value cells across array and object slots"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T15:06:17+02:00
 
 - Checkpoint before this task: `e4d5351a runtime: support non-direct magic

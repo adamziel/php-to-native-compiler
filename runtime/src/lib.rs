@@ -2267,7 +2267,7 @@ impl ArrayEntry {
 
 #[derive(Debug, PartialEq)]
 pub struct ArraySlot {
-    cell: Rc<ArraySlotCell>,
+    cell: Rc<PhpValueCell>,
 }
 
 impl Clone for ArraySlot {
@@ -2333,33 +2333,43 @@ impl ArraySlot {
     }
 }
 
-static NEXT_ARRAY_SLOT_CELL_ID: AtomicI64 = AtomicI64::new(1);
+static NEXT_PHP_VALUE_CELL_ID: AtomicI64 = AtomicI64::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ArraySlotCellId(i64);
+pub struct PhpValueCellId(i64);
 
-impl ArraySlotCellId {
+pub type ArraySlotCellId = PhpValueCellId;
+
+impl PhpValueCellId {
     pub fn as_i64(self) -> i64 {
         self.0
     }
 }
 
 #[derive(Debug)]
-struct ArraySlotCell {
-    id: ArraySlotCellId,
+struct PhpValueCell {
+    id: PhpValueCellId,
     value: Value,
 }
 
-impl PartialEq for ArraySlotCell {
+impl Clone for PhpValueCell {
+    fn clone(&self) -> Self {
+        self.clone_by_value()
+    }
+}
+
+impl PartialEq for PhpValueCell {
     fn eq(&self, other: &Self) -> bool {
         self.value == other.value
     }
 }
 
-impl ArraySlotCell {
+type ArraySlotCell = PhpValueCell;
+
+impl PhpValueCell {
     fn new(value: Value) -> Self {
         Self {
-            id: ArraySlotCellId(NEXT_ARRAY_SLOT_CELL_ID.fetch_add(1, AtomicOrdering::Relaxed)),
+            id: PhpValueCellId(NEXT_PHP_VALUE_CELL_ID.fetch_add(1, AtomicOrdering::Relaxed)),
             value,
         }
     }
@@ -2368,7 +2378,7 @@ impl ArraySlotCell {
         Self::new(self.value.clone())
     }
 
-    fn id(&self) -> ArraySlotCellId {
+    fn id(&self) -> PhpValueCellId {
         self.id
     }
 
@@ -3534,7 +3544,7 @@ impl PhpObject {
             name: name.to_string(),
             visibility,
             type_decl: type_decl.clone(),
-            value: Value::Null,
+            cell: PhpValueCell::new(Value::Null),
             initialized: type_decl.is_none(),
         });
     }
@@ -3589,6 +3599,13 @@ impl PhpObject {
         Ok(property.initialized_value()?.clone())
     }
 
+    pub fn public_property_cell_id(&self, name: &str) -> RuntimeResult<PhpValueCellId> {
+        let properties = self.properties.borrow();
+        let property = self.public_property_or_error(&properties, name)?;
+
+        Ok(property.cell_id())
+    }
+
     pub fn read_property_from_context(
         &self,
         name: &str,
@@ -3621,7 +3638,7 @@ impl PhpObject {
             return Ok(false);
         };
 
-        Ok(property.initialized && !matches!(property.value, Value::Null))
+        Ok(property.initialized && !matches!(property.value(), Value::Null))
     }
 
     pub fn is_property_set_from_context(
@@ -3641,7 +3658,7 @@ impl PhpObject {
             return Ok(false);
         };
 
-        Ok(property.initialized && !matches!(property.value, Value::Null))
+        Ok(property.initialized && !matches!(property.value(), Value::Null))
     }
 
     pub fn read_public_property_for_isset(&self, name: &str) -> RuntimeResult<Option<Value>> {
@@ -3654,7 +3671,7 @@ impl PhpObject {
             return Ok(None);
         }
 
-        Ok(Some(property.value.clone()))
+        Ok(Some(property.value().clone()))
     }
 
     pub fn read_property_for_isset_from_context(
@@ -3678,7 +3695,7 @@ impl PhpObject {
             return Ok(None);
         }
 
-        Ok(Some(property.value.clone()))
+        Ok(Some(property.value().clone()))
     }
 
     pub fn read_current_public_property(&self, name: &str) -> Option<Value> {
@@ -3686,7 +3703,7 @@ impl PhpObject {
             .borrow()
             .iter()
             .find(|property| property.name == name && property.visibility == Visibility::Public)
-            .and_then(|property| property.initialized.then(|| property.value.clone()))
+            .and_then(|property| property.initialized.then(|| property.value().clone()))
     }
 
     pub fn is_public_property_empty(&self, name: &str) -> RuntimeResult<bool> {
@@ -3699,7 +3716,7 @@ impl PhpObject {
             return Ok(true);
         }
 
-        Ok(!property.value.is_truthy())
+        Ok(!property.value().is_truthy())
     }
 
     pub fn is_property_empty_from_context(
@@ -3723,14 +3740,15 @@ impl PhpObject {
             return Ok(true);
         }
 
-        Ok(!property.value.is_truthy())
+        Ok(!property.value().is_truthy())
     }
 
     pub fn write_public_property(&self, name: &str, value: Value) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
         let property = self.public_property_mut_or_error(&mut properties, name)?;
 
-        property.value = coerce_typed_property_value(property, value)?;
+        let value = coerce_typed_property_value(property, value)?;
+        property.set_value(value);
         property.initialized = true;
         Ok(())
     }
@@ -3741,7 +3759,7 @@ impl PhpObject {
             property.name == name && property.visibility == Visibility::Public
         }) {
             let value = coerce_typed_property_value(&properties[index], value)?;
-            properties[index].value = value;
+            properties[index].set_value(value);
             properties[index].initialized = true;
             return Ok(());
         }
@@ -3769,7 +3787,7 @@ impl PhpObject {
             name: name.to_string(),
             visibility: Visibility::Public,
             type_decl: None,
-            value,
+            cell: PhpValueCell::new(value),
             initialized: true,
         });
         Ok(())
@@ -3795,7 +3813,8 @@ impl PhpObject {
             protected_class_ids,
         )?;
 
-        property.value = coerce_typed_property_value(property, value)?;
+        let value = coerce_typed_property_value(property, value)?;
+        property.set_value(value);
         property.initialized = true;
         Ok(())
     }
@@ -3819,11 +3838,12 @@ impl PhpObject {
             protected_class_ids,
         )?;
 
-        property.value = coerce_typed_property_value_with_object_type_resolver(
+        let value = coerce_typed_property_value_with_object_type_resolver(
             property,
             value,
             &object_type_resolver,
         )?;
+        property.set_value(value);
         property.initialized = true;
         Ok(())
     }
@@ -3845,7 +3865,7 @@ impl PhpObject {
             return Ok(false);
         };
 
-        property.value = Value::Null;
+        property.set_value(Value::Null);
         property.initialized = property.type_decl.is_none();
         Ok(true)
     }
@@ -4023,7 +4043,7 @@ pub struct ObjectProperty {
     name: String,
     visibility: Visibility,
     type_decl: Option<String>,
-    value: Value,
+    cell: PhpValueCell,
     initialized: bool,
 }
 
@@ -4045,7 +4065,11 @@ impl ObjectProperty {
     }
 
     pub fn value(&self) -> &Value {
-        &self.value
+        self.cell.value()
+    }
+
+    pub fn cell_id(&self) -> PhpValueCellId {
+        self.cell.id()
     }
 
     pub fn is_initialized(&self) -> bool {
@@ -4074,13 +4098,17 @@ impl ObjectProperty {
 
     fn initialized_value(&self) -> RuntimeResult<&Value> {
         if self.initialized {
-            Ok(&self.value)
+            Ok(self.value())
         } else {
             Err(RuntimeError::uninitialized_typed_property(
                 self.declaring_class_name.clone(),
                 self.name.clone(),
             ))
         }
+    }
+
+    fn set_value(&mut self, value: Value) {
+        self.cell.set_value(value);
     }
 }
 
@@ -6115,6 +6143,59 @@ mod tests {
             Value::String("original".to_string())
         );
         assert_eq!(original.value(), &Value::String("original".to_string()));
+    }
+
+    #[test]
+    fn object_property_slots_use_value_cells_and_clone_by_value() {
+        let mut classes = PhpClassTable::new();
+        let id = classes.declare_class("Packet").unwrap();
+        let class = classes.get_mut(id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("payload", Visibility::Public))
+            .unwrap();
+
+        let object = PhpObject::from_class(class);
+        object
+            .write_public_property("payload", Value::String("original".to_string()))
+            .unwrap();
+        let original_cell = object.public_property_cell_id("payload").unwrap();
+
+        let clone = object.shallow_clone_with_id(999);
+        let clone_cell = clone.public_property_cell_id("payload").unwrap();
+
+        assert_ne!(
+            original_cell, clone_cell,
+            "object clone must allocate independent property value cells"
+        );
+        assert_eq!(
+            object.read_public_property("payload").unwrap(),
+            Value::String("original".to_string())
+        );
+        assert_eq!(
+            clone.read_public_property("payload").unwrap(),
+            Value::String("original".to_string())
+        );
+
+        clone
+            .write_public_property("payload", Value::String("clone".to_string()))
+            .unwrap();
+
+        assert_eq!(
+            object.public_property_cell_id("payload").unwrap(),
+            original_cell
+        );
+        assert_eq!(
+            clone.public_property_cell_id("payload").unwrap(),
+            clone_cell
+        );
+        assert_eq!(
+            object.read_public_property("payload").unwrap(),
+            Value::String("original".to_string())
+        );
+        assert_eq!(
+            clone.read_public_property("payload").unwrap(),
+            Value::String("clone".to_string())
+        );
     }
 
     #[test]
