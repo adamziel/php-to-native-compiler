@@ -5080,6 +5080,22 @@ fn milestone1766_nested_control_reference_returns_fixture_matches_runtime() {
 }
 
 #[test]
+fn milestone1767_system_php_switch_reference_returns_fixture_matches() {
+    assert_system_php_fixture_matches_stdout(
+        "../tests/fixtures/milestone1767/switch_reference_returns_cow.php",
+        "../tests/fixtures/milestone1767/switch_reference_returns_cow.stdout",
+    );
+}
+
+#[test]
+fn milestone1767_switch_reference_returns_fixture_matches_runtime() {
+    assert_run_source_fixture_path_matches_stdout(
+        "../tests/fixtures/milestone1767/switch_reference_returns_cow.php",
+        "../tests/fixtures/milestone1767/switch_reference_returns_cow.stdout",
+    );
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

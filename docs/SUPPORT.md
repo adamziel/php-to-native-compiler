@@ -232,6 +232,9 @@
   so branch-selected backing buckets such as
   `if ($offset === "left") { return $this->left[$offset]; } return $this->right[$offset];`
   bind through the selected bucket.
+  `switch`/`case`/`default` bodies are covered for the same supported return
+  lvalue shapes, including ordinary case fallthrough until a returned lvalue
+  or `break` is reached.
   Public by-reference `__get()` uses the same assignment-capable return path
   for covered array-offset returns such as `return $this->store[$name];`.
   The bounded `__get()` and `offsetGet()` backing analyzers also accept one
@@ -242,7 +245,7 @@
   such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
   This does not add magic property roots without an array offset, magic
   `__get()` roots beyond the covered direct variable/property/backing-offset
-  returns; loop/switch/try-style reference returns; arbitrary PHP syntax
+  returns; loop/try-style reference returns; arbitrary PHP syntax
   outside the interpreter subset; arbitrary mixed nested `ArrayAccess` object
   chains; broad same-container identity for
   reference-returning function,

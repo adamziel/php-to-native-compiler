@@ -36358,6 +36358,10 @@ impl Interpreter {
                 .execute_reference_return_assignment_statement_list(function, branch, scope);
         }
 
+        if let Stmt::Switch { value, cases, .. } = stmt {
+            return self.execute_reference_return_assignment_switch(function, value, cases, scope);
+        }
+
         match self.execute_statement(stmt, scope)? {
             Flow::Normal => Ok(None),
             Flow::Return(_) => Err(runtime_error(
@@ -36384,6 +36388,77 @@ impl Interpreter {
             )),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
+    }
+
+    fn execute_reference_return_assignment_switch(
+        &mut self,
+        function: &FunctionDecl,
+        value: &Expr,
+        cases: &[SwitchCase],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnLocalBinding>> {
+        let switch_value = self.evaluate(value, scope)?;
+        let mut default_index = None;
+        let mut matched_index = None;
+
+        for (index, case) in cases.iter().enumerate() {
+            let Some(condition) = &case.condition else {
+                if default_index.is_none() {
+                    default_index = Some(index);
+                }
+                continue;
+            };
+
+            let case_value = self.evaluate(condition, scope)?;
+            let matched = switch_value
+                .php_cmp_checked(&case_value, Comparison::Eq)
+                .map_err(|error| runtime_error(condition.span(), error))?;
+            if matched {
+                matched_index = Some(index);
+                break;
+            }
+        }
+
+        let Some(mut index) = matched_index.or(default_index) else {
+            return Ok(None);
+        };
+
+        while index < cases.len() {
+            for stmt in &cases[index].body {
+                match stmt {
+                    Stmt::Break { depth, .. } if *depth <= 1 => return Ok(None),
+                    Stmt::Break { depth, span } => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                format!(
+                                    "break {depth} inside switch reference-return bodies is not implemented"
+                                ),
+                            ),
+                        ));
+                    }
+                    Stmt::Continue { span, .. } => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::invalid_loop_control(
+                                "continue inside switch is not implemented; use break for switch cases in the current subset",
+                            ),
+                        ));
+                    }
+                    _ => {
+                        if let Some(binding) = self
+                            .execute_reference_return_assignment_statement(function, stmt, scope)?
+                        {
+                            return Ok(Some(binding));
+                        }
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        Ok(None)
     }
 
     fn execute_reference_return_assignment_statement_list(

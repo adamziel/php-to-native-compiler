@@ -19901,8 +19901,18 @@ handled.
   through executed `if`/`else` branches in public by-reference
   `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies, so
   branch-selected backing buckets keep copied reference-slot write-through.
-  Keep loop/switch/try-style reference returns, arbitrary unsupported PHP
-  syntax, broader dynamic backing keys, and native reference lowering named as
+  Keep loop/switch/try-style reference returns outside the covered branch
+  form, arbitrary unsupported PHP syntax, broader dynamic backing keys, and
+  native reference lowering named as unsupported.
+
+## Lane 1767-C: Switch Reference-Return Bodies
+
+- [x] Runtime/interpreter/tests/docs lane: preserve reference-return lvalues
+  through `switch`/`case`/`default` bodies in public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies, so
+  case-selected backing buckets keep copied reference-slot write-through.
+  Keep loop/try-style reference returns, arbitrary unsupported PHP syntax,
+  broader dynamic backing keys, and native reference lowering named as
   unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations

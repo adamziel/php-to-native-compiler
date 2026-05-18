@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1767-C for `switch` reference-return control flow in the
+  supported magic/`ArrayAccess` method-body subset. By-reference
+  `ArrayAccess::offsetGet()` and `__get()` bodies can now select covered
+  return lvalues through `switch`/`case`/`default` fallthrough and preserve COW
+  reference-slot write-through for the selected bucket. Loop/try-style
+  reference returns, unsupported PHP syntax inside the body, broader dynamic
+  backing-key variables, and native reference lowering remain unsupported.
+  Focused verification: raw system PHP output matched the new `milestone1767`
+  fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1767` passed `1` fixture with `1` system PHP
+  comparison and `0` skips; focused `functions_and_scopes` milestone tests
+  passed.
+
 - Added Lane 1766-C for nested `if` reference-return control flow in the
   supported magic/`ArrayAccess` method-body subset. By-reference
   `ArrayAccess::offsetGet()` and `__get()` bodies can now return covered
