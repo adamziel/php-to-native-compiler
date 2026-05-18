@@ -12040,7 +12040,7 @@ impl Interpreter {
             else {
                 return Ok(None);
             };
-            (property, keys)
+            (property.clone(), keys)
         } else if let [Stmt::Assign {
             target:
                 AssignTarget::ObjectPropertyArrayIndex {
@@ -12066,48 +12066,63 @@ impl Interpreter {
             ) else {
                 return Ok(None);
             };
-            (property, keys)
+            (property.clone(), keys)
         } else {
             if !allow_append_branch {
                 return Ok(None);
             }
-            let [Stmt::If {
+            let (condition, then_branch, target_object, property, indices) = if let [Stmt::If {
                 condition,
                 then_branch,
                 else_branch,
                 ..
-            }, Stmt::Assign {
-                target:
-                    AssignTarget::ObjectPropertyArrayIndex {
-                        object: target_object,
-                        property,
-                        indices,
-                        ..
-                    },
-                expr,
+            }, keyed_assignment] =
+                function.body.as_slice()
+            {
+                if !else_branch.is_empty() {
+                    return Ok(None);
+                }
+                let Some((target_object, property, indices)) =
+                    Self::offset_set_index_assignment_target(keyed_assignment, &value_param.name)
+                else {
+                    return Ok(None);
+                };
+                (condition, then_branch, target_object, property, indices)
+            } else if let [Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
                 ..
             }] = function.body.as_slice()
-            else {
+            {
+                let [keyed_assignment] = else_branch.as_slice() else {
+                    return Ok(None);
+                };
+                let Some((target_object, property, indices)) =
+                    Self::offset_set_index_assignment_target(keyed_assignment, &value_param.name)
+                else {
+                    return Ok(None);
+                };
+                (condition, then_branch, target_object, property, indices)
+            } else {
                 return Ok(None);
             };
-            if !else_branch.is_empty()
-                || !Self::is_null_offset_guard(condition, &offset_param.name)
-                || target_object != "this"
-                || !matches!(expr, Expr::Variable(name, _) if name == &value_param.name)
+            if !Self::is_null_offset_guard(condition, &offset_param.name) || target_object != "this"
             {
                 return Ok(None);
-            }
+            };
             let Some((assign_prefix_keys, assign_suffix_keys)) =
-                Self::array_access_offset_parameter_key_parts(indices, &offset_param.name)
+                Self::array_access_offset_parameter_key_parts(&indices, &offset_param.name)
             else {
                 return Ok(None);
             };
+            let require_return = function.body.len() > 1;
             let Some(append_target) =
-                Self::offset_set_append_target(then_branch, &value_param.name)
+                Self::offset_set_append_target(then_branch, &value_param.name, require_return)
             else {
                 return Ok(None);
             };
-            if &append_target.property != property
+            if append_target.property != property
                 || append_target.prefix_keys != assign_prefix_keys
                 || append_target.suffix_keys != assign_suffix_keys
             {
@@ -12116,7 +12131,7 @@ impl Interpreter {
             let keys = self
                 .last_array_access_backing_key(
                     object_name,
-                    property,
+                    &property,
                     &append_target.prefix_keys,
                     class_id,
                     span,
@@ -12137,7 +12152,7 @@ impl Interpreter {
 
         let protected_class_ids = self.protected_class_ids_for_context(class_id);
         let property_visibility = object
-            .property_visibility_from_context(property, Some(class_id), &protected_class_ids)
+            .property_visibility_from_context(&property, Some(class_id), &protected_class_ids)
             .map_err(|error| runtime_error(span, error))?;
         let root = if property_visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
@@ -12172,9 +12187,18 @@ impl Interpreter {
     fn offset_set_append_target(
         then_branch: &[Stmt],
         value_param: &str,
+        require_return: bool,
     ) -> Option<ThisPropertyReferenceTarget> {
-        let [assignment, Stmt::Return { value: None, .. }] = then_branch else {
-            return None;
+        let assignment = if require_return {
+            let [assignment, Stmt::Return { value: None, .. }] = then_branch else {
+                return None;
+            };
+            assignment
+        } else {
+            let [assignment] = then_branch else {
+                return None;
+            };
+            assignment
         };
         let (target, expr) = match assignment {
             Stmt::Assign { target, expr, .. } => (target, expr),
@@ -12211,6 +12235,33 @@ impl Interpreter {
                 suffix_keys,
             })
         }
+    }
+
+    fn offset_set_index_assignment_target(
+        statement: &Stmt,
+        value_param: &str,
+    ) -> Option<(String, String, Vec<Expr>)> {
+        let (target, expr) = match statement {
+            Stmt::Assign { target, expr, .. } => (target, expr),
+            Stmt::Expr {
+                expr: Expr::Assign { target, expr, .. },
+                ..
+            } => (target.as_ref(), expr.as_ref()),
+            _ => return None,
+        };
+        let AssignTarget::ObjectPropertyArrayIndex {
+            object,
+            property,
+            indices,
+            ..
+        } = target
+        else {
+            return None;
+        };
+        if !matches!(expr, Expr::Variable(name, _) if name == value_param) {
+            return None;
+        }
+        Some((object.clone(), property.clone(), indices.clone()))
     }
 
     fn last_array_access_backing_key(

@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Lane 1714-C focused `if/else` support for the branchy public
+  `ArrayAccess::offsetSet(null, $value)` append bridge. Direct
+  `$bag[] = $array` now preserves copied nested reference-slot metadata when
+  `offsetSet($offset, $value)` uses the shape
+  `if ($offset === null) { $this->items["outer"][]["leaf"] = $value; }
+  else { $this->items["outer"][$offset]["leaf"] = $value; }`, so later direct
+  writes through `$this->items["outer"][0]["leaf"]...` resynchronize the
+  original referenced variables. This does not add `elseif`, extra statements
+  in either branch, fall-through append bodies without `else`/`return`,
+  mismatched append/keyed paths, dynamic or repeated `offsetSet()` parameter
+  keys, non-literal `offsetSet()` path keys, arbitrary side-effecting or
+  broader `offsetSet()` bodies, broader mixed nested `ArrayAccess` chains,
+  broader `__get()` return expressions, by-value terminal/plain-array
+  mutation, scalar parent overwrite/error parity, full references/COW, or
+  native reference lowering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  PHP syntax checks passed for the new fixture, the `milestone1714`
+  `functions_and_scopes` filter passed `2` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1714`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+
 - Added Lane 1713-C focused literal-suffix support for the branchy public
   `ArrayAccess::offsetSet(null, $value)` append bridge. Direct
   `$bag[] = $array` now preserves copied nested reference-slot metadata when

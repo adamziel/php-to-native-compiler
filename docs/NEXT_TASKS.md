@@ -19234,6 +19234,25 @@ handled.
   overwrite/error parity, full references/COW, and native reference lowering
   named as unsupported.
 
+## Lane 1714-C: ArrayAccess If/Else Append Store
+
+- [x] Runtime/tests/docs lane: extend the branchy public
+  `ArrayAccess::offsetSet(null, $value)` append bridge to the equivalent
+  `if/else` body without a `return`, including the same literal prefix/suffix
+  family, such as
+  `if ($offset === null) { $this->items["outer"][]["leaf"] = $value; }
+  else { $this->items["outer"][$offset]["leaf"] = $value; }`. The covered
+  direct `$bag[] = $array` shape now stores copied nested reference-slot
+  metadata under the actual appended key inside that literal path, so later
+  direct backing-property writes resynchronize the original referenced
+  variables. Keep `elseif`, extra statements in either branch, fall-through
+  append bodies without `else`/`return`, mismatched append/keyed paths,
+  dynamic or repeated `offsetSet()` parameter keys, non-literal `offsetSet()`
+  path keys, side-effecting or broader `offsetSet()` bodies, broader mixed
+  nested `ArrayAccess` chains, broader `__get()` return expressions, by-value
+  terminal/plain-array mutation, scalar parent overwrite/error parity, full
+  references/COW, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

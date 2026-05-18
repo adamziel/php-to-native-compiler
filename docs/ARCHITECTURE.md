@@ -902,7 +902,11 @@ parameter, such as
 $this->property["bucket"][$offset] = $value;`, and the same literal suffix
 after both the append slot and offset parameter, such as
 `if ($offset === null) { $this->property[]["bucket"] = $value; return; }
-$this->property[$offset]["bucket"] = $value;`. Direct visible property-held
+$this->property[$offset]["bucket"] = $value;`. The recognizer also accepts
+the equivalent `if/else` body without a `return`, where the `else` branch is
+exactly the keyed assignment for the same literal prefix/suffix path:
+`if ($offset === null) { $this->property["outer"][]["leaf"] = $value; }
+else { $this->property["outer"][$offset]["leaf"] = $value; }`. Direct visible property-held
 append stores such as `$holder->bag[] = $array` reuse the same hidden
 `ArrayAccess` object root used by property-held reference-source bridges, then
 attach literal-reference or copied-array alias metadata to the held object's

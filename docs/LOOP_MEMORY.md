@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T13:52:55+02:00
+
+- Checkpoint before this task: `c78572a0 runtime: support ArrayAccess literal
+  suffix append stores`, pushed to `origin/master`.
+- Task attempted: Lane 1714-C focused `if/else` support for branchy public
+  `ArrayAccess::offsetSet(null, $value)` append stores.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1714/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo check -q -p phpc` passed;
+  PHP syntax check passed for the new fixture; the `milestone1714`
+  `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1714`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+- Semantic gap reduced: the branchy append-key ArrayAccess store bridge can
+  now recognize an equivalent `if/else` body without a `return`, including
+  the current literal prefix/suffix family, so direct append stores keep
+  copied nested reference-slot metadata under the actual appended key for
+  that branch shape.
+- Remaining semantic gaps: `elseif`, extra statements in either branch,
+  fall-through append bodies without `else`/`return`, mismatched append/keyed
+  paths, dynamic or repeated `offsetSet()` parameter keys, non-literal
+  `offsetSet()` path keys, side-effecting or broader `offsetSet()` bodies,
+  broader mixed nested `ArrayAccess` chains, broader `__get()` return
+  expressions, by-value terminal/plain-array mutation, scalar parent
+  overwrite/error parity, full references/COW, and native reference lowering
+  remain unsupported.
+- Next concrete task: run adjacent milestone1713 checks, `cargo fmt --check`,
+  `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "runtime: support ArrayAccess if else append stores"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-18T13:45:48+02:00
 
 - Checkpoint before this task: `a381254c runtime: support ArrayAccess literal

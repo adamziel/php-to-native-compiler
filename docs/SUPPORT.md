@@ -865,7 +865,11 @@
   $this->property["bucket"][$offset] = $value;`, and literal int/string
   suffix buckets after the append slot and offset parameter, such as
   `if ($offset === null) { $this->property[]["bucket"] = $value; return; }
-  $this->property[$offset]["bucket"] = $value;`. The same focused append
+  $this->property[$offset]["bucket"] = $value;`. The branchy bridge also
+  accepts the equivalent `if/else` body without the `return`, including the
+  same literal prefix/suffix family, such as
+  `if ($offset === null) { $this->property["outer"][]["leaf"] = $value; }
+  else { $this->property["outer"][$offset]["leaf"] = $value; }`. The same focused append
   stored-bucket propagation is supported
   when a direct visible named or dynamic property holds the `ArrayAccess`
   object, such as `$holder->bag[] = $array` or
@@ -1032,7 +1036,9 @@
   stored-argument-array
   `call_user_func_array()` propagation beyond direct positional copied-bucket
   variables, non-public backing properties outside the exact method-context
-  bridges, dynamic or repeated `offsetSet()` parameter
+  bridges, `elseif`, extra statements in either `offsetSet()` branch,
+  fall-through append bodies without `else`/`return`, mismatched append/keyed
+  paths, dynamic or repeated `offsetSet()` parameter
   keys, non-literal `offsetSet()` path keys, side-effecting or broader
   `offsetSet()`/`offsetGet()` bodies,
   built-in interface enforcement/signature validation, typed method
