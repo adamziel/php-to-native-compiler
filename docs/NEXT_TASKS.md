@@ -18995,6 +18995,23 @@ handled.
   `__get()` return bodies, scalar parent overwrite/error parity, full
   references/COW, and native reference lowering named as unsupported.
 
+## Lane 1701-C: Magic `__get()` Returns Visible `$this` Property
+
+- [x] Runtime/tests/docs lane: broaden the focused magic-property plain-array
+  append route so by-reference `__get($name)` can contain the direct body
+  `return $this->store;` when `$store` is a visible object property. The
+  covered shape is `$box->missing["outer"][] = $array`, where the append
+  mutates `$box->store["outer"]`, mirrors copied nested reference-slot
+  provenance for the appended array literal, and later direct writes through
+  `$box->store["outer"][0]...` synchronize the copied reference slots with
+  their original variables. Keep private `$this` property reference returns,
+  method-local backing writes, arbitrary `__get()` return expressions, broader
+  parent paths for this `$this` property route, arbitrary
+  method-return/factory-root variants, by-value terminal/plain-array
+  mutation, arbitrary side-effecting or broader `offsetGet()` bodies, scalar
+  parent overwrite/error parity, full references/COW, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

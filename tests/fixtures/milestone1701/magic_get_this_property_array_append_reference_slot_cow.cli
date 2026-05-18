@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1701/magic_get_this_property_array_append_reference_slot_cow.php
+stdout:
+via-this-property-magic-append|via-this-property-magic-label|via-this-property-magic-append|via-this-property-magic-label|5|plain-mutated|plain-mutated
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

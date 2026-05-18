@@ -932,7 +932,12 @@
   reference and that cell holds an array or `null`: direct named/dynamic and
   non-direct named/dynamic forms append into the returned array cell and
   preserve nested reference slots for appended array literals or copied arrays
-  carrying mirrored alias metadata. The same focused route supports one
+  carrying mirrored alias metadata. The same direct named append route also
+  supports a by-reference `__get()` body that directly returns a visible
+  `$this->store` property; the runtime appends into that object-property root
+  and mirrors copied reference slots for later direct backing-property writes.
+  Private `$this` property returns and method-scope backing writes remain
+  outside that focused slice. The same focused route supports one
   tested string-keyed parent path before the append, such as
   `$box->missing["outer"][] = $array`,
   `$box->{$name}["outer"][] = $array`,
@@ -969,7 +974,8 @@
   roots beyond the focused reference-source backing-write shape, non-empty
   nested append paths below
   property-held or magic-property `ArrayAccess`, magic `__get()` bodies that
-  return unsupported expressions, dynamic property names that trigger
+  return unsupported expressions beyond direct variables and the focused
+  visible `$this` property append route, dynamic property names that trigger
   unsupported fallback or inaccessible properties, append compound assignment
   through object-property
   `ArrayAccess`, ArrayAccess iteration, broader

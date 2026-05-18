@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T14:15:00+02:00
+
+- Checkpoint before this task: `8e77aa90 runtime: pin magic ArrayAccess alias
+  detach`, pushed to `origin/master`.
+- Task attempted: Lane 1701-C focused by-reference magic `__get()` visible
+  `$this` property return support for the magic-property plain-array append
+  COW shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1701/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far with isolated `CARGO_TARGET_DIR` values and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax check passed for the
+  new milestone1701 fixture; after narrowing the fixture to the visible
+  backing-property caller-scope shape, the `milestone1701`
+  `functions_and_scopes` filter passed `2` tests; and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1701`
+  passed `1` fixture with `1` system PHP comparison and `0` skips.
+  `cargo check -q -p phpc`, `cargo fmt --check`, `git diff --check`, the
+  adjacent `milestone1700` `functions_and_scopes` filter, and adjacent
+  `milestone1700` fixture comparison also passed.
+- Semantic gap reduced: by-reference `__get($name)` may now directly return a
+  visible `$this->store` property for `$box->missing["outer"][] = $array`.
+  The runtime appends into the object-property alias root and mirrors copied
+  nested reference-slot provenance so later direct writes through
+  `$box->store["outer"][0]...` synchronize with the original variables.
+- Remaining semantic gaps: private `$this` property reference returns,
+  method-local backing writes, arbitrary `__get()` return expressions, broader
+  parent paths for this `$this` property route, arbitrary
+  method-return/factory-root variants, by-value terminal/plain-array mutation,
+  arbitrary side-effecting or broader `offsetGet()` bodies, scalar parent
+  overwrite/error parity, full references/COW, and native reference lowering
+  remain unsupported.
+- Next concrete task: checkpoint with
+  `tools/checkpoint.sh "runtime: support magic get this property appends"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-18T13:45:00+02:00
 
 - Checkpoint before this task: `d2f56baf runtime: sync factory ArrayAccess

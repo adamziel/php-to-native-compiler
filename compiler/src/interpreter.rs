@@ -13649,6 +13649,93 @@ impl Interpreter {
         };
 
         if returns_by_reference {
+            let function =
+                self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+            let function = function.as_ref();
+            ensure_user_function_arity(function, 1, span)?;
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            if let Some(return_property) =
+                self.reference_return_this_property_name(function, span)?
+            {
+                let protected_class_ids = self.protected_class_ids_for_context(class_id);
+                let property_visibility = holder
+                    .property_visibility_from_context(
+                        &return_property,
+                        Some(class_id),
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))?;
+                let root = if property_visibility == Visibility::Public {
+                    ArrayOffsetAliasRoot::PublicObjectProperty {
+                        object: object_name.to_string(),
+                        property: return_property.clone(),
+                    }
+                } else {
+                    ArrayOffsetAliasRoot::ContextObjectProperty {
+                        object: object_name.to_string(),
+                        property: return_property.clone(),
+                        current_class_id: Some(class_id),
+                        protected_class_ids: protected_class_ids.clone(),
+                    }
+                };
+                let root = scope.canonical_equivalent_object_property_alias_root(&root);
+                match holder
+                    .read_property_from_context(
+                        &return_property,
+                        Some(class_id),
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))?
+                {
+                    Value::Array(_) | Value::Null => {
+                        let alias = scope.append_object_property_array_offset_reference_alias(
+                            root, keys, value, span,
+                        )?;
+                        self.bind_or_mirror_array_references_to_alias_root(
+                            expr,
+                            alias.root,
+                            alias.keys,
+                            array_literal_references,
+                            scope,
+                        )?;
+                        return Ok(true);
+                    }
+                    Value::Object(object)
+                        if keys.is_empty()
+                            && self
+                                .classes
+                                .implements_interface(object.class_id(), "ArrayAccess") =>
+                    {
+                        return self.write_array_access_object_append_with_reference_propagation(
+                            object,
+                            value,
+                            expr,
+                            array_literal_references,
+                            span,
+                            scope,
+                        );
+                    }
+                    Value::Object(object)
+                        if !keys.is_empty()
+                            && self
+                                .classes
+                                .implements_interface(object.class_id(), "ArrayAccess") =>
+                    {
+                        return self
+                            .write_array_access_object_nested_append_with_reference_propagation(
+                                object,
+                                keys,
+                                value,
+                                expr,
+                                array_literal_references,
+                                span,
+                                scope,
+                            );
+                    }
+                    _ => {}
+                }
+            }
             let Some(cell) = self.call_magic_get_reference_return_cell(holder, property, span)?
             else {
                 return Ok(false);
@@ -13751,6 +13838,32 @@ impl Interpreter {
                 Some(_) | None => Ok(false),
             }
         }
+    }
+
+    fn reference_return_this_property_name(
+        &self,
+        function: &FunctionDecl,
+        span: Span,
+    ) -> CompileResult<Option<String>> {
+        let [Stmt::Return {
+            value: Some(Expr::Property {
+                target, property, ..
+            }),
+            ..
+        }] = function.body.as_slice()
+        else {
+            return Ok(None);
+        };
+        if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "reference-return $this property expressions require return $this->property in the current subset",
+                ),
+            ));
+        }
+        Ok(Some(property.clone()))
     }
 
     fn write_array_access_object_nested_append_with_reference_propagation(

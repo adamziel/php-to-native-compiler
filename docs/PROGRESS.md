@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Lane 1701-C focused by-reference magic `__get()` visible `$this`
+  property return support for the magic-property plain-array append COW shape.
+  A direct body `public function &__get($name) { return $this->store; }` is
+  now recognized for `$box->missing["outer"][] = $array` when `$store` is a
+  visible object property. The runtime appends into the object-property alias
+  root, mirrors copied nested reference-slot provenance for the appended array
+  literal, and later direct writes through `$box->store["outer"][0]...`
+  synchronize the copied reference slots with their original variables. This
+  does not add private `$this` property reference returns, method-local
+  backing writes, arbitrary `__get()` return expressions, broader parent paths
+  for this `$this` property route, arbitrary method-return/factory-root
+  variants, full references/COW, or native reference lowering. Focused
+  verification used isolated `CARGO_TARGET_DIR` values with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: PHP syntax checks passed for the
+  new fixture, the `milestone1701` `functions_and_scopes` filter passed `2`
+  tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1701`
+  passed `1` fixture with `1` system PHP comparison and `0` skips. Before
+  checkpointing, `cargo check -q -p phpc`, `cargo fmt --check`,
+  `git diff --check`, the adjacent `milestone1700` `functions_and_scopes`
+  filter, and adjacent `milestone1700` fixture comparison also passed.
+
 - Added Lane 1700-C local alias unset/detach coverage for the focused
   magic-property mixed `ArrayAccess` reference-source COW shape. Direct
   `$alias =& $box->missing["outer"]["leaf"]; $alias[] = $array;` now has
