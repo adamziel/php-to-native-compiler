@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added Lane 1689-C plain-array magic-property append mutation for the
+  focused by-reference `__get()` COW shape. Direct `$box->missing[] =
+  $array`, direct dynamic `$box->{$name}[] = $array`, non-direct
+  `$holders["box"]->missing[] = $array`, and dynamic non-direct
+  `$holders["box"]->{$name}[] = $array` now mutate the array cell returned by
+  visible public `__get($name)` when `__get()` returns a direct variable by
+  reference and that cell holds an array or `null`. The append path binds the
+  returned cell to a temporary root for mutation, then canonicalizes nested
+  reference metadata back to the visible static variable sharing that cell so
+  later copied-bucket mutations preserve nested reference slots while
+  ordinary copied fields remain detached. By-value `__get()` returning a
+  plain array or `null` now follows PHP's indirect-modification notice/no-op
+  path for the covered array RHS shape and does not call `__set()`. The
+  existing magic `ArrayAccess` append-store path still dispatches
+  `offsetSet(null, $value)`, and magic append reference-source paths remain
+  separate. This does not add non-empty nested append paths such as
+  `$box->missing["x"][]`, by-value plain-array mutation, magic `__get()`
+  return bodies beyond direct-variable reference returns for mutation,
+  method-return or factory holder roots, scalar by-value no-op coverage for
+  non-array RHS values, mixed nested `ArrayAccess` chains, full
+  references/COW, native reference lowering, or exact alias
+  destruction/destructor ordering. Focused verification used isolated
+  `CARGO_TARGET_DIR` values with `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`:
+  `cargo check -q -p phpc` passed, the plain-array append
+  `functions_and_scopes` filter passed `10` tests, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1689`
+  passed `5` fixtures with `5` system PHP comparisons and `0` skips.
+
 - Added Lane 1688-C non-direct magic-property `ArrayAccess` append
   `offsetSet(null, $value)` stored-bucket reference-slot propagation for the
   focused copied-bucket COW shape. Non-direct holder forms

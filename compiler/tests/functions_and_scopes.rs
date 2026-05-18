@@ -3929,6 +3929,216 @@ fn dynamic_non_direct_magic_property_array_access_exact_append_offset_set_bucket
 }
 
 #[test]
+fn system_php_mutates_by_reference_magic_get_plain_array_append_reference_slots() {
+    if !system_php_available() {
+        return;
+    }
+
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../tests/fixtures/milestone1689/magic_property_plain_array_append_reference_slot_cow.php",
+    );
+    let output = Command::new("php")
+        .arg(&fixture)
+        .output()
+        .expect("run system PHP magic-property plain-array append COW probe");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "via-magic-array-append|via-magic-array-label|via-magic-array-append|via-magic-array-label|1|plain|plain"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn system_php_mutates_dynamic_by_reference_magic_get_plain_array_append_reference_slots() {
+    if !system_php_available() {
+        return;
+    }
+
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../tests/fixtures/milestone1689/dynamic_magic_property_plain_array_append_reference_slot_cow.php",
+    );
+    let output = Command::new("php")
+        .arg(&fixture)
+        .output()
+        .expect("run system PHP dynamic magic-property plain-array append COW probe");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "via-dynamic-magic-array-append|via-dynamic-magic-array-label|via-dynamic-magic-array-append|via-dynamic-magic-array-label|1|plain|plain"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn system_php_by_value_magic_get_plain_array_append_notices_and_does_not_mutate() {
+    if !system_php_available() {
+        return;
+    }
+
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../tests/fixtures/milestone1689/magic_property_plain_array_append_by_value_noop.php",
+    );
+    let output = Command::new("php")
+        .arg(&fixture)
+        .output()
+        .expect("run system PHP by-value magic-property plain-array append no-op probe");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        concat!(
+            "notice:Indirect modification of overloaded property ",
+            "Milestone1689_ByValueMagicPlainArrayAppendBox::$missing has no effect\n",
+            "no-op"
+        )
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn system_php_mutates_non_direct_by_reference_magic_get_plain_array_append_reference_slots() {
+    if !system_php_available() {
+        return;
+    }
+
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../tests/fixtures/milestone1689/non_direct_magic_property_plain_array_append_reference_slot_cow.php",
+    );
+    let output = Command::new("php")
+        .arg(&fixture)
+        .output()
+        .expect("run system PHP non-direct magic-property plain-array append COW probe");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "via-non-direct-magic-array-append|via-non-direct-magic-array-label|via-non-direct-magic-array-append|via-non-direct-magic-array-label|1|plain|plain"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn system_php_mutates_dynamic_non_direct_by_reference_magic_get_plain_array_append_reference_slots()
+{
+    if !system_php_available() {
+        return;
+    }
+
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../tests/fixtures/milestone1689/dynamic_non_direct_magic_property_plain_array_append_reference_slot_cow.php",
+    );
+    let output = Command::new("php")
+        .arg(&fixture)
+        .output()
+        .expect("run system PHP dynamic non-direct magic-property plain-array append COW probe");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "via-dynamic-non-direct-magic-array-append|via-dynamic-non-direct-magic-array-label|via-dynamic-non-direct-magic-array-append|via-dynamic-non-direct-magic-array-label|1|plain|plain"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn magic_property_plain_array_append_preserves_nested_reference_slots() {
+    let source = include_str!(
+        "../../tests/fixtures/milestone1689/magic_property_plain_array_append_reference_slot_cow.php"
+    );
+    let expected = include_str!(
+        "../../tests/fixtures/milestone1689/magic_property_plain_array_append_reference_slot_cow.stdout"
+    );
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_magic_property_plain_array_append_preserves_nested_reference_slots() {
+    let source = include_str!(
+        "../../tests/fixtures/milestone1689/dynamic_magic_property_plain_array_append_reference_slot_cow.php"
+    );
+    let expected = include_str!(
+        "../../tests/fixtures/milestone1689/dynamic_magic_property_plain_array_append_reference_slot_cow.stdout"
+    );
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn by_value_magic_property_plain_array_append_notices_and_does_not_mutate() {
+    let source = include_str!(
+        "../../tests/fixtures/milestone1689/magic_property_plain_array_append_by_value_noop.php"
+    );
+    let expected = include_str!(
+        "../../tests/fixtures/milestone1689/magic_property_plain_array_append_by_value_noop.stdout"
+    );
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn non_direct_magic_property_plain_array_append_preserves_nested_reference_slots() {
+    let source = include_str!(
+        "../../tests/fixtures/milestone1689/non_direct_magic_property_plain_array_append_reference_slot_cow.php"
+    );
+    let expected = include_str!(
+        "../../tests/fixtures/milestone1689/non_direct_magic_property_plain_array_append_reference_slot_cow.stdout"
+    );
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_non_direct_magic_property_plain_array_append_preserves_nested_reference_slots() {
+    let source = include_str!(
+        "../../tests/fixtures/milestone1689/dynamic_non_direct_magic_property_plain_array_append_reference_slot_cow.php"
+    );
+    let expected = include_str!(
+        "../../tests/fixtures/milestone1689/dynamic_non_direct_magic_property_plain_array_append_reference_slot_cow.stdout"
+    );
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(execution.stdout, expected.trim_end_matches('\n'));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn property_held_array_access_bucket_copy_preserves_nested_reference_slots() {
     let execution = run_source(
         r#"<?php

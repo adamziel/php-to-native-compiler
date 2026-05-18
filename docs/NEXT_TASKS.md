@@ -18568,8 +18568,9 @@ handled.
   append `offsetSet(null)` stores. Lanes 1683-C through 1688-C extend that
   append stored-bucket shape to direct visible named/dynamic property-held
   receivers, non-direct holder visible named/dynamic property-held receivers,
-  and direct/non-direct magic-property receivers. Keep plain-array magic
-  append mutation, dynamic non-direct
+  direct/non-direct magic-property `ArrayAccess` receivers, and Lane 1689-C
+  extends it to by-reference `__get()` plain-array receivers. Keep dynamic
+  non-direct
   whole-property setup assignment, side-effecting or broader
   `offsetSet()`/`offsetGet()` bodies, broader mixed `ArrayAccess` chains,
   full references/COW, native reference lowering, and exact alias
@@ -18684,8 +18685,9 @@ handled.
   the Lane 1685 named setup write before exercising the dynamic append. Lane
   1687-C extends the same append stored-bucket shape to direct magic-property
   `ArrayAccess` receivers, and Lane 1688-C extends it to non-direct
-  magic-property receivers. Keep plain-array magic append mutation,
-  method-return or factory holder roots,
+  magic-property receivers, and Lane 1689-C extends the plain-array
+  by-reference `__get()` append shape. Keep method-return or factory holder
+  roots,
   non-empty nested append paths, dynamic property names that trigger
   unsupported fallback or inaccessible properties, side-effecting or broader
   `offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess` chains, full
@@ -18707,12 +18709,12 @@ handled.
   bucket copies preserve nested reference slots. This store path remains
   distinct from magic `ArrayAccess` append reference sources, which keep their
   `offsetGet(null)` notice/no-op behavior. Lane 1688-C extends the same
-  append-store bridge to non-direct holder magic-property receivers. Keep
-  plain-array magic append mutation, non-empty nested append paths,
-  side-effecting or broader `__get()`/`offsetSet()`/`offsetGet()` bodies,
-  mixed nested `ArrayAccess` chains, full references/COW, native reference
-  lowering, and exact alias destruction/destructor ordering named as
-  unsupported.
+  append-store bridge to non-direct holder magic-property receivers. Lane
+  1689-C extends magic append stores to plain arrays returned by-reference
+  from `__get()`. Keep non-empty nested append paths, side-effecting or
+  broader `__get()`/`offsetSet()`/`offsetGet()` bodies, mixed nested
+  `ArrayAccess` chains, full references/COW, native reference lowering, and
+  exact alias destruction/destructor ordering named as unsupported.
 
 ## Lane 1688-C: Non-Direct Magic-Property ArrayAccess Append `offsetSet(null)` Stored-Bucket Reference Slots
 
@@ -18728,11 +18730,34 @@ handled.
   metadata to the actual appended integer key after the method call. Later
   exact by-value `offsetGet($offset) { return $this->property[$offset]; }`
   bucket copies preserve nested reference slots while ordinary copied fields
-  remain detached. Keep plain-array magic append mutation, non-empty nested
-  append paths such as `$holders["box"]->missing["x"][]`, method-return or
-  factory holder roots, side-effecting or broader
+  remain detached. Lane 1689-C extends magic append stores to plain arrays
+  returned by-reference from `__get()`. Keep non-empty nested append paths
+  such as `$holders["box"]->missing["x"][]`, method-return or factory holder
+  roots, side-effecting or broader
   `__get()`/`offsetSet()`/`offsetGet()` bodies, mixed nested `ArrayAccess`
   chains, full references/COW, native reference lowering, and exact alias
+  destruction/destructor ordering named as unsupported.
+
+## Lane 1689-C: Plain-Array Magic Append Mutation
+
+- [x] Runtime/tests/docs lane: parse and execute empty append stores below
+  magic properties when visible public `__get($name)` returns a direct
+  variable by reference whose cell holds an array or `null`. Covered forms are
+  direct named `$box->missing[] = $array`, direct dynamic
+  `$box->{$name}[] = $array`, non-direct named
+  `$holders["box"]->missing[] = $array`, and dynamic non-direct
+  `$holders["box"]->{$name}[] = $array`. The runtime appends into the
+  returned array cell, canonicalizes reference metadata from the temporary
+  magic root back to the visible static variable sharing that cell, and
+  preserves nested reference slots for appended array literals and copied
+  arrays carrying mirrored alias metadata. By-value `__get()` returning a
+  plain array or `null` stays a PHP-compatible indirect-modification
+  notice/no-op for the covered array RHS shape. Keep non-empty nested append
+  paths such as `$box->missing["x"][]`, by-value plain-array mutation,
+  arbitrary `__get()` return bodies beyond direct-variable reference returns
+  for mutation, method-return or factory holder roots, scalar by-value no-op
+  coverage for non-array RHS values, mixed nested `ArrayAccess` chains, full
+  references/COW, native reference lowering, and exact alias
   destruction/destructor ordering named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations

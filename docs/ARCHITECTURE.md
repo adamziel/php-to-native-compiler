@@ -930,6 +930,18 @@ The covered object case calls `__get()` once for the append store and does not
 call `__set()`, then attaches the appended array's reference metadata to the
 returned `ArrayAccess` object's exact empty-key or branchy append-key backing
 bucket.
+The same magic append-store helper also covers the focused plain-array route
+when visible public `__get($name)` returns a direct variable by reference and
+that returned cell currently holds an array or `null`. The runtime binds the
+returned cell to a hidden temporary root, appends through the normal array
+append-alias machinery, then canonicalizes the alias root back to a visible
+static variable sharing that cell before attaching array-literal or copied
+array reference metadata. That keeps later reads such as `$storage[0]`
+connected to nested reference slots created through `$box->missing[]` or
+`$holders["box"]->missing[]`. By-value `__get()` returning a plain array or
+`null` is intentionally a notice/no-op path for the covered array RHS shape,
+matching PHP's indirect-modification behavior instead of mutating detached
+storage.
 By-value helper parameters that import copied-bucket provenance detach those
 mirrored static-array provenance paths when the parameter variable is replaced:
 writes through the copied bucket before replacement still write back to the
@@ -941,8 +953,9 @@ copied bucket loop, and mutating two distinct nested reference slots in one
 copied bucket match the focused PHP probes. Broader alias lifetime after
 replacing non-direct containing properties, side-effecting or broader
 `offsetGet()` bodies, mixed nested
-ArrayAccess chains beyond the documented one-level bridge, plain-array magic
-append mutation, dynamic non-direct whole-property setup assignment,
+ArrayAccess chains beyond the documented one-level bridge, non-empty append
+paths below plain arrays returned from magic `__get()`, dynamic non-direct
+whole-property setup assignment,
 dynamic property names that trigger unsupported fallback or inaccessible
 properties,
 arbitrary nested reference slots copied from ArrayAccess storage outside the
@@ -989,12 +1002,14 @@ holder array offsets below magic properties are limited to direct
 user-function by-reference parameters and direct-variable reference
 assignment, while the separate `ArrayAccess` append-store path covers the
 documented direct and non-direct magic receivers whose `__get()` returns an
-`ArrayAccess` object. Append offsets below plain arrays returned from magic
-properties, non-direct magic-property holders outside that selected
-array-offset slice, broader `__get()` return bodies such as properties,
-offsets, expressions, or nested-control-flow returns, mixed nested
-`ArrayAccess` chains, and arbitrary reference-return invocations still report
-stable runtime boundaries before any by-value return is produced.
+`ArrayAccess` object, and the separate plain-array append-store path covers
+empty appends into direct-variable cells returned by reference from
+`__get()`. Non-empty append offsets below plain arrays returned from magic
+properties, non-direct magic-property holders outside the selected array and
+append slices, broader `__get()` return bodies such as properties, offsets,
+expressions, or nested-control-flow returns, mixed nested `ArrayAccess`
+chains, and arbitrary reference-return invocations still report stable
+runtime boundaries before any by-value return is produced.
 By-reference parameters are also metadata-first: omitted optional
 by-reference parameters can use their defaults as ordinary local values, while
 provided direct-variable by-reference arguments bind the callee parameter name

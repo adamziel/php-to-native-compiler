@@ -2902,6 +2902,38 @@ impl SymbolTable {
             .unwrap_or_else(|| root.clone())
     }
 
+    fn canonical_equivalent_static_array_alias_root(
+        &self,
+        root: &ArrayOffsetAliasRoot,
+    ) -> ArrayOffsetAliasRoot {
+        let ArrayOffsetAliasRoot::StaticArray { name } = root else {
+            return root.clone();
+        };
+        let Some(target_cell) = self.read_cell(name) else {
+            return root.clone();
+        };
+
+        let mut storages = vec![self.symbols.clone()];
+        if let Some(global_symbols) = &self.global_symbols {
+            storages.push(global_symbols.clone());
+        }
+
+        for storage in storages {
+            for (candidate_name, candidate_cell) in storage.borrow().iter() {
+                if candidate_name != name
+                    && !candidate_name.starts_with('\0')
+                    && Rc::ptr_eq(candidate_cell, &target_cell)
+                {
+                    return ArrayOffsetAliasRoot::StaticArray {
+                        name: candidate_name.clone(),
+                    };
+                }
+            }
+        }
+
+        root.clone()
+    }
+
     fn bind_array_offset_alias_root_to_static_source(
         &mut self,
         alias: ArrayOffsetAlias,
@@ -13412,36 +13444,107 @@ impl Interpreter {
             return Ok(false);
         };
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
-        let array_access_object = match holder.read_property_from_context(
-            property,
-            current_class_id,
-            &protected_class_ids,
-        ) {
+        match holder.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => return Ok(false),
-            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
-                match self.call_magic_get_property_value(holder, property, span)? {
-                    Some(Value::Object(object)) => object,
-                    Some(_) | None => return Ok(false),
-                }
-            }
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {}
             Err(error) => return Err(runtime_error(span, error)),
-        };
-
-        if !self
-            .classes
-            .implements_interface(array_access_object.class_id(), "ArrayAccess")
-        {
-            return Ok(false);
         }
 
-        self.write_array_access_object_append_with_reference_propagation(
-            array_access_object,
-            value,
-            expr,
-            array_literal_references,
-            span,
-            scope,
-        )
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(holder.class_id(), "__get")
+        else {
+            return Ok(false);
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__get()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, "__get", visibility, span)?;
+        let returns_by_reference = {
+            let function =
+                self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+            function.as_ref().returns_by_reference
+        };
+
+        if returns_by_reference {
+            let Some(cell) = self.call_magic_get_reference_return_cell(holder, property, span)?
+            else {
+                return Ok(false);
+            };
+
+            let current_value = cell.borrow().clone();
+            match current_value {
+                Value::Object(object)
+                    if self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    self.write_array_access_object_append_with_reference_propagation(
+                        object,
+                        value,
+                        expr,
+                        array_literal_references,
+                        span,
+                        scope,
+                    )
+                }
+                Value::Array(_) | Value::Null => {
+                    let temp_name = self.next_foreach_temporary_array_name();
+                    scope.bind_static_to_cell(&temp_name, cell);
+                    let alias = scope.append_array_offset_reference_alias(
+                        &temp_name,
+                        Vec::new(),
+                        value,
+                        span,
+                    )?;
+                    let root = scope.canonical_equivalent_static_array_alias_root(&alias.root);
+                    self.bind_or_mirror_array_references_to_alias_root(
+                        expr,
+                        root,
+                        alias.keys,
+                        array_literal_references,
+                        scope,
+                    )?;
+                    Ok(true)
+                }
+                _ => Ok(false),
+            }
+        } else {
+            match self.call_magic_get_property_value(holder, property, span)? {
+                Some(Value::Object(object))
+                    if self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    self.write_array_access_object_append_with_reference_propagation(
+                        object,
+                        value,
+                        expr,
+                        array_literal_references,
+                        span,
+                        scope,
+                    )
+                }
+                Some(Value::Array(_)) | Some(Value::Null) => {
+                    self.emit_notice(
+                        "__get()",
+                        format!(
+                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
+                        ),
+                        span,
+                    )?;
+                    Ok(true)
+                }
+                Some(_) | None => Ok(false),
+            }
+        }
     }
 
     fn write_array_access_object_append_with_reference_propagation(
