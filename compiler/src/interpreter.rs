@@ -32051,13 +32051,14 @@ impl Interpreter {
                     prebound_locals,
                 )
             }
-            Value::Array(_) => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
+            Value::Array(callback) => self
+                .call_reference_return_array_callable_for_reference_assignment(
+                    callback,
+                    &args[1..],
+                    span,
+                    caller_scope,
                     "call_user_func()",
-                    "array callables as reference-return sources are not implemented in the current subset",
                 ),
-            )),
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -32068,6 +32069,177 @@ impl Interpreter {
                     ),
                 ),
             )),
+        }
+    }
+
+    fn call_reference_return_array_callable_for_reference_assignment(
+        &mut self,
+        callback: &PhpArray,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        context: &str,
+    ) -> CompileResult<ReferenceReturnBinding> {
+        let Some((target, method_name)) = array_callable_parts(callback) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    "array callback must be [object-or-class, method] in the current subset",
+                ),
+            ));
+        };
+
+        match target {
+            Value::Object(object) => {
+                let receiver_class = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata");
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            format!("static method dispatch through {context} object array callables is not implemented"),
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            format!("{context} array callable method dispatch is only implemented for public methods"),
+                        ),
+                    ));
+                }
+
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+                if !function.returns_by_reference {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "function does not return by reference",
+                        ),
+                    ));
+                }
+                ensure_user_function_arity(function, args.len(), span)?;
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                let (values, reference_bindings) = self
+                    .evaluate_user_function_call_arguments_with_options(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                        true,
+                    )?;
+                self.call_reference_return_function_with_checked_values_for_reference_assignment(
+                    function,
+                    values,
+                    Some(object.clone()),
+                    Some(class_id),
+                    Some(object.class_id()),
+                    reference_bindings,
+                    caller_scope,
+                )
+            }
+            Value::String(class_name) => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                })?;
+                let receiver_class = self
+                    .classes
+                    .get(class_id)
+                    .expect("class id should resolve to class metadata");
+                let Some((
+                    declaring_class_id,
+                    declaring_class_name,
+                    resolved_method_name,
+                    visibility,
+                    is_static,
+                )) = self.resolve_instance_method(class_id, method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if !is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            format!("non-static method array callables through {context} require an object receiver in the current subset"),
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            format!("{context} array callable method dispatch is only implemented for public methods"),
+                        ),
+                    ));
+                }
+
+                let function = self.method_function(
+                    declaring_class_id,
+                    &declaring_class_name,
+                    &resolved_method_name,
+                    span,
+                )?;
+                let function = function.as_ref();
+                if !function.returns_by_reference {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "function does not return by reference",
+                        ),
+                    ));
+                }
+                ensure_user_function_arity(function, args.len(), span)?;
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                let (values, reference_bindings) = self
+                    .evaluate_user_function_call_arguments_with_options(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                        true,
+                    )?;
+                self.call_reference_return_function_with_checked_values_for_reference_assignment(
+                    function,
+                    values,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    reference_bindings,
+                    caller_scope,
+                )
+            }
+            _ => unreachable!("array_callable_parts restricts callback targets"),
         }
     }
 
@@ -35416,6 +35588,15 @@ impl Interpreter {
                     span,
                     caller_scope,
                     "closure",
+                );
+            }
+            Value::Array(callback) => {
+                return self.call_reference_return_array_callable_for_reference_assignment(
+                    &callback,
+                    args,
+                    span,
+                    caller_scope,
+                    "dynamic function call",
                 );
             }
             other => {

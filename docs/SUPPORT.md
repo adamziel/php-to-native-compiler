@@ -1182,9 +1182,17 @@
   object-property, or array-offset lvalue. Helper-local direct object-property
   array-offset roots such as `return $box->store[$key]` are remapped back to a
   caller-visible object root before suffix keys are applied. Arbitrary closure
-  capture roots, array callables through `call_user_func()`, builtin callbacks
-  as reference-return sources, and arbitrary callable side effects remain
-  unsupported. The exact `__get()`/`offsetGet()` backing
+  capture roots, builtin callbacks as reference-return sources, and arbitrary
+  callable side effects remain unsupported. Bounded array callables are also
+  accepted as reference-return
+  sources when the callable is exactly `[object, method]` or `[class, method]`
+  and the resolved public method returns a proven lvalue by reference. This
+  covers direct dynamic calls such as `$cb(...)` and `call_user_func($cb, ...)`
+  for object/static array callables, including helper-local
+  object-property array-offset returns that can be remapped to a caller-visible
+  root. Arbitrary callable arrays, magic `__call`/`__callStatic`, and builtin
+  callbacks remain unsupported for reference-return sources. The exact
+  `__get()`/`offsetGet()` backing
   analyzer accepts one local copy of the magic/offset parameter before the
   return, such as `$slot = $name; return $this->store[$slot];` or
   `$slot = $offset; return $this->items[$slot];`; it also accepts a local

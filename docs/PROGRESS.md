@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1803-C through Lane 1805-C for bounded array-callable
+  reference-return sources inside the executed magic/`ArrayAccess` COW
+  bridge. Supported bodies can now `return $cb(...)` when `$cb` is an
+  object/class array callable, and `call_user_func($cb, ...)` accepts object
+  and static array callables when the resolved method returns a proven lvalue
+  by reference. Covered fixtures exercise a magic `__get()` dynamic object
+  array callable, an `ArrayAccess::offsetGet()` object array callable through
+  `call_user_func()`, and a static array callable returning a helper-local
+  object-property array offset. This does not claim arbitrary callable arrays,
+  builtin callbacks as reference-return sources, arbitrary PHP syntax or side
+  effects outside the executed interpreter subset, incompatible typed
+  signatures, full exception unwinding, exact PHP diagnostics, or native
+  reference lowering. Focused verification: raw system PHP output matched the
+  new `milestone1803`, `milestone1804`, and `milestone1805` fixtures; `cargo
+  run -q -p phpc -- test --compare-php` passed each new fixture directory
+  with `1` fixture, `1` system PHP comparison, and `0` skips; focused
+  `functions_and_scopes` milestone and adjacent callback tests passed.
+
 - Added Lane 1800-C through Lane 1802-C for bounded by-reference closure
   callback sources inside the executed magic/`ArrayAccess` COW bridge.
   Supported public by-reference `__get()` and `ArrayAccess::offsetGet()`

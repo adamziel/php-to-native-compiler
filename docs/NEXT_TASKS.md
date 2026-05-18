@@ -20101,6 +20101,20 @@ handled.
   incompatible typed signatures, full exception unwinding, exact PHP
   diagnostics, and native reference lowering named as unsupported.
 
+## Lane 1803-C through Lane 1805-C: Array Callable Reference Returns
+
+- [x] Runtime/interpreter/tests/docs bundle: allow supported
+  magic/`ArrayAccess` reference-return bodies to return bounded object/class
+  array callables through direct `$cb(...)` and `call_user_func($cb, ...)`
+  paths when the resolved method returns a proven lvalue by reference. Cover
+  dynamic object array callables, `ArrayAccess::offsetGet()` object array
+  callables, and static array callables returning helper-local
+  object-property array offsets. Keep arbitrary callable arrays, magic
+  `__call`/`__callStatic`, builtin callbacks as reference-return sources,
+  arbitrary PHP syntax and side effects outside the executed method-body
+  subset, incompatible typed signatures, full exception unwinding, exact PHP
+  diagnostics, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

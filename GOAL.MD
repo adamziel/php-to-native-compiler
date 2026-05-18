@@ -32,7 +32,13 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1802:
+The current in-progress implementation frontier is Lane 1805:
+
+- Lanes 1803 through 1805 add bounded array-callable reference-return sources
+  to the same executed magic/`ArrayAccess` bridge. Covered bodies can now
+  `return $cb(...)` when `$cb` is an object/class array callable, or use
+  `call_user_func($cb, ...)` with object and static array callables, as long as
+  the resolved method returns a proven lvalue by reference.
 
 - Lanes 1800 through 1802 add bounded by-reference closure callbacks to the
   executed magic/`ArrayAccess` reference-return body path. Covered bodies can
