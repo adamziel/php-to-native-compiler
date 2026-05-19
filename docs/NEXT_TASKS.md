@@ -20242,10 +20242,11 @@ handled.
   `ArrayAccess` chains such as `$alias =& make_array()["slot"]`,
   `$alias =& make_bag()["slot"]`, and
   `$alias =& $factory->make()["slot"]`. Preserve supported `&` elements in
-  ordinary returned array literals as reference cells. Keep append-offset
-  expression roots, scalar/string temporary reference parity, arbitrary
-  callback/builtin reference-return sources, arbitrary PHP outside the
-  interpreter subset, and native reference lowering named as unsupported.
+  ordinary returned array literals as reference cells. Keep append suffixes
+  below expression-root `ArrayAccess` chains, scalar/string temporary
+  reference parity, arbitrary callback/builtin reference-return sources,
+  arbitrary PHP outside the interpreter subset, and native reference lowering
+  named as unsupported.
 
 ## Lane 1838-C through Lane 1841-C: Executed ArrayAccess Copy Sources
 
@@ -20255,10 +20256,24 @@ handled.
   magic-provided roots whose supported method bodies perform side effects,
   initialize missing buckets, bind local aliases, and return a backing bucket
   before the copied bucket is mutated through covered reference slots. Keep
-  append-offset expression roots, arbitrary PHP outside the interpreter
-  subset, arbitrary magic/`ArrayAccess` side effects that the interpreter
-  cannot execute, exact diagnostic streams, and native reference lowering
-  named as unsupported.
+  arbitrary PHP outside the interpreter subset, arbitrary magic/`ArrayAccess`
+  side effects that the interpreter cannot execute, exact diagnostic streams,
+  and native reference lowering named as unsupported.
+
+## Lane 1842-C through Lane 1845-C: Expression-Root Append Sources
+
+- [x] Parser/runtime/tests/docs bundle: parse and execute append-offset
+  expression-root reference sources for direct variable targets when the root
+  expression evaluates to a returned array, `null` temporary, or public
+  by-reference `ArrayAccess` object returned by a direct function or method
+  call. Cover `$alias =& make_array()[]`,
+  `$alias =& make_array()["outer"][]`, `$alias =& make_bag()[]`, and
+  `$alias =& $factory->make()[]`, including `offsetGet(null)` and
+  empty-string backing-key coercion for the covered `ArrayAccess` path. Keep
+  nested expression-root `ArrayAccess` append suffixes, scalar/string
+  temporary reference parity, arbitrary PHP outside the interpreter subset,
+  exact diagnostic streams, and native reference lowering named as
+  unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

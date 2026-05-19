@@ -262,6 +262,14 @@
   inside the returned temporary remains live. Expression roots that evaluate
   to `ArrayAccess` objects reuse the same recursive binding bridge, including
   a proven by-value outer object returning a by-reference inner object bucket.
+  Append-offset expression roots are covered for direct variable targets when
+  the root expression evaluates to an array, `null`, or a public
+  by-reference `ArrayAccess` object returned by a direct function or method
+  call. Covered examples include `$alias =& make_array()[]`,
+  `$alias =& make_array()["outer"][]`, `$alias =& make_bag()[]`, and
+  `$alias =& $factory->make()[]`. The `ArrayAccess` append form passes
+  `null` to `offsetGet()` and uses PHP's empty-string null-key coercion for
+  the covered backing array bucket.
   Mixed chains where a by-value outer `offsetGet()` returns an inner
   `ArrayAccess` object can continue into a public by-reference inner
   `offsetGet()` for direct, property-held, and by-value magic `__get()`
@@ -341,11 +349,12 @@
   it, for example `$bucket =& $this->items[$offset]; return $bucket["leaf"];`.
   Backing paths may also use locals initialized from literal int/string keys,
   such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
-  This does not add append-offset expression roots, scalar/string temporary
-  reference parity, magic `__get()` roots beyond the covered direct,
-  dynamic, non-direct holder, expression-root, variable/property/backing-offset
-  returns; incompatible typed reference-return signatures or arbitrary type
-  enforcement; full exception unwinding, uncaught exception propagation,
+  This does not add nested expression-root `ArrayAccess` append suffixes,
+  scalar/string temporary reference parity, magic `__get()` roots beyond the
+  covered direct, dynamic, non-direct holder, expression-root,
+  variable/property/backing-offset returns; incompatible typed
+  reference-return signatures or arbitrary type enforcement; full exception
+  unwinding, uncaught exception propagation,
   non-object throws, exact exception diagnostics, or global `throw` support
   outside this method-body executor; arbitrary side-effect analysis or
   non-executed static bridge inference for every dynamic backing-key shape; arbitrary

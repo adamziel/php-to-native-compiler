@@ -9726,6 +9726,25 @@ impl Interpreter {
                             scope.bind_static_to_array_offset_alias(name, alias);
                         }
                     }
+                } else if let ReferenceSource::ExpressionArrayAppend {
+                    target, indices, ..
+                } = source
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let binding = self.evaluate_expression_array_append_reference_source_binding(
+                        target, keys, span, scope,
+                    )?;
+                    match binding {
+                        NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                            scope.write_detached_static(name, value);
+                        }
+                        NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                            scope.bind_static_to_array_offset_alias(name, alias);
+                        }
+                    }
                 } else if let ReferenceSource::ArrayIndex {
                     name: array_name,
                     index,
@@ -12215,6 +12234,7 @@ impl Interpreter {
             object,
             object_name.to_string(),
             keys,
+            None,
             span,
             scope,
         )
@@ -12334,6 +12354,91 @@ impl Interpreter {
                 span,
                 RuntimeError::invalid_array_access(format!(
                     "cannot use {} as an expression-root array reference source",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn evaluate_expression_array_append_reference_source_binding(
+        &mut self,
+        target: &Expr,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<NonDirectReferenceSourceBinding> {
+        match self.evaluate(target, scope)? {
+            Value::Object(object)
+                if keys.is_empty()
+                    && self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                let hidden_name = self.hidden_array_access_reference_object_name(&object);
+                scope.write_static(&hidden_name, Value::Object(object.clone()));
+                self.evaluate_array_access_reference_source_binding_for_object(
+                    object,
+                    hidden_name,
+                    vec![Self::array_access_append_reference_key()],
+                    Some(Value::Null),
+                    span,
+                    scope,
+                )?
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "reference assignment",
+                            "expression-root ArrayAccess append reference source could not bind a covered offsetGet(null) result",
+                        ),
+                    )
+                })
+            }
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "nested expression-root ArrayAccess append reference sources are not implemented",
+                    ),
+                ))
+            }
+            Value::Array(array) => {
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Array(array));
+                let alias =
+                    scope.append_array_offset_reference_alias(&temp_name, keys, Value::Null, span)?;
+                Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
+            }
+            Value::Null => {
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Array(PhpArray::new()));
+                let alias =
+                    scope.append_array_offset_reference_alias(&temp_name, keys, Value::Null, span)?;
+                Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
+            }
+            Value::Bool(false) => {
+                self.emit_false_to_array_deprecation(span)?;
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Array(PhpArray::new()));
+                let alias =
+                    scope.append_array_offset_reference_alias(&temp_name, keys, Value::Null, span)?;
+                Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
+            }
+            Value::String(_) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot create references to/from string offsets".to_string(),
+                ),
+            )),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot use {} as an expression-root array append reference source",
                     other.type_name()
                 )),
             )),
@@ -12570,6 +12675,7 @@ impl Interpreter {
             object,
             hidden_name,
             keys,
+            None,
             span,
             scope,
         )
@@ -12641,6 +12747,7 @@ impl Interpreter {
                                     array_access_object,
                                     hidden_name,
                                     keys,
+                                    None,
                                     span,
                                     scope,
                                 )
@@ -13330,6 +13437,7 @@ impl Interpreter {
         object: PhpObject,
         object_name: String,
         keys: Vec<ArrayKey>,
+        first_key_value: Option<Value>,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<(ArrayOffsetAlias, Value)> {
@@ -13412,6 +13520,7 @@ impl Interpreter {
                             nested_object,
                             hidden_name,
                             keys[1..].to_vec(),
+                            None,
                             span,
                             scope,
                         );
@@ -13438,7 +13547,7 @@ impl Interpreter {
         let binding = match self.call_array_access_offset_get_reference_return_binding(
             object.clone(),
             function,
-            Self::array_key_value(Some(first_key)),
+            first_key_value.unwrap_or_else(|| Self::array_key_value(Some(first_key))),
             class_id,
             span,
             scope,
@@ -13473,6 +13582,7 @@ impl Interpreter {
                         nested_object,
                         hidden_name,
                         keys[1..].to_vec(),
+                        None,
                         span,
                         scope,
                     );
@@ -13552,6 +13662,7 @@ impl Interpreter {
                         nested_object,
                         hidden_name,
                         keys[1..].to_vec(),
+                        None,
                         span,
                         scope,
                     );
@@ -13870,6 +13981,7 @@ impl Interpreter {
                 object,
                 object_name,
                 keys,
+                first_key_value,
                 span,
                 scope,
             )?;
@@ -15159,7 +15271,8 @@ impl Interpreter {
                     ),
                 ));
             }
-            ReferenceSource::ExpressionArrayIndex { .. } => {
+            ReferenceSource::ExpressionArrayIndex { .. }
+            | ReferenceSource::ExpressionArrayAppend { .. } => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -15233,7 +15346,8 @@ impl Interpreter {
                     ),
                 ));
             }
-            ReferenceSource::ExpressionArrayIndex { .. } => {
+            ReferenceSource::ExpressionArrayIndex { .. }
+            | ReferenceSource::ExpressionArrayAppend { .. } => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -18200,6 +18314,7 @@ impl Interpreter {
             array_access_object,
             hidden_name,
             keys,
+            None,
             span,
             scope,
         )?;
@@ -18376,6 +18491,7 @@ impl Interpreter {
             array_access_object,
             hidden_name,
             keys,
+            None,
             span,
             scope,
         )?;
@@ -39698,6 +39814,7 @@ impl Interpreter {
                         array_access_object,
                         hidden_name,
                         keys,
+                        None,
                         arg.span(),
                         caller_scope,
                     )

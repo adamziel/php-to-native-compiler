@@ -4,16 +4,32 @@
 
 Implemented:
 
+- Added Lane 1842-C through Lane 1845-C for append-offset expression-root
+  reference sources. Direct variable targets now bind through appended slots
+  below returned arrays, null temporaries, and direct function/method results
+  that evaluate to public by-reference `ArrayAccess` objects, including
+  `$alias =& make_array()[]`, `$alias =& make_array()["outer"][]`,
+  `$alias =& make_bag()[]`, and `$alias =& $factory->make()[]`.
+  `ArrayAccess` expression append roots pass `null` to `offsetGet()` while
+  the covered backing array key uses PHP's empty-string null-key coercion.
+  This does not claim nested expression-root `ArrayAccess` append suffixes,
+  scalar/string temporary reference parity, arbitrary PHP outside the
+  interpreter subset, exact diagnostic streams, or native reference lowering.
+  Focused verification: `cargo run -q -p phpc -- test --compare-php` passed
+  the new `milestone1842`, `milestone1843`, `milestone1844`, and
+  `milestone1845` fixtures plus adjacent append/expression/ArrayAccess
+  milestones `1087`, `1447`, `1677`, `1824`, `1834`, `1835`, and `1837`.
+
 - Added Lane 1838-C through Lane 1841-C for executed `ArrayAccess` copy-source
   COW provenance. Normal array reads from direct, property-held,
   expression-root, and magic-provided `ArrayAccess` roots now derive copied
   reference-slot provenance from the executed public by-reference
   `offsetGet()` binding, so supported method-body side effects, missing-bucket
   initialization, and local aliases are honored before a copied bucket is used
-  by by-reference `foreach` or helper calls. This does not claim append-offset
-  expression roots, arbitrary PHP outside the interpreter subset, arbitrary
-  magic/`ArrayAccess` side effects that the interpreter cannot execute, exact
-  diagnostic streams, or native reference lowering. Focused verification:
+  by by-reference `foreach` or helper calls. This does not claim arbitrary PHP
+  outside the interpreter subset, arbitrary magic/`ArrayAccess` side effects
+  that the interpreter cannot execute, exact diagnostic streams, or native
+  reference lowering. Focused verification:
   `cargo run -q -p phpc -- test --compare-php` passed the new
   `milestone1838`, `milestone1839`, `milestone1840`, and `milestone1841`
   fixtures plus adjacent `milestone1532`, `milestone1672`, `milestone1751`,

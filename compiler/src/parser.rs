@@ -3024,21 +3024,36 @@ impl Parser {
                         span,
                     }),
                     nested @ Expr::Index { .. } => {
-                        let (name, indices, _) = Self::array_index_path_from_expr(nested)
-                            .ok_or_else(|| {
-                                self.error_at(
-                                    span,
-                                    unsupported_reference_assignment_source_message(),
-                                )
-                            })?;
-                        Ok(ReferenceSource::ArrayAppend {
-                            name,
-                            indices,
+                        if let Some((name, indices, _)) =
+                            Self::array_index_path_from_expr(nested.clone())
+                        {
+                            Ok(ReferenceSource::ArrayAppend {
+                                name,
+                                indices,
+                                span,
+                            })
+                        } else if let Some((target, indices, _)) =
+                            Self::expression_array_index_path_from_expr(nested)
+                        {
+                            Ok(ReferenceSource::ExpressionArrayAppend {
+                                target,
+                                indices,
+                                span,
+                            })
+                        } else {
+                            Err(self
+                                .error_at(span, unsupported_reference_assignment_source_message()))
+                        }
+                    }
+                    target => {
+                        if matches!(target, Expr::Variable(_, _)) {
+                            unreachable!("variable append target handled above");
+                        }
+                        Ok(ReferenceSource::ExpressionArrayAppend {
+                            target,
+                            indices: Vec::new(),
                             span,
                         })
-                    }
-                    _ => {
-                        Err(self.error_at(span, unsupported_reference_assignment_source_message()))
                     }
                 }
             }
@@ -7404,7 +7419,7 @@ fn unsupported_array_destructuring_assignment_message() -> &'static str {
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {
-    "unsupported reference assignment: only direct variable, direct/nested/append array-offset, expression-root array-offset, direct/nested/append object-property array-offset, bounded non-direct object-property array-offset, object-property, static property, direct/dynamic function-call, and method-call reference sources are parsed before reference semantics exist"
+    "unsupported reference assignment: only direct variable, direct/nested/append array-offset, expression-root array-offset/append, direct/nested/append object-property array-offset, bounded non-direct object-property array-offset, object-property, static property, direct/dynamic function-call, and method-call reference sources are parsed before reference semantics exist"
 }
 
 fn unsupported_first_class_callable_message() -> &'static str {

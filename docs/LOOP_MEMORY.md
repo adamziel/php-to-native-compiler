@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T03:16:26+02:00
+
+- Checkpoint before this task: `890284df runtime: preserve executed
+  arrayaccess copy sources`, pushed to `origin/master`.
+- Task attempted: Lane 1842-C through Lane 1845-C bundle, parsing and
+  executing append-offset expression-root reference sources for returned
+  arrays, null temporaries, and direct function/method results that evaluate
+  to public by-reference `ArrayAccess` objects.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `tests/fixtures/milestone1842/*`,
+  `tests/fixtures/milestone1843/*`, `tests/fixtures/milestone1844/*`,
+  `tests/fixtures/milestone1845/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo run -q -p phpc -- test --compare-php` passed each
+  new fixture directory and adjacent append/expression/ArrayAccess milestones
+  `1087`, `1447`, `1677`, `1824`, `1834`, `1835`, and `1837`; focused
+  `functions_and_scopes` reference-assignment, `object_model` ArrayAccess,
+  and `syntax_boundaries` reference-assignment Rust tests passed; `cargo
+  fmt`, `cargo fmt --check`, `cargo check -q -p phpc`, and `git diff
+  --check` passed.
+- Remaining COW gaps: nested expression-root `ArrayAccess` append suffixes,
+  scalar/string temporary reference parity, arbitrary callback and builtin
+  reference-return sources, arbitrary PHP and magic/`ArrayAccess` side effects
+  outside the interpreter subset, full exception unwinding and uncaught
+  propagation, arbitrary Iterator side effects, broader complex alias sinks
+  and alias lifetime ordering, exact PHP stderr/fatal text,
+  binary/multibyte string offset behavior, and native reference/string COW
+  lowering.
+- Next concrete task: run focused Rust tests, formatting, diff check, and the
+  full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T03:09:31+02:00
 
 - Checkpoint before this task: `62bf431a runtime: support expression-root

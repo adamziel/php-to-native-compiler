@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1841:
+The current in-progress implementation frontier is Lane 1845:
+
+- Lanes 1842 through 1845 add append-offset expression-root reference
+  sources. Direct variable targets can now bind to appended slots below
+  returned arrays, null temporaries, and direct function/method results that
+  evaluate to public by-reference `ArrayAccess` objects, such as
+  `$alias =& make_array()[]`, `$alias =& make_array()["outer"][]`,
+  `$alias =& make_bag()[]`, and `$alias =& $factory->make()[]`. `ArrayAccess`
+  append roots pass `null` to `offsetGet()` while the backing array key uses
+  PHP's empty-string null-key coercion. This still does not claim nested
+  expression-root `ArrayAccess` append suffixes, scalar/string temporary
+  reference parity, arbitrary PHP outside the interpreter subset, exact
+  diagnostic streams, or native reference lowering.
 
 - Lanes 1838 through 1841 derive copied-array COW provenance from executed
   public by-reference `ArrayAccess::offsetGet()` bodies during normal reads.
@@ -40,10 +52,10 @@ The current in-progress implementation frontier is Lane 1841:
   roots such as `$bucket = $bag[10]`, `$bucket = $holder->bag[10]`, and
   `$bucket = $box->missing[10]` can now run supported side effects and local
   alias setup inside `offsetGet()` before preserving reference slots in the
-  copied array. This still does not claim append-offset expression roots,
-  arbitrary PHP outside the interpreter subset, arbitrary magic/`ArrayAccess`
-  side effects that the interpreter cannot execute, exact diagnostic streams,
-  or native reference lowering.
+  copied array. This still does not claim arbitrary PHP outside the
+  interpreter subset, arbitrary magic/`ArrayAccess` side effects that the
+  interpreter cannot execute, exact diagnostic streams, or native reference
+  lowering.
 
 - Lanes 1834 through 1837 add expression-root array-offset reference
   sources. Direct variable targets can now bind to selected buckets below
@@ -54,10 +66,10 @@ The current in-progress implementation frontier is Lane 1841:
   evaluation, so references embedded in a returned array remain live when the
   returned temporary is selected. The same expression-root bridge can recurse
   through a proven by-value outer `ArrayAccess` object into a by-reference
-  inner `ArrayAccess` bucket. This still does not claim append-offset
-  expression roots, scalar/string temporary reference parity, arbitrary
-  callback/builtin reference sources, arbitrary PHP outside the interpreter
-  subset, or native reference lowering.
+  inner `ArrayAccess` bucket. This still does not claim nested
+  expression-root `ArrayAccess` append suffixes, scalar/string temporary
+  reference parity, arbitrary callback/builtin reference sources, arbitrary
+  PHP outside the interpreter subset, or native reference lowering.
 
 - Lanes 1830 through 1833 close the whole by-value magic-property root
   counterpart to the preceding array-offset work. Direct, dynamic, and
