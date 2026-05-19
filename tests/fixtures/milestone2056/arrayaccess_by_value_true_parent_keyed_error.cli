@@ -1,0 +1,7 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone2056/arrayaccess_by_value_true_parent_keyed_error.php:33:1: invalid array access: cannot write offset on bool
+--- stderr end ---
+

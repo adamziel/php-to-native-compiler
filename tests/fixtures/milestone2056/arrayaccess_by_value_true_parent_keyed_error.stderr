@@ -1,0 +1,2 @@
+runtime error at 33:1: invalid array access: cannot write offset on bool
+

@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+diag:Indirect modification of overloaded element of Milestone2060_Bag has no effect
+diag:Automatic conversion of false to array is deprecated
+type=boolean
+--- stdout end ---
+stderr:
+--- stderr end ---
+

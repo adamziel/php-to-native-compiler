@@ -1,0 +1,7 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone2058/property_arrayaccess_by_value_int_parent_reference_error.php:38:1: invalid array access: cannot write offset on int
+--- stderr end ---
+

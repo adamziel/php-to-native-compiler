@@ -1,0 +1,7 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone2059/magic_arrayaccess_by_value_string_parent_reference_error.php:45:1: invalid array access: cannot access offset of type string on string
+--- stderr end ---
+

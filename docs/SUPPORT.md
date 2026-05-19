@@ -515,6 +515,15 @@
   stays local to the returned copy. This does not cover arbitrary callback
   side effects, whole-array reference identity, exact diagnostics, or native
   reference lowering.
+  Covered by-value `ArrayAccess::offsetGet()` paths also reject scalar parents
+  when the caller attempts a nested keyed write, nested append, property-held
+  reference target, or magic-provided reference target below the returned
+  value. `true`, integer, float, and string parents now fail with stable
+  project runtime diagnostics instead of silently no-oping; `false` still
+  leaves the backing bucket unchanged and emits the automatic-conversion
+  deprecation. These fatal paths are not PHP-catchable `Throwable` objects in
+  phpc yet, and arbitrary side effects or complete mixed `ArrayAccess` object
+  chains remain unsupported.
   Bounded `call_user_func_array()` callback containers with reached
   by-reference callback parameters can also preserve copied-bucket COW
   provenance in these bodies. Covered forms include literal

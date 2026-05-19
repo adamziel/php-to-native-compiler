@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2055:
+The current in-progress implementation frontier is Lane 2060:
+
+- Lanes 2056 through 2060 close a proven scalar-parent miss below covered
+  by-value `ArrayAccess::offsetGet()` results. Nested keyed writes, nested
+  appends, property-held reference targets, and magic-provided reference
+  targets now reject `true`, integer, float, and string parents instead of
+  silently no-oping. The `false` parent path remains a no-op against the
+  backing bucket while emitting PHP's automatic-conversion deprecation.
+  Focused runtime-error fixtures pin stable project diagnostics for the
+  currently non-catchable fatal paths, and a `false` no-op/deprecation fixture
+  compares directly against system PHP. This is still bounded to covered
+  by-value magic/`ArrayAccess` paths; arbitrary side effects, complete mixed
+  `ArrayAccess` object chains, exact PHP `Throwable` objects/diagnostics,
+  whole-array reference identity, and native reference lowering remain
+  unsupported.
 
 - Lanes 2051 through 2055 preserve copied-bucket COW behavior for bounded
   `call_user_func()` callbacks whose reached callback parameter is variadic
@@ -1499,9 +1513,10 @@ reference/COW.
 
 Highest-value concrete candidates:
 
-- Broader mixed nested `ArrayAccess` chains below magic-property roots,
-  including by-value terminal/plain-array mutation and arbitrary mixed-chain
-  shapes beyond the currently tested object-handle recursion.
+- Broader mixed nested `ArrayAccess` chains below direct, property-held, and
+  magic roots, especially object-chain bridges for nested append/keyed writes,
+  reference-return bodies, callback reference arguments, and no-reference
+  callback value paths where backing buckets can be statically proven.
 - Broader but still proven `offsetGet()` and `__get()` return-body shapes.
 - Broader method-return or factory expression roots beyond the one covered
   magic/`ArrayAccess` reference-source backing-write shape.

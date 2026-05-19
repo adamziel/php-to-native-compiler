@@ -1,0 +1,2 @@
+phpc-only: phpc runtime errors are not catchable PHP Throwables yet; this pins scalar-parent rejection for by-value ArrayAccess nested keyed writes.
+

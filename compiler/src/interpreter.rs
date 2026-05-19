@@ -14534,6 +14534,8 @@ impl Interpreter {
             object_name.to_string(),
             keys,
             first_key_value,
+            false,
+            false,
             span,
             scope,
         )
@@ -14678,6 +14680,8 @@ impl Interpreter {
             hidden_name,
             keys,
             first_key_value,
+            false,
+            false,
             span,
             scope,
         )
@@ -15922,6 +15926,8 @@ impl Interpreter {
         _object_name: String,
         keys: Vec<ArrayKey>,
         first_key_value: Option<Value>,
+        check_terminal_scalar_parent: bool,
+        is_append_to_parent: bool,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<Value>> {
@@ -15969,6 +15975,8 @@ impl Interpreter {
                     hidden_name,
                     rest_keys.to_vec(),
                     None,
+                    check_terminal_scalar_parent,
+                    is_append_to_parent,
                     span,
                     scope,
                 );
@@ -15981,6 +15989,15 @@ impl Interpreter {
             span,
         )?;
 
+        if !rest_keys.is_empty() || check_terminal_scalar_parent {
+            self.reject_by_value_array_access_scalar_parent_for_nested_write(
+                &first_value,
+                rest_keys,
+                is_append_to_parent,
+                span,
+            )?;
+        }
+
         if rest_keys.is_empty() {
             return Ok(Some(first_value));
         }
@@ -15990,6 +16007,47 @@ impl Interpreter {
             )));
         }
         Ok(Some(Value::Null))
+    }
+
+    fn reject_by_value_array_access_scalar_parent_for_nested_write(
+        &mut self,
+        value: &Value,
+        keys: &[ArrayKey],
+        is_append: bool,
+        span: Span,
+    ) -> CompileResult<()> {
+        match value {
+            Value::Bool(false) => self.emit_false_to_array_deprecation(span),
+            Value::Bool(true) | Value::Int(_) | Value::Float(_) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot write offset on {}",
+                    value.type_name()
+                )),
+            )),
+            Value::String(_) if is_append => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "[] operator not supported for strings".to_string(),
+                ),
+            )),
+            Value::String(_) => match keys.first() {
+                Some(key) if !Self::array_key_is_string_offset(key) => Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(
+                        "cannot access offset of type string on string".to_string(),
+                    ),
+                )),
+                Some(_) if keys.len() > 1 => Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(
+                        "cannot use string offset as an array".to_string(),
+                    ),
+                )),
+                _ => Ok(()),
+            },
+            _ => Ok(()),
+        }
     }
 
     fn detached_array_copy_reference_source_value(array: PhpArray, keys: &[ArrayKey]) -> Value {
@@ -16122,6 +16180,15 @@ impl Interpreter {
             format!("Indirect modification of overloaded element of {class_name} has no effect"),
             span,
         )?;
+
+        if !rest_keys.is_empty() {
+            self.reject_by_value_array_access_scalar_parent_for_nested_write(
+                &first_value,
+                rest_keys,
+                false,
+                span,
+            )?;
+        }
 
         let value = if rest_keys.is_empty() {
             first_value
@@ -20625,6 +20692,8 @@ impl Interpreter {
                 hidden_name.clone(),
                 keys.clone(),
                 None,
+                true,
+                true,
                 span,
                 scope,
             )?
@@ -20802,6 +20871,8 @@ impl Interpreter {
                 hidden_name.clone(),
                 keys.clone(),
                 None,
+                false,
+                false,
                 span,
                 scope,
             )?

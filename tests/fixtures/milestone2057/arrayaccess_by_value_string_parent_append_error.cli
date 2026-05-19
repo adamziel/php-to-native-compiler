@@ -1,0 +1,7 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone2057/arrayaccess_by_value_string_parent_append_error.php:37:1: invalid array access: [] operator not supported for strings
+--- stderr end ---
+

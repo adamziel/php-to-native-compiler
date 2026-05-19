@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T12:48:17+02:00
+
+- Checkpoint before this task: `1d4ef693 runtime: preserve variadic
+  call_user_func warning COW copies`, pushed to `origin/master`.
+- Task attempted: Lane 2056-C through Lane 2060-C bundle, rejecting scalar
+  parents below covered by-value `ArrayAccess::offsetGet()` roots for nested
+  keyed writes, nested appends, property-held reference targets, and
+  magic-provided reference targets. `false` parents remain no-op backing
+  buckets and now emit the PHP-matching automatic-conversion deprecation.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2056/*`, `tests/fixtures/milestone2057/*`,
+  `tests/fixtures/milestone2058/*`, `tests/fixtures/milestone2059/*`,
+  `tests/fixtures/milestone2060/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP probes confirmed scalar-parent throw/no-op
+  behavior; focused fixture tests passed for `milestone2056` through
+  `milestone2060`; `milestone2060` passed system-PHP comparison; recent
+  `milestone2051` through `milestone2060` comparisons passed with phpc-only
+  skips only for the new non-catchable runtime-error snapshots; adjacent
+  regressions passed for `milestone1676`, `milestone1680`, `milestone1692`,
+  `milestone1973`, `milestone1974`, and `milestone1976`; the broader COW band
+  `milestone1880` through `milestone2060` passed; `cargo check -q` passed
+  after the runtime change.
+- Remaining COW gaps: complete mixed `ArrayAccess` object-chain bridges,
+  arbitrary untracked magic/`ArrayAccess` side effects, untracked dynamic
+  containers, whole-array reference identity, PHP-catchable fatal
+  `Throwable` objects/exact diagnostics, native reference/string COW lowering,
+  and native lowering for these interpreter paths.
+- Next concrete task: run formatting/check/diff gates and one full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T12:32:21+02:00
 
 - Checkpoint before this task: `3953ad60 runtime: preserve call_user_func

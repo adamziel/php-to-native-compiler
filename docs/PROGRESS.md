@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2056-C through Lane 2060-C for scalar-parent parity below
+  covered by-value `ArrayAccess::offsetGet()` roots. Nested keyed writes,
+  nested appends, property-held reference targets, and magic-provided
+  reference targets now reject `true`, integer, float, and string parents
+  instead of silently treating the indirect modification as a no-op. The
+  `false` parent path remains a no-op against the backing bucket while now
+  emitting the PHP-matching automatic-conversion deprecation. Focused
+  runtime-error fixtures pin project diagnostics for the currently
+  non-catchable fatal paths, and the `false` no-op/deprecation guard is
+  compared directly against system PHP. This remains bounded to covered
+  by-value magic/`ArrayAccess` paths; arbitrary side effects, complete mixed
+  `ArrayAccess` object chains, exact PHP `Throwable` objects/diagnostics,
+  whole-array reference identity, and native reference lowering remain
+  unsupported.
+
 - Added Lane 2051-C through Lane 2055-C for `call_user_func()` callbacks
   whose reached callback parameter is both variadic and declared by
   reference inside supported by-value magic/`ArrayAccess` method bodies. PHP

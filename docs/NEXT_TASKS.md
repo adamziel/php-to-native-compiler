@@ -20857,14 +20857,26 @@ handled.
   arbitrary untracked side effects, whole-array reference identity, exact
   diagnostics, and native reference lowering named as unsupported.
 
+## Lane 2056-C through Lane 2060-C: Scalar Parent By-Value `ArrayAccess` Parity
+
+- [x] Runtime/tests/docs bundle: reject scalar parents below covered by-value
+  `ArrayAccess::offsetGet()` results for nested keyed writes, nested appends,
+  property-held reference targets, and magic-provided reference targets.
+  Cover `true`, integer, and string fatal paths with stable phpc-only
+  runtime-error snapshots, and cover `false` no-op/deprecation behavior with
+  system-PHP comparison. Keep arbitrary side-effecting method bodies, complete
+  mixed `ArrayAccess` object chains, PHP-catchable `Throwable` objects/exact
+  fatal text, whole-array reference identity, and native reference lowering
+  named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
-- [ ] Probe remaining scalar parent-overwrite/error parity outside covered
-  roots, then probe whether any covered mixed `ArrayAccess` bridge is still
-  missing from reference-return, callback reference-argument, or
-  no-reference callback-value paths. Implement only bounded PHP-comparable
-  failures without claiming arbitrary side-effecting method bodies, full PHP
-  COW identity, or unsupported native lowering.
+- [ ] Probe covered mixed `ArrayAccess` object-chain bridges that still miss
+  PHP behavior in reference-return, callback reference-argument,
+  no-reference callback-value, and nested append/keyed write paths. Implement
+  only statically proven backing-bucket bridges without claiming arbitrary
+  side-effecting method bodies, full PHP COW identity, exact PHP fatal
+  objects/text, or unsupported native lowering.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
