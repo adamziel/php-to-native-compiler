@@ -6302,6 +6302,25 @@ impl Interpreter {
                 self.tick(stmt.span())?;
                 return self.execute_switch_with_array_copy_return_source(value, cases, scope);
             }
+            Stmt::Foreach {
+                iterable,
+                key,
+                value,
+                by_reference,
+                body,
+                span,
+            } => {
+                self.tick(stmt.span())?;
+                if *by_reference {
+                    return self.execute_foreach_by_reference_with_array_copy_return_source(
+                        iterable, key, value, body, *span, scope,
+                    );
+                }
+                let iterable = self.evaluate(iterable, scope)?;
+                return self.execute_foreach_by_value_iterable_with_array_copy_return_source(
+                    iterable, key, value, body, *span, scope,
+                );
+            }
             Stmt::Try {
                 body, finally_body, ..
             } => {
@@ -6321,6 +6340,409 @@ impl Interpreter {
         }
 
         self.execute_statement(stmt, scope).map(|flow| (flow, None))
+    }
+
+    fn execute_foreach_by_reference_with_array_copy_return_source(
+        &mut self,
+        iterable: &Expr,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+        let root = self.by_reference_foreach_root(iterable, scope, span)?;
+        Self::read_foreach_root_array(&root, scope, span)?;
+        let mut position = 0usize;
+        let mut lingering_reference_key = None;
+
+        loop {
+            let array = Self::read_foreach_root_array(&root, scope, span)?;
+            let Some(entry) = array.entries().get(position) else {
+                break;
+            };
+            let entry_key = entry.key.clone();
+            self.tick(span)?;
+
+            if let Some(key) = key {
+                scope.write_static(key, value_from_array_key(&entry_key));
+            }
+            bind_foreach_reference_to_key(scope, value, &root, &entry_key, span)?;
+            self.active_foreach_references.push(ActiveForeachReference {
+                root: root.clone(),
+                value_name: value.to_string(),
+                key: entry_key.clone(),
+            });
+            let flow_result = self.execute_statements_with_array_copy_return_source(body, scope);
+            self.active_foreach_references.pop();
+            let (flow, source) = flow_result?;
+
+            let value_still_bound = if let Some(expected_aliases) =
+                foreach_root_slot_aliases(scope, &root, &entry_key)
+            {
+                scope
+                    .array_offset_aliases_for_name(value)
+                    .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
+            } else {
+                match &root {
+                    ForeachArrayRoot::Static { name, keys } => {
+                        let mut alias_keys = keys.clone();
+                        alias_keys.push(entry_key.clone());
+                        scope.is_static_bound_to_array_offset_path(value, name, &alias_keys)
+                    }
+                    ForeachArrayRoot::Global { name, keys } => {
+                        let mut alias_keys = keys.clone();
+                        alias_keys.push(entry_key.clone());
+                        scope.is_static_bound_to_global_array_offset_path(value, name, &alias_keys)
+                    }
+                    ForeachArrayRoot::Alias { root, keys } => {
+                        let mut alias_keys = keys.clone();
+                        alias_keys.push(entry_key.clone());
+                        scope.is_static_bound_to_array_offset_alias_root(value, root, &alias_keys)
+                    }
+                    ForeachArrayRoot::Aliases { .. } => false,
+                    ForeachArrayRoot::ObjectProperties { .. } => false,
+                }
+            };
+            let array = Self::read_foreach_root_array(&root, scope, span)?;
+            let current_position = array
+                .entries()
+                .iter()
+                .position(|entry| entry.key == entry_key);
+            lingering_reference_key = if value_still_bound && current_position.is_some() {
+                Some(entry_key.clone())
+            } else {
+                None
+            };
+            let next_position = match current_position {
+                Some(current_position) if current_position > position => position,
+                Some(current_position) => current_position + 1,
+                None => {
+                    lingering_reference_key = None;
+                    position
+                }
+            };
+            position = next_position;
+
+            match flow {
+                Flow::Normal => {}
+                Flow::Continue { depth, .. } if depth <= 1 => {}
+                Flow::Continue {
+                    depth,
+                    span: flow_span,
+                } => {
+                    bind_foreach_lingering_reference(
+                        scope,
+                        value,
+                        &root,
+                        lingering_reference_key,
+                        span,
+                    )?;
+                    return Ok((
+                        Flow::Continue {
+                            depth: depth - 1,
+                            span: flow_span,
+                        },
+                        None,
+                    ));
+                }
+                Flow::Break { depth, .. } if depth <= 1 => break,
+                Flow::Break {
+                    depth,
+                    span: flow_span,
+                } => {
+                    bind_foreach_lingering_reference(
+                        scope,
+                        value,
+                        &root,
+                        lingering_reference_key,
+                        span,
+                    )?;
+                    return Ok((
+                        Flow::Break {
+                            depth: depth - 1,
+                            span: flow_span,
+                        },
+                        None,
+                    ));
+                }
+                Flow::Goto {
+                    label,
+                    span: flow_span,
+                } => {
+                    bind_foreach_lingering_reference(
+                        scope,
+                        value,
+                        &root,
+                        lingering_reference_key,
+                        span,
+                    )?;
+                    return Ok((
+                        Flow::Goto {
+                            label,
+                            span: flow_span,
+                        },
+                        None,
+                    ));
+                }
+                flow @ (Flow::Return(_) | Flow::Exit(_)) => {
+                    return Ok((flow, source));
+                }
+            }
+        }
+
+        bind_foreach_lingering_reference(scope, value, &root, lingering_reference_key, span)?;
+        Ok((Flow::Normal, None))
+    }
+
+    fn execute_foreach_by_value_iterable_with_array_copy_return_source(
+        &mut self,
+        iterable: Value,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+        match iterable {
+            Value::Array(array) => self.execute_foreach_array_by_value_with_array_copy_return_source(
+                array, key, value, body, span, scope,
+            ),
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "Iterator") =>
+            {
+                self.execute_foreach_iterator_by_value_with_array_copy_return_source(
+                    object, key, value, body, span, scope,
+                )
+            }
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "IteratorAggregate") =>
+            {
+                let iterator = self.call_required_iterator_method(object, "getIterator", span)?;
+                match iterator {
+                    Value::Object(iterator)
+                        if self
+                            .classes
+                            .implements_interface(iterator.class_id(), "Iterator") =>
+                    {
+                        self.execute_foreach_iterator_by_value_with_array_copy_return_source(
+                            iterator, key, value, body, span, scope,
+                        )
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_foreach(format!(
+                            "IteratorAggregate::getIterator() must return an Iterator object in the current subset, got {}",
+                            other.type_name()
+                        )),
+                    )),
+                }
+            }
+            Value::Object(object) if !self.is_traversable_object(&object) => {
+                self.execute_foreach_public_object_by_value_with_array_copy_return_source(
+                    object, key, value, body, span, scope,
+                )
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_foreach(format!(
+                    "can only iterate arrays, ordinary public-property objects, or bounded Iterator objects in the current subset, got {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn execute_foreach_array_by_value_with_array_copy_return_source(
+        &mut self,
+        array: PhpArray,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+        for entry in array.entries() {
+            self.tick(span)?;
+            if let Some(key) = key {
+                scope.write_static(key, value_from_array_key(&entry.key));
+            }
+            scope.write_static(value, entry.value_cloned());
+            let (flow, source) =
+                self.execute_statements_with_array_copy_return_source(body, scope)?;
+            match flow {
+                Flow::Normal => {}
+                Flow::Continue { depth, .. } if depth <= 1 => {}
+                Flow::Continue { depth, span } => {
+                    return Ok((
+                        Flow::Continue {
+                            depth: depth - 1,
+                            span,
+                        },
+                        None,
+                    ));
+                }
+                Flow::Break { depth, .. } if depth <= 1 => break,
+                Flow::Break { depth, span } => {
+                    return Ok((
+                        Flow::Break {
+                            depth: depth - 1,
+                            span,
+                        },
+                        None,
+                    ));
+                }
+                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                    return Ok((flow, source));
+                }
+            }
+        }
+
+        Ok((Flow::Normal, None))
+    }
+
+    fn execute_foreach_public_object_by_value_with_array_copy_return_source(
+        &mut self,
+        object: PhpObject,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+        let property_names: Vec<String> = object
+            .properties()
+            .into_iter()
+            .filter(|property| {
+                property.visibility() == Visibility::Public && property.is_initialized()
+            })
+            .map(|property| property.name().to_string())
+            .collect();
+
+        for property in property_names {
+            self.tick(span)?;
+            if let Some(key) = key {
+                scope.write_static(key, Value::String(property.clone()));
+            }
+            scope.write_static(value, object.read_public_property(&property)?);
+            let (flow, source) =
+                self.execute_statements_with_array_copy_return_source(body, scope)?;
+            match flow {
+                Flow::Normal => {}
+                Flow::Continue { depth, .. } if depth <= 1 => {}
+                Flow::Continue { depth, span } => {
+                    return Ok((
+                        Flow::Continue {
+                            depth: depth - 1,
+                            span,
+                        },
+                        None,
+                    ));
+                }
+                Flow::Break { depth, .. } if depth <= 1 => break,
+                Flow::Break { depth, span } => {
+                    return Ok((
+                        Flow::Break {
+                            depth: depth - 1,
+                            span,
+                        },
+                        None,
+                    ));
+                }
+                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                    return Ok((flow, source));
+                }
+            }
+        }
+
+        Ok((Flow::Normal, None))
+    }
+
+    fn execute_foreach_iterator_by_value_with_array_copy_return_source(
+        &mut self,
+        object: PhpObject,
+        key: &Option<String>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+        self.call_required_iterator_method(object.clone(), "rewind", span)?;
+
+        loop {
+            if !self
+                .call_required_iterator_method(object.clone(), "valid", span)?
+                .is_truthy()
+            {
+                break;
+            }
+
+            self.tick(span)?;
+            let (current, array_copy_source) = self
+                .call_required_iterator_current_method_with_array_copy_source(
+                    object.clone(),
+                    span,
+                    scope,
+                )?;
+            if let Some(key) = key {
+                let iterator_key =
+                    self.call_required_iterator_method(object.clone(), "key", span)?;
+                scope.write_static(key, iterator_key);
+            }
+            let target_is_alias = scope.is_array_offset_alias_name(value);
+            let current_is_array = matches!(current, Value::Array(_));
+            scope.write_static(value, current);
+            if !target_is_alias && current_is_array {
+                if let Some(source) = array_copy_source {
+                    scope.mirror_public_object_property_aliases_from_array_copy(
+                        value,
+                        &source.object,
+                        &source.property,
+                        &source.keys,
+                        source.include_exact_path,
+                    );
+                }
+            }
+
+            let (flow, source) =
+                self.execute_statements_with_array_copy_return_source(body, scope)?;
+            match flow {
+                Flow::Normal => {
+                    self.call_required_iterator_method(object.clone(), "next", span)?;
+                }
+                Flow::Continue { depth, .. } if depth <= 1 => {
+                    self.call_required_iterator_method(object.clone(), "next", span)?;
+                }
+                Flow::Continue { depth, span } => {
+                    return Ok((
+                        Flow::Continue {
+                            depth: depth - 1,
+                            span,
+                        },
+                        None,
+                    ));
+                }
+                Flow::Break { depth, .. } if depth <= 1 => break,
+                Flow::Break { depth, span } => {
+                    return Ok((
+                        Flow::Break {
+                            depth: depth - 1,
+                            span,
+                        },
+                        None,
+                    ));
+                }
+                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                    return Ok((flow, source));
+                }
+            }
+        }
+
+        Ok((Flow::Normal, None))
     }
 
     fn return_flow_with_array_copy_source(

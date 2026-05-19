@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1874:
+The current in-progress implementation frontier is Lane 1879:
+
+- Lanes 1875 through 1879 preserve by-value method-return copied-array COW
+  provenance when the covered return expression is reached from supported
+  `foreach` bodies. The source-aware method-return path now covers by-value
+  array iteration, by-reference foreach over supported array roots, by-value
+  foreach over ordinary public-property objects, bounded userland
+  `Iterator`, and bounded `IteratorAggregate` returning a userland
+  `Iterator`. Focused coverage includes ArrayAccess-backed array,
+  by-reference, public-object, and IteratorAggregate foreach returns plus a
+  magic `__get()` Iterator return. This remains bounded to the interpreter
+  subset and the existing direct visible object-property array return shapes;
+  arbitrary returned temporaries, thrown exception unwinding, whole-array
+  reference identity, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 1871 through 1874 preserve the same by-value method-return
   copied-array COW provenance when the covered return expression is reached
@@ -44,9 +58,9 @@ The current in-progress implementation frontier is Lane 1874:
   ArrayAccess-backed `if`, `switch`, and loop returns plus a magic `__get()`
   `try`/`finally` return. This remains bounded to the interpreter subset and
   the existing direct visible object-property array return shapes; arbitrary
-  returned temporaries, `foreach`/Iterator body returns, thrown exception
-  unwinding, whole-array reference identity, exact diagnostics, and native
-  reference lowering remain unsupported.
+  returned temporaries, thrown exception unwinding, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 1867 through 1870 preserve copied-array COW provenance when a
   by-value user method returns a backed object-property array after supported

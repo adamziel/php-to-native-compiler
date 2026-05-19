@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1875-C through Lane 1879-C for by-value method returns that copy
+  backed object-property arrays from supported `foreach` method bodies after
+  magic/`ArrayAccess` reference slots have been established. The return-source
+  provenance path now carries through by-value array foreach, by-reference
+  foreach over supported array roots, by-value foreach over ordinary
+  public-property objects, bounded userland `Iterator`, and bounded
+  `IteratorAggregate` returning a userland `Iterator` when the reached return
+  expression is one of the existing direct visible object-property array
+  shapes. This remains bounded to the interpreter subset and does not claim
+  arbitrary returned temporaries, thrown exception unwinding, whole-array
+  reference identity, or native reference lowering. Focused verification:
+  `cargo run -q -p phpc -- test --compare-php` passed the new
+  `milestone1875`, `milestone1876`, `milestone1877`, `milestone1878`, and
+  `milestone1879` fixtures with system-PHP comparisons.
+
 - Added Lane 1871-C through Lane 1874-C for by-value method returns that copy
   backed object-property arrays from supported control-flow method bodies after
   magic/`ArrayAccess` reference slots have been established. The return-source
@@ -12,8 +27,8 @@ Implemented:
   bodies when the reached return expression is one of the existing direct
   visible object-property array shapes. This remains bounded to the current
   interpreter subset and does not claim arbitrary returned temporaries,
-  `foreach`/Iterator body returns, thrown exception unwinding, whole-array
-  reference identity, or native reference lowering. Focused verification:
+  thrown exception unwinding, whole-array reference identity, or native
+  reference lowering. Focused verification:
   `cargo run -q -p phpc -- test --compare-php` passed the new
   `milestone1871`, `milestone1872`, `milestone1873`, and `milestone1874`
   fixtures with system-PHP comparisons.

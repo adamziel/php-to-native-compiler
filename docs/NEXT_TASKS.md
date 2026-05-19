@@ -20368,6 +20368,18 @@ handled.
   whole-array reference identity, exact diagnostics, and native reference
   lowering named as unsupported.
 
+## Lane 1875-C through Lane 1879-C: Foreach Method Return Copy Provenance
+
+- [x] Runtime/tests/docs bundle: carry by-value method-return copied-array COW
+  provenance through supported `foreach` method bodies. Cover by-value array
+  foreach, by-reference foreach over supported array roots, ordinary
+  public-property object foreach, bounded userland `Iterator`, and bounded
+  `IteratorAggregate` returning a userland `Iterator` with system-PHP
+  comparisons for ArrayAccess-backed and magic-backed object-property arrays.
+  Keep arbitrary returned temporaries, thrown exception unwinding,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

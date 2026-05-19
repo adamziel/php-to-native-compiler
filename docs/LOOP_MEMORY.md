@@ -18,6 +18,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T04:34:24+02:00
+
+- Checkpoint before this task: `e06a28d4 runtime: preserve control-flow
+  return COW provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1875-C through Lane 1879-C bundle, carrying by-value
+  method-return copied-array COW provenance through supported `foreach`
+  method bodies after magic/`ArrayAccess` aliases have established reference
+  slots below the backing object-property array.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1875/*`, `tests/fixtures/milestone1876/*`,
+  `tests/fixtures/milestone1877/*`, `tests/fixtures/milestone1878/*`,
+  `tests/fixtures/milestone1879/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes matched phpc for by-value array
+  foreach, by-reference foreach, ordinary public-object foreach, userland
+  `Iterator`, and `IteratorAggregate` method-body returns; `cargo check -q
+  -p phpc` passed; `cargo run -q -p phpc -- test --compare-php` passed
+  `milestone1875`, `milestone1876`, `milestone1877`, `milestone1878`, and
+  `milestone1879`; adjacent `object_model`, `functions_and_scopes`,
+  `foreach`, `foreach_cli`, and `iterable_type_builtin` Rust tests passed;
+  adjacent `milestone1667`, `milestone1669`, `milestone1773`,
+  `milestone1774`, and `milestone1871` through `milestone1879` fixture
+  comparisons passed.
+- Remaining COW gaps: recursive `$GLOBALS` materialization, arbitrary
+  callback and builtin reference-return sources, arbitrary PHP and
+  magic/`ArrayAccess` side effects outside the interpreter subset, full
+  exception unwinding and uncaught propagation, broader complex alias sinks
+  and alias lifetime ordering, exact PHP stderr/fatal text,
+  binary/multibyte string offset behavior, and native reference/string COW
+  lowering.
+- Next concrete task: run formatting, diff check, the full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T04:27:54+02:00
 
 - Checkpoint before this task: `ecd52103 runtime: preserve method return COW
