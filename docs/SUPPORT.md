@@ -611,9 +611,9 @@
   source roots outside the exact direct/property-held
   `offsetGet(null)` bridge, `ArrayAccess` bridges outside
   the documented direct/property-held stored-array source path for
-  `call_user_func_array()` reference-return alias binding, closure or builtin
-  callbacks as reference-return sources, and broader reference-return binding
-  forms remain unsupported for direct
+  `call_user_func_array()` reference-return alias binding, builtin callbacks
+  beyond ordinary supported builtin value calls and broader reference-return
+  binding forms remain unsupported for direct
   array-offset, object-property, and stored-array reference arguments. This is
   still a bounded direct-variable alias plus direct array/property slot route,
   not full PHP reference containers or copy-on-write.
@@ -1317,8 +1317,9 @@
   object-property, or array-offset lvalue. Helper-local direct object-property
   array-offset roots such as `return $box->store[$key]` are remapped back to a
   caller-visible object root before suffix keys are applied. Arbitrary closure
-  capture roots, builtin callbacks as reference-return sources, and arbitrary
-  callable side effects remain unsupported. Bounded array callables are also
+  capture roots, builtin callback reference-return sources beyond ordinary
+  supported builtin value calls, and arbitrary callable side effects remain
+  unsupported. Bounded array callables are also
   accepted as reference-return
   sources when the callable is exactly `[object, method]` or `[class, method]`
   and the resolved public method returns a proven lvalue by reference. This
@@ -1329,7 +1330,8 @@
   dispatch through bounded public static by-reference `__callStatic()` in
   direct `$cb(...)` reference-assignment sources, `call_user_func($cb, ...)`,
   and `call_user_func_array($cb, ...)`. Arbitrary callable arrays and builtin
-  callbacks remain unsupported for reference-return sources.
+  callback reference-return sources beyond ordinary supported builtin value
+  calls remain unsupported.
   Whole static-property roots and bounded static-property array-offset roots
   are accepted when the executed by-reference body returns a declared static
   property or selected bucket through a named, `self::`, `parent::`,
@@ -2403,11 +2405,14 @@
   direct dynamic calls when the first argument is a direct variable containing
   a current ordered array. It evaluates prepended values left to right, writes
   the mutated array back to that variable, reindexes integer keys, preserves
-  string keys, and returns the new count. Non-variable array targets, non-array
-  first arguments, value-only dynamic calls such as
-  `call_user_func("array_unshift", ...)`, broad by-reference argument
-  handling, references/copy-on-write, exact warnings, and native lowering
-  remain unsupported.
+  string keys, and returns the new count. Through `call_user_func()` the
+  covered callback form evaluates the array argument by value, emits the
+  bounded reference-parameter warning, returns the copied-array count, and
+  leaves the caller array unchanged. Through `call_user_func_array()` a
+  literal or stored reference element for the first argument mutates the
+  referenced caller array. Non-variable direct array targets, non-array first
+  arguments, broad by-reference argument handling beyond the selected callback
+  forms, exact warnings, and native lowering remain unsupported.
   `strcasecmp($left, $right)` supports exactly two scalar/null
   string-convertible arguments, compares with ASCII case folding, and returns
   `-1`, `0`, or `1`. Array operands, object/resource coercions, binary string
@@ -5235,15 +5240,23 @@
   calls.
   `next($array)` advances the current array cursor and returns the next value
   or `false` past the last element for direct variable arrays and the reached
-  direct object-property array-offset shape. Full PHP internal pointer
-  semantics, `reset()`/`end()`/`prev()` interaction, object operands,
-  value-only dynamic calls, broad lvalue targets, references/copy-on-write,
-  exact warnings, and native lowering remain unsupported.
+  direct object-property array-offset shape. Through `call_user_func()` the
+  covered callback form advances a copied array, emits the bounded
+  reference-parameter warning, and leaves the caller cursor unchanged; through
+  `call_user_func_array()` a literal or stored reference element mutates the
+  referenced array cursor. Full PHP internal pointer semantics,
+  `reset()`/`end()`/`prev()` interaction, object operands, broad lvalue
+  targets, references/copy-on-write, exact warnings, and native lowering
+  remain unsupported.
   `array_pop($array)` removes and returns the last inserted value for direct
   variable arrays, returns `null` for empty arrays, updates the current cursor
   when needed, and follows the reached PHP append-index behavior after popping
-  the last integer key. Non-variable targets, object-property array targets,
-  value-only dynamic calls, broad by-reference handling,
+  the last integer key. Through `call_user_func()` the covered callback form
+  pops a copied array, emits the bounded reference-parameter warning, and
+  leaves the caller array unchanged; through `call_user_func_array()` a
+  literal or stored reference element mutates the referenced caller array.
+  Non-variable direct targets, object-property array direct targets, broad
+  by-reference handling beyond the selected callback forms,
   references/copy-on-write, exact warnings, and native lowering remain
   unsupported.
   `array_is_list($array)`
@@ -5421,9 +5434,12 @@
   dynamic function calls. `ksort($array, SORT_NUMERIC)` sorts direct variable
   arrays in place by numeric key and returns `true`; direct object-property
   array targets such as `ksort($object->callbacks, SORT_NUMERIC)` use the
-  visible property path. Keys and values are preserved. Other sort flags,
-  natural/locale sorts, broad key comparison, broad by-reference argument
-  handling, exact diagnostics, and native lowering remain unsupported.
+  visible property path. Literal or stored `call_user_func_array()` argument
+  arrays whose first element is a reference cell can also dispatch
+  `ksort` with `SORT_NUMERIC` and mutate the referenced array. Keys and
+  values are preserved. Other sort flags, natural/locale sorts, broad key
+  comparison, broad by-reference argument handling, exact diagnostics, and
+  native lowering remain unsupported.
   `foreach ($array as $value)` iterates array values in
   insertion order over a snapshot of the current entries and writes the current
   value to the direct loop variable in the active scope. `foreach ($array as
@@ -9397,23 +9413,23 @@
   runtime-string subset, array/object/resource coercions, exact PHP
   diagnostics, and native lowering beyond function-table introspection
 - `array_unshift()` outside the current direct-variable ordered-array mutation
-  subset: non-variable first arguments, value-only dynamic calls such as
-  `call_user_func("array_unshift", ...)`, broad by-reference argument
-  handling, references/copy-on-write, exact warnings/errors, and native
+  subset and selected `call_user_func()`/`call_user_func_array()` callback
+  slice: non-variable first arguments, broad by-reference argument
+  handling beyond covered callback forms, exact warnings/errors, and native
   lowering beyond function-table introspection
 - `array_pop()` outside the current direct-variable ordered-array mutation
-  subset: non-variable targets, object-property array targets, value-only
-  dynamic calls such as `call_user_func("array_pop", ...)`, broad by-reference
-  argument handling, full internal pointer side effects, references/copy-on-write,
-  exact warnings/errors, and native lowering beyond function-table
-  introspection
+  subset and selected `call_user_func()`/`call_user_func_array()` callback
+  slice: non-variable direct targets, object-property array direct targets,
+  broad by-reference argument handling beyond covered callback forms, full
+  internal pointer side effects, references/copy-on-write, exact
+  warnings/errors, and native lowering beyond function-table introspection
 - `current()` outside the current ordered-array first-value subset: PHP's
   mutable internal array-pointer model, interaction with `next()`/`reset()`,
   object operands, references/copy-on-write, exact warnings/errors, and native
   lowering beyond function-table introspection
 - `next()` outside the current direct variable and direct object-property
-  array-offset pointer-mutation subset: broad lvalue targets, value-only
-  dynamic calls, full internal array-pointer semantics, object operands,
+  array-offset pointer-mutation subset and selected callback slice: broad
+  lvalue targets, full internal array-pointer semantics, object operands,
   `reset()`/`end()`/`prev()` interaction, references/copy-on-write, exact
   warnings/errors, and native lowering beyond function-table introspection
 - `str_contains()` outside the current exact-two-argument scalar/null

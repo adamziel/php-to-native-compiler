@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1898:
+The current in-progress implementation frontier is Lane 1902:
+
+- Lanes 1899 through 1902 add a bounded builtin-callback reference/COW
+  parity slice for selected array-mutating builtins. `call_user_func()` now
+  evaluates `array_pop`, `array_unshift`, and `next` callback arguments by
+  value, emits the covered reference-parameter warning, returns the result
+  from the copied array, and leaves the caller array unchanged.
+  `call_user_func_array()` now honors reference cells in literal or stored
+  argument arrays for selected first-array-parameter builtins (`array_pop`,
+  `array_unshift`, `ksort`, and `next`), mutating the referenced caller array
+  without a warning. Assigning a builtin callback result by reference for
+  ordinary supported builtin value calls emits the covered notice and binds
+  only a detached local value. Unsupported builtin functions, broader
+  callback signatures, exact warning/notice text, whole-array reference
+  identity, full PHP internal pointer semantics, and native reference
+  lowering remain unsupported.
 
 - Lanes 1895 through 1898 close a bounded recursive string-keyed
   `$GLOBALS["GLOBALS"]` slice. Direct nested writes, reference sources,

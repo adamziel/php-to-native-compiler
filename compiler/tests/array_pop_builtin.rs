@@ -67,18 +67,19 @@ fn array_pop_rejects_forms_outside_current_subset() {
 
     let value_call = run_source(
         r#"<?php
+function warn_ref($errno, $errstr) {
+    echo str_contains($errstr, "must be passed by reference") ? "warning" : "other";
+    echo "|";
+    return true;
+}
+set_error_handler("warn_ref", E_WARNING);
 $items = array("tail");
-call_user_func("array_pop", $items);
+echo call_user_func("array_pop", $items), "|", count($items);
 "#,
     )
-    .unwrap_err();
-    assert_eq!(value_call.phase, Phase::Runtime);
-    assert_eq!(value_call.line, 3);
-    assert_eq!(value_call.column, 1);
-    assert_eq!(
-        value_call.message,
-        "unsupported call array_pop(): by-reference array arguments require a direct call target in the current subset"
-    );
+    .unwrap();
+    assert_eq!(value_call.stdout, "warning|tail|1");
+    assert_eq!(value_call.exit_code, 0);
 }
 
 #[test]

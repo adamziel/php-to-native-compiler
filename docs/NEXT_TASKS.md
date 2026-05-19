@@ -20430,6 +20430,19 @@ handled.
   diagnostics, whole-array reference identity, and native reference lowering
   named as unsupported.
 
+## Lane 1899-C through Lane 1902-C: Builtin Callback Reference Parameters
+
+- [x] Runtime/tests/docs bundle: close a bounded selected-builtin callback
+  reference/COW parity slice. Cover `call_user_func()` by-value warning/no
+  caller mutation for `array_pop`, `array_unshift`, and `next`; literal and
+  stored `call_user_func_array()` reference cells mutating caller arrays for
+  `array_pop`, `array_unshift`, `ksort`, and `next`; and detached reference
+  assignment from selected array-builtin and ordinary `strlen` callback
+  results. Use system-PHP comparisons. Keep unsupported builtin functions,
+  broader callback signatures, exact warning/notice text, whole-array
+  reference identity, full PHP internal pointer semantics, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Lane 1899-C through Lane 1902-C for selected builtin callbacks with
+  by-reference array parameters. `call_user_func()` now evaluates covered
+  `array_pop`, `array_unshift`, and `next` callback arguments by value,
+  emits the bounded reference-parameter warning, returns the copied-array
+  result, and leaves the caller array unchanged. `call_user_func_array()` now
+  honors reference cells in literal and stored argument arrays for selected
+  first-array-parameter builtins (`array_pop`, `array_unshift`, `ksort`, and
+  `next`), mutating the referenced caller array without warning. Assigning a
+  supported builtin callback result by reference emits the bounded
+  "Only variables" notice and binds only a detached local value. Focused
+  coverage includes by-value `call_user_func()` callback warnings/no-op
+  mutation, literal and stored `call_user_func_array()` reference cells, and
+  detached reference assignment from selected array-builtin and ordinary
+  `strlen` callback results, all with system-PHP comparisons. Unsupported
+  builtin functions, broader callback
+  signatures, exact warning/notice text, whole-array reference identity, full
+  PHP internal pointer semantics, and native reference lowering remain
+  unsupported.
+
 - Added Lane 1895-C through Lane 1898-C for bounded recursive
   string-keyed `$GLOBALS["GLOBALS"]` routing. The direct assignment path now
   handles `$GLOBALS[...]` before ordinary string-offset writes, so an existing

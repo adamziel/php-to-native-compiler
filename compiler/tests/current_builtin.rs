@@ -108,18 +108,19 @@ fn current_rejects_forms_outside_current_subset() {
 
     let value_call = run_source(
         r#"<?php
+function warn_ref($errno, $errstr) {
+    echo str_contains($errstr, "must be passed by reference") ? "warning" : "other";
+    echo "|";
+    return true;
+}
+set_error_handler("warn_ref", E_WARNING);
 $items = array("a", "b");
-call_user_func("next", $items);
+echo call_user_func("next", $items), "|", current($items);
 "#,
     )
-    .unwrap_err();
-    assert_eq!(value_call.phase, Phase::Runtime);
-    assert_eq!(value_call.line, 3);
-    assert_eq!(value_call.column, 1);
-    assert_eq!(
-        value_call.message,
-        "unsupported call next(): array pointer mutation requires a direct call target in the current subset"
-    );
+    .unwrap();
+    assert_eq!(value_call.stdout, "warning|b|a");
+    assert_eq!(value_call.exit_code, 0);
 }
 
 #[test]

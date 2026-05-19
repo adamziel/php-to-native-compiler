@@ -33322,16 +33322,18 @@ impl Interpreter {
                     caller_scope,
                 );
             }
+            return self.call_builtin_callback_from_call_user_func(
+                key,
+                &args[1..],
+                span,
+                caller_scope,
+            );
         }
         if let Callable::User(function) = callable {
             return self.call_user_func_user_function(function, &args[1..], span, caller_scope);
         }
 
-        let mut values = Vec::with_capacity(args.len().saturating_sub(1));
-        for arg in &args[1..] {
-            values.push(self.evaluate(arg, caller_scope)?);
-        }
-        self.call_callable_with_values(callable, values, span)
+        unreachable!("callable should be handled by builtin or user-function branch")
     }
 
     fn call_user_func_array_callable_direct(
@@ -33659,6 +33661,335 @@ impl Interpreter {
         Ok(values)
     }
 
+    fn call_builtin_callback_from_call_user_func(
+        &mut self,
+        key: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.evaluate(arg, caller_scope)?);
+        }
+        self.call_builtin_callback_with_values(key, values, span, true)
+    }
+
+    fn call_builtin_callback_from_call_user_func_array(
+        &mut self,
+        key: &str,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let argument_array = self.evaluate(argument_expr, caller_scope)?;
+        let Value::Array(argument_array) = &argument_array else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    format!(
+                        "argument array must be array in the current subset, got {}",
+                        argument_array.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        self.call_builtin_callback_with_argument_array(key, argument_array, span)
+    }
+
+    fn call_builtin_callback_with_argument_array(
+        &mut self,
+        key: &str,
+        argument_array: &PhpArray,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if !Self::builtin_callback_has_first_reference_array_param(key) {
+            let positional_args =
+                Self::call_user_func_array_positional_values(argument_array, span)?;
+            return self.call_builtin(key, positional_args, span);
+        }
+
+        for entry in argument_array.entries() {
+            if matches!(entry.key, ArrayKey::String(_)) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func_array()",
+                        "string-keyed named arguments are not implemented in the current subset",
+                    ),
+                ));
+            }
+        }
+
+        let Some(first) = argument_array.entries().first() else {
+            return self.call_builtin_callback_with_values(key, Vec::new(), span, true);
+        };
+        let rest = argument_array
+            .entries()
+            .iter()
+            .skip(1)
+            .map(|entry| entry.value_cloned())
+            .collect::<Vec<_>>();
+        if let Some(reference) = first.slot().reference_cell() {
+            return self.call_builtin_callback_with_first_reference(key, reference, rest, span);
+        }
+
+        let positional_args = argument_array
+            .entries()
+            .iter()
+            .map(|entry| entry.value_cloned())
+            .collect::<Vec<_>>();
+        self.call_builtin_callback_with_values(key, positional_args, span, true)
+    }
+
+    fn builtin_callback_has_first_reference_array_param(key: &str) -> bool {
+        matches!(key, "array_pop" | "array_unshift" | "ksort" | "next")
+    }
+
+    fn emit_builtin_callback_reference_value_warning(
+        &mut self,
+        function: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_warning(
+            function,
+            "Argument #1 ($array) must be passed by reference, value given",
+            span,
+        )
+    }
+
+    fn call_builtin_callback_with_values(
+        &mut self,
+        key: &str,
+        args: Vec<Value>,
+        span: Span,
+        warn_for_reference_value: bool,
+    ) -> CompileResult<Value> {
+        match key {
+            "array_pop" => {
+                expect_arity("array_pop", &args, 1, span)?;
+                if warn_for_reference_value {
+                    self.emit_builtin_callback_reference_value_warning("array_pop", span)?;
+                }
+                let Value::Array(mut array) = args[0].clone() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_pop()",
+                            format!("argument must be array, got {}", args[0].type_name()),
+                        ),
+                    ));
+                };
+                Ok(array.pop_value())
+            }
+            "array_unshift" => {
+                if args.is_empty() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "array_unshift()",
+                            ArityExpectation::AtLeast(1),
+                            args.len(),
+                        ),
+                    ));
+                }
+                if warn_for_reference_value {
+                    self.emit_builtin_callback_reference_value_warning("array_unshift", span)?;
+                }
+                let Value::Array(mut array) = args[0].clone() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_unshift()",
+                            format!("first argument must be array, got {}", args[0].type_name()),
+                        ),
+                    ));
+                };
+                let len = array
+                    .unshift_values(&args[1..])
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Int(len))
+            }
+            "ksort" => {
+                if !(1..=2).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "ksort()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                if warn_for_reference_value {
+                    self.emit_builtin_callback_reference_value_warning("ksort", span)?;
+                }
+                let sort_flags = args.get(1).cloned().unwrap_or(Value::Int(0));
+                if sort_flags != Value::Int(1) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ksort()",
+                            "only SORT_NUMERIC is implemented in the current subset",
+                        ),
+                    ));
+                }
+                let Value::Array(mut array) = args[0].clone() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ksort()",
+                            format!("first argument must be array, got {}", args[0].type_name()),
+                        ),
+                    ));
+                };
+                array
+                    .sort_keys_numeric()
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Bool(true))
+            }
+            "next" => {
+                expect_arity("next", &args, 1, span)?;
+                if warn_for_reference_value {
+                    self.emit_builtin_callback_reference_value_warning("next", span)?;
+                }
+                let Value::Array(mut array) = args[0].clone() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "next()",
+                            format!("argument must be array, got {}", args[0].type_name()),
+                        ),
+                    ));
+                };
+                Ok(array.next_value())
+            }
+            _ => self.call_builtin(key, args, span),
+        }
+    }
+
+    fn call_builtin_callback_with_first_reference(
+        &mut self,
+        key: &str,
+        reference: PhpReferenceCell,
+        rest: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match key {
+            "array_pop" => {
+                if !rest.is_empty() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "array_pop()",
+                            ArityExpectation::Exactly(1),
+                            rest.len() + 1,
+                        ),
+                    ));
+                }
+                let mut array_value = reference.value_cloned();
+                let type_name = array_value.type_name();
+                let Value::Array(array) = &mut array_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_pop()",
+                            format!("argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                let value = array.pop_value();
+                reference.set_value(array_value);
+                Ok(value)
+            }
+            "array_unshift" => {
+                let mut array_value = reference.value_cloned();
+                let type_name = array_value.type_name();
+                let Value::Array(array) = &mut array_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_unshift()",
+                            format!("first argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                let len = array
+                    .unshift_values(&rest)
+                    .map_err(|error| runtime_error(span, error))?;
+                reference.set_value(array_value);
+                Ok(Value::Int(len))
+            }
+            "ksort" => {
+                if rest.len() > 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "ksort()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            rest.len() + 1,
+                        ),
+                    ));
+                }
+                let sort_flags = rest.first().cloned().unwrap_or(Value::Int(0));
+                if sort_flags != Value::Int(1) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ksort()",
+                            "only SORT_NUMERIC is implemented in the current subset",
+                        ),
+                    ));
+                }
+                let mut array_value = reference.value_cloned();
+                let type_name = array_value.type_name();
+                let Value::Array(array) = &mut array_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ksort()",
+                            format!("first argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                array
+                    .sort_keys_numeric()
+                    .map_err(|error| runtime_error(span, error))?;
+                reference.set_value(array_value);
+                Ok(Value::Bool(true))
+            }
+            "next" => {
+                if !rest.is_empty() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "next()",
+                            ArityExpectation::Exactly(1),
+                            rest.len() + 1,
+                        ),
+                    ));
+                }
+                let mut array_value = reference.value_cloned();
+                let type_name = array_value.type_name();
+                let Value::Array(array) = &mut array_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "next()",
+                            format!("argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                let value = array.next_value();
+                reference.set_value(array_value);
+                Ok(value)
+            }
+            _ => unreachable!("caller restricts reference-parameter builtin callbacks"),
+        }
+    }
+
     fn emit_call_user_func_reference_parameter_warnings(
         &mut self,
         function: &FunctionDecl,
@@ -33723,6 +34054,12 @@ impl Interpreter {
                             caller_scope,
                         );
                     }
+                    return self.call_builtin_callback_from_call_user_func_array(
+                        key,
+                        &args[1],
+                        span,
+                        caller_scope,
+                    );
                 }
                 if let Callable::User(function) = &callable {
                     return self.call_user_func_array_user_function(
@@ -33732,9 +34069,7 @@ impl Interpreter {
                         caller_scope,
                     );
                 }
-                let positional_args =
-                    self.evaluate_call_user_func_array_arguments(&args[1], span, caller_scope)?;
-                self.call_callable_with_values(callable, positional_args, span)
+                unreachable!("callable should be handled by builtin or user-function branch")
             }
             Value::Array(callback) => {
                 self.call_user_func_array_array_callable(callback, &args[1], span, caller_scope)
@@ -33966,14 +34301,22 @@ impl Interpreter {
                         RuntimeError::undefined_function(callable_name(callback_name)),
                     )
                 })?;
-                let Callable::User(function) = callable else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "call_user_func_array()",
-                            "builtin callbacks cannot be used as reference-return sources in the current subset",
-                        ),
-                    ));
+                let function = match callable {
+                    Callable::Builtin(key) => {
+                        let value = self.call_builtin_callback_from_call_user_func_array(
+                            &key,
+                            &args[1],
+                            span,
+                            caller_scope,
+                        )?;
+                        self.emit_notice(
+                            "reference assignment",
+                            "Only variables should be assigned by reference",
+                            span,
+                        )?;
+                        return Ok(ReferenceReturnBinding::Cell(PhpReferenceCell::new(value)));
+                    }
+                    Callable::User(function) => function,
                 };
                 let function = function.as_ref();
                 if !function.returns_by_reference {
@@ -34102,14 +34445,22 @@ impl Interpreter {
                         RuntimeError::undefined_function(callable_name(callback_name)),
                     )
                 })?;
-                let Callable::User(function) = callable else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "call_user_func()",
-                            "builtin callbacks cannot be used as reference-return sources in the current subset",
-                        ),
-                    ));
+                let function = match callable {
+                    Callable::Builtin(key) => {
+                        let value = self.call_builtin_callback_from_call_user_func(
+                            &key,
+                            &args[1..],
+                            span,
+                            caller_scope,
+                        )?;
+                        self.emit_notice(
+                            "reference assignment",
+                            "Only variables should be assigned by reference",
+                            span,
+                        )?;
+                        return Ok(ReferenceReturnBinding::Cell(PhpReferenceCell::new(value)));
+                    }
+                    Callable::User(function) => function,
                 };
                 let function = function.as_ref();
                 if !function.returns_by_reference {
@@ -47531,6 +47882,10 @@ impl Interpreter {
             )
         })?;
 
+        if let Callable::Builtin(key) = callable {
+            return self.call_builtin_callback_with_values(&key, args[1..].to_vec(), span, true);
+        }
+
         self.call_callable_with_values(callable, args[1..].to_vec(), span)
     }
 
@@ -47576,6 +47931,13 @@ impl Interpreter {
                         RuntimeError::undefined_function(callable_name(callback_name)),
                     )
                 })?;
+                if let Callable::Builtin(key) = callable {
+                    return self.call_builtin_callback_with_argument_array(
+                        &key,
+                        argument_array,
+                        span,
+                    );
+                }
                 self.call_callable_with_values(callable, positional_args, span)
             }
             Value::Array(callback) => {

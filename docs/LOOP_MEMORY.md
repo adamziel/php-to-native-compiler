@@ -18,6 +18,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T05:30:12+02:00
+
+- Checkpoint before this task: `1cf733be runtime: route recursive GLOBALS key
+  paths`, pushed to `origin/master`.
+- Task attempted: Lane 1899-C through Lane 1902-C bundle, adding selected
+  builtin callback by-reference array-parameter parity for `call_user_func()`
+  and `call_user_func_array()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/array_pop_builtin.rs`,
+  `compiler/tests/array_unshift_builtin.rs`,
+  `compiler/tests/current_builtin.rs`,
+  `tests/fixtures/milestone1899/*`, `tests/fixtures/milestone1900/*`,
+  `tests/fixtures/milestone1901/*`, `tests/fixtures/milestone1902/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused `cargo run -q -p phpc -- test --compare-php`
+  passed `milestone1899`, `milestone1900`, `milestone1901`, and
+  `milestone1902`; `milestone1902` also covers a detached ordinary `strlen`
+  builtin callback result. Adjacent Rust tests passed for
+  `call_user_func_builtin`, `array_pop_builtin`, `array_unshift_builtin`,
+  `ksort_builtin`, and `current_builtin`. `cargo fmt --all --check`,
+  `cargo check -q -p phpc`, and `git diff --check` passed. Adjacent fixture
+  comparisons passed for `milestone1287`, `milestone1292`, `milestone1412`,
+  `milestone1422`, `milestone1477`, `milestone1630`, `milestone1636`,
+  `milestone1656`, `milestone1673`, and `milestone1899` through
+  `milestone1902`.
+- Remaining COW gaps: unsupported builtin functions and callback signatures
+  beyond the selected array-mutating callback slice and ordinary supported
+  builtin value calls, unsupported PHP side effects outside the interpreter
+  subset, full exception unwinding and uncaught propagation, broader complex
+  alias sinks and alias lifetime ordering, exact PHP stderr/fatal text,
+  binary/multibyte string offset behavior, whole-array reference identity,
+  full direct `$GLOBALS` array materialization, and native reference/string
+  COW lowering.
+- Next concrete task: run formatting, cargo check, diff check, adjacent
+  fixture comparisons, and the full `tools/checkpoint.sh` bundle gate, then
+  push if it passes.
+
 ## Loop Event 2026-05-19T05:18:26+02:00
 
 - Checkpoint before this task: `b9d543a0 runtime: carry magic ArrayAccess body
