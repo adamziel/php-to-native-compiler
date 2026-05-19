@@ -33707,11 +33707,29 @@ impl Interpreter {
                 Ok(Value::Bool(state.returns_by_reference))
             }
             "invoke" => {
+                if let Some(value) = self.invoke_reflection_function_exprs_with_array_copy_source(
+                    state.clone(),
+                    args,
+                    span,
+                    caller_scope,
+                )? {
+                    return Ok(value);
+                }
                 let values = self.evaluate_reflection_invocation_exprs(args, caller_scope)?;
                 self.invoke_reflection_function(state, values, span)
             }
             "invokeargs" => {
                 expect_expr_arity("ReflectionFunction::invokeArgs", args.len(), 1, span)?;
+                if let Some(value) = self
+                    .invoke_reflection_function_argument_array_with_array_copy_source(
+                        state.clone(),
+                        &args[0],
+                        span,
+                        caller_scope,
+                    )?
+                {
+                    return Ok(value);
+                }
                 let values =
                     self.evaluate_reflection_invocation_args_array(&args[0], caller_scope, span)?;
                 self.invoke_reflection_function(state, values, span)
@@ -34007,6 +34025,119 @@ impl Interpreter {
             .iter()
             .map(|entry| entry.value_cloned())
             .collect())
+    }
+
+    fn invoke_reflection_function_exprs_with_array_copy_source(
+        &mut self,
+        state: ReflectionFunctionState,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        if state.is_closure {
+            let Some(closure_id) = state.closure_id else {
+                return Ok(None);
+            };
+            let Some(closure) = self.closure_values.get(&closure_id).cloned() else {
+                return Ok(None);
+            };
+            let Some(function) = self.closure_functions.get(&closure.id()).cloned() else {
+                return Ok(None);
+            };
+            if closure.is_arrow() || function.returns_by_reference {
+                return Ok(None);
+            }
+            let function = function.as_ref();
+            let prebound_locals = self.closure_prebound_locals(&closure);
+            let (this_object, class_context, called_class_context) =
+                self.closure_call_context(&closure);
+            return self
+                .call_source_aware_user_function_with_expr_args(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    this_object,
+                    class_context,
+                    called_class_context,
+                    prebound_locals,
+                )
+                .map(|(value, _)| Some(value));
+        }
+
+        let Some(Callable::User(function)) = self.lookup_function(&state.name) else {
+            return Ok(None);
+        };
+        if function.returns_by_reference {
+            return Ok(None);
+        }
+        self.call_source_aware_user_function_with_expr_args(
+            function.as_ref(),
+            args,
+            span,
+            caller_scope,
+            None,
+            None,
+            None,
+            Vec::new(),
+        )
+        .map(|(value, _)| Some(value))
+    }
+
+    fn invoke_reflection_function_argument_array_with_array_copy_source(
+        &mut self,
+        state: ReflectionFunctionState,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        if state.is_closure {
+            let Some(closure_id) = state.closure_id else {
+                return Ok(None);
+            };
+            let Some(closure) = self.closure_values.get(&closure_id).cloned() else {
+                return Ok(None);
+            };
+            let Some(function) = self.closure_functions.get(&closure.id()).cloned() else {
+                return Ok(None);
+            };
+            if closure.is_arrow() || function.returns_by_reference {
+                return Ok(None);
+            }
+            let function = function.as_ref();
+            let prebound_locals = self.closure_prebound_locals(&closure);
+            let (this_object, class_context, called_class_context) =
+                self.closure_call_context(&closure);
+            let result = self.call_source_aware_user_function_with_call_user_func_array_argument(
+                function,
+                argument_expr,
+                span,
+                caller_scope,
+                this_object,
+                class_context,
+                called_class_context,
+                prebound_locals,
+            )?;
+            return Ok(result.map(|(value, _)| value));
+        }
+
+        let Some(Callable::User(function)) = self.lookup_function(&state.name) else {
+            return Ok(None);
+        };
+        if function.returns_by_reference {
+            return Ok(None);
+        }
+        let result = self.call_source_aware_user_function_with_call_user_func_array_argument(
+            function.as_ref(),
+            argument_expr,
+            span,
+            caller_scope,
+            None,
+            None,
+            None,
+            Vec::new(),
+        )?;
+        Ok(result.map(|(value, _)| value))
     }
 
     fn invoke_reflection_function(

@@ -32,7 +32,23 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2222:
+The current in-progress implementation frontier is Lane 2226:
+
+- Lanes 2223 through 2226 route supported `ReflectionFunction::invoke()` and
+  `invokeArgs()` calls for closure helpers through source-aware invocation
+  before falling back to value-only reflection. Reflected non-reference
+  closures and user functions now receive copied-source metadata for by-value
+  array arguments in the direct argument and argument-array forms, so a
+  reflected closure helper can rebuild a shared holder's stored
+  `call_user_func_array()` argument container without losing the source leaf.
+  Focused system-PHP coverage proves visible `__get()` and public
+  `ArrayAccess::offsetGet()` for reflected closure `invoke()` and
+  `invokeArgs()` holder helpers. This remains bounded to supported
+  `ReflectionFunction` targets, non-reference closure/user-function bodies,
+  concrete shared holder objects, and portable copied-source roots; it does
+  not claim arbitrary reflection targets, unsupported method-body syntax,
+  untracked dynamic containers, whole-array reference identity, exact
+  diagnostics, or native reference/string COW lowering.
 
 - Lanes 2219 through 2222 extend the shared-holder mutation model to
   closure-valued helpers inside supported magic/`ArrayAccess` bodies. Direct

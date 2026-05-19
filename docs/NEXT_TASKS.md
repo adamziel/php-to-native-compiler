@@ -107,13 +107,17 @@ handled.
   copied-array argument handling when closure helpers mutate shared holder
   `call_user_func_array()` argument containers inside visible `__get()` and
   public `ArrayAccess::offsetGet()` bodies.
+- [x] Lane 2223-C through 2226-C: route supported
+  `ReflectionFunction::invoke()` and `invokeArgs()` closure helper dispatch
+  through source-aware copied-array argument handling for visible `__get()` and
+  public `ArrayAccess::offsetGet()` shared-holder argument-container rebuilds.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
   holders expose real cells or concrete writeback roots instead of stale paths.
   Known next probes should target broader dynamic callback containers
-  (`call_user_func_array()` callback expressions, reflection-dispatched
-  closures, or property-held callback arrays) that mutate shared stored
+  (`call_user_func_array()` callback expressions, property-held callback
+  arrays, or non-closure reflected user functions) that mutate shared stored
   containers, plus portable-root gaps where copied-source metadata currently
   cannot be synced without leaking callee-local symbol names.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method

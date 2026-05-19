@@ -214,6 +214,14 @@ holder argument arrays and synced through the existing dirty object-property
 ledger. This is still closure dispatch through the runtime's supported
 closure metadata, not arbitrary callback graph recovery.
 
+`ReflectionFunction::invoke()` and `invokeArgs()` first attempt that same
+source-aware path for supported non-reference closure and user-function
+targets. Direct reflection arguments use expression-argument copied-source
+collection; `invokeArgs()` reuses the stored/literal argument-array
+copied-source path used by `call_user_func_array()`. If the reflected target is
+outside that bounded subset, reflection falls back to the existing value-only
+invocation path and does not claim COW provenance preservation.
+
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller

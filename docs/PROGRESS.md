@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2223-C through Lane 2226-C for reflected closure helper
+  dispatch. `ReflectionFunction::invoke()` and `invokeArgs()` now try the
+  source-aware invocation path for supported non-reference closures and user
+  functions before falling back to value-only reflection, including copied
+  source metadata for by-value array arguments in both direct and argument
+  array forms. Focused system-PHP coverage proves visible `__get()` and public
+  `ArrayAccess::offsetGet()` reflected closure helpers that unset and recreate
+  a shared holder's stored `call_user_func_array()` argument container while
+  preserving source-leaf promotion. This remains bounded to supported
+  `ReflectionFunction` targets, non-reference closure/user-function bodies,
+  concrete shared holder objects, and portable copied-source roots; arbitrary
+  reflection targets, unsupported method-body syntax, untracked dynamic
+  containers, exact diagnostics, and native reference/string COW lowering
+  remain unsupported.
+
 - Added Lane 2219-C through Lane 2222-C for closure-valued helpers that mutate
   shared stored `call_user_func_array()` argument containers inside supported
   magic/`ArrayAccess` method bodies. Direct closure invocation now uses the

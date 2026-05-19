@@ -100,13 +100,16 @@
   source-aware by-value array argument path for supported bound-closure bodies,
   so those closures can recreate a concrete shared holder's stored argument
   array without losing copied-source provenance.
+  `ReflectionFunction::invoke()` and `invokeArgs()` use that same source-aware
+  path for supported non-reference closure and user-function targets before
+  falling back to value-only reflection.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.
   This does
   not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
-  dynamic callables or reflection targets, unsupported method-body syntax,
+  dynamic callables or arbitrary reflection targets, unsupported method-body syntax,
   arbitrary side effects beyond covered writeback paths, broader dynamic
   callback mutation of containers whose copied-source roots cannot be synced
   through a concrete shared object property or global root, full whole-array reference

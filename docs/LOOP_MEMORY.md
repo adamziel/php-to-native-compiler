@@ -23,6 +23,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T22:38:59+02:00
+
+- Checkpoint before this task: `651900e5 checkpoint: 2026-05-19 20:33:44
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2223-C through Lane 2226-C bundle, extending
+  source-aware shared-holder argument-container mutation handling to
+  `ReflectionFunction::invoke()` and `invokeArgs()` closure helper dispatch.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2223/*` through
+  `tests/fixtures/milestone2226/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; focused system-PHP
+  comparisons passed for `milestone2223` through `milestone2226`; adjacent
+  system-PHP comparisons passed for `milestone2219` through `milestone2222`;
+  focused `object_model reflection`, `functions_and_scopes call_user_func`,
+  and `object_model magic` Rust tests passed.
+- Remaining COW gaps: broader dynamic callback containers such as
+  `call_user_func_array()` callback expressions, property-held callback
+  arrays, or non-closure reflected user functions that mutate shared stored
+  containers; portable-root gaps where copied-source metadata cannot be synced
+  without leaking callee-local symbol names; arbitrary unsupported
+  magic/`ArrayAccess` method syntax; untracked dynamic containers; whole-array
+  reference identity; exact diagnostics/Throwable objects; and native
+  reference/string COW lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes. After checkpoint,
+  attack `call_user_func_array()` callback-expression or property-held array
+  callback helpers that rebuild shared holder argument containers.
+
 ## Loop Event 2026-05-19T22:32:38+02:00
 
 - Checkpoint before this task: `ed44c78b checkpoint: 2026-05-19 20:25:36
