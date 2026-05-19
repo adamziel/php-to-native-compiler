@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1955-C through Lane 1958-C for stored and named
+  `call_user_func_array()` helper wrappers in by-value magic/`ArrayAccess`
+  method bodies. Non-reference string user callbacks now preserve proven
+  array-copy sources when the callback argument container is a direct local
+  array assigned from a current-scope evaluated literal, and when literal or
+  direct local string-keyed named argument arrays bind the copied bucket to a
+  matching parameter. Focused system-PHP coverage includes visible by-value
+  `__get()` stored positional, named literal, and named stored wrappers, plus
+  a public by-value `ArrayAccess::offsetGet()` stored positional wrapper.
+  Dynamic/stored containers that cannot be traced to an evaluated local
+  literal, closures, array callbacks, by-reference callback parameters,
+  arbitrary PHP side effects outside the interpreter subset, whole-array
+  reference identity, exact diagnostics, and native reference lowering remain
+  unsupported.
+
 - Added Lane 1950-C through Lane 1954-C for literal
   `call_user_func_array()` helper wrappers in by-value magic/`ArrayAccess`
   method bodies. Non-reference string user callbacks now preserve proven

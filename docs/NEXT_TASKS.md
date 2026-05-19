@@ -20581,14 +20581,27 @@ handled.
   side effects, whole-array reference identity, exact diagnostics, and native
   reference lowering named as unsupported.
 
+## Lane 1955-C through Lane 1958-C: Stored/Named call_user_func_array Copy Provenance
+
+- [x] Runtime/tests/docs bundle: extend helper-call by-value copied-array COW
+  provenance to direct local `call_user_func_array()` argument containers and
+  named argument arrays for non-reference string user callbacks. Cover visible
+  by-value `__get()` stored positional, named literal, and named stored
+  wrappers, plus public by-value `ArrayAccess::offsetGet()` stored positional
+  wrappers with system-PHP comparisons. Keep dynamic containers that cannot be
+  traced to a current-scope evaluated literal, closures, array callbacks,
+  by-reference callback parameters, arbitrary PHP side effects outside the
+  interpreter subset, whole-array reference identity, exact diagnostics, and
+  native reference lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
-- [ ] Probe stored/named `call_user_func_array()` argument arrays and scalar
-  parent overwrite/error parity for covered append/keyed/reference paths.
-  Implement whichever produces a bounded, PHP-comparable failure with a
-  statically proven source. Keep arbitrary side-effecting method bodies and
-  full PHP COW identity out of the support claim until the value model can
-  prove them directly.
+- [ ] Probe scalar parent overwrite/error parity for covered append/keyed/
+  reference paths, plus one broader mixed nested `ArrayAccess` chain where
+  the backing-bucket bridge can be statically proven. Implement whichever
+  produces a bounded, PHP-comparable failure without claiming arbitrary
+  side-effecting method bodies, full PHP COW identity, or unsupported native
+  lowering.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

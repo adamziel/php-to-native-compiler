@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T09:50:00+02:00
+
+- Checkpoint before this task: `5cfb7f57 runtime: preserve call_user_func_array COW provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1955-C through Lane 1958-C bundle, preserving
+  copied-array COW provenance through direct local and named
+  `call_user_func_array()` argument containers in by-value
+  magic/`ArrayAccess` method-body returns.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1955/*`, `tests/fixtures/milestone1956/*`,
+  `tests/fixtures/milestone1957/*`, `tests/fixtures/milestone1958/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q`, `cargo fmt --check`, and
+  `git diff --check` passed. Focused system-PHP comparisons passed for
+  `milestone1955`, `milestone1956`, `milestone1957`, and `milestone1958`;
+  adjacent comparisons passed for `milestone1950` through `milestone1954`;
+  adjacent Rust tests `call_user_func_builtin`, `functions_and_scopes`,
+  `object_model`, and `array_reference_literals` passed.
+- Remaining COW gaps: scalar parent overwrite/error parity for covered
+  append/keyed/reference paths, broader mixed nested `ArrayAccess` chains
+  beyond statically proven backing-bucket bridges, dynamic
+  `call_user_func_array()` containers that cannot be traced to evaluated
+  local literals, closures and array callbacks, by-reference helper
+  parameters, arbitrary PHP side effects outside the interpreter subset,
+  exact PHP diagnostics, whole-array reference identity, native reference/
+  string COW lowering, and native lowering for these interpreter paths.
+- Next concrete task: run the full `tools/checkpoint.sh` bundle gate, then
+  push if it passes.
+
 ## Loop Event 2026-05-19T09:20:00+02:00
 
 - Checkpoint before this task: `7850fad7 runtime: preserve helper-call COW

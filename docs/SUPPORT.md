@@ -847,14 +847,20 @@
   parameter to a tracked local before returning it, instance-method helpers
   such as `return $this->helper($this->store[$name]);`, public by-value
   `ArrayAccess::offsetGet()` bodies using those direct helpers, and string
-  user callbacks through `call_user_func()`. Literal positional
-  `call_user_func_array()` argument arrays also preserve this provenance for
-  non-reference string user callbacks, including explicit integer-keyed
-  positional arrays such as
-  `return call_user_func_array("helper", array(0 => $this->store[$name]));`.
-  Dynamic, stored, or named `call_user_func_array()` argument arrays,
-  closures, array callbacks, and by-reference helper parameters do not yet
-  preserve method-return provenance through this helper-call path.
+  user callbacks through `call_user_func()`. `call_user_func_array()`
+  argument arrays also preserve this provenance for non-reference string user
+  callbacks when the argument container is a direct literal or a direct local
+  variable assigned from a current-scope evaluated array literal. Covered
+  forms include literal positional arrays, explicit integer-keyed positional
+  arrays, direct local positional containers such as
+  `$args = array($this->store[$name]); return call_user_func_array("helper", $args);`,
+  and literal or direct local string-keyed named containers whose key matches
+  the callback parameter, such as
+  `return call_user_func_array("helper", array("value" => $this->store[$name]));`.
+  Dynamic/stored `call_user_func_array()` argument containers that cannot be
+  traced to a current-scope evaluated literal, closures, array callbacks, and
+  by-reference helper parameters do not yet preserve method-return provenance
+  through this helper-call path.
   When those proven copied arrays are supplied by value to user functions or
   instance methods, their covered reference-backed elements are preserved in
   the callee's local parameter array. The same bounded preservation applies
