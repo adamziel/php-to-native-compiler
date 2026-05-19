@@ -20685,6 +20685,19 @@ handled.
   values, exact deprecation/diagnostic text, and native reference lowering
   named as unsupported.
 
+## Lane 1991-C through Lane 1995-C: Local Container Copy Provenance
+
+- [x] Runtime/tests/docs bundle: preserve copied-array COW provenance when a
+  supported by-value magic/`ArrayAccess` method body stores a proven backed
+  bucket inside a current-scope local array container before returning it.
+  Cover local array literals, nested local array literals, keyed local
+  container writes, nested keyed local container writes, and a stored
+  `call_user_func_array()` argument array built from the recovered container
+  slot with system-PHP comparisons. Keep arbitrary object containers,
+  side-effecting container-key analysis, by-reference helper/callback
+  parameters, whole-array reference identity, exact diagnostics, and native
+  reference lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe the remaining scalar parent overwrite/error parity for covered

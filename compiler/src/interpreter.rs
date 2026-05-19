@@ -1863,6 +1863,25 @@ impl SymbolTable {
         self.array_literal_copy_source_paths.remove(name);
     }
 
+    fn remove_array_literal_copy_source_paths_for_static_prefix(
+        &mut self,
+        name: &str,
+        prefix: &[ArrayKey],
+    ) {
+        if prefix.is_empty() {
+            self.array_literal_copy_source_paths.remove(name);
+            return;
+        }
+
+        let Some(paths) = self.array_literal_copy_source_paths.get_mut(name) else {
+            return;
+        };
+        paths.retain(|(candidate, _)| !candidate.starts_with(prefix));
+        if paths.is_empty() {
+            self.array_literal_copy_source_paths.remove(name);
+        }
+    }
+
     fn record_array_literal_copy_source_paths(
         &mut self,
         name: &str,
@@ -1874,6 +1893,32 @@ impl SymbolTable {
         }
         self.array_literal_copy_source_paths
             .insert(name.to_string(), paths);
+    }
+
+    fn record_array_literal_copy_source_path(
+        &mut self,
+        name: &str,
+        keys: Vec<ArrayKey>,
+        source: ArrayCopySource,
+    ) {
+        self.remove_array_literal_copy_source_paths_for_static_prefix(name, &keys);
+        self.array_literal_copy_source_paths
+            .entry(name.to_string())
+            .or_default()
+            .push((keys, source));
+    }
+
+    fn record_array_literal_copy_source_paths_with_prefix(
+        &mut self,
+        name: &str,
+        prefix: &[ArrayKey],
+        paths: Vec<(Vec<ArrayKey>, ArrayCopySource)>,
+    ) {
+        for (mut keys, source) in paths {
+            let mut path = prefix.to_vec();
+            path.append(&mut keys);
+            self.record_array_literal_copy_source_path(name, path, source);
+        }
     }
 
     fn array_literal_copy_source_for_static_path(
@@ -7114,6 +7159,20 @@ impl Interpreter {
             }
             _ => None,
         }
+    }
+
+    fn array_literal_copy_source_for_index_expr(
+        &self,
+        target: &Expr,
+        index: &Expr,
+        scope: &SymbolTable,
+    ) -> Option<ArrayCopySource> {
+        let (source_name, indices) = Self::collect_direct_variable_array_index_path(target, index)?;
+        let mut keys = Vec::with_capacity(indices.len());
+        for index in indices {
+            keys.push(Self::side_effect_free_array_key(index, scope)?);
+        }
+        scope.array_literal_copy_source_for_static_path(source_name, &keys)
     }
 
     fn return_flow_with_array_copy_source(
@@ -17380,18 +17439,47 @@ impl Interpreter {
                 self.evaluate_list_assignment(names, expr, *span, scope)
             }
             AssignTarget::ArrayIndex { name, index, span } => {
-                scope.clear_array_literal_copy_source_paths_for_root(name);
                 let key = match index {
                     Some(index) => Some(self.evaluate_array_key(index, scope)?),
                     None => None,
                 };
-                let (value, array_literal_references) = match expr {
+                if let Some(key) = key.as_ref() {
+                    scope.remove_array_literal_copy_source_paths_for_static_prefix(
+                        name,
+                        std::slice::from_ref(key),
+                    );
+                } else {
+                    scope.clear_array_literal_copy_source_paths_for_root(name);
+                }
+                let (
+                    value,
+                    array_literal_references,
+                    array_copy_source,
+                    array_literal_copy_sources,
+                ) = match expr {
                     Expr::Array { items, span } => {
-                        let (value, references, _) =
+                        let (value, references, copy_sources) =
                             self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
+                        (value, references, None, copy_sources)
                     }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                    _ => {
+                        let (value, source) =
+                            self.evaluate_value_with_array_copy_source(expr, scope)?;
+                        let value_is_array = matches!(value, Value::Array(_));
+                        let value = scope.value_with_object_property_aliases_from_array_copy(
+                            value,
+                            source.clone(),
+                        );
+                        let copy_sources = if value_is_array {
+                            source
+                                .clone()
+                                .map(|source| vec![(Vec::new(), source)])
+                                .unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        };
+                        (value, Vec::new(), source, copy_sources)
+                    }
                 };
                 if name == "GLOBALS" {
                     let Some(key) = key.as_ref() else {
@@ -17671,12 +17759,29 @@ impl Interpreter {
                         ArrayOffsetAliasRoot::StaticArray {
                             name: name.to_string(),
                         },
-                        vec![key],
+                        vec![key.clone()],
                         array_literal_references,
                         expr.span(),
                         scope,
                     )?;
+                    scope.record_array_literal_copy_source_paths_with_prefix(
+                        name,
+                        std::slice::from_ref(&key),
+                        array_literal_copy_sources,
+                    );
                 } else if let (Some(key), Value::Array(_)) = (target_key.as_ref(), &value) {
+                    if let Some(source) = array_copy_source {
+                        scope.record_array_literal_copy_source_path(
+                            name,
+                            vec![key.clone()],
+                            source,
+                        );
+                    }
+                    scope.record_array_literal_copy_source_paths_with_prefix(
+                        name,
+                        std::slice::from_ref(key),
+                        array_literal_copy_sources,
+                    );
                     self.mirror_copied_array_aliases_to_alias_root(
                         expr,
                         ArrayOffsetAliasRoot::StaticArray {
@@ -17698,13 +17803,36 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let (value, array_literal_references) = match expr {
+                scope.remove_array_literal_copy_source_paths_for_static_prefix(name, &keys);
+                let (
+                    value,
+                    array_literal_references,
+                    array_copy_source,
+                    array_literal_copy_sources,
+                ) = match expr {
                     Expr::Array { items, span } => {
-                        let (value, references, _) =
+                        let (value, references, copy_sources) =
                             self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
+                        (value, references, None, copy_sources)
                     }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                    _ => {
+                        let (value, source) =
+                            self.evaluate_value_with_array_copy_source(expr, scope)?;
+                        let value_is_array = matches!(value, Value::Array(_));
+                        let value = scope.value_with_object_property_aliases_from_array_copy(
+                            value,
+                            source.clone(),
+                        );
+                        let copy_sources = if value_is_array {
+                            source
+                                .clone()
+                                .map(|source| vec![(Vec::new(), source)])
+                                .unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        };
+                        (value, Vec::new(), source, copy_sources)
+                    }
                 };
                 if name == "GLOBALS" {
                     self.write_global_nested_array_assignment(&keys, value.clone(), *span, scope)?;
@@ -17764,12 +17892,25 @@ impl Interpreter {
                         ArrayOffsetAliasRoot::StaticArray {
                             name: name.to_string(),
                         },
-                        keys,
+                        keys.clone(),
                         array_literal_references,
                         expr.span(),
                         scope,
                     )?;
+                    scope.record_array_literal_copy_source_paths_with_prefix(
+                        name,
+                        &keys,
+                        array_literal_copy_sources,
+                    );
                 } else if matches!(value, Value::Array(_)) {
+                    if let Some(source) = array_copy_source {
+                        scope.record_array_literal_copy_source_path(name, keys.clone(), source);
+                    }
+                    scope.record_array_literal_copy_source_paths_with_prefix(
+                        name,
+                        &keys,
+                        array_literal_copy_sources,
+                    );
                     self.mirror_copied_array_aliases_to_alias_root(
                         expr,
                         ArrayOffsetAliasRoot::StaticArray {
@@ -28055,11 +28196,14 @@ impl Interpreter {
                     )
                 })?;
                 let source = if matches!(value, Value::Array(_)) {
-                    target_copy_source.map(|mut source| {
-                        source.keys.push(key);
-                        source.include_exact_path = false;
-                        source
-                    })
+                    self.array_literal_copy_source_for_index_expr(target, index, scope)
+                        .or_else(|| {
+                            target_copy_source.map(|mut source| {
+                                source.keys.push(key);
+                                source.include_exact_path = false;
+                                source
+                            })
+                        })
                 } else {
                     None
                 };

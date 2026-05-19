@@ -393,6 +393,19 @@
   preserve copied-array reference-slot provenance for direct roots, dynamic
   magic-property reads, non-direct holder magic-property reads, and the
   documented mixed magic-provided `ArrayAccess` chain.
+  Supported by-value `__get()` and public by-value
+  `ArrayAccess::offsetGet()` bodies also preserve copied-array provenance
+  when a proven backed bucket is first stored inside a current-scope local
+  array container and then returned from that container. Covered containers
+  include local array literals such as `$holder = array("copy" => $bucket)`,
+  nested local literals, direct keyed writes such as
+  `$holder["copy"] = $bucket`, nested keyed writes such as
+  `$holder["outer"]["copy"] = $bucket`, and stored
+  `call_user_func_array()` argument arrays built from a recovered container
+  slot. Container keys must be side-effect-free int/string keys in the current
+  scope; arbitrary object containers, side-effecting key expressions,
+  by-reference helper/callback parameters, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
   Supported reference-return bodies may also delegate to non-static helpers
   through PHP's static call syntaxes when a compatible current `$this` object
   exists. Covered forms include `self::helper(...)`, `parent::helper(...)`,

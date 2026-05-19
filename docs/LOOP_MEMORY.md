@@ -18,6 +18,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T09:18:23+02:00
+
+- Checkpoint before this task: `4bf7b6e1 runtime: bind append reference
+  arguments`, pushed to `origin/master`.
+- Task attempted: Lane 1991-C through Lane 1995-C bundle, preserving
+  copied-array COW provenance when supported by-value magic/`ArrayAccess`
+  method bodies hide a proven backed bucket inside current-scope local array
+  containers before returning it.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1991/*`, `tests/fixtures/milestone1992/*`,
+  `tests/fixtures/milestone1993/*`, `tests/fixtures/milestone1994/*`,
+  `tests/fixtures/milestone1995/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone1991` through `milestone1995`; adjacent comparisons passed for
+  `milestone1955` through `milestone1958` and `milestone1977` through
+  `milestone1985`; `cargo check -q`, `cargo test -q --test
+  functions_and_scopes`, `cargo test -q --test object_model`,
+  `cargo test -q --test call_user_func_builtin`, and `cargo test -q --test
+  array_reference_literals` passed.
+- Remaining COW gaps: arbitrary object/container provenance, side-effecting
+  container-key analysis, by-reference closure captures, by-reference
+  helper/callback parameters, append expressions outside by-reference
+  call-argument positions, non-reference append-expression values, dynamic
+  `call_user_func_array()` containers not traceable to current-scope local
+  arrays, remaining scalar parent overwrite/error parity outside covered
+  roots, possible mixed `ArrayAccess` gaps in reference-return or callback
+  reference-argument paths, exact PHP diagnostics, whole-array reference
+  identity, native reference/string COW lowering, and native lowering for
+  these interpreter paths.
+- Next concrete task: run formatting/diff checks and the full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T08:51:48+02:00
 
 - Checkpoint before this task: `e199952e runtime: preserve closure capture

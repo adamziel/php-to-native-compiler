@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 1991-C through Lane 1995-C for copied-array COW provenance
+  hidden inside local array containers in supported by-value
+  magic/`ArrayAccess` method bodies. Source-aware local array reads now
+  consult tracked container provenance, and direct or nested local array
+  writes retain provenance when the assigned value is a proven copied backed
+  bucket. Focused system-PHP coverage proves visible by-value `__get()` and
+  public by-value `ArrayAccess::offsetGet()` bodies preserve reference-backed
+  nested slots through local array-literal containers, nested local
+  containers, keyed container writes, nested keyed container writes, and a
+  stored `call_user_func_array()` argument array built from the recovered
+  slot. Arbitrary object containers, side-effecting container-key analysis,
+  by-reference helper/callback parameters, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
+
 - Added Lane 1986-C through Lane 1990-C for append-offset expressions in
   by-reference function-argument position. Call arguments such as
   `mutate($items["x"][])`, `mutate($bag["x"][])`,
