@@ -23,6 +23,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T22:10:00+02:00
+
+- Checkpoint before this task: `5b1b4a3a checkpoint: 2026-05-19 18:30:39
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2189-C through Lane 2195-C bundle, extending by-value
+  overloaded array results and missing-method magic dispatch. Public by-value
+  `ArrayAccess::offsetGet()` and visible `__get()` results that are plain
+  arrays now scan intermediate buckets for concrete `ArrayAccess` objects and
+  forward remaining keyed, append, or covered reference-source paths to the
+  inner object while preserving the detached overloaded parent. Missing
+  instance-method calls through `__call()` now use a source-aware path, so
+  supported `offsetGet()`/`__get()` bodies that delegate through `__call()`
+  preserve returned copied-source metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2189/*`, `tests/fixtures/milestone2190/*`,
+  `tests/fixtures/milestone2191/*`, `tests/fixtures/milestone2192/*`,
+  `tests/fixtures/milestone2193/*`, `tests/fixtures/milestone2194/*`,
+  `tests/fixtures/milestone2195/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2189` through `milestone2195`; adjacent system-PHP comparisons
+  passed for `milestone2184` through `milestone2188`; `cargo check -q -p
+  phpc` passed; `cargo test -q -p phpc --test array_reference_literals`
+  passed; focused `object_model` filters for scalar nested ArrayAccess writes
+  and appends passed; `cargo fmt --check`, `cargo check -q -p phpc`, and
+  `git diff --check` passed after docs.
+- Remaining COW gaps: untracked dynamic callback containers, especially
+  `call_user_func_array()` argument arrays stored behind object-property
+  holders inside magic method bodies; arbitrary unsupported magic/`ArrayAccess`
+  method syntax; dynamic containers that cannot expose a concrete
+  bucket/object; full whole-array reference identity; exact PHP
+  diagnostics/Throwable objects; and native reference/string COW lowering.
+- Next concrete task after the full bundle gate: attack
+  `call_user_func_array()` argument arrays stored behind object-property
+  holders inside magic method bodies.
+
 ## Loop Event 2026-05-19T21:55:00+02:00
 
 - Checkpoint before this task: `23b8c09d runtime: strengthen COW cell and

@@ -32,7 +32,25 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2188:
+The current in-progress implementation frontier is Lane 2195:
+
+- Lanes 2189 through 2195 close two higher-order method-body COW gaps.
+  By-value `ArrayAccess::offsetGet()` and visible `__get()` results that are
+  plain arrays can now be scanned for concrete `ArrayAccess` objects in
+  intermediate buckets; deeper keyed writes, append writes, and covered
+  reference-source bindings route into that inner object while preserving the
+  PHP detached-parent/no-backing-write behavior for the overloaded outer
+  value. Missing instance-method dispatch through `__call()` now has a
+  source-aware path, so supported `offsetGet()` and `__get()` bodies such as
+  `return $this->load($name);` preserve copied-array provenance returned by
+  `__call()`. Focused system-PHP coverage proves ArrayAccess-returned and
+  magic-returned arrays containing inner `ArrayAccess` objects for keyed,
+  append, and by-reference paths, plus source-aware `__call()` returns from
+  `ArrayAccess::offsetGet()` and `__get()`. This remains bounded to supported
+  interpreter syntax, concrete object handles visible in returned arrays,
+  supported `__call()` targets, and current copied-source propagation; it
+  does not claim untracked dynamic callback containers, arbitrary unsupported
+  PHP syntax, exact diagnostics, or native reference/string COW lowering.
 
 - Lanes 2184 through 2188 extend the same concrete-container COW model to
   local and global array values, not just object-property arrays. Supported

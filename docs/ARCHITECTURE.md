@@ -102,6 +102,15 @@ append when the live path exposes a concrete contained `ArrayAccess` object.
 This avoids a separate static body recognizer for those shapes, but it is still
 not a general container graph: the runtime needs a concrete array bucket/object
 and supported interpreter syntax.
+The by-value overloaded-result path uses the same concrete-bucket rule after
+emitting PHP's indirect-modification notice. If public by-value
+`offsetGet()` or visible `__get()` returns a plain array that contains an
+`ArrayAccess` object at an intermediate selected bucket, keyed writes, append
+writes, and covered reference-source bindings forward the remaining path to
+that inner object while keeping the overloaded parent detached. Missing
+instance-method calls through `__call()` now enter a source-aware method path,
+so delegated `offsetGet()`/`__get()` returns can preserve copied-array source
+metadata instead of returning an untracked plain value.
 Statement-form reference assignment from by-value exact-bridge `ArrayAccess`
 offset sources follows PHP's indirect-modification notice/no-op behavior for
 direct object roots, visible direct property-held roots, bounded non-direct

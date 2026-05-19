@@ -70,7 +70,15 @@
   by-reference parameters can promote their array-offset alias to a real
   reference cell and bind the caller-visible variable directly to that cell
   instead of relying on stale path writeback, so a separate by-reference
-  parent-array replacement leaves the child alias on its old cell. This does
+  parent-array replacement leaves the child alias on its old cell. By-value
+  `ArrayAccess::offsetGet()` and visible `__get()` results that are plain
+  arrays can also route deeper keyed writes, append writes, and covered
+  reference-source bindings through a concrete `ArrayAccess` object stored in
+  an intermediate returned-array bucket, while the overloaded parent remains a
+  detached copy. Missing instance-method dispatch through `__call()` preserves
+  copied-source metadata for supported returned arrays, so `offsetGet()` and
+  `__get()` bodies may delegate through supported `__call()` methods without
+  dropping selected reference-backed leaves. This does
   not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
   dynamic callables or reflection targets, unsupported method-body syntax,

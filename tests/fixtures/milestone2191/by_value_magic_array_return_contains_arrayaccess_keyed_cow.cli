@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2191/by_value_magic_array_return_contains_arrayaccess_keyed_cow.php

@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2195/source_aware_magic_call_magic_get_cow.php

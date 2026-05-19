@@ -72,12 +72,16 @@ handled.
   and append stores, `ArrayAccess::offsetSet()` local-copy stores,
   `$GLOBALS` array-container stores, and direct `$GLOBALS` `ArrayAccess`
   append stores with copied-source propagation.
+- [x] Lane 2189-C through 2195-C: route by-value overloaded arrays through
+  concrete inner `ArrayAccess` objects for keyed, append, magic `__get()`, and
+  covered reference-source paths, and preserve copied-source provenance when
+  supported `offsetGet()`/`__get()` bodies delegate through `__call()`.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
-  holders expose real cells or concrete writeback roots instead of stale paths,
-  especially where today a copied array escapes through an untracked local,
-  callback result, or dynamic object graph.
+  holders expose real cells or concrete writeback roots instead of stale paths.
+  A known next probe is `call_user_func_array()` argument arrays stored behind
+  an object-property holder inside magic method bodies.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

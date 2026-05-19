@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2194/source_aware_magic_call_arrayaccess_offsetget_cow.php

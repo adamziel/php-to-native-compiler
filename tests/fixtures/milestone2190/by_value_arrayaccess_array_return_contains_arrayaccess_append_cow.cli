@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2190/by_value_arrayaccess_array_return_contains_arrayaccess_append_cow.php

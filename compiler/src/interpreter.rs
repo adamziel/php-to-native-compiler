@@ -17663,6 +17663,21 @@ impl Interpreter {
             span,
         )?;
 
+        if self.write_by_value_overloaded_array_path_array_access_object(
+            &first_value,
+            rest_keys,
+            suffix_keys,
+            value.clone(),
+            expr,
+            array_literal_references,
+            array_literal_copy_sources,
+            is_append_to_parent,
+            span,
+            scope,
+        )? {
+            return Ok(true);
+        }
+
         if !rest_keys.is_empty() || check_terminal_scalar_parent {
             self.reject_by_value_array_access_scalar_parent_for_nested_write(
                 &first_value,
@@ -17684,6 +17699,80 @@ impl Interpreter {
             span,
             scope,
         )
+    }
+
+    fn write_by_value_overloaded_array_path_array_access_object(
+        &mut self,
+        returned_value: &Value,
+        keys: &[ArrayKey],
+        suffix_keys: &[ArrayKey],
+        value: Value,
+        expr: &Expr,
+        array_literal_references: &[ArrayLiteralReferenceElement],
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
+        is_append: bool,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some((array_access_object, remaining_keys)) =
+            self.array_access_object_in_array_value_path(returned_value, keys, is_append)
+        else {
+            return Ok(false);
+        };
+
+        if is_append {
+            return if remaining_keys.is_empty() {
+                self.write_array_access_object_append_with_reference_propagation(
+                    array_access_object,
+                    suffix_keys,
+                    value,
+                    expr,
+                    array_literal_references.to_vec(),
+                    array_literal_copy_sources,
+                    span,
+                    scope,
+                )
+            } else {
+                self.write_array_access_object_nested_append_with_reference_propagation(
+                    array_access_object,
+                    remaining_keys,
+                    suffix_keys,
+                    value,
+                    expr,
+                    array_literal_references.to_vec(),
+                    array_literal_copy_sources,
+                    span,
+                    scope,
+                )
+            };
+        }
+
+        if remaining_keys.is_empty() {
+            return Ok(false);
+        }
+        if remaining_keys.len() == 1 {
+            self.write_array_access_object_keyed_with_reference_propagation(
+                array_access_object,
+                remaining_keys[0].clone(),
+                value,
+                expr,
+                array_literal_references.to_vec(),
+                array_literal_copy_sources,
+                span,
+                scope,
+            )
+        } else {
+            self.write_array_access_object_nested_keyed_with_reference_propagation(
+                array_access_object,
+                remaining_keys,
+                value,
+                expr,
+                array_literal_references.to_vec(),
+                array_literal_copy_sources,
+                span,
+                scope,
+            )
+        }
     }
 
     fn write_by_value_overloaded_array_reference_cells(
@@ -17916,6 +18005,17 @@ impl Interpreter {
             span,
         )?;
 
+        if let Some(binding) = self
+            .by_value_overloaded_array_path_array_access_reference_source_binding(
+                &first_value,
+                rest_keys,
+                span,
+                scope,
+            )?
+        {
+            return Ok(Some(binding));
+        }
+
         if !rest_keys.is_empty() {
             self.reject_by_value_array_access_scalar_parent_for_nested_write(
                 &first_value,
@@ -17935,6 +18035,34 @@ impl Interpreter {
             Value::Null
         };
         Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(value)))
+    }
+
+    fn by_value_overloaded_array_path_array_access_reference_source_binding(
+        &mut self,
+        returned_value: &Value,
+        keys: &[ArrayKey],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<NonDirectReferenceSourceBinding>> {
+        let Some((array_access_object, remaining_keys)) =
+            self.array_access_object_in_array_value_path(returned_value, keys, false)
+        else {
+            return Ok(None);
+        };
+        if remaining_keys.is_empty() {
+            return Ok(None);
+        }
+
+        let hidden_name = self.hidden_array_access_reference_object_name(&array_access_object);
+        scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
+        self.evaluate_array_access_reference_source_binding_for_object(
+            array_access_object,
+            hidden_name,
+            remaining_keys,
+            None,
+            span,
+            scope,
+        )
     }
 
     fn hidden_array_access_reference_object_name(&self, object: &PhpObject) -> String {
@@ -22624,6 +22752,20 @@ impl Interpreter {
                         ),
                         span,
                     )?;
+                    if self.write_by_value_overloaded_array_path_array_access_object(
+                        &returned_value,
+                        &keys,
+                        suffix_keys,
+                        value.clone(),
+                        expr,
+                        &array_literal_references,
+                        array_literal_copy_sources,
+                        true,
+                        span,
+                        scope,
+                    )? {
+                        return Ok(true);
+                    }
                     self.write_by_value_overloaded_array_reference_cells(
                         returned_value,
                         &keys,
@@ -22893,6 +23035,20 @@ impl Interpreter {
                         ),
                         span,
                     )?;
+                    if self.write_by_value_overloaded_array_path_array_access_object(
+                        &returned_value,
+                        &keys,
+                        &[],
+                        value.clone(),
+                        expr,
+                        &array_literal_references,
+                        array_literal_copy_sources,
+                        false,
+                        span,
+                        scope,
+                    )? {
+                        return Ok(true);
+                    }
                     return self.write_by_value_overloaded_array_reference_cells(
                         returned_value,
                         &keys,
@@ -32380,6 +32536,17 @@ impl Interpreter {
                 .name()
                 .to_string();
             let Some(method) = self.resolve_instance_method(object.class_id(), method_name) else {
+                if let Some(result) = self
+                    .call_missing_instance_method_via_magic_with_array_copy_source(
+                        object.clone(),
+                        method_name,
+                        args,
+                        span,
+                        caller_scope,
+                    )?
+                {
+                    return Ok(result);
+                }
                 return match self.call_missing_instance_method_via_magic(
                     object,
                     method_name,
@@ -34932,6 +35099,82 @@ impl Interpreter {
                 )),
             )),
         }
+    }
+
+    fn call_missing_instance_method_via_magic_with_array_copy_source(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(Value, Option<ArrayCopySource>)>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__call")
+        else {
+            return Ok(None);
+        };
+        if is_static {
+            return Ok(None);
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, "__call", visibility, span)?;
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        if function.returns_by_reference {
+            return Ok(None);
+        }
+        ensure_user_function_arity(function, 2, span)?;
+        if !Self::function_accepts_source_aware_by_value_arguments(function) {
+            return Ok(None);
+        }
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let mut argument_array = PhpArray::new();
+        let mut indexed_array_copy_source_bindings = Vec::new();
+        for (index, arg) in args.iter().enumerate() {
+            let (value, source) = self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
+            let value = caller_scope.value_with_object_property_aliases_from_array_copy(
+                value,
+                source.clone(),
+                true,
+            );
+            if matches!(value, Value::Array(_)) {
+                if let Some(source) = source {
+                    indexed_array_copy_source_bindings.push((
+                        1,
+                        vec![ArrayKey::Int(index as i64)],
+                        source,
+                    ));
+                }
+            }
+            argument_array
+                .append(value)
+                .map_err(|error| runtime_error(arg.span(), error))?;
+        }
+
+        let by_value_array_copy_source_bindings = Self::array_copy_source_bindings_for_indexed_args(
+            function,
+            indexed_array_copy_source_bindings,
+        );
+        let called_class_id = object.class_id();
+        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+            function,
+            vec![
+                Value::String(method_name.to_string()),
+                Value::Array(argument_array),
+            ],
+            Some(object),
+            Some(class_id),
+            Some(called_class_id),
+            Vec::new(),
+            Some(caller_scope),
+            Vec::new(),
+            Vec::new(),
+            by_value_array_copy_source_bindings,
+        )
+        .map(Some)
     }
 
     fn call_missing_instance_method_via_magic(

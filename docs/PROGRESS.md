@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Lane 2189-C through Lane 2195-C for by-value overloaded arrays that
+  carry concrete object handles plus source-aware `__call()` dispatch. When
+  public by-value `ArrayAccess::offsetGet()` or visible `__get()` returns a
+  plain array containing an `ArrayAccess` object in an intermediate bucket,
+  nested keyed writes, nested appends, and covered reference-source bindings
+  now route the remaining path through that inner object's existing
+  source-aware `offsetSet()`/`offsetGet()` path while preserving PHP's
+  detached overloaded-parent behavior. Missing instance-method calls that
+  dispatch through `__call()` now execute through a source-aware path, so
+  supported `offsetGet()`/`__get()` bodies returning `$this->load($name)`
+  keep copied-source provenance returned by `__call()`. Focused system-PHP
+  coverage proves ArrayAccess-returned and magic-returned arrays containing
+  inner `ArrayAccess` objects for keyed, append, and by-reference paths, plus
+  source-aware `__call()` returns from `ArrayAccess::offsetGet()` and
+  `__get()`. This remains bounded to supported interpreter syntax, concrete
+  object handles visible in returned arrays, supported `__call()` targets,
+  and current copied-source propagation; untracked dynamic callback
+  containers, arbitrary unsupported method-body syntax, exact diagnostics,
+  and native reference/string COW lowering remain unsupported.
+
 - Added Lane 2184-C through Lane 2188-C for method-body writes through local
   and global array values that contain concrete `ArrayAccess` objects.
   Supported nested keyed and append assignment now inspects the live array
