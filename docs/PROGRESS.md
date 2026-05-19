@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 1940-C through Lane 1944-C for wrapper-expression by-value
+  magic/`ArrayAccess` method-body copied-array COW provenance. The
+  source-aware return/evaluation path now carries backed array-copy metadata
+  through error-control expressions, array casts that keep an existing array,
+  local assignment expressions, and local null-coalescing assignment
+  expressions. The variable `??=` assignment branch now records RHS
+  copied-array provenance when it writes a local. Focused system-PHP coverage
+  includes visible by-value `__get()` wrapper returns and a by-value user-call
+  argument sourced from an `ArrayAccess::offsetGet()` assignment-expression
+  body. Arbitrary PHP side effects outside the interpreter subset,
+  unsupported method-body syntax, side-effecting copied-key parity,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 1935-C through Lane 1939-C for conditional by-value
   magic/`ArrayAccess` method-body copied-array COW provenance. The
   source-aware return/evaluation path now carries backed array-copy metadata

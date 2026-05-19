@@ -6914,7 +6914,51 @@ impl Interpreter {
             } if matches!(op, BinaryOp::NullCoalesce) => {
                 self.evaluate_null_coalescing_with_array_copy_source(left, right, *span, scope)
             }
+            Expr::ErrorControl { expr, .. } => {
+                self.evaluate_value_with_array_copy_source(expr, scope)
+            }
+            Expr::Cast { kind, expr, span } => {
+                let (value, source) = self.evaluate_value_with_array_copy_source(expr, scope)?;
+                let value = self.apply_cast(*kind, value, *span)?;
+                let source = if matches!(*kind, CastKind::Array) && matches!(value, Value::Array(_))
+                {
+                    source
+                } else {
+                    None
+                };
+                Ok((value, source))
+            }
+            Expr::Assign { target, expr, .. } => {
+                let value = self.evaluate_assignment(target, expr, scope)?;
+                let source =
+                    self.array_copy_source_for_assignment_target_result(target, &value, scope);
+                Ok((value, source))
+            }
+            Expr::NullCoalesceAssign { target, expr, .. } => {
+                let value = self.evaluate_null_coalesce_assignment(target, expr, scope)?;
+                let source =
+                    self.array_copy_source_for_assignment_target_result(target, &value, scope);
+                Ok((value, source))
+            }
             _ => Ok((self.evaluate(expr, scope)?, None)),
+        }
+    }
+
+    fn array_copy_source_for_assignment_target_result(
+        &self,
+        target: &AssignTarget,
+        value: &Value,
+        scope: &SymbolTable,
+    ) -> Option<ArrayCopySource> {
+        if !matches!(value, Value::Array(_)) {
+            return None;
+        }
+
+        match target {
+            AssignTarget::Variable { name, .. } => {
+                scope.public_object_property_array_copy_source_for_static(name)
+            }
+            _ => None,
         }
     }
 
@@ -21066,8 +21110,19 @@ impl Interpreter {
                         return Ok(value.clone());
                     }
                 }
-                let value = self.evaluate(expr, scope)?;
+                let (value, array_copy_source) =
+                    self.evaluate_value_with_array_copy_source(expr, scope)?;
+                let assigned_array_copy_source = if matches!(value, Value::Array(_)) {
+                    array_copy_source.or_else(|| {
+                        self.public_object_property_array_copy_source_for_value_expr(expr, scope)
+                    })
+                } else {
+                    None
+                };
                 scope.write_static(name, value.clone());
+                if let Some(source) = assigned_array_copy_source {
+                    scope.record_public_object_property_array_copy_source(name, source);
+                }
                 Ok(value)
             }
             AssignTarget::List { span, .. } => Err(runtime_error(

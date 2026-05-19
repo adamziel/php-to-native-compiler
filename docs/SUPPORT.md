@@ -832,6 +832,14 @@
   `$bucket = $this->store[$name]; return $bucket ?: array();`, and
   null-coalescing fallback returns such as
   `return $this->store[$name] ?? array();`.
+  Selected wrapper expressions also retain this bounded provenance when they
+  evaluate to a proven backed array bucket: error-control returns such as
+  `return @$this->store[$name];`, array-cast returns that keep an existing
+  array such as `return (array) $this->store[$name];`, local assignment
+  expressions such as `return $bucket = $this->store[$name];`, and local
+  null-coalescing assignment expressions such as
+  `return $bucket ??= $this->store[$name];`. The variable `??=` assignment
+  branch records RHS provenance when it writes the local array.
   When those proven copied arrays are supplied by value to user functions or
   instance methods, their covered reference-backed elements are preserved in
   the callee's local parameter array. The same bounded preservation applies
@@ -843,9 +851,10 @@
   sources, full direct `$GLOBALS` array materialization, full SAPI/request
   semantics, alias-root sources beyond the documented
   object-property/direct-`$GLOBALS`/imported-global/auto-superglobal buckets,
-  thrown exception unwinding, whole-array reference identity in returned
-  values, and arbitrary side-effecting copied-key expressions remain unsupported for this
-  by-value method-return provenance path. When a declared
+  unsupported method-body syntax outside the documented expression/control-flow
+  subset, thrown exception unwinding, whole-array reference identity in
+  returned values, and arbitrary side-effecting copied-key expressions remain
+  unsupported for this by-value method-return provenance path. When a declared
   public object property array with a covered direct object-property
   array-offset reference target is copied into a direct static variable, the
   copied slot also joins the same bounded alias group: writes through the

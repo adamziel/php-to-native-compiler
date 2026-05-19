@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1939:
+The current in-progress implementation frontier is Lane 1944:
+
+- Lanes 1940 through 1944 preserve by-value copied-array COW provenance when
+  visible magic/`ArrayAccess` method bodies return a proven backed bucket
+  through selected wrapper expressions. Covered bodies include error-control
+  returns, array-cast returns that keep an already-array value, local
+  assignment-expression returns, and local null-coalescing-assignment returns.
+  The `??=` variable assignment path records RHS provenance when the
+  assignment branch runs. Focused coverage includes visible by-value
+  `__get()` wrapper returns and a by-value user-call argument sourced from an
+  `ArrayAccess::offsetGet()` assignment-expression body. Arbitrary PHP side
+  effects, unsupported method-body syntax, side-effecting copied-key parity,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
 
 - Lanes 1935 through 1939 preserve by-value copied-array COW provenance when
   visible magic/`ArrayAccess` method bodies return a backed bucket through

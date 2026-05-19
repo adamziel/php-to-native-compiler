@@ -20542,6 +20542,29 @@ handled.
   identity, exact diagnostics, and native reference lowering named as
   unsupported.
 
+## Lane 1940-C through Lane 1944-C: Wrapper Method Body Copy Provenance
+
+- [x] Runtime/tests/docs bundle: preserve by-value copied-array COW
+  provenance when visible magic/`ArrayAccess` bodies return proven backed
+  buckets through selected wrapper expressions. Cover error-control returns,
+  array-cast returns that keep an existing array, local assignment-expression
+  returns, local null-coalescing-assignment returns, and a by-value user-call
+  argument sourced from an `ArrayAccess::offsetGet()` assignment-expression
+  body with system-PHP comparisons. Keep arbitrary PHP side effects outside
+  the interpreter subset, unsupported method-body syntax, side-effecting
+  copied-key parity, whole-array reference identity, exact diagnostics, and
+  native reference lowering named as unsupported.
+
+## Next COW Bundle: Remaining Method Body and Value-Model Gaps
+
+- [ ] Pick the next bounded magic/`ArrayAccess` body shape from a system-PHP
+  probe and implement it only when the backing-bucket bridge can be proven.
+  Prioritize method-body expression/control-flow forms that currently execute
+  but lose copied-array provenance, plus scalar-parent overwrite/error parity
+  for covered append/keyed/reference paths. Keep arbitrary side-effecting
+  method bodies and full PHP COW identity out of the support claim until the
+  value model can prove them directly.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
