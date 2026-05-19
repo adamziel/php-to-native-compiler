@@ -1132,6 +1132,8 @@ struct SymbolTable {
         Vec<(PhpObject, String, Vec<ArrayKey>, VariableCell)>,
     copied_array_provenance_paths: HashMap<String, Vec<Vec<ArrayKey>>>,
     public_object_property_array_copy_sources: HashMap<String, ArrayCopySource>,
+    dirty_public_object_property_array_copy_sources: HashSet<String>,
+    dirty_public_object_property_array_copy_source_values: HashMap<String, ArrayCopySource>,
     object_property_array_copy_sources:
         HashMap<(i64, String), Vec<(Vec<ArrayKey>, ArrayCopySource)>>,
     dirty_object_property_array_copy_sources: HashSet<(i64, String)>,
@@ -1141,7 +1143,8 @@ struct SymbolTable {
 
 type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
 type VariableCell = PhpReferenceCell;
-type PublicArrayCopySourceSnapshot = Vec<(String, ArrayCopySource, Option<VariableCell>, Value)>;
+type PublicArrayCopySourceSnapshot =
+    Vec<(String, ArrayCopySource, bool, Option<VariableCell>, Value)>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ArrayOffsetAlias {
@@ -1233,6 +1236,8 @@ impl SymbolTable {
             detached_object_property_array_offset_values: Vec::new(),
             copied_array_provenance_paths: HashMap::new(),
             public_object_property_array_copy_sources: HashMap::new(),
+            dirty_public_object_property_array_copy_sources: HashSet::new(),
+            dirty_public_object_property_array_copy_source_values: HashMap::new(),
             object_property_array_copy_sources: HashMap::new(),
             dirty_object_property_array_copy_sources: HashSet::new(),
             array_literal_copy_source_paths: HashMap::new(),
@@ -1250,6 +1255,8 @@ impl SymbolTable {
             detached_object_property_array_offset_values: Vec::new(),
             copied_array_provenance_paths: HashMap::new(),
             public_object_property_array_copy_sources: HashMap::new(),
+            dirty_public_object_property_array_copy_sources: HashSet::new(),
+            dirty_public_object_property_array_copy_source_values: HashMap::new(),
             object_property_array_copy_sources: HashMap::new(),
             dirty_object_property_array_copy_sources: HashSet::new(),
             array_literal_copy_source_paths: HashMap::new(),
@@ -1320,7 +1327,7 @@ impl SymbolTable {
     }
 
     fn write_detached_static(&mut self, name: &str, value: Value) {
-        self.public_object_property_array_copy_sources.remove(name);
+        self.clear_public_object_property_array_copy_source(name);
         self.array_literal_copy_source_paths.remove(name);
         let target_is_alias = self.array_offset_aliases.remove(name).is_some();
         let replaces_copied_array_provenance = self.has_copied_array_provenance_path(name);
@@ -1351,7 +1358,7 @@ impl SymbolTable {
     }
 
     fn unset_static(&mut self, name: &str) {
-        self.public_object_property_array_copy_sources.remove(name);
+        self.clear_public_object_property_array_copy_source(name);
         self.array_literal_copy_source_paths.remove(name);
         let target_is_alias = self.array_offset_aliases.remove(name).is_some();
         if !target_is_alias {
@@ -1444,7 +1451,7 @@ impl SymbolTable {
     }
 
     fn write_global_name(&mut self, name: &str, value: Value) {
-        self.public_object_property_array_copy_sources.remove(name);
+        self.clear_public_object_property_array_copy_source(name);
         self.array_literal_copy_source_paths.remove(name);
         let storage = self.global_storage().clone();
         let cell = storage.borrow().get(name).cloned();
@@ -1464,7 +1471,7 @@ impl SymbolTable {
         span: Span,
         object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
     ) -> CompileResult<()> {
-        self.public_object_property_array_copy_sources.remove(name);
+        self.clear_public_object_property_array_copy_source(name);
         self.array_literal_copy_source_paths.remove(name);
         let storage = self.global_storage().clone();
         let cell = storage.borrow().get(name).cloned();
@@ -1488,7 +1495,7 @@ impl SymbolTable {
     }
 
     fn write_storage_named(&mut self, name: &str, value: Value) {
-        self.public_object_property_array_copy_sources.remove(name);
+        self.clear_public_object_property_array_copy_source(name);
         self.array_literal_copy_source_paths.remove(name);
         let storage = self.routed_storage(name).clone();
         let cell = storage.borrow().get(name).cloned();
@@ -1511,7 +1518,7 @@ impl SymbolTable {
     where
         F: Fn(&PhpObject, &str) -> bool,
     {
-        self.public_object_property_array_copy_sources.remove(name);
+        self.clear_public_object_property_array_copy_source(name);
         self.array_literal_copy_source_paths.remove(name);
         let storage = self.routed_storage(name).clone();
         let cell = storage.borrow().get(name).cloned();
@@ -1545,8 +1552,7 @@ impl SymbolTable {
         let source_cell = self
             .read_cell(source)
             .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(source)))?;
-        self.public_object_property_array_copy_sources
-            .remove(target);
+        self.clear_public_object_property_array_copy_source(target);
         self.array_literal_copy_source_paths.remove(target);
         self.array_offset_aliases.remove(target);
         self.routed_storage(target)
@@ -1608,8 +1614,7 @@ impl SymbolTable {
     }
 
     fn bind_static_to_cell(&mut self, target: &str, cell: VariableCell) {
-        self.public_object_property_array_copy_sources
-            .remove(target);
+        self.clear_public_object_property_array_copy_source(target);
         self.array_literal_copy_source_paths.remove(target);
         self.array_offset_aliases.remove(target);
         self.routed_storage(target)
@@ -1630,9 +1635,7 @@ impl SymbolTable {
             },
             keys: vec![key],
         };
-        self.materialize_array_offset_alias(&alias, span)?;
-        self.bind_static_to_array_offset_alias(target, alias);
-        Ok(())
+        self.bind_static_to_existing_array_offset_aliases(target, vec![alias], span)
     }
 
     fn bind_static_to_existing_nested_array_offset(
@@ -1648,9 +1651,7 @@ impl SymbolTable {
             },
             keys,
         };
-        self.materialize_array_offset_alias(&alias, span)?;
-        self.bind_static_to_array_offset_alias(target, alias);
-        Ok(())
+        self.bind_static_to_existing_array_offset_aliases(target, vec![alias], span)
     }
 
     fn bind_static_to_existing_global_nested_array_offset(
@@ -1666,9 +1667,7 @@ impl SymbolTable {
             },
             keys,
         };
-        self.materialize_array_offset_alias(&alias, span)?;
-        self.bind_static_to_array_offset_alias(target, alias);
-        Ok(())
+        self.bind_static_to_existing_array_offset_aliases(target, vec![alias], span)
     }
 
     fn bind_static_to_existing_array_offset_alias_root(
@@ -1679,9 +1678,7 @@ impl SymbolTable {
         span: Span,
     ) -> CompileResult<()> {
         let alias = ArrayOffsetAlias { root, keys };
-        self.materialize_array_offset_alias(&alias, span)?;
-        self.bind_static_to_array_offset_alias(target, alias);
-        Ok(())
+        self.bind_static_to_existing_array_offset_aliases(target, vec![alias], span)
     }
 
     fn bind_static_to_existing_array_offset_aliases(
@@ -1786,8 +1783,7 @@ impl SymbolTable {
         target: &str,
         aliases: Vec<ArrayOffsetAlias>,
     ) {
-        self.public_object_property_array_copy_sources
-            .remove(target);
+        self.clear_public_object_property_array_copy_source(target);
         self.array_literal_copy_source_paths.remove(target);
         self.routed_storage(target).borrow_mut().remove(target);
         self.array_offset_aliases
@@ -1872,6 +1868,65 @@ impl SymbolTable {
             .insert(name.to_string(), source);
     }
 
+    fn clear_public_object_property_array_copy_source(&mut self, name: &str) {
+        self.public_object_property_array_copy_sources.remove(name);
+        self.dirty_public_object_property_array_copy_sources
+            .remove(name);
+        self.dirty_public_object_property_array_copy_source_values
+            .remove(name);
+    }
+
+    fn mark_public_object_property_array_copy_source_dirty(&mut self, name: &str) {
+        if let Some(source) = self
+            .public_object_property_array_copy_sources
+            .get(name)
+            .cloned()
+        {
+            self.dirty_public_object_property_array_copy_sources
+                .insert(name.to_string());
+            self.dirty_public_object_property_array_copy_source_values
+                .insert(name.to_string(), source);
+        }
+    }
+
+    fn dirty_public_object_property_array_copy_source_for_static(
+        &self,
+        name: &str,
+    ) -> Option<ArrayCopySource> {
+        self.dirty_public_object_property_array_copy_source_values
+            .get(name)
+            .cloned()
+    }
+
+    fn array_copy_source_was_dirtied(&self, source: &ArrayCopySource) -> bool {
+        self.dirty_public_object_property_array_copy_source_values
+            .values()
+            .any(|candidate| Self::array_copy_sources_match(candidate, source))
+    }
+
+    fn array_copy_sources_match(left: &ArrayCopySource, right: &ArrayCopySource) -> bool {
+        if left.keys != right.keys || left.include_exact_path != right.include_exact_path {
+            return false;
+        }
+
+        match (&left.root, &right.root) {
+            (
+                ArrayCopySourceRoot::ObjectProperty {
+                    object: left_object,
+                    property: left_property,
+                },
+                ArrayCopySourceRoot::ObjectProperty {
+                    object: right_object,
+                    property: right_property,
+                },
+            ) => left_object.id() == right_object.id() && left_property == right_property,
+            (ArrayCopySourceRoot::AliasPath(left), ArrayCopySourceRoot::AliasPath(right)) => {
+                left == right
+            }
+            _ => false,
+        }
+    }
+
     fn public_object_property_array_copy_source_for_static(
         &self,
         name: &str,
@@ -1886,8 +1941,18 @@ impl SymbolTable {
             .iter()
             .filter_map(|(name, source)| {
                 let value = self.read_named(name)?;
-                matches!(value, Value::Array(_))
-                    .then(|| (name.clone(), source.clone(), self.read_cell(name), value))
+                let dirty = self
+                    .dirty_public_object_property_array_copy_sources
+                    .contains(name);
+                matches!(value, Value::Array(_)).then(|| {
+                    (
+                        name.clone(),
+                        source.clone(),
+                        dirty,
+                        self.read_cell(name),
+                        value,
+                    )
+                })
             })
             .collect()
     }
@@ -1896,7 +1961,7 @@ impl SymbolTable {
         &mut self,
         snapshot: PublicArrayCopySourceSnapshot,
     ) {
-        for (name, source, before_cell, before_value) in snapshot {
+        for (name, source, dirty, before_cell, before_value) in snapshot {
             if self
                 .public_object_property_array_copy_sources
                 .contains_key(&name)
@@ -1916,12 +1981,15 @@ impl SymbolTable {
             };
             if same_cell {
                 self.record_public_object_property_array_copy_source(&name, source);
+                if dirty {
+                    self.mark_public_object_property_array_copy_source_dirty(&name);
+                }
             }
         }
     }
 
     fn remove_public_object_property_array_copy_source(&mut self, name: &str) {
-        self.public_object_property_array_copy_sources.remove(name);
+        self.clear_public_object_property_array_copy_source(name);
     }
 
     fn public_object_property_array_copy_source_for_alias_group(
@@ -3545,6 +3613,10 @@ impl SymbolTable {
             return value;
         };
 
+        if promote_missing_reference_cells {
+            self.overlay_object_property_copy_reference_cells(&mut array, &source);
+        }
+
         for source_root in self.array_copy_source_roots(&source) {
             let matching_aliases = self
                 .array_offset_aliases
@@ -3574,6 +3646,15 @@ impl SymbolTable {
                             .or_else(|| {
                                 self.reference_cell_for_array_copy_alias_group(&alias_group)
                             })
+                            .or_else(|| {
+                                matches!(source.root, ArrayCopySourceRoot::ObjectProperty { .. })
+                                    .then(|| {
+                                        self.reference_cell_for_array_literal_alias_group(
+                                            &alias_group,
+                                        )
+                                    })
+                                    .flatten()
+                            })
                     })
                     .flatten();
                 let Some(reference) = existing_reference.or(promoted_reference) else {
@@ -3588,6 +3669,53 @@ impl SymbolTable {
         }
 
         Value::Array(array)
+    }
+
+    fn overlay_object_property_copy_reference_cells(
+        &self,
+        target: &mut PhpArray,
+        source: &ArrayCopySource,
+    ) {
+        let ArrayCopySourceRoot::ObjectProperty { object, property } = &source.root else {
+            return;
+        };
+        let Ok(Value::Array(source_array)) = object.read_public_property(property) else {
+            return;
+        };
+        let source_value = if source.keys.is_empty() {
+            Value::Array(source_array)
+        } else {
+            let Some(value) = Self::read_nested_array_offset_alias(&source_array, &source.keys)
+            else {
+                return;
+            };
+            value
+        };
+        let Value::Array(source_array) = source_value else {
+            return;
+        };
+        Self::overlay_reference_cells_from_source_array(target, &source_array);
+    }
+
+    fn overlay_reference_cells_from_source_array(target: &mut PhpArray, source: &PhpArray) {
+        for source_entry in source.entries() {
+            let key = source_entry.key.clone();
+            if target.get_slot(key.clone()).is_none() {
+                continue;
+            }
+            if let Some(reference) = source_entry.slot().reference_cell() {
+                target.insert_reference(key, reference);
+                continue;
+            }
+            let Some(Value::Array(mut target_child)) = target.get_cloned(key.clone()) else {
+                continue;
+            };
+            let Value::Array(source_child) = source_entry.value_cloned() else {
+                continue;
+            };
+            Self::overlay_reference_cells_from_source_array(&mut target_child, &source_child);
+            target.insert(key, Value::Array(target_child));
+        }
     }
 
     fn value_with_array_copy_source_aliases_from_copy_to_path(
@@ -5160,6 +5288,20 @@ impl SymbolTable {
             .all(|alias| self.write_array_offset_alias(alias, value.clone()))
     }
 
+    fn write_array_offset_aliases_reference_cell(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+        reference: VariableCell,
+    ) -> bool {
+        if aliases.is_empty() {
+            return false;
+        }
+
+        aliases.iter().all(|alias| {
+            self.promote_array_offset_alias_to_reference_cell(alias, reference.clone())
+        })
+    }
+
     fn write_array_offset_aliases_checked_with_object_type_resolver(
         &mut self,
         aliases: &[ArrayOffsetAlias],
@@ -5305,18 +5447,29 @@ impl SymbolTable {
         root: &ArrayOffsetAliasRoot,
         keys: &[ArrayKey],
     ) {
-        let syncs: Vec<(String, Vec<ArrayOffsetAlias>, Value)> = self
+        let syncs: Vec<(String, Vec<ArrayOffsetAlias>, Value, Option<VariableCell>)> = self
             .array_offset_aliases
             .iter()
             .filter_map(|(alias_name, aliases)| {
                 let touched_alias = Self::best_alias_for_changed_root_path(aliases, root, keys)?;
-                self.read_array_offset_alias(touched_alias)
-                    .map(|value| (alias_name.clone(), aliases.clone(), value))
+                self.read_array_offset_alias(touched_alias).map(|value| {
+                    (
+                        alias_name.clone(),
+                        aliases.clone(),
+                        value,
+                        self.read_array_offset_alias_reference_cell(touched_alias),
+                    )
+                })
             })
             .collect();
 
-        for (alias_name, aliases, value) in syncs {
-            if !self.write_array_offset_aliases(&aliases, value) {
+        for (alias_name, aliases, value, reference) in syncs {
+            let wrote = if let Some(reference) = reference {
+                self.write_array_offset_aliases_reference_cell(&aliases, reference)
+            } else {
+                self.write_array_offset_aliases(&aliases, value)
+            };
+            if !wrote {
                 self.array_offset_aliases.remove(&alias_name);
             }
         }
@@ -5329,23 +5482,34 @@ impl SymbolTable {
         span: Span,
         object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
     ) -> CompileResult<()> {
-        let syncs: Vec<(String, Vec<ArrayOffsetAlias>, Value)> = self
+        let syncs: Vec<(String, Vec<ArrayOffsetAlias>, Value, Option<VariableCell>)> = self
             .array_offset_aliases
             .iter()
             .filter_map(|(alias_name, aliases)| {
                 let touched_alias = Self::best_alias_for_changed_root_path(aliases, root, keys)?;
-                self.read_array_offset_alias(touched_alias)
-                    .map(|value| (alias_name.clone(), aliases.clone(), value))
+                self.read_array_offset_alias(touched_alias).map(|value| {
+                    (
+                        alias_name.clone(),
+                        aliases.clone(),
+                        value,
+                        self.read_array_offset_alias_reference_cell(touched_alias),
+                    )
+                })
             })
             .collect();
 
-        for (alias_name, aliases, value) in syncs {
-            if !self.write_array_offset_aliases_checked_with_object_type_resolver(
-                &aliases,
-                value,
-                span,
-                object_type_resolver,
-            )? {
+        for (alias_name, aliases, value, reference) in syncs {
+            let wrote = if let Some(reference) = reference {
+                self.write_array_offset_aliases_reference_cell(&aliases, reference)
+            } else {
+                self.write_array_offset_aliases_checked_with_object_type_resolver(
+                    &aliases,
+                    value,
+                    span,
+                    object_type_resolver,
+                )?
+            };
+            if !wrote {
                 self.array_offset_aliases.remove(&alias_name);
             }
         }
@@ -8345,8 +8509,24 @@ impl Interpreter {
         name: &str,
         keys: &[ArrayKey],
     ) -> Option<ArrayCopySource> {
-        let source = scope.public_object_property_array_copy_source_for_static(name)?;
+        let source = Self::array_copy_source_before_nested_write(scope, name)?;
         (!Self::copied_array_write_replaces_live_alias_parent(scope, name, keys)).then_some(source)
+    }
+
+    fn array_copy_source_before_nested_write(
+        scope: &SymbolTable,
+        name: &str,
+    ) -> Option<ArrayCopySource> {
+        scope
+            .public_object_property_array_copy_source_for_static(name)
+            .or_else(|| {
+                scope
+                    .array_offset_aliases_for_name(name)
+                    .and_then(|aliases| {
+                        scope.public_object_property_array_copy_source_for_alias_group(&aliases)
+                    })
+            })
+            .or_else(|| scope.dirty_public_object_property_array_copy_source_for_static(name))
     }
 
     fn copied_array_write_replaces_live_alias_parent(
@@ -8446,15 +8626,34 @@ impl Interpreter {
             return Ok((Flow::Return(value), None));
         }
         let (value, array_copy_source) = self.evaluate_value_with_array_copy_source(expr, scope)?;
+        let fallback_source = if array_copy_source.is_none() && matches!(value, Value::Array(_)) {
+            self.public_object_property_array_copy_source_for_value_expr(expr, scope)
+                .or_else(|| {
+                    if let Expr::Variable(name, _) = expr {
+                        scope.dirty_public_object_property_array_copy_source_for_static(name)
+                    } else {
+                        None
+                    }
+                })
+        } else {
+            None
+        };
+        let fallback_source_was_dirty = fallback_source
+            .as_ref()
+            .is_some_and(|source| scope.array_copy_source_was_dirtied(source));
         let value = if array_copy_source.is_none() {
             self.value_with_local_array_aliases_for_expr(value, expr, scope, true)
         } else {
             value
         };
+        if let (Expr::Variable(name, _), Some(source)) = (expr, fallback_source.clone()) {
+            scope.record_public_object_property_array_copy_source(name, source);
+            if fallback_source_was_dirty {
+                scope.mark_public_object_property_array_copy_source_dirty(name);
+            }
+        }
         let source = if matches!(value, Value::Array(_)) {
-            array_copy_source.or_else(|| {
-                self.public_object_property_array_copy_source_for_value_expr(expr, scope)
-            })
+            array_copy_source.or(fallback_source)
         } else {
             None
         };
@@ -19879,6 +20078,29 @@ impl Interpreter {
                         (value, Vec::new(), source, Vec::new())
                     }
                 };
+                let direct_object_property_copy = match expr {
+                    Expr::Property { target, .. } | Expr::DynamicProperty { target, .. } => {
+                        matches!(target.as_ref(), Expr::Variable(_, _))
+                    }
+                    Expr::Index { target, index, .. } => {
+                        Self::collect_direct_object_property_array_index_path(target, index)
+                            .is_some()
+                            || Self::collect_direct_dynamic_object_property_array_index_path(
+                                target, index,
+                            )
+                            .is_some()
+                    }
+                    _ => false,
+                };
+                let value = if direct_object_property_copy && matches!(value, Value::Array(_)) {
+                    scope.value_with_object_property_aliases_from_array_copy(
+                        value,
+                        array_copy_source.clone(),
+                        true,
+                    )
+                } else {
+                    value
+                };
                 let target_is_alias = scope.is_array_offset_alias_name(name);
                 let replaces_copied_array_provenance = scope.has_copied_array_provenance_path(name);
                 if replaces_copied_array_provenance {
@@ -20277,6 +20499,7 @@ impl Interpreter {
                     {
                         if let Some(source) = retained_array_copy_source.clone() {
                             scope.record_public_object_property_array_copy_source(name, source);
+                            scope.mark_public_object_property_array_copy_source_dirty(name);
                         }
                         return Ok(value);
                     }
@@ -20445,6 +20668,7 @@ impl Interpreter {
                 );
                 if let Some(source) = retained_array_copy_source {
                     scope.record_public_object_property_array_copy_source(name, source);
+                    scope.mark_public_object_property_array_copy_source_dirty(name);
                 }
                 if let Some(key) = target_key.as_ref() {
                     scope.sync_array_offset_aliases_for_root_path(
@@ -20594,6 +20818,7 @@ impl Interpreter {
                     )? {
                         if let Some(source) = retained_array_copy_source {
                             scope.record_public_object_property_array_copy_source(name, source);
+                            scope.mark_public_object_property_array_copy_source_dirty(name);
                         }
                         return Ok(value);
                     }
@@ -20611,6 +20836,7 @@ impl Interpreter {
                 {
                     if let Some(source) = retained_array_copy_source {
                         scope.record_public_object_property_array_copy_source(name, source);
+                        scope.mark_public_object_property_array_copy_source_dirty(name);
                     }
                     return Ok(value);
                 }
@@ -20650,6 +20876,7 @@ impl Interpreter {
                 );
                 if let Some(source) = retained_array_copy_source {
                     scope.record_public_object_property_array_copy_source(name, source);
+                    scope.mark_public_object_property_array_copy_source_dirty(name);
                 }
                 if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                     self.bind_array_literal_references_to_alias_root_with_prefix(
@@ -51868,13 +52095,16 @@ impl Interpreter {
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
             Flow::Return(value) => {
+                let promote_reference_cells = array_copy_source
+                    .as_ref()
+                    .is_some_and(|source| local_scope.array_copy_source_was_dirtied(source));
                 let value = reference_scope
                     .as_deref_mut()
                     .map(|scope| {
                         scope.value_with_object_property_aliases_from_array_copy(
                             value.clone(),
                             array_copy_source.clone(),
-                            false,
+                            promote_reference_cells,
                         )
                     })
                     .unwrap_or(value);

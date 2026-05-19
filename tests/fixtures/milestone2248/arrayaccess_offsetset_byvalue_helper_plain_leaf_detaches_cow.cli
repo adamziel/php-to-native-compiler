@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2248/arrayaccess_offsetset_byvalue_helper_plain_leaf_detaches_cow.php

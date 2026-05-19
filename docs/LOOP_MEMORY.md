@@ -23,6 +23,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T00:05:00+02:00
+
+- Checkpoint before this task: `3e243e93 checkpoint: 2026-05-19 21:42:57
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2245-C through Lane 2248-C bundle, preserving
+  reference-backed leaves for by-value copied object-property buckets returned
+  after local mutation or helper delegation from supported methods,
+  `__get()`, and `ArrayAccess::offsetGet()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2245/*` through
+  `tests/fixtures/milestone2248/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo build -q -p phpc` passed; focused scratch
+  system-PHP probes passed for by-value helper-return magic/`ArrayAccess`
+  copies, normal method copied-bucket returns, direct function controls, and a
+  plain-leaf detach guard; focused fixture system-PHP comparisons passed for
+  `milestone2245` through `milestone2248`.
+- Remaining COW gaps: explicit method-local object-property alias writeback
+  after `$alias =& $bucket["ref"]`, whole-array reference identity outside
+  covered non-empty array-offset roots, untracked dynamic containers that
+  expose neither materialized reference cells nor portable copied-source
+  roots, unsupported syntax outside the current dynamic instance-call slice,
+  exact diagnostics/Throwable objects, and native reference/string COW
+  lowering.
+- Next concrete task: run focused adjacent regressions, `cargo fmt`,
+  `cargo fmt --check`, `cargo check -q -p phpc`, `git diff --check`, then one
+  full `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T23:45:00+02:00
 
 - Checkpoint before this task: `552bccae checkpoint: 2026-05-19 21:34:42

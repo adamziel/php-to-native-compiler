@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2244:
+The current in-progress implementation frontier is Lane 2248:
+
+- Lanes 2245 through 2248 preserve reference-backed leaves when a supported
+  by-value method body returns a copied object-property bucket after local
+  mutation or helper delegation. Source-aware return handling now promotes
+  proven copied-source reference leaves before values leave the callee frame,
+  and alias-root synchronization preserves reference cells instead of
+  flattening sibling aliases back to scalar values. Focused system-PHP
+  coverage proves a normal method, visible `__get()`, and public
+  `ArrayAccess::offsetGet()` returning a helper-mutated copy while later writes
+  to the returned copy still update the original referenced leaf; a paired
+  `offsetSet()` helper-key guard keeps plain leaves detached. Remaining gaps
+  include method-local object-property alias writeback after explicit
+  `$alias =& $bucket["ref"]` aliases, arbitrary untracked containers,
+  unsupported syntax, exact diagnostics, and native reference/string COW
+  lowering.
 
 - Lanes 2241 through 2244 broaden whole-array reference identity for covered
   non-empty object-property array-offset roots passed into by-reference

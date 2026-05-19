@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 2245-C through Lane 2248-C for by-value method returns of copied
+  object-property buckets with reference-backed leaves. Source-aware
+  function/method return rehydration now promotes proven copied-source
+  reference leaves while the callee frame still has the alias proof, and alias
+  synchronization preserves reference cells instead of flattening sibling
+  aliases to plain scalar values. Focused system-PHP coverage proves a normal
+  method, visible `__get()`, and public `ArrayAccess::offsetGet()` returning a
+  helper-mutated copied bucket whose later returned-copy reference write still
+  updates the original referenced leaf. A paired `ArrayAccess::offsetSet()`
+  helper-key guard proves plain nested leaves still detach. Remaining gaps
+  include explicit method-local `$alias =& $bucket["ref"]` object-property
+  alias writeback, arbitrary untracked containers, unsupported syntax, exact
+  diagnostics, and native reference/string COW lowering.
+
 - Added Lane 2241-C through Lane 2244-C for covered whole-array reference
   identity in supported magic/`ArrayAccess` helper bodies. By-reference
   function parameter binding now uses the array-literal reference-cell

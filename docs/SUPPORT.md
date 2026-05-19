@@ -129,6 +129,13 @@
   `$this->store[$name]` into helpers that return `array(&$bucket)` and keep
   the original backing bucket connected until a later by-value write detaches
   the returned copy.
+  By-value method returns of copied object-property buckets also promote
+  proven copied-source reference leaves before the value leaves the callee
+  frame. This covers supported normal methods, visible `__get()`, and public
+  `ArrayAccess::offsetGet()` bodies that copy `$this->store[$name]`, mutate
+  that local copy directly or through a helper, and return it by value; later
+  writes to returned reference leaves still update the original referenced
+  leaf while plain leaves detach.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.
@@ -140,8 +147,9 @@
   arbitrary side effects beyond covered writeback paths, broader dynamic
   callback mutation of containers whose copied-source roots cannot be synced
   through a concrete shared object property or global root, full whole-array
-  reference identity for arbitrary roots, exact PHP diagnostics, or native COW
-  lowering.
+  reference identity for arbitrary roots, explicit method-local object-property
+  alias writeback after `$alias =& $bucket["ref"]`, exact PHP diagnostics, or
+  native COW lowering.
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or
   declaration-contained declarations can be loaded. The executing subset

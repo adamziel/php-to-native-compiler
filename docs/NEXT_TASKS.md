@@ -134,14 +134,19 @@ handled.
   by-reference helpers inside visible `__get()` and public
   `ArrayAccess::offsetGet()`, including dynamic method helper dispatch and a
   copied-local no-over-promotion guard.
+- [x] Lane 2245-C through 2248-C: preserve reference-backed leaves in
+  by-value copied object-property buckets returned after local mutation or
+  helper delegation, covering normal methods, visible `__get()`, public
+  `ArrayAccess::offsetGet()`, and a plain-leaf detach guard.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
   holders expose real cells or concrete writeback roots instead of stale paths.
-  Known next probes should target remaining whole-array reference identity
-  cases outside covered non-empty array-offset roots and containers that still
-  cannot expose either materialized reference cells or portable copied-source
-  roots.
+  Known next probes should target method-local object-property alias writeback
+  after explicit `$alias =& $bucket["ref"]` aliases, remaining whole-array
+  reference identity outside covered non-empty array-offset roots, and
+  containers that still cannot expose either materialized reference cells or
+  portable copied-source roots.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

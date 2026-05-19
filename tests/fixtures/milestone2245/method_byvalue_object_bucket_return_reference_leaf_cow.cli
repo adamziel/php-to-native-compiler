@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2245/method_byvalue_object_bucket_return_reference_leaf_cow.php

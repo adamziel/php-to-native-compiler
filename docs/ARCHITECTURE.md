@@ -267,6 +267,14 @@ when the alias group exposes a concrete runtime cell, copied locals placed into
 `call_user_func_array()` arguments still remain detached from their original
 backing store.
 
+Source-aware by-value returns also rehydrate copied object-property reference
+leaves at the callee boundary, before the local alias proof disappears. The
+return path overlays existing reference-backed source slots when present and
+uses array-literal promotion for proven object-property copy-source aliases.
+Alias synchronization now carries reference cells between sibling aliases, so
+updating a copied bucket's reference leaf does not flatten that leaf back to a
+plain scalar before the returned value is assigned by the caller.
+
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller
