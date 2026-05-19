@@ -23,6 +23,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T21:55:00+02:00
+
+- Checkpoint before this task: `23b8c09d runtime: strengthen COW cell and
+  container writeback`, pushed to `origin/master`.
+- Task attempted: Lane 2184-C through Lane 2188-C bundle, extending the
+  concrete-container COW write path from object-property arrays to supported
+  local and global array values used inside magic/`ArrayAccess` method bodies.
+  Nested keyed and append assignment now detects an `ArrayAccess` object in a
+  live intermediate array bucket and forwards the remaining path through the
+  existing source-aware `offsetSet()` path; string-keyed `$GLOBALS` paths also
+  cover array containers and direct global roots that are `ArrayAccess`
+  objects.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2184/*`, `tests/fixtures/milestone2185/*`,
+  `tests/fixtures/milestone2186/*`, `tests/fixtures/milestone2187/*`,
+  `tests/fixtures/milestone2188/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: the original local-copy COW probe now matches system PHP;
+  focused system-PHP comparisons passed for `milestone2184` through
+  `milestone2188`; adjacent system-PHP comparisons passed for
+  `milestone2179` through `milestone2183`; `cargo check -q -p phpc` passed;
+  `cargo test -q -p phpc --test array_reference_literals` passed.
+- Remaining COW gaps: arbitrary unsupported magic/`ArrayAccess` method syntax,
+  untracked dynamic containers that cannot expose a concrete bucket/object,
+  broader callback containers and dynamic holder graphs, full whole-array
+  reference identity, exact PHP diagnostics/Throwable objects, and native
+  reference/string COW lowering.
+- Next concrete task after the full bundle gate: attack the next hard
+  value/container identity gap where supported helper/callback containers or
+  dynamic holders still produce stale paths instead of real cells or concrete
+  writeback roots.
+
 ## Loop Event 2026-05-19T21:35:00+02:00
 
 - Checkpoint before this task: `cf576d10 runtime: support source-aware method

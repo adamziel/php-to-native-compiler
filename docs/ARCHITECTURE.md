@@ -94,8 +94,14 @@ another by-reference path replaces the parent array. The same
 method-body write helpers can also traverse a tracked object-property array
 until a selected concrete bucket contains an `ArrayAccess` object, then pass
 the remaining keyed or append path to that object's existing source-aware
-`offsetSet()` machinery. This is still not a general container graph: the
-runtime needs a concrete array bucket/object and supported interpreter syntax.
+`offsetSet()` machinery. The same dispatch now runs for supported local array
+values and string-keyed `$GLOBALS` paths before the generic nested array writer
+executes, so method bodies can use a local copy of `$this->bags`, a
+`$GLOBALS["registry"]["selected"][$key]` write, or a `$GLOBALS["bag"][]`
+append when the live path exposes a concrete contained `ArrayAccess` object.
+This avoids a separate static body recognizer for those shapes, but it is still
+not a general container graph: the runtime needs a concrete array bucket/object
+and supported interpreter syntax.
 Statement-form reference assignment from by-value exact-bridge `ArrayAccess`
 offset sources follows PHP's indirect-modification notice/no-op behavior for
 direct object roots, visible direct property-held roots, bounded non-direct

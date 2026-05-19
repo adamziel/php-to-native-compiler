@@ -32,7 +32,23 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2183:
+The current in-progress implementation frontier is Lane 2188:
+
+- Lanes 2184 through 2188 extend the same concrete-container COW model to
+  local and global array values, not just object-property arrays. Supported
+  magic/`ArrayAccess` method bodies can now copy an array property into a
+  local, or write through a string-keyed `$GLOBALS` array, and if an
+  intermediate bucket contains an `ArrayAccess` object the runtime forwards the
+  remaining keyed or append path into the existing source-aware `offsetSet()`
+  machinery. Focused system-PHP coverage proves magic `__set()` local-copy
+  keyed and append stores, outer `ArrayAccess::offsetSet()` local-copy stores,
+  `$GLOBALS` array-container stores, and direct `$GLOBALS` `ArrayAccess` append
+  stores while preserving selected reference-backed leaves and detaching plain
+  copied leaves. This is still bounded to supported interpreter syntax,
+  concrete array buckets/objects visible at execution time, and current
+  copied-source propagation; it does not claim arbitrary unsupported PHP
+  syntax, arbitrary side-effect recovery, untracked dynamic containers, exact
+  diagnostics, or native reference/string COW lowering.
 
 - Lanes 2179 through 2183 address two value-model COW holes instead of adding
   another method-name special case. Direct alias variables passed to
@@ -40,19 +56,18 @@ The current in-progress implementation frontier is Lane 2183:
   `PhpReferenceCell`, bind the caller-visible variable to that cell, and avoid
   stale path writeback, so replacing a parent array through one by-reference
   parameter does not reroute another child reference into the replacement
-  array. Supported magic/`ArrayAccess`
-  method-body writes can also traverse object-property arrays whose selected
-  bucket contains an `ArrayAccess` object, forwarding keyed and append stores
-  into the existing source-aware `offsetSet()` propagation path. Focused
-  system-PHP coverage proves child-reference detachment after whole-root
-  replacement, magic `__set()` keyed/dynamic/append stores through
-  array-contained `ArrayAccess` objects, and outer `ArrayAccess::offsetSet()`
-  bodies forwarding into inner array-contained `ArrayAccess` objects. This is
-  still bounded to promoted reference cells, supported interpreter syntax,
-  concrete tracked array buckets/objects, and current copied-source
-  propagation; it does not claim arbitrary unsupported PHP syntax, arbitrary
-  side effects, untracked dynamic containers, exact diagnostics, or native
-  reference/string COW lowering.
+  array. Supported magic/`ArrayAccess` method-body writes can also traverse
+  object-property arrays whose selected bucket contains an `ArrayAccess`
+  object, forwarding keyed and append stores into the existing source-aware
+  `offsetSet()` propagation path. Focused system-PHP coverage proves
+  child-reference detachment after whole-root replacement, magic `__set()`
+  keyed/dynamic/append stores through array-contained `ArrayAccess` objects,
+  and outer `ArrayAccess::offsetSet()` bodies forwarding into inner
+  array-contained `ArrayAccess` objects. This is still bounded to promoted
+  reference cells, supported interpreter syntax, concrete tracked array
+  buckets/objects, and current copied-source propagation; it does not claim
+  arbitrary unsupported PHP syntax, arbitrary side effects, untracked dynamic
+  containers, exact diagnostics, or native reference/string COW lowering.
 
 - Lanes 2172 through 2178 broaden supported magic/`ArrayAccess` method-body
   dispatch while preserving copied-array COW provenance. Dynamic calls where

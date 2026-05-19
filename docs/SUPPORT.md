@@ -60,7 +60,13 @@
   object in a concrete selected bucket, supported keyed and append writes
   continue through that inner object's source-aware `offsetSet()` path,
   including magic `__set()` bodies, dynamic-property spellings, and outer
-  `ArrayAccess::offsetSet()` bodies. Direct alias variables passed to
+  `ArrayAccess::offsetSet()` bodies. The same concrete-bucket dispatch now
+  also covers supported local/global array values inside those method bodies:
+  a local copy such as `$bags = $this->bags`, a string-keyed `$GLOBALS` array
+  container, or a direct string-keyed `$GLOBALS` root that is itself an
+  `ArrayAccess` object can forward the remaining keyed or append path into
+  source-aware `offsetSet()` when the live value path exposes a concrete
+  `ArrayAccess` object. Direct alias variables passed to
   by-reference parameters can promote their array-offset alias to a real
   reference cell and bind the caller-visible variable directly to that cell
   instead of relying on stale path writeback, so a separate by-reference

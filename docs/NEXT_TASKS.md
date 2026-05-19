@@ -66,11 +66,18 @@ handled.
   the parent array, and route supported object-property array writes through
   `ArrayAccess` objects stored inside those arrays for keyed, dynamic-property,
   append, magic `__set()`, and `ArrayAccess::offsetSet()` method-body shapes.
+- [x] Lane 2184-C through 2188-C: route supported local/global array value
+  paths through concrete contained `ArrayAccess` objects before falling back to
+  the generic nested array writer, covering magic `__set()` local-copy keyed
+  and append stores, `ArrayAccess::offsetSet()` local-copy stores,
+  `$GLOBALS` array-container stores, and direct `$GLOBALS` `ArrayAccess`
+  append stores with copied-source propagation.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
-  side-effect/writeback so supported helper, callback, dynamic-holder, and
-  mixed-container bodies expose real cells or concrete writeback roots instead
-  of stale paths.
+  side-effect/writeback so supported helper/callback containers and dynamic
+  holders expose real cells or concrete writeback roots instead of stale paths,
+  especially where today a copied array escapes through an untracked local,
+  callback result, or dynamic object graph.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2188/magic_set_global_arrayaccess_direct_root_append_copied_source.php

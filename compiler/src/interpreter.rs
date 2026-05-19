@@ -20044,6 +20044,19 @@ impl Interpreter {
                     }
                 };
                 if name == "GLOBALS" {
+                    if self
+                        .write_global_array_value_path_array_access_keyed_with_reference_propagation(
+                            &keys,
+                            value.clone(),
+                            expr,
+                            array_literal_references.clone(),
+                            &array_literal_copy_sources,
+                            *span,
+                            scope,
+                        )?
+                    {
+                        return Ok(value);
+                    }
                     self.write_global_nested_array_assignment(&keys, value.clone(), *span, scope)?;
                     if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                         let (global_name, prefix) =
@@ -20060,6 +20073,23 @@ impl Interpreter {
                 }
                 let retained_array_copy_source =
                     Self::array_copy_source_preserved_after_nested_write(scope, name, &keys);
+                if let Some(root_value) = scope.read_named(name) {
+                    if self.write_array_value_path_array_access_keyed_with_reference_propagation(
+                        &root_value,
+                        &keys,
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        &array_literal_copy_sources,
+                        *span,
+                        scope,
+                    )? {
+                        if let Some(source) = retained_array_copy_source {
+                            scope.record_public_object_property_array_copy_source(name, source);
+                        }
+                        return Ok(value);
+                    }
+                }
                 if !Self::copied_array_write_replaces_live_alias_parent(scope, name, &keys)
                     && scope.write_alias_backed_array_offset_checked_with_object_type_resolver(
                         name,
@@ -20165,6 +20195,20 @@ impl Interpreter {
                 let (value, array_literal_references, array_literal_copy_sources) =
                     self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if name == "GLOBALS" {
+                    if self
+                        .write_global_array_value_path_array_access_append_with_reference_propagation(
+                            &keys,
+                            &suffix_keys,
+                            value.clone(),
+                            expr,
+                            array_literal_references.clone(),
+                            &array_literal_copy_sources,
+                            *span,
+                            scope,
+                        )?
+                    {
+                        return Ok(value);
+                    }
                     if matches!(value, Value::Array(_))
                         && (!array_literal_references.is_empty()
                             || !array_literal_copy_sources.is_empty())
@@ -20203,6 +20247,21 @@ impl Interpreter {
                         self.write_global_nested_array_append(&keys, stored_value, *span, scope)?;
                     }
                     return Ok(value);
+                }
+                if let Some(root_value) = scope.read_named(name) {
+                    if self.write_array_value_path_array_access_append_with_reference_propagation(
+                        &root_value,
+                        &keys,
+                        &suffix_keys,
+                        value.clone(),
+                        expr,
+                        array_literal_references.clone(),
+                        &array_literal_copy_sources,
+                        *span,
+                        scope,
+                    )? {
+                        return Ok(value);
+                    }
                 }
                 if let Some(Value::Object(array_access_object)) = scope.read_named(name) {
                     if self
@@ -22024,6 +22083,221 @@ impl Interpreter {
             return Some((object, keys[prefix_len..].to_vec()));
         }
         None
+    }
+
+    fn write_array_value_path_array_access_keyed_with_reference_propagation(
+        &mut self,
+        root_value: &Value,
+        keys: &[ArrayKey],
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some((array_access_object, remaining_keys)) =
+            self.array_access_object_in_array_value_path(root_value, keys, false)
+        else {
+            return Ok(false);
+        };
+        if remaining_keys.is_empty() {
+            return Ok(false);
+        }
+
+        if remaining_keys.len() == 1 {
+            self.write_array_access_object_keyed_with_reference_propagation(
+                array_access_object,
+                remaining_keys[0].clone(),
+                value,
+                expr,
+                array_literal_references,
+                array_literal_copy_sources,
+                span,
+                scope,
+            )
+        } else {
+            self.write_array_access_object_nested_keyed_with_reference_propagation(
+                array_access_object,
+                remaining_keys,
+                value,
+                expr,
+                array_literal_references,
+                array_literal_copy_sources,
+                span,
+                scope,
+            )
+        }
+    }
+
+    fn write_array_value_path_array_access_append_with_reference_propagation(
+        &mut self,
+        root_value: &Value,
+        keys: &[ArrayKey],
+        suffix_keys: &[ArrayKey],
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some((array_access_object, remaining_keys)) =
+            self.array_access_object_in_array_value_path(root_value, keys, true)
+        else {
+            return Ok(false);
+        };
+
+        if remaining_keys.is_empty() {
+            self.write_array_access_object_append_with_reference_propagation(
+                array_access_object,
+                suffix_keys,
+                value,
+                expr,
+                array_literal_references,
+                array_literal_copy_sources,
+                span,
+                scope,
+            )
+        } else {
+            self.write_array_access_object_nested_append_with_reference_propagation(
+                array_access_object,
+                remaining_keys,
+                suffix_keys,
+                value,
+                expr,
+                array_literal_references,
+                array_literal_copy_sources,
+                span,
+                scope,
+            )
+        }
+    }
+
+    fn write_global_array_value_path_array_access_keyed_with_reference_propagation(
+        &mut self,
+        keys: &[ArrayKey],
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let (global_name, global_keys) =
+            SymbolTable::split_globals_reference_path(keys.to_vec(), span)?;
+        let Some(root_value) = scope.read_global_name(&global_name) else {
+            return Ok(false);
+        };
+        if global_keys.is_empty() {
+            return Ok(false);
+        }
+
+        if let Value::Object(array_access_object) = root_value {
+            if !self
+                .classes
+                .implements_interface(array_access_object.class_id(), "ArrayAccess")
+            {
+                return Ok(false);
+            }
+            return if global_keys.len() == 1 {
+                self.write_array_access_object_keyed_with_reference_propagation(
+                    array_access_object,
+                    global_keys[0].clone(),
+                    value,
+                    expr,
+                    array_literal_references,
+                    array_literal_copy_sources,
+                    span,
+                    scope,
+                )
+            } else {
+                self.write_array_access_object_nested_keyed_with_reference_propagation(
+                    array_access_object,
+                    global_keys,
+                    value,
+                    expr,
+                    array_literal_references,
+                    array_literal_copy_sources,
+                    span,
+                    scope,
+                )
+            };
+        }
+
+        self.write_array_value_path_array_access_keyed_with_reference_propagation(
+            &root_value,
+            &global_keys,
+            value,
+            expr,
+            array_literal_references,
+            array_literal_copy_sources,
+            span,
+            scope,
+        )
+    }
+
+    fn write_global_array_value_path_array_access_append_with_reference_propagation(
+        &mut self,
+        keys: &[ArrayKey],
+        suffix_keys: &[ArrayKey],
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let (global_name, global_keys) =
+            SymbolTable::split_globals_reference_path(keys.to_vec(), span)?;
+        let Some(root_value) = scope.read_global_name(&global_name) else {
+            return Ok(false);
+        };
+
+        if let Value::Object(array_access_object) = root_value {
+            if !self
+                .classes
+                .implements_interface(array_access_object.class_id(), "ArrayAccess")
+            {
+                return Ok(false);
+            }
+            return if global_keys.is_empty() {
+                self.write_array_access_object_append_with_reference_propagation(
+                    array_access_object,
+                    suffix_keys,
+                    value,
+                    expr,
+                    array_literal_references,
+                    array_literal_copy_sources,
+                    span,
+                    scope,
+                )
+            } else {
+                self.write_array_access_object_nested_append_with_reference_propagation(
+                    array_access_object,
+                    global_keys,
+                    suffix_keys,
+                    value,
+                    expr,
+                    array_literal_references,
+                    array_literal_copy_sources,
+                    span,
+                    scope,
+                )
+            };
+        }
+
+        self.write_array_value_path_array_access_append_with_reference_propagation(
+            &root_value,
+            &global_keys,
+            suffix_keys,
+            value,
+            expr,
+            array_literal_references,
+            array_literal_copy_sources,
+            span,
+            scope,
+        )
     }
 
     fn write_magic_get_array_access_append_with_reference_propagation(

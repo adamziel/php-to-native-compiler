@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2184/magic_set_local_array_container_arrayaccess_keyed_copied_source.php

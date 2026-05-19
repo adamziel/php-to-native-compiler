@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 2184-C through Lane 2188-C for method-body writes through local
+  and global array values that contain concrete `ArrayAccess` objects.
+  Supported nested keyed and append assignment now inspects the live array
+  value path before the generic array writer runs; when an intermediate bucket
+  holds an `ArrayAccess` object, the remaining path is routed through the
+  existing source-aware `offsetSet()` propagation path. The same dispatch is
+  available for string-keyed `$GLOBALS` paths, including direct global roots
+  that are themselves `ArrayAccess` objects. Focused system-PHP coverage
+  proves magic `__set()` local-copy keyed and append stores,
+  `ArrayAccess::offsetSet()` local-copy stores, `$GLOBALS` array-container
+  stores, and direct `$GLOBALS` `ArrayAccess` append stores while preserving
+  selected reference-backed leaves and detaching ordinary copied leaves. This
+  remains bounded to supported interpreter syntax, concrete arrays/objects
+  visible at execution time, and the current copied-source model; arbitrary
+  unsupported method-body syntax, untracked containers, exact diagnostics, and
+  native reference/string COW lowering remain unsupported.
+
 - Added Lane 2179-C through Lane 2183-C for two hard COW/value-model
   surfaces. Direct alias variables passed to by-reference parameters now
   promote their array-offset alias to a real `PhpReferenceCell`, bind the
