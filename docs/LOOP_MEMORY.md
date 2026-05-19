@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T13:57:12+02:00
+
+- Checkpoint before this task: `19b13539 runtime: execute magic ArrayAccess
+  COW bodies`, pushed to `origin/master`.
+- Task attempted: Lane 2076-C through Lane 2080-C bundle, extending executed
+  by-value magic/`ArrayAccess` copied-source bodies into reference-return
+  callees and `call_user_func()` reference-return callbacks.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2076/*`, `tests/fixtures/milestone2077/*`,
+  `tests/fixtures/milestone2078/*`, `tests/fixtures/milestone2079/*`,
+  `tests/fixtures/milestone2080/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP probes matched direct by-value
+  `ArrayAccess::offsetGet()` reference-return assignment, direct by-value
+  `__get()` reference-return assignment, dynamic string reference-return
+  calls, `call_user_func()` string callbacks, closure callbacks, and public
+  object array-callable callbacks; focused system-PHP comparisons passed for
+  `milestone2076` through `milestone2080`; adjacent `milestone2046` through
+  `milestone2080` comparisons passed; focused Rust suites
+  `functions_and_scopes`, `call_user_func_builtin`, and `object_model` passed;
+  `cargo check -q` passed.
+- Remaining COW gaps: `call_user_func_array()` reference-return/value-copy
+  containers, variadic callback reference-return value copies, nested
+  append/keyed write paths still tied to exact bridge dependencies, arbitrary
+  `offsetSet()` reference propagation, untracked dynamic containers,
+  whole-array reference identity, exact PHP diagnostics/Throwable objects, and
+  native reference/string COW lowering.
+- Next concrete task: run broad COW fixture regression plus `cargo fmt --check`
+  and `git diff --check`, then one full `tools/checkpoint.sh` bundle gate and
+  push if it passes.
+
 ## Loop Event 2026-05-19T14:06:18+02:00
 
 - Checkpoint before this task: `1a197150 runtime: preserve ArrayAccess

@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 2076-C through Lane 2080-C for reference-return callees receiving
+  overloaded by-value magic/`ArrayAccess` arrays. The by-reference argument
+  evaluator now allows the executed by-value `offsetGet()`/`__get()` path for
+  reference-return calls when the existing reference-return array-binding gate
+  is enabled, and reference-return assignment now binds child offsets below
+  value-copy parameters to a real local reference cell instead of requiring a
+  caller array alias. `call_user_func()` reference-return callbacks now carry
+  the same copied-source metadata while preserving PHP's warning/no-reference
+  value-passing shape. Focused system-PHP coverage proves branch-selected
+  local references in public by-value `ArrayAccess::offsetGet()`, visible
+  by-value `__get()`, dynamic string reference-return calls,
+  `call_user_func()` string callbacks, and public object array-callable
+  callbacks. This remains bounded to supported interpreter-body syntax,
+  tracked copied-array sources, and non-variadic value-copy callback
+  arguments; arbitrary PHP syntax, untracked dynamic containers, arbitrary
+  `offsetSet()` reference propagation, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
+
 - Added Lane 2071-C through Lane 2075-C for by-reference user-function
   parameters receiving overloaded by-value magic/`ArrayAccess` arrays from
   supported but non-exact method bodies. The interpreter now executes public

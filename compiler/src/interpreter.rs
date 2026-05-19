@@ -35834,21 +35834,29 @@ impl Interpreter {
         }
         self.ensure_user_function_call_depth(function, span)?;
 
-        let values =
-            self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
         let by_value_array_copy_bindings =
             Self::by_value_array_copy_bindings_for_call_user_func_value(function, args);
         if function.returns_by_reference {
+            let (values, reference_bindings) = self
+                .evaluate_call_user_func_reference_return_value_arguments(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                )?;
             return self.call_reference_return_function_value_with_checked_values(
                 function,
                 values,
                 None,
                 None,
                 None,
-                Vec::new(),
+                reference_bindings,
                 caller_scope,
             );
         }
+
+        let values =
+            self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
 
         self.call_user_function_with_checked_values_and_locals(
             function,
@@ -35898,8 +35906,13 @@ impl Interpreter {
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
-            let values =
-                self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
+            let (values, reference_bindings) = self
+                .evaluate_call_user_func_reference_return_value_arguments(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                )?;
             let prebound_locals = self.closure_prebound_locals(&closure);
             return self.call_reference_return_function_value_with_checked_values_and_locals(
                 function,
@@ -35907,7 +35920,7 @@ impl Interpreter {
                 None,
                 None,
                 None,
-                Vec::new(),
+                reference_bindings,
                 caller_scope,
                 prebound_locals,
             );
@@ -36039,6 +36052,32 @@ impl Interpreter {
         }
         self.emit_call_user_func_reference_parameter_warnings(function, args.len(), span)?;
         Ok(values)
+    }
+
+    fn evaluate_call_user_func_reference_return_value_arguments(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
+        let (values, source_bindings) = self
+            .evaluate_by_value_call_arguments_with_array_copy_sources(
+                function,
+                args,
+                caller_scope,
+            )?;
+        self.emit_call_user_func_reference_parameter_warnings(function, args.len(), span)?;
+        let reference_bindings = source_bindings
+            .into_iter()
+            .filter_map(|(param_name, target_keys, source)| {
+                target_keys.is_empty().then_some(ReferenceBinding {
+                    param_name,
+                    target: ReferenceBindingTarget::ValueWithArrayCopySource { source },
+                })
+            })
+            .collect();
+        Ok((values, reference_bindings))
     }
 
     fn by_value_array_copy_bindings_for_call_user_func_value(
@@ -37275,19 +37314,20 @@ impl Interpreter {
                 ensure_user_function_arity(function, args.len().saturating_sub(1), span)?;
                 ensure_supported_reference_return_function_metadata(function, span)?;
                 self.ensure_user_function_call_depth(function, span)?;
-                let values = self.evaluate_call_user_func_value_arguments(
-                    function,
-                    &args[1..],
-                    span,
-                    caller_scope,
-                )?;
+                let (values, reference_bindings) = self
+                    .evaluate_call_user_func_reference_return_value_arguments(
+                        function,
+                        &args[1..],
+                        span,
+                        caller_scope,
+                    )?;
                 self.call_reference_return_function_with_checked_values_for_reference_assignment(
                     function,
                     values,
                     None,
                     None,
                     None,
-                    Vec::new(),
+                    reference_bindings,
                     caller_scope,
                 )
             }
@@ -37327,12 +37367,13 @@ impl Interpreter {
                 ensure_user_function_arity(function, args.len().saturating_sub(1), span)?;
                 ensure_supported_reference_return_function_metadata(function, span)?;
                 self.ensure_user_function_call_depth(function, span)?;
-                let values = self.evaluate_call_user_func_value_arguments(
-                    function,
-                    &args[1..],
-                    span,
-                    caller_scope,
-                )?;
+                let (values, reference_bindings) = self
+                    .evaluate_call_user_func_reference_return_value_arguments(
+                        function,
+                        &args[1..],
+                        span,
+                        caller_scope,
+                    )?;
                 let prebound_locals = self.closure_prebound_locals(closure);
                 self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
                     function,
@@ -37340,7 +37381,7 @@ impl Interpreter {
                     None,
                     None,
                     None,
-                    Vec::new(),
+                    reference_bindings,
                     caller_scope,
                     prebound_locals,
                 )
@@ -37445,14 +37486,22 @@ impl Interpreter {
                 ensure_user_function_arity(function, args.len(), span)?;
                 ensure_supported_reference_return_function_metadata(function, span)?;
                 self.ensure_user_function_call_depth(function, span)?;
-                let (values, reference_bindings) = self
-                    .evaluate_user_function_call_arguments_with_options(
+                let (values, reference_bindings) = if context == "call_user_func()" {
+                    self.evaluate_call_user_func_reference_return_value_arguments(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                    )?
+                } else {
+                    self.evaluate_user_function_call_arguments_with_options(
                         function,
                         args,
                         span,
                         caller_scope,
                         true,
-                    )?;
+                    )?
+                };
                 self.call_reference_return_function_with_checked_values_for_reference_assignment(
                     function,
                     values,
@@ -37534,14 +37583,22 @@ impl Interpreter {
                 ensure_user_function_arity(function, args.len(), span)?;
                 ensure_supported_reference_return_function_metadata(function, span)?;
                 self.ensure_user_function_call_depth(function, span)?;
-                let (values, reference_bindings) = self
-                    .evaluate_user_function_call_arguments_with_options(
+                let (values, reference_bindings) = if context == "call_user_func()" {
+                    self.evaluate_call_user_func_reference_return_value_arguments(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                    )?
+                } else {
+                    self.evaluate_user_function_call_arguments_with_options(
                         function,
                         args,
                         span,
                         caller_scope,
                         true,
-                    )?;
+                    )?
+                };
                 self.call_reference_return_function_with_checked_values_for_reference_assignment(
                     function,
                     values,
@@ -42525,6 +42582,7 @@ impl Interpreter {
         }
         let mut direct_parent_binding_cells = Vec::new();
         let mut array_offset_binding_cells = Vec::new();
+        let mut value_copy_reference_params = Vec::new();
         for (index, param) in function.params.iter().enumerate() {
             if param.is_variadic {
                 let mut rest = PhpArray::new();
@@ -42578,6 +42636,7 @@ impl Interpreter {
                                 &param.name,
                                 source.clone(),
                             );
+                            value_copy_reference_params.push(param.name.clone());
                         }
                     }
                     ReferenceBindingTarget::ArrayOffset(alias) => {
@@ -42654,6 +42713,27 @@ impl Interpreter {
         self.active_static_locals.push(Vec::new());
         let result =
             self.execute_reference_return_assignment_statements(function, &mut local_scope);
+        let returned_value_copy_param_cell = match result.as_ref() {
+            Ok(ReferenceReturnLocalBinding::ArrayOffset { root_name, keys })
+                if value_copy_reference_params
+                    .iter()
+                    .any(|param_name| param_name == root_name) =>
+            {
+                let alias = ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::StaticArray {
+                        name: root_name.clone(),
+                    },
+                    keys: keys.clone(),
+                };
+                Some(self.reference_return_alias_cell(
+                    function,
+                    alias,
+                    function.span,
+                    &mut local_scope,
+                )?)
+            }
+            _ => None,
+        };
         let returned_array_offset = result.as_ref().ok().and_then(|returned| match returned {
             ReferenceReturnLocalBinding::Cell(returned_cell) => array_offset_binding_cells
                 .iter()
@@ -42819,7 +42899,9 @@ impl Interpreter {
 
         writeback_result?;
         captured_writeback_result?;
-        if let Some(aliases) = returned_array_offset {
+        if let Some(cell) = returned_value_copy_param_cell {
+            Ok(ReferenceReturnBinding::Cell(cell))
+        } else if let Some(aliases) = returned_array_offset {
             for alias in &aliases {
                 caller_scope.materialize_array_offset_alias(alias, function.span)?;
             }
@@ -44640,7 +44722,9 @@ impl Interpreter {
                         },
                     });
                 } else {
-                    if !function.returns_by_reference {
+                    let allow_by_value_overloaded_reference_argument =
+                        !function.returns_by_reference || allow_reference_return_array_bindings;
+                    if allow_by_value_overloaded_reference_argument {
                         if let Some((value, target)) = self
                             .evaluate_by_value_array_access_reference_argument(arg, caller_scope)?
                         {
@@ -44698,7 +44782,7 @@ impl Interpreter {
                             target: ReferenceBindingTarget::ArrayOffset(alias),
                         });
                     } else {
-                        if !function.returns_by_reference {
+                        if allow_by_value_overloaded_reference_argument {
                             if let Some((value, target)) = self
                                 .evaluate_by_value_magic_get_array_reference_argument(
                                     arg,

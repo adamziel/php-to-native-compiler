@@ -544,6 +544,17 @@
   containers, arbitrary `offsetSet()` reference propagation, whole-array
   reference identity, exact diagnostics, and native reference lowering remain
   unsupported.
+  Reference-return callees whose reached parameter is supplied by one of those
+  by-value magic/`ArrayAccess` copies can return a child slot by reference,
+  such as `return $param["ref"];`, and the returned alias binds to the
+  selected nested reference-backed leaf when copied-source metadata proves it.
+  Covered dispatch includes direct user functions, dynamic string calls, and
+  `call_user_func()` string or public object array-callable callbacks, while
+  preserving `call_user_func()` warning/no-reference value-passing semantics.
+  Variadic value-copy callback reference returns, `call_user_func_array()`
+  value-copy containers, untracked dynamic containers, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
   Covered by-value `ArrayAccess::offsetGet()` paths also reject scalar parents
   when the caller attempts a nested keyed write, nested append, property-held
   reference target, or magic-provided reference target below the returned

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone2078/dynamic_reference_return_arrayaccess_branch_arg_copy.php
+stdout:
+copy|plain-original
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

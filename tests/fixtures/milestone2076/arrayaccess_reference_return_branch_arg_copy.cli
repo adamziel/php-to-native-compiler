@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone2076/arrayaccess_reference_return_branch_arg_copy.php
+stdout:
+copy|copy|store|plain-original
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

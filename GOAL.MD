@@ -32,7 +32,24 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2075:
+The current in-progress implementation frontier is Lane 2080:
+
+- Lanes 2076 through 2080 extend the executed by-value magic/`ArrayAccess`
+  method-body path into reference-return callees. A reference-return function,
+  dynamic string call, or `call_user_func()` callback whose reached parameter
+  is declared by reference now receives the overloaded value copy with tracked
+  copied-array provenance, so `return $param["ref"];` can return the selected
+  nested reference-backed leaf instead of falling back to exact static bridge
+  requirements. Focused system-PHP coverage proves public by-value
+  `ArrayAccess::offsetGet()` branch-selected local references, visible
+  by-value `__get()` branch-selected local references, dynamic string
+  reference-return calls, `call_user_func()` string callbacks, and
+  `call_user_func()` public object array-callable callbacks. This remains
+  bounded to supported interpreter-body syntax, copied-source metadata, and
+  non-variadic value-copy callback arguments; arbitrary PHP syntax, untracked
+  dynamic containers, arbitrary `offsetSet()` reference propagation,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
 
 - Lanes 2071 through 2075 remove another exact-static bridge from
   by-reference user-function parameters that receive overloaded by-value
