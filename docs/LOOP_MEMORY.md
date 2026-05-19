@@ -18,6 +18,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T03:56:21+02:00
+
+- Checkpoint before this task: `f238eac7 runtime: support global reference
+  return slots`, pushed to `origin/master`.
+- Task attempted: Lane 1861-C through Lane 1863-C bundle, extending
+  reference-return body global-root aliasing from explicit `$GLOBALS[...]`
+  paths to `global`-imported symbols and auto-superglobal array slots.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1861/*`, `tests/fixtures/milestone1862/*`,
+  `tests/fixtures/milestone1863/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo run -q -p phpc -- test --compare-php` passed
+  `milestone1861`, `milestone1862`, and `milestone1863` with system-PHP
+  comparisons.
+- Remaining COW gaps: recursive `$GLOBALS` materialization, arbitrary callback
+  and builtin reference-return sources, arbitrary PHP and magic/`ArrayAccess`
+  side effects outside the interpreter subset, full exception unwinding and
+  uncaught propagation, arbitrary Iterator side effects, broader complex alias
+  sinks and alias lifetime ordering, exact PHP stderr/fatal text,
+  binary/multibyte string offset behavior, and native reference/string COW
+  lowering.
+- Next concrete task: run adjacent global/magic/ArrayAccess reference checks,
+  formatting, diff check, and the full `tools/checkpoint.sh` bundle gate,
+  then push if it passes.
+
 ## Loop Event 2026-05-19T03:51:18+02:00
 
 - Checkpoint before this task: `d4d0e5fc runtime: tighten expression scalar

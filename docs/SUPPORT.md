@@ -368,6 +368,10 @@
   key computation. Delegated reference-return helpers reached from those
   bodies use the same global-root alias path when their returned lvalue is a
   covered `$GLOBALS` slot.
+  The same returned-lvalue path covers routed imported globals and
+  auto-superglobals, so direct helpers or magic/`ArrayAccess` bodies can use
+  `global $store; return $store[$key];` or
+  `return $_REQUEST[$offset];` for covered array slots.
   The bounded `__get()` and `offsetGet()` backing analyzers also accept one
   local variable bound by reference to an indexed `$this->property[...]`
   backing bucket, followed by returning that local or a literal child below

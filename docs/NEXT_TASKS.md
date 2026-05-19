@@ -20321,6 +20321,18 @@ handled.
   sources, full PHP side effects outside the interpreter subset, exact
   diagnostics, and native reference lowering named as unsupported.
 
+## Lane 1861-C through Lane 1863-C: Imported Global Return Slots
+
+- [x] Runtime/tests/docs bundle: extend executed reference-return bodies to
+  routed imported globals and auto-superglobal array slots. Cover a direct
+  helper using `global $store; return $store[$key];`, a public by-reference
+  `__get()` body returning an imported global bucket, and a public
+  by-reference `ArrayAccess::offsetGet()` body returning `$_REQUEST[$offset]`,
+  all with system-PHP comparisons. Keep recursive `$GLOBALS` materialization,
+  arbitrary callback/builtin reference-return sources, full PHP side effects
+  outside the interpreter subset, exact diagnostics, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

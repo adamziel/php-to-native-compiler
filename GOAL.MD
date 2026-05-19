@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1860:
+The current in-progress implementation frontier is Lane 1863:
+
+- Lanes 1861 through 1863 extend the same executed reference-return body
+  global-root alias path to imported globals and auto-superglobal array slots.
+  Direct reference-return helpers can now `global $store; return
+  $store[$key];`, and covered public by-reference `__get()`/
+  `ArrayAccess::offsetGet()` bodies can return imported global or
+  superglobal buckets such as `return $_REQUEST[$offset];` while preserving
+  COW/reference-slot identity. This remains bounded to globals routed through
+  the current symbol table, direct array-offset lvalues, and the existing
+  interpreter subset; recursive `$GLOBALS` materialization, arbitrary
+  callback/builtin reference-return sources, exact diagnostics, and native
+  reference lowering remain unsupported.
 
 - Lanes 1858 through 1860 broaden executed magic/`ArrayAccess`
   reference-return method bodies to return string-keyed `$GLOBALS` array

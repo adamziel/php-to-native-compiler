@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Lane 1861-C through Lane 1863-C for imported-global and superglobal
+  array slots returned from reference-return bodies. Direct helpers can now
+  `global $store; return $store[$key];`, and covered public by-reference
+  `__get()`/`ArrayAccess::offsetGet()` bodies can return imported global or
+  auto-superglobal buckets such as `return $_REQUEST[$offset];` as proven
+  COW lvalues. This stays bounded to routed global symbols, direct
+  array-offset lvalues, the current interpreter subset, and native lowering
+  remains unsupported. Focused verification: `cargo run -q -p phpc -- test
+  --compare-php` passed the new `milestone1861`, `milestone1862`, and
+  `milestone1863` fixtures with system-PHP comparisons.
+
 - Added Lane 1858-C through Lane 1860-C for string-keyed `$GLOBALS` lvalues
   returned from executed magic/`ArrayAccess` reference-return bodies. Public
   by-reference `__get()` and `ArrayAccess::offsetGet()` bodies can now return

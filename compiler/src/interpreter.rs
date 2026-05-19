@@ -39228,6 +39228,18 @@ impl Interpreter {
                             alias,
                         ]));
                     }
+                    if scope.name_routes_to_global_storage(root_name) {
+                        let alias = ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::GlobalArray {
+                                name: root_name.to_string(),
+                            },
+                            keys,
+                        };
+                        scope.materialize_array_offset_alias(&alias, span)?;
+                        return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(vec![
+                            alias,
+                        ]));
+                    }
                     if let Some(aliases) = scope.array_offset_aliases_for_name(root_name) {
                         return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(
                             Self::array_offset_aliases_with_suffix(&aliases, &keys),
