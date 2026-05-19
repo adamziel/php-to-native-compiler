@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2000:
+The current in-progress implementation frontier is Lane 2005:
+
+- Lanes 2001 through 2005 preserve copied-array COW provenance when supported
+  by-value magic/`ArrayAccess` method bodies capture a proven backed bucket
+  by reference in a closure. Covered bodies include visible by-value
+  `__get()`, public by-value `ArrayAccess::offsetGet()`, direct closure
+  invocation, `call_user_func($closure)`, `call_user_func_array($closure,
+  $args)`, and a bounded nested-leaf mutation through the captured bucket
+  before it is returned. Focused system-PHP coverage proves the returned copy
+  keeps selected reference-backed nested slots shared while ordinary nested
+  arrays detach. Replacing a parent of a live copied-bucket reference,
+  arbitrary capture roots, whole-array reference identity, exact diagnostics,
+  and native reference lowering remain unsupported.
 
 - Lanes 1996 through 2000 preserve copied-array COW provenance when supported
   by-value magic/`ArrayAccess` method bodies pass a proven backed bucket

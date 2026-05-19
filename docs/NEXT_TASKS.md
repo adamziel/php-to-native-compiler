@@ -20712,6 +20712,21 @@ handled.
   reference identity, exact diagnostics, and native reference lowering named
   as unsupported.
 
+## Lane 2001-C through Lane 2005-C: By-Reference Closure Capture Provenance
+
+- [x] Runtime/tests/docs bundle: preserve copied-array COW provenance when a
+  supported by-value magic/`ArrayAccess` method body captures a proven backed
+  bucket with `use (&$bucket)` and returns it through a closure. Cover visible
+  by-value `__get()`, public by-value `ArrayAccess::offsetGet()`, direct
+  closure invocation, `call_user_func($closure)`,
+  `call_user_func_array($closure, $args)`, and one bounded nested-leaf write
+  through the captured bucket before return with system-PHP comparisons. Keep
+  parent replacement of live copied-bucket references, arbitrary capture
+  roots, `call_user_func()` reference-warning/no-reference semantics,
+  `call_user_func_array()` by-reference callback containers, whole-array
+  reference identity, exact diagnostics, and native reference lowering named
+  as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe the remaining scalar parent overwrite/error parity for covered

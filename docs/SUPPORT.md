@@ -417,6 +417,19 @@
   warnings/no-reference semantics, `call_user_func_array()` by-reference
   callback argument containers, whole-array reference identity, exact
   diagnostics, and native reference lowering remain unsupported.
+  These bodies also preserve copied-array provenance through by-reference
+  closure captures of a proven backed bucket. Covered forms include
+  `use (&$bucket)` returned through direct closure invocation,
+  `call_user_func($closure)`, and `call_user_func_array($closure, $args)`
+  from visible by-value `__get()` or public by-value
+  `ArrayAccess::offsetGet()`. The covered closure body may also write through
+  the captured bucket at a nested leaf that does not replace a parent of a
+  live copied-bucket reference before returning the bucket; the returned copy
+  still preserves selected reference-backed nested slots while ordinary
+  nested arrays detach. Replacing a parent of a live copied-bucket reference,
+  arbitrary capture roots, arbitrary object/container provenance,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
   Supported reference-return bodies may also delegate to non-static helpers
   through PHP's static call syntaxes when a compatible current `$this` object
   exists. Covered forms include `self::helper(...)`, `parent::helper(...)`,

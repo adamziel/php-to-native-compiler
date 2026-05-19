@@ -149,7 +149,7 @@ struct Interpreter {
     closure_functions: HashMap<i64, Rc<FunctionDecl>>,
     closure_values: HashMap<i64, PhpClosure>,
     closure_alias_captures: HashMap<i64, Vec<ClosureAliasCapture>>,
-    closure_array_copy_source_captures: HashMap<i64, Vec<(String, ArrayCopySource)>>,
+    closure_array_copy_source_captures: HashMap<i64, Vec<(String, ArrayCopySource, SymbolTable)>>,
     reflection_methods: HashMap<i64, ReflectionMethodState>,
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
@@ -2657,6 +2657,37 @@ impl SymbolTable {
         }
     }
 
+    fn import_array_copy_source_aliases_from_copy(
+        &mut self,
+        target_name: &str,
+        source: &ArrayCopySource,
+        source_scope: &SymbolTable,
+    ) -> Vec<ArrayOffsetAlias> {
+        let mut imported = Vec::new();
+        for source_root in source_scope.array_copy_source_roots(source) {
+            imported.extend(self.import_array_offset_aliases_from_path_copy(
+                target_name,
+                source_scope,
+                &source_root,
+                &source.keys,
+                source.include_exact_path,
+            ));
+        }
+
+        let mut unique_imports = Vec::new();
+        for alias in imported {
+            if !unique_imports.contains(&alias) {
+                if let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root {
+                    if name == target_name {
+                        self.record_copied_array_provenance_path(target_name, &alias.keys);
+                    }
+                }
+                unique_imports.push(alias);
+            }
+        }
+        unique_imports
+    }
+
     fn value_with_object_property_aliases_from_array_copy(
         &mut self,
         value: Value,
@@ -4969,10 +5000,17 @@ enum PreboundLocal {
         name: String,
         value: Value,
         source: ArrayCopySource,
+        source_scope: SymbolTable,
     },
     Cell {
         name: String,
         cell: VariableCell,
+    },
+    CellWithArrayCopySource {
+        name: String,
+        cell: VariableCell,
+        source: ArrayCopySource,
+        source_scope: SymbolTable,
     },
     ArrayOffsets {
         name: String,
@@ -7159,6 +7197,20 @@ impl Interpreter {
             }
             _ => None,
         }
+    }
+
+    fn array_copy_source_preserved_after_nested_write(
+        scope: &SymbolTable,
+        name: &str,
+        keys: &[ArrayKey],
+    ) -> Option<ArrayCopySource> {
+        let source = scope.public_object_property_array_copy_source_for_static(name)?;
+        let replaces_parent_of_live_alias = scope
+            .array_offset_aliases_for_name(name)
+            .unwrap_or_default()
+            .iter()
+            .any(|alias| alias.keys.starts_with(keys) && alias.keys.len() > keys.len());
+        (!replaces_parent_of_live_alias).then_some(source)
     }
 
     fn array_literal_copy_source_for_index_expr(
@@ -17528,6 +17580,12 @@ impl Interpreter {
                     }
                 }
                 if let Some(key) = key.as_ref() {
+                    let retained_array_copy_source =
+                        Self::array_copy_source_preserved_after_nested_write(
+                            scope,
+                            name,
+                            std::slice::from_ref(key),
+                        );
                     if scope.write_alias_backed_array_offset_checked_with_object_type_resolver(
                         name,
                         std::slice::from_ref(key),
@@ -17537,6 +17595,9 @@ impl Interpreter {
                             self.object_satisfies_live_property_type(object, type_name)
                         },
                     )? {
+                        if let Some(source) = retained_array_copy_source {
+                            scope.record_public_object_property_array_copy_source(name, source);
+                        }
                         return Ok(value);
                     }
                 }
@@ -17734,7 +17795,17 @@ impl Interpreter {
                         ));
                     }
                 }
+                let retained_array_copy_source = target_key.as_ref().and_then(|key| {
+                    Self::array_copy_source_preserved_after_nested_write(
+                        scope,
+                        name,
+                        std::slice::from_ref(key),
+                    )
+                });
                 scope.write_static(name, slot);
+                if let Some(source) = retained_array_copy_source {
+                    scope.record_public_object_property_array_copy_source(name, source);
+                }
                 if let Some(key) = target_key.as_ref() {
                     scope.sync_array_offset_aliases_for_root_path(
                         &ArrayOffsetAliasRoot::StaticArray {
@@ -17849,6 +17920,8 @@ impl Interpreter {
                     }
                     return Ok(value);
                 }
+                let retained_array_copy_source =
+                    Self::array_copy_source_preserved_after_nested_write(scope, name, &keys);
                 if scope.write_alias_backed_array_offset_checked_with_object_type_resolver(
                     name,
                     &keys,
@@ -17858,6 +17931,9 @@ impl Interpreter {
                         self.object_satisfies_live_property_type(object, type_name)
                     },
                 )? {
+                    if let Some(source) = retained_array_copy_source {
+                        scope.record_public_object_property_array_copy_source(name, source);
+                    }
                     return Ok(value);
                 }
                 if keys.len() > 1 {
@@ -17886,7 +17962,12 @@ impl Interpreter {
                     },
                     keys: keys.clone(),
                 }]);
+                let retained_array_copy_source =
+                    Self::array_copy_source_preserved_after_nested_write(scope, name, &keys);
                 self.write_nested_array_assignment(name, &keys, value.clone(), *span, scope)?;
+                if let Some(source) = retained_array_copy_source {
+                    scope.record_public_object_property_array_copy_source(name, source);
+                }
                 if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                     self.bind_array_literal_references_to_alias_root_with_prefix(
                         ArrayOffsetAliasRoot::StaticArray {
@@ -30581,19 +30662,30 @@ impl Interpreter {
             .iter()
             .map(|capture| {
                 if capture.by_reference() {
+                    if let Some((source, source_scope)) =
+                        self.closure_array_copy_source_capture(closure, capture.name())
+                    {
+                        return PreboundLocal::CellWithArrayCopySource {
+                            name: capture.name().to_string(),
+                            cell: capture.cell(),
+                            source,
+                            source_scope,
+                        };
+                    }
                     PreboundLocal::Cell {
                         name: capture.name().to_string(),
                         cell: capture.cell(),
                     }
                 } else {
                     let value = capture.value();
-                    if let Some(source) =
+                    if let Some((source, source_scope)) =
                         self.closure_array_copy_source_capture(closure, capture.name())
                     {
                         return PreboundLocal::ValueWithArrayCopySource {
                             name: capture.name().to_string(),
                             value,
                             source,
+                            source_scope,
                         };
                     }
                     PreboundLocal::Value {
@@ -30621,13 +30713,13 @@ impl Interpreter {
         &self,
         closure: &PhpClosure,
         name: &str,
-    ) -> Option<ArrayCopySource> {
+    ) -> Option<(ArrayCopySource, SymbolTable)> {
         self.closure_array_copy_source_captures
             .get(&closure.id())?
             .iter()
             .rev()
-            .find(|(candidate, _)| candidate == name)
-            .map(|(_, source)| source.clone())
+            .find(|(candidate, _, _)| candidate == name)
+            .map(|(_, source, source_scope)| (source.clone(), source_scope.clone()))
     }
 
     fn invoke_reflection_method(
@@ -33866,6 +33958,12 @@ impl Interpreter {
                         RuntimeError::undefined_variable(&capture.name),
                     )
                 })?;
+                let value = cell.value_cloned();
+                if let Some(source) =
+                    Self::array_copy_source_for_closure_capture(&capture.name, &value, scope)
+                {
+                    array_copy_source_captures.push((capture.name.clone(), source, scope.clone()));
+                }
                 captured_values.push(PhpClosureCapture::new_reference(
                     capture.name.clone(),
                     true,
@@ -33873,12 +33971,10 @@ impl Interpreter {
                 ));
             } else {
                 let value = scope.read_static(&capture.name, capture.span)?;
-                if let Some(source) = Self::array_copy_source_for_by_value_closure_capture(
-                    &capture.name,
-                    &value,
-                    scope,
-                ) {
-                    array_copy_source_captures.push((capture.name.clone(), source));
+                if let Some(source) =
+                    Self::array_copy_source_for_closure_capture(&capture.name, &value, scope)
+                {
+                    array_copy_source_captures.push((capture.name.clone(), source, scope.clone()));
                 }
                 captured_values.push(PhpClosureCapture::new(capture.name.clone(), false, value));
             }
@@ -33924,7 +34020,7 @@ impl Interpreter {
         Ok(Value::Closure(closure))
     }
 
-    fn array_copy_source_for_by_value_closure_capture(
+    fn array_copy_source_for_closure_capture(
         name: &str,
         value: &Value,
         scope: &SymbolTable,
@@ -41257,8 +41353,13 @@ impl Interpreter {
             self.called_class_context.push(called_class_context);
         }
         let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
-        if let Some(this_object) = this_object {
-            local_scope.write_static("this", Value::Object(this_object));
+        if let Some(this_object) = this_object.as_ref() {
+            local_scope.write_static("this", Value::Object(this_object.clone()));
+            local_scope.import_public_object_property_aliases_for_object_value(
+                "this",
+                this_object,
+                caller_scope,
+            );
         }
         let mut captured_array_offset_binding_cells = Vec::new();
         for local in prebound_locals {
@@ -41268,12 +41369,33 @@ impl Interpreter {
                     name,
                     value,
                     source,
+                    source_scope,
                 } => {
                     local_scope.write_static(&name, value);
+                    local_scope.import_array_copy_source_aliases_from_copy(
+                        &name,
+                        &source,
+                        &source_scope,
+                    );
                     local_scope.mirror_array_copy_source_aliases_from_copy(&name, &source);
                     local_scope.record_public_object_property_array_copy_source(&name, source);
                 }
                 PreboundLocal::Cell { name, cell } => local_scope.bind_static_to_cell(&name, cell),
+                PreboundLocal::CellWithArrayCopySource {
+                    name,
+                    cell,
+                    source,
+                    source_scope,
+                } => {
+                    local_scope.bind_static_to_cell(&name, cell);
+                    local_scope.import_array_copy_source_aliases_from_copy(
+                        &name,
+                        &source,
+                        &source_scope,
+                    );
+                    local_scope.mirror_array_copy_source_aliases_from_copy(&name, &source);
+                    local_scope.record_public_object_property_array_copy_source(&name, source);
+                }
                 PreboundLocal::ArrayOffsets {
                     name,
                     aliases,
@@ -41703,8 +41825,15 @@ impl Interpreter {
             self.called_class_context.push(called_class_context);
         }
         let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
-        if let Some(this_object) = this_object {
-            local_scope.write_static("this", Value::Object(this_object));
+        if let Some(this_object) = this_object.as_ref() {
+            local_scope.write_static("this", Value::Object(this_object.clone()));
+            if let Some(source_scope) = writeback_scope.as_deref() {
+                local_scope.import_public_object_property_aliases_for_object_value(
+                    "this",
+                    this_object,
+                    source_scope,
+                );
+            }
         }
         let mut array_offset_binding_cells = Vec::new();
         for (index, param) in function.params.iter().enumerate() {
@@ -44414,8 +44543,15 @@ impl Interpreter {
         }
         let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
         let this_object_for_alias_transfer = this_object.clone();
-        if let Some(this_object) = this_object {
-            local_scope.write_static("this", Value::Object(this_object));
+        if let Some(this_object) = this_object.as_ref() {
+            local_scope.write_static("this", Value::Object(this_object.clone()));
+            if let Some(source_scope) = reference_scope.as_deref() {
+                local_scope.import_public_object_property_aliases_for_object_value(
+                    "this",
+                    this_object,
+                    source_scope,
+                );
+            }
         }
         let mut captured_array_offset_binding_cells = Vec::new();
         let mut by_value_array_copy_alias_writebacks: Vec<(
@@ -44430,12 +44566,33 @@ impl Interpreter {
                     name,
                     value,
                     source,
+                    source_scope,
                 } => {
                     local_scope.write_static(&name, value);
+                    local_scope.import_array_copy_source_aliases_from_copy(
+                        &name,
+                        &source,
+                        &source_scope,
+                    );
                     local_scope.mirror_array_copy_source_aliases_from_copy(&name, &source);
                     local_scope.record_public_object_property_array_copy_source(&name, source);
                 }
                 PreboundLocal::Cell { name, cell } => local_scope.bind_static_to_cell(&name, cell),
+                PreboundLocal::CellWithArrayCopySource {
+                    name,
+                    cell,
+                    source,
+                    source_scope,
+                } => {
+                    local_scope.bind_static_to_cell(&name, cell);
+                    local_scope.import_array_copy_source_aliases_from_copy(
+                        &name,
+                        &source,
+                        &source_scope,
+                    );
+                    local_scope.mirror_array_copy_source_aliases_from_copy(&name, &source);
+                    local_scope.record_public_object_property_array_copy_source(&name, source);
+                }
                 PreboundLocal::ArrayOffsets {
                     name,
                     aliases,

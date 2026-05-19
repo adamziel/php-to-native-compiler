@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T10:25:00+02:00
+
+- Checkpoint before this task: `53617d8d runtime: preserve byref helper COW
+  provenance`, pushed to `origin/master`.
+- Task attempted: Lane 2001-C through Lane 2005-C bundle, preserving
+  copied-array COW provenance when supported by-value magic/`ArrayAccess`
+  method bodies capture a proven backed bucket by reference in a closure and
+  return it.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2001/*`, `tests/fixtures/milestone2002/*`,
+  `tests/fixtures/milestone2003/*`, `tests/fixtures/milestone2004/*`,
+  `tests/fixtures/milestone2005/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2001` through `milestone2005`; adjacent comparisons passed for
+  `milestone1982` through `milestone1985` and `milestone1991` through
+  `milestone2005`; `cargo check -q` passed while developing the bundle.
+- Remaining COW gaps: parent replacement of live copied-bucket references,
+  `call_user_func()` reference-warning/no-reference semantics,
+  `call_user_func_array()` by-reference callback containers, arbitrary
+  object/container provenance, side-effecting container-key analysis, append
+  expressions outside by-reference call-argument positions, non-reference
+  append-expression values, dynamic `call_user_func_array()` containers not
+  traceable to current-scope local arrays, remaining scalar parent
+  overwrite/error parity outside covered roots, possible mixed `ArrayAccess`
+  gaps in reference-return or callback reference-argument paths, exact PHP
+  diagnostics, whole-array reference identity, native reference/string COW
+  lowering, and native lowering for these interpreter paths.
+- Next concrete task: run focused Rust tests, formatting/diff checks, and the
+  full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T09:42:56+02:00
 
 - Checkpoint before this task: `eeaf3096 runtime: preserve local container

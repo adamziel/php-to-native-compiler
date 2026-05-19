@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2001-C through Lane 2005-C for copied-array COW provenance
+  through by-reference closure captures inside supported by-value
+  magic/`ArrayAccess` method bodies. Closure creation now records both the
+  proven copied-bucket source and the source scope for `use (&$bucket)`
+  captures, and closure prebinding restores that provenance plus imported
+  backing aliases before execution. Focused system-PHP coverage proves
+  visible by-value `__get()` and public by-value
+  `ArrayAccess::offsetGet()` bodies preserve reference-backed nested slots
+  through direct by-reference closure captures, `call_user_func($closure)`,
+  `call_user_func_array($closure, $args)`, and a bounded mutation inside the
+  closure through the captured bucket before returning it. Replacing a parent
+  of a live copied-bucket reference, `call_user_func()` warning/no-reference
+  semantics, `call_user_func_array()` by-reference callback containers,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 1996-C through Lane 2000-C for copied-array COW provenance
   through by-reference helper parameters inside supported by-value
   magic/`ArrayAccess` method bodies. The source-aware user-function call path
