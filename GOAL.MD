@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2236:
+The current in-progress implementation frontier is Lane 2240:
+
+- Lanes 2237 through 2240 broaden `call_user_func_array()` argument-container
+  identity inside supported magic/`ArrayAccess` bodies. Source-aware
+  reference-return dispatch now accepts general expression argument arrays such
+  as helper-returned `array($copy)` values, and stored argument arrays whose
+  reached slot is already a runtime reference cell can bind through that cell
+  even when the callee-local alias name is not portable. Focused system-PHP
+  coverage proves visible `__get()`, public `ArrayAccess::offsetSet()`, fresh
+  helper-returned holder objects, and dynamic instance method calls such as
+  `$this->{$method}($bucket)`. This remains bounded to supported expression
+  evaluation, concrete returned arrays/objects, materialized reference cells,
+  and portable copied-source roots; it does not claim arbitrary unsupported
+  syntax, untracked dynamic containers, full whole-array reference identity,
+  exact diagnostics, or native reference/string COW lowering.
 
 - Lanes 2233 through 2236 rehydrate copied-source reference leaves when a
   supported helper returns an array literal directly. Direct returned literals

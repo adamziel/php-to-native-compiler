@@ -243,6 +243,18 @@ direct helper and reflected user-function results aligned with PHP COW for
 covered copied-source roots without introducing arbitrary callee-local path
 names into the caller.
 
+`call_user_func_array()` now has a value-copy fallback for supported general
+expression argument arrays in the reference-return path. If an expression such
+as a helper call returns an argument array, the interpreter uses the evaluated
+array value directly; reference cells already materialized in that value are
+available to the callback, and copied-source entry metadata is attached when
+the argument-array expression itself has a portable source. Stored argument
+arrays also check the reached slot for a concrete runtime reference cell before
+requiring a portable alias group, which lets fresh helper-returned holder
+objects participate without leaking local variable names. Dynamic instance
+method calls evaluate the method expression and then reuse ordinary
+source-aware instance dispatch.
+
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller

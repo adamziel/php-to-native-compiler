@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2237/magic_get_call_user_func_array_helper_returned_args_cow.php

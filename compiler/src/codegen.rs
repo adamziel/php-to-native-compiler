@@ -299,6 +299,7 @@ fn is_object_offset_expr(expr: &Expr) -> bool {
         Expr::Property { .. }
             | Expr::DynamicProperty { .. }
             | Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. }
             | Expr::New { .. }
             | Expr::Clone { .. }
             | Expr::ObjectStaticProperty { .. }
@@ -1065,6 +1066,7 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_OBJECT_PROPERTY_REJECTION))
             }
             Expr::MethodCall { span, .. }
+            | Expr::DynamicMethodCall { span, .. }
             | Expr::ParentMethodCall { span, .. }
             | Expr::StaticMethodCall { span, .. }
             | Expr::ObjectStaticMethodCall { span, .. }
@@ -4109,6 +4111,7 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_PROPERTY_REJECTION))
             }
             Expr::MethodCall { span, .. }
+            | Expr::DynamicMethodCall { span, .. }
             | Expr::ParentMethodCall { span, .. }
             | Expr::StaticMethodCall { span, .. }
             | Expr::ObjectStaticMethodCall { span, .. }

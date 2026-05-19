@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 2237-C through Lane 2240-C for helper-produced
+  `call_user_func_array()` argument containers and dynamic method-body helper
+  dispatch. Reference-return `call_user_func_array()` can now use a general
+  expression argument array, so helper-returned `array($copy)` values preserve
+  already materialized copied-source reference leaves. Stored argument arrays
+  whose reached slot is a runtime reference cell can bind through that cell
+  without requiring a portable caller alias name, while still importing
+  copied-source metadata when available for selected-leaf promotion. Dynamic
+  instance method calls such as `$this->{$method}($bucket)` now parse and enter
+  the same source-aware method dispatch as ordinary calls. Focused system-PHP
+  coverage proves visible `__get()`, public `ArrayAccess::offsetSet()`, fresh
+  helper-returned holder objects, and dynamic helper calls. This remains
+  bounded to supported expression bodies, concrete returned arrays/objects,
+  materialized reference cells, and portable copied-source roots; arbitrary
+  unsupported syntax, untracked dynamic containers, full whole-array reference
+  identity, exact diagnostics, and native reference/string COW lowering remain
+  unsupported.
+
 - Added Lane 2233-C through Lane 2236-C for direct returned array-literal COW
   rehydration. Supported helper functions that receive a copied bucket and
   return `array($copy)` or a nested literal such as

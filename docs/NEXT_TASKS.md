@@ -123,14 +123,19 @@ handled.
   `__get()` and public `ArrayAccess::offsetGet()` callers that index direct
   helper results and reflected user-function `ReflectionFunction::invoke()` /
   `invokeArgs()` results.
+- [x] Lane 2237-C through 2240-C: broaden helper-produced
+  `call_user_func_array()` argument-container identity and dynamic method
+  dispatch, covering helper-returned argument arrays, fresh helper-returned
+  holder objects with materialized reference-cell slots, visible `__get()`,
+  public `ArrayAccess::offsetSet()`, and `$this->{$method}($bucket)` source-aware
+  calls.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
   holders expose real cells or concrete writeback roots instead of stale paths.
-  Known next probes should target remaining portable-root/container cases where
-  copied-source metadata still cannot be synced without leaking callee-local
-  symbol names, plus broader whole-array reference identity cases not covered
-  by returned-literal rehydration.
+  Known next probes should target remaining whole-array reference identity
+  cases and containers that still cannot expose either materialized reference
+  cells or portable copied-source roots.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

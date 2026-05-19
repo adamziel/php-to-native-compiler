@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2238/magic_get_call_user_func_array_fresh_helper_holder_reference_cell_cow.php

@@ -7060,6 +7060,7 @@ impl Interpreter {
                 self.by_reference_foreach_reference_return_root(iterable, scope, span)
             }
             Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. }
             | Expr::StaticMethodCall { .. }
             | Expr::SelfMethodCall { .. }
             | Expr::ParentMethodCall { .. }
@@ -8235,6 +8236,14 @@ impl Interpreter {
             } => {
                 self.call_instance_method_with_array_copy_source(target, method, args, *span, scope)
             }
+            Expr::DynamicMethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => self.call_dynamic_instance_method_with_array_copy_source(
+                target, method, args, *span, scope,
+            ),
             Expr::Call { name, args, span } => {
                 self.call_function_with_array_copy_source(name, args, *span, scope)
             }
@@ -12375,6 +12384,12 @@ impl Interpreter {
                 args,
                 span,
             } => self.call_instance_method(target, method, args, *span, scope),
+            Expr::DynamicMethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => self.call_dynamic_instance_method(target, method, args, *span, scope),
             Expr::ParentMethodCall { method, args, span } => {
                 self.call_parent_method(method, args, *span, scope)
             }
@@ -19590,6 +19605,14 @@ impl Interpreter {
                 args,
                 span: call_span,
             } => self.call_reference_return_instance_method(
+                target, method, args, *call_span, scope,
+            ),
+            Expr::DynamicMethodCall {
+                target,
+                method,
+                args,
+                span: call_span,
+            } => self.call_reference_return_dynamic_instance_method(
                 target, method, args, *call_span, scope,
             ),
             Expr::StaticMethodCall {
@@ -32794,6 +32817,64 @@ impl Interpreter {
         .map(|(value, _)| value)
     }
 
+    fn call_dynamic_instance_method(
+        &mut self,
+        target: &Expr,
+        method: &Expr,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        self.call_dynamic_instance_method_with_array_copy_source(
+            target,
+            method,
+            args,
+            span,
+            caller_scope,
+        )
+        .map(|(value, _)| value)
+    }
+
+    fn call_dynamic_instance_method_with_array_copy_source(
+        &mut self,
+        target: &Expr,
+        method: &Expr,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let method_name = self.evaluate_dynamic_method_name(method, span, caller_scope)?;
+        self.call_instance_method_with_array_copy_source(
+            target,
+            &method_name,
+            args,
+            span,
+            caller_scope,
+        )
+    }
+
+    fn evaluate_dynamic_method_name(
+        &mut self,
+        method: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<String> {
+        match self.evaluate(method, scope)? {
+            Value::String(value) => Ok(value),
+            Value::Int(value) => Ok(value.to_string()),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "dynamic method call",
+                    format!(
+                        "method name must evaluate to string or integer in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
     fn call_instance_method_with_array_copy_source(
         &mut self,
         target: &Expr,
@@ -41881,11 +41962,42 @@ impl Interpreter {
                     true,
                 )?
             else {
-                return Ok(None);
+                let Some((values, source_bindings)) = self
+                    .evaluate_general_call_user_func_array_value_arguments_with_array_copy_sources(
+                        function,
+                        argument_expr,
+                        span,
+                        caller_scope,
+                        true,
+                    )?
+                else {
+                    return Ok(None);
+                };
+                return self.call_user_func_array_reference_return_value_arguments_from_values(
+                    function,
+                    values,
+                    source_bindings,
+                    span,
+                );
             };
             (values, source_bindings)
         };
 
+        self.call_user_func_array_reference_return_value_arguments_from_values(
+            function,
+            values,
+            source_bindings,
+            span,
+        )
+    }
+
+    fn call_user_func_array_reference_return_value_arguments_from_values(
+        &mut self,
+        function: &FunctionDecl,
+        values: Vec<Value>,
+        source_bindings: Vec<ArrayCopySourceBinding>,
+        span: Span,
+    ) -> CompileResult<Option<(Vec<Value>, Vec<ReferenceBinding>)>> {
         let reference_bindings = source_bindings
             .into_iter()
             .filter_map(|(param_name, target_keys, source)| {
@@ -43152,53 +43264,76 @@ impl Interpreter {
             };
 
             if param.by_reference {
-                let aliases = match &stored_root {
-                    StoredArgumentArrayRoot::DirectVariable(array_name) => caller_scope
-                        .array_offset_alias_group_for_stored_array_slot(array_name, &entry.key),
-                    StoredArgumentArrayRoot::ArrayOffset(root_alias) => caller_scope
-                        .array_offset_alias_group_for_stored_alias_slot(root_alias, &entry.key),
-                    StoredArgumentArrayRoot::ObjectProperty(root) => caller_scope
-                        .array_offset_alias_group_for_stored_object_property_slot(
-                            root, &entry.key,
-                        ),
+                if let Some(aliases) = Self::stored_call_user_func_array_entry_alias_group(
+                    &stored_root,
+                    &entry.key,
+                    caller_scope,
+                ) {
+                    let value = caller_scope
+                        .read_array_offset_alias(aliases.first().expect("alias group is non-empty"))
+                        .ok_or_else(|| {
+                            runtime_error(
+                                argument_expr.span(),
+                                RuntimeError::invalid_array_access(if returns_by_reference {
+                                    "cannot bind missing stored array reference-return argument"
+                                        .to_string()
+                                } else {
+                                    "cannot bind missing stored array reference argument"
+                                        .to_string()
+                                }),
+                            )
+                        })?;
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffsets(aliases),
+                    });
+                    continue;
                 }
-                .ok_or_else(|| {
-                    runtime_error(
-                        argument_expr.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            if returns_by_reference {
-                                "call_user_func_array() stored reference-return alias binding requires each reached by-reference argument slot to have been assigned by reference in the current subset"
-                            } else {
-                                "call_user_func_array() stored reference parameter invocation requires each reached by-reference argument slot to have been assigned by reference in the current subset"
-                            },
-                        ),
-                    )
-                })?;
-                let value = caller_scope
-                    .read_array_offset_alias(aliases.first().expect("alias group is non-empty"))
-                    .ok_or_else(|| {
-                        runtime_error(
-                            argument_expr.span(),
-                            RuntimeError::invalid_array_access(if returns_by_reference {
-                                "cannot bind missing stored array reference-return argument"
-                                    .to_string()
-                            } else {
-                                "cannot bind missing stored array reference argument".to_string()
-                            }),
-                        )
-                    })?;
-                values.push(value);
-                reference_bindings.push(ReferenceBinding {
-                    param_name: param.name.clone(),
-                    target: ReferenceBindingTarget::ArrayOffsets(aliases),
-                });
+
+                if let Some(cell) = entry.slot().reference_cell() {
+                    let source = self.stored_call_user_func_array_entry_copy_source(
+                        &stored_root,
+                        &entry.key,
+                        caller_scope,
+                    );
+                    values.push(entry.value_cloned());
+                    let target = if let Some(source) = source {
+                        ReferenceBindingTarget::ValueWithArrayCopySource { source }
+                    } else {
+                        ReferenceBindingTarget::CallerCell {
+                            name: Self::anonymous_call_user_func_array_entry_name(index),
+                            cell,
+                        }
+                    };
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target,
+                    });
+                    continue;
+                }
+
+                return Err(runtime_error(
+                    argument_expr.span(),
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        if returns_by_reference {
+                            "call_user_func_array() stored reference-return alias binding requires each reached by-reference argument slot to have been assigned by reference in the current subset"
+                        } else {
+                            "call_user_func_array() stored reference parameter invocation requires each reached by-reference argument slot to have been assigned by reference in the current subset"
+                        },
+                    ),
+                ));
             } else {
                 values.push(entry.value_cloned());
             }
         }
 
         Ok((values, reference_bindings))
+    }
+
+    fn anonymous_call_user_func_array_entry_name(index: usize) -> String {
+        format!("\0call_user_func_array_arg:{index}")
     }
 
     fn evaluate_stored_call_user_func_array_named_reference_arguments(
@@ -43289,47 +43424,66 @@ impl Interpreter {
             }
 
             if param.by_reference {
-                let aliases = match &stored_root {
-                    StoredArgumentArrayRoot::DirectVariable(array_name) => caller_scope
-                        .array_offset_alias_group_for_stored_array_slot(array_name, &entry.key),
-                    StoredArgumentArrayRoot::ArrayOffset(root_alias) => caller_scope
-                        .array_offset_alias_group_for_stored_alias_slot(root_alias, &entry.key),
-                    StoredArgumentArrayRoot::ObjectProperty(root) => caller_scope
-                        .array_offset_alias_group_for_stored_object_property_slot(
-                            root, &entry.key,
-                        ),
+                if let Some(aliases) = Self::stored_call_user_func_array_entry_alias_group(
+                    &stored_root,
+                    &entry.key,
+                    caller_scope,
+                ) {
+                    let value = caller_scope
+                        .read_array_offset_alias(aliases.first().expect("alias group is non-empty"))
+                        .ok_or_else(|| {
+                            runtime_error(
+                                argument_expr.span(),
+                                RuntimeError::invalid_array_access(if returns_by_reference {
+                                    "cannot bind missing stored array reference-return argument"
+                                        .to_string()
+                                } else {
+                                    "cannot bind missing stored array reference argument"
+                                        .to_string()
+                                }),
+                            )
+                        })?;
+                    values_by_param[param_index] = Some(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffsets(aliases),
+                    });
+                    continue;
                 }
-                .ok_or_else(|| {
-                    runtime_error(
-                        argument_expr.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            if returns_by_reference {
-                                "call_user_func_array() stored reference-return alias binding requires each reached by-reference argument slot to have been assigned by reference in the current subset"
-                            } else {
-                                "call_user_func_array() stored reference parameter invocation requires each reached by-reference argument slot to have been assigned by reference in the current subset"
-                            },
-                        ),
-                    )
-                })?;
-                let value = caller_scope
-                    .read_array_offset_alias(aliases.first().expect("alias group is non-empty"))
-                    .ok_or_else(|| {
-                        runtime_error(
-                            argument_expr.span(),
-                            RuntimeError::invalid_array_access(if returns_by_reference {
-                                "cannot bind missing stored array reference-return argument"
-                                    .to_string()
-                            } else {
-                                "cannot bind missing stored array reference argument".to_string()
-                            }),
-                        )
-                    })?;
-                values_by_param[param_index] = Some(value);
-                reference_bindings.push(ReferenceBinding {
-                    param_name: param.name.clone(),
-                    target: ReferenceBindingTarget::ArrayOffsets(aliases),
-                });
+
+                if let Some(cell) = entry.slot().reference_cell() {
+                    let source = self.stored_call_user_func_array_entry_copy_source(
+                        &stored_root,
+                        &entry.key,
+                        caller_scope,
+                    );
+                    values_by_param[param_index] = Some(entry.value_cloned());
+                    let target = if let Some(source) = source {
+                        ReferenceBindingTarget::ValueWithArrayCopySource { source }
+                    } else {
+                        ReferenceBindingTarget::CallerCell {
+                            name: Self::anonymous_call_user_func_array_entry_name(param_index),
+                            cell,
+                        }
+                    };
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target,
+                    });
+                    continue;
+                }
+
+                return Err(runtime_error(
+                    argument_expr.span(),
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        if returns_by_reference {
+                            "call_user_func_array() stored reference-return alias binding requires each reached by-reference argument slot to have been assigned by reference in the current subset"
+                        } else {
+                            "call_user_func_array() stored reference parameter invocation requires each reached by-reference argument slot to have been assigned by reference in the current subset"
+                        },
+                    ),
+                ));
             } else {
                 values_by_param[param_index] = Some(entry.value_cloned());
             }
@@ -45442,7 +45596,22 @@ impl Interpreter {
                 false,
             )?
         else {
-            return Ok(None);
+            let Some((values, by_value_array_copy_source_bindings)) = self
+                .evaluate_general_call_user_func_array_value_arguments_with_array_copy_sources(
+                    function,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                    false,
+                )?
+            else {
+                return Ok(None);
+            };
+            return Ok(Some((
+                values,
+                by_value_array_copy_source_bindings,
+                Vec::new(),
+            )));
         };
         let by_value_array_copy_bindings =
             Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
@@ -45454,6 +45623,80 @@ impl Interpreter {
             by_value_array_copy_source_bindings,
             by_value_array_copy_bindings,
         )))
+    }
+
+    fn evaluate_general_call_user_func_array_value_arguments_with_array_copy_sources(
+        &mut self,
+        function: &FunctionDecl,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        include_reference_params: bool,
+    ) -> CompileResult<Option<(Vec<Value>, Vec<ArrayCopySourceBinding>)>> {
+        if matches!(
+            argument_expr,
+            Expr::Array { .. }
+                | Expr::Variable(_, _)
+                | Expr::Property { .. }
+                | Expr::DynamicProperty { .. }
+                | Expr::Index { .. }
+        ) {
+            return Ok(None);
+        }
+
+        let (argument_value, argument_source) =
+            self.evaluate_value_with_array_copy_source(argument_expr, caller_scope)?;
+        let Value::Array(argument_array) = &argument_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    format!(
+                        "argument array must be array in the current subset, got {}",
+                        argument_value.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        ensure_user_function_arity(function, argument_array.len(), span)?;
+        let entry_sources = Self::call_user_func_array_entry_sources_from_argument_source(
+            argument_array,
+            argument_source,
+        );
+        Ok(Some(
+            self.call_user_func_array_value_arguments_with_array_copy_sources_from_array(
+                function,
+                argument_array,
+                argument_array.len(),
+                span,
+                &entry_sources,
+                caller_scope,
+                include_reference_params,
+            )?,
+        ))
+    }
+
+    fn call_user_func_array_entry_sources_from_argument_source(
+        argument_array: &PhpArray,
+        argument_source: Option<ArrayCopySource>,
+    ) -> Vec<(ArrayKey, ArrayCopySource)> {
+        let Some(argument_source) = argument_source else {
+            return Vec::new();
+        };
+
+        argument_array
+            .entries()
+            .iter()
+            .filter_map(|entry| {
+                Self::array_copy_source_with_suffix(
+                    argument_source.clone(),
+                    std::slice::from_ref(&entry.key),
+                    entry.value(),
+                )
+                .map(|source| (entry.key.clone(), source))
+            })
+            .collect()
     }
 
     fn evaluate_by_value_call_arguments_with_array_copy_sources(
@@ -45884,6 +46127,18 @@ impl Interpreter {
             reference_bindings,
             caller_scope,
         )
+    }
+
+    fn call_reference_return_dynamic_instance_method(
+        &mut self,
+        target: &Expr,
+        method: &Expr,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnBinding> {
+        let method_name = self.evaluate_dynamic_method_name(method, span, caller_scope)?;
+        self.call_reference_return_instance_method(target, &method_name, args, span, caller_scope)
     }
 
     fn current_this_for_non_static_reference_static_dispatch(
@@ -48589,6 +48844,7 @@ impl Interpreter {
         match value {
             Expr::Call { .. }
             | Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. }
             | Expr::StaticMethodCall { .. }
             | Expr::SelfMethodCall { .. }
             | Expr::ParentMethodCall { .. }

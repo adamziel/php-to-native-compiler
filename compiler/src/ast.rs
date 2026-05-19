@@ -951,6 +951,12 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    DynamicMethodCall {
+        target: Box<Expr>,
+        method: Box<Expr>,
+        args: Vec<Expr>,
+        span: Span,
+    },
     ParentMethodCall {
         method: String,
         args: Vec<Expr>,
@@ -1153,6 +1159,7 @@ impl Expr {
             | Expr::ParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. }
             | Expr::MethodCall { span, .. }
+            | Expr::DynamicMethodCall { span, .. }
             | Expr::ParentMethodCall { span, .. }
             | Expr::StaticMethodCall { span, .. }
             | Expr::ObjectStaticMethodCall { span, .. }

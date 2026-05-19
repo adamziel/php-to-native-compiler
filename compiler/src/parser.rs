@@ -3158,6 +3158,7 @@ impl Parser {
             Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. }
             | Expr::ParentMethodCall { .. }
             | Expr::SelfMethodCall { .. }
             | Expr::StaticMethodCall { .. }
@@ -5187,10 +5188,15 @@ impl Parser {
                 if matches!(self.peek().kind, TokenKind::Variable(_) | TokenKind::LBrace) {
                     let property = self.parse_dynamic_property_name_expr(operator_span)?;
                     if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
-                        return Err(self.error_at(
-                            operator_span,
-                            "unsupported dynamic method call: dynamic method names are not implemented",
-                        ));
+                        let span = expr.span();
+                        let args = self.parse_call_arguments_after_open()?;
+                        expr = Expr::DynamicMethodCall {
+                            target: Box::new(expr),
+                            method: Box::new(property),
+                            args,
+                            span,
+                        };
+                        continue;
                     }
 
                     let span = expr.span();
@@ -6148,6 +6154,7 @@ impl Parser {
             | Expr::Property { .. }
             | Expr::DynamicProperty { .. }
             | Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. }
             | Expr::InstanceOf { .. }
             | Expr::ParentMethodCall { .. }
             | Expr::StaticMethodCall { .. }
@@ -6231,6 +6238,7 @@ impl Parser {
             | Expr::Property { .. }
             | Expr::DynamicProperty { .. }
             | Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. }
             | Expr::InstanceOf { .. }
             | Expr::ParentMethodCall { .. }
             | Expr::StaticMethodCall { .. }
@@ -6354,6 +6362,16 @@ impl Parser {
                 Self::expr_contains_assignment(target)
                     || args.iter().any(Self::expr_contains_assignment)
             }
+            Expr::DynamicMethodCall {
+                target,
+                method,
+                args,
+                ..
+            } => {
+                Self::expr_contains_assignment(target)
+                    || Self::expr_contains_assignment(method)
+                    || args.iter().any(Self::expr_contains_assignment)
+            }
             Expr::ParentMethodCall { args, .. } => args.iter().any(Self::expr_contains_assignment),
             Expr::StaticMethodCall { args, .. } => args.iter().any(Self::expr_contains_assignment),
             Expr::ObjectStaticMethodCall { target, args, .. } => {
@@ -6472,6 +6490,18 @@ impl Parser {
                         .iter()
                         .any(Self::expr_contains_unsupported_assignment_rhs)
             }
+            Expr::DynamicMethodCall {
+                target,
+                method,
+                args,
+                ..
+            } => {
+                Self::expr_contains_unsupported_assignment_rhs(target)
+                    || Self::expr_contains_unsupported_assignment_rhs(method)
+                    || args
+                        .iter()
+                        .any(Self::expr_contains_unsupported_assignment_rhs)
+            }
             Expr::ParentMethodCall { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
@@ -6584,6 +6614,8 @@ impl Parser {
             } => Self::find_append_index_span(target)
                 .or_else(|| Self::find_append_index_span(property)),
             Expr::MethodCall { target, .. } => Self::find_append_index_span(target),
+            Expr::DynamicMethodCall { target, method, .. } => Self::find_append_index_span(target)
+                .or_else(|| Self::find_append_index_span(method)),
             Expr::ParentMethodCall { .. } => None,
             Expr::StaticMethodCall { .. } => None,
             Expr::ObjectStaticMethodCall { target, .. } => Self::find_append_index_span(target),

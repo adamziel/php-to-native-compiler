@@ -23,6 +23,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T23:30:32+02:00
+
+- Checkpoint before this task: `d8e80220 checkpoint: 2026-05-19 21:14:19
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2237-C through Lane 2240-C bundle, broadening
+  helper-produced `call_user_func_array()` argument-container identity and
+  dynamic instance method dispatch inside supported magic/`ArrayAccess`
+  method bodies.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/codegen.rs`, `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2237/*` through
+  `tests/fixtures/milestone2240/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; focused scratch
+  system-PHP probes passed for helper-returned argument arrays, fresh
+  helper-returned holder objects, public `ArrayAccess::offsetSet()`, dynamic
+  method calls, and the whole-array over-promotion guard; focused fixture
+  system-PHP comparisons passed for `milestone2237` through `milestone2240`;
+  focused Rust regressions passed for `object_model magic`, `object_model
+  arrayaccess`, `functions_and_scopes call_user_func_array`,
+  `unsupported_syntax_features_cli`, and `unsupported_object_features_cli`;
+  `cargo fmt --check`, `cargo check -q -p phpc`, `git diff --check`, and
+  `cargo test -q -p phpc --test milestone1 milestone1_fixtures_pass` passed.
+- Remaining COW gaps: whole-array reference identity beyond covered selected
+  leaves, untracked dynamic containers that expose neither materialized
+  reference cells nor portable copied-source roots, unsupported syntax outside
+  the dynamic instance-call slice, exact diagnostics/Throwable objects, and
+  native reference/string COW lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-19T23:13:21+02:00
 
 - Checkpoint before this task: `8918f28a checkpoint: 2026-05-19 21:04:08

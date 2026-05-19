@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2239/arrayaccess_offsetset_call_user_func_array_fresh_helper_holder_reference_cell_cow.php

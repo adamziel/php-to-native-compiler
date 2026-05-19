@@ -115,13 +115,22 @@
   those returned literals rehydrate copied-source reference leaves before the
   caller indexes them, including through supported reflected user-function
   `ReflectionFunction::invoke()` and `invokeArgs()` dispatch.
+  Reference-return `call_user_func_array()` can also consume supported general
+  expression argument arrays, such as helper-returned `array($copy)` values,
+  after those values have materialized copied-source reference leaves. Stored
+  argument arrays whose reached slot is already a runtime reference cell can
+  bind through that cell even when a callee-local alias name cannot be synced,
+  including fresh helper-returned holder objects. Dynamic instance method
+  calls such as `$this->{$method}($bucket)` parse and dispatch through the
+  same source-aware method path as ordinary instance calls.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.
   This does
   not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
-  dynamic callables or arbitrary reflection targets, unsupported method-body syntax,
+  dynamic callables or arbitrary reflection targets, unsupported method-body syntax
+  beyond the documented dynamic instance-call slice,
   arbitrary side effects beyond covered writeback paths, broader dynamic
   callback mutation of containers whose copied-source roots cannot be synced
   through a concrete shared object property or global root, full whole-array reference
