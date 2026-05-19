@@ -32,7 +32,23 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1920:
+The current in-progress implementation frontier is Lane 1925:
+
+- Lanes 1921 through 1925 preserve reference-backed slots when a
+  by-reference assignment selects inside a by-value magic/`ArrayAccess`
+  copied array result. The covered paths still emit PHP's bounded
+  indirect-modification notice/no-op diagnostic for the overloaded access,
+  but if the selected nested element in the copied array is a reference cell,
+  the alias remains tied to that original reference-backed slot while ordinary
+  selected elements stay detached. Focused coverage includes direct by-value
+  `ArrayAccess`, dynamic property-held `ArrayAccess`, by-value `__get()`
+  plain arrays, magic-provided `ArrayAccess` objects whose inner
+  `offsetGet()` returns by value, and a mixed by-value `ArrayAccess` chain
+  with a by-value terminal copied-array result. Unsupported shapes still
+  include arbitrary PHP side effects outside the interpreter subset,
+  arbitrary magic/`ArrayAccess` method bodies beyond supported statements,
+  exact diagnostics, whole-array reference identity, and native reference
+  lowering.
 
 - Lanes 1916 through 1920 add bounded direct `$GLOBALS` value
   materialization. Reading `$GLOBALS` now produces a PHP array snapshot of the

@@ -18,6 +18,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T06:37:00+02:00
+
+- Checkpoint before this task: `19222a01 runtime: materialize GLOBALS value
+  snapshots`, pushed to `origin/master`.
+- Task attempted: Lane 1921-C through Lane 1925-C bundle, preserving selected
+  reference-backed slots when by-reference assignment indexes into by-value
+  magic/`ArrayAccess` copied-array results.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1921/*`, `tests/fixtures/milestone1922/*`,
+  `tests/fixtures/milestone1923/*`, `tests/fixtures/milestone1924/*`,
+  `tests/fixtures/milestone1925/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone1921`, `milestone1922`, `milestone1923`, `milestone1924`, and
+  `milestone1925`; `cargo fmt --all`, `cargo fmt --all --check`,
+  `cargo check -q -p phpc`, and `git diff --check` passed. Adjacent Rust
+  tests `object_model`, `call_user_func_builtin`,
+  `array_reference_literals`, and `functions_and_scopes` passed. Adjacent
+  fixture comparisons passed for `milestone1676` through `milestone1680`,
+  `milestone1722`, `milestone1890` through `milestone1894`,
+  `milestone1903` through `milestone1906`, `milestone1911` through
+  `milestone1915`, and `milestone1921` through `milestone1925`.
+- Remaining COW gaps: arbitrary PHP side effects outside the interpreter
+  subset, arbitrary magic/`ArrayAccess` method bodies beyond supported
+  statements, side-effecting key-order parity, broad alias lifetime ordering,
+  exact PHP diagnostics, whole-array reference identity, native
+  reference/string COW lowering, and native lowering for these interpreter
+  paths.
+- Next concrete task: run formatting, cargo check, diff check, adjacent
+  regression comparisons, and the full `tools/checkpoint.sh` bundle gate, then
+  push if it passes.
+
 ## Loop Event 2026-05-19T06:13:35+02:00
 
 - Checkpoint before this task: `54fda4c8 runtime: support mixed ArrayAccess

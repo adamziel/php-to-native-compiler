@@ -20491,6 +20491,19 @@ handled.
   alias lifetime, exact diagnostics, and native reference lowering named as
   unsupported.
 
+## Lane 1921-C through Lane 1925-C: By-Value Magic/ArrayAccess Reference Slots
+
+- [x] Runtime/tests/docs bundle: preserve reference-backed selected slots when
+  by-reference assignment indexes into by-value magic/`ArrayAccess`
+  copied-array results. Cover direct by-value `ArrayAccess`, dynamic
+  property-held `ArrayAccess`, by-value `__get()` plain arrays,
+  magic-provided `ArrayAccess` objects with inner by-value `offsetGet()`, and
+  a mixed by-value `ArrayAccess` chain with a terminal copied-array result
+  using system-PHP comparisons. Keep arbitrary PHP side effects outside the
+  interpreter subset, arbitrary magic/`ArrayAccess` method bodies beyond
+  supported statements, exact diagnostics, whole-array reference identity, and
+  native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

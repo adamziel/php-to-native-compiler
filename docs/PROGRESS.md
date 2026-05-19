@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1921-C through Lane 1925-C for by-value magic/`ArrayAccess`
+  copied-array reference-slot selection. By-reference assignments that select
+  inside a by-value overloaded array result still emit the bounded PHP
+  indirect-modification notice, but now preserve the selected reference cell
+  when the copied array contains a reference-backed nested slot. Plain
+  selected nested elements remain detached. Focused coverage includes direct
+  by-value `ArrayAccess`, dynamic property-held `ArrayAccess`, by-value
+  `__get()` plain arrays, magic-provided `ArrayAccess` objects whose inner
+  `offsetGet()` returns an array by value, and a mixed by-value
+  `ArrayAccess` chain with a terminal copied-array result, all with
+  system-PHP comparisons. Arbitrary PHP side effects outside the interpreter
+  subset, arbitrary magic/`ArrayAccess` method bodies beyond supported
+  statements, exact diagnostics, whole-array reference identity, and native
+  reference lowering remain unsupported.
+
 - Added Lane 1916-C through Lane 1920-C for bounded direct `$GLOBALS` value
   materialization. Direct reads of `$GLOBALS` now produce a PHP array snapshot
   of the root global symbol table from top-level and function scope. Plain

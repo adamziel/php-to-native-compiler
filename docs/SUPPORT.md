@@ -231,11 +231,17 @@
   `$alias =& $object->missing[];` follow PHP's bounded
   indirect-modification notice/no-op behavior: the assigned variable receives
   a detached local value and later writes do not mutate the backing
-  `ArrayAccess` storage. Public by-value `__get()` bodies that return plain
+  `ArrayAccess` storage. When that by-value chain produces a copied array
+  whose selected nested slot is reference-backed, the selected slot keeps its
+  reference cell in the assigned variable; ordinary selected slots remain
+  detached. Public by-value `__get()` bodies that return plain
   arrays are also executed for covered direct and non-direct holder
   magic-property array-offset reference sources, and the assigned variable
   receives a detached selected value or detached append `null` while the
-  backing array stays unchanged. Whole direct, dynamic, and non-direct holder
+  backing array stays unchanged. If the selected nested value inside that
+  copied plain array is reference-backed, the assigned variable preserves that
+  reference cell while non-reference values stay detached. Whole direct,
+  dynamic, and non-direct holder
   magic-property roots such as `$alias =& $object->missing`,
   `$alias =& $object->{$name}`, and
   `$alias =& $holders["box"]->missing` also execute public by-value
@@ -933,8 +939,11 @@
   a bounded non-direct holder expression that evaluates once to a visible
   property-held object:
   it emits the indirect-modification `E_NOTICE`, initializes the target as a
-  detached local value, and does not mutate the backing element when the
-  target is later written. Append source forms such as `$alias =& $bag[]`,
+  detached local value, and does not mutate ordinary backing elements when the
+  target is later written. If the by-value copied array contains a
+  reference-backed nested slot at the selected suffix, the assigned variable
+  preserves that reference cell; plain selected values remain detached. Append
+  source forms such as `$alias =& $bag[]`,
   `$alias =& $holder->bag[]`, `$alias =& $holder->{$name}[]`,
   `$alias =& $holders["box"]->bag[]`,
   `$alias =& $holders["box"]->{$name}[]`,
@@ -953,8 +962,9 @@
   replacing non-direct/dynamic containing properties, append `ArrayAccess`
   sources outside the exact documented direct/property-held/non-direct
   visible property-held/magic-property `offsetGet(null)` bridge, mixed nested
-  `ArrayAccess` chains beyond the documented one-level bridge, arbitrary
-  nested reference slots copied from `ArrayAccess` storage, full
+  `ArrayAccess` chains beyond the documented one-level bridge and focused
+  by-value terminal copied-array result, arbitrary nested reference slots
+  copied from `ArrayAccess` storage outside those documented shapes, full
   references/COW, native lowering, exact alias destruction/destructor
   ordering, and real runtime reference containers remain unsupported. Direct
   array-offset reference targets

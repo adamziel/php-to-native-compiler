@@ -14192,9 +14192,9 @@ impl Interpreter {
                 )?;
                 match value {
                     Value::Array(array) if !append_array_fallback => {
-                        let value = SymbolTable::read_nested_array_offset_alias(&array, &keys)
-                            .unwrap_or(Value::Null);
-                        return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(value)));
+                        return Ok(Some(self.detached_array_copy_reference_source_binding(
+                            array, &keys, span, scope,
+                        )?));
                     }
                     Value::Array(_) | Value::Null | Value::Bool(false) => {
                         return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(
@@ -15052,12 +15052,38 @@ impl Interpreter {
             return Ok(Some(first_value));
         }
         if let Value::Array(array) = first_value {
-            return Ok(Some(
-                SymbolTable::read_nested_array_offset_alias(&array, rest_keys)
-                    .unwrap_or(Value::Null),
-            ));
+            return Ok(Some(Self::detached_array_copy_reference_source_value(
+                array, rest_keys,
+            )));
         }
         Ok(Some(Value::Null))
+    }
+
+    fn detached_array_copy_reference_source_value(array: PhpArray, keys: &[ArrayKey]) -> Value {
+        SymbolTable::read_nested_array_offset_alias(&array, keys).unwrap_or(Value::Null)
+    }
+
+    fn detached_array_copy_reference_source_binding(
+        &mut self,
+        array: PhpArray,
+        keys: &[ArrayKey],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<NonDirectReferenceSourceBinding> {
+        if keys.is_empty() {
+            return Ok(NonDirectReferenceSourceBinding::DetachedValue(
+                Value::Array(array),
+            ));
+        }
+
+        let temp_name = self.next_foreach_temporary_array_name();
+        scope.write_static(&temp_name, Value::Array(array));
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::StaticArray { name: temp_name },
+            keys: keys.to_vec(),
+        };
+        scope.materialize_array_offset_alias(&alias, span)?;
+        Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
     }
 
     fn evaluate_array_access_reference_source_binding_for_object(
@@ -15139,7 +15165,9 @@ impl Interpreter {
         let value = if rest_keys.is_empty() {
             first_value
         } else if let Value::Array(array) = first_value {
-            SymbolTable::read_nested_array_offset_alias(&array, rest_keys).unwrap_or(Value::Null)
+            return Ok(Some(self.detached_array_copy_reference_source_binding(
+                array, rest_keys, span, scope,
+            )?));
         } else {
             Value::Null
         };
