@@ -18,6 +18,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T07:02:00+02:00
+
+- Checkpoint before this task: `21ea0ccd runtime: preserve by-value
+  ArrayAccess reference slots`, pushed to `origin/master`.
+- Task attempted: Lane 1926-C through Lane 1930-C bundle, generalizing
+  by-value magic/`ArrayAccess` copied-array provenance from object-property
+  roots to covered alias-root sources.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1926/*`, `tests/fixtures/milestone1927/*`,
+  `tests/fixtures/milestone1928/*`, `tests/fixtures/milestone1929/*`,
+  `tests/fixtures/milestone1930/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes exposed the direct `$GLOBALS`
+  bucket gap and then matched direct `$GLOBALS`, imported-global, local-temp,
+  magic `__get()`, and by-value argument shapes; focused system-PHP
+  comparisons passed for `milestone1926`, `milestone1927`,
+  `milestone1928`, `milestone1929`, and `milestone1930`; `cargo fmt --all`,
+  `cargo fmt --all --check`, `cargo check -q -p phpc`, and `git diff
+  --check` passed. Adjacent Rust tests `object_model`, `superglobals`,
+  `functions_and_scopes`, `array_reference_literals`,
+  `call_user_func_builtin`, and `foreach` passed. Adjacent fixture
+  comparisons passed for `milestone1890` through `milestone1894`,
+  `milestone1907` through `milestone1910`, `milestone1916` through
+  `milestone1925`, and `milestone1926` through `milestone1930`.
+- Remaining COW gaps: arbitrary PHP side effects outside the interpreter
+  subset, arbitrary unsupported magic/`ArrayAccess` method-body syntax,
+  side-effecting key-order parity, broad alias lifetime ordering, exact PHP
+  diagnostics, whole-array reference identity, native reference/string COW
+  lowering, and native lowering for these interpreter paths.
+- Next concrete task: run formatting, cargo check, diff check, adjacent
+  regression comparisons, and the full `tools/checkpoint.sh` bundle gate, then
+  push if it passes.
+
 ## Loop Event 2026-05-19T06:37:00+02:00
 
 - Checkpoint before this task: `19222a01 runtime: materialize GLOBALS value

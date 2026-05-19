@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1925:
+The current in-progress implementation frontier is Lane 1930:
+
+- Lanes 1926 through 1930 generalize by-value copied-array COW provenance for
+  magic/`ArrayAccess` method bodies beyond object-property backing roots to
+  covered alias-root sources. Public by-value `ArrayAccess::offsetGet()` and
+  visible by-value `__get()` bodies can now return direct `$GLOBALS` buckets
+  or imported-global buckets by value while preserving selected
+  reference-backed nested slots in the copied array. Tracked locals assigned
+  from those global buckets keep the same provenance, and by-value user-call
+  arguments sourced from the returned copy preserve referenced nested slots
+  inside the callee while ordinary nested values remain detached. This is
+  still bounded to the current interpreter subset and the covered alias roots;
+  arbitrary PHP side effects, arbitrary unsupported method-body syntax,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
 
 - Lanes 1921 through 1925 preserve reference-backed slots when a
   by-reference assignment selects inside a by-value magic/`ArrayAccess`

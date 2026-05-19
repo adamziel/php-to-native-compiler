@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1926-C through Lane 1930-C for alias-root by-value
+  magic/`ArrayAccess` copied-array COW provenance. The array-copy source model
+  now covers direct `$GLOBALS` buckets and imported-global buckets in addition
+  to object-property roots, so public by-value `ArrayAccess::offsetGet()` and
+  visible by-value `__get()` bodies can return those arrays while preserving
+  selected reference-backed nested slots in the copied result. Tracked locals
+  assigned from those global buckets keep the same provenance, and by-value
+  user-call arguments sourced from a returned global-backed `ArrayAccess`
+  bucket preserve referenced nested slots inside the callee while ordinary
+  nested values remain detached. Focused coverage uses system-PHP comparisons
+  for `milestone1926` through `milestone1930`. Arbitrary PHP side effects
+  outside the interpreter subset, arbitrary unsupported method-body syntax,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 1921-C through Lane 1925-C for by-value magic/`ArrayAccess`
   copied-array reference-slot selection. By-reference assignments that select
   inside a by-value overloaded array result still emit the bounded PHP

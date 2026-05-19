@@ -1127,7 +1127,7 @@ struct SymbolTable {
     array_offset_aliases: HashMap<String, Vec<ArrayOffsetAlias>>,
     detached_array_offset_values: Vec<(String, Vec<ArrayKey>, Value)>,
     copied_array_provenance_paths: HashMap<String, Vec<Vec<ArrayKey>>>,
-    public_object_property_array_copy_sources: HashMap<String, PublicObjectPropertyArrayCopySource>,
+    public_object_property_array_copy_sources: HashMap<String, ArrayCopySource>,
 }
 
 type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
@@ -1823,7 +1823,7 @@ impl SymbolTable {
     fn record_public_object_property_array_copy_source(
         &mut self,
         name: &str,
-        source: PublicObjectPropertyArrayCopySource,
+        source: ArrayCopySource,
     ) {
         self.public_object_property_array_copy_sources
             .insert(name.to_string(), source);
@@ -1832,7 +1832,7 @@ impl SymbolTable {
     fn public_object_property_array_copy_source_for_static(
         &self,
         name: &str,
-    ) -> Option<PublicObjectPropertyArrayCopySource> {
+    ) -> Option<ArrayCopySource> {
         self.public_object_property_array_copy_sources
             .get(name)
             .cloned()
@@ -2546,22 +2546,17 @@ impl SymbolTable {
         }
     }
 
-    fn mirror_public_object_property_aliases_from_array_copy(
+    fn mirror_array_copy_source_aliases_from_copy(
         &mut self,
         target_name: &str,
-        source_object: &PhpObject,
-        source_property: &str,
-        source_keys: &[ArrayKey],
-        include_exact_path: bool,
+        source: &ArrayCopySource,
     ) {
-        let source_roots =
-            self.public_object_property_alias_roots_for_object(source_object, source_property);
-        for source_root in source_roots {
+        for source_root in self.array_copy_source_roots(source) {
             self.mirror_array_offset_aliases_from_path_copy(
                 target_name,
                 &source_root,
-                source_keys,
-                include_exact_path,
+                &source.keys,
+                source.include_exact_path,
             );
         }
     }
@@ -2569,7 +2564,7 @@ impl SymbolTable {
     fn value_with_object_property_aliases_from_array_copy(
         &mut self,
         value: Value,
-        source: Option<PublicObjectPropertyArrayCopySource>,
+        source: Option<ArrayCopySource>,
     ) -> Value {
         let Some(source) = source else {
             return value;
@@ -2578,9 +2573,7 @@ impl SymbolTable {
             return value;
         };
 
-        let source_roots =
-            self.public_object_property_alias_roots_for_object(&source.object, &source.property);
-        for source_root in source_roots {
+        for source_root in self.array_copy_source_roots(&source) {
             let matching_aliases = self
                 .array_offset_aliases
                 .values()
@@ -2612,6 +2605,21 @@ impl SymbolTable {
         }
 
         Value::Array(array)
+    }
+
+    fn array_copy_source_roots(&self, source: &ArrayCopySource) -> Vec<ArrayOffsetAliasRoot> {
+        match &source.root {
+            ArrayCopySourceRoot::ObjectProperty { object, property } => {
+                self.public_object_property_alias_roots_for_object(object, property)
+            }
+            ArrayCopySourceRoot::AliasPath(root @ ArrayOffsetAliasRoot::GlobalArray { name }) => {
+                vec![
+                    root.clone(),
+                    ArrayOffsetAliasRoot::StaticArray { name: name.clone() },
+                ]
+            }
+            ArrayCopySourceRoot::AliasPath(root) => vec![root.clone()],
+        }
     }
 
     fn public_object_property_alias_roots_for_object(
@@ -4912,11 +4920,43 @@ enum ReferenceReturnBodyFlow {
 }
 
 #[derive(Debug, Clone)]
-struct PublicObjectPropertyArrayCopySource {
-    object: PhpObject,
-    property: String,
+struct ArrayCopySource {
+    root: ArrayCopySourceRoot,
     keys: Vec<ArrayKey>,
     include_exact_path: bool,
+}
+
+#[derive(Debug, Clone)]
+enum ArrayCopySourceRoot {
+    ObjectProperty { object: PhpObject, property: String },
+    AliasPath(ArrayOffsetAliasRoot),
+}
+
+impl ArrayCopySource {
+    fn object_property(
+        object: PhpObject,
+        property: String,
+        keys: Vec<ArrayKey>,
+        include_exact_path: bool,
+    ) -> Self {
+        Self {
+            root: ArrayCopySourceRoot::ObjectProperty { object, property },
+            keys,
+            include_exact_path,
+        }
+    }
+
+    fn alias_path(
+        root: ArrayOffsetAliasRoot,
+        keys: Vec<ArrayKey>,
+        include_exact_path: bool,
+    ) -> Self {
+        Self {
+            root: ArrayCopySourceRoot::AliasPath(root),
+            keys,
+            include_exact_path,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -6013,7 +6053,7 @@ impl Interpreter {
         object: PhpObject,
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let method_name = "current";
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), method_name)
@@ -6146,7 +6186,7 @@ impl Interpreter {
         &mut self,
         statements: &[Stmt],
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
         let mut labels = HashMap::new();
         for (index, stmt) in statements.iter().enumerate() {
             if let Stmt::Label { name, .. } = stmt {
@@ -6185,7 +6225,7 @@ impl Interpreter {
         &mut self,
         stmt: &Stmt,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
         match stmt {
             Stmt::Return { value, .. } => {
                 self.tick(stmt.span())?;
@@ -6402,7 +6442,7 @@ impl Interpreter {
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
         let root = self.by_reference_foreach_root(iterable, scope, span)?;
         Self::read_foreach_root_array(&root, scope, span)?;
         let mut position = 0usize;
@@ -6555,7 +6595,7 @@ impl Interpreter {
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
         match iterable {
             Value::Array(array) => self.execute_foreach_array_by_value_with_array_copy_return_source(
                 array, key, value, body, span, scope,
@@ -6617,7 +6657,7 @@ impl Interpreter {
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
         for entry in array.entries() {
             self.tick(span)?;
             if let Some(key) = key {
@@ -6665,7 +6705,7 @@ impl Interpreter {
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
         let property_names: Vec<String> = object
             .properties()
             .into_iter()
@@ -6722,7 +6762,7 @@ impl Interpreter {
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
         self.call_required_iterator_method(object.clone(), "rewind", span)?;
 
         loop {
@@ -6750,13 +6790,7 @@ impl Interpreter {
             scope.write_static(value, current);
             if !target_is_alias && current_is_array {
                 if let Some(source) = array_copy_source {
-                    scope.mirror_public_object_property_aliases_from_array_copy(
-                        value,
-                        &source.object,
-                        &source.property,
-                        &source.keys,
-                        source.include_exact_path,
-                    );
+                    scope.mirror_array_copy_source_aliases_from_copy(value, &source);
                     scope.record_public_object_property_array_copy_source(value, source);
                 }
             }
@@ -6802,8 +6836,24 @@ impl Interpreter {
         &mut self,
         expr: &Expr,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         match expr {
+            Expr::Variable(name, _) => {
+                let value = self.evaluate(expr, scope)?;
+                let source = if matches!(value, Value::Array(_))
+                    && scope.global_symbols.is_some()
+                    && (scope.imported_globals.contains(name) || is_auto_global_name(name))
+                {
+                    Some(ArrayCopySource::alias_path(
+                        ArrayOffsetAliasRoot::GlobalArray { name: name.clone() },
+                        Vec::new(),
+                        true,
+                    ))
+                } else {
+                    None
+                };
+                Ok((value, source))
+            }
             Expr::Index {
                 target,
                 index,
@@ -6837,7 +6887,7 @@ impl Interpreter {
         &mut self,
         value: Option<&Expr>,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
         let Some(expr) = value else {
             return Ok((Flow::Return(Value::Null), None));
         };
@@ -6885,7 +6935,7 @@ impl Interpreter {
         value: &Expr,
         cases: &[SwitchCase],
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
         let switch_value = self.evaluate(value, scope)?;
         let mut default_index = None;
         let mut matched_index = None;
@@ -6958,7 +7008,7 @@ impl Interpreter {
         &self,
         expr: &Expr,
         scope: &SymbolTable,
-    ) -> Option<PublicObjectPropertyArrayCopySource> {
+    ) -> Option<ArrayCopySource> {
         match expr {
             Expr::Property {
                 target, property, ..
@@ -6974,12 +7024,12 @@ impl Interpreter {
                 object
                     .read_property_from_context(property, current_class_id, &protected_class_ids)
                     .ok()?;
-                Some(PublicObjectPropertyArrayCopySource {
+                Some(ArrayCopySource::object_property(
                     object,
-                    property: property.clone(),
-                    keys: Vec::new(),
-                    include_exact_path: true,
-                })
+                    property.clone(),
+                    Vec::new(),
+                    true,
+                ))
             }
             Expr::DynamicProperty {
                 target, property, ..
@@ -7001,14 +7051,49 @@ impl Interpreter {
                 object
                     .read_property_from_context(&property, current_class_id, &protected_class_ids)
                     .ok()?;
-                Some(PublicObjectPropertyArrayCopySource {
+                Some(ArrayCopySource::object_property(
                     object,
                     property,
-                    keys: Vec::new(),
-                    include_exact_path: true,
-                })
+                    Vec::new(),
+                    true,
+                ))
             }
-            Expr::Index { target, index, .. } => {
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => {
+                if let Some((source_name, indices)) =
+                    Self::collect_direct_variable_array_index_path(target, index)
+                {
+                    let mut keys = Vec::with_capacity(indices.len());
+                    for index in indices {
+                        keys.push(Self::side_effect_free_array_key(index, scope)?);
+                    }
+                    if source_name == "GLOBALS" {
+                        let (global_name, keys) =
+                            SymbolTable::split_globals_reference_path(keys, *span).ok()?;
+                        return Some(ArrayCopySource::alias_path(
+                            ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+                            keys,
+                            false,
+                        ));
+                    }
+                    if scope.global_symbols.is_some()
+                        && (scope.imported_globals.contains(source_name)
+                            || is_auto_global_name(source_name))
+                    {
+                        return Some(ArrayCopySource::alias_path(
+                            ArrayOffsetAliasRoot::GlobalArray {
+                                name: source_name.to_string(),
+                            },
+                            keys,
+                            false,
+                        ));
+                    }
+                    return None;
+                }
+
                 let (object_name, property, indices) =
                     if let Some((object_name, property, indices)) =
                         Self::collect_direct_object_property_array_index_path(target, index)
@@ -7039,12 +7124,9 @@ impl Interpreter {
                 for index in indices {
                     keys.push(Self::side_effect_free_array_key(index, scope)?);
                 }
-                Some(PublicObjectPropertyArrayCopySource {
-                    object,
-                    property,
-                    keys,
-                    include_exact_path: false,
-                })
+                Some(ArrayCopySource::object_property(
+                    object, property, keys, false,
+                ))
             }
             _ => None,
         }
@@ -7054,7 +7136,7 @@ impl Interpreter {
         &self,
         expr: &Expr,
         scope: &SymbolTable,
-    ) -> Option<PublicObjectPropertyArrayCopySource> {
+    ) -> Option<ArrayCopySource> {
         if let Expr::Variable(name, _) = expr {
             return scope.public_object_property_array_copy_source_for_static(name);
         }
@@ -7064,28 +7146,34 @@ impl Interpreter {
     fn public_object_property_array_copy_source_from_reference_binding(
         binding: &ReferenceReturnBinding,
         scope: &SymbolTable,
-    ) -> Option<PublicObjectPropertyArrayCopySource> {
+    ) -> Option<ArrayCopySource> {
         let alias = match binding {
             ReferenceReturnBinding::ArrayOffset(alias) => alias,
             ReferenceReturnBinding::ArrayOffsets(aliases) => aliases.first()?,
             ReferenceReturnBinding::Cell(_) => return None,
         };
-        let (ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
-        | ArrayOffsetAliasRoot::ContextObjectProperty {
-            object, property, ..
-        }) = &alias.root
-        else {
-            return None;
-        };
-        let Value::Object(object) = scope.read_named(object)? else {
-            return None;
-        };
-        Some(PublicObjectPropertyArrayCopySource {
-            object,
-            property: property.clone(),
-            keys: alias.keys.clone(),
-            include_exact_path: false,
-        })
+        match &alias.root {
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+            | ArrayOffsetAliasRoot::ContextObjectProperty {
+                object, property, ..
+            } => {
+                let Value::Object(object) = scope.read_named(object)? else {
+                    return None;
+                };
+                Some(ArrayCopySource::object_property(
+                    object,
+                    property.clone(),
+                    alias.keys.clone(),
+                    false,
+                ))
+            }
+            ArrayOffsetAliasRoot::GlobalArray { .. } => Some(ArrayCopySource::alias_path(
+                alias.root.clone(),
+                alias.keys.clone(),
+                false,
+            )),
+            ArrayOffsetAliasRoot::StaticArray { .. } => None,
+        }
     }
 
     fn array_access_array_copy_source_for_direct_variable_index(
@@ -7094,7 +7182,7 @@ impl Interpreter {
         indices: &[&Expr],
         span: Span,
         scope: &SymbolTable,
-    ) -> Option<PublicObjectPropertyArrayCopySource> {
+    ) -> Option<ArrayCopySource> {
         if indices.len() != 1 {
             return None;
         }
@@ -7112,7 +7200,7 @@ impl Interpreter {
         indices: &[&Expr],
         span: Span,
         scope: &SymbolTable,
-    ) -> Option<PublicObjectPropertyArrayCopySource> {
+    ) -> Option<ArrayCopySource> {
         if indices.len() != 1 {
             return None;
         }
@@ -7135,7 +7223,7 @@ impl Interpreter {
         object: PhpObject,
         key: ArrayKey,
         span: Span,
-    ) -> Option<PublicObjectPropertyArrayCopySource> {
+    ) -> Option<ArrayCopySource> {
         if !self
             .classes
             .implements_interface(object.class_id(), "ArrayAccess")
@@ -7166,12 +7254,12 @@ impl Interpreter {
             )
             .ok()?;
         let keys = Self::array_access_offset_get_reference_keys(&return_target, &[key]);
-        Some(PublicObjectPropertyArrayCopySource {
+        Some(ArrayCopySource::object_property(
             object,
-            property: return_target.property,
+            return_target.property,
             keys,
-            include_exact_path: false,
-        })
+            false,
+        ))
     }
 
     fn side_effect_free_array_key(expr: &Expr, scope: &SymbolTable) -> Option<ArrayKey> {
@@ -7263,13 +7351,7 @@ impl Interpreter {
             scope.write_static(value, current);
             if !target_is_alias && current_is_array {
                 if let Some(source) = array_copy_source {
-                    scope.mirror_public_object_property_aliases_from_array_copy(
-                        value,
-                        &source.object,
-                        &source.property,
-                        &source.keys,
-                        source.include_exact_path,
-                    );
+                    scope.mirror_array_copy_source_aliases_from_copy(value, &source);
                     scope.record_public_object_property_array_copy_source(value, source);
                 }
             }
@@ -16637,13 +16719,7 @@ impl Interpreter {
                                         scope,
                                     )
                                 {
-                                    scope.mirror_public_object_property_aliases_from_array_copy(
-                                        name,
-                                        &source.object,
-                                        &source.property,
-                                        &source.keys,
-                                        source.include_exact_path,
-                                    );
+                                    scope.mirror_array_copy_source_aliases_from_copy(name, &source);
                                 } else if let Some(keys) = Self::literal_array_key_path(&indices) {
                                     if source_name == "GLOBALS" {
                                         if let Ok((global_name, keys)) =
@@ -16684,13 +16760,7 @@ impl Interpreter {
                                         scope,
                                     )
                                 {
-                                    scope.mirror_public_object_property_aliases_from_array_copy(
-                                        name,
-                                        &source.object,
-                                        &source.property,
-                                        &source.keys,
-                                        source.include_exact_path,
-                                    );
+                                    scope.mirror_array_copy_source_aliases_from_copy(name, &source);
                                 } else if let Some(keys) = Self::literal_array_key_path(&indices) {
                                     if let Ok(root) = self.foreach_object_property_alias_root(
                                         object_name,
@@ -16722,14 +16792,9 @@ impl Interpreter {
                                             scope,
                                         )
                                     {
-                                        scope
-                                            .mirror_public_object_property_aliases_from_array_copy(
-                                                name,
-                                                &source.object,
-                                                &source.property,
-                                                &source.keys,
-                                                source.include_exact_path,
-                                            );
+                                        scope.mirror_array_copy_source_aliases_from_copy(
+                                            name, &source,
+                                        );
                                     } else if let Some(keys) =
                                         Self::literal_array_key_path(&indices)
                                     {
@@ -16794,13 +16859,7 @@ impl Interpreter {
                         _ => {}
                     }
                     if let Some(source) = array_copy_source {
-                        scope.mirror_public_object_property_aliases_from_array_copy(
-                            name,
-                            &source.object,
-                            &source.property,
-                            &source.keys,
-                            source.include_exact_path,
-                        );
+                        scope.mirror_array_copy_source_aliases_from_copy(name, &source);
                     }
                     if let Some(source) = assigned_array_copy_source {
                         scope.record_public_object_property_array_copy_source(name, source);
@@ -27464,7 +27523,7 @@ impl Interpreter {
         index: &Expr,
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         if let Expr::Variable(name, _) = target {
             if name == "GLOBALS" {
                 let key = self.evaluate_array_key(index, scope)?;
@@ -27477,12 +27536,21 @@ impl Interpreter {
                         ),
                     ));
                 };
-                return scope
-                    .read_global_name(global_name)
-                    .map(|value| (value, None))
-                    .ok_or_else(|| {
-                        runtime_error(span, RuntimeError::undefined_variable(global_name))
-                    });
+                let value = scope.read_global_name(global_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_variable(global_name))
+                })?;
+                let source = if matches!(value, Value::Array(_)) {
+                    Some(ArrayCopySource::alias_path(
+                        ArrayOffsetAliasRoot::GlobalArray {
+                            name: global_name.to_string(),
+                        },
+                        Vec::new(),
+                        true,
+                    ))
+                } else {
+                    None
+                };
+                return Ok((value, source));
             }
         }
 
@@ -27849,7 +27917,7 @@ impl Interpreter {
         property: &str,
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let target_value = self.evaluate(target, scope)?;
 
         match target_value {
@@ -27863,12 +27931,12 @@ impl Interpreter {
                 ) {
                     Ok(value) => {
                         let source = if matches!(value, Value::Array(_)) {
-                            Some(PublicObjectPropertyArrayCopySource {
+                            Some(ArrayCopySource::object_property(
                                 object,
-                                property: property.to_string(),
-                                keys: Vec::new(),
-                                include_exact_path: true,
-                            })
+                                property.to_string(),
+                                Vec::new(),
+                                true,
+                            ))
                         } else {
                             None
                         };
@@ -27974,7 +28042,7 @@ impl Interpreter {
         property: &str,
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<Option<(Value, Option<PublicObjectPropertyArrayCopySource>)>> {
+    ) -> CompileResult<Option<(Value, Option<ArrayCopySource>)>> {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), "__get")
         else {
@@ -28251,7 +28319,7 @@ impl Interpreter {
         property: &Expr,
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let property = self.evaluate_dynamic_property_name(property, span, scope)?;
         self.evaluate_property_read_with_array_copy_source(target, &property, span, scope)
     }
@@ -28300,7 +28368,7 @@ impl Interpreter {
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let target_value = self.evaluate(target, caller_scope)?;
         let object = match target_value {
             Value::Object(object) => object,
@@ -40397,13 +40465,7 @@ impl Interpreter {
             scope.write_static(value, current);
             if !target_is_alias && current_is_array {
                 if let Some(source) = array_copy_source {
-                    scope.mirror_public_object_property_aliases_from_array_copy(
-                        value,
-                        &source.object,
-                        &source.property,
-                        &source.keys,
-                        source.include_exact_path,
-                    );
+                    scope.mirror_array_copy_source_aliases_from_copy(value, &source);
                 }
             }
 
@@ -42173,7 +42235,7 @@ impl Interpreter {
         mut reference_scope: Option<&mut SymbolTable>,
         prebound_locals: Vec<PreboundLocal>,
         by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
-    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
             self.class_context.push(class_context);
@@ -42544,7 +42606,7 @@ impl Interpreter {
         class_context: Option<ClassId>,
         called_class_context: Option<ClassId>,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source(
             function,
             args,
@@ -50004,7 +50066,7 @@ impl Interpreter {
         offset_arg: Value,
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         if let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), "offsetGet")
         {

@@ -20504,6 +20504,18 @@ handled.
   supported statements, exact diagnostics, whole-array reference identity, and
   native reference lowering named as unsupported.
 
+## Lane 1926-C through Lane 1930-C: Alias-Root Method Body Copy Provenance
+
+- [x] Runtime/tests/docs bundle: generalize by-value magic/`ArrayAccess`
+  copied-array provenance from object-property roots to covered alias-root
+  sources. Cover direct `$GLOBALS` buckets, by-value magic `__get()` returning
+  `$GLOBALS` buckets, imported-global buckets, tracked locals assigned from
+  `$GLOBALS` buckets before return, and by-value user-call arguments sourced
+  from global-backed `ArrayAccess` buckets with system-PHP comparisons. Keep
+  arbitrary PHP side effects outside the interpreter subset, arbitrary
+  unsupported method-body syntax, whole-array reference identity, exact
+  diagnostics, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
