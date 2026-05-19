@@ -20741,6 +20741,22 @@ handled.
   reference identity, exact diagnostics, and native reference lowering named
   as unsupported.
 
+## Lane 2011-C through Lane 2015-C: By-Reference Helper Leaf Mutation
+
+- [x] Runtime/tests/docs bundle: preserve PHP COW behavior when a supported
+  by-value magic/`ArrayAccess` method body passes a proven copied bucket into
+  a by-reference helper that mutates a nested reference-backed leaf and
+  returns it. Cover visible by-value `__get()`, public by-value
+  `ArrayAccess::offsetGet()`, direct free-function helpers, `$this`
+  instance-method helpers, dynamic string helper calls, and direct closure
+  helpers with system-PHP comparisons. Keep sequential helper bodies that
+  mutate a copied reference leaf and later replace that reference's parent in
+  the same helper, arbitrary helper/callback side effects,
+  `call_user_func()` reference-warning/no-reference semantics,
+  `call_user_func_array()` by-reference callback containers, whole-array
+  reference identity, exact diagnostics, and native reference lowering named
+  as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe remaining scalar parent overwrite/error parity outside the covered

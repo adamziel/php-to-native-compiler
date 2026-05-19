@@ -44298,6 +44298,60 @@ impl Interpreter {
         Ok(())
     }
 
+    fn write_back_array_copy_source_aliases(
+        &mut self,
+        alias_writebacks: &[(String, ArrayCopySource, Vec<ArrayOffsetAlias>)],
+        local_scope: &SymbolTable,
+        caller_scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<()> {
+        for (local_name, source, local_aliases) in alias_writebacks {
+            for local_alias in local_aliases {
+                let ArrayOffsetAliasRoot::StaticArray { name } = &local_alias.root else {
+                    continue;
+                };
+                if name != local_name || local_alias.keys.is_empty() {
+                    continue;
+                }
+                let Some(active_local_aliases) = local_scope
+                    .array_offset_alias_group_for_stored_array_path(local_name, &local_alias.keys)
+                else {
+                    continue;
+                };
+                if !active_local_aliases.contains(local_alias) {
+                    continue;
+                }
+                let Some(value) = local_scope
+                    .read_storage_named(local_name)
+                    .and_then(|value| Self::array_path_value(&value, &local_alias.keys))
+                else {
+                    continue;
+                };
+
+                for source_root in caller_scope.array_copy_source_roots(source) {
+                    let mut source_keys = source.keys.clone();
+                    source_keys.extend(local_alias.keys.iter().cloned());
+                    let source_alias = ArrayOffsetAlias {
+                        root: source_root,
+                        keys: source_keys,
+                    };
+                    let Some(caller_aliases) = caller_scope
+                        .array_offset_alias_group_for_stored_root_path(source_alias, None)
+                    else {
+                        continue;
+                    };
+                    self.write_back_array_offset_aliases(
+                        &caller_aliases,
+                        value.clone(),
+                        caller_scope,
+                        span,
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn write_back_reference_parameter_object_aliases(
         &mut self,
         reference_bindings: &[ReferenceBinding],
@@ -44583,6 +44637,11 @@ impl Interpreter {
             Vec<ArrayKey>,
             Vec<ArrayOffsetAlias>,
         )> = Vec::new();
+        let mut array_copy_source_alias_writebacks: Vec<(
+            String,
+            ArrayCopySource,
+            Vec<ArrayOffsetAlias>,
+        )> = Vec::new();
         for local in prebound_locals {
             match local {
                 PreboundLocal::Value { name, value } => local_scope.write_static(&name, value),
@@ -44766,11 +44825,29 @@ impl Interpreter {
                         .find(|(param_name, _)| param_name == &param.name)
                     {
                         if let Some(source_scope) = reference_scope.as_deref() {
-                            local_scope.import_array_copy_source_aliases_from_copy(
-                                &param.name,
-                                source,
-                                source_scope,
-                            );
+                            let imported_aliases = local_scope
+                                .import_array_copy_source_aliases_from_copy(
+                                    &param.name,
+                                    source,
+                                    source_scope,
+                                );
+                            let imported_aliases: Vec<_> = imported_aliases
+                                .into_iter()
+                                .filter(|alias| {
+                                    matches!(
+                                        &alias.root,
+                                        ArrayOffsetAliasRoot::StaticArray { name }
+                                            if name == &param.name
+                                    ) && !alias.keys.is_empty()
+                                })
+                                .collect();
+                            if !imported_aliases.is_empty() {
+                                array_copy_source_alias_writebacks.push((
+                                    param.name.clone(),
+                                    source.clone(),
+                                    imported_aliases,
+                                ));
+                            }
                         }
                         local_scope.mirror_array_copy_source_aliases_from_copy(&param.name, source);
                         local_scope.record_public_object_property_array_copy_source(
@@ -44893,6 +44970,16 @@ impl Interpreter {
                             reference_scope,
                             function.span,
                         );
+                        let result = if result.is_ok() {
+                            self.write_back_array_copy_source_aliases(
+                                &array_copy_source_alias_writebacks,
+                                &local_scope,
+                                reference_scope,
+                                function.span,
+                            )
+                        } else {
+                            result
+                        };
                         if result.is_ok() {
                             if let Some(this_object) = this_object_for_alias_transfer.as_ref() {
                                 reference_scope

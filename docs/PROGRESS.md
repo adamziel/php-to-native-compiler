@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2011-C through Lane 2015-C for nested-leaf writes through
+  by-reference helper parameters that receive proven copied buckets from
+  supported by-value magic/`ArrayAccess` method bodies. The source-aware
+  function call writeback now records imported copied-source aliases for
+  reference parameters and writes active local leaf mutations back to the
+  original backing alias after helper execution. Focused system-PHP coverage
+  proves visible by-value `__get()` and public by-value
+  `ArrayAccess::offsetGet()` bodies preserve PHP COW behavior through direct
+  free-function helpers, `$this` instance-method helpers, dynamic string
+  helper calls, direct closure helpers, and an `ArrayAccess` helper body.
+  Sequential helper bodies that mutate a copied reference leaf and later
+  replace that reference's parent in the same helper, `call_user_func()`
+  warning/no-reference semantics, `call_user_func_array()` by-reference
+  callback containers, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
+
 - Added Lane 2006-C through Lane 2010-C for parent replacement of live
   copied-bucket reference paths inside supported by-value magic/`ArrayAccess`
   method bodies. Copied-bucket locals now skip alias-backed writes when an

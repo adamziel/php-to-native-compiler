@@ -18,6 +18,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T11:31:00+02:00
+
+- Checkpoint before this task: `c16c1029 runtime: detach copied bucket parent
+  replacements`, pushed to `origin/master`.
+- Task attempted: Lane 2011-C through Lane 2015-C bundle, preserving PHP COW
+  behavior when supported by-value magic/`ArrayAccess` method bodies pass a
+  proven copied bucket into a by-reference helper that mutates a nested
+  reference-backed leaf and returns it.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2011/*`, `tests/fixtures/milestone2012/*`,
+  `tests/fixtures/milestone2013/*`, `tests/fixtures/milestone2014/*`,
+  `tests/fixtures/milestone2015/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2011` through `milestone2015`; `cargo check -q` passed while
+  developing the bundle.
+- Remaining COW gaps: sequential helper bodies that mutate a copied reference
+  leaf and later replace that reference's parent in the same helper,
+  `call_user_func()` reference-warning/no-reference semantics,
+  `call_user_func_array()` by-reference callback containers, arbitrary
+  object/container provenance, side-effecting container-key analysis, append
+  expressions outside by-reference call-argument positions, non-reference
+  append-expression values, dynamic `call_user_func_array()` containers not
+  traceable to current-scope local arrays, remaining scalar parent
+  overwrite/error parity outside covered roots, possible mixed `ArrayAccess`
+  gaps in reference-return or callback reference-argument paths, exact PHP
+  diagnostics, whole-array reference identity, native reference/string COW
+  lowering, and native lowering for these interpreter paths.
+- Next concrete task: run adjacent fixture comparisons, focused Rust tests,
+  formatting/diff checks, and the full `tools/checkpoint.sh` bundle gate,
+  then push if it passes.
+
 ## Loop Event 2026-05-19T10:58:00+02:00
 
 - Checkpoint before this task: `3c9105ba runtime: preserve byref closure COW

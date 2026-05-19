@@ -412,13 +412,20 @@
   forms are direct free functions, `$this` instance methods, direct closures,
   dynamic string function calls, and the same direct helper shape from public
   by-value `ArrayAccess::offsetGet()`. The helper parameter receives the
-  proven copy source for return evaluation. Helper-internal writes through
-  that by-reference parameter remain bounded to the documented copied-bucket
-  parent-replacement shape below; broader helper side effects, including
-  nested-leaf mutations through helper parameters, `call_user_func()`
-  reference warnings/no-reference semantics, `call_user_func_array()`
-  by-reference callback argument containers, whole-array reference identity,
-  exact diagnostics, and native reference lowering remain unsupported.
+  proven copy source for return evaluation. Helper-internal nested-leaf writes
+  through that by-reference parameter are covered for direct free-function
+  helpers, `$this` instance-method helpers, dynamic string helper calls,
+  direct closure helpers, and the same direct helper shape from public
+  by-value `ArrayAccess::offsetGet()`: a write such as
+  `$value["ref"]["value"] = "inside"` updates the original referenced backing
+  slot, and the returned copy still keeps that selected reference-backed slot
+  shared while ordinary nested arrays detach. Helper parent replacement is
+  bounded separately below. Sequential helper bodies that mutate a copied
+  reference leaf and later replace that reference's parent in the same helper,
+  broader helper/callback side effects, `call_user_func()` reference
+  warnings/no-reference semantics, `call_user_func_array()` by-reference
+  callback argument containers, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
   These bodies also preserve copied-array provenance through by-reference
   closure captures of a proven backed bucket. Covered forms include
   `use (&$bucket)` returned through direct closure invocation,
