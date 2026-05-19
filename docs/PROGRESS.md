@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2021-C through Lane 2025-C for by-reference helper calls over
+  visible local object-property containers inside supported by-value
+  magic/`ArrayAccess` method bodies. Direct and dynamic object-property
+  reference arguments can now bind to the visible property cell while carrying
+  copied-bucket source metadata, and active helper-local copied-source alias
+  writes are written back after helper execution. Focused system-PHP coverage
+  proves visible by-value `__get()`, public by-value
+  `ArrayAccess::offsetGet()`, dynamic local property names, `$this`
+  instance-method helpers, and direct closure helpers update selected original
+  reference-backed leaves while ordinary nested arrays remain detached. This
+  remains bounded to current-scope visible object-property containers;
+  arbitrary object graphs, side-effecting property names or keys, sequential
+  helper leaf-write plus parent replacement, `call_user_func*` callback
+  containers, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
+
 - Added Lane 2016-C through Lane 2020-C for copied-array COW provenance
   through visible properties of current-scope local object containers inside
   supported by-value magic/`ArrayAccess` method bodies. Object-property

@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2020:
+The current in-progress implementation frontier is Lane 2025:
+
+- Lanes 2021 through 2025 preserve COW behavior when those visible local
+  object-property containers are passed by reference to a helper inside a
+  supported by-value magic/`ArrayAccess` method body. Covered bodies include
+  visible by-value `__get()`, public by-value `ArrayAccess::offsetGet()`,
+  dynamic local properties, `$this` instance-method helpers, and direct
+  closure helpers. Focused system-PHP coverage proves helper leaf writes update
+  the selected original backing reference while ordinary nested arrays stay
+  local to the returned copy. This is not arbitrary method-body support:
+  arbitrary object graphs, side-effecting property names or keys,
+  sequential helper leaf-write plus parent replacement, `call_user_func*`
+  callback containers, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
 
 - Lanes 2016 through 2020 preserve copied-array COW provenance when
   supported by-value magic/`ArrayAccess` method bodies store a proven backed
@@ -45,9 +58,8 @@ The current in-progress implementation frontier is Lane 2020:
   reference-backed nested slots shared while ordinary nested arrays detach.
   This is bounded to visible local object-property containers with
   side-effect-free property/index recovery; arbitrary object graphs,
-  side-effecting property names or keys, by-reference property-container
-  helper parameters, whole-array reference identity, exact diagnostics, and
-  native reference lowering remain unsupported.
+  side-effecting property names or keys, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2011 through 2015 preserve PHP COW behavior when supported
   by-value magic/`ArrayAccess` method bodies pass a proven copied bucket into

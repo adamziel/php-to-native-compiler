@@ -412,11 +412,21 @@
   `ArrayAccess::offsetGet()` bodies, non-reference helpers that return the
   local property by value, and nested array-literal containers stored in the
   local property such as `$holder->bucket = array("wrapped" => $bucket)`.
+  The same visible local object-property containers can be passed by reference
+  to covered helpers before return. Covered forms include direct local
+  property arguments such as `helper($holder->bucket)`, dynamic local property
+  arguments such as `helper($holder->{$property})`, public by-value
+  `ArrayAccess::offsetGet()` bodies, `$this` instance-method helpers, and
+  direct closure helpers. Helper leaf writes such as
+  `$value["ref"]["value"] = "inside"` update the selected original
+  reference-backed slot, while ordinary nested arrays stay local to the
+  returned copy.
   This is still bounded to visible local object-property containers with
   side-effect-free property/key recovery; arbitrary object graphs,
-  side-effecting property names or keys, by-reference property-container
-  helper/callback parameters, whole-array reference identity, exact
-  diagnostics, and native reference lowering remain unsupported.
+  side-effecting property names or keys, sequential helper leaf-write plus
+  parent replacement, `call_user_func*` callback containers, whole-array
+  reference identity, exact diagnostics, and native reference lowering remain
+  unsupported.
   These by-value magic/`ArrayAccess` bodies also preserve copied-array
   provenance when the proven bucket is passed through a by-reference
   parameter of a non-reference-return helper and then returned. Covered helper

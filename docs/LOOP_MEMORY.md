@@ -18,6 +18,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T13:05:00+02:00
+
+- Checkpoint before this task: `661bdc75 runtime: preserve local object
+  property COW containers`, pushed to `origin/master`.
+- Task attempted: Lane 2021-C through Lane 2025-C bundle, preserving COW
+  behavior when supported by-value magic/`ArrayAccess` method bodies pass a
+  visible current-scope local object-property container to a by-reference
+  helper before returning it.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2021/*`, `tests/fixtures/milestone2022/*`,
+  `tests/fixtures/milestone2023/*`, `tests/fixtures/milestone2024/*`,
+  `tests/fixtures/milestone2025/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new fixtures; `cargo
+  check` passed; focused fixture snapshots and system-PHP comparisons passed
+  for `milestone2021` through `milestone2025`; adjacent comparisons passed for
+  `milestone2011` through `milestone2025`, `milestone1673c`, `milestone1907`
+  through `milestone1910`, `milestone1930`, `milestone1934`,
+  `milestone1939`, `milestone1944`, `milestone1954`, and `milestone1958`.
+- Remaining COW gaps: sequential helper bodies that mutate a copied reference
+  leaf and later replace that reference's parent in the same helper,
+  `call_user_func()` reference-warning/no-reference semantics,
+  `call_user_func_array()` by-reference callback containers, arbitrary object
+  graphs outside the local visible-property container slice, side-effecting
+  property names or keys, append expressions outside by-reference
+  call-argument positions, non-reference append-expression values, dynamic
+  `call_user_func_array()` containers not traceable to current-scope local
+  arrays, remaining scalar parent overwrite/error parity outside covered
+  roots, possible mixed `ArrayAccess` gaps in reference-return or callback
+  reference-argument paths, exact PHP diagnostics, whole-array reference
+  identity, native reference/string COW lowering, and native lowering for
+  these interpreter paths.
+- Next concrete task: run formatting, diff checks, focused Rust checks, and the
+  full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T12:20:00+02:00
 
 - Checkpoint before this task: `07e4581a runtime: write back byref helper COW
