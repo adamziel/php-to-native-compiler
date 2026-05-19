@@ -32,7 +32,23 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1976:
+The current in-progress implementation frontier is Lane 1981:
+
+- Lanes 1977 through 1981 broaden by-value magic/`ArrayAccess`
+  method-body copied-array provenance through callback/helper bodies. Visible
+  by-value `__get()` and public by-value `ArrayAccess::offsetGet()` bodies
+  can now preserve proven backed-array copy sources through dynamic string
+  helper calls, direct closure helper calls, closure callbacks via
+  `call_user_func()`, closure callbacks via literal or traced-local
+  `call_user_func_array()` argument arrays, and public object array-callable
+  helpers via `call_user_func()`/`call_user_func_array()`. Focused
+  system-PHP coverage proves the reference-backed nested slot stays shared
+  while ordinary nested arrays detach. Dynamic `call_user_func_array()`
+  containers that cannot be traced to a current-scope evaluated literal,
+  closure capture provenance, by-reference helper/callback parameters,
+  arbitrary side effects outside the supported interpreter subset,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
 
 - Lanes 1973 through 1976 broaden nested append reference sources below
   proven `ArrayAccess` backing buckets, including false-parent

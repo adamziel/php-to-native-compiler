@@ -7016,6 +7016,9 @@ impl Interpreter {
             Expr::Call { name, args, span } => {
                 self.call_function_with_array_copy_source(name, args, *span, scope)
             }
+            Expr::DynamicCall { callee, args, span } => {
+                self.call_dynamic_function_with_array_copy_source(callee, args, *span, scope)
+            }
             Expr::Ternary {
                 condition,
                 if_true,
@@ -30342,6 +30345,57 @@ impl Interpreter {
         )
     }
 
+    fn invoke_closure_value_direct_with_array_copy_source(
+        &mut self,
+        closure: PhpClosure,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        context: &str,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        context,
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        if closure.is_arrow() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    "arrow closure invocation is not implemented",
+                ),
+            ));
+        }
+        let function = function.as_ref();
+        if function.returns_by_reference
+            || !Self::function_accepts_source_aware_by_value_arguments(function)
+        {
+            return self
+                .invoke_closure_value_direct(closure, args, span, caller_scope, context)
+                .map(|value| (value, None));
+        }
+        let prebound_locals = self.closure_prebound_locals(&closure);
+        self.call_source_aware_user_function_with_expr_args(
+            function,
+            args,
+            span,
+            caller_scope,
+            None,
+            None,
+            None,
+            prebound_locals,
+        )
+    }
+
     fn closure_prebound_locals(&self, closure: &PhpClosure) -> Vec<PreboundLocal> {
         let mut locals: Vec<_> = closure
             .captures()
@@ -33788,6 +33842,89 @@ impl Interpreter {
         self.call_named_function(&name, args, span, caller_scope)
     }
 
+    fn call_dynamic_function_with_array_copy_source(
+        &mut self,
+        callee: &Expr,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let callee_value = self.evaluate(callee, caller_scope)?;
+        match callee_value {
+            Value::String(name) => {
+                self.call_named_function_with_array_copy_source(&name, args, span, caller_scope)
+            }
+            Value::Closure(closure) => self.invoke_closure_value_direct_with_array_copy_source(
+                closure,
+                args,
+                span,
+                caller_scope,
+                "closure",
+            ),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "dynamic function call",
+                    format!(
+                        "callable expression must evaluate to string, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn call_named_function_with_array_copy_source(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        match self.lookup_function_exact(name).ok_or_else(|| {
+            runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
+        })? {
+            Callable::Builtin(key) => {
+                if key == "call_user_func" {
+                    return self.call_user_func_direct_with_array_copy_source(
+                        args,
+                        span,
+                        caller_scope,
+                    );
+                }
+                if key == "call_user_func_array" {
+                    return self.call_user_func_array_direct_with_array_copy_source(
+                        args,
+                        span,
+                        caller_scope,
+                    );
+                }
+                self.call_named_function(name, args, span, caller_scope)
+                    .map(|value| (value, None))
+            }
+            Callable::User(function_rc) => {
+                let function = function_rc.as_ref();
+                if function.returns_by_reference
+                    || !Self::function_accepts_source_aware_by_value_arguments(function)
+                {
+                    return self
+                        .call_named_function(name, args, span, caller_scope)
+                        .map(|value| (value, None));
+                }
+                self.call_source_aware_user_function_with_expr_args(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                )
+            }
+        }
+    }
+
     fn call_named_function(
         &mut self,
         name: &str,
@@ -34070,20 +34207,21 @@ impl Interpreter {
         let callback_name = match &callback {
             Value::String(name) => name,
             Value::Array(callback) => {
-                return self
-                    .call_user_func_array_callable_direct(callback, &args[1..], span, caller_scope)
-                    .map(|value| (value, None));
+                return self.call_user_func_array_callable_direct_with_array_copy_source(
+                    callback,
+                    &args[1..],
+                    span,
+                    caller_scope,
+                );
             }
             Value::Closure(closure) => {
-                return self
-                    .invoke_closure_value_from_call_user_func(
-                        closure.clone(),
-                        &args[1..],
-                        span,
-                        caller_scope,
-                        "call_user_func()",
-                    )
-                    .map(|value| (value, None));
+                return self.invoke_closure_value_from_call_user_func_with_array_copy_source(
+                    closure.clone(),
+                    &args[1..],
+                    span,
+                    caller_scope,
+                    "call_user_func()",
+                );
             }
             other => {
                 return Err(runtime_error(
@@ -34334,6 +34472,153 @@ impl Interpreter {
         }
     }
 
+    fn call_user_func_array_callable_direct_with_array_copy_source(
+        &mut self,
+        callback: &PhpArray,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let Some((target, method_name)) = array_callable_parts(callback) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func()",
+                    "array callback must be [object-or-class, method] in the current subset",
+                ),
+            ));
+        };
+
+        match target {
+            Value::Object(object) => {
+                let receiver_class_name = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata")
+                    .name()
+                    .to_string();
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{receiver_class_name}::{method_name}()"
+                        )),
+                    ));
+                };
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "static method dispatch through object array callables is not implemented",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+                if function.returns_by_reference
+                    || !Self::function_accepts_source_aware_by_value_arguments(function)
+                {
+                    return self
+                        .call_user_func_array_callable_direct(callback, args, span, caller_scope)
+                        .map(|value| (value, None));
+                }
+                self.call_source_aware_user_function_with_expr_args(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    Some(object.clone()),
+                    Some(class_id),
+                    Some(object.class_id()),
+                    Vec::new(),
+                )
+            }
+            Value::String(class_name) => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                })?;
+                let receiver_class = self
+                    .classes
+                    .get(class_id)
+                    .expect("class id should resolve to class metadata");
+                let Some((
+                    declaring_class_id,
+                    declaring_class_name,
+                    resolved_method_name,
+                    visibility,
+                    is_static,
+                )) = self.resolve_instance_method(class_id, method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if !is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "non-static method array callables require an object receiver in the current subset",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function = self.method_function(
+                    declaring_class_id,
+                    &declaring_class_name,
+                    &resolved_method_name,
+                    span,
+                )?;
+                let function = function.as_ref();
+                if function.returns_by_reference
+                    || !Self::function_accepts_source_aware_by_value_arguments(function)
+                {
+                    return self
+                        .call_user_func_array_callable_direct(callback, args, span, caller_scope)
+                        .map(|value| (value, None));
+                }
+                self.call_source_aware_user_function_with_expr_args(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    Vec::new(),
+                )
+            }
+            _ => unreachable!("array_callable_parts restricts callback targets"),
+        }
+    }
+
     fn call_user_func_user_function(
         &mut self,
         function: Rc<FunctionDecl>,
@@ -34445,6 +34730,63 @@ impl Interpreter {
             Some(caller_scope),
             prebound_locals,
             by_value_array_copy_bindings,
+        )
+    }
+
+    fn invoke_closure_value_from_call_user_func_with_array_copy_source(
+        &mut self,
+        closure: PhpClosure,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        context: &str,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        context,
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        if closure.is_arrow() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    "arrow closure invocation is not implemented",
+                ),
+            ));
+        }
+        let function = function.as_ref();
+        if function.returns_by_reference
+            || !Self::function_accepts_source_aware_by_value_arguments(function)
+        {
+            return self
+                .invoke_closure_value_from_call_user_func(
+                    closure,
+                    args,
+                    span,
+                    caller_scope,
+                    context,
+                )
+                .map(|value| (value, None));
+        }
+        let prebound_locals = self.closure_prebound_locals(&closure);
+        self.call_source_aware_user_function_with_expr_args(
+            function,
+            args,
+            span,
+            caller_scope,
+            None,
+            None,
+            None,
+            prebound_locals,
         )
     }
 
@@ -34975,16 +35317,19 @@ impl Interpreter {
                 unreachable!("callable should be handled by builtin or user-function branch")
             }
             Value::Array(callback) => self
-                .call_user_func_array_array_callable(callback, &args[1], span, caller_scope)
-                .map(|value| (value, None)),
+                .call_user_func_array_array_callable_with_array_copy_source(
+                    callback,
+                    &args[1],
+                    span,
+                    caller_scope,
+                ),
             Value::Closure(closure) => self
-                .invoke_closure_value_from_call_user_func_array(
+                .invoke_closure_value_from_call_user_func_array_with_array_copy_source(
                     closure.clone(),
                     &args[1],
                     span,
                     caller_scope,
-                )
-                .map(|value| (value, None)),
+                ),
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -35083,6 +35428,60 @@ impl Interpreter {
             prebound_locals,
             by_value_array_copy_bindings,
         )
+    }
+
+    fn invoke_closure_value_from_call_user_func_array_with_array_copy_source(
+        &mut self,
+        closure: PhpClosure,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func_array()",
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        if closure.is_arrow() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    "arrow closure invocation is not implemented",
+                ),
+            ));
+        }
+        let function = function.as_ref();
+        if let Some(result) = self
+            .call_source_aware_user_function_with_call_user_func_array_argument(
+                function,
+                argument_expr,
+                span,
+                caller_scope,
+                None,
+                None,
+                None,
+                self.closure_prebound_locals(&closure),
+            )?
+        {
+            return Ok(result);
+        }
+
+        self.invoke_closure_value_from_call_user_func_array(
+            closure,
+            argument_expr,
+            span,
+            caller_scope,
+        )
+        .map(|value| (value, None))
     }
 
     fn evaluate_call_user_func_array_arguments(
@@ -39308,6 +39707,150 @@ impl Interpreter {
 
     fn function_accepts_source_aware_by_value_arguments(function: &FunctionDecl) -> bool {
         function.params.iter().all(|param| !param.by_reference)
+    }
+
+    fn call_source_aware_user_function_with_expr_args(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let (values, by_value_array_copy_source_bindings) = self
+            .evaluate_by_value_call_arguments_with_array_copy_sources(
+                function,
+                args,
+                caller_scope,
+            )?;
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call(function, args);
+
+        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+            function,
+            values,
+            this_object,
+            class_context,
+            called_class_context,
+            Vec::new(),
+            Some(caller_scope),
+            prebound_locals,
+            by_value_array_copy_bindings,
+            by_value_array_copy_source_bindings,
+        )
+    }
+
+    fn call_source_aware_user_function_with_call_user_func_array_argument(
+        &mut self,
+        function: &FunctionDecl,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<Option<(Value, Option<ArrayCopySource>)>> {
+        if function.returns_by_reference
+            || !Self::function_accepts_source_aware_by_value_arguments(function)
+        {
+            return Ok(None);
+        }
+
+        let Some((values, by_value_array_copy_source_bindings, by_value_array_copy_bindings)) =
+            self.evaluate_call_user_func_array_argument_with_array_copy_sources(
+                function,
+                argument_expr,
+                span,
+                caller_scope,
+            )?
+        else {
+            return Ok(None);
+        };
+
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+            function,
+            values,
+            this_object,
+            class_context,
+            called_class_context,
+            Vec::new(),
+            Some(caller_scope),
+            prebound_locals,
+            by_value_array_copy_bindings,
+            by_value_array_copy_source_bindings,
+        )
+        .map(Some)
+    }
+
+    fn evaluate_call_user_func_array_argument_with_array_copy_sources(
+        &mut self,
+        function: &FunctionDecl,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<
+        Option<(
+            Vec<Value>,
+            Vec<(String, ArrayCopySource)>,
+            Vec<(String, String, Vec<ArrayKey>)>,
+        )>,
+    > {
+        if let Expr::Array { items, .. } = argument_expr {
+            if !Self::literal_call_user_func_array_can_preserve_copy_sources(items) {
+                return Ok(None);
+            }
+
+            ensure_user_function_arity(function, items.len(), span)?;
+            let (values, by_value_array_copy_source_bindings) = self
+                .evaluate_literal_call_user_func_array_value_arguments_with_array_copy_sources(
+                    function,
+                    items,
+                    span,
+                    caller_scope,
+                )?;
+            let by_value_array_copy_bindings =
+                Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
+                    function,
+                    argument_expr,
+                );
+            return Ok(Some((
+                values,
+                by_value_array_copy_source_bindings,
+                by_value_array_copy_bindings,
+            )));
+        }
+
+        let Some((values, by_value_array_copy_source_bindings)) = self
+            .evaluate_stored_call_user_func_array_value_arguments_with_array_copy_sources(
+                function,
+                argument_expr,
+                span,
+                caller_scope,
+            )?
+        else {
+            return Ok(None);
+        };
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
+                function,
+                argument_expr,
+            );
+        Ok(Some((
+            values,
+            by_value_array_copy_source_bindings,
+            by_value_array_copy_bindings,
+        )))
     }
 
     fn evaluate_by_value_call_arguments_with_array_copy_sources(
@@ -49685,6 +50228,162 @@ impl Interpreter {
                     reference_bindings,
                     Some(caller_scope),
                 )
+            }
+            _ => unreachable!("array_callable_parts restricts callback targets"),
+        }
+    }
+
+    fn call_user_func_array_array_callable_with_array_copy_source(
+        &mut self,
+        callback: &PhpArray,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let Some((target, method_name)) = array_callable_parts(callback) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    "array callback must be [object-or-class, method] in the current subset",
+                ),
+            ));
+        };
+
+        match target {
+            Value::Object(object) => {
+                let receiver_class = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata");
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "static method dispatch through object array callables is not implemented",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+                if let Some(result) = self
+                    .call_source_aware_user_function_with_call_user_func_array_argument(
+                        function,
+                        argument_expr,
+                        span,
+                        caller_scope,
+                        Some(object.clone()),
+                        Some(class_id),
+                        Some(object.class_id()),
+                        Vec::new(),
+                    )?
+                {
+                    return Ok(result);
+                }
+
+                self.call_user_func_array_array_callable(
+                    callback,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                )
+                .map(|value| (value, None))
+            }
+            Value::String(class_name) => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                })?;
+                let receiver_class = self
+                    .classes
+                    .get(class_id)
+                    .expect("class id should resolve to class metadata");
+                let Some((
+                    declaring_class_id,
+                    declaring_class_name,
+                    resolved_method_name,
+                    visibility,
+                    is_static,
+                )) = self.resolve_instance_method(class_id, method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if !is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "non-static method array callables require an object receiver in the current subset",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function = self.method_function(
+                    declaring_class_id,
+                    &declaring_class_name,
+                    &resolved_method_name,
+                    span,
+                )?;
+                let function = function.as_ref();
+                if let Some(result) = self
+                    .call_source_aware_user_function_with_call_user_func_array_argument(
+                        function,
+                        argument_expr,
+                        span,
+                        caller_scope,
+                        None,
+                        Some(declaring_class_id),
+                        Some(class_id),
+                        Vec::new(),
+                    )?
+                {
+                    return Ok(result);
+                }
+
+                self.call_user_func_array_array_callable(
+                    callback,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                )
+                .map(|value| (value, None))
             }
             _ => unreachable!("array_callable_parts restricts callback targets"),
         }

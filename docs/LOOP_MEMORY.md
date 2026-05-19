@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T08:33:24+02:00
+
+- Checkpoint before this task: `e9f400de runtime: append through ArrayAccess
+  false parents`, pushed to `origin/master`.
+- Task attempted: Lane 1977-C through Lane 1981-C bundle, broadening
+  by-value magic/`ArrayAccess` copied-array provenance through
+  callback/helper method bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1977/*`, `tests/fixtures/milestone1978/*`,
+  `tests/fixtures/milestone1979/*`, `tests/fixtures/milestone1980/*`,
+  `tests/fixtures/milestone1981/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone1977` through `milestone1981`; adjacent comparisons passed for
+  `milestone1801`, `milestone1945` through `milestone1958`, and
+  `milestone1973` through `milestone1976`; `cargo check -q` passed.
+- Remaining COW gaps: dynamic `call_user_func_array()` containers that cannot
+  be traced to current-scope evaluated literals, closure capture provenance,
+  by-reference helper/callback parameters, parser support for append
+  expressions in by-reference argument position, remaining scalar parent
+  overwrite/error parity outside covered roots, possible mixed
+  `ArrayAccess` gaps in reference-return or callback reference-argument
+  paths, arbitrary PHP side effects and syntax outside the supported
+  interpreter subset, exact PHP diagnostics, whole-array reference identity,
+  native reference/string COW lowering, and native lowering for these
+  interpreter paths.
+- Next concrete task: run formatting, diff, check, adjacent Rust regression
+  tests, the full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T08:22:14+02:00
 
 - Checkpoint before this task: `7ce1dace runtime: execute caught COW return

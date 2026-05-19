@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 1977-C through Lane 1981-C for callback/helper method-body
+  copied-array provenance in by-value magic/`ArrayAccess` returns. The
+  source-aware call path now covers dynamic string helper calls, direct
+  closure helper calls, closure callbacks through `call_user_func()`, closure
+  callbacks through literal or traced-local `call_user_func_array()` argument
+  arrays, and public object array-callable helpers through
+  `call_user_func()`/`call_user_func_array()`. Focused system-PHP coverage
+  proves visible by-value `__get()` and public by-value
+  `ArrayAccess::offsetGet()` bodies keep reference-backed nested slots shared
+  while ordinary nested arrays detach. Dynamic `call_user_func_array()`
+  containers that cannot be traced to a current-scope evaluated literal,
+  closure capture provenance, by-reference helper/callback parameters,
+  arbitrary side effects outside the supported interpreter subset,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 1973-C through Lane 1976-C for nested append reference sources
   below proven `ArrayAccess` backing buckets with false-parent
   materialization. Direct `ArrayAccess`, by-value magic `__get()` returning an

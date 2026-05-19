@@ -20644,6 +20644,20 @@ handled.
   the interpreter subset, whole-array reference identity, exact diagnostics,
   and native reference lowering named as unsupported.
 
+## Lane 1977-C through Lane 1981-C: Callback Method-Body Copy Provenance
+
+- [x] Runtime/tests/docs bundle: broaden by-value magic/`ArrayAccess`
+  method-body copied-array provenance through callback/helper bodies. Cover
+  dynamic string helper calls, direct closure helper calls, closure
+  `call_user_func()`, closure `call_user_func_array()` with literal or
+  traced-local argument arrays, and public object array-callable helpers
+  through `call_user_func()`/`call_user_func_array()` with system-PHP
+  comparisons. Keep dynamic `call_user_func_array()` containers that cannot
+  be traced to a current-scope evaluated literal, closure capture provenance,
+  by-reference helper/callback parameters, arbitrary side effects outside the
+  supported interpreter subset, whole-array reference identity, exact
+  diagnostics, and native reference lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe the remaining scalar parent overwrite/error parity for covered

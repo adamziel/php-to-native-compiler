@@ -890,10 +890,18 @@
   and literal or direct local string-keyed named containers whose key matches
   the callback parameter, such as
   `return call_user_func_array("helper", array("value" => $this->store[$name]));`.
+  Additional by-value callback/helper bodies keep the same provenance when
+  the callback parameters are non-reference: dynamic string helper calls such
+  as `$helper = "copy_id"; return $helper($this->store[$name]);`, direct
+  closure helper calls, closure callbacks reached through `call_user_func()`,
+  closure callbacks reached through literal or traced-local
+  `call_user_func_array()` argument arrays, and public object array-callable
+  helpers reached through `call_user_func()` or `call_user_func_array()`.
   Dynamic/stored `call_user_func_array()` argument containers that cannot be
-  traced to a current-scope evaluated literal, closures, array callbacks, and
-  by-reference helper parameters do not yet preserve method-return provenance
-  through this helper-call path.
+  traced to a current-scope evaluated literal, closure capture provenance,
+  by-reference helper/callback parameters, and array callbacks outside the
+  covered public object-method forms do not yet preserve method-return
+  provenance through this helper-call path.
   When those proven copied arrays are supplied by value to user functions or
   instance methods, their covered reference-backed elements are preserved in
   the callee's local parameter array. The same bounded preservation applies
