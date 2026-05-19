@@ -95,6 +95,11 @@
   `call_user_func()` call: by-value copied-array source metadata is imported
   into the helper scope, and dirty shared-holder copied-source metadata is
   synced back before the returned holder property is read.
+  Closure-valued helpers invoked directly, through a variable/property-held
+  dynamic call, or through `call_user_func($closure, ...)` use the same
+  source-aware by-value array argument path for supported bound-closure bodies,
+  so those closures can recreate a concrete shared holder's stored argument
+  array without losing copied-source provenance.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.
@@ -102,10 +107,9 @@
   not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
   dynamic callables or reflection targets, unsupported method-body syntax,
-  arbitrary side effects beyond covered writeback paths, closure or broader
-  dynamic callback mutation of containers whose copied-source roots cannot be
-  synced through a concrete shared object property or global root, full
-  whole-array reference
+  arbitrary side effects beyond covered writeback paths, broader dynamic
+  callback mutation of containers whose copied-source roots cannot be synced
+  through a concrete shared object property or global root, full whole-array reference
   identity, exact PHP diagnostics, or native COW lowering.
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or

@@ -23,6 +23,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T22:32:38+02:00
+
+- Checkpoint before this task: `ed44c78b checkpoint: 2026-05-19 20:25:36
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2219-C through Lane 2222-C bundle, extending shared
+  stored `call_user_func_array()` argument-container mutation handling to
+  closure-valued helpers inside supported magic/`ArrayAccess` method bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2219/*` through
+  `tests/fixtures/milestone2222/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; focused system-PHP
+  comparisons passed for `milestone2219` through `milestone2222` after fixing
+  `call_user_func($closure, ...)` source propagation; adjacent system-PHP
+  comparisons passed for `milestone2215` through `milestone2218`; focused
+  `functions_and_scopes call_user_func`, `object_model magic`, and
+  `assignment_expression` Rust tests passed.
+- Remaining COW gaps: broader dynamic callback containers such as
+  `call_user_func_array()` callback expressions, reflection-dispatched
+  closures, or property-held callback arrays that mutate shared stored
+  containers; portable-root gaps where copied-source metadata cannot be synced
+  without leaking callee-local symbol names; arbitrary unsupported
+  magic/`ArrayAccess` method syntax; untracked dynamic containers; whole-array
+  reference identity; exact diagnostics/Throwable objects; and native
+  reference/string COW lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes. After checkpoint,
+  attack one broader dynamic callback-container path that still rebuilds a
+  shared holder's stored argument container without portable source sync.
+
 ## Loop Event 2026-05-19T22:24:28+02:00
 
 - Checkpoint before this task: `8460cc9b checkpoint: 2026-05-19 20:15:40

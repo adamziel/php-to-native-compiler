@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2219-C through Lane 2222-C for closure-valued helpers that mutate
+  shared stored `call_user_func_array()` argument containers inside supported
+  magic/`ArrayAccess` method bodies. Direct closure invocation now uses the
+  source-aware argument path, reference-returning closures can receive
+  copied-source bindings for by-value array arguments, and
+  `call_user_func($closure, ...)` dispatches non-reference closures through the
+  same source-aware helper. Focused system-PHP coverage proves visible
+  `__get()` direct closures, property-stored dynamic closures,
+  `call_user_func()` closure dispatch, and public `ArrayAccess::offsetGet()`
+  direct closures that unset and recreate a shared holder's argument array
+  while preserving source-leaf promotion. This remains bounded to supported
+  closure invocation, bound `$this` contexts, concrete shared holder objects,
+  and portable copied-source roots; arbitrary unsupported method-body syntax,
+  untracked dynamic containers, exact diagnostics, and native reference/string
+  COW lowering remain unsupported.
+
 - Added Lane 2215-C through Lane 2218-C for reference-returning helper
   methods that mutate shared stored `call_user_func_array()` argument
   containers inside magic/`ArrayAccess` method bodies. Direct helper calls now

@@ -204,6 +204,16 @@ leaf needed by a later reference-return callback. This is still scoped to
 supported helper dispatch and portable copied-source roots, not arbitrary
 effect analysis for every possible callback body.
 
+Closure-valued helpers follow the same source-aware path for direct closure
+calls, dynamic closure calls from variables or object properties, and
+`call_user_func($closure, ...)`. Non-static closures created inside supported
+method bodies retain their bound `$this` context, so closure helper writes to a
+shared holder object are visible to the caller scope; the copied-source
+metadata imported for by-value array arguments is then recorded on recreated
+holder argument arrays and synced through the existing dirty object-property
+ledger. This is still closure dispatch through the runtime's supported
+closure metadata, not arbitrary callback graph recovery.
+
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller

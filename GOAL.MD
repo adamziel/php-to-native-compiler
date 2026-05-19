@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2218:
+The current in-progress implementation frontier is Lane 2222:
+
+- Lanes 2219 through 2222 extend the shared-holder mutation model to
+  closure-valued helpers inside supported magic/`ArrayAccess` bodies. Direct
+  closure calls and dynamic closure calls now enter source-aware invocation,
+  and `call_user_func($closure, ...)` uses the same copied-source argument
+  path, so a closure helper can unset and recreate a holder's stored
+  `call_user_func_array()` argument container without losing copied-array
+  provenance from the by-value `$bucket` argument. Focused system-PHP coverage
+  proves visible `__get()` direct closures, property-stored dynamic closures,
+  `call_user_func()` closure dispatch, and public `ArrayAccess::offsetGet()`
+  direct closures. This remains bounded to supported closure invocation and
+  bound `$this` contexts, concrete shared holder objects, and portable
+  copied-source roots; it does not claim arbitrary unsupported method-body
+  syntax, untracked dynamic containers, whole-array reference identity, exact
+  diagnostics, or native reference/string COW lowering.
 
 - Lanes 2215 through 2218 carry copied-source metadata into
   reference-returning helper method bodies that are used as values while they

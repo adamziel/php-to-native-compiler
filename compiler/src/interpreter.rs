@@ -34257,6 +34257,8 @@ impl Interpreter {
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
+            let by_value_array_copy_source_bindings =
+                self.array_copy_source_bindings_for_call_arguments(function, args, caller_scope);
             let (values, reference_bindings) = self
                 .evaluate_user_function_call_arguments_with_options(
                     function,
@@ -34277,29 +34279,24 @@ impl Interpreter {
                 reference_bindings,
                 caller_scope,
                 prebound_locals,
-                Vec::new(),
+                by_value_array_copy_source_bindings,
             );
         }
         ensure_supported_function_metadata(function, span)?;
-        self.ensure_user_function_call_depth(function, span)?;
-        let (values, reference_bindings) =
-            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
-        let by_value_array_copy_bindings =
-            Self::by_value_array_copy_bindings_for_call(function, args);
         let prebound_locals = self.closure_prebound_locals(&closure);
         let (this_object, class_context, called_class_context) =
             self.closure_call_context(&closure);
-        self.call_user_function_with_checked_values_and_locals(
+        self.call_source_aware_user_function_with_expr_args(
             function,
-            values,
+            args,
+            span,
+            caller_scope,
             this_object,
             class_context,
             called_class_context,
-            reference_bindings,
-            Some(caller_scope),
             prebound_locals,
-            by_value_array_copy_bindings,
         )
+        .map(|(value, _)| value)
     }
 
     fn invoke_closure_value_direct_with_array_copy_source(
@@ -39183,25 +39180,20 @@ impl Interpreter {
             );
         }
         ensure_supported_function_metadata(function, span)?;
-        self.ensure_user_function_call_depth(function, span)?;
-        let values =
-            self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
-        let by_value_array_copy_bindings =
-            Self::by_value_array_copy_bindings_for_call(function, args);
         let prebound_locals = self.closure_prebound_locals(&closure);
         let (this_object, class_context, called_class_context) =
             self.closure_call_context(&closure);
-        self.call_user_function_with_checked_values_and_locals(
+        self.call_user_func_value_warning_function_with_array_copy_source(
             function,
-            values,
+            args,
+            span,
+            caller_scope,
             this_object,
             class_context,
             called_class_context,
-            Vec::new(),
-            Some(caller_scope),
             prebound_locals,
-            by_value_array_copy_bindings,
         )
+        .map(|(value, _)| value)
     }
 
     fn invoke_closure_value_from_call_user_func_with_array_copy_source(
