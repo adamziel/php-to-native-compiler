@@ -362,6 +362,12 @@
   return expression, and computed nested suffix keys below the selected
   backing bucket. These keys are evaluated by the interpreter before the
   returned lvalue is bound.
+  Executed magic/`ArrayAccess` reference-return bodies may also return direct
+  string-keyed `$GLOBALS` array slots, such as
+  `return $GLOBALS["store"][$key];`, after supported side effects and local
+  key computation. Delegated reference-return helpers reached from those
+  bodies use the same global-root alias path when their returned lvalue is a
+  covered `$GLOBALS` slot.
   The bounded `__get()` and `offsetGet()` backing analyzers also accept one
   local variable bound by reference to an indexed `$this->property[...]`
   backing bucket, followed by returning that local or a literal child below

@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1858-C through Lane 1860-C for string-keyed `$GLOBALS` lvalues
+  returned from executed magic/`ArrayAccess` reference-return bodies. Public
+  by-reference `__get()` and `ArrayAccess::offsetGet()` bodies can now return
+  `$GLOBALS["store"][$key]` after supported side effects and local key
+  computation, and delegated reference-return helpers, including dynamic
+  string helper calls, share that global-root alias path. This remains bounded
+  to direct string-keyed `$GLOBALS` paths inside the existing interpreter
+  subset and does not claim recursive `$GLOBALS` materialization,
+  arbitrary callback/builtin reference-return sources, exact diagnostics, or
+  native reference lowering. Focused verification: `cargo run -q -p phpc --
+  test --compare-php` passed the new `milestone1858`, `milestone1859`, and
+  `milestone1860` fixtures with system-PHP comparisons.
+
 - Added Lane 1855-C through Lane 1857-C for expression-root scalar/string
   temporary reference-source parity. Direct variable targets now have covered
   keyed and nested append materialization for `null` and `false` temporaries,

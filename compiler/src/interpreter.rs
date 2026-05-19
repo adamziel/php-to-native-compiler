@@ -39216,6 +39216,18 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if root_name == "GLOBALS" {
+                        let (global_name, keys) =
+                            SymbolTable::split_globals_reference_path(keys, span)?;
+                        let alias = ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+                            keys,
+                        };
+                        scope.materialize_array_offset_alias(&alias, span)?;
+                        return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(vec![
+                            alias,
+                        ]));
+                    }
                     if let Some(aliases) = scope.array_offset_aliases_for_name(root_name) {
                         return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(
                             Self::array_offset_aliases_with_suffix(&aliases, &keys),

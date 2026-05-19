@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1857:
+The current in-progress implementation frontier is Lane 1860:
+
+- Lanes 1858 through 1860 broaden executed magic/`ArrayAccess`
+  reference-return method bodies to return string-keyed `$GLOBALS` array
+  slots as proven lvalues. Covered public by-reference `__get()` and
+  `ArrayAccess::offsetGet()` bodies can now execute supported side effects,
+  compute local keys, and return `$GLOBALS["store"][$key]`; delegated
+  reference-return helpers, including dynamic string helper calls, share the
+  same global-root alias path. This is bounded to direct string-keyed
+  `$GLOBALS` paths inside the existing interpreter method-body subset and
+  still does not claim recursive `$GLOBALS` materialization, arbitrary
+  callback/builtin reference-return sources, full PHP side effects, exact
+  diagnostics, or native reference lowering.
 
 - Lanes 1855 through 1857 tighten scalar/string temporary behavior for
   expression-root array-offset and append reference sources. Direct variable

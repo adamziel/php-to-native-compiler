@@ -20309,6 +20309,18 @@ handled.
   traces, broader scalar/string temporary matrices outside expression-root
   reference sources, and native reference lowering named as unsupported.
 
+## Lane 1858-C through Lane 1860-C: Global Slot Magic/ArrayAccess Returns
+
+- [x] Runtime/tests/docs bundle: allow executed public by-reference `__get()`
+  and `ArrayAccess::offsetGet()` bodies to return direct string-keyed
+  `$GLOBALS` array slots as proven lvalues after supported side effects and
+  local key computation. Cover direct magic `__get()`, direct
+  `offsetGet()`, and delegated reference-return helpers including dynamic
+  string helper calls, all with system-PHP comparisons. Keep recursive
+  `$GLOBALS` materialization, arbitrary callback/builtin reference-return
+  sources, full PHP side effects outside the interpreter subset, exact
+  diagnostics, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
