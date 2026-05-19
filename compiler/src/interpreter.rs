@@ -4060,14 +4060,32 @@ impl SymbolTable {
         &mut self,
         aliases: &[ArrayOffsetAlias],
     ) -> Option<VariableCell> {
+        self.reference_cell_for_array_offset_alias_group_with_promotion(
+            aliases,
+            Self::array_offset_alias_allows_reference_cell_promotion,
+        )
+    }
+
+    fn reference_cell_for_array_literal_alias_group(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+    ) -> Option<VariableCell> {
+        self.reference_cell_for_array_offset_alias_group_with_promotion(
+            aliases,
+            Self::array_offset_alias_allows_array_literal_reference_cell_promotion,
+        )
+    }
+
+    fn reference_cell_for_array_offset_alias_group_with_promotion(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+        allows_promotion: fn(&SymbolTable, &ArrayOffsetAlias) -> bool,
+    ) -> Option<VariableCell> {
         if aliases.is_empty() {
             return None;
         }
 
-        if !aliases
-            .iter()
-            .all(|alias| self.array_offset_alias_allows_reference_cell_promotion(alias))
-        {
+        if !aliases.iter().all(|alias| allows_promotion(self, alias)) {
             return None;
         }
 
@@ -4093,6 +4111,22 @@ impl SymbolTable {
         }
 
         Some(reference)
+    }
+
+    fn array_offset_alias_allows_array_literal_reference_cell_promotion(
+        &self,
+        alias: &ArrayOffsetAlias,
+    ) -> bool {
+        if alias.keys.is_empty() {
+            return self.array_offset_alias_allows_reference_cell_promotion(alias);
+        }
+
+        match &alias.root {
+            ArrayOffsetAliasRoot::StaticArray { name } => name != "GLOBALS",
+            ArrayOffsetAliasRoot::GlobalArray { .. } => true,
+            ArrayOffsetAliasRoot::PublicObjectProperty { .. }
+            | ArrayOffsetAliasRoot::ContextObjectProperty { .. } => true,
+        }
     }
 
     fn array_offset_alias_allows_reference_cell_promotion(&self, alias: &ArrayOffsetAlias) -> bool {
@@ -23854,7 +23888,7 @@ impl Interpreter {
             self.evaluate_direct_array_reference_argument(expr, scope)?
         {
             let aliases = vec![source_alias];
-            let Some(cell) = scope.reference_cell_for_array_offset_alias_group(&aliases) else {
+            let Some(cell) = scope.reference_cell_for_array_literal_alias_group(&aliases) else {
                 return Err(runtime_error(
                     expr.span(),
                     RuntimeError::invalid_array_access(
@@ -23869,7 +23903,7 @@ impl Interpreter {
             self.evaluate_magic_get_array_reference_argument(expr, scope)?
         {
             let aliases = vec![source_alias];
-            let Some(cell) = scope.reference_cell_for_array_offset_alias_group(&aliases) else {
+            let Some(cell) = scope.reference_cell_for_array_literal_alias_group(&aliases) else {
                 return Err(runtime_error(
                     expr.span(),
                     RuntimeError::invalid_array_access(
@@ -23884,7 +23918,7 @@ impl Interpreter {
             self.evaluate_visible_object_property_array_reference_argument(expr, scope, false)?
         {
             let aliases = vec![source_alias];
-            let Some(cell) = scope.reference_cell_for_array_offset_alias_group(&aliases) else {
+            let Some(cell) = scope.reference_cell_for_array_literal_alias_group(&aliases) else {
                 return Err(runtime_error(
                     expr.span(),
                     RuntimeError::invalid_array_access(

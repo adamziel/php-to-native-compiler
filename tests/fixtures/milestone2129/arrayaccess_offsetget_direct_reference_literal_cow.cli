@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2129/arrayaccess_offsetget_direct_reference_literal_cow.php

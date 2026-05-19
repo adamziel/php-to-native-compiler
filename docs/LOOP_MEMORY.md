@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T16:48:15+02:00
+
+- Checkpoint before this task: `9e3560e4 runtime: detach nonpublic COW
+  property aliases`, pushed to `origin/master`.
+- Task attempted: Lane 2129-C through Lane 2133-C bundle, broadening
+  supported magic/`ArrayAccess` method-body COW value cells for
+  value-position array literals with reference elements that point at covered
+  object-property array offsets.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2129/*`, `tests/fixtures/milestone2130/*`,
+  `tests/fixtures/milestone2131/*`, `tests/fixtures/milestone2132/*`,
+  `tests/fixtures/milestone2133/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2129` through `milestone2133`; adjacent system-PHP comparisons
+  passed for `milestone2086` through `milestone2090`, `milestone2101`
+  through `milestone2106`, and `milestone2129` through `milestone2133`;
+  focused Rust binaries passed for `object_model`, `functions_and_scopes`,
+  `dynamic_features`, and `array_reference_literals`; `cargo fmt`,
+  `cargo fmt --check`, `cargo check -q -p phpc`, and `git diff --check`
+  passed.
+- Remaining COW gaps: future-path metadata recovery outside the new
+  value-literal reference-cell path, non-public ancestor-container alias
+  detach on property overwrite, untracked dynamic containers, broader dynamic
+  callback containers, whole-array reference identity, exact PHP
+  diagnostics/Throwable objects, and native reference/string COW lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-19T16:40:19+02:00
 
 - Checkpoint before this task: `a530c3d5 docs: clarify ArrayAccess COW body

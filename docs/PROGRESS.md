@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Lane 2129-C through Lane 2133-C for value-position array literals with
+  reference elements inside supported magic/`ArrayAccess` method bodies.
+  Runtime array-literal reference evaluation can now promote covered
+  object-property array offsets, including `$this` context roots and
+  non-public backing properties, to real reference cells instead of requiring
+  the older direct-assignment metadata bridge. Public by-value
+  `ArrayAccess::offsetGet()` and visible `__get()` bodies can therefore
+  return `array("leaf" => &$this->store[$key]["leaf"])` directly or through a
+  helper method, and nested writes through the returned overloaded value
+  mutate the original reference leaf while ordinary copied leaves remain
+  detached. Focused system-PHP coverage proves direct and helper
+  `offsetGet()` returns, private-backed direct `__get()` returns, helper
+  `__get()` returns, and helper-based `__set()` payload storage. This remains
+  bounded to supported interpreter syntax and covered object-property array
+  offsets; side-effecting dynamic property/key expressions that cannot be
+  statically evaluated, untracked dynamic containers, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
+
 - Added Lane 2126-C through Lane 2128-C for non-public object-property leaf
   aliases imported into method scope. Private and protected `$this->property`
   array-offset aliases can now detach when a direct method body or public

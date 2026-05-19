@@ -32,7 +32,24 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2128:
+The current in-progress implementation frontier is Lane 2133:
+
+- Lanes 2129 through 2133 broaden the supported magic/`ArrayAccess`
+  method-body value model for array literals with reference elements.
+  Value-position array literals inside supported method bodies can now promote
+  covered object-property array offsets, including `$this` context roots and
+  non-public backing properties, to runtime reference cells. Public by-value
+  `ArrayAccess::offsetGet()` and visible `__get()` bodies can return
+  `array("leaf" => &$this->store[$key]["leaf"])` directly or through helper
+  methods, and nested writes through the returned overloaded value mutate the
+  original reference leaf while ordinary copied leaves remain detached.
+  Focused system-PHP coverage proves direct and helper `offsetGet()` returns,
+  private-backed direct `__get()` returns, helper `__get()` returns, and
+  helper-based `__set()` payload storage. This remains bounded to supported
+  interpreter syntax and covered object-property array offsets; side-effecting
+  dynamic property/key expressions, untracked dynamic containers,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
 
 - Lanes 2126 through 2128 extend the method-scope alias transfer used by the
   previous public-property detach work to covered non-public object-property

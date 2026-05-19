@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2133/magic_set_helper_payload_reference_cells.php
