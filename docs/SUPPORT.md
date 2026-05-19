@@ -545,10 +545,16 @@
   `call_user_func([$this, ...])` callbacks invoked from `offsetSet()` or
   `__set()` now also propagate object-property overwrite detaches back to
   caller aliases, so stale aliases keep their pre-call fallback values even
-  when the overwritten path is recreated. This does not claim arbitrary
-  setter side effects, append/suffix storage paths, untracked dynamic
-  holders, whole-array reference identity, exact diagnostics, or native
-  reference lowering.
+  when the overwritten path is recreated. Supported by-value
+  `ArrayAccess::offsetGet()` and visible `__get()` bodies that first copy a
+  backing object-property array into a local and then overwrite that backing
+  property directly, through a helper, or through direct
+  `call_user_func([$this, ...])` now also rehydrate the local copied bucket
+  with the detached reference cell, so returned copies keep selected
+  reference leaves tied to the old detached alias while the recreated backing
+  property remains separate. This does not claim arbitrary setter side
+  effects, append/suffix storage paths, untracked dynamic holders, whole-array
+  reference identity, exact diagnostics, or native reference lowering.
   Supported by-value magic/`ArrayAccess` method bodies also carry actual
   reference cells for the current array-literal and local-array value-model
   shapes, rather than relying only on exact backing-bucket bridge recovery.

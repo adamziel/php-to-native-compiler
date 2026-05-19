@@ -35,6 +35,10 @@ handled.
 - [x] Lane 2148-C through 2151-C: add a detached object-property path ledger
   that propagates supported helper/callback method-body overwrites back to
   caller aliases for `ArrayAccess::offsetSet()` and magic `__set()`.
+- [x] Lane 2152-C through 2156-C: rehydrate method-local copied buckets when
+  supported by-value `ArrayAccess::offsetGet()` and magic `__get()` bodies
+  overwrite their backing object-property arrays directly, through helpers, or
+  through direct `call_user_func([$this, ...])` callbacks.
 - [ ] Next COW gap, hard-first: keep extending the general
   magic/`ArrayAccess` method-body side-effect/writeback model so helper,
   callback, dynamic-holder, append/suffix setter storage, and copied-source

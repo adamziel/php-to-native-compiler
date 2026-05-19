@@ -88,6 +88,42 @@ injects this file into every prompt. Each Codex pass should update it with:
   provenance through helper/callback/dynamic-holder storage rather than adding
   isolated shape checks.
 
+## Loop Event 2026-05-19T18:44:02+02:00
+
+- Checkpoint before this task: `8067d74b runtime: propagate nested magic
+  ArrayAccess detaches`, pushed to `origin/master`.
+- Task attempted: Lane 2152-C through Lane 2156-C bundle, extending detached
+  object-property writeback so by-value `offsetGet()`/`__get()` method-local
+  copied buckets are rehydrated when a later direct/helper/callback method
+  body overwrites the backing property.
+- Files changed: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2152/*`, `tests/fixtures/milestone2153/*`,
+  `tests/fixtures/milestone2154/*`, `tests/fixtures/milestone2155/*`,
+  `tests/fixtures/milestone2156/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run: raw system-PHP probes matched for direct, helper, and
+  direct `call_user_func([$this, ...])` backing overwrites under
+  `ArrayAccess::offsetGet()` and visible magic `__get()`; focused system-PHP
+  fixture comparisons passed for `milestone2152` through `milestone2156`;
+  the existing `milestone1673c` bucket-reuse control passed after narrowing
+  plain by-value `offsetGet()` return promotion; adjacent comparisons passed
+  for `milestone2148` through `milestone2156`; the broader COW comparison
+  sweep passed for `milestone2101` through `milestone2156`; focused Rust
+  filters passed for `object_model`, `functions_and_scopes`,
+  `dynamic_features`, `array_reference_literals`, `assignment_expression`,
+  `array_unset`, `array_isset`, and `empty`; `cargo fmt`,
+  `cargo fmt --check`, `cargo check -q -p phpc`, and `git diff --check`
+  passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies outside
+  the supported interpreter/writeback subset, broader append/suffix setter
+  storage metadata, untracked dynamic containers, whole-array reference
+  identity, exact diagnostics/Throwable objects, and native reference/string
+  COW lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes; after that, keep attacking the general method-body
+  side-effect/writeback model rather than adding isolated shape checks.
+
 ## Loop Event 2026-05-19T17:29:49+02:00
 
 - Checkpoint before this task: `f2bcf43c runtime: execute magic ArrayAccess

@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 2152-C through Lane 2156-C for method-local copied buckets that
+  survive later magic/`ArrayAccess` backing-property overwrites. By-value
+  `ArrayAccess::offsetGet()` and visible `__get()` bodies that first copy a
+  backing object-property array into a local and then overwrite the backing
+  property now rehydrate detached copied-source locals with the same fallback
+  reference cell used for stale caller aliases. This works for direct
+  overwrites, helper-method overwrites, and direct
+  `call_user_func([$this, ...])` callback overwrites, so returned local copies
+  keep selected reference-backed leaves tied to the detached alias while the
+  recreated backing property remains separate. Focused system-PHP coverage
+  proves direct/helper/callback `ArrayAccess::offsetGet()` and direct/callback
+  magic `__get()` shapes. This remains bounded to supported interpreter
+  syntax, tracked object-property copy sources, direct caller-scope callback
+  dispatch, and current reference-cell value paths; untracked dynamic
+  containers, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
+
 - Added Lane 2148-C through Lane 2151-C for nested magic/`ArrayAccess`
   method-body side-effect writeback. Method scopes now record detached
   object-property array-offset paths when a supported body overwrites or

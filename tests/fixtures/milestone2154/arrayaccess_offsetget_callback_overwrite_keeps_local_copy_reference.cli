@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2154/arrayaccess_offsetget_callback_overwrite_keeps_local_copy_reference.php

@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2151:
+The current in-progress implementation frontier is Lane 2156:
+
+- Lanes 2152 through 2156 extend the detached object-property writeback model
+  to method-local copied buckets returned by by-value `ArrayAccess::offsetGet()`
+  and visible `__get()` bodies. When supported bodies copy a backing
+  object-property array into a local, then overwrite the backing property
+  directly, through a helper method, or through direct
+  `call_user_func([$this, ...])`, the returned local copy now keeps selected
+  reference-backed leaves tied to the detached caller alias while the new
+  backing property stays separate. Focused system-PHP coverage proves direct,
+  helper, and callback `offsetGet()` overwrites plus direct and callback
+  magic `__get()` overwrites. This remains bounded to supported interpreter
+  syntax, tracked object-property copy sources, and direct caller-scope
+  callback dispatch; untracked dynamic containers, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 2148 through 2151 add a method-scope detached object-property path
   ledger for supported nested magic/`ArrayAccess` method bodies. When

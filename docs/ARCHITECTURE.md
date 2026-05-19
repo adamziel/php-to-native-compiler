@@ -977,9 +977,16 @@ method calls propagate that ledger back to the caller scope before stale alias
 sync runs, so helper methods and direct `call_user_func([$this, ...])`
 callbacks invoked by `ArrayAccess::offsetSet()` or magic `__set()` can detach
 caller aliases even when the overwritten object-property path is immediately
-recreated. This is still a bounded interpreter-scope writeback model rather
-than a general PHP reference container, and it does not cover unsupported
-syntax, untracked dynamic containers, exact diagnostics, or native lowering.
+recreated. The same detach operation scans tracked copied-array sources in the
+scope where the detach happens and again during caller writeback: if a local
+array copy came from the detached object-property path, the local copy is
+rehydrated with the detached reference cell before the alias group is removed.
+This keeps by-value `offsetGet()`/`__get()` locals returned after a
+direct/helper/callback backing overwrite connected to the old detached
+reference leaf while the recreated backing property remains separate. This is
+still a bounded interpreter-scope writeback model rather than a general PHP
+reference container, and it does not cover unsupported syntax, untracked
+dynamic containers, exact diagnostics, or native lowering.
 Direct magic-property append stores such as `$box->missing[] = $array` and
 `$box->{$name}[] = $array` are a separate store path from magic append
 reference sources. For the covered store shape, the runtime calls visible
