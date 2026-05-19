@@ -255,6 +255,18 @@ objects participate without leaking local variable names. Dynamic instance
 method calls evaluate the method expression and then reuse ordinary
 source-aware instance dispatch.
 
+By-reference function parameter binding uses the narrower offset-promotion
+rules for ordinary nested offset aliases, but switches to the array-literal
+promotion rules for covered array-offset aliases. That gives supported
+magic/`ArrayAccess` method bodies the same whole-bucket reference-cell behavior
+as an array literal containing `&$bucket`: a backing slot such as
+`$this->store[$name]` can be passed to a helper, returned inside
+`array(&$bucket)`, and mutated through the returned argument array without
+falling back to a stale method-local writeback path. Because this only applies
+when the alias group exposes a concrete runtime cell, copied locals placed into
+`call_user_func_array()` arguments still remain detached from their original
+backing store.
+
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller

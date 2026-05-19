@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2244/arrayaccess_offsetget_whole_array_copy_no_overpromotion_cow.php

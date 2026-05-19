@@ -129,13 +129,19 @@ handled.
   holder objects with materialized reference-cell slots, visible `__get()`,
   public `ArrayAccess::offsetSet()`, and `$this->{$method}($bucket)` source-aware
   calls.
+- [x] Lane 2241-C through 2244-C: promote covered whole-array reference
+  identity for non-empty object-property array-offset roots passed to
+  by-reference helpers inside visible `__get()` and public
+  `ArrayAccess::offsetGet()`, including dynamic method helper dispatch and a
+  copied-local no-over-promotion guard.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
   holders expose real cells or concrete writeback roots instead of stale paths.
   Known next probes should target remaining whole-array reference identity
-  cases and containers that still cannot expose either materialized reference
-  cells or portable copied-source roots.
+  cases outside covered non-empty array-offset roots and containers that still
+  cannot expose either materialized reference cells or portable copied-source
+  roots.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

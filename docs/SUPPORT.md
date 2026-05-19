@@ -123,6 +123,12 @@
   including fresh helper-returned holder objects. Dynamic instance method
   calls such as `$this->{$method}($bucket)` parse and dispatch through the
   same source-aware method path as ordinary instance calls.
+  Covered by-reference helper parameters also use the array-literal
+  reference-cell promotion rules for non-empty array-offset roots, so
+  supported magic/`ArrayAccess` bodies can pass backing buckets such as
+  `$this->store[$name]` into helpers that return `array(&$bucket)` and keep
+  the original backing bucket connected until a later by-value write detaches
+  the returned copy.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.
@@ -133,8 +139,9 @@
   beyond the documented dynamic instance-call slice,
   arbitrary side effects beyond covered writeback paths, broader dynamic
   callback mutation of containers whose copied-source roots cannot be synced
-  through a concrete shared object property or global root, full whole-array reference
-  identity, exact PHP diagnostics, or native COW lowering.
+  through a concrete shared object property or global root, full whole-array
+  reference identity for arbitrary roots, exact PHP diagnostics, or native COW
+  lowering.
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or
   declaration-contained declarations can be loaded. The executing subset

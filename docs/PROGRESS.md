@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 2241-C through Lane 2244-C for covered whole-array reference
+  identity in supported magic/`ArrayAccess` helper bodies. By-reference
+  function parameter binding now uses the array-literal reference-cell
+  promotion rules for covered array-offset aliases, so non-empty
+  object-property array slots such as `$this->store[$name]` can be passed to a
+  helper, wrapped as `array(&$bucket)`, mutated through that returned argument
+  array, and still update the original backing bucket. Focused system-PHP
+  coverage proves visible `__get()`, public `ArrayAccess::offsetGet()`, and a
+  dynamic method helper reached through `$this->{$method}(...)`; a paired
+  guard proves copied locals stored into `call_user_func_array()` arguments do
+  not over-promote and mutate the original backing store. This remains bounded
+  to supported by-reference helper calls, covered non-empty array-offset roots,
+  concrete runtime cells, and supported method-body syntax; arbitrary
+  untracked containers, full whole-array reference identity for all roots,
+  exact diagnostics, and native reference/string COW lowering remain
+  unsupported.
+
 - Added Lane 2237-C through Lane 2240-C for helper-produced
   `call_user_func_array()` argument containers and dynamic method-body helper
   dispatch. Reference-return `call_user_func_array()` can now use a general

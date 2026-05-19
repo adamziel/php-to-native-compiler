@@ -23,6 +23,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T23:45:00+02:00
+
+- Checkpoint before this task: `552bccae checkpoint: 2026-05-19 21:34:42
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2241-C through Lane 2244-C bundle, broadening covered
+  whole-array reference identity for non-empty object-property array-offset
+  roots passed through by-reference helpers inside supported
+  magic/`ArrayAccess` method bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2241/*` through
+  `tests/fixtures/milestone2244/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: focused scratch system-PHP probes passed for visible
+  `__get()`, public `ArrayAccess::offsetGet()`, dynamic method helper
+  dispatch, and the copied-local no-over-promotion guard; focused fixture
+  system-PHP comparisons passed for `milestone2241` through `milestone2244`.
+- Remaining COW gaps: whole-array reference identity outside covered
+  non-empty array-offset roots, untracked dynamic containers that expose
+  neither materialized reference cells nor portable copied-source roots,
+  unsupported syntax outside the current dynamic instance-call slice, exact
+  diagnostics/Throwable objects, and native reference/string COW lowering.
+- Next concrete task: run focused adjacent regressions, `cargo fmt`,
+  `cargo fmt --check`, `cargo check -q -p phpc`, `git diff --check`, then one
+  full `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T23:30:32+02:00
 
 - Checkpoint before this task: `d8e80220 checkpoint: 2026-05-19 21:14:19

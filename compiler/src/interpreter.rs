@@ -47056,7 +47056,7 @@ impl Interpreter {
                         if let Some(arg) = args.get(index) {
                             let aliases = vec![alias.clone()];
                             let cell = if let Some(cell) =
-                                caller_scope.reference_cell_for_array_offset_alias_group(&aliases)
+                                caller_scope.reference_cell_for_array_literal_alias_group(&aliases)
                             {
                                 local_scope.bind_static_to_cell(&param.name, cell.clone());
                                 Some(cell)
@@ -47076,7 +47076,7 @@ impl Interpreter {
                     ReferenceBindingTarget::ArrayOffsets(aliases) => {
                         if let Some(arg) = args.get(index) {
                             let cell = if let Some(cell) =
-                                caller_scope.reference_cell_for_array_offset_alias_group(aliases)
+                                caller_scope.reference_cell_for_array_literal_alias_group(aliases)
                             {
                                 local_scope.bind_static_to_cell(&param.name, cell.clone());
                                 Some(cell)
@@ -47641,7 +47641,7 @@ impl Interpreter {
                             let aliases = vec![alias.clone()];
                             let cell = if let Some(scope) = writeback_scope.as_deref_mut() {
                                 if let Some(cell) =
-                                    scope.reference_cell_for_array_offset_alias_group(&aliases)
+                                    scope.reference_cell_for_array_literal_alias_group(&aliases)
                                 {
                                     local_scope.bind_static_to_cell(&param.name, cell.clone());
                                     Some(cell)
@@ -47670,7 +47670,7 @@ impl Interpreter {
                         if let Some(arg) = args.get(index) {
                             let cell = if let Some(scope) = writeback_scope.as_deref_mut() {
                                 if let Some(cell) =
-                                    scope.reference_cell_for_array_offset_alias_group(aliases)
+                                    scope.reference_cell_for_array_literal_alias_group(aliases)
                                 {
                                     local_scope.bind_static_to_cell(&param.name, cell.clone());
                                     Some(cell)
@@ -51513,7 +51513,7 @@ impl Interpreter {
                                     reference_scope.as_deref_mut()
                                 {
                                     if let Some(cell) =
-                                        scope.reference_cell_for_array_offset_alias_group(&aliases)
+                                        scope.reference_cell_for_array_literal_alias_group(&aliases)
                                     {
                                         local_scope.bind_static_to_cell(&param.name, cell.clone());
                                         true
@@ -51557,7 +51557,7 @@ impl Interpreter {
                                     reference_scope.as_deref_mut()
                                 {
                                     if let Some(cell) =
-                                        scope.reference_cell_for_array_offset_alias_group(aliases)
+                                        scope.reference_cell_for_array_literal_alias_group(aliases)
                                     {
                                         local_scope.bind_static_to_cell(&param.name, cell.clone());
                                         true

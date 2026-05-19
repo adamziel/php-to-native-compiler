@@ -32,7 +32,23 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2240:
+The current in-progress implementation frontier is Lane 2244:
+
+- Lanes 2241 through 2244 broaden whole-array reference identity for covered
+  non-empty object-property array-offset roots passed into by-reference
+  helpers inside supported magic/`ArrayAccess` bodies. Function parameter
+  binding now uses the array-literal promotion rules for covered array-offset
+  aliases, so helpers that return `array(&$bucket)` can keep the same backing
+  bucket cell while PHP COW still detaches a later write to the returned
+  by-value copy. Focused system-PHP coverage proves visible `__get()`, public
+  `ArrayAccess::offsetGet()`, a dynamic method helper reached through
+  `$this->{$method}(...)`, and a no-over-promotion guard where a copied local
+  bucket stored in `call_user_func_array()` arguments must not mutate the
+  original backing store. This remains bounded to supported by-reference
+  helper calls, covered non-empty array-offset roots, concrete runtime cells,
+  and supported method-body syntax; it does not claim arbitrary untracked
+  containers, full whole-array reference identity for all roots, exact
+  diagnostics, or native reference/string COW lowering.
 
 - Lanes 2237 through 2240 broaden `call_user_func_array()` argument-container
   identity inside supported magic/`ArrayAccess` bodies. Source-aware
