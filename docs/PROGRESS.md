@@ -4,16 +4,30 @@
 
 Implemented:
 
+- Added Lane 1871-C through Lane 1874-C for by-value method returns that copy
+  backed object-property arrays from supported control-flow method bodies after
+  magic/`ArrayAccess` reference slots have been established. The return-source
+  provenance path now carries through executed `if`/`else`,
+  `switch`/`case`/`default`, `while`/`do while`/`for`, and `try`/`finally`
+  bodies when the reached return expression is one of the existing direct
+  visible object-property array shapes. This remains bounded to the current
+  interpreter subset and does not claim arbitrary returned temporaries,
+  `foreach`/Iterator body returns, thrown exception unwinding, whole-array
+  reference identity, or native reference lowering. Focused verification:
+  `cargo run -q -p phpc -- test --compare-php` passed the new
+  `milestone1871`, `milestone1872`, `milestone1873`, and `milestone1874`
+  fixtures with system-PHP comparisons.
+
 - Added Lane 1867-C through Lane 1870-C for by-value method returns that copy
   backed object-property arrays after magic/`ArrayAccess` reference slots have
   been established. Public and private `ArrayAccess::offsetGet()` backing
   arrays, `__get()` backing arrays, dynamic `$this->{$property}` returns, and
   selected `$this->store[$group]` returns now preserve existing scalar-slot
   COW write-through in the returned array value. This remains bounded to
-  top-level by-value method returns with direct visible object-property array
-  paths and side-effect-free copied keys; arbitrary returned temporaries,
-  nested-control-flow return-source provenance, whole-array reference identity,
-  and native reference lowering remain unsupported. Focused verification:
+  by-value method returns with direct visible object-property array paths and
+  side-effect-free copied keys; arbitrary returned temporaries, whole-array
+  reference identity, and native reference lowering remain unsupported.
+  Focused verification:
   `cargo run -q -p phpc -- test --compare-php` passed the new
   `milestone1867`, `milestone1868`, `milestone1869`, and `milestone1870`
   fixtures with system-PHP comparisons.

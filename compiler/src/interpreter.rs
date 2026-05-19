@@ -6105,21 +6105,9 @@ impl Interpreter {
         let mut index = 0;
         while index < statements.len() {
             let stmt = &statements[index];
-            if let Stmt::Return { value, .. } = stmt {
-                self.tick(stmt.span())?;
-                let Some(expr) = value else {
-                    return Ok((Flow::Return(Value::Null), None));
-                };
-                let value = self.evaluate(expr, scope)?;
-                let source = if matches!(value, Value::Array(_)) {
-                    self.public_object_property_array_copy_source_for_expr(expr, scope)
-                } else {
-                    None
-                };
-                return Ok((Flow::Return(value), source));
-            }
-
-            match self.execute_statement(stmt, scope)? {
+            let (flow, source) =
+                self.execute_statement_with_array_copy_return_source(stmt, scope)?;
+            match flow {
                 Flow::Normal => {}
                 Flow::Goto { label, span } => {
                     let Some(target) = labels.get(&label) else {
@@ -6131,13 +6119,298 @@ impl Interpreter {
                 flow @ (Flow::Break { .. }
                 | Flow::Continue { .. }
                 | Flow::Return(_)
-                | Flow::Exit(_)) => return Ok((flow, None)),
+                | Flow::Exit(_)) => return Ok((flow, source)),
             }
             if let Some(code) = self.exit_signal {
                 return Ok((Flow::Exit(code), None));
             }
             index += 1;
         }
+        Ok((Flow::Normal, None))
+    }
+
+    fn execute_statement_with_array_copy_return_source(
+        &mut self,
+        stmt: &Stmt,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+        match stmt {
+            Stmt::Return { value, .. } => {
+                self.tick(stmt.span())?;
+                return self.return_flow_with_array_copy_source(value.as_ref(), scope);
+            }
+            Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                self.tick(stmt.span())?;
+                let branch = if self.evaluate(condition, scope)?.is_truthy() {
+                    then_branch
+                } else {
+                    else_branch
+                };
+                return self.execute_statements_with_array_copy_return_source(branch, scope);
+            }
+            Stmt::While {
+                condition,
+                body,
+                span,
+            } => {
+                self.tick(stmt.span())?;
+                loop {
+                    self.tick(*span)?;
+                    if !self.evaluate(condition, scope)?.is_truthy() {
+                        break;
+                    }
+                    let (flow, source) =
+                        self.execute_statements_with_array_copy_return_source(body, scope)?;
+                    match flow {
+                        Flow::Normal => {}
+                        Flow::Continue { depth, .. } if depth <= 1 => {}
+                        Flow::Continue { depth, span } => {
+                            return Ok((
+                                Flow::Continue {
+                                    depth: depth - 1,
+                                    span,
+                                },
+                                None,
+                            ));
+                        }
+                        Flow::Break { depth, .. } if depth <= 1 => break,
+                        Flow::Break { depth, span } => {
+                            return Ok((
+                                Flow::Break {
+                                    depth: depth - 1,
+                                    span,
+                                },
+                                None,
+                            ));
+                        }
+                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                            return Ok((flow, source));
+                        }
+                    }
+                }
+                return Ok((Flow::Normal, None));
+            }
+            Stmt::DoWhile {
+                body,
+                condition,
+                span,
+            } => {
+                self.tick(stmt.span())?;
+                loop {
+                    self.tick(*span)?;
+                    let (flow, source) =
+                        self.execute_statements_with_array_copy_return_source(body, scope)?;
+                    match flow {
+                        Flow::Normal => {}
+                        Flow::Continue { depth, .. } if depth <= 1 => {}
+                        Flow::Continue { depth, span } => {
+                            return Ok((
+                                Flow::Continue {
+                                    depth: depth - 1,
+                                    span,
+                                },
+                                None,
+                            ));
+                        }
+                        Flow::Break { depth, .. } if depth <= 1 => break,
+                        Flow::Break { depth, span } => {
+                            return Ok((
+                                Flow::Break {
+                                    depth: depth - 1,
+                                    span,
+                                },
+                                None,
+                            ));
+                        }
+                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                            return Ok((flow, source));
+                        }
+                    }
+
+                    if !self.evaluate(condition, scope)?.is_truthy() {
+                        break;
+                    }
+                }
+                return Ok((Flow::Normal, None));
+            }
+            Stmt::For {
+                initializers,
+                conditions,
+                increments,
+                body,
+                span,
+            } => {
+                self.tick(stmt.span())?;
+                for initializer in initializers {
+                    self.execute_for_action(initializer, scope)?;
+                }
+
+                loop {
+                    self.tick(*span)?;
+                    if !conditions.is_empty() {
+                        let mut keep_running = true;
+                        for condition in conditions {
+                            keep_running = self.evaluate(condition, scope)?.is_truthy();
+                        }
+                        if !keep_running {
+                            break;
+                        }
+                    }
+
+                    let (flow, source) =
+                        self.execute_statements_with_array_copy_return_source(body, scope)?;
+                    match flow {
+                        Flow::Normal => {}
+                        Flow::Continue { depth, .. } if depth <= 1 => {}
+                        Flow::Continue { depth, span } => {
+                            return Ok((
+                                Flow::Continue {
+                                    depth: depth - 1,
+                                    span,
+                                },
+                                None,
+                            ));
+                        }
+                        Flow::Break { depth, .. } if depth <= 1 => break,
+                        Flow::Break { depth, span } => {
+                            return Ok((
+                                Flow::Break {
+                                    depth: depth - 1,
+                                    span,
+                                },
+                                None,
+                            ));
+                        }
+                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                            return Ok((flow, source));
+                        }
+                    }
+
+                    for increment in increments {
+                        self.execute_for_action(increment, scope)?;
+                    }
+                }
+
+                return Ok((Flow::Normal, None));
+            }
+            Stmt::Switch { value, cases, .. } => {
+                self.tick(stmt.span())?;
+                return self.execute_switch_with_array_copy_return_source(value, cases, scope);
+            }
+            Stmt::Try {
+                body, finally_body, ..
+            } => {
+                self.tick(stmt.span())?;
+                let try_flow =
+                    self.execute_statements_with_array_copy_return_source(body, scope)?;
+                if let Some(finally_body) = finally_body {
+                    let finally_flow =
+                        self.execute_statements_with_array_copy_return_source(finally_body, scope)?;
+                    if !matches!(finally_flow.0, Flow::Normal) {
+                        return Ok(finally_flow);
+                    }
+                }
+                return Ok(try_flow);
+            }
+            _ => {}
+        }
+
+        self.execute_statement(stmt, scope).map(|flow| (flow, None))
+    }
+
+    fn return_flow_with_array_copy_source(
+        &mut self,
+        value: Option<&Expr>,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+        let Some(expr) = value else {
+            return Ok((Flow::Return(Value::Null), None));
+        };
+        let value = self.evaluate(expr, scope)?;
+        let source = if matches!(value, Value::Array(_)) {
+            self.public_object_property_array_copy_source_for_expr(expr, scope)
+        } else {
+            None
+        };
+        Ok((Flow::Return(value), source))
+    }
+
+    fn execute_switch_with_array_copy_return_source(
+        &mut self,
+        value: &Expr,
+        cases: &[SwitchCase],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Flow, Option<PublicObjectPropertyArrayCopySource>)> {
+        let switch_value = self.evaluate(value, scope)?;
+        let mut default_index = None;
+        let mut matched_index = None;
+
+        for (index, case) in cases.iter().enumerate() {
+            let Some(condition) = &case.condition else {
+                if default_index.is_none() {
+                    default_index = Some(index);
+                }
+                continue;
+            };
+
+            let case_value = self.evaluate(condition, scope)?;
+            let matched = switch_value
+                .php_cmp_checked(&case_value, Comparison::Eq)
+                .map_err(|error| runtime_error(condition.span(), error))?;
+            if matched {
+                matched_index = Some(index);
+                break;
+            }
+        }
+
+        let Some(mut index) = matched_index.or(default_index) else {
+            return Ok((Flow::Normal, None));
+        };
+
+        while index < cases.len() {
+            let (flow, source) =
+                self.execute_statements_with_array_copy_return_source(&cases[index].body, scope)?;
+            match flow {
+                Flow::Normal => {}
+                Flow::Break { depth, .. } if depth <= 1 => return Ok((Flow::Normal, None)),
+                Flow::Break { depth, span } => {
+                    return Ok((
+                        Flow::Break {
+                            depth: depth - 1,
+                            span,
+                        },
+                        None,
+                    ));
+                }
+                Flow::Continue { depth, span } if depth <= 1 => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_loop_control(
+                            "continue inside switch is not implemented; use break for switch cases in the current subset",
+                        ),
+                    ));
+                }
+                Flow::Continue { depth, span } => {
+                    return Ok((
+                        Flow::Continue {
+                            depth: depth - 1,
+                            span,
+                        },
+                        None,
+                    ));
+                }
+                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                    return Ok((flow, source));
+                }
+            }
+            index += 1;
+        }
+
         Ok((Flow::Normal, None))
     }
 

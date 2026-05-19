@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1870:
+The current in-progress implementation frontier is Lane 1874:
+
+- Lanes 1871 through 1874 preserve the same by-value method-return
+  copied-array COW provenance when the covered return expression is reached
+  through supported method-body control flow. Executed `if`/`else`,
+  `switch`/`case`/`default`, `while`/`do while`/`for`, and `try`/`finally`
+  paths can now carry provenance for direct visible `$this` object-property
+  array returns after supported magic/`ArrayAccess` aliases have established
+  reference slots below the backing property. Focused coverage includes
+  ArrayAccess-backed `if`, `switch`, and loop returns plus a magic `__get()`
+  `try`/`finally` return. This remains bounded to the interpreter subset and
+  the existing direct visible object-property array return shapes; arbitrary
+  returned temporaries, `foreach`/Iterator body returns, thrown exception
+  unwinding, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
 
 - Lanes 1867 through 1870 preserve copied-array COW provenance when a
   by-value user method returns a backed object-property array after supported
@@ -40,11 +54,10 @@ The current in-progress implementation frontier is Lane 1870:
   property. Covered public/private `ArrayAccess::offsetGet()` and
   `__get()` paths now keep scalar slot write-through when a later method
   returns `$this->store`, `$this->{$property}`, or `$this->store[$group]`.
-  This is bounded to top-level by-value method returns whose return expression
-  is a direct visible object-property array path with side-effect-free copied
-  keys; arbitrary returned temporaries, return sources hidden inside nested
-  control flow, whole-array reference identity, exact diagnostics, and native
-  reference lowering remain unsupported.
+  This is bounded to by-value method returns whose returned expression is a
+  direct visible object-property array path with side-effect-free copied keys;
+  arbitrary returned temporaries, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 1864 through 1866 tighten scalar/string parent failures for direct
   variable, `$GLOBALS`, and imported-global array-offset reference sources.

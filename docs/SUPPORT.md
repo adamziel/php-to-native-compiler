@@ -756,10 +756,15 @@
   side-effect-free. This covers supported magic/`ArrayAccess` aliases created
   before the method return, so later writes through the returned array's
   mirrored scalar reference slots still reach the original backing property.
-  Returned temporaries, return sources hidden inside nested control flow,
-  whole-array reference identity in returned values, and arbitrary
-  side-effecting copied-key expressions remain unsupported for this by-value
-  method-return provenance path. When a declared
+  The same provenance is retained when that supported return expression is
+  reached through executed `if`/`else`, `switch`/`case`/`default`,
+  `while`/`do while`/`for`, or `try`/`finally` method-body paths in the
+  current interpreter subset. `finally` side effects run before the copied
+  return value reaches the caller, and a supported return from `finally`
+  overrides an earlier try return. Returned temporaries, `foreach`/Iterator
+  body returns, thrown exception unwinding, whole-array reference identity in
+  returned values, and arbitrary side-effecting copied-key expressions remain
+  unsupported for this by-value method-return provenance path. When a declared
   public object property array with a covered direct object-property
   array-offset reference target is copied into a direct static variable, the
   copied slot also joins the same bounded alias group: writes through the

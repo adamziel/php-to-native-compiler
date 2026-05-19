@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T04:27:54+02:00
+
+- Checkpoint before this task: `ecd52103 runtime: preserve method return COW
+  provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1871-C through Lane 1874-C bundle, carrying by-value
+  method-return copied-array COW provenance through supported control-flow
+  method bodies after magic/`ArrayAccess` aliases have established reference
+  slots below the backing object-property array.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1871/*`, `tests/fixtures/milestone1872/*`,
+  `tests/fixtures/milestone1873/*`, `tests/fixtures/milestone1874/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes matched phpc for ArrayAccess
+  `if`, `switch`, and loop returns plus magic `try`/`finally`; `cargo check
+  -q -p phpc` passed; `cargo run -q -p phpc -- test --compare-php` passed
+  `milestone1871`, `milestone1872`, `milestone1873`, and `milestone1874`;
+  adjacent `object_model`, `functions_and_scopes`, and
+  `call_user_func_builtin` Rust tests passed; adjacent `milestone1858`,
+  `milestone1859`, `milestone1862`, `milestone1863`, and `milestone1867`
+  through `milestone1874` fixture comparisons passed.
+- Remaining COW gaps: recursive `$GLOBALS` materialization, arbitrary
+  callback and builtin reference-return sources, arbitrary PHP and
+  magic/`ArrayAccess` side effects outside the interpreter subset,
+  `foreach`/Iterator method-return provenance, full exception unwinding and
+  uncaught propagation, broader complex alias sinks and alias lifetime
+  ordering, exact PHP stderr/fatal text, binary/multibyte string offset
+  behavior, and native reference/string COW lowering.
+- Next concrete task: run formatting, diff check, the full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T04:19:05+02:00
 
 - Checkpoint before this task: `355fb5c7 runtime: tighten direct scalar
