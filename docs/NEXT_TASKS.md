@@ -39,11 +39,15 @@ handled.
   supported by-value `ArrayAccess::offsetGet()` and magic `__get()` bodies
   overwrite their backing object-property arrays directly, through helpers, or
   through direct `call_user_func([$this, ...])` callbacks.
+- [x] Lane 2157-C through 2161-C: bind `$this` and class/called-class context
+  into non-static closures created inside supported magic/`ArrayAccess` method
+  bodies, covering direct closure calls, closure-valued `call_user_func()`,
+  positional `call_user_func_array()`, and setter storage of copied-source
+  payloads through a bound closure.
 - [ ] Next COW gap, hard-first: keep extending the general
   magic/`ArrayAccess` method-body side-effect/writeback model so helper,
-  callback, dynamic-holder, append/suffix setter storage, and copied-source
-  provenance all use one propagation architecture instead of new shape
-  checks.
+  dynamic-holder, append/suffix setter storage, and copied-source provenance
+  all use one propagation architecture instead of new shape checks.
 - [ ] Remaining hard gaps: untracked dynamic containers, broader callback
   containers, whole-array reference identity, exact PHP diagnostics/Throwable
   objects, and native reference/string COW lowering.

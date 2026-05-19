@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2161/arrayaccess_offsetset_bound_closure_stores_array_copy_source.php

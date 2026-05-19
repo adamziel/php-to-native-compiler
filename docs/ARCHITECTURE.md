@@ -983,10 +983,16 @@ array copy came from the detached object-property path, the local copy is
 rehydrated with the detached reference cell before the alias group is removed.
 This keeps by-value `offsetGet()`/`__get()` locals returned after a
 direct/helper/callback backing overwrite connected to the old detached
-reference leaf while the recreated backing property remains separate. This is
-still a bounded interpreter-scope writeback model rather than a general PHP
-reference container, and it does not cover unsupported syntax, untracked
-dynamic containers, exact diagnostics, or native lowering.
+reference leaf while the recreated backing property remains separate.
+Non-static anonymous closures created inside these method bodies record the
+current `$this`, class context, and called-class context; direct invocation,
+closure-valued `call_user_func()`, positional `call_user_func_array()`, and
+covered reference-return/source closure paths then execute the callback with
+that bound context, so `$this`-based backing writes inside the closure use the
+same alias and copied-source propagation machinery. This is still a bounded
+interpreter-scope writeback model rather than a general PHP reference
+container, and it does not cover unsupported syntax, `Closure::bind`/`bindTo`,
+untracked dynamic containers, exact diagnostics, or native lowering.
 Direct magic-property append stores such as `$box->missing[] = $array` and
 `$box->{$name}[] = $array` are a separate store path from magic append
 reference sources. For the covered store shape, the runtime calls visible
@@ -3074,6 +3080,11 @@ through the bounded direct `$closure(...)`, `call_user_func()`,
 positional-array `call_user_func_array()`, and `ReflectionFunction::invoke()`
 paths. Invocation prebinds the closure's by-value captured snapshot into the
 callee local scope and then reuses the user-function call frame machinery.
+For non-static anonymous closures created while `$this` is visible, the
+closure id also records the bound object plus class and called-class context.
+The documented direct, callback, and reflection invocation paths pass that
+context into the user-function frame, while `static function` closures leave
+`$this` unbound.
 Direct `$closure(...)` invocation also routes through the checked direct-call
 argument evaluator, so current direct-variable and direct array-offset
 by-reference parameter bindings are installed before the closure body executes
@@ -3087,10 +3098,11 @@ the value-only callback argument path and emits the same bounded recoverable
 warnings as string user-function callbacks when a reached non-variadic closure
 parameter is declared by reference; direct-variable by-reference captures are
 still prebound as cells.
-Static closure binding semantics are not represented yet. Arrow values do not
-bind implicit captures or execute their synthetic return bodies. Static arrow
-functions stop at a dedicated parse boundary until no-`$this` binding,
-implicit capture metadata, references/copy-on-write, and native lowering exist.
+Closure rebinding through `Closure::bind`/`bindTo` is not represented yet.
+Arrow values do not bind implicit captures or execute their synthetic return
+bodies. Static arrow functions stop at a dedicated parse boundary until
+no-`$this` binding, implicit capture metadata, references/copy-on-write, and
+native lowering exist.
 `phpc run` supports an opt-in execution-step budget via
 `PHPC_MAX_EXECUTION_STEPS`; it is enforced at statement execution and loop
 iteration boundaries to diagnose runtime loops, but it intentionally does not
@@ -3373,7 +3385,8 @@ source direct-variable cell, and closure invocation prebinds that cell into the
 closure local scope so closure writes update the captured variable even after
 the creating user-function scope has returned. The function path intentionally
 rejects other internal functions, by-reference capture of array-offset/property/
-ArrayAccess alias roots, array-callable `call_user_func()` forms beyond the
+ArrayAccess alias roots outside the documented alias metadata, array-callable
+`call_user_func()` forms beyond the
 bounded public object/static method by-value slice, variadic reference
 parameters through `call_user_func()`, typed
 parameter/return declarations during invocation,

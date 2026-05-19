@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2160/arrayaccess_offsetget_call_user_func_array_bound_closure_overwrite_keeps_reference.php

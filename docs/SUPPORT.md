@@ -36,8 +36,13 @@
   supported interpreter bodies with caller-scope alias transfer, so overwrites
   or unsets of tracked object-property array containers detach stale caller
   aliases while preserving nested reference leaves in the detached value,
-  including non-public backing properties reached from the method body. This
-  does not provide general PHP reference containers, untracked dynamic
+  including non-public backing properties reached from the method body.
+  Non-static closures created inside those supported method bodies retain
+  their `$this` and class/called-class context for direct closure invocation,
+  closure-valued `call_user_func()`, and positional
+  `call_user_func_array()`, so bound closure callbacks can participate in the
+  same tracked COW side-effect/writeback model. This does not provide general
+  PHP reference containers, `Closure::bind`/`bindTo`, untracked dynamic
   container recovery, unsupported method-body syntax, whole-array reference
   identity, exact PHP diagnostics, or native COW lowering.
 - by-reference function and method return declarations such as
@@ -7145,16 +7150,21 @@
   by-reference parameters are supplied by covered by-reference argument-array
   elements in the same direct-variable and direct array/property slot subset
   used by user-function callbacks. Invocation uses the captured by-value
-  snapshot stored when the closure was created. Arrow implicit capture binding
-  and execution, `$this` binding, by-reference capture of dynamic property
-  roots outside the documented alias metadata, arbitrary magic/`ArrayAccess`
-  method bodies, arbitrary alias roots, closure
+  snapshot stored when the closure was created. Non-static anonymous closures
+  created while `$this` is in scope retain their bound receiver plus
+  class/called-class context for the documented direct, `call_user_func()`,
+  positional `call_user_func_array()`, and `ReflectionFunction::invoke()`
+  paths; `static function` closures deliberately do not bind `$this`. Arrow
+  implicit capture binding and execution, `Closure::bind`/`bindTo`,
+  by-reference capture of dynamic property roots outside the documented alias
+  metadata, arbitrary magic/`ArrayAccess` method bodies, arbitrary alias roots,
+  closure
   reference returns, array-callable `call_user_func()` forms beyond public
   object/static method callbacks over by-value arguments, variadic
   reference parameters through `call_user_func()`, typed parameter/return
-  enforcement, copy-on-write, static closure binding
-  semantics, named closure callback arguments, exact PHP `Closure` object
-  behavior, and native lowering are unsupported. Non-static
+  enforcement, copy-on-write beyond the documented closure/method-body paths,
+  named closure callback arguments, exact PHP `Closure` object behavior, and
+  native lowering are unsupported. Non-static
   arrow function syntax `fn (...) => expr` is parsed as a closure-shaped
   expression with a synthetic return body, while `static fn (...) => expr`
   stops at a dedicated parse boundary until no-`$this` binding, implicit

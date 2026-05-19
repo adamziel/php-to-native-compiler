@@ -124,6 +124,36 @@ injects this file into every prompt. Each Codex pass should update it with:
   if it passes; after that, keep attacking the general method-body
   side-effect/writeback model rather than adding isolated shape checks.
 
+## Loop Event 2026-05-19T18:57:31+02:00
+
+- Checkpoint before this task: `3cc3250c runtime: rehydrate magic ArrayAccess
+  copied detaches`, pushed to `origin/master`.
+- Task attempted: Lane 2157-C through Lane 2161-C bundle, binding `$this` and
+  class/called-class context into non-static closures created inside supported
+  magic/`ArrayAccess` method bodies so bound closure callbacks can participate
+  in the current COW side-effect/writeback model.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `tests/fixtures/milestone2157/*`,
+  `tests/fixtures/milestone2158/*`, `tests/fixtures/milestone2159/*`,
+  `tests/fixtures/milestone2160/*`, `tests/fixtures/milestone2161/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, `docs/ARCHITECTURE.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; focused system-PHP
+  comparisons for Milestones 2157 through 2161 passed; adjacent system-PHP
+  comparisons for Milestones 2152 through 2161 passed; the recent COW sweep
+  Milestones 2101 through 2161 passed; the older closure/COW regression set
+  passed; and filtered Rust regression checks for object model, scopes,
+  dynamic features, array reference literals, assignment, unset/isset/empty,
+  and closure passed.
+- Remaining COW gaps: untracked dynamic containers, broader callback
+  containers, append/suffix setter provenance beyond the current covered
+  paths, whole-array reference identity, exact PHP diagnostics/Throwable
+  objects, string COW identity, and native reference lowering.
+- Next concrete task: run `cargo fmt --check`, `cargo check -q -p phpc`,
+  `git diff --check`, then the full checkpoint gate with
+  `tools/checkpoint.sh "runtime: bind closure method COW contexts"` if the
+  preflight remains clean.
+
 ## Loop Event 2026-05-19T17:29:49+02:00
 
 - Checkpoint before this task: `f2bcf43c runtime: execute magic ArrayAccess

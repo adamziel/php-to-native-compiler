@@ -150,6 +150,7 @@ struct Interpreter {
     closure_values: HashMap<i64, PhpClosure>,
     closure_alias_captures: HashMap<i64, Vec<ClosureAliasCapture>>,
     closure_array_copy_source_captures: HashMap<i64, Vec<(String, ArrayCopySource, SymbolTable)>>,
+    closure_bound_contexts: HashMap<i64, ClosureBoundContext>,
     reflection_methods: HashMap<i64, ReflectionMethodState>,
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
@@ -5877,6 +5878,13 @@ struct ClosureAliasCapture {
 }
 
 #[derive(Debug, Clone)]
+struct ClosureBoundContext {
+    this_object: PhpObject,
+    class_context: Option<ClassId>,
+    called_class_context: Option<ClassId>,
+}
+
+#[derive(Debug, Clone)]
 enum ReferenceBindingTarget {
     CallerCell {
         name: String,
@@ -6302,6 +6310,7 @@ impl Interpreter {
             closure_values: HashMap::new(),
             closure_alias_captures: HashMap::new(),
             closure_array_copy_source_captures: HashMap::new(),
+            closure_bound_contexts: HashMap::new(),
             reflection_methods: HashMap::new(),
             reflection_parameters: HashMap::new(),
             reflection_properties: HashMap::new(),
@@ -12124,6 +12133,7 @@ impl Interpreter {
                 return_type,
                 returns_by_reference,
                 body,
+                is_static,
                 span,
                 is_arrow,
                 ..
@@ -12133,6 +12143,7 @@ impl Interpreter {
                 return_type.as_ref(),
                 *returns_by_reference,
                 body,
+                *is_static,
                 *is_arrow,
                 *span,
                 scope,
@@ -32927,12 +32938,14 @@ impl Interpreter {
         ensure_supported_function_signature(function, values.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
         let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
         self.call_user_function_with_checked_values_and_locals(
             function,
             values,
-            None,
-            None,
-            None,
+            this_object,
+            class_context,
+            called_class_context,
             Vec::new(),
             None,
             prebound_locals,
@@ -33083,12 +33096,14 @@ impl Interpreter {
                     true,
                 )?;
             let prebound_locals = self.closure_prebound_locals(&closure);
+            let (this_object, class_context, called_class_context) =
+                self.closure_call_context(&closure);
             return self.call_reference_return_function_value_with_checked_values_and_locals(
                 function,
                 values,
-                None,
-                None,
-                None,
+                this_object,
+                class_context,
+                called_class_context,
                 reference_bindings,
                 caller_scope,
                 prebound_locals,
@@ -33101,12 +33116,14 @@ impl Interpreter {
         let by_value_array_copy_bindings =
             Self::by_value_array_copy_bindings_for_call(function, args);
         let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
         self.call_user_function_with_checked_values_and_locals(
             function,
             values,
-            None,
-            None,
-            None,
+            this_object,
+            class_context,
+            called_class_context,
             reference_bindings,
             Some(caller_scope),
             prebound_locals,
@@ -33151,14 +33168,16 @@ impl Interpreter {
                 .map(|value| (value, None));
         }
         let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
         self.call_source_aware_user_function_with_expr_args(
             function,
             args,
             span,
             caller_scope,
-            None,
-            None,
-            None,
+            this_object,
+            class_context,
+            called_class_context,
             prebound_locals,
         )
     }
@@ -33214,6 +33233,22 @@ impl Interpreter {
             );
         }
         locals
+    }
+
+    fn closure_call_context(
+        &self,
+        closure: &PhpClosure,
+    ) -> (Option<PhpObject>, Option<ClassId>, Option<ClassId>) {
+        self.closure_bound_contexts
+            .get(&closure.id())
+            .map(|context| {
+                (
+                    Some(context.this_object.clone()),
+                    context.class_context,
+                    context.called_class_context,
+                )
+            })
+            .unwrap_or((None, None, None))
     }
 
     fn closure_array_copy_source_capture(
@@ -36439,6 +36474,7 @@ impl Interpreter {
         return_type: Option<&TypeDecl>,
         returns_by_reference: bool,
         body: &[Stmt],
+        is_static: bool,
         is_arrow: bool,
         span: Span,
         scope: &mut SymbolTable,
@@ -36517,6 +36553,28 @@ impl Interpreter {
         );
         let closure = PhpClosure::new(id, is_arrow, captured_values);
         self.closure_values.insert(id, closure.clone());
+        if !is_static {
+            if let Some(Value::Object(this_object)) = scope.read_storage_named("this") {
+                let class_context = self
+                    .class_context
+                    .last()
+                    .copied()
+                    .or_else(|| Some(this_object.class_id()));
+                let called_class_context = self
+                    .called_class_context
+                    .last()
+                    .copied()
+                    .or_else(|| Some(this_object.class_id()));
+                self.closure_bound_contexts.insert(
+                    id,
+                    ClosureBoundContext {
+                        this_object,
+                        class_context,
+                        called_class_context,
+                    },
+                );
+            }
+        }
         if !alias_captures.is_empty() {
             self.closure_alias_captures.insert(id, alias_captures);
         }
@@ -37552,12 +37610,14 @@ impl Interpreter {
                     caller_scope,
                 )?;
             let prebound_locals = self.closure_prebound_locals(&closure);
+            let (this_object, class_context, called_class_context) =
+                self.closure_call_context(&closure);
             return self.call_reference_return_function_value_with_checked_values_and_locals(
                 function,
                 values,
-                None,
-                None,
-                None,
+                this_object,
+                class_context,
+                called_class_context,
                 reference_bindings,
                 caller_scope,
                 prebound_locals,
@@ -37570,12 +37630,14 @@ impl Interpreter {
         let by_value_array_copy_bindings =
             Self::by_value_array_copy_bindings_for_call(function, args);
         let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
         self.call_user_function_with_checked_values_and_locals(
             function,
             values,
-            None,
-            None,
-            None,
+            this_object,
+            class_context,
+            called_class_context,
             Vec::new(),
             Some(caller_scope),
             prebound_locals,
@@ -37626,14 +37688,16 @@ impl Interpreter {
                 .map(|value| (value, None));
         }
         let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
         self.call_user_func_value_warning_function_with_array_copy_source(
             function,
             args,
             span,
             caller_scope,
-            None,
-            None,
-            None,
+            this_object,
+            class_context,
+            called_class_context,
             prebound_locals,
         )
     }
@@ -38310,12 +38374,14 @@ impl Interpreter {
                     caller_scope,
                 )?;
             let prebound_locals = self.closure_prebound_locals(&closure);
+            let (this_object, class_context, called_class_context) =
+                self.closure_call_context(&closure);
             return self.call_reference_return_function_value_with_checked_values_and_locals(
                 function,
                 values,
-                None,
-                None,
-                None,
+                this_object,
+                class_context,
+                called_class_context,
                 reference_bindings,
                 caller_scope,
                 prebound_locals,
@@ -38348,12 +38414,14 @@ impl Interpreter {
             )
             .collect();
         let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             values,
-            None,
-            None,
-            None,
+            this_object,
+            class_context,
+            called_class_context,
             reference_bindings,
             Some(caller_scope),
             prebound_locals,
@@ -38431,13 +38499,15 @@ impl Interpreter {
                 )
                 .collect();
             self.ensure_user_function_call_depth(function, span)?;
+            let (this_object, class_context, called_class_context) =
+                self.closure_call_context(&closure);
             return self
                 .call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
                     function,
                     values,
-                    None,
-                    None,
-                    None,
+                    this_object,
+                    class_context,
+                    called_class_context,
                     reference_bindings,
                     Some(caller_scope),
                     prebound_locals,
@@ -38445,15 +38515,17 @@ impl Interpreter {
                     by_value_array_copy_source_bindings,
                 );
         }
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
         if let Some(result) = self
             .call_source_aware_user_function_with_call_user_func_array_argument(
                 function,
                 argument_expr,
                 span,
                 caller_scope,
-                None,
-                None,
-                None,
+                this_object.clone(),
+                class_context,
+                called_class_context,
                 prebound_locals.clone(),
             )?
         {
@@ -38470,9 +38542,9 @@ impl Interpreter {
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source(
             function,
             values,
-            None,
-            None,
-            None,
+            this_object,
+            class_context,
+            called_class_context,
             reference_bindings,
             Some(caller_scope),
             prebound_locals,
@@ -38914,12 +38986,14 @@ impl Interpreter {
                 {
                     self.ensure_user_function_call_depth(function, span)?;
                     let prebound_locals = self.closure_prebound_locals(closure);
+                    let (this_object, class_context, called_class_context) =
+                        self.closure_call_context(closure);
                     return self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
                         function,
                         values,
-                        None,
-                        None,
-                        None,
+                        this_object,
+                        class_context,
+                        called_class_context,
                         reference_bindings,
                         caller_scope,
                         prebound_locals,
@@ -38931,15 +39005,17 @@ impl Interpreter {
                         &args[1],
                         span,
                         caller_scope,
-                    )?;
+                )?;
                 self.ensure_user_function_call_depth(function, span)?;
                 let prebound_locals = self.closure_prebound_locals(closure);
+                let (this_object, class_context, called_class_context) =
+                    self.closure_call_context(closure);
                 self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
                     function,
                     values,
-                    None,
-                    None,
-                    None,
+                    this_object,
+                    class_context,
+                    called_class_context,
                     reference_bindings,
                     caller_scope,
                     prebound_locals,
@@ -39075,12 +39151,14 @@ impl Interpreter {
                         caller_scope,
                     )?;
                 let prebound_locals = self.closure_prebound_locals(closure);
+                let (this_object, class_context, called_class_context) =
+                    self.closure_call_context(closure);
                 self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
                     function,
                     values,
-                    None,
-                    None,
-                    None,
+                    this_object,
+                    class_context,
+                    called_class_context,
                     reference_bindings,
                     caller_scope,
                     prebound_locals,
@@ -43613,12 +43691,14 @@ impl Interpreter {
                 true,
             )?;
         let prebound_locals = self.closure_prebound_locals(&closure);
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
         self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
             function,
             values,
-            None,
-            None,
-            None,
+            this_object,
+            class_context,
+            called_class_context,
             reference_bindings,
             caller_scope,
             prebound_locals,

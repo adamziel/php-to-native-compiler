@@ -32,7 +32,24 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2156:
+The current in-progress implementation frontier is Lane 2161:
+
+- Lanes 2157 through 2161 carry PHP's non-static closure binding into
+  closures created inside supported magic/`ArrayAccess` method bodies. A
+  closure created while `$this` is in scope now records the receiver and
+  class/called-class context, and direct closure calls,
+  `call_user_func($closure, ...)`, positional `call_user_func_array()`, and
+  reference-return/source paths execute with that bound context. Focused
+  system-PHP coverage proves by-value `ArrayAccess::offsetGet()` and visible
+  `__get()` bodies where a bound closure overwrites the backing property
+  after copying the old bucket, callback-dispatched bound closures through
+  `call_user_func()` and `call_user_func_array()`, and
+  `ArrayAccess::offsetSet()` storing a copied-source payload through a bound
+  closure. This removes a real method-body callback hole, but it remains
+  bounded to supported interpreter syntax and existing callable dispatch
+  shapes; `Closure::bind`/`bindTo`, arbitrary unsupported PHP syntax,
+  untracked dynamic containers, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2152 through 2156 extend the detached object-property writeback model
   to method-local copied buckets returned by by-value `ArrayAccess::offsetGet()`

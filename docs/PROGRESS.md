@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 2157-C through Lane 2161-C for non-static closure binding inside
+  supported magic/`ArrayAccess` method bodies. Anonymous closures created with
+  `$this` in scope now retain the receiver plus class/called-class context, and
+  the direct closure, `call_user_func($closure, ...)`, positional
+  `call_user_func_array()`, and covered reference-return/source invocation
+  paths execute with that bound context. Focused system-PHP coverage proves
+  by-value `ArrayAccess::offsetGet()` and visible `__get()` bodies where a
+  bound closure overwrites the backing property after copying the old bucket,
+  callback-dispatched bound closures through `call_user_func()` and
+  `call_user_func_array()`, and `ArrayAccess::offsetSet()` storing a
+  copied-source payload through a bound closure while preserving selected
+  reference-backed leaves. This remains bounded to supported interpreter
+  syntax, existing closure/callback invocation paths, and current COW source
+  metadata; `Closure::bind`/`bindTo`, unsupported PHP syntax inside method
+  bodies, untracked dynamic containers, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
+
 - Added Lane 2152-C through Lane 2156-C for method-local copied buckets that
   survive later magic/`ArrayAccess` backing-property overwrites. By-value
   `ArrayAccess::offsetGet()` and visible `__get()` bodies that first copy a

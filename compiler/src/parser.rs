@@ -5264,7 +5264,7 @@ impl Parser {
             TokenKind::Instanceof => {
                 Err(self.error_at(token.span, unsupported_instanceof_message()))
             }
-            TokenKind::Function => self.parse_closure_expression(token.span),
+            TokenKind::Function => self.parse_closure_expression(token.span, false),
             TokenKind::Fn => self.parse_arrow_function_expression(token.span),
             TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
             TokenKind::Do => {
@@ -5474,7 +5474,7 @@ impl Parser {
             }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::Function)) => {
                 self.advance();
-                self.parse_closure_expression(token.span)
+                self.parse_closure_expression(token.span, true)
             }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::Fn)) => {
                 Err(self.error_at(token.span, unsupported_static_arrow_function_message()))
@@ -5494,7 +5494,7 @@ impl Parser {
         }
     }
 
-    fn parse_closure_expression(&mut self, span: Span) -> CompileResult<Expr> {
+    fn parse_closure_expression(&mut self, span: Span, is_static: bool) -> CompileResult<Expr> {
         let returns_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
 
         self.consume_keyword(TokenKind::LParen, "expected '(' after function")?;
@@ -5543,6 +5543,7 @@ impl Parser {
             return_type,
             returns_by_reference,
             body,
+            is_static,
             is_arrow: false,
             span,
         })
@@ -5582,6 +5583,7 @@ impl Parser {
                 value: Some(value),
                 span,
             }],
+            is_static: false,
             is_arrow: true,
             span,
         })
