@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2249/method_local_alias_reference_leaf_cow.php

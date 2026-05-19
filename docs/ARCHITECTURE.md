@@ -275,6 +275,15 @@ Alias synchronization now carries reference cells between sibling aliases, so
 updating a copied bucket's reference leaf does not flatten that leaf back to a
 plain scalar before the returned value is assigned by the caller.
 
+Explicit local references to copied bucket leaves use the same terminal-cell
+rule. When a supported method body binds `$alias =& $bucket["ref"]["value"]`
+and the alias group proves both the copied local path and the source
+object-property path for that scalar leaf, the interpreter promotes all
+terminal aliases in that group to one reference cell. That prevents by-value
+helper writeback from reading a stale copied leaf and overwriting a source
+reference mutation, while still refusing to promote parent arrays or missing
+untracked containers.
+
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller

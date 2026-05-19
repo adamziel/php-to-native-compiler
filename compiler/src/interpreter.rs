@@ -1690,8 +1690,101 @@ impl SymbolTable {
         for alias in &aliases {
             self.materialize_array_offset_alias(alias, span)?;
         }
-        self.bind_static_to_array_offset_aliases(target, aliases);
+        let alias_group = aliases
+            .first()
+            .and_then(|alias| {
+                self.array_offset_alias_group_for_stored_root_path(alias.clone(), None)
+            })
+            .unwrap_or_else(|| aliases.clone());
+        if let Some(cell) = self.reference_cell_for_source_alias_in_alias_group(&alias_group) {
+            self.bind_static_to_cell(target, cell);
+        } else if aliases
+            .iter()
+            .all(|alias| !matches!(self.read_array_offset_alias(alias), Some(Value::Array(_))))
+        {
+            if let Some(cell) = self.existing_reference_cell_for_alias_group(&aliases) {
+                self.bind_static_to_cell(target, cell);
+            } else {
+                self.bind_static_to_array_offset_aliases(target, aliases);
+            }
+        } else {
+            self.bind_static_to_array_offset_aliases(target, aliases);
+        }
         Ok(())
+    }
+
+    fn reference_cell_for_source_alias_in_alias_group(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+    ) -> Option<VariableCell> {
+        if aliases
+            .iter()
+            .any(|alias| !matches!(alias.root, ArrayOffsetAliasRoot::StaticArray { .. }))
+        {
+            if let Some(cell) = self.reference_cell_for_terminal_alias_group(aliases.to_vec()) {
+                return Some(cell);
+            }
+        }
+        for alias in aliases {
+            let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root else {
+                continue;
+            };
+            let Some(source) = self
+                .public_object_property_array_copy_source_for_static(name)
+                .or_else(|| self.dirty_public_object_property_array_copy_source_for_static(name))
+            else {
+                continue;
+            };
+            let mut source_keys = source.keys.clone();
+            source_keys.extend(alias.keys.iter().cloned());
+            for source_root in self.array_copy_source_roots(&source) {
+                let source_alias = ArrayOffsetAlias {
+                    root: source_root,
+                    keys: source_keys.clone(),
+                };
+                if matches!(
+                    self.read_array_offset_alias(&source_alias),
+                    Some(Value::Array(_))
+                ) {
+                    continue;
+                }
+                if let Some(cell) =
+                    self.reference_cell_for_terminal_alias_group(vec![source_alias, alias.clone()])
+                {
+                    return Some(cell);
+                }
+            }
+        }
+        None
+    }
+
+    fn reference_cell_for_terminal_alias_group(
+        &mut self,
+        aliases: Vec<ArrayOffsetAlias>,
+    ) -> Option<VariableCell> {
+        let mut terminal_aliases = Vec::new();
+        for alias in aliases {
+            let Some(value) = self.read_array_offset_alias(&alias) else {
+                continue;
+            };
+            if matches!(value, Value::Array(_)) || terminal_aliases.contains(&alias) {
+                continue;
+            }
+            terminal_aliases.push(alias);
+        }
+        if terminal_aliases.is_empty() {
+            return None;
+        }
+        self.reference_cell_for_array_literal_alias_group(&terminal_aliases)
+    }
+
+    fn existing_reference_cell_for_alias_group(
+        &self,
+        aliases: &[ArrayOffsetAlias],
+    ) -> Option<VariableCell> {
+        aliases
+            .iter()
+            .find_map(|alias| self.read_array_offset_alias_reference_cell(alias))
     }
 
     fn bind_static_to_appended_array_offset(

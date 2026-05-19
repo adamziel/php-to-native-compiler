@@ -136,6 +136,13 @@
   that local copy directly or through a helper, and return it by value; later
   writes to returned reference leaves still update the original referenced
   leaf while plain leaves detach.
+  Explicit method-local aliases to copied object-property reference leaves are
+  covered for the same terminal scalar paths: `$alias =&
+  $bucket["ref"]["value"]` inside supported normal methods, visible
+  `__get()`, public `ArrayAccess::offsetGet()`, helper bodies, or dynamic
+  helper calls promotes the proven source/copy alias group to one reference
+  cell so helper writeback cannot restore a stale copied value over the source
+  leaf.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.
@@ -147,9 +154,8 @@
   arbitrary side effects beyond covered writeback paths, broader dynamic
   callback mutation of containers whose copied-source roots cannot be synced
   through a concrete shared object property or global root, full whole-array
-  reference identity for arbitrary roots, explicit method-local object-property
-  alias writeback after `$alias =& $bucket["ref"]`, exact PHP diagnostics, or
-  native COW lowering.
+  reference identity for arbitrary roots, exact PHP diagnostics, or native COW
+  lowering.
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or
   declaration-contained declarations can be loaded. The executing subset

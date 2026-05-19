@@ -1,5 +1,24 @@
 # Progress Log
 
+## 2026-05-20
+
+Implemented:
+
+- Added Lane 2249-C through Lane 2253-C for explicit method-local aliases to
+  copied object-property reference leaves. Static array-offset reference
+  binding now promotes a proven terminal scalar alias group together, so
+  `$alias =& $bucket["ref"]["value"]` inside supported normal methods,
+  visible `__get()`, public `ArrayAccess::offsetGet()`, helper bodies, and
+  dynamic helper dispatch shares the same source object-property reference
+  cell instead of writing through a stale copied leaf during by-value helper
+  writeback. Focused system-PHP coverage proves the normal method, magic,
+  ArrayAccess, helper, and dynamic-helper forms while adjacent bucket-reuse
+  and parent-detach guards still pass. This remains bounded to terminal
+  scalar leaves with a statically proven source/copy alias group; arbitrary
+  untracked containers, full whole-array identity outside covered roots,
+  unsupported syntax, exact diagnostics, and native reference/string COW
+  lowering remain unsupported.
+
 ## 2026-05-19
 
 Implemented:
@@ -14,8 +33,7 @@ Implemented:
   helper-mutated copied bucket whose later returned-copy reference write still
   updates the original referenced leaf. A paired `ArrayAccess::offsetSet()`
   helper-key guard proves plain nested leaves still detach. Remaining gaps
-  include explicit method-local `$alias =& $bucket["ref"]` object-property
-  alias writeback, arbitrary untracked containers, unsupported syntax, exact
+  include arbitrary untracked containers, unsupported syntax, exact
   diagnostics, and native reference/string COW lowering.
 
 - Added Lane 2241-C through Lane 2244-C for covered whole-array reference

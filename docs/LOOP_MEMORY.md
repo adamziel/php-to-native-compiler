@@ -23,6 +23,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T00:52:31+02:00
+
+- Checkpoint before this task: `93ca705c checkpoint: 2026-05-19 22:28:38
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2249-C through Lane 2253-C bundle, promoting explicit
+  method-local aliases to terminal copied object-property reference leaves
+  across supported normal methods, visible `__get()`, public
+  `ArrayAccess::offsetGet()`, helper bodies, and dynamic helper dispatch.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2249/*` through
+  `tests/fixtures/milestone2253/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo build -q -p phpc` passed; focused fixture runner
+  and `--compare-php` checks passed for `milestone2249` through
+  `milestone2253`; focused system-PHP comparisons passed for those fixtures
+  plus adjacent guards for `milestone1673c`,
+  `milestone2006/magic_get_parent_array_replacement_detaches_copy.php`, and
+  `milestone2245/method_byvalue_object_bucket_return_reference_leaf_cow.php`;
+  focused Rust regressions passed for `object_model magic`, `object_model
+  arrayaccess`, `functions_and_scopes function`, and
+  `milestone1_fixtures_pass`; `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, and `git diff --check` passed.
+- Remaining COW gaps: whole-array reference identity outside covered
+  non-empty array-offset roots, untracked dynamic containers that expose
+  neither materialized reference cells nor portable copied-source roots,
+  unsupported syntax outside the current dynamic instance-call slice, exact
+  diagnostics/Throwable objects, and native reference/string COW lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-20T00:05:00+02:00
 
 - Checkpoint before this task: `3e243e93 checkpoint: 2026-05-19 21:42:57

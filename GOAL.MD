@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2248:
+The current in-progress implementation frontier is Lane 2253:
+
+- Lanes 2249 through 2253 keep explicit method-local aliases to copied
+  object-property reference leaves attached to the proven source terminal
+  cell. When supported normal methods, visible `__get()`, or public
+  `ArrayAccess::offsetGet()` bodies copy `$this->store[$name]`, bind
+  `$alias =& $bucket["ref"]["value"]`, mutate through that alias, and return
+  the copied bucket, the alias group now promotes the terminal scalar leaf
+  across both the local copied path and the source object-property path. This
+  also covers helper bodies and dynamic helper dispatch through
+  `$this->{$method}($bucket)` while preserving the existing parent-array and
+  plain-leaf detach guards. Remaining gaps include untracked containers,
+  unsupported syntax, full whole-array identity outside covered roots, exact
+  diagnostics, and native reference/string COW lowering.
 
 - Lanes 2245 through 2248 preserve reference-backed leaves when a supported
   by-value method body returns a copied object-property bucket after local
@@ -44,10 +57,8 @@ The current in-progress implementation frontier is Lane 2248:
   `ArrayAccess::offsetGet()` returning a helper-mutated copy while later writes
   to the returned copy still update the original referenced leaf; a paired
   `offsetSet()` helper-key guard keeps plain leaves detached. Remaining gaps
-  include method-local object-property alias writeback after explicit
-  `$alias =& $bucket["ref"]` aliases, arbitrary untracked containers,
-  unsupported syntax, exact diagnostics, and native reference/string COW
-  lowering.
+  include arbitrary untracked containers, unsupported syntax, exact
+  diagnostics, and native reference/string COW lowering.
 
 - Lanes 2241 through 2244 broaden whole-array reference identity for covered
   non-empty object-property array-offset roots passed into by-reference
