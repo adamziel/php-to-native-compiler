@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2226:
+The current in-progress implementation frontier is Lane 2232:
+
+- Lanes 2227 through 2232 close two broader method-body callback/container
+  paths. `call_user_func_array()` callback expressions can now be produced by
+  supported helper calls or reference-returning holder helpers that recreate a
+  shared argument container before the callback runs, and direct caller-cell
+  by-reference helper parameters now import and sync portable array-literal
+  copied-source paths back to the caller. Focused system-PHP coverage proves
+  visible `__get()` and public `ArrayAccess::offsetGet()` for callback helper
+  expressions, property-held callback arrays, and method-local `$args`
+  containers recreated through by-reference helper parameters. This remains
+  bounded to supported helper bodies, direct caller-cell by-reference
+  arguments, portable copied-source roots, and concrete callback/argument
+  containers; it does not claim arbitrary unsupported method-body syntax,
+  untracked dynamic containers, full whole-array reference identity, exact
+  diagnostics, or native reference/string COW lowering.
 
 - Lanes 2223 through 2226 route supported `ReflectionFunction::invoke()` and
   `invokeArgs()` calls for closure helpers through source-aware invocation

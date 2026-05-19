@@ -1136,6 +1136,7 @@ struct SymbolTable {
         HashMap<(i64, String), Vec<(Vec<ArrayKey>, ArrayCopySource)>>,
     dirty_object_property_array_copy_sources: HashSet<(i64, String)>,
     array_literal_copy_source_paths: HashMap<String, Vec<(Vec<ArrayKey>, ArrayCopySource)>>,
+    dirty_array_literal_copy_source_roots: HashSet<String>,
 }
 
 type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
@@ -1235,6 +1236,7 @@ impl SymbolTable {
             object_property_array_copy_sources: HashMap::new(),
             dirty_object_property_array_copy_sources: HashSet::new(),
             array_literal_copy_source_paths: HashMap::new(),
+            dirty_array_literal_copy_source_roots: HashSet::new(),
         }
     }
 
@@ -1251,6 +1253,7 @@ impl SymbolTable {
             object_property_array_copy_sources: HashMap::new(),
             dirty_object_property_array_copy_sources: HashSet::new(),
             array_literal_copy_source_paths: HashMap::new(),
+            dirty_array_literal_copy_source_roots: HashSet::new(),
         }
     }
 
@@ -2155,7 +2158,25 @@ impl SymbolTable {
         }
     }
 
+    fn portable_array_literal_copy_source_paths_from_scope(
+        name: &str,
+        source_scope: &SymbolTable,
+    ) -> Option<Vec<(Vec<ArrayKey>, ArrayCopySource)>> {
+        let paths = source_scope.array_literal_copy_source_paths.get(name)?;
+        Some(
+            paths
+                .iter()
+                .filter_map(|(keys, source)| {
+                    Self::portable_array_copy_source_from_scope(source, source_scope)
+                        .map(|source| (keys.clone(), source))
+                })
+                .collect(),
+        )
+    }
+
     fn clear_array_literal_copy_source_paths_for_root(&mut self, name: &str) {
+        self.dirty_array_literal_copy_source_roots
+            .insert(name.to_string());
         self.array_literal_copy_source_paths.remove(name);
     }
 
@@ -2166,16 +2187,22 @@ impl SymbolTable {
     ) {
         if prefix.is_empty() {
             self.array_literal_copy_source_paths.remove(name);
+            self.dirty_array_literal_copy_source_roots
+                .insert(name.to_string());
             return;
         }
 
         let Some(paths) = self.array_literal_copy_source_paths.get_mut(name) else {
+            self.dirty_array_literal_copy_source_roots
+                .insert(name.to_string());
             return;
         };
         paths.retain(|(candidate, _)| !candidate.starts_with(prefix));
         if paths.is_empty() {
             self.array_literal_copy_source_paths.remove(name);
         }
+        self.dirty_array_literal_copy_source_roots
+            .insert(name.to_string());
     }
 
     fn record_array_literal_copy_source_paths(
@@ -2183,12 +2210,27 @@ impl SymbolTable {
         name: &str,
         paths: Vec<(Vec<ArrayKey>, ArrayCopySource)>,
     ) {
+        self.dirty_array_literal_copy_source_roots
+            .insert(name.to_string());
         if paths.is_empty() {
             self.array_literal_copy_source_paths.remove(name);
             return;
         }
         self.array_literal_copy_source_paths
             .insert(name.to_string(), paths);
+    }
+
+    fn import_array_literal_copy_source_paths(
+        &mut self,
+        name: &str,
+        paths: Vec<(Vec<ArrayKey>, ArrayCopySource)>,
+    ) {
+        if paths.is_empty() {
+            self.array_literal_copy_source_paths.remove(name);
+        } else {
+            self.array_literal_copy_source_paths
+                .insert(name.to_string(), paths);
+        }
     }
 
     fn record_array_literal_copy_source_path(
@@ -2198,6 +2240,8 @@ impl SymbolTable {
         source: ArrayCopySource,
     ) {
         self.remove_array_literal_copy_source_paths_for_static_prefix(name, &keys);
+        self.dirty_array_literal_copy_source_roots
+            .insert(name.to_string());
         self.array_literal_copy_source_paths
             .entry(name.to_string())
             .or_default()
@@ -50561,6 +50605,42 @@ impl Interpreter {
         }
     }
 
+    fn sync_reference_binding_array_literal_copy_source_paths(
+        reference_bindings: &[ReferenceBinding],
+        local_scope: &SymbolTable,
+        caller_scope: &mut SymbolTable,
+    ) {
+        for binding in reference_bindings {
+            let ReferenceBindingTarget::CallerCell { name, .. } = &binding.target else {
+                continue;
+            };
+            if !local_scope
+                .dirty_array_literal_copy_source_roots
+                .contains(&binding.param_name)
+                && !local_scope
+                    .array_literal_copy_source_paths
+                    .contains_key(&binding.param_name)
+            {
+                continue;
+            }
+
+            let portable_paths = local_scope
+                .array_literal_copy_source_paths
+                .get(&binding.param_name)
+                .map(|paths| {
+                    paths
+                        .iter()
+                        .filter_map(|(keys, source)| {
+                            SymbolTable::portable_array_copy_source_from_scope(source, local_scope)
+                                .map(|source| (keys.clone(), source))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            caller_scope.record_array_literal_copy_source_paths(name, portable_paths);
+        }
+    }
+
     fn detach_reference_binding_array_copy_source_aliases(
         &mut self,
         reference_bindings: &[ReferenceBinding],
@@ -51049,6 +51129,20 @@ impl Interpreter {
                 match &binding.target {
                     ReferenceBindingTarget::CallerCell { cell, .. } => {
                         local_scope.bind_static_to_cell(&param.name, cell.clone());
+                        if let Some(source_scope) = reference_scope.as_deref() {
+                            if let ReferenceBindingTarget::CallerCell { name, .. } = &binding.target
+                            {
+                                if let Some(paths) =
+                                    SymbolTable::portable_array_literal_copy_source_paths_from_scope(
+                                        name,
+                                        source_scope,
+                                    )
+                                {
+                                    local_scope
+                                        .import_array_literal_copy_source_paths(&param.name, paths);
+                                }
+                            }
+                        }
                     }
                     ReferenceBindingTarget::CallerCellWithArrayCopySource {
                         cell, source, ..
@@ -51420,6 +51514,11 @@ impl Interpreter {
                             self.sync_reference_binding_array_copy_source_metadata(
                                 &reference_bindings,
                                 &by_value_array_copy_source_bindings,
+                                &local_scope,
+                                reference_scope,
+                            );
+                            Self::sync_reference_binding_array_literal_copy_source_paths(
+                                &reference_bindings,
                                 &local_scope,
                                 reference_scope,
                             );

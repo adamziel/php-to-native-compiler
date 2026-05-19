@@ -23,6 +23,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T22:59:48+02:00
+
+- Checkpoint before this task: `5f5a5dc3 checkpoint: 2026-05-19 20:40:03
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2227-C through Lane 2232-C bundle, extending
+  supported magic/`ArrayAccess` COW method-body handling to broader
+  `call_user_func_array()` callback expressions and method-local argument
+  containers rebuilt through direct caller-cell by-reference helper
+  parameters.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2227/*` through
+  `tests/fixtures/milestone2232/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; focused system-PHP
+  comparisons passed for `milestone2227` through `milestone2232`; adjacent
+  system-PHP comparisons passed for `milestone2223` through `milestone2226`;
+  focused `functions_and_scopes call_user_func_array`, `object_model magic`,
+  `object_model arrayaccess`, and `assignment_expression` Rust tests passed.
+- Remaining COW gaps: non-closure reflected user functions or remaining
+  portable-root/container cases that cannot sync copied-source metadata
+  without leaking callee-local names; arbitrary unsupported
+  magic/`ArrayAccess` method syntax; untracked dynamic containers; full
+  whole-array reference identity; exact diagnostics/Throwable objects; and
+  native reference/string COW lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes. After checkpoint,
+  attack non-closure reflected user-function helper containers or the
+  whole-array reference identity substrate.
+
 ## Loop Event 2026-05-19T22:38:59+02:00
 
 - Checkpoint before this task: `651900e5 checkpoint: 2026-05-19 20:33:44

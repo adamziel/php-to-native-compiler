@@ -103,6 +103,13 @@
   `ReflectionFunction::invoke()` and `invokeArgs()` use that same source-aware
   path for supported non-reference closure and user-function targets before
   falling back to value-only reflection.
+  `call_user_func_array()` callback expressions may also be produced by
+  supported helper calls or reference-returning holder helpers that recreate a
+  concrete shared holder's argument array before dispatch. Method-local
+  argument arrays rebuilt through direct caller-cell by-reference helper
+  parameters import portable array-literal copied-source metadata into the
+  callee and sync dirty paths back to the caller, so a local `$args` container
+  can still promote the original selected source leaf.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.

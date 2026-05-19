@@ -111,14 +111,19 @@ handled.
   `ReflectionFunction::invoke()` and `invokeArgs()` closure helper dispatch
   through source-aware copied-array argument handling for visible `__get()` and
   public `ArrayAccess::offsetGet()` shared-holder argument-container rebuilds.
+- [x] Lane 2227-C through 2232-C: cover broader
+  `call_user_func_array()` callback containers and method-local argument
+  containers inside visible `__get()` and public `ArrayAccess::offsetGet()`.
+  Callback expressions may be produced by supported helper calls or
+  reference-returning holder helpers that recreate shared holder args, and
+  direct caller-cell by-reference helper parameters now sync portable
+  array-literal copied-source paths back to local `$args` containers.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
   holders expose real cells or concrete writeback roots instead of stale paths.
-  Known next probes should target broader dynamic callback containers
-  (`call_user_func_array()` callback expressions, property-held callback
-  arrays, or non-closure reflected user functions) that mutate shared stored
-  containers, plus portable-root gaps where copied-source metadata currently
+  Known next probes should target non-closure reflected user functions and
+  remaining portable-root/container cases where copied-source metadata still
   cannot be synced without leaking callee-local symbol names.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete

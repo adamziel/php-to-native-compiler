@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Lane 2227-C through Lane 2232-C for broader
+  `call_user_func_array()` callback and local argument-container side effects
+  inside supported magic/`ArrayAccess` method bodies. Callback expressions can
+  now be produced by supported helper calls or reference-returning holder
+  helpers that recreate a shared holder argument container before dispatch.
+  Direct caller-cell by-reference helper parameters now import portable
+  array-literal copied-source paths into the callee and sync dirty paths back
+  to the caller, so a helper can rebuild a method-local `$args` container from
+  a copied bucket and a later reference-return callback still promotes the
+  original selected source leaf. Focused system-PHP coverage proves visible
+  `__get()` and public `ArrayAccess::offsetGet()` for direct callback helper
+  expressions, property-held callback arrays, and local by-reference `$args`
+  rebuilds. This remains bounded to supported interpreter syntax, direct
+  caller-cell by-reference arguments, portable copied-source roots, and
+  concrete callback/argument containers; arbitrary unsupported method-body
+  syntax, untracked dynamic containers, full whole-array reference identity,
+  exact diagnostics, and native reference/string COW lowering remain
+  unsupported.
+
 - Added Lane 2223-C through Lane 2226-C for reflected closure helper
   dispatch. `ReflectionFunction::invoke()` and `invokeArgs()` now try the
   source-aware invocation path for supported non-reference closures and user
