@@ -296,6 +296,11 @@ pub enum AssignTarget {
         property: String,
         span: Span,
     },
+    NonDirectDynamicProperty {
+        holder: Expr,
+        property: Expr,
+        span: Span,
+    },
     ObjectPropertyArrayIndex {
         object: String,
         property: String,
@@ -611,6 +616,7 @@ impl AssignTarget {
             | AssignTarget::NestedArrayAppend { span, .. }
             | AssignTarget::Property { span, .. }
             | AssignTarget::NonDirectProperty { span, .. }
+            | AssignTarget::NonDirectDynamicProperty { span, .. }
             | AssignTarget::ObjectPropertyArrayIndex { span, .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { span, .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { span, .. }

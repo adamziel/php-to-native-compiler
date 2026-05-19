@@ -1601,6 +1601,7 @@ impl LlvmGenerator {
             }
             AssignTarget::Property { span, .. }
             | AssignTarget::NonDirectProperty { span, .. }
+            | AssignTarget::NonDirectDynamicProperty { span, .. }
             | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_PROPERTY_REJECTION))
             }
@@ -4646,6 +4647,7 @@ impl CGenerator {
             }
             AssignTarget::Property { span, .. }
             | AssignTarget::NonDirectProperty { span, .. }
+            | AssignTarget::NonDirectDynamicProperty { span, .. }
             | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_PROPERTY_REJECTION))
             }

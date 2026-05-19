@@ -23,6 +23,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T21:33:53+02:00
+
+- Checkpoint before this task: `c3f5fddb checkpoint: 2026-05-19 19:11:50
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2201-C through Lane 2205-C bundle, extending stored
+  `call_user_func_array()` COW handling to non-direct holder expressions and
+  property-held callback containers inside supported magic/`ArrayAccess`
+  method bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/parser.rs`, `compiler/src/ast.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/assignment_expression.rs`,
+  `tests/fixtures/milestone2201/*` through `tests/fixtures/milestone2205/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2201` through `milestone2205`; adjacent comparisons passed for
+  `milestone2196` through `milestone2200`; `cargo check -q -p phpc` passed;
+  focused `functions_and_scopes`, `object_model`,
+  `array_reference_literals`, and `assignment_expression` Rust tests passed.
+  The first full checkpoint attempt caught a stale assignment-expression
+  parser-boundary assertion and regressions in old non-direct magic-property
+  append/keyed paths; the holder helper was split so ordinary non-direct
+  writes still allow magic fallback while stored-root paths can request alias
+  roots explicitly, and the focused old/new fixture filters pass again.
+- Remaining COW gaps: supported side effects that intentionally replace,
+  unset, or recreate copied local arrays while provenance must survive;
+  arbitrary unsupported magic/`ArrayAccess` method syntax; untracked dynamic
+  containers; whole-array reference identity; exact diagnostics/Throwable
+  objects; and native reference/string COW lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T21:10:00+02:00
 
 - Checkpoint before this task: `06d841ab checkpoint: 2026-05-19 18:50:27

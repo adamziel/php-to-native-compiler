@@ -174,6 +174,16 @@ to the detached local copied value. This is still bounded to concrete
 stored-root paths and selected leaves, not arbitrary callback-container graph
 analysis.
 
+Non-direct holder expressions use the same identity model after evaluating the
+holder once into a temporary object root. The interpreter snapshots public
+array copy-source metadata before the helper evaluation and restores only
+unchanged same-cell arrays, so fetching a concrete holder does not erase local
+copy provenance that a later reference-return callback needs. Equivalent
+object-property roots are canonicalized by object identity, allowing separate
+temporary roots for the same holder object to share alias metadata. This is
+concrete holder identity preservation, not arbitrary graph or side-effect
+reconstruction.
+
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller

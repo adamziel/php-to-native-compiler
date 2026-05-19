@@ -81,12 +81,19 @@ handled.
   object-property holders inside supported magic/`ArrayAccess` method bodies,
   covering direct, dynamic, and nested holder-property roots plus
   reference-return source-leaf promotion and by-value callback returns.
+- [x] Lane 2201-C through 2205-C: extend stored `call_user_func_array()`
+  copied-source and reference-return handling to non-direct holder expressions
+  inside supported magic/`ArrayAccess` method bodies, covering method-returned
+  holders, dynamic non-direct holder properties, nested holder-array roots,
+  and non-direct property-held array callables while preserving unchanged
+  local copied-array provenance across holder helper calls.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
   holders expose real cells or concrete writeback roots instead of stale paths.
-  A known next probe is a non-direct holder or callback container that cannot
-  be reduced to the current visible stored-root model.
+  A known next probe is a holder/callback expression whose supported side
+  effects intentionally replace, unset, or recreate copied local arrays while
+  later COW provenance still needs exact PHP identity.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

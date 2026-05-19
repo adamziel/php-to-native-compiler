@@ -1139,6 +1139,7 @@ struct SymbolTable {
 
 type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
 type VariableCell = PhpReferenceCell;
+type PublicArrayCopySourceSnapshot = Vec<(String, ArrayCopySource, Option<VariableCell>, Value)>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ArrayOffsetAlias {
@@ -1868,6 +1869,45 @@ impl SymbolTable {
             .cloned()
     }
 
+    fn public_array_copy_source_snapshot(&self) -> PublicArrayCopySourceSnapshot {
+        self.public_object_property_array_copy_sources
+            .iter()
+            .filter_map(|(name, source)| {
+                let value = self.read_named(name)?;
+                matches!(value, Value::Array(_))
+                    .then(|| (name.clone(), source.clone(), self.read_cell(name), value))
+            })
+            .collect()
+    }
+
+    fn restore_unchanged_public_array_copy_sources(
+        &mut self,
+        snapshot: PublicArrayCopySourceSnapshot,
+    ) {
+        for (name, source, before_cell, before_value) in snapshot {
+            if self
+                .public_object_property_array_copy_sources
+                .contains_key(&name)
+            {
+                continue;
+            }
+            let Some(after_value) = self.read_named(&name) else {
+                continue;
+            };
+            if after_value != before_value {
+                continue;
+            }
+            let same_cell = match (before_cell.as_ref(), self.read_cell(&name).as_ref()) {
+                (Some(before), Some(after)) => before.shares_reference_with(after),
+                (None, None) => true,
+                _ => false,
+            };
+            if same_cell {
+                self.record_public_object_property_array_copy_source(&name, source);
+            }
+        }
+    }
+
     fn remove_public_object_property_array_copy_source(&mut self, name: &str) {
         self.public_object_property_array_copy_sources.remove(name);
     }
@@ -2160,7 +2200,7 @@ impl SymbolTable {
         key: &ArrayKey,
     ) -> Option<Vec<ArrayOffsetAlias>> {
         let candidate = ArrayOffsetAlias {
-            root: root.clone(),
+            root: self.canonical_equivalent_object_property_alias_root(root),
             keys: vec![key.clone()],
         };
         self.array_offset_aliases
@@ -2175,6 +2215,7 @@ impl SymbolTable {
         key: &ArrayKey,
     ) -> Option<Vec<ArrayOffsetAlias>> {
         let mut candidate = root_alias.clone();
+        candidate.root = self.canonical_equivalent_object_property_alias_root(&candidate.root);
         candidate.keys.push(key.clone());
         self.array_offset_aliases
             .values()
@@ -3705,22 +3746,28 @@ impl SymbolTable {
         object_name: &str,
         property: &str,
     ) {
-        let syncs: Vec<(String, Value)> = self
+        let syncs: Vec<(String, Value, Option<ArrayCopySource>)> = self
             .array_offset_aliases
             .iter()
             .filter_map(|(alias_name, aliases)| {
                 let touched_alias = aliases
                     .iter()
                     .find(|alias| alias.root.matches_object_property(object_name, property))?;
+                let source = self.public_object_property_array_copy_source_for_static(alias_name);
                 self.read_array_offset_alias(touched_alias)
-                    .map(|value| (alias_name.clone(), value))
+                    .map(|value| (alias_name.clone(), value, source))
             })
             .collect();
 
-        for (alias_name, value) in syncs {
+        for (alias_name, value, source) in syncs {
+            let value_is_array = matches!(value, Value::Array(_));
             if let Some(aliases) = self.array_offset_aliases.get(&alias_name).cloned() {
                 if !self.write_array_offset_aliases(&aliases, value) {
                     self.array_offset_aliases.remove(&alias_name);
+                } else if value_is_array {
+                    if let Some(source) = source {
+                        self.record_public_object_property_array_copy_source(&alias_name, source);
+                    }
                 }
             }
         }
@@ -6630,7 +6677,21 @@ impl Interpreter {
         scope: &mut SymbolTable,
         span: Span,
     ) -> CompileResult<(String, ArrayOffsetAliasRoot)> {
+        let temp_name = self.non_direct_object_holder_temp(target, property, scope, span)?;
+        let root = self.context_object_property_alias_root(&temp_name, property, span, scope)?;
+        Ok((temp_name, root))
+    }
+
+    fn non_direct_object_holder_temp(
+        &mut self,
+        target: &Expr,
+        property: &str,
+        scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<String> {
+        let source_snapshot = scope.public_array_copy_source_snapshot();
         let target_value = self.evaluate(target, scope)?;
+        scope.restore_unchanged_public_array_copy_sources(source_snapshot);
         let object = match target_value {
             Value::Object(object) => object,
             other => {
@@ -6646,8 +6707,7 @@ impl Interpreter {
 
         let temp_name = self.next_foreach_temporary_array_name();
         scope.write_static(&temp_name, Value::Object(object));
-        let root = self.context_object_property_alias_root(&temp_name, property, span, scope)?;
-        Ok((temp_name, root))
+        Ok(temp_name)
     }
 
     fn non_direct_foreach_object_property_array_root(
@@ -20696,34 +20756,43 @@ impl Interpreter {
                 property,
                 span,
             } => {
+                let temp_name =
+                    self.non_direct_object_holder_temp(holder, property, scope, *span)?;
+                let target = AssignTarget::Property {
+                    object: temp_name,
+                    property: property.clone(),
+                    span: *span,
+                };
+                self.evaluate_assignment(&target, expr, scope)
+            }
+            AssignTarget::NonDirectDynamicProperty {
+                holder,
+                property,
+                span,
+            } => {
+                let source_snapshot = scope.public_array_copy_source_snapshot();
                 let holder_value = self.evaluate(holder, scope)?;
+                scope.restore_unchanged_public_array_copy_sources(source_snapshot);
                 let holder_object = match holder_value {
                     Value::Object(object) => object,
                     other => {
                         return Err(runtime_error(
                             *span,
                             RuntimeError::invalid_property_access(format!(
-                                "cannot write property ${property} on {}",
+                                "cannot write dynamic property on {}",
                                 other.type_name()
                             )),
                         ));
                     }
                 };
-                let value = self.evaluate(expr, scope)?;
-                let (current_class_id, protected_class_ids) =
-                    self.current_property_access_context();
-                holder_object
-                    .write_property_from_context_with_object_type_resolver(
-                        property,
-                        value.clone(),
-                        current_class_id,
-                        &protected_class_ids,
-                        |object, type_name| {
-                            self.object_satisfies_live_property_type(object, type_name)
-                        },
-                    )
-                    .map_err(|error| runtime_error(*span, error))?;
-                Ok(value)
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Object(holder_object));
+                let target = AssignTarget::DynamicProperty {
+                    object: temp_name,
+                    property: property.clone(),
+                    span: *span,
+                };
+                self.evaluate_assignment(&target, expr, scope)
             }
             AssignTarget::ObjectPropertyArrayIndex {
                 object,
@@ -20970,21 +21039,8 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let holder_value = self.evaluate(holder, scope)?;
-                let holder_object = match holder_value {
-                    Value::Object(object) => object,
-                    other => {
-                        return Err(runtime_error(
-                            *span,
-                            RuntimeError::invalid_property_access(format!(
-                                "cannot read property ${property} on {}",
-                                other.type_name()
-                            )),
-                        ));
-                    }
-                };
-                let temp_name = self.next_foreach_temporary_array_name();
-                scope.write_static(&temp_name, Value::Object(holder_object));
+                let temp_name =
+                    self.non_direct_object_holder_temp(holder, property, scope, *span)?;
                 let (value, array_literal_references, array_literal_copy_sources) =
                     self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if keys.len() == 1
@@ -21059,21 +21115,8 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let holder_value = self.evaluate(holder, scope)?;
-                let holder_object = match holder_value {
-                    Value::Object(object) => object,
-                    other => {
-                        return Err(runtime_error(
-                            *span,
-                            RuntimeError::invalid_property_access(format!(
-                                "cannot read property ${property} on {}",
-                                other.type_name()
-                            )),
-                        ));
-                    }
-                };
-                let temp_name = self.next_foreach_temporary_array_name();
-                scope.write_static(&temp_name, Value::Object(holder_object));
+                let temp_name =
+                    self.non_direct_object_holder_temp(holder, property, scope, *span)?;
                 let (value, array_literal_references, array_literal_copy_sources) =
                     self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if keys.is_empty()
@@ -21146,7 +21189,9 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
+                let source_snapshot = scope.public_array_copy_source_snapshot();
                 let holder_value = self.evaluate(holder, scope)?;
+                scope.restore_unchanged_public_array_copy_sources(source_snapshot);
                 let holder_object = match holder_value {
                     Value::Object(object) => object,
                     other => {
@@ -21236,7 +21281,9 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
+                let source_snapshot = scope.public_array_copy_source_snapshot();
                 let holder_value = self.evaluate(holder, scope)?;
+                scope.restore_unchanged_public_array_copy_sources(source_snapshot);
                 let holder_object = match holder_value {
                     Value::Object(object) => object,
                     other => {
@@ -24507,15 +24554,15 @@ impl Interpreter {
                     RuntimeError::undefined_variable(object),
                 )),
             },
-            AssignTarget::DynamicProperty { .. } | AssignTarget::NonDirectProperty { .. } => {
-                Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "compound assignment",
-                        "dynamic property targets are not implemented",
-                    ),
-                ))
-            }
+            AssignTarget::DynamicProperty { .. }
+            | AssignTarget::NonDirectProperty { .. }
+            | AssignTarget::NonDirectDynamicProperty { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "compound assignment",
+                    "dynamic property targets are not implemented",
+                ),
+            )),
             AssignTarget::ObjectStaticProperty { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -24966,15 +25013,15 @@ impl Interpreter {
                     RuntimeError::undefined_variable(object),
                 )),
             },
-            AssignTarget::DynamicProperty { .. } | AssignTarget::NonDirectProperty { .. } => {
-                Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "increment/decrement",
-                        "dynamic property targets are not implemented",
-                    ),
-                ))
-            }
+            AssignTarget::DynamicProperty { .. }
+            | AssignTarget::NonDirectProperty { .. }
+            | AssignTarget::NonDirectDynamicProperty { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "increment/decrement",
+                    "dynamic property targets are not implemented",
+                ),
+            )),
             AssignTarget::ObjectStaticProperty { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -25194,7 +25241,8 @@ impl Interpreter {
                 }
             }
             AssignTarget::DynamicProperty { span, .. }
-            | AssignTarget::NonDirectProperty { span, .. } => Err(runtime_error(
+            | AssignTarget::NonDirectProperty { span, .. }
+            | AssignTarget::NonDirectDynamicProperty { span, .. } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_call(
                     "??=",
@@ -41780,18 +41828,10 @@ impl Interpreter {
             StoredArgumentArrayRoot::ArrayOffset(root_alias) => {
                 let mut keys = root_alias.keys.clone();
                 keys.push(key.clone());
-                self.array_copy_source_for_stored_argument_alias_path(
-                    &root_alias.root,
-                    &keys,
-                    caller_scope,
-                )
-                .or_else(|| {
-                    Some(ArrayCopySource::alias_path(
-                        root_alias.root.clone(),
-                        keys,
-                        false,
-                    ))
-                })
+                let root =
+                    caller_scope.canonical_equivalent_object_property_alias_root(&root_alias.root);
+                self.array_copy_source_for_stored_argument_alias_path(&root, &keys, caller_scope)
+                    .or_else(|| Some(ArrayCopySource::alias_path(root, keys, false)))
             }
             StoredArgumentArrayRoot::ObjectProperty(root) => self
                 .array_copy_source_for_stored_argument_alias_path(
@@ -41800,11 +41840,8 @@ impl Interpreter {
                     caller_scope,
                 )
                 .or_else(|| {
-                    Some(ArrayCopySource::alias_path(
-                        root.clone(),
-                        vec![key.clone()],
-                        false,
-                    ))
+                    let root = caller_scope.canonical_equivalent_object_property_alias_root(root);
+                    Some(ArrayCopySource::alias_path(root, vec![key.clone()], false))
                 }),
         }
     }
@@ -41815,7 +41852,8 @@ impl Interpreter {
         keys: &[ArrayKey],
         caller_scope: &SymbolTable,
     ) -> Option<ArrayCopySource> {
-        match root {
+        let root = caller_scope.canonical_equivalent_object_property_alias_root(root);
+        match &root {
             ArrayOffsetAliasRoot::StaticArray { name } => {
                 caller_scope.array_literal_copy_source_for_static_path(name, keys)
             }
@@ -42402,26 +42440,58 @@ impl Interpreter {
             Expr::Property {
                 target, property, ..
             } => {
-                let Expr::Variable(object_name, _) = target.as_ref() else {
-                    return Ok(None);
+                if let Expr::Variable(object_name, _) = target.as_ref() {
+                    let root = self.context_object_property_alias_root(
+                        object_name,
+                        property,
+                        span,
+                        caller_scope,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayRoot::ObjectProperty(root)));
                 };
-                let root = self.context_object_property_alias_root(
-                    object_name,
+
+                let (_, root) = self.non_direct_object_property_alias_root_with_temp(
+                    target,
                     property,
-                    span,
                     caller_scope,
+                    span,
                 )?;
                 Ok(Some(StoredArgumentArrayRoot::ObjectProperty(root)))
             }
             Expr::DynamicProperty {
                 target, property, ..
             } => {
-                let Expr::Variable(object_name, _) = target.as_ref() else {
-                    return Ok(None);
+                if let Expr::Variable(object_name, _) = target.as_ref() {
+                    let property =
+                        self.evaluate_dynamic_property_name(property, span, caller_scope)?;
+                    let root = self.context_object_property_alias_root(
+                        object_name,
+                        &property,
+                        span,
+                        caller_scope,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayRoot::ObjectProperty(root)));
+                };
+                let source_snapshot = caller_scope.public_array_copy_source_snapshot();
+                let target_value = self.evaluate(target, caller_scope)?;
+                caller_scope.restore_unchanged_public_array_copy_sources(source_snapshot);
+                let holder_object = match target_value {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot read dynamic property on {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
                 };
                 let property = self.evaluate_dynamic_property_name(property, span, caller_scope)?;
+                let temp_name = self.next_foreach_temporary_array_name();
+                caller_scope.write_static(&temp_name, Value::Object(holder_object));
                 let root = self.context_object_property_alias_root(
-                    object_name,
+                    &temp_name,
                     &property,
                     span,
                     caller_scope,
@@ -42493,6 +42563,59 @@ impl Interpreter {
                     }
                     let root = self.context_object_property_alias_root(
                         object_name,
+                        &property,
+                        span,
+                        caller_scope,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
+                        ArrayOffsetAlias { root, keys },
+                    )));
+                }
+                if let Some((holder, property, indices)) =
+                    Self::collect_object_property_array_index_path(target, index)
+                {
+                    let mut keys = Vec::with_capacity(indices.len());
+                    for index in indices {
+                        keys.push(self.evaluate_array_key(index, caller_scope)?);
+                    }
+                    let (_, root) = self.non_direct_object_property_alias_root_with_temp(
+                        holder,
+                        property,
+                        caller_scope,
+                        span,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
+                        ArrayOffsetAlias { root, keys },
+                    )));
+                }
+                if let Some((holder, property, indices)) =
+                    Self::collect_dynamic_object_property_array_index_path(target, index)
+                {
+                    let mut keys = Vec::with_capacity(indices.len());
+                    for index in indices {
+                        keys.push(self.evaluate_array_key(index, caller_scope)?);
+                    }
+                    let source_snapshot = caller_scope.public_array_copy_source_snapshot();
+                    let holder_value = self.evaluate(holder, caller_scope)?;
+                    caller_scope.restore_unchanged_public_array_copy_sources(source_snapshot);
+                    let holder_object = match holder_value {
+                        Value::Object(object) => object,
+                        other => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::invalid_property_access(format!(
+                                    "cannot read dynamic property on {}",
+                                    other.type_name()
+                                )),
+                            ));
+                        }
+                    };
+                    let property =
+                        self.evaluate_dynamic_property_name(property, span, caller_scope)?;
+                    let temp_name = self.next_foreach_temporary_array_name();
+                    caller_scope.write_static(&temp_name, Value::Object(holder_object));
+                    let root = self.context_object_property_alias_root(
+                        &temp_name,
                         &property,
                         span,
                         caller_scope,

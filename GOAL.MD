@@ -32,7 +32,26 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2200:
+The current in-progress implementation frontier is Lane 2205:
+
+- Lanes 2201 through 2205 extend the stored `call_user_func_array()`
+  source-aware model to non-direct holder expressions inside supported
+  magic/`ArrayAccess` method bodies. Method-returned holders such as
+  `$this->holder()->args`, dynamic non-direct properties, nested holder-array
+  roots such as `$this->holder()->sets["pack"]`, and non-direct property-held
+  array callables now evaluate the holder once into a temporary object root,
+  canonicalize equivalent object-property roots by object identity, and keep
+  unchanged local copied-array source metadata across the helper call used to
+  fetch that holder. Focused system-PHP coverage proves visible `__get()`,
+  public `ArrayAccess::offsetGet()`, dynamic holder properties, nested holder
+  array roots, and non-direct callback-holder reference-return shapes. This
+  remains bounded to supported interpreter syntax, holder expressions whose
+  side effects leave copied local array values unchanged when provenance must
+  survive, concrete object-property roots, and selected leaves; it does not
+  claim arbitrary side-effect reconstruction, containers that destroy and
+  recreate equivalent local values with different identity, unsupported
+  method-body syntax, whole-array reference identity, exact diagnostics, or
+  native reference/string COW lowering.
 
 - Lanes 2196 through 2200 move the stored `call_user_func_array()` argument
   path onto the same source-aware stored-root model used by reference slots.

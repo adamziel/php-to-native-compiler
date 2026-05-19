@@ -80,15 +80,22 @@
   `__get()` bodies may delegate through supported `__call()` methods without
   dropping selected reference-backed leaves. Source-aware
   `call_user_func_array()` argument handling also covers stored arrays behind
-  visible object-property holder roots inside those method bodies, including
-  dynamic property names and nested holder-property array roots; covered
-  reference-return callbacks promote proven source leaves to real cells before
-  returning the reference. This does
+  visible and non-direct object-property holder roots inside those method
+  bodies, including dynamic property names, method-returned holders such as
+  `$this->holder()->args`, nested holder-property array roots, and
+  property-held array callables. Holder expressions evaluate once to concrete
+  object roots, equivalent property roots are canonicalized by object
+  identity, and unchanged copied-array source metadata is preserved across the
+  helper call used to fetch the holder; covered reference-return callbacks
+  promote proven source leaves to real cells before returning the reference.
+  This does
   not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
   dynamic callables or reflection targets, unsupported method-body syntax,
-  arbitrary side effects beyond covered writeback paths, full whole-array
-  reference identity, exact PHP diagnostics, or native COW lowering.
+  arbitrary side effects beyond covered writeback paths, helper calls that
+  destroy and recreate copied locals while provenance must survive, full
+  whole-array reference identity, exact PHP diagnostics, or native COW
+  lowering.
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or
   declaration-contained declarations can be loaded. The executing subset

@@ -2858,6 +2858,7 @@ impl Parser {
                     | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
                     | AssignTarget::DynamicProperty { .. }
                     | AssignTarget::NonDirectProperty { .. }
+                    | AssignTarget::NonDirectDynamicProperty { .. }
                     | AssignTarget::ObjectStaticProperty { .. }
                     | AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
@@ -3273,10 +3274,11 @@ impl Parser {
                     let property = self.parse_dynamic_property_name_expr(operator_span)?;
                     let property_span = property.span();
                     if !self.check(|kind| matches!(kind, TokenKind::LBracket)) {
-                        return Err(self.error_at(
-                            property_span,
-                            unsupported_assignment_expression_target_message(),
-                        ));
+                        return Ok(AssignTarget::NonDirectDynamicProperty {
+                            holder,
+                            property,
+                            span: property_span,
+                        });
                     } else {
                         let (indices, suffix_indices, is_append) =
                             self.parse_object_property_array_indices_or_append()?;
@@ -3487,6 +3489,7 @@ impl Parser {
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NonDirectProperty { .. }
+            | AssignTarget::NonDirectDynamicProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
@@ -3518,6 +3521,7 @@ impl Parser {
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NonDirectProperty { .. }
+            | AssignTarget::NonDirectDynamicProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
@@ -3929,7 +3933,11 @@ impl Parser {
                     property,
                     span,
                 }),
-                _ => Err(unsupported_assignment_expression_target_message()),
+                holder => Ok(AssignTarget::NonDirectProperty {
+                    holder,
+                    property,
+                    span,
+                }),
             },
             Expr::DynamicProperty {
                 target,
@@ -3941,7 +3949,11 @@ impl Parser {
                     property: *property,
                     span,
                 }),
-                _ => Err(unsupported_assignment_expression_target_message()),
+                holder => Ok(AssignTarget::NonDirectDynamicProperty {
+                    holder,
+                    property: *property,
+                    span,
+                }),
             },
             Expr::ObjectStaticProperty {
                 target,

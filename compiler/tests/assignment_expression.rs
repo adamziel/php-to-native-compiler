@@ -480,18 +480,18 @@ fn assignment_expression_rejects_complex_targets() {
         (
             "<?php\nclass Box { public $value; }\n$box = new Box();\necho (($box->value)->nested = 2);\n",
             4,
-            29,
+            8,
         ),
     ];
 
     for (source, line, column) in cases {
         let error = run_source(source).unwrap_err();
-        assert_eq!(error.phase, Phase::Parse);
+        assert_eq!(error.phase, Phase::Runtime);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented"
+            "invalid property access: cannot read property $nested on null"
         );
     }
 }

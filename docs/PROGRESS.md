@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Lane 2201-C through Lane 2205-C for non-direct holder and callback
+  containers in the stored `call_user_func_array()` COW path inside supported
+  magic/`ArrayAccess` method bodies. Simple non-direct property assignment is
+  now parsed and routed through the existing temporary object-root property
+  writer, including non-direct dynamic properties while native lowering still
+  rejects the object-property target. Stored argument-array root recovery now
+  accepts method-returned holders, non-direct dynamic properties, and nested
+  non-direct holder-property array roots; equivalent object-property alias
+  roots are canonicalized by object identity so separate evaluations of the
+  same holder object share source identity. Internal object-property alias
+  sync and holder evaluation preserve unchanged local copied-array provenance,
+  so a helper call used to fetch the holder no longer erases the copied-source
+  metadata needed by reference-return callbacks. Focused system-PHP coverage
+  proves visible `__get()`, public `ArrayAccess::offsetGet()`, dynamic
+  non-direct holder properties, nested holder-array roots, and non-direct
+  property-held array callables. This remains bounded to supported interpreter
+  syntax, concrete object-property roots, and holder side effects that leave
+  copied local array values unchanged when provenance must survive; arbitrary
+  side-effect reconstruction, unsupported method-body syntax, exact
+  diagnostics, and native reference/string COW lowering remain unsupported.
+
 - Added Lane 2196-C through Lane 2200-C for source-aware
   `call_user_func_array()` argument arrays stored behind object-property
   holders inside supported magic/`ArrayAccess` method bodies. Stored argument
