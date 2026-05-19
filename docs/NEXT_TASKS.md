@@ -20727,12 +20727,26 @@ handled.
   reference identity, exact diagnostics, and native reference lowering named
   as unsupported.
 
+## Lane 2006-C through Lane 2010-C: Copied-Bucket Parent Replacement
+
+- [x] Runtime/tests/docs bundle: preserve PHP COW detach behavior when a
+  supported by-value magic/`ArrayAccess` method body replaces a parent of a
+  live copied-bucket reference. Cover visible by-value `__get()`, public
+  by-value `ArrayAccess::offsetGet()`, scalar parent overwrite, direct
+  by-reference helper parent replacement, and by-reference closure capture
+  parent replacement with system-PHP comparisons. Keep nested-leaf writes
+  through by-reference helper parameters, arbitrary helper/callback side
+  effects, `call_user_func()` reference-warning/no-reference semantics,
+  `call_user_func_array()` by-reference callback containers, whole-array
+  reference identity, exact diagnostics, and native reference lowering named
+  as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
-- [ ] Probe the remaining scalar parent overwrite/error parity for covered
-  append/keyed/reference paths, then probe whether any covered mixed
-  `ArrayAccess` bridge is still missing from reference-return or callback
-  reference-argument paths. Implement only bounded PHP-comparable failures
+- [ ] Probe remaining scalar parent overwrite/error parity outside the covered
+  copied-bucket parent-replacement roots, then probe whether any covered
+  mixed `ArrayAccess` bridge is still missing from reference-return or
+  callback reference-argument paths. Implement only bounded PHP-comparable failures
   without claiming arbitrary side-effecting method bodies, full PHP COW
   identity, or unsupported native lowering.
 

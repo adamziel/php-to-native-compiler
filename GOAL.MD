@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2005:
+The current in-progress implementation frontier is Lane 2010:
+
+- Lanes 2006 through 2010 preserve COW detach behavior when supported
+  by-value magic/`ArrayAccess` method bodies replace a parent of a live
+  copied-bucket reference. Covered bodies include visible by-value `__get()`,
+  public by-value `ArrayAccess::offsetGet()`, scalar parent overwrite,
+  direct by-reference helper parent replacement, and by-reference closure
+  capture parent replacement. Focused system-PHP coverage proves the original
+  backing reference keeps its previous value while the replacement stays local
+  to the returned copy. Nested-leaf writes through by-reference helper
+  parameters, arbitrary helper/callback side effects, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 2001 through 2005 preserve copied-array COW provenance when supported
   by-value magic/`ArrayAccess` method bodies capture a proven backed bucket

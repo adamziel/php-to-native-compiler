@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T10:58:00+02:00
+
+- Checkpoint before this task: `3c9105ba runtime: preserve byref closure COW
+  provenance`, pushed to `origin/master`.
+- Task attempted: Lane 2006-C through Lane 2010-C bundle, preserving PHP COW
+  detach behavior when supported by-value magic/`ArrayAccess` method bodies
+  replace a parent of a live copied-bucket reference.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2006/*`, `tests/fixtures/milestone2007/*`,
+  `tests/fixtures/milestone2008/*`, `tests/fixtures/milestone2009/*`,
+  `tests/fixtures/milestone2010/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2006` through `milestone2010`; `cargo check -q` passed while
+  developing the bundle.
+- Remaining COW gaps: nested-leaf writes through by-reference helper
+  parameters, `call_user_func()` reference-warning/no-reference semantics,
+  `call_user_func_array()` by-reference callback containers, arbitrary
+  object/container provenance, side-effecting container-key analysis, append
+  expressions outside by-reference call-argument positions, non-reference
+  append-expression values, dynamic `call_user_func_array()` containers not
+  traceable to current-scope local arrays, remaining scalar parent
+  overwrite/error parity outside covered roots, possible mixed `ArrayAccess`
+  gaps in reference-return or callback reference-argument paths, exact PHP
+  diagnostics, whole-array reference identity, native reference/string COW
+  lowering, and native lowering for these interpreter paths.
+- Next concrete task: run adjacent fixture comparisons, focused Rust tests,
+  formatting/diff checks, and the full `tools/checkpoint.sh` bundle gate,
+  then push if it passes.
+
 ## Loop Event 2026-05-19T10:25:00+02:00
 
 - Checkpoint before this task: `53617d8d runtime: preserve byref helper COW

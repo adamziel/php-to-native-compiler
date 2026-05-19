@@ -412,11 +412,13 @@
   forms are direct free functions, `$this` instance methods, direct closures,
   dynamic string function calls, and the same direct helper shape from public
   by-value `ArrayAccess::offsetGet()`. The helper parameter receives the
-  proven copy source for return evaluation; writes performed inside the
-  helper through that by-reference parameter, `call_user_func()` reference
-  warnings/no-reference semantics, `call_user_func_array()` by-reference
-  callback argument containers, whole-array reference identity, exact
-  diagnostics, and native reference lowering remain unsupported.
+  proven copy source for return evaluation. Helper-internal writes through
+  that by-reference parameter remain bounded to the documented copied-bucket
+  parent-replacement shape below; broader helper side effects, including
+  nested-leaf mutations through helper parameters, `call_user_func()`
+  reference warnings/no-reference semantics, `call_user_func_array()`
+  by-reference callback argument containers, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
   These bodies also preserve copied-array provenance through by-reference
   closure captures of a proven backed bucket. Covered forms include
   `use (&$bucket)` returned through direct closure invocation,
@@ -430,6 +432,18 @@
   arbitrary capture roots, arbitrary object/container provenance,
   whole-array reference identity, exact diagnostics, and native reference
   lowering remain unsupported.
+  These copied-bucket bodies also detach correctly when an assignment replaces
+  a parent of a live nested copied-bucket reference. Covered parent
+  replacement forms include visible by-value `__get()`, public by-value
+  `ArrayAccess::offsetGet()`, scalar overwrites such as
+  `$bucket["ref"] = "inside"`, direct by-reference helper calls that replace
+  the parent through the helper parameter, and by-reference closure captures
+  that replace the parent before returning the bucket. The replacement stays
+  local to the returned copy while the original referenced backing slot keeps
+  its previous value. This remains bounded to proven copied-bucket locals and
+  side-effect-free reached paths; arbitrary helper/callback side effects,
+  arbitrary object/container provenance, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
   Supported reference-return bodies may also delegate to non-static helpers
   through PHP's static call syntaxes when a compatible current `$this` object
   exists. Covered forms include `self::helper(...)`, `parent::helper(...)`,

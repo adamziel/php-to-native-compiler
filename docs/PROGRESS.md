@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 2006-C through Lane 2010-C for parent replacement of live
+  copied-bucket reference paths inside supported by-value magic/`ArrayAccess`
+  method bodies. Copied-bucket locals now skip alias-backed writes when an
+  assignment replaces a parent of a live nested copied reference, so the
+  replacement detaches in the returned copy instead of mutating the backing
+  store. Focused system-PHP coverage proves visible by-value `__get()`,
+  public by-value `ArrayAccess::offsetGet()`, scalar parent overwrite,
+  direct by-reference helper parent replacement, and by-reference closure
+  capture parent replacement shapes. Nested-leaf writes through
+  by-reference helper parameters, `call_user_func()` warning/no-reference
+  semantics, `call_user_func_array()` by-reference callback containers,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 2001-C through Lane 2005-C for copied-array COW provenance
   through by-reference closure captures inside supported by-value
   magic/`ArrayAccess` method bodies. Closure creation now records both the

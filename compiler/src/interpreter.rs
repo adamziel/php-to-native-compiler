@@ -7205,12 +7205,31 @@ impl Interpreter {
         keys: &[ArrayKey],
     ) -> Option<ArrayCopySource> {
         let source = scope.public_object_property_array_copy_source_for_static(name)?;
-        let replaces_parent_of_live_alias = scope
-            .array_offset_aliases_for_name(name)
-            .unwrap_or_default()
-            .iter()
-            .any(|alias| alias.keys.starts_with(keys) && alias.keys.len() > keys.len());
-        (!replaces_parent_of_live_alias).then_some(source)
+        (!Self::copied_array_write_replaces_live_alias_parent(scope, name, keys)).then_some(source)
+    }
+
+    fn copied_array_write_replaces_live_alias_parent(
+        scope: &SymbolTable,
+        name: &str,
+        keys: &[ArrayKey],
+    ) -> bool {
+        if scope
+            .public_object_property_array_copy_source_for_static(name)
+            .is_none()
+        {
+            return false;
+        }
+
+        let root = ArrayOffsetAliasRoot::StaticArray {
+            name: name.to_string(),
+        };
+        scope
+            .array_offset_aliases
+            .values()
+            .flat_map(|aliases| aliases.iter())
+            .any(|alias| {
+                alias.root == root && alias.keys.starts_with(keys) && alias.keys.len() > keys.len()
+            })
     }
 
     fn array_literal_copy_source_for_index_expr(
@@ -17579,23 +17598,33 @@ impl Interpreter {
                         return Ok(value);
                     }
                 }
-                if let Some(key) = key.as_ref() {
-                    let retained_array_copy_source =
-                        Self::array_copy_source_preserved_after_nested_write(
-                            scope,
-                            name,
-                            std::slice::from_ref(key),
-                        );
-                    if scope.write_alias_backed_array_offset_checked_with_object_type_resolver(
+                let retained_array_copy_source = key.as_ref().and_then(|key| {
+                    Self::array_copy_source_preserved_after_nested_write(
+                        scope,
                         name,
                         std::slice::from_ref(key),
-                        value.clone(),
-                        *span,
-                        &|object, type_name| {
-                            self.object_satisfies_live_property_type(object, type_name)
-                        },
-                    )? {
-                        if let Some(source) = retained_array_copy_source {
+                    )
+                });
+                let replaces_copied_array_parent = key.as_ref().is_some_and(|key| {
+                    Self::copied_array_write_replaces_live_alias_parent(
+                        scope,
+                        name,
+                        std::slice::from_ref(key),
+                    )
+                });
+                if let Some(key) = key.as_ref() {
+                    if !replaces_copied_array_parent
+                        && scope.write_alias_backed_array_offset_checked_with_object_type_resolver(
+                            name,
+                            std::slice::from_ref(key),
+                            value.clone(),
+                            *span,
+                            &|object, type_name| {
+                                self.object_satisfies_live_property_type(object, type_name)
+                            },
+                        )?
+                    {
+                        if let Some(source) = retained_array_copy_source.clone() {
                             scope.record_public_object_property_array_copy_source(name, source);
                         }
                         return Ok(value);
@@ -17795,13 +17824,6 @@ impl Interpreter {
                         ));
                     }
                 }
-                let retained_array_copy_source = target_key.as_ref().and_then(|key| {
-                    Self::array_copy_source_preserved_after_nested_write(
-                        scope,
-                        name,
-                        std::slice::from_ref(key),
-                    )
-                });
                 scope.write_static(name, slot);
                 if let Some(source) = retained_array_copy_source {
                     scope.record_public_object_property_array_copy_source(name, source);
@@ -17922,15 +17944,17 @@ impl Interpreter {
                 }
                 let retained_array_copy_source =
                     Self::array_copy_source_preserved_after_nested_write(scope, name, &keys);
-                if scope.write_alias_backed_array_offset_checked_with_object_type_resolver(
-                    name,
-                    &keys,
-                    value.clone(),
-                    *span,
-                    &|object, type_name| {
-                        self.object_satisfies_live_property_type(object, type_name)
-                    },
-                )? {
+                if !Self::copied_array_write_replaces_live_alias_parent(scope, name, &keys)
+                    && scope.write_alias_backed_array_offset_checked_with_object_type_resolver(
+                        name,
+                        &keys,
+                        value.clone(),
+                        *span,
+                        &|object, type_name| {
+                            self.object_satisfies_live_property_type(object, type_name)
+                        },
+                    )?
+                {
                     if let Some(source) = retained_array_copy_source {
                         scope.record_public_object_property_array_copy_source(name, source);
                     }
@@ -17956,14 +17980,14 @@ impl Interpreter {
                         }
                     }
                 }
+                let retained_array_copy_source =
+                    Self::array_copy_source_preserved_after_nested_write(scope, name, &keys);
                 scope.detach_array_offset_aliases_below_assignment_paths(&[ArrayOffsetAlias {
                     root: ArrayOffsetAliasRoot::StaticArray {
                         name: name.to_string(),
                     },
                     keys: keys.clone(),
                 }]);
-                let retained_array_copy_source =
-                    Self::array_copy_source_preserved_after_nested_write(scope, name, &keys);
                 self.write_nested_array_assignment(name, &keys, value.clone(), *span, scope)?;
                 if let Some(source) = retained_array_copy_source {
                     scope.record_public_object_property_array_copy_source(name, source);
@@ -44741,6 +44765,13 @@ impl Interpreter {
                         .iter()
                         .find(|(param_name, _)| param_name == &param.name)
                     {
+                        if let Some(source_scope) = reference_scope.as_deref() {
+                            local_scope.import_array_copy_source_aliases_from_copy(
+                                &param.name,
+                                source,
+                                source_scope,
+                            );
+                        }
                         local_scope.mirror_array_copy_source_aliases_from_copy(&param.name, source);
                         local_scope.record_public_object_property_array_copy_source(
                             &param.name,
@@ -44780,6 +44811,13 @@ impl Interpreter {
                     .iter()
                     .find(|(param_name, _)| param_name == &param.name)
                 {
+                    if let Some(source_scope) = reference_scope.as_deref() {
+                        local_scope.import_array_copy_source_aliases_from_copy(
+                            &param.name,
+                            source,
+                            source_scope,
+                        );
+                    }
                     local_scope.record_public_object_property_array_copy_source(
                         &param.name,
                         source.clone(),
