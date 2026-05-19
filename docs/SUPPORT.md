@@ -300,7 +300,15 @@
   `$alias =& $factory->make()["outer"][]`, and
   `$alias =& make_outer()["box"][]`. The selected inner-object case is covered
   both when the outer `offsetGet()` returns by reference and when a by-value
-  outer `offsetGet()` returns the inner object handle.
+  outer `offsetGet()` returns the inner object handle. The same selected
+  append bridge is covered for direct `ArrayAccess` variables and by-value
+  magic `__get()` roots returning `ArrayAccess` objects, including dynamic
+  magic-property spellings and non-direct magic-property holders such as
+  `$alias =& $bag["outer"][]`, `$alias =& $box->missing["outer"][]`,
+  `$alias =& $box->{$name}["outer"][]`, and
+  `$alias =& $holders["box"]->missing["outer"][]`. When the selected backed
+  parent bucket is `false`, the covered append reference source materializes
+  it as an array before binding the appended alias.
   Mixed chains where a by-value outer `offsetGet()` returns an inner
   `ArrayAccess` object can continue into a public by-reference inner
   `offsetGet()` for direct, property-held, and by-value magic `__get()`

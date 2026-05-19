@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1973-C through Lane 1976-C for nested append reference sources
+  below proven `ArrayAccess` backing buckets with false-parent
+  materialization. Direct `ArrayAccess`, by-value magic `__get()` returning an
+  `ArrayAccess` object, dynamic magic-property, and non-direct
+  magic-property holder roots now route `$root["key"][]` through the covered
+  by-reference `offsetGet()` binding before appending, so selected `false`
+  backing buckets become arrays and the appended alias remains live. Focused
+  system-PHP coverage proves parity for all four roots. Parser support for
+  append expressions in by-reference argument position, arbitrary
+  magic/`ArrayAccess` bodies outside the interpreter subset, whole-array
+  reference identity, exact diagnostics, and native reference lowering remain
+  unsupported.
+
 - Added Lane 1969-C through Lane 1972-C for caught thrown-object paths inside
   by-value magic/`ArrayAccess` method bodies that return copied arrays with
   COW provenance. The array-copy return-body executor now carries a bounded

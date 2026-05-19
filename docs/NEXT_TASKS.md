@@ -20632,6 +20632,18 @@ handled.
   magic/`ArrayAccess` method bodies, whole-array reference identity, and
   native reference lowering named as unsupported.
 
+## Lane 1973-C through Lane 1976-C: ArrayAccess False-Parent Append Sources
+
+- [x] Runtime/tests/docs bundle: broaden nested append reference sources below
+  proven `ArrayAccess` backing buckets and pin selected false-parent
+  materialization. Cover direct `ArrayAccess`, by-value magic `__get()`
+  returning an `ArrayAccess` object, dynamic magic-property, and non-direct
+  magic-property holder roots for `$root["key"][]` append aliases with
+  system-PHP comparisons. Keep parser support for append expressions in
+  by-reference argument position, arbitrary magic/`ArrayAccess` bodies outside
+  the interpreter subset, whole-array reference identity, exact diagnostics,
+  and native reference lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe the remaining scalar parent overwrite/error parity for covered

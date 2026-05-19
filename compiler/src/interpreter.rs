@@ -11080,6 +11080,29 @@ impl Interpreter {
                             return Ok(());
                         }
                     }
+                    if !keys.is_empty() {
+                        if let Some(binding) = self
+                            .evaluate_direct_array_access_reference_source_binding(
+                                array_name,
+                                keys.clone(),
+                                span,
+                                scope,
+                            )?
+                        {
+                            let binding = self.append_to_non_direct_reference_source_binding(
+                                binding, span, scope,
+                            )?;
+                            match binding {
+                                NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                    scope.write_detached_static(name, value);
+                                }
+                                NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                    scope.bind_static_to_array_offset_alias(name, alias);
+                                }
+                            }
+                            return Ok(());
+                        }
+                    }
                     self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
                     self.reject_direct_scalar_string_reference_source_if_needed(
                         array_name, &keys, true, span, scope,
@@ -11432,6 +11455,30 @@ impl Interpreter {
                             }
                             return Ok(());
                         }
+                        if let Some(binding) = self
+                            .evaluate_magic_get_array_access_reference_source_binding(
+                                object,
+                                property,
+                                keys.clone(),
+                                span,
+                                scope,
+                                true,
+                                false,
+                            )?
+                        {
+                            let binding = self.append_to_non_direct_reference_source_binding(
+                                binding, span, scope,
+                            )?;
+                            match binding {
+                                NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                    scope.write_detached_static(name, value);
+                                }
+                                NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                    scope.bind_static_to_array_offset_alias(name, alias);
+                                }
+                            }
+                            return Ok(());
+                        }
                     }
                     if let Some((alias, _)) = self
                         .evaluate_magic_get_array_append_reference_source_alias(
@@ -11510,6 +11557,30 @@ impl Interpreter {
                                 keys.clone(),
                                 span,
                                 scope,
+                            )?
+                        {
+                            let binding = self.append_to_non_direct_reference_source_binding(
+                                binding, span, scope,
+                            )?;
+                            match binding {
+                                NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                    scope.write_detached_static(name, value);
+                                }
+                                NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                    scope.bind_static_to_array_offset_alias(name, alias);
+                                }
+                            }
+                            return Ok(());
+                        }
+                        if let Some(binding) = self
+                            .evaluate_magic_get_array_access_reference_source_binding(
+                                object,
+                                &property,
+                                keys.clone(),
+                                span,
+                                scope,
+                                true,
+                                false,
                             )?
                         {
                             let binding = self.append_to_non_direct_reference_source_binding(
@@ -14819,6 +14890,19 @@ impl Interpreter {
                     scope,
                 )?
             {
+                return self
+                    .append_to_non_direct_reference_source_binding(binding, span, scope)
+                    .map(Some);
+            }
+            if let Some(binding) = self.evaluate_magic_get_array_access_reference_source_binding(
+                &temp_name,
+                property,
+                keys.clone(),
+                span,
+                scope,
+                true,
+                false,
+            )? {
                 return self
                     .append_to_non_direct_reference_source_binding(binding, span, scope)
                     .map(Some);

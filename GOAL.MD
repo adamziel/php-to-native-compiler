@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1972:
+The current in-progress implementation frontier is Lane 1976:
+
+- Lanes 1973 through 1976 broaden nested append reference sources below
+  proven `ArrayAccess` backing buckets, including false-parent
+  materialization. Direct `ArrayAccess` roots, visible by-value magic
+  `__get()` roots returning an `ArrayAccess` object, dynamic magic-property
+  spellings, and non-direct magic-property holders can now bind
+  `$root["key"][]` through the existing public by-reference `offsetGet()`
+  bridge, append into the selected backing bucket, and keep the alias live.
+  Focused coverage proves PHP-parity conversion of a selected `false` bucket
+  to an array. Parser support for append expressions in by-reference argument
+  position, arbitrary `ArrayAccess`/magic bodies outside the supported
+  interpreter subset, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
 
 - Lanes 1969 through 1972 broaden by-value magic/`ArrayAccess` method-body
   execution for copied-array COW provenance through caught thrown-object

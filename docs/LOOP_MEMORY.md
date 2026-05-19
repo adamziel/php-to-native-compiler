@@ -18,6 +18,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T08:22:14+02:00
+
+- Checkpoint before this task: `7ce1dace runtime: execute caught COW return
+  bodies`, pushed to `origin/master`.
+- Task attempted: Lane 1973-C through Lane 1976-C bundle, broadening nested
+  append reference sources below proven `ArrayAccess` backing buckets and
+  pinning selected false-parent materialization.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1973/*`, `tests/fixtures/milestone1974/*`,
+  `tests/fixtures/milestone1975/*`, `tests/fixtures/milestone1976/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes exposed direct and magic-provided
+  nested `ArrayAccess` append reference-source failures for selected `false`
+  backing buckets, then matched after the patch. Focused system-PHP
+  comparisons passed for `milestone1973` through `milestone1976`; adjacent
+  comparisons passed for `milestone1723`, `milestone1724`,
+  `milestone1758` through `milestone1762`, and `milestone1959` through
+  `milestone1972`; `cargo check -q`, `cargo fmt --check`, `git diff
+  --check`, `cargo test -q --test array_reference_literals`,
+  `cargo test -q --test functions_and_scopes`,
+  `cargo test -q --test object_model`, and
+  `cargo test -q --test exception_boundaries` passed.
+- Remaining COW gaps: parser support for append expressions in
+  by-reference argument position, remaining scalar parent overwrite/error
+  parity outside covered roots, possible mixed `ArrayAccess` gaps in
+  reference-return or callback reference-argument paths, dynamic
+  `call_user_func_array()` containers that cannot be traced to evaluated
+  local literals, closures and array callbacks outside covered reference
+  argument slices, by-reference helper parameters, arbitrary PHP side effects
+  and syntax outside the interpreter subset, exact PHP diagnostics,
+  whole-array reference identity, native reference/string COW lowering, and
+  native lowering for these interpreter paths.
+- Next concrete task: run adjacent Rust regression tests, `cargo fmt
+  --check`, `git diff --check`, the full `tools/checkpoint.sh` bundle gate,
+  then push if it passes.
+
 ## Loop Event 2026-05-19T08:12:39+02:00
 
 - Checkpoint before this task: `2de5c9fc runtime: broaden ArrayAccess
