@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2030:
+The current in-progress implementation frontier is Lane 2035:
+
+- Lanes 2031 through 2035 preserve copied-bucket COW provenance through
+  bounded `call_user_func_array()` callback containers whose reached callback
+  parameter is by reference. Covered bodies include visible by-value
+  `__get()`, public by-value `ArrayAccess::offsetGet()`, literal
+  `array(&$bucket)` argument arrays, stored local `array(&$bucket)` argument
+  arrays, closure callbacks, and public object array-callable callbacks.
+  Focused system-PHP coverage proves callback leaf writes update the selected
+  original backing reference and the returned copy keeps that selected
+  reference-backed leaf shared while ordinary nested arrays detach. This is
+  still not arbitrary callback/container support: dynamic containers that
+  cannot be traced to a current-scope literal/local, arbitrary object graphs,
+  side-effecting property names or keys, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2026 through 2030 preserve COW behavior for bounded sequential helper
   bodies that first mutate a copied reference-backed leaf and then replace

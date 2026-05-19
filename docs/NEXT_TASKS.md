@@ -20795,6 +20795,19 @@ handled.
   containers, whole-array reference identity, exact diagnostics, and native
   reference lowering named as unsupported.
 
+## Lane 2031-C through Lane 2035-C: By-Ref `call_user_func_array()` Containers
+
+- [x] Runtime/tests/docs bundle: preserve copied-bucket COW provenance through
+  bounded `call_user_func_array()` callback containers whose reached callback
+  parameter is by reference inside supported by-value magic/`ArrayAccess`
+  method bodies. Cover visible by-value `__get()`, public by-value
+  `ArrayAccess::offsetGet()`, literal `array(&$bucket)` containers, stored
+  local `array(&$bucket)` containers, closure callbacks, and public object
+  array-callable callbacks with system-PHP comparisons. Keep dynamic untraced
+  containers, arbitrary object graphs, side-effecting property names or keys,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe remaining scalar parent-overwrite/error parity outside covered

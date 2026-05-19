@@ -477,6 +477,20 @@
   helper/callback side effects, object/container provenance outside the
   documented local container slices, whole-array reference identity, exact
   diagnostics, and native reference lowering remain unsupported.
+  Bounded `call_user_func_array()` callback containers with reached
+  by-reference callback parameters can also preserve copied-bucket COW
+  provenance in these bodies. Covered forms include literal
+  `array(&$bucket)` argument arrays, stored current-scope local argument arrays
+  built as `array(&$bucket)`, string user callbacks, closure callbacks, public
+  object array-callable callbacks, visible by-value `__get()`, and public
+  by-value `ArrayAccess::offsetGet()`. Callback leaf writes update the
+  selected original backing reference, and a callback return of the copied
+  bucket keeps the selected reference-backed leaf shared while ordinary nested
+  arrays detach. This is bounded to traced current-scope literal/local
+  callback containers and proven copied-source paths; dynamic containers that
+  cannot be traced, arbitrary callback side effects, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
   Supported reference-return bodies may also delegate to non-static helpers
   through PHP's static call syntaxes when a compatible current `$this` object
   exists. Covered forms include `self::helper(...)`, `parent::helper(...)`,

@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2031-C through Lane 2035-C for copied-bucket COW provenance
+  through bounded `call_user_func_array()` callback containers with
+  by-reference callback parameters inside supported by-value
+  magic/`ArrayAccess` method bodies. Reference callback binding now recovers
+  copied-source metadata from direct reference bindings and from statically
+  traced stored argument-array slots, and the source-aware callback path
+  returns the copied bucket with selected reference-backed leaves still shared.
+  Focused system-PHP coverage proves visible by-value `__get()`, public
+  by-value `ArrayAccess::offsetGet()`, literal `array(&$bucket)` containers,
+  stored local `array(&$bucket)` containers, closure callbacks, and public
+  object array-callable callbacks. This remains bounded to traced
+  current-scope callback containers and proven copied-source paths; arbitrary
+  object graphs, side-effecting property names or keys, dynamic untraced
+  callback containers, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
+
 - Added Lane 2026-C through Lane 2030-C for sequential by-reference helper
   bodies that first mutate a copied reference-backed leaf and then replace
   that reference's parent inside supported by-value magic/`ArrayAccess` method
