@@ -731,9 +731,9 @@
   non-public forms such as
   `array(&$this->{$name}["outer"]["slot"], ...)` are covered when the selected
   private or protected holder property is visible from the active method
-  context. In these cases public
-  `offsetGet($offset)` must return by reference and its body must be exactly
-  the current bounded root shape `return $this->property[$offset];`. The
+  context. In these cases public by-reference `offsetGet($offset)` executes
+  the supported reference-return method body and may return a direct variable
+  or covered array-offset lvalue reached through supported control flow. The
   selected property array slot or nested child slot is materialized when
   missing and writes back through the same alias metadata as direct
   object-property array slots, including private/protected backing properties
@@ -1245,15 +1245,15 @@
   `ArrayAccess` object. Method-context non-public forms such as
   `$alias =& $this->{$name}["slot"];` execute when the selected private or
   protected holder property is visible from the active method context. In
-  these cases public
-  `offsetGet($offset)` must return by reference and its body must be exactly
-  `return $this->property[$offset];` in the current subset. The bridge binds
-  the alias to the backing property array slot or nested child slot,
-  materializes missing slots as `null`, and supports public plus
-  private/protected backing properties through the declaring method context.
+  these cases public by-reference `offsetGet($offset)` executes the supported
+  reference-return method body and may return a direct variable or covered
+  array-offset lvalue reached through supported control flow. The bridge binds
+  the alias to the returned backing slot, materializes missing slots as
+  `null`, and supports public plus private/protected backing properties
+  through the declaring method context.
   Append-offset sources such as `$alias =& $bag[]` and
-  `$alias =& $holder->bag[]` use that same exact-body bridge and bind
-  `offsetGet(null)` to the backing property array's empty-string key.
+  `$alias =& $holder->bag[]` use the same by-reference execution path and bind
+  `offsetGet(null)` to the returned backing slot.
   Direct public property-held aliases created through this bridge remain bound
   to the held `ArrayAccess` object's backing slot if the holder property is
   later replaced. Normal reads through that same bounded reference-returning
