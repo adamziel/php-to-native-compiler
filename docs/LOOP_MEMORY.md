@@ -23,6 +23,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T01:01:33+02:00
+
+- Checkpoint before this task: `fee2c36e runtime: promote copied bucket
+  terminal aliases`, pushed to `origin/master`.
+- Task attempted: Lane 2254-C through Lane 2257-C bundle, materializing named
+  public dynamic `stdClass` slots and preserving selected copied-bucket
+  reference leaves through fresh helper-returned `stdClass` holders used by
+  supported magic/`ArrayAccess` method bodies.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone2254/*` through
+  `tests/fixtures/milestone2257/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo build -q -p phpc` passed; focused fixture runner
+  and `--compare-php` checks passed for `milestone2254` through
+  `milestone2257`; focused Rust regression
+  `object_model named_public_property_writes_materialize_stdclass_slots`
+  passed; adjacent regressions passed for `php_runtime object_properties`,
+  `object_model dynamic`, `object_model magic`, `object_model arrayaccess`,
+  and `milestone1_fixtures_pass`; `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, and `git diff --check` passed.
+- Remaining COW gaps: whole-array reference identity outside covered
+  non-empty array-offset roots, untracked dynamic containers that expose
+  neither materialized reference cells nor portable copied-source roots,
+  unsupported syntax outside the current dynamic instance-call slice, exact
+  diagnostics/Throwable objects, and native reference/string COW lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-20T00:52:31+02:00
 
 - Checkpoint before this task: `93ca705c checkpoint: 2026-05-19 22:28:38

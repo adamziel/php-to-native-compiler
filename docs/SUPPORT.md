@@ -143,6 +143,12 @@
   helper calls promotes the proven source/copy alias group to one reference
   cell so helper writeback cannot restore a stale copied value over the source
   leaf.
+  Fresh helper-returned `stdClass` holders can participate in the same
+  concrete-container path when a supported method body stores copied-bucket
+  `call_user_func_array()` arguments in a named dynamic public slot such as
+  `$holder->args`. This covers visible `__get()`, public
+  `ArrayAccess::offsetGet()`, and public `ArrayAccess::offsetSet()` bodies for
+  terminal selected reference leaves.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.
@@ -1569,9 +1575,10 @@
   assignment expressions such as `$object->$name`, `$object->{$expr}`,
   `$object->$name = expr`, and `$object->{$expr} = expr` are supported for
   direct object variables when the property-name expression evaluates to a
-  string or integer name and resolves to an existing public slot; writes can
-  also materialize public dynamic slots on `stdClass` objects and the
-  WordPress `wpdb` compatibility class for reached table-name slots. Array literal
+  string or integer name and resolves to an existing public slot; named and
+  dynamic property-name writes can also materialize public dynamic slots on
+  `stdClass` objects and the WordPress `wpdb` compatibility class for reached
+  table-name slots. Array literal
   reference elements such as `array(&$value)` and keyed values like
   `array('name' => &$value)` are parsed and evaluate the current value, but do
   not create PHP reference aliases yet. Reference assignment sources support

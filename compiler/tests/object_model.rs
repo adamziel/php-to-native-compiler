@@ -473,6 +473,22 @@ echo $db->categories, "|", $db->$table;
 }
 
 #[test]
+fn named_public_property_writes_materialize_stdclass_slots() {
+    let source = r#"<?php
+$data = new stdClass();
+$data->answer = 42;
+echo $data->answer, "|";
+
+$data->args = array("x");
+echo $data->args[0];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "42|x");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn braced_dynamic_property_names_read_write_current_expression_subset() {
     let source = r#"<?php
 class Account {

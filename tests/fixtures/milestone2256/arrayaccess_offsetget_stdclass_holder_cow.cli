@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2256/arrayaccess_offsetget_stdclass_holder_cow.php

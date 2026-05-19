@@ -143,6 +143,11 @@ handled.
   methods, visible `__get()`, public `ArrayAccess::offsetGet()`, helper
   bodies, and dynamic helper dispatch while preserving bucket-reuse and
   parent-detach guards.
+- [x] Lane 2254-C through 2257-C: materialize named public dynamic
+  `stdClass` slots and preserve selected copied-bucket reference leaves
+  through fresh helper-returned `stdClass` holders used by visible `__get()`,
+  public `ArrayAccess::offsetGet()`, and public `ArrayAccess::offsetSet()`
+  bodies.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic

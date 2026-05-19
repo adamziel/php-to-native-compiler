@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2254-C through Lane 2257-C for fresh helper-returned `stdClass`
+  holders in covered COW method bodies. Named public property writes now
+  materialize dynamic slots on allowed dynamic-property objects such as
+  `stdClass`, matching the existing dynamic-property-name materialization
+  policy. Focused system-PHP coverage proves the base named-slot write plus
+  visible `__get()`, public `ArrayAccess::offsetGet()`, and public
+  `ArrayAccess::offsetSet()` bodies that store copied-bucket
+  `call_user_func_array()` arguments in `$holder->args` on a fresh returned
+  `stdClass` without losing the selected source reference leaf. This remains
+  bounded to allowed dynamic-property objects, concrete holder objects,
+  terminal selected leaves, and supported method-body syntax; arbitrary
+  untracked containers, full whole-array identity outside covered roots,
+  exact diagnostics, and native reference/string COW lowering remain
+  unsupported.
+
 - Added Lane 2249-C through Lane 2253-C for explicit method-local aliases to
   copied object-property reference leaves. Static array-offset reference
   binding now promotes a proven terminal scalar alias group together, so

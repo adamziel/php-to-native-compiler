@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2254/stdclass_named_dynamic_property_write.php

@@ -4195,12 +4195,16 @@ impl PhpObject {
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
-        let property = self.context_property_mut(
+        let Some(property) = self.context_property_mut_or_none(
             &mut properties,
             name,
             current_class_id,
             protected_class_ids,
-        )?;
+        )?
+        else {
+            drop(properties);
+            return self.write_dynamic_public_property(name, value);
+        };
 
         let value = coerce_typed_property_value(property, value)?;
         property.set_value(value);
@@ -4259,12 +4263,16 @@ impl PhpObject {
         F: Fn(&PhpObject, &str) -> bool,
     {
         let mut properties = self.properties.borrow_mut();
-        let property = self.context_property_mut(
+        let Some(property) = self.context_property_mut_or_none(
             &mut properties,
             name,
             current_class_id,
             protected_class_ids,
-        )?;
+        )?
+        else {
+            drop(properties);
+            return self.write_dynamic_public_property(name, value);
+        };
 
         let value = coerce_typed_property_value_with_object_type_resolver(
             property,

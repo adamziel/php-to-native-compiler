@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2253:
+The current in-progress implementation frontier is Lane 2257:
+
+- Lanes 2254 through 2257 let named public writes materialize dynamic
+  `stdClass` slots and use those fresh helper-returned holders in the COW
+  container path. Supported magic `__get()`, public
+  `ArrayAccess::offsetGet()`, and public `ArrayAccess::offsetSet()` bodies can
+  now call helpers that build `$holder = new stdClass(); $holder->args =
+  array($copy); return $holder;`, then pass `$holder->args` into
+  `call_user_func_array()` without losing the copied bucket's selected
+  reference leaf. This remains bounded to allowed dynamic-property objects,
+  concrete holder objects, terminal selected reference leaves, and supported
+  method-body syntax; arbitrary untracked containers, full whole-array
+  identity outside covered roots, exact diagnostics, and native
+  reference/string COW lowering remain unsupported.
 
 - Lanes 2249 through 2253 keep explicit method-local aliases to copied
   object-property reference leaves attached to the proven source terminal

@@ -284,6 +284,12 @@ helper writeback from reading a stale copied leaf and overwriting a source
 reference mutation, while still refusing to promote parent arrays or missing
 untracked containers.
 
+Fresh helper-returned `stdClass` holder objects are now concrete containers for
+this model. Named writes on allowed dynamic-property objects materialize public
+dynamic slots through the same runtime policy as dynamic-property-name writes,
+so helpers can return `$holder->args` arrays that carry copied-bucket metadata
+into `call_user_func_array()` from supported magic and `ArrayAccess` bodies.
+
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller
@@ -832,9 +838,10 @@ Implemented now:
   to load missing `extends` parents, direct `implements` interfaces, direct
   class-body trait uses, and parent interfaces before final registration
   validation,
-  bounded dynamic property-name reads/writes for existing public slots,
-  `stdClass` public dynamic slots, and the WordPress `wpdb` compatibility
-  class's dynamic table-name slots, and bounded `clone` expressions that
+  bounded named and dynamic property-name reads/writes for existing public
+  slots, `stdClass` public dynamic slots, and the WordPress `wpdb`
+  compatibility class's dynamic table-name slots, and bounded `clone`
+  expressions that
   allocate fresh handles, shallow-copy current property slots, and dispatch
   visible non-static `__clone()` methods on cloned objects
 - structured runtime error categories with stable diagnostic messages for the
