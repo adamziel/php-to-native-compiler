@@ -969,6 +969,17 @@ same visible property-held or magic `ArrayAccess` keyed bridge for
 terminal/plain-array nested mutation, unsupported
 `offsetSet()`/`offsetGet()`/`__get()` bodies, broader mixed chains, and native
 lowering remain outside this path.
+For supported method-body side effects, method scopes now carry a detached
+object-property array-offset ledger alongside the existing alias metadata.
+When a body overwrites or unsets a tracked object-property array, the scope
+records the pre-write fallback for each detached path. Successful nested
+method calls propagate that ledger back to the caller scope before stale alias
+sync runs, so helper methods and direct `call_user_func([$this, ...])`
+callbacks invoked by `ArrayAccess::offsetSet()` or magic `__set()` can detach
+caller aliases even when the overwritten object-property path is immediately
+recreated. This is still a bounded interpreter-scope writeback model rather
+than a general PHP reference container, and it does not cover unsupported
+syntax, untracked dynamic containers, exact diagnostics, or native lowering.
 Direct magic-property append stores such as `$box->missing[] = $array` and
 `$box->{$name}[] = $array` are a separate store path from magic append
 reference sources. For the covered store shape, the runtime calls visible

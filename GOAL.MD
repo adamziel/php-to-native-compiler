@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2147:
+The current in-progress implementation frontier is Lane 2151:
+
+- Lanes 2148 through 2151 add a method-scope detached object-property path
+  ledger for supported nested magic/`ArrayAccess` method bodies. When
+  `offsetSet()` or `__set()` delegates to a helper method or a direct
+  `call_user_func([$this, ...])` callback that overwrites a backing
+  object-property array, stale caller aliases now detach to their pre-call
+  fallback cells even if the overwritten path exists again afterward. Focused
+  system-PHP coverage proves helper and callback overwrite detaches for both
+  `ArrayAccess::offsetSet()` and magic `__set()`. This is a high-leverage
+  side-effect/writeback step, but it remains bounded to supported method
+  bodies and direct caller-scope callback dispatch; untracked dynamic
+  containers, arbitrary unsupported PHP syntax, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 2144 through 2147 carry copied-array source metadata into supported
   `ArrayAccess::offsetSet()` setter calls reached through visible

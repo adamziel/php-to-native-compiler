@@ -32,12 +32,14 @@ handled.
 - [x] Lane 2144-C through 2147-C: carry copied-source metadata into supported
   property-held and magic-returned `ArrayAccess::offsetSet()` keyed storage
   bodies, including non-direct and dynamic holder roots.
-- [ ] Next COW gap, hard-first: design and implement a general
-  magic/`ArrayAccess` method-body side-effect/writeback model that can carry
-  COW provenance through broader `offsetSet()`, `__set()`, helper, callback,
-  and dynamic-holder storage bodies. Prefer one architecture that makes
-  append/suffix setter metadata and lesser storage cases fall out naturally
-  over more one-off shape checks.
+- [x] Lane 2148-C through 2151-C: add a detached object-property path ledger
+  that propagates supported helper/callback method-body overwrites back to
+  caller aliases for `ArrayAccess::offsetSet()` and magic `__set()`.
+- [ ] Next COW gap, hard-first: keep extending the general
+  magic/`ArrayAccess` method-body side-effect/writeback model so helper,
+  callback, dynamic-holder, append/suffix setter storage, and copied-source
+  provenance all use one propagation architecture instead of new shape
+  checks.
 - [ ] Remaining hard gaps: untracked dynamic containers, broader callback
   containers, whole-array reference identity, exact PHP diagnostics/Throwable
   objects, and native reference/string COW lowering.

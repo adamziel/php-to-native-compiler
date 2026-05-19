@@ -541,8 +541,12 @@
   setter body stores that copied array through local variables or branch
   bodies, later by-value `offsetGet()` consumers preserve selected
   reference-backed leaves from the original source while ordinary copied
-  leaves detach. This does not claim arbitrary setter side effects,
-  append/suffix storage paths, helper/callback containers, untracked dynamic
+  leaves detach. Supported nested helper methods and direct
+  `call_user_func([$this, ...])` callbacks invoked from `offsetSet()` or
+  `__set()` now also propagate object-property overwrite detaches back to
+  caller aliases, so stale aliases keep their pre-call fallback values even
+  when the overwritten path is recreated. This does not claim arbitrary
+  setter side effects, append/suffix storage paths, untracked dynamic
   holders, whole-array reference identity, exact diagnostics, or native
   reference lowering.
   Supported by-value magic/`ArrayAccess` method bodies also carry actual

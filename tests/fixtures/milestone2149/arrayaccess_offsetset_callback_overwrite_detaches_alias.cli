@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2149/arrayaccess_offsetset_callback_overwrite_detaches_alias.php

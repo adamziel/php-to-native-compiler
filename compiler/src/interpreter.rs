@@ -1127,6 +1127,8 @@ struct SymbolTable {
     imported_globals: HashSet<String>,
     array_offset_aliases: HashMap<String, Vec<ArrayOffsetAlias>>,
     detached_array_offset_values: Vec<(String, Vec<ArrayKey>, Value)>,
+    detached_object_property_array_offset_values:
+        Vec<(PhpObject, String, Vec<ArrayKey>, VariableCell)>,
     copied_array_provenance_paths: HashMap<String, Vec<Vec<ArrayKey>>>,
     public_object_property_array_copy_sources: HashMap<String, ArrayCopySource>,
     object_property_array_copy_sources:
@@ -1218,6 +1220,7 @@ impl SymbolTable {
             imported_globals: HashSet::new(),
             array_offset_aliases: HashMap::new(),
             detached_array_offset_values: Vec::new(),
+            detached_object_property_array_offset_values: Vec::new(),
             copied_array_provenance_paths: HashMap::new(),
             public_object_property_array_copy_sources: HashMap::new(),
             object_property_array_copy_sources: HashMap::new(),
@@ -1232,6 +1235,7 @@ impl SymbolTable {
             imported_globals: HashSet::new(),
             array_offset_aliases: HashMap::new(),
             detached_array_offset_values: Vec::new(),
+            detached_object_property_array_offset_values: Vec::new(),
             copied_array_provenance_paths: HashMap::new(),
             public_object_property_array_copy_sources: HashMap::new(),
             object_property_array_copy_sources: HashMap::new(),
@@ -2259,6 +2263,41 @@ impl SymbolTable {
             .collect()
     }
 
+    fn record_detached_object_property_array_offset_cell(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        keys: &[ArrayKey],
+        cell: VariableCell,
+    ) {
+        if let Some((_, _, _, existing)) = self
+            .detached_object_property_array_offset_values
+            .iter_mut()
+            .find(
+                |(candidate_object, candidate_property, candidate_keys, _)| {
+                    candidate_object == object
+                        && candidate_property == property
+                        && candidate_keys.as_slice() == keys
+                },
+            )
+        {
+            *existing = cell;
+            return;
+        }
+        self.detached_object_property_array_offset_values.push((
+            object.clone(),
+            property.to_string(),
+            keys.to_vec(),
+            cell,
+        ));
+    }
+
+    fn detached_object_property_array_offset_values(
+        &self,
+    ) -> Vec<(PhpObject, String, Vec<ArrayKey>, VariableCell)> {
+        self.detached_object_property_array_offset_values.clone()
+    }
+
     fn detach_static_array_offset_alias_paths(
         &mut self,
         root_name: &str,
@@ -2326,6 +2365,30 @@ impl SymbolTable {
         if detached_paths.is_empty() {
             return;
         }
+        let detached_cells = detached_paths
+            .iter()
+            .map(|(keys, value)| (keys.clone(), value_cell(value.clone())))
+            .collect::<Vec<_>>();
+        self.detach_object_property_array_offset_alias_path_cells(object, property, &detached_cells)
+    }
+
+    fn detach_object_property_array_offset_alias_path_cells(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        detached_paths: &[(Vec<ArrayKey>, VariableCell)],
+    ) {
+        if detached_paths.is_empty() {
+            return;
+        }
+        for (keys, cell) in detached_paths {
+            self.record_detached_object_property_array_offset_cell(
+                object,
+                property,
+                keys,
+                cell.clone(),
+            );
+        }
 
         let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
         let mut detached_groups = Vec::new();
@@ -2335,11 +2398,11 @@ impl SymbolTable {
                 continue;
             };
             let previous_aliases = existing_aliases.clone();
-            let mut fallback_value = None;
+            let mut fallback_cell = None;
             let mut aliases = Vec::new();
 
             for alias in existing_aliases {
-                let detached_value = match &alias.root {
+                let detached_cell = match &alias.root {
                     ArrayOffsetAliasRoot::PublicObjectProperty {
                         object: object_name,
                         property: alias_property,
@@ -2357,14 +2420,14 @@ impl SymbolTable {
                         detached_paths
                             .iter()
                             .find(|(keys, _)| keys.as_slice() == alias.keys.as_slice())
-                            .map(|(_, value)| value.clone())
+                            .map(|(_, cell)| cell.clone())
                     }
                     _ => None,
                 };
 
-                if let Some(value) = detached_value {
-                    if fallback_value.is_none() {
-                        fallback_value = Some(value);
+                if let Some(cell) = detached_cell {
+                    if fallback_cell.is_none() {
+                        fallback_cell = Some(cell);
                     }
                 } else {
                     aliases.push(alias);
@@ -2380,7 +2443,7 @@ impl SymbolTable {
                 self.bind_detached_array_offset_alias_fallback(
                     &alias_name,
                     &previous_aliases,
-                    fallback_value.map(value_cell),
+                    fallback_cell,
                     &mut detached_groups,
                 );
             } else {
@@ -2513,6 +2576,10 @@ impl SymbolTable {
         property: &str,
         fallbacks: &HashMap<String, VariableCell>,
     ) {
+        let source_object = match self.read_storage_named(object_name) {
+            Some(Value::Object(object)) => Some(object),
+            _ => None,
+        };
         let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
         let mut detached_groups = Vec::new();
 
@@ -2521,13 +2588,25 @@ impl SymbolTable {
                 continue;
             };
             let previous_aliases = existing_aliases.clone();
-            let aliases: Vec<_> = existing_aliases
-                .into_iter()
-                .filter(|alias| {
-                    !(alias.root.matches_object_property(object_name, property)
-                        && !alias.keys.is_empty())
-                })
-                .collect();
+            let mut aliases = Vec::new();
+            for alias in existing_aliases {
+                let should_detach = alias.root.matches_object_property(object_name, property)
+                    && !alias.keys.is_empty();
+                if should_detach {
+                    if let (Some(object), Some(fallback)) =
+                        (source_object.as_ref(), fallbacks.get(&alias_name))
+                    {
+                        self.record_detached_object_property_array_offset_cell(
+                            object,
+                            property,
+                            &alias.keys,
+                            fallback.clone(),
+                        );
+                    }
+                } else {
+                    aliases.push(alias);
+                }
+            }
 
             if aliases.is_empty() {
                 self.array_offset_aliases.remove(&alias_name);
@@ -36946,7 +37025,7 @@ impl Interpreter {
                     Some(class_id),
                     Some(object.class_id()),
                     Vec::new(),
-                    None,
+                    Some(caller_scope),
                 )
             }
             Value::String(class_name) => {
@@ -37031,7 +37110,7 @@ impl Interpreter {
                     Some(declaring_class_id),
                     Some(class_id),
                     Vec::new(),
-                    None,
+                    Some(caller_scope),
                 )
             }
             _ => unreachable!("array_callable_parts restricts callback targets"),
@@ -48100,6 +48179,33 @@ impl Interpreter {
         }
     }
 
+    fn write_back_detached_object_property_array_offset_aliases(
+        local_scope: &SymbolTable,
+        caller_scope: &mut SymbolTable,
+    ) {
+        let mut groups: Vec<(PhpObject, String, Vec<(Vec<ArrayKey>, VariableCell)>)> = Vec::new();
+        for (object, property, keys, cell) in
+            local_scope.detached_object_property_array_offset_values()
+        {
+            if let Some((_, _, paths)) =
+                groups
+                    .iter_mut()
+                    .find(|(candidate_object, candidate_property, _)| {
+                        candidate_object == &object && candidate_property == &property
+                    })
+            {
+                paths.push((keys, cell));
+            } else {
+                groups.push((object, property, vec![(keys, cell)]));
+            }
+        }
+
+        for (object, property, paths) in groups {
+            caller_scope
+                .detach_object_property_array_offset_alias_path_cells(&object, &property, &paths);
+        }
+    }
+
     fn write_back_reference_parameter_object_aliases(
         &mut self,
         reference_bindings: &[ReferenceBinding],
@@ -48880,6 +48986,10 @@ impl Interpreter {
                             result
                         };
                         if result.is_ok() {
+                            Self::write_back_detached_object_property_array_offset_aliases(
+                                &local_scope,
+                                reference_scope,
+                            );
                             self.sync_reference_binding_array_copy_source_metadata(
                                 &reference_bindings,
                                 &by_value_array_copy_source_bindings,

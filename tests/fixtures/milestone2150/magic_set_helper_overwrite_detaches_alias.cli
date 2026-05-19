@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2150/magic_set_helper_overwrite_detaches_alias.php

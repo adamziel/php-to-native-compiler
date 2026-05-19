@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2148-C through Lane 2151-C for nested magic/`ArrayAccess`
+  method-body side-effect writeback. Method scopes now record detached
+  object-property array-offset paths when a supported body overwrites or
+  unsets a backing object-property array, and successful nested calls
+  propagate that ledger back to their caller scope. Direct
+  `call_user_func([$this, ...])` object-array callbacks now execute with the
+  caller scope, so helper/callback bodies invoked from `offsetSet()` or
+  `__set()` detach stale caller aliases to their pre-call fallback cells even
+  when the same path exists again after the overwrite. Focused system-PHP
+  coverage proves helper and callback overwrite-detach parity for
+  `ArrayAccess::offsetSet()` and magic `__set()`. This remains bounded to
+  supported interpreter syntax and direct caller-scope callback dispatch;
+  untracked dynamic containers, arbitrary unsupported PHP side effects,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 2144-C through Lane 2147-C for copied-array source metadata
   flowing into supported `ArrayAccess::offsetSet()` setter bodies reached via
   object-property containers. Direct visible property-held `ArrayAccess`

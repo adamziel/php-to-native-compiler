@@ -55,6 +55,39 @@ injects this file into every prompt. Each Codex pass should update it with:
   push if it passes; after that, attack the general method-body side-effect
   model before lesser COW shape broadening.
 
+## Loop Event 2026-05-19T18:02:49+02:00
+
+- Checkpoint before this task: `cbaaac18 runtime: preserve property-held
+  ArrayAccess COW sources`, pushed to `origin/master`.
+- Task attempted: Lane 2148-C through Lane 2151-C bundle, adding a detached
+  object-property path ledger for supported nested magic/`ArrayAccess`
+  method-body side effects and routing direct object-array `call_user_func()`
+  callbacks through caller-scope method execution.
+- Files changed: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2148/*`, `tests/fixtures/milestone2149/*`,
+  `tests/fixtures/milestone2150/*`, `tests/fixtures/milestone2151/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run: raw system-PHP probes matched for helper and direct
+  `call_user_func([$this, ...])` callback overwrites under both
+  `ArrayAccess::offsetSet()` and magic `__set()`; focused system-PHP fixture
+  comparisons passed for `milestone2148` through `milestone2151`;
+  adjacent comparisons passed for `milestone2134` through `milestone2151`;
+  the broader COW comparison sweep passed for `milestone2101` through
+  `milestone2151`; focused Rust filters passed for `object_model`,
+  `functions_and_scopes`, `dynamic_features`, `array_reference_literals`,
+  `assignment_expression`, `array_unset`, `array_isset`, and `empty`;
+  `cargo fmt`, `cargo fmt --check`, `cargo check -q -p phpc`, and
+  `git diff --check` passed.
+- Remaining COW gaps: broader propagation of copied-source provenance through
+  helper/callback/dynamic-holder storage, append/suffix setter storage,
+  untracked dynamic containers, whole-array reference identity, exact
+  diagnostics/Throwable objects, and native reference/string COW lowering.
+- Next concrete task: after the one full bundle checkpoint and push, continue
+  the hard-first method-body propagation work by extending copied-source
+  provenance through helper/callback/dynamic-holder storage rather than adding
+  isolated shape checks.
+
 ## Loop Event 2026-05-19T17:29:49+02:00
 
 - Checkpoint before this task: `f2bcf43c runtime: execute magic ArrayAccess
