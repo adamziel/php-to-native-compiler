@@ -1946,6 +1946,55 @@ impl SymbolTable {
             .remove(&(object.id(), property.to_string()));
     }
 
+    fn remove_object_property_array_copy_source_paths_for_prefix(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        prefix: &[ArrayKey],
+    ) {
+        if prefix.is_empty() {
+            self.remove_object_property_array_copy_source_paths(object, property);
+            return;
+        }
+
+        let key = (object.id(), property.to_string());
+        let Some(paths) = self.object_property_array_copy_sources.get_mut(&key) else {
+            return;
+        };
+        paths.retain(|(candidate, _)| !candidate.starts_with(prefix));
+        if paths.is_empty() {
+            self.object_property_array_copy_sources.remove(&key);
+        }
+    }
+
+    fn record_object_property_array_copy_source_path(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        source: ArrayCopySource,
+    ) {
+        self.remove_object_property_array_copy_source_paths_for_prefix(object, property, &keys);
+        self.object_property_array_copy_sources
+            .entry((object.id(), property.to_string()))
+            .or_default()
+            .push((keys, source));
+    }
+
+    fn record_object_property_array_copy_source_paths_with_prefix(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        prefix: &[ArrayKey],
+        paths: Vec<(Vec<ArrayKey>, ArrayCopySource)>,
+    ) {
+        for (mut keys, source) in paths {
+            let mut path = prefix.to_vec();
+            path.append(&mut keys);
+            self.record_object_property_array_copy_source_path(object, property, path, source);
+        }
+    }
+
     fn object_property_array_copy_source_for_path(
         &self,
         object: &PhpObject,
@@ -5652,6 +5701,7 @@ struct ArrayCopySource {
 }
 
 type ArrayCopySourceBinding = (String, Vec<ArrayKey>, ArrayCopySource);
+type IndexedArrayCopySourceBinding = (usize, Vec<ArrayKey>, ArrayCopySource);
 type ArrayCopySourceAliasWriteback = (
     String,
     Vec<ArrayKey>,
@@ -8004,6 +8054,80 @@ impl Interpreter {
                 .value_with_array_copy_source_aliases_from_copy_to_path(value, keys, source, true);
         }
         self.value_with_array_literal_reference_cells(value, array_literal_references, scope, span)
+    }
+
+    fn evaluate_assignment_value_with_reference_metadata(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(
+        Value,
+        Vec<ArrayLiteralReferenceElement>,
+        Vec<(Vec<ArrayKey>, ArrayCopySource)>,
+    )> {
+        match expr {
+            Expr::Array { items, span } => {
+                self.evaluate_array_for_direct_assignment(items, *span, scope)
+            }
+            _ => {
+                let (value, source) = self.evaluate_value_with_array_copy_source(expr, scope)?;
+                let value_is_array = matches!(value, Value::Array(_));
+                let value = scope.value_with_object_property_aliases_from_array_copy(
+                    value,
+                    source.clone(),
+                    false,
+                );
+                let copy_sources = if value_is_array {
+                    source
+                        .map(|source| vec![(Vec::new(), source)])
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                Ok((value, Vec::new(), copy_sources))
+            }
+        }
+    }
+
+    fn indexed_array_copy_source_bindings_for_argument(
+        arg_index: usize,
+        copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
+    ) -> Vec<IndexedArrayCopySourceBinding> {
+        Self::indexed_array_copy_source_bindings_for_argument_with_prefix(
+            arg_index,
+            &[],
+            copy_sources,
+        )
+    }
+
+    fn indexed_array_copy_source_bindings_for_argument_with_prefix(
+        arg_index: usize,
+        prefix: &[ArrayKey],
+        copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
+    ) -> Vec<IndexedArrayCopySourceBinding> {
+        copy_sources
+            .iter()
+            .map(|(keys, source)| {
+                let mut target_keys = prefix.to_vec();
+                target_keys.extend(keys.iter().cloned());
+                (arg_index, target_keys, source.clone())
+            })
+            .collect()
+    }
+
+    fn array_copy_source_bindings_for_indexed_args(
+        function: &FunctionDecl,
+        indexed_bindings: Vec<IndexedArrayCopySourceBinding>,
+    ) -> Vec<ArrayCopySourceBinding> {
+        indexed_bindings
+            .into_iter()
+            .filter_map(|(index, keys, source)| {
+                function
+                    .params
+                    .get(index)
+                    .map(|param| (param.name.clone(), keys, source))
+            })
+            .collect()
     }
 
     fn value_with_array_literal_reference_cells(
@@ -17144,6 +17268,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: &[ArrayLiteralReferenceElement],
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         check_terminal_scalar_parent: bool,
         is_append_to_parent: bool,
         span: Span,
@@ -17203,6 +17328,7 @@ impl Interpreter {
                             value,
                             expr,
                             array_literal_references.to_vec(),
+                            array_literal_copy_sources,
                             span,
                             scope,
                         )
@@ -17214,6 +17340,7 @@ impl Interpreter {
                             value,
                             expr,
                             array_literal_references.to_vec(),
+                            array_literal_copy_sources,
                             span,
                             scope,
                         )
@@ -17225,6 +17352,7 @@ impl Interpreter {
                         value,
                         expr,
                         array_literal_references.to_vec(),
+                        array_literal_copy_sources,
                         span,
                         scope,
                     )
@@ -17235,6 +17363,7 @@ impl Interpreter {
                         value,
                         expr,
                         array_literal_references.to_vec(),
+                        array_literal_copy_sources,
                         span,
                         scope,
                     )
@@ -17264,6 +17393,7 @@ impl Interpreter {
             value,
             expr,
             array_literal_references,
+            array_literal_copy_sources,
             is_append_to_parent,
             span,
             scope,
@@ -17278,6 +17408,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: &[ArrayLiteralReferenceElement],
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         is_append: bool,
         span: Span,
         scope: &mut SymbolTable,
@@ -17290,7 +17421,7 @@ impl Interpreter {
             value,
             expr,
             array_literal_references,
-            &[],
+            array_literal_copy_sources,
             scope,
             expr.span(),
         )?;
@@ -19433,12 +19564,18 @@ impl Interpreter {
                         scope,
                         expr.span(),
                     )?;
-                    self.call_array_access_method_with_caller_scope(
+                    let indexed_copy_source_bindings =
+                        Self::indexed_array_copy_source_bindings_for_argument(
+                            1,
+                            &array_literal_copy_sources,
+                        );
+                    self.call_array_access_method_with_caller_scope_and_arg_sources(
                         object.clone(),
                         "offsetSet",
                         vec![Self::array_key_value(key), method_value],
                         *span,
                         scope,
+                        indexed_copy_source_bindings,
                     )?;
                     if matches!(value, Value::Array(_)) {
                         if let Some((root, reference_keys)) = self
@@ -19665,6 +19802,7 @@ impl Interpreter {
                                     value.clone(),
                                     expr,
                                     array_literal_references.clone(),
+                                    &array_literal_copy_sources,
                                     *span,
                                     scope,
                                 )?
@@ -19780,6 +19918,7 @@ impl Interpreter {
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
+                            &[],
                             *span,
                             scope,
                         )?
@@ -19935,12 +20074,19 @@ impl Interpreter {
                                     scope,
                                     expr.span(),
                                 )?;
-                                match self.call_magic_instance_method_with_values_and_caller_scope(
+                                let indexed_copy_source_bindings =
+                                    Self::indexed_array_copy_source_bindings_for_argument(
+                                        1,
+                                        &array_copy_sources,
+                                    );
+                                match self
+                                    .call_magic_instance_method_with_values_and_caller_scope_and_arg_sources(
                                     object_value,
                                     "__set",
                                     vec![Value::String(property.clone()), method_value],
                                     *span,
                                     scope,
+                                    indexed_copy_source_bindings,
                                 )? {
                                     Some(_) => Ok(value),
                                     None => Err(runtime_error(*span, error)),
@@ -20002,14 +20148,8 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let (value, array_literal_references) = match expr {
-                    Expr::Array { items, span } => {
-                        let (value, references, _) =
-                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
-                    }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
-                };
+                let (value, array_literal_references, array_literal_copy_sources) =
+                    self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if keys.len() == 1
                     && self.write_object_property_array_access_keyed_with_reference_propagation(
                         object,
@@ -20018,6 +20158,7 @@ impl Interpreter {
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
+                        &array_literal_copy_sources,
                         *span,
                         scope,
                     )?
@@ -20033,6 +20174,7 @@ impl Interpreter {
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
+                            &array_literal_copy_sources,
                             *span,
                             scope,
                         )?
@@ -20046,6 +20188,7 @@ impl Interpreter {
                     value.clone(),
                     expr,
                     array_literal_references.clone(),
+                    &array_literal_copy_sources,
                     *span,
                     scope,
                 )? {
@@ -20067,6 +20210,10 @@ impl Interpreter {
                     scope,
                 )?;
                 scope.sync_array_offset_aliases_for_root_path(&root, &keys);
+                let object_value = match scope.read_static(object, *span)? {
+                    Value::Object(object_value) => object_value,
+                    _ => unreachable!("object property assignment already resolved object"),
+                };
                 if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                     self.bind_array_literal_references_to_alias_root_with_prefix(
                         root.clone(),
@@ -20075,8 +20222,36 @@ impl Interpreter {
                         expr.span(),
                         scope,
                     )?;
+                    scope.record_object_property_array_copy_source_paths_with_prefix(
+                        &object_value,
+                        property,
+                        &keys,
+                        array_literal_copy_sources,
+                    );
                 } else if matches!(value, Value::Array(_)) {
+                    for (relative_keys, source) in &array_literal_copy_sources {
+                        let mut target_keys = keys.clone();
+                        target_keys.extend(relative_keys.iter().cloned());
+                        self.mirror_array_copy_source_aliases_to_alias_root(
+                            root.clone(),
+                            &target_keys,
+                            source,
+                            scope,
+                        );
+                    }
+                    scope.record_object_property_array_copy_source_paths_with_prefix(
+                        &object_value,
+                        property,
+                        &keys,
+                        array_literal_copy_sources,
+                    );
                     self.mirror_copied_array_aliases_to_alias_root(expr, root, &keys, scope);
+                } else {
+                    scope.remove_object_property_array_copy_source_paths_for_prefix(
+                        &object_value,
+                        property,
+                        &keys,
+                    );
                 }
                 Ok(value)
             }
@@ -20091,14 +20266,8 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let (value, array_literal_references) = match expr {
-                    Expr::Array { items, span } => {
-                        let (value, references, _) =
-                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
-                    }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
-                };
+                let (value, array_literal_references, array_literal_copy_sources) =
+                    self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if keys.len() == 1
                     && self.write_object_property_array_access_keyed_with_reference_propagation(
                         object,
@@ -20107,6 +20276,7 @@ impl Interpreter {
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
+                        &array_literal_copy_sources,
                         *span,
                         scope,
                     )?
@@ -20122,6 +20292,7 @@ impl Interpreter {
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
+                            &array_literal_copy_sources,
                             *span,
                             scope,
                         )?
@@ -20135,6 +20306,7 @@ impl Interpreter {
                     value.clone(),
                     expr,
                     array_literal_references.clone(),
+                    &array_literal_copy_sources,
                     *span,
                     scope,
                 )? {
@@ -20156,6 +20328,10 @@ impl Interpreter {
                     scope,
                 )?;
                 scope.sync_array_offset_aliases_for_root_path(&root, &keys);
+                let object_value = match scope.read_static(object, *span)? {
+                    Value::Object(object_value) => object_value,
+                    _ => unreachable!("object property assignment already resolved object"),
+                };
                 if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
                     self.bind_array_literal_references_to_alias_root_with_prefix(
                         root.clone(),
@@ -20164,8 +20340,36 @@ impl Interpreter {
                         expr.span(),
                         scope,
                     )?;
+                    scope.record_object_property_array_copy_source_paths_with_prefix(
+                        &object_value,
+                        &property,
+                        &keys,
+                        array_literal_copy_sources,
+                    );
                 } else if matches!(value, Value::Array(_)) {
+                    for (relative_keys, source) in &array_literal_copy_sources {
+                        let mut target_keys = keys.clone();
+                        target_keys.extend(relative_keys.iter().cloned());
+                        self.mirror_array_copy_source_aliases_to_alias_root(
+                            root.clone(),
+                            &target_keys,
+                            source,
+                            scope,
+                        );
+                    }
+                    scope.record_object_property_array_copy_source_paths_with_prefix(
+                        &object_value,
+                        &property,
+                        &keys,
+                        array_literal_copy_sources,
+                    );
                     self.mirror_copied_array_aliases_to_alias_root(expr, root, &keys, scope);
+                } else {
+                    scope.remove_object_property_array_copy_source_paths_for_prefix(
+                        &object_value,
+                        &property,
+                        &keys,
+                    );
                 }
                 Ok(value)
             }
@@ -20194,14 +20398,8 @@ impl Interpreter {
                 };
                 let temp_name = self.next_foreach_temporary_array_name();
                 scope.write_static(&temp_name, Value::Object(holder_object));
-                let (value, array_literal_references) = match expr {
-                    Expr::Array { items, span } => {
-                        let (value, references, _) =
-                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
-                    }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
-                };
+                let (value, array_literal_references, array_literal_copy_sources) =
+                    self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if keys.len() == 1
                     && self.write_object_property_array_access_keyed_with_reference_propagation(
                         &temp_name,
@@ -20210,6 +20408,7 @@ impl Interpreter {
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
+                        &array_literal_copy_sources,
                         *span,
                         scope,
                     )?
@@ -20225,6 +20424,7 @@ impl Interpreter {
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
+                            &array_literal_copy_sources,
                             *span,
                             scope,
                         )?
@@ -20238,6 +20438,7 @@ impl Interpreter {
                     value.clone(),
                     expr,
                     array_literal_references,
+                    &array_literal_copy_sources,
                     *span,
                     scope,
                 )? {
@@ -20281,14 +20482,8 @@ impl Interpreter {
                 };
                 let temp_name = self.next_foreach_temporary_array_name();
                 scope.write_static(&temp_name, Value::Object(holder_object));
-                let (value, array_literal_references) = match expr {
-                    Expr::Array { items, span } => {
-                        let (value, references, _) =
-                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
-                    }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
-                };
+                let (value, array_literal_references, array_literal_copy_sources) =
+                    self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if keys.is_empty()
                     && self.write_object_property_array_access_append_with_reference_propagation(
                         &temp_name,
@@ -20297,6 +20492,7 @@ impl Interpreter {
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
+                        &array_literal_copy_sources,
                         *span,
                         scope,
                     )?
@@ -20313,6 +20509,7 @@ impl Interpreter {
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
+                            &array_literal_copy_sources,
                             *span,
                             scope,
                         )?
@@ -20327,6 +20524,7 @@ impl Interpreter {
                     value.clone(),
                     expr,
                     array_literal_references,
+                    &array_literal_copy_sources,
                     *span,
                     scope,
                 )? {
@@ -20366,14 +20564,8 @@ impl Interpreter {
                 let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
                 let temp_name = self.next_foreach_temporary_array_name();
                 scope.write_static(&temp_name, Value::Object(holder_object));
-                let (value, array_literal_references) = match expr {
-                    Expr::Array { items, span } => {
-                        let (value, references, _) =
-                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
-                    }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
-                };
+                let (value, array_literal_references, array_literal_copy_sources) =
+                    self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if keys.len() == 1
                     && self.write_object_property_array_access_keyed_with_reference_propagation(
                         &temp_name,
@@ -20382,6 +20574,7 @@ impl Interpreter {
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
+                        &array_literal_copy_sources,
                         *span,
                         scope,
                     )?
@@ -20397,6 +20590,7 @@ impl Interpreter {
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
+                            &array_literal_copy_sources,
                             *span,
                             scope,
                         )?
@@ -20410,6 +20604,7 @@ impl Interpreter {
                     value.clone(),
                     expr,
                     array_literal_references,
+                    &array_literal_copy_sources,
                     *span,
                     scope,
                 )? {
@@ -20454,14 +20649,8 @@ impl Interpreter {
                 let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
                 let temp_name = self.next_foreach_temporary_array_name();
                 scope.write_static(&temp_name, Value::Object(holder_object));
-                let (value, array_literal_references) = match expr {
-                    Expr::Array { items, span } => {
-                        let (value, references, _) =
-                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
-                    }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
-                };
+                let (value, array_literal_references, array_literal_copy_sources) =
+                    self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if keys.is_empty()
                     && self.write_object_property_array_access_append_with_reference_propagation(
                         &temp_name,
@@ -20470,6 +20659,7 @@ impl Interpreter {
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
+                        &array_literal_copy_sources,
                         *span,
                         scope,
                     )?
@@ -20486,6 +20676,7 @@ impl Interpreter {
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
+                            &array_literal_copy_sources,
                             *span,
                             scope,
                         )?
@@ -20500,6 +20691,7 @@ impl Interpreter {
                     value.clone(),
                     expr,
                     array_literal_references,
+                    &array_literal_copy_sources,
                     *span,
                     scope,
                 )? {
@@ -20528,14 +20720,8 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let (value, array_literal_references) = match expr {
-                    Expr::Array { items, span } => {
-                        let (value, references, _) =
-                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
-                    }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
-                };
+                let (value, array_literal_references, array_literal_copy_sources) =
+                    self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if keys.is_empty()
                     && self.write_object_property_array_access_append_with_reference_propagation(
                         object,
@@ -20544,6 +20730,7 @@ impl Interpreter {
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
+                        &array_literal_copy_sources,
                         *span,
                         scope,
                     )?
@@ -20560,6 +20747,7 @@ impl Interpreter {
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
+                            &array_literal_copy_sources,
                             *span,
                             scope,
                         )?
@@ -20574,6 +20762,7 @@ impl Interpreter {
                     value.clone(),
                     expr,
                     array_literal_references.clone(),
+                    &array_literal_copy_sources,
                     *span,
                     scope,
                 )? {
@@ -20643,14 +20832,8 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let (value, array_literal_references) = match expr {
-                    Expr::Array { items, span } => {
-                        let (value, references, _) =
-                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
-                    }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
-                };
+                let (value, array_literal_references, array_literal_copy_sources) =
+                    self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if keys.is_empty()
                     && self.write_object_property_array_access_append_with_reference_propagation(
                         object,
@@ -20659,6 +20842,7 @@ impl Interpreter {
                         value.clone(),
                         expr,
                         array_literal_references.clone(),
+                        &array_literal_copy_sources,
                         *span,
                         scope,
                     )?
@@ -20675,6 +20859,7 @@ impl Interpreter {
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
+                            &array_literal_copy_sources,
                             *span,
                             scope,
                         )?
@@ -20689,6 +20874,7 @@ impl Interpreter {
                     value.clone(),
                     expr,
                     array_literal_references.clone(),
+                    &array_literal_copy_sources,
                     *span,
                     scope,
                 )? {
@@ -20758,13 +20944,19 @@ impl Interpreter {
                                     scope,
                                     expr.span(),
                                 )?;
+                                let indexed_copy_source_bindings =
+                                    Self::indexed_array_copy_source_bindings_for_argument(
+                                        1,
+                                        &array_copy_sources,
+                                    );
                                 if self
-                                    .call_magic_instance_method_with_values_and_caller_scope(
+                                    .call_magic_instance_method_with_values_and_caller_scope_and_arg_sources(
                                         object_value.clone(),
                                         "__set",
                                         vec![Value::String(property.clone()), method_value],
                                         *span,
                                         scope,
+                                        indexed_copy_source_bindings,
                                     )?
                                     .is_some()
                                 {
@@ -20970,9 +21162,20 @@ impl Interpreter {
         root: ArrayOffsetAliasRoot,
         keys: Vec<ArrayKey>,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         if array_literal_references.is_empty() {
+            for (relative_keys, source) in array_literal_copy_sources {
+                let mut target_keys = keys.clone();
+                target_keys.extend(relative_keys.iter().cloned());
+                self.mirror_array_copy_source_aliases_to_alias_root(
+                    root.clone(),
+                    &target_keys,
+                    source,
+                    scope,
+                );
+            }
             self.mirror_copied_array_aliases_to_alias_root(expr, root, &keys, scope);
         } else {
             self.bind_array_literal_references_to_alias_root_with_prefix(
@@ -20994,6 +21197,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
@@ -21024,6 +21228,7 @@ impl Interpreter {
             value,
             expr,
             array_literal_references,
+            array_literal_copy_sources,
             span,
             scope,
         )
@@ -21038,6 +21243,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
@@ -21073,6 +21279,7 @@ impl Interpreter {
             value,
             expr,
             array_literal_references,
+            array_literal_copy_sources,
             span,
             scope,
         )
@@ -21086,6 +21293,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
@@ -21116,6 +21324,7 @@ impl Interpreter {
             value,
             expr,
             array_literal_references,
+            array_literal_copy_sources,
             span,
             scope,
         )
@@ -21129,6 +21338,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
@@ -21159,6 +21369,7 @@ impl Interpreter {
             value,
             expr,
             array_literal_references,
+            array_literal_copy_sources,
             span,
             scope,
         )
@@ -21173,6 +21384,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
@@ -21318,6 +21530,7 @@ impl Interpreter {
                             alias.root,
                             reference_keys,
                             array_literal_references,
+                            array_literal_copy_sources,
                             scope,
                         )?;
                         return Ok(true);
@@ -21334,6 +21547,7 @@ impl Interpreter {
                             value,
                             expr,
                             array_literal_references,
+                            array_literal_copy_sources,
                             span,
                             scope,
                         );
@@ -21352,6 +21566,7 @@ impl Interpreter {
                                 value,
                                 expr,
                                 array_literal_references,
+                                array_literal_copy_sources,
                                 span,
                                 scope,
                             );
@@ -21378,6 +21593,7 @@ impl Interpreter {
                         value,
                         expr,
                         array_literal_references,
+                        array_literal_copy_sources,
                         span,
                         scope,
                     )
@@ -21395,6 +21611,7 @@ impl Interpreter {
                         value,
                         expr,
                         array_literal_references,
+                        array_literal_copy_sources,
                         span,
                         scope,
                     )
@@ -21418,6 +21635,7 @@ impl Interpreter {
                         root,
                         reference_keys,
                         array_literal_references,
+                        array_literal_copy_sources,
                         scope,
                     )?;
                     Ok(true)
@@ -21450,6 +21668,7 @@ impl Interpreter {
                         value,
                         expr,
                         array_literal_references,
+                        array_literal_copy_sources,
                         span,
                         scope,
                     )
@@ -21467,6 +21686,7 @@ impl Interpreter {
                         value,
                         expr,
                         array_literal_references,
+                        array_literal_copy_sources,
                         span,
                         scope,
                     )
@@ -21486,6 +21706,7 @@ impl Interpreter {
                         value,
                         expr,
                         &array_literal_references,
+                        array_literal_copy_sources,
                         true,
                         span,
                         scope,
@@ -21533,6 +21754,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
@@ -21649,6 +21871,7 @@ impl Interpreter {
                             root,
                             target_keys,
                             array_literal_references,
+                            array_literal_copy_sources,
                             scope,
                         )?;
                         return Ok(true);
@@ -21701,6 +21924,7 @@ impl Interpreter {
                             root,
                             keys.clone(),
                             array_literal_references,
+                            array_literal_copy_sources,
                             scope,
                         )?;
                         return Ok(true);
@@ -21751,6 +21975,7 @@ impl Interpreter {
                         value,
                         expr,
                         &array_literal_references,
+                        array_literal_copy_sources,
                         false,
                         span,
                         scope,
@@ -21800,6 +22025,7 @@ impl Interpreter {
                 value,
                 expr,
                 array_literal_references,
+                array_literal_copy_sources,
                 span,
                 scope,
             )
@@ -21810,6 +22036,7 @@ impl Interpreter {
                 value,
                 expr,
                 array_literal_references,
+                array_literal_copy_sources,
                 span,
                 scope,
             )
@@ -22077,6 +22304,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
@@ -22095,6 +22323,7 @@ impl Interpreter {
             value.clone(),
             expr,
             &array_literal_references,
+            array_literal_copy_sources,
             true,
             true,
             span,
@@ -22125,6 +22354,7 @@ impl Interpreter {
             target_alias.root,
             reference_keys,
             array_literal_references,
+            array_literal_copy_sources,
             scope,
         )?;
         Ok(true)
@@ -22137,6 +22367,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
@@ -22147,17 +22378,24 @@ impl Interpreter {
             value,
             expr,
             &array_literal_references,
-            &[],
+            array_literal_copy_sources,
             scope,
             expr.span(),
         )?;
         let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, method_value, span)?;
-        self.call_array_access_method_with_caller_scope(
+        let indexed_copy_source_bindings =
+            Self::indexed_array_copy_source_bindings_for_argument_with_prefix(
+                1,
+                suffix_keys,
+                array_literal_copy_sources,
+            );
+        self.call_array_access_method_with_caller_scope_and_arg_sources(
             array_access_object.clone(),
             "offsetSet",
             vec![Self::array_key_value(None), stored_value],
             span,
             scope,
+            indexed_copy_source_bindings,
         )?;
         if let Some((root, reference_keys)) = self.array_access_offset_set_alias_for_object(
             array_access_object.clone(),
@@ -22174,6 +22412,7 @@ impl Interpreter {
                 root,
                 target_keys,
                 array_literal_references,
+                array_literal_copy_sources,
                 scope,
             )?;
         }
@@ -22187,6 +22426,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
@@ -22197,16 +22437,19 @@ impl Interpreter {
             value,
             expr,
             &array_literal_references,
-            &[],
+            array_literal_copy_sources,
             scope,
             expr.span(),
         )?;
-        self.call_array_access_method_with_caller_scope(
+        let indexed_copy_source_bindings =
+            Self::indexed_array_copy_source_bindings_for_argument(1, array_literal_copy_sources);
+        self.call_array_access_method_with_caller_scope_and_arg_sources(
             array_access_object.clone(),
             "offsetSet",
             vec![Self::array_key_value(Some(key.clone())), method_value],
             span,
             scope,
+            indexed_copy_source_bindings,
         )?;
         if let Some((root, reference_keys)) = self.array_access_offset_set_alias_for_object(
             array_access_object,
@@ -22221,6 +22464,7 @@ impl Interpreter {
                 root,
                 reference_keys,
                 array_literal_references,
+                array_literal_copy_sources,
                 scope,
             )?;
         }
@@ -22234,6 +22478,7 @@ impl Interpreter {
         value: Value,
         expr: &Expr,
         array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
@@ -22252,6 +22497,7 @@ impl Interpreter {
             value.clone(),
             expr,
             &array_literal_references,
+            array_literal_copy_sources,
             false,
             false,
             span,
@@ -22286,6 +22532,7 @@ impl Interpreter {
             target_alias.root,
             target_alias.keys,
             array_literal_references,
+            array_literal_copy_sources,
             scope,
         )?;
         Ok(true)
@@ -30896,6 +31143,25 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Option<Value>> {
+        self.call_magic_instance_method_with_values_and_caller_scope_and_arg_sources(
+            object,
+            method_name,
+            args,
+            span,
+            caller_scope,
+            Vec::new(),
+        )
+    }
+
+    fn call_magic_instance_method_with_values_and_caller_scope_and_arg_sources(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        indexed_array_copy_source_bindings: Vec<IndexedArrayCopySourceBinding>,
+    ) -> CompileResult<Option<Value>> {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), method_name)
         else {
@@ -30921,7 +31187,11 @@ impl Interpreter {
         self.ensure_user_function_call_depth(function, span)?;
 
         let called_class_id = object.class_id();
-        self.call_user_function_with_checked_values(
+        let by_value_array_copy_source_bindings = Self::array_copy_source_bindings_for_indexed_args(
+            function,
+            indexed_array_copy_source_bindings,
+        );
+        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             args,
             Some(object),
@@ -30929,7 +31199,11 @@ impl Interpreter {
             Some(called_class_id),
             Vec::new(),
             Some(&mut *caller_scope),
+            Vec::new(),
+            Vec::new(),
+            by_value_array_copy_source_bindings,
         )
+        .map(|(value, _)| value)
         .map(Some)
     }
 
@@ -56563,6 +56837,25 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        self.call_array_access_method_with_caller_scope_and_arg_sources(
+            object,
+            method_name,
+            args,
+            span,
+            caller_scope,
+            Vec::new(),
+        )
+    }
+
+    fn call_array_access_method_with_caller_scope_and_arg_sources(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        indexed_array_copy_source_bindings: Vec<IndexedArrayCopySourceBinding>,
+    ) -> CompileResult<Value> {
         if !self
             .classes
             .implements_interface(object.class_id(), "ArrayAccess")
@@ -56635,12 +56928,13 @@ impl Interpreter {
             }
         }
 
-        self.call_magic_instance_method_with_values_and_caller_scope(
+        self.call_magic_instance_method_with_values_and_caller_scope_and_arg_sources(
             object,
             method_name,
             args,
             span,
             caller_scope,
+            indexed_array_copy_source_bindings,
         )?
         .ok_or_else(|| {
             runtime_error(

@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2144-C through Lane 2147-C for copied-array source metadata
+  flowing into supported `ArrayAccess::offsetSet()` setter bodies reached via
+  object-property containers. Direct visible property-held `ArrayAccess`
+  objects, non-direct holder expressions, dynamic property names, and magic
+  `__get()` roots returning `ArrayAccess` objects now pass copied-source
+  provenance for by-value RHS arrays into the setter method scope before
+  supported local/branch storage bodies run. Later by-value `offsetGet()`
+  consumers therefore preserve selected reference-backed leaves from the
+  original source while ordinary copied leaves remain detached. Focused
+  system-PHP coverage proves the four keyed property-held and magic-returned
+  `ArrayAccess` storage shapes. This remains bounded to supported
+  interpreter syntax and tracked copied-array sources; broader append/suffix
+  setter paths, helper/callback containers, untracked dynamic containers,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 2139-C through Lane 2143-C for immediate by-value overloaded
   reference consumers from supported non-exact magic/`ArrayAccess` method
   bodies. Nested writes, append/write helpers, and reference assignment paths

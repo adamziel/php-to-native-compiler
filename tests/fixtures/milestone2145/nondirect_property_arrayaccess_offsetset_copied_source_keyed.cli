@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2145/nondirect_property_arrayaccess_offsetset_copied_source_keyed.php

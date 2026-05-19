@@ -534,6 +534,17 @@
   future-path metadata after broader setter/storage bodies, whole-array
   reference identity, exact diagnostics, and native reference lowering remain
   unsupported.
+  Supported property-held `ArrayAccess::offsetSet()` keyed stores now carry
+  copied-array source metadata into the setter method scope for visible
+  property roots, non-direct holder roots, dynamic property roots, and magic
+  `__get()` roots that return an `ArrayAccess` object. If the supported
+  setter body stores that copied array through local variables or branch
+  bodies, later by-value `offsetGet()` consumers preserve selected
+  reference-backed leaves from the original source while ordinary copied
+  leaves detach. This does not claim arbitrary setter side effects,
+  append/suffix storage paths, helper/callback containers, untracked dynamic
+  holders, whole-array reference identity, exact diagnostics, or native
+  reference lowering.
   Supported by-value magic/`ArrayAccess` method bodies also carry actual
   reference cells for the current array-literal and local-array value-model
   shapes, rather than relying only on exact backing-bucket bridge recovery.

@@ -8,6 +8,11 @@ gaps, uncovered nuances, original-prompt omissions, difficult unaddressed
 parts, shallow implementation, shallow tests, edge cases, and user-flow or
 operational rough spots. Address the highest-value gap and continue.
 
+Hard-first rule for current and future work: choose the difficult,
+high-impact COW/runtime architecture before easier case-by-case patches. Use
+narrow fixtures to prove the architecture, not as a substitute for it, unless
+a one-off is genuinely the only viable route.
+
 This file is durable memory for unattended Codex loop runs. The forever loop
 injects this file into every prompt. Each Codex pass should update it with:
 
@@ -17,6 +22,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - tests run and result
 - blockers or semantic gaps
 - next concrete task
+
+## Loop Event 2026-05-19T17:46:50+02:00
+
+- Checkpoint before this task: `efb472f1 runtime: source-aware overloaded
+  COW returns`, pushed to `origin/master`.
+- Task attempted: Lane 2144-C through Lane 2147-C bundle, carrying
+  copied-array source metadata into supported property-held and
+  magic-returned `ArrayAccess::offsetSet()` keyed storage bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2144/*`, `tests/fixtures/milestone2145/*`,
+  `tests/fixtures/milestone2146/*`, `tests/fixtures/milestone2147/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes matched for direct property-held,
+  non-direct property-held, dynamic property-held, and magic-returned
+  `ArrayAccess::offsetSet()` copied-source keyed storage; focused
+  system-PHP fixture comparisons passed for `milestone2144` through
+  `milestone2147`; adjacent comparisons passed for `milestone2139` through
+  `milestone2147`; the broader COW comparison sweep passed for
+  `milestone2101` through `milestone2147`; focused Rust filters passed for
+  `object_model`, `functions_and_scopes`, `dynamic_features`,
+  `array_reference_literals`, `assignment_expression`, `array_unset`,
+  `array_isset`, and `empty`; `cargo fmt --check`,
+  `cargo check -q -p phpc`, and `git diff --check` passed.
+- Remaining COW gaps: a general magic/`ArrayAccess` method-body
+  side-effect/writeback model for broader `offsetSet()`, `__set()`, helper,
+  callback, and dynamic-holder storage bodies; untracked dynamic containers;
+  whole-array reference identity; exact diagnostics/Throwable objects; and
+  native reference/string COW lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and
+  push if it passes; after that, attack the general method-body side-effect
+  model before lesser COW shape broadening.
 
 ## Loop Event 2026-05-19T17:29:49+02:00
 

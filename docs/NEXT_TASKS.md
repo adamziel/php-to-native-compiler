@@ -29,9 +29,15 @@ handled.
   by-value `offsetGet()`/`__get()` overloaded nested writes and reference
   assignments, so supported non-exact bodies preserve selected
   reference-backed leaves in the detached returned copy.
-- [ ] Next COW gap: recover stored future-path metadata after supported but
-  non-exact setter/storage bodies, especially `offsetSet()`/`__set()` paths
-  that move copied arrays through broader containers after the call.
+- [x] Lane 2144-C through 2147-C: carry copied-source metadata into supported
+  property-held and magic-returned `ArrayAccess::offsetSet()` keyed storage
+  bodies, including non-direct and dynamic holder roots.
+- [ ] Next COW gap, hard-first: design and implement a general
+  magic/`ArrayAccess` method-body side-effect/writeback model that can carry
+  COW provenance through broader `offsetSet()`, `__set()`, helper, callback,
+  and dynamic-holder storage bodies. Prefer one architecture that makes
+  append/suffix setter metadata and lesser storage cases fall out naturally
+  over more one-off shape checks.
 - [ ] Remaining hard gaps: untracked dynamic containers, broader callback
   containers, whole-array reference identity, exact PHP diagnostics/Throwable
   objects, and native reference/string COW lowering.

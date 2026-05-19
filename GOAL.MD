@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2143:
+The current in-progress implementation frontier is Lane 2147:
+
+- Lanes 2144 through 2147 carry copied-array source metadata into supported
+  `ArrayAccess::offsetSet()` setter calls reached through visible
+  object-property roots, non-direct holder roots, dynamic property roots, and
+  magic `__get()` roots that return an `ArrayAccess` object. When those
+  setters store a copied object-property array through supported local/branch
+  bodies, later by-value `offsetGet()` consumers preserve reference-backed
+  leaves and keep ordinary copied leaves detached. Focused system-PHP
+  coverage proves direct property-held, non-direct property-held, dynamic
+  property-held, and magic-returned `ArrayAccess` keyed stores. This remains
+  bounded to supported interpreter syntax and tracked copied-array sources;
+  broader setter/storage metadata after append/suffix paths, helper/callback
+  containers, untracked dynamic containers, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2139 through 2143 route immediate by-value overloaded reference
   consumers through the source-aware method-body executor. Public by-value
