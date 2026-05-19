@@ -2962,6 +2962,16 @@ impl Parser {
                     });
                 }
 
+                if let Some((target, indices, span)) =
+                    Self::expression_array_index_path_from_expr(expr.clone())
+                {
+                    return Ok(ReferenceSource::ExpressionArrayIndex {
+                        target,
+                        indices,
+                        span,
+                    });
+                }
+
                 Err(self.error_at(span, unsupported_reference_assignment_source_message()))
             }
             Expr::AppendIndex { target, span } => {
@@ -3897,6 +3907,26 @@ impl Parser {
                     Some((name, indices, span))
                 }
                 _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn expression_array_index_path_from_expr(expr: Expr) -> Option<(Expr, Vec<Expr>, Span)> {
+        match expr {
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => match *target {
+                Expr::Index { .. } => {
+                    let (target, mut indices, _) =
+                        Self::expression_array_index_path_from_expr(*target)?;
+                    indices.push(*index);
+                    Some((target, indices, span))
+                }
+                Expr::Variable(_, _) => None,
+                target => Some((target, vec![*index], span)),
             },
             _ => None,
         }
@@ -7374,7 +7404,7 @@ fn unsupported_array_destructuring_assignment_message() -> &'static str {
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {
-    "unsupported reference assignment: only direct variable, direct/nested/append array-offset, direct/nested/append object-property array-offset, bounded non-direct object-property array-offset, object-property, static property, direct/dynamic function-call, and method-call reference sources are parsed before reference semantics exist"
+    "unsupported reference assignment: only direct variable, direct/nested/append array-offset, expression-root array-offset, direct/nested/append object-property array-offset, bounded non-direct object-property array-offset, object-property, static property, direct/dynamic function-call, and method-call reference sources are parsed before reference semantics exist"
 }
 
 fn unsupported_first_class_callable_message() -> &'static str {

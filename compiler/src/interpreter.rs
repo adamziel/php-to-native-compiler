@@ -9707,6 +9707,25 @@ impl Interpreter {
                         expr, &keys, span, scope,
                     )?;
                     scope.bind_static_to_cell(name, cell);
+                } else if let ReferenceSource::ExpressionArrayIndex {
+                    target, indices, ..
+                } = source
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let binding = self.evaluate_expression_array_reference_source_binding(
+                        target, keys, span, scope,
+                    )?;
+                    match binding {
+                        NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                            scope.write_detached_static(name, value);
+                        }
+                        NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                            scope.bind_static_to_array_offset_alias(name, alias);
+                        }
+                    }
                 } else if let ReferenceSource::ArrayIndex {
                     name: array_name,
                     index,
@@ -12230,6 +12249,95 @@ impl Interpreter {
             span,
             scope,
         )
+    }
+
+    fn evaluate_expression_array_reference_source_binding(
+        &mut self,
+        target: &Expr,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<NonDirectReferenceSourceBinding> {
+        if keys.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind empty expression-root array reference source".to_string(),
+                ),
+            ));
+        }
+
+        match self.evaluate(target, scope)? {
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                let hidden_name = self.hidden_array_access_reference_object_name(&object);
+                scope.write_static(&hidden_name, Value::Object(object.clone()));
+                self.evaluate_array_access_reference_source_binding_for_object(
+                    object,
+                    hidden_name,
+                    keys,
+                    None,
+                    span,
+                    scope,
+                )?
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "reference assignment",
+                            "expression-root ArrayAccess reference source could not bind a covered offsetGet() result",
+                        ),
+                    )
+                })
+            }
+            Value::Array(array) => {
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Array(array));
+                let alias = ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::StaticArray { name: temp_name },
+                    keys,
+                };
+                scope.materialize_array_offset_alias(&alias, span)?;
+                Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
+            }
+            Value::Null => {
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Array(PhpArray::new()));
+                let alias = ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::StaticArray { name: temp_name },
+                    keys,
+                };
+                scope.materialize_array_offset_alias(&alias, span)?;
+                Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
+            }
+            Value::Bool(false) => {
+                self.emit_false_to_array_deprecation(span)?;
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Array(PhpArray::new()));
+                let alias = ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::StaticArray { name: temp_name },
+                    keys,
+                };
+                scope.materialize_array_offset_alias(&alias, span)?;
+                Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
+            }
+            Value::String(_) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot create references to/from string offsets".to_string(),
+                ),
+            )),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot use {} as an expression-root array reference source",
+                    other.type_name()
+                )),
+            )),
+        }
     }
 
     fn evaluate_direct_array_access_append_by_value_reference_source_value(
@@ -15051,6 +15159,15 @@ impl Interpreter {
                     ),
                 ));
             }
+            ReferenceSource::ExpressionArrayIndex { .. } => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "expression-root array-offset reference sources require a direct variable target in the current subset",
+                    ),
+                ));
+            }
             ReferenceSource::ArrayIndex { name, index, .. } => {
                 return self.reject_array_offset_reference_source(name, index, span, scope);
             }
@@ -15113,6 +15230,15 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "reference assignment",
                         "static property reference sources require a direct variable target in the current subset",
+                    ),
+                ));
+            }
+            ReferenceSource::ExpressionArrayIndex { .. } => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "expression-root array-offset reference sources require a direct variable target in the current subset",
                     ),
                 ));
             }
@@ -19806,6 +19932,21 @@ impl Interpreter {
                 Some(expr) => Some(self.evaluate_array_key(expr, scope)?),
                 None => None,
             };
+            if item.by_reference {
+                let (_, reference) =
+                    self.evaluate_array_literal_reference_cell(&item.value, scope)?;
+                match key {
+                    Some(key) => {
+                        array.insert_reference(key, reference);
+                    }
+                    None => {
+                        array
+                            .append_reference(reference)
+                            .map_err(|error| runtime_error(span, error))?;
+                    }
+                }
+                continue;
+            }
             let value = self.evaluate(&item.value, scope)?;
 
             match key {
@@ -19935,6 +20076,72 @@ impl Interpreter {
         }
 
         Ok((Value::Array(array), references))
+    }
+
+    fn evaluate_array_literal_reference_cell(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, VariableCell)> {
+        if let Expr::Variable(source_name, span) = expr {
+            let cell = scope.read_cell(source_name).ok_or_else(|| {
+                runtime_error(*span, RuntimeError::undefined_variable(source_name))
+            })?;
+            return Ok((cell.value_cloned(), cell));
+        }
+
+        if let Some((source_alias, value)) =
+            self.evaluate_direct_array_reference_argument(expr, scope)?
+        {
+            let aliases = vec![source_alias];
+            let Some(cell) = scope.reference_cell_for_array_offset_alias_group(&aliases) else {
+                return Err(runtime_error(
+                    expr.span(),
+                    RuntimeError::invalid_array_access(
+                        "cannot bind array literal reference element".to_string(),
+                    ),
+                ));
+            };
+            return Ok((value, cell));
+        }
+
+        if let Some((source_alias, value)) =
+            self.evaluate_magic_get_array_reference_argument(expr, scope)?
+        {
+            let aliases = vec![source_alias];
+            let Some(cell) = scope.reference_cell_for_array_offset_alias_group(&aliases) else {
+                return Err(runtime_error(
+                    expr.span(),
+                    RuntimeError::invalid_array_access(
+                        "cannot bind magic array literal reference element".to_string(),
+                    ),
+                ));
+            };
+            return Ok((value, cell));
+        }
+
+        if let Some((source_alias, value)) =
+            self.evaluate_visible_object_property_array_reference_argument(expr, scope, false)?
+        {
+            let aliases = vec![source_alias];
+            let Some(cell) = scope.reference_cell_for_array_offset_alias_group(&aliases) else {
+                return Err(runtime_error(
+                    expr.span(),
+                    RuntimeError::invalid_array_access(
+                        "cannot bind object-property array literal reference element".to_string(),
+                    ),
+                ));
+            };
+            return Ok((value, cell));
+        }
+
+        Err(runtime_error(
+            expr.span(),
+            RuntimeError::unsupported_call(
+                "array literal",
+                "runtime reference elements are only implemented for direct variables, direct array offsets, direct visible object-property array offsets, and bounded magic __get array offsets in the current subset",
+            ),
+        ))
     }
 
     fn bind_array_literal_references_to_alias_root(

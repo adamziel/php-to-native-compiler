@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1833:
+The current in-progress implementation frontier is Lane 1837:
+
+- Lanes 1834 through 1837 add expression-root array-offset reference
+  sources. Direct variable targets can now bind to selected buckets below
+  arrays or `ArrayAccess` objects returned by calls and method calls, such as
+  `$alias =& make_array()["slot"]`, `$alias =& make_bag()["slot"]`, and
+  `$alias =& $factory->make()["slot"]`. Returned array literals now preserve
+  supported `&` elements as real reference cells in ordinary expression
+  evaluation, so references embedded in a returned array remain live when the
+  returned temporary is selected. The same expression-root bridge can recurse
+  through a proven by-value outer `ArrayAccess` object into a by-reference
+  inner `ArrayAccess` bucket. This still does not claim append-offset
+  expression roots, scalar/string temporary reference parity, arbitrary
+  callback/builtin reference sources, arbitrary PHP outside the interpreter
+  subset, or native reference lowering.
 
 - Lanes 1830 through 1833 close the whole by-value magic-property root
   counterpart to the preceding array-offset work. Direct, dynamic, and

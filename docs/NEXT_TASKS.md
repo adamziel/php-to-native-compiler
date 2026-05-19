@@ -20234,6 +20234,19 @@ handled.
   subset, arbitrary mixed chains, exact diagnostic-stream parity, and native
   reference lowering named as unsupported.
 
+## Lane 1834-C through Lane 1837-C: Expression-Root Reference Sources
+
+- [x] Parser/runtime/tests/docs bundle: parse expression-root array-offset
+  reference sources and bind direct variable targets through returned arrays,
+  direct function-call results, direct method-call results, and recursive
+  `ArrayAccess` chains such as `$alias =& make_array()["slot"]`,
+  `$alias =& make_bag()["slot"]`, and
+  `$alias =& $factory->make()["slot"]`. Preserve supported `&` elements in
+  ordinary returned array literals as reference cells. Keep append-offset
+  expression roots, scalar/string temporary reference parity, arbitrary
+  callback/builtin reference-return sources, arbitrary PHP outside the
+  interpreter subset, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

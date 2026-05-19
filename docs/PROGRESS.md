@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Lane 1834-C through Lane 1837-C for expression-root array-offset
+  reference sources. Direct variable targets now bind through arrays,
+  direct function-call results, direct method-call results, and recursive
+  `ArrayAccess` object chains returned by expressions such as
+  `$alias =& make_array()["ref"]`, `$alias =& make_bag()["x"]`, and
+  `$alias =& $factory->make()["x"]`. Ordinary array-literal expression
+  evaluation now preserves supported `&` elements as real reference cells, so
+  references embedded in returned arrays remain live after selecting the
+  returned temporary. This does not claim append-offset expression roots,
+  scalar/string temporary reference parity, arbitrary callback/builtin
+  reference-return sources, arbitrary PHP outside the interpreter subset, or
+  native reference lowering. Focused verification: raw system PHP output
+  matched the new `milestone1834`, `milestone1835`, `milestone1836`, and
+  `milestone1837` fixtures; `cargo run -q -p phpc -- test --compare-php`
+  passed each new directory plus adjacent reference/ArrayAccess milestones
+  `1352`, `1362`, `1457`, `1696`, `1698`, `1699`, `1802`, `1825`, and
+  `1826`; focused `functions_and_scopes` reference-assignment,
+  `object_model` ArrayAccess, and `syntax_boundaries` reference-assignment
+  tests passed.
+
 - Added Lane 1830-C through Lane 1833-C for whole by-value magic `__get()`
   root COW parity. Covered direct, dynamic, and non-direct holder
   magic-property reference roots now execute public by-value `__get()` bodies,

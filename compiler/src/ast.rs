@@ -471,6 +471,11 @@ pub enum ReferenceSource {
         indices: Vec<Expr>,
         span: Span,
     },
+    ExpressionArrayIndex {
+        target: Expr,
+        indices: Vec<Expr>,
+        span: Span,
+    },
     MethodCall {
         expr: Expr,
         span: Span,

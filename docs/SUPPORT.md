@@ -253,6 +253,15 @@
   `$alias =& $holders["box"]->missing["slot"];` and
   `$alias =& $holders["box"]->{$name}["outer"]["slot"];` are also accepted for
   direct-variable reference assignment through the same temporary holder root.
+  Expression-root array-offset reference sources are also covered when the
+  root expression evaluates to an array or `ArrayAccess` object and the
+  target is a direct variable. Covered examples include
+  `$alias =& make_array()["slot"]`, `$alias =& make_bag()["slot"]`, and
+  `$alias =& $factory->make()["slot"]`. Returned array literals preserve
+  supported `&` elements as reference cells, so a selected reference slot
+  inside the returned temporary remains live. Expression roots that evaluate
+  to `ArrayAccess` objects reuse the same recursive binding bridge, including
+  a proven by-value outer object returning a by-reference inner object bucket.
   Mixed chains where a by-value outer `offsetGet()` returns an inner
   `ArrayAccess` object can continue into a public by-reference inner
   `offsetGet()` for direct, property-held, and by-value magic `__get()`
@@ -326,8 +335,9 @@
   it, for example `$bucket =& $this->items[$offset]; return $bucket["leaf"];`.
   Backing paths may also use locals initialized from literal int/string keys,
   such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
-  This does not add magic `__get()` roots beyond the covered direct,
-  dynamic, non-direct holder, variable/property/backing-offset
+  This does not add append-offset expression roots, scalar/string temporary
+  reference parity, magic `__get()` roots beyond the covered direct,
+  dynamic, non-direct holder, expression-root, variable/property/backing-offset
   returns; incompatible typed reference-return signatures or arbitrary type
   enforcement; full exception unwinding, uncaught exception propagation,
   non-object throws, exact exception diagnostics, or global `throw` support

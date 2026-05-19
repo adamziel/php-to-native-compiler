@@ -18,6 +18,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T02:59:32+02:00
+
+- Checkpoint before this task: `31d003a5 runtime: detach by-value magic get
+  roots`, pushed to `origin/master`.
+- Task attempted: Lane 1834-C through Lane 1837-C bundle, parsing and
+  executing expression-root array-offset reference sources below returned
+  arrays, direct function-call results, direct method-call results, and
+  recursive `ArrayAccess` chains, plus preserving supported `&` elements in
+  ordinary returned array literals.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `tests/fixtures/milestone1834/*`,
+  `tests/fixtures/milestone1835/*`, `tests/fixtures/milestone1836/*`,
+  `tests/fixtures/milestone1837/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new `milestone1834`,
+  `milestone1835`, `milestone1836`, and `milestone1837` fixtures;
+  `cargo run -q -p phpc -- test --compare-php` passed each new fixture
+  directory plus adjacent reference/ArrayAccess milestones `1352`, `1362`,
+  `1457`, `1696`, `1698`, `1699`, `1802`, `1825`, and `1826`; focused
+  `functions_and_scopes` reference-assignment, `object_model` ArrayAccess,
+  and `syntax_boundaries` reference-assignment tests passed; `cargo check -q
+  -p phpc` passed.
+- Remaining COW gaps: append-offset expression roots, scalar/string
+  temporary reference parity, arbitrary callback and builtin reference-return
+  sources, arbitrary magic/`ArrayAccess` method bodies outside the supported
+  interpreter subset, full exception unwinding and uncaught propagation,
+  arbitrary Iterator side effects, broader complex alias sinks and alias
+  lifetime ordering, exact PHP stderr/fatal text, binary/multibyte string
+  offset behavior, and native reference/string COW lowering.
+- Next concrete task: run formatting, diff check, and the full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T02:46:26+02:00
 
 - Checkpoint before this task: `27899cea runtime: execute by-value magic get
