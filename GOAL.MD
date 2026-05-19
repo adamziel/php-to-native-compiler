@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2045:
+The current in-progress implementation frontier is Lane 2050:
+
+- Lanes 2046 through 2050 preserve copied-bucket COW behavior for bounded
+  `call_user_func()` callbacks whose reached callback parameter is declared
+  by reference. PHP warns and passes a value for these calls; the interpreter
+  now mirrors that no-reference call while carrying source-aware copied-array
+  metadata into visible by-value `__get()` and public by-value
+  `ArrayAccess::offsetGet()` bodies. Covered callback shapes include direct
+  string callbacks, dynamic string callbacks, closure callbacks, and public
+  object array-callable callbacks. Focused system-PHP coverage proves nested
+  writes through selected reference-backed leaves update the original backing
+  reference while ordinary nested arrays detach in the returned copy. This is
+  still bounded to supported interpreter syntax and tracked copied-source
+  roots; variadic by-reference `call_user_func()` callbacks, arbitrary
+  untracked side effects, whole-array reference identity, exact diagnostics,
+  and native reference lowering remain unsupported.
 
 - Lanes 2041 through 2045 route exact by-value magic/`ArrayAccess`
   backing-bucket returns through the same source-aware method executor as

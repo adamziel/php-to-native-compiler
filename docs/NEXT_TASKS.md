@@ -20832,14 +20832,27 @@ handled.
   reference identity, exact diagnostics, and native reference lowering named
   as unsupported.
 
+## Lane 2046-C through Lane 2050-C: `call_user_func()` Warning COW Copies
+
+- [x] Runtime/tests/docs bundle: preserve copied-bucket COW behavior for
+  bounded `call_user_func()` callbacks whose reached callback parameter is
+  declared by reference inside supported by-value magic/`ArrayAccess` method
+  bodies. Cover PHP's warning/no-reference value-passing semantics for string
+  callbacks, dynamic string callbacks, closure callbacks, public object
+  array-callable callbacks, visible public `__get()`, and public by-value
+  `ArrayAccess::offsetGet()` with system-PHP comparisons. Keep variadic
+  by-reference `call_user_func()` callbacks, arbitrary untracked side effects,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe remaining scalar parent-overwrite/error parity outside covered
   roots, then probe whether any covered mixed `ArrayAccess` bridge is still
-  missing from reference-return or callback reference-argument paths. Implement
-  only bounded PHP-comparable failures without claiming arbitrary
-  side-effecting method bodies, full PHP COW identity, or unsupported native
-  lowering.
+  missing from reference-return, callback reference-argument, or
+  no-reference callback-value paths. Implement only bounded PHP-comparable
+  failures without claiming arbitrary side-effecting method bodies, full PHP
+  COW identity, or unsupported native lowering.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

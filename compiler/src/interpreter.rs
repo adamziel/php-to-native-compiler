@@ -35043,37 +35043,21 @@ impl Interpreter {
         };
         let function = function_rc.as_ref();
         ensure_user_function_arity(function, args.len() - 1, span)?;
-        if function.returns_by_reference
-            || !Self::function_accepts_source_aware_by_value_arguments(function)
-        {
+        if function.returns_by_reference {
             return self
                 .call_user_func_user_function(function_rc, &args[1..], span, caller_scope)
                 .map(|value| (value, None));
         }
-        ensure_supported_function_metadata(function, span)?;
-        self.ensure_user_function_call_depth(function, span)?;
 
-        let call_args = &args[1..];
-        let (values, by_value_array_copy_source_bindings) = self
-            .evaluate_by_value_call_arguments_with_array_copy_sources(
-                function,
-                call_args,
-                caller_scope,
-            )?;
-        let by_value_array_copy_bindings =
-            Self::by_value_array_copy_bindings_for_call(function, call_args);
-
-        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+        self.call_user_func_value_warning_function_with_array_copy_source(
             function,
-            values,
+            &args[1..],
+            span,
+            caller_scope,
             None,
             None,
             None,
             Vec::new(),
-            Some(caller_scope),
-            Vec::new(),
-            by_value_array_copy_bindings,
-            by_value_array_copy_source_bindings,
         )
     }
 
@@ -35315,14 +35299,12 @@ impl Interpreter {
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
-                if function.returns_by_reference
-                    || !Self::function_accepts_source_aware_by_value_arguments(function)
-                {
+                if function.returns_by_reference {
                     return self
                         .call_user_func_array_callable_direct(callback, args, span, caller_scope)
                         .map(|value| (value, None));
                 }
-                self.call_source_aware_user_function_with_expr_args(
+                self.call_user_func_value_warning_function_with_array_copy_source(
                     function,
                     args,
                     span,
@@ -35383,14 +35365,12 @@ impl Interpreter {
                     span,
                 )?;
                 let function = function.as_ref();
-                if function.returns_by_reference
-                    || !Self::function_accepts_source_aware_by_value_arguments(function)
-                {
+                if function.returns_by_reference {
                     return self
                         .call_user_func_array_callable_direct(callback, args, span, caller_scope)
                         .map(|value| (value, None));
                 }
-                self.call_source_aware_user_function_with_expr_args(
+                self.call_user_func_value_warning_function_with_array_copy_source(
                     function,
                     args,
                     span,
@@ -35424,7 +35404,7 @@ impl Interpreter {
         let values =
             self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
         let by_value_array_copy_bindings =
-            Self::by_value_array_copy_bindings_for_call(function, args);
+            Self::by_value_array_copy_bindings_for_call_user_func_value(function, args);
         if function.returns_by_reference {
             return self.call_reference_return_function_value_with_checked_values(
                 function,
@@ -35550,9 +35530,7 @@ impl Interpreter {
             ));
         }
         let function = function.as_ref();
-        if function.returns_by_reference
-            || !Self::function_accepts_source_aware_by_value_arguments(function)
-        {
+        if function.returns_by_reference {
             return self
                 .invoke_closure_value_from_call_user_func(
                     closure,
@@ -35564,7 +35542,7 @@ impl Interpreter {
                 .map(|value| (value, None));
         }
         let prebound_locals = self.closure_prebound_locals(&closure);
-        self.call_source_aware_user_function_with_expr_args(
+        self.call_user_func_value_warning_function_with_array_copy_source(
             function,
             args,
             span,
@@ -35573,6 +35551,60 @@ impl Interpreter {
             None,
             None,
             prebound_locals,
+        )
+    }
+
+    fn call_user_func_value_warning_function_with_array_copy_source(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        if function
+            .params
+            .iter()
+            .enumerate()
+            .any(|(index, param)| param.by_reference && param.is_variadic && index < args.len())
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "call_user_func() variadic reference parameter invocation is not implemented",
+                ),
+            ));
+        }
+
+        let (values, by_value_array_copy_source_bindings) = self
+            .evaluate_by_value_call_arguments_with_array_copy_sources(
+                function,
+                args,
+                caller_scope,
+            )?;
+        self.emit_call_user_func_reference_parameter_warnings(function, args.len(), span)?;
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call_user_func_value(function, args);
+
+        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+            function,
+            values,
+            this_object,
+            class_context,
+            called_class_context,
+            Vec::new(),
+            Some(caller_scope),
+            prebound_locals,
+            by_value_array_copy_bindings,
+            by_value_array_copy_source_bindings,
         )
     }
 
@@ -35604,6 +35636,26 @@ impl Interpreter {
         }
         self.emit_call_user_func_reference_parameter_warnings(function, args.len(), span)?;
         Ok(values)
+    }
+
+    fn by_value_array_copy_bindings_for_call_user_func_value(
+        function: &FunctionDecl,
+        args: &[Expr],
+    ) -> Vec<(String, String, Vec<ArrayKey>)> {
+        function
+            .params
+            .iter()
+            .zip(args.iter())
+            .filter_map(|(param, arg)| {
+                if param.is_variadic {
+                    return None;
+                }
+                let Expr::Variable(source_name, _) = arg else {
+                    return None;
+                };
+                Some((param.name.clone(), source_name.clone(), Vec::new()))
+            })
+            .collect()
     }
 
     fn call_builtin_callback_from_call_user_func(
@@ -45778,11 +45830,29 @@ impl Interpreter {
                     .find(|(param_name, _)| param_name == &param.name)
                 {
                     if let Some(source_scope) = reference_scope.as_deref() {
-                        local_scope.import_array_copy_source_aliases_from_copy(
-                            &param.name,
-                            source,
-                            source_scope,
-                        );
+                        let imported_aliases = local_scope
+                            .import_array_copy_source_aliases_from_copy(
+                                &param.name,
+                                source,
+                                source_scope,
+                            );
+                        let imported_aliases: Vec<_> = imported_aliases
+                            .into_iter()
+                            .filter(|alias| {
+                                matches!(
+                                    &alias.root,
+                                    ArrayOffsetAliasRoot::StaticArray { name }
+                                        if name == &param.name
+                                ) && !alias.keys.is_empty()
+                            })
+                            .collect();
+                        if !imported_aliases.is_empty() {
+                            array_copy_source_alias_writebacks.push((
+                                param.name.clone(),
+                                source.clone(),
+                                imported_aliases,
+                            ));
+                        }
                     }
                     local_scope.record_public_object_property_array_copy_source(
                         &param.name,

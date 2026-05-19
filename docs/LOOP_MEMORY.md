@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T12:16:54+02:00
+
+- Checkpoint before this task: `1b4486a5 runtime: preserve exact magic COW
+  returns`, pushed to `origin/master`.
+- Task attempted: Lane 2046-C through Lane 2050-C bundle, preserving
+  copied-bucket COW behavior for bounded `call_user_func()` callbacks whose
+  reached callback parameter is declared by reference inside supported
+  by-value magic/`ArrayAccess` method bodies. PHP warns and passes a value for
+  these calls, so the implementation keeps the no-reference call shape while
+  carrying source-aware copied-array metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2046/*`, `tests/fixtures/milestone2047/*`,
+  `tests/fixtures/milestone2048/*`, `tests/fixtures/milestone2049/*`,
+  `tests/fixtures/milestone2050/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for `milestone2046`
+  through `milestone2050`; adjacent comparisons passed for `milestone1673c`
+  and `milestone2031` through `milestone2050`; the broader existing COW band
+  `milestone1880` through `milestone2050` passed; focused Rust suites passed
+  for `functions_and_scopes`, `object_model`, `call_user_func_builtin`, and
+  `array_reference_literals`; `cargo check -q`, `cargo fmt`, and
+  `git diff --check` passed.
+- Remaining COW gaps: arbitrary untracked magic/`ArrayAccess` side effects,
+  variadic by-reference `call_user_func()` callbacks, untracked dynamic
+  containers, whole-array reference identity, exact PHP diagnostics, native
+  reference/string COW lowering, native lowering for these interpreter paths,
+  and remaining non-method-body COW parity gaps.
+- Next concrete task: run final formatting/check/diff gates and one full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T16:10:00+02:00
 
 - Checkpoint before this task: `2da5fb5a runtime: retain method-body COW

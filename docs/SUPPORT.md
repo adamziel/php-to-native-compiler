@@ -443,7 +443,7 @@
   bounded separately below, including the sequential shape where the same
   helper first mutates a copied reference leaf and then replaces that leaf's
   parent before return. Broader helper/callback side effects,
-  `call_user_func()` reference warnings/no-reference semantics,
+  variadic by-reference `call_user_func()` callback parameters, untraced
   `call_user_func_array()` by-reference callback argument containers,
   whole-array reference identity, exact diagnostics, and native reference
   lowering remain unsupported.
@@ -500,6 +500,17 @@
   arrays detach. This does not claim arbitrary untracked magic/`ArrayAccess`
   side effects, whole-array reference identity, exact diagnostics, or native
   reference lowering.
+  Bounded `call_user_func()` callbacks whose reached callback parameter is
+  declared by reference use PHP's warning/no-reference behavior while carrying
+  copied-bucket provenance through supported bodies. Covered forms include
+  string callbacks, dynamic string callbacks, closure callbacks, public object
+  array-callable callbacks, visible by-value `__get()`, and public by-value
+  `ArrayAccess::offsetGet()`. Callback leaf writes update the selected
+  original backing reference, and the returned copy keeps that selected
+  reference-backed leaf shared while ordinary nested arrays detach. This does
+  not cover variadic by-reference `call_user_func()` callbacks, arbitrary
+  callback side effects, whole-array reference identity, exact diagnostics,
+  or native reference lowering.
   Bounded `call_user_func_array()` callback containers with reached
   by-reference callback parameters can also preserve copied-bucket COW
   provenance in these bodies. Covered forms include literal

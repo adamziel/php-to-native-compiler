@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2046-C through Lane 2050-C for `call_user_func()` callbacks
+  whose reached callback parameter is declared by reference inside supported
+  by-value magic/`ArrayAccess` method bodies. PHP emits a warning and passes
+  a value for these calls; the interpreter now keeps that no-reference call
+  shape while preserving source-aware copied-bucket metadata for visible
+  public `__get()` and public by-value `ArrayAccess::offsetGet()` bodies.
+  Focused system-PHP coverage proves string callbacks, dynamic string
+  callbacks, closure callbacks, and public object array-callable callbacks
+  update selected original reference-backed leaves while ordinary nested
+  arrays detach in the returned copy. This remains bounded to supported
+  interpreter syntax and tracked copied-source roots; variadic by-reference
+  `call_user_func()` callbacks, arbitrary untracked side effects,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 2041-C through Lane 2045-C for exact by-value
   magic/`ArrayAccess` backing-bucket returns that previously bypassed
   source-aware copied-bucket tracking. Exact public by-value `__get()` and
