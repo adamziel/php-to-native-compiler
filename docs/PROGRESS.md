@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2026-C through Lane 2030-C for sequential by-reference helper
+  bodies that first mutate a copied reference-backed leaf and then replace
+  that reference's parent inside supported by-value magic/`ArrayAccess` method
+  bodies. Imported copied-source alias paths are now detached from the caller's
+  copied local/container root before the saved leaf mutation is written back
+  to the original source, so the original backing reference observes the leaf
+  write while the later parent replacement remains local to the returned copy.
+  Focused system-PHP coverage proves visible by-value `__get()`, public
+  by-value `ArrayAccess::offsetGet()`, direct and dynamic local
+  object-property containers, `$this` instance-method helpers, and direct
+  closure helpers. This remains bounded to proven copied-source paths and
+  visible local containers; arbitrary object graphs, side-effecting property
+  names or keys, `call_user_func*` callback containers, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
+
 - Added Lane 2021-C through Lane 2025-C for by-reference helper calls over
   visible local object-property containers inside supported by-value
   magic/`ArrayAccess` method bodies. Direct and dynamic object-property
@@ -15,10 +31,9 @@ Implemented:
   instance-method helpers, and direct closure helpers update selected original
   reference-backed leaves while ordinary nested arrays remain detached. This
   remains bounded to current-scope visible object-property containers;
-  arbitrary object graphs, side-effecting property names or keys, sequential
-  helper leaf-write plus parent replacement, `call_user_func*` callback
-  containers, whole-array reference identity, exact diagnostics, and native
-  reference lowering remain unsupported.
+  arbitrary object graphs, side-effecting property names or keys,
+  `call_user_func*` callback containers, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Added Lane 2016-C through Lane 2020-C for copied-array COW provenance
   through visible properties of current-scope local object containers inside

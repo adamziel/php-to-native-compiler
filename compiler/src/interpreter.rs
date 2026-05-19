@@ -1863,6 +1863,10 @@ impl SymbolTable {
             .cloned()
     }
 
+    fn remove_public_object_property_array_copy_source(&mut self, name: &str) {
+        self.public_object_property_array_copy_sources.remove(name);
+    }
+
     fn record_object_property_array_copy_source_paths(
         &mut self,
         object: &PhpObject,
@@ -2138,6 +2142,148 @@ impl SymbolTable {
             .map(|(_, _, value)| value.clone())
     }
 
+    fn detached_static_array_offset_values_for_root(
+        &self,
+        root_name: &str,
+    ) -> Vec<(Vec<ArrayKey>, Value)> {
+        self.detached_array_offset_values
+            .iter()
+            .filter_map(|(name, keys, value)| {
+                (name == root_name).then(|| (keys.clone(), value.clone()))
+            })
+            .collect()
+    }
+
+    fn detach_static_array_offset_alias_paths(
+        &mut self,
+        root_name: &str,
+        detached_paths: &[(Vec<ArrayKey>, Value)],
+    ) {
+        if detached_paths.is_empty() {
+            return;
+        }
+
+        let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+        let mut detached_groups = Vec::new();
+
+        for alias_name in alias_names {
+            let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
+                continue;
+            };
+            let previous_aliases = existing_aliases.clone();
+            let mut fallback_value = None;
+            let mut aliases = Vec::new();
+
+            for alias in existing_aliases {
+                let detached_value = match &alias.root {
+                    ArrayOffsetAliasRoot::StaticArray { name } if name == root_name => {
+                        detached_paths
+                            .iter()
+                            .find(|(keys, _)| keys.as_slice() == alias.keys.as_slice())
+                            .map(|(_, value)| value.clone())
+                    }
+                    _ => None,
+                };
+
+                if let Some(value) = detached_value {
+                    if fallback_value.is_none() {
+                        fallback_value = Some(value);
+                    }
+                } else {
+                    aliases.push(alias);
+                }
+            }
+
+            if aliases.len() == previous_aliases.len() {
+                continue;
+            }
+
+            if aliases.is_empty() {
+                self.array_offset_aliases.remove(&alias_name);
+                self.bind_detached_array_offset_alias_fallback(
+                    &alias_name,
+                    &previous_aliases,
+                    fallback_value.map(value_cell),
+                    &mut detached_groups,
+                );
+            } else {
+                self.array_offset_aliases.insert(alias_name, aliases);
+            }
+        }
+    }
+
+    fn detach_object_property_array_offset_alias_paths(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        detached_paths: &[(Vec<ArrayKey>, Value)],
+    ) {
+        if detached_paths.is_empty() {
+            return;
+        }
+
+        let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+        let mut detached_groups = Vec::new();
+
+        for alias_name in alias_names {
+            let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
+                continue;
+            };
+            let previous_aliases = existing_aliases.clone();
+            let mut fallback_value = None;
+            let mut aliases = Vec::new();
+
+            for alias in existing_aliases {
+                let detached_value = match &alias.root {
+                    ArrayOffsetAliasRoot::PublicObjectProperty {
+                        object: object_name,
+                        property: alias_property,
+                    }
+                    | ArrayOffsetAliasRoot::ContextObjectProperty {
+                        object: object_name,
+                        property: alias_property,
+                        ..
+                    } if alias_property == property
+                        && matches!(
+                            self.read_storage_named(object_name),
+                            Some(Value::Object(candidate)) if candidate == *object
+                        ) =>
+                    {
+                        detached_paths
+                            .iter()
+                            .find(|(keys, _)| keys.as_slice() == alias.keys.as_slice())
+                            .map(|(_, value)| value.clone())
+                    }
+                    _ => None,
+                };
+
+                if let Some(value) = detached_value {
+                    if fallback_value.is_none() {
+                        fallback_value = Some(value);
+                    }
+                } else {
+                    aliases.push(alias);
+                }
+            }
+
+            if aliases.len() == previous_aliases.len() {
+                continue;
+            }
+
+            if aliases.is_empty() {
+                self.array_offset_aliases.remove(&alias_name);
+                self.bind_detached_array_offset_alias_fallback(
+                    &alias_name,
+                    &previous_aliases,
+                    fallback_value.map(value_cell),
+                    &mut detached_groups,
+                );
+            } else {
+                self.array_offset_aliases.insert(alias_name, aliases);
+            }
+        }
+    }
+
     fn record_copied_array_provenance_path(&mut self, root_name: &str, keys: &[ArrayKey]) {
         if keys.is_empty() {
             return;
@@ -2357,6 +2503,15 @@ impl SymbolTable {
                         && alias.keys.len() > assigned_path.keys.len()
                 });
                 if should_detach {
+                    if let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root {
+                        if let Some(value) = self.read_array_offset_alias(&alias) {
+                            self.record_detached_static_array_offset_value(
+                                name,
+                                &alias.keys,
+                                value,
+                            );
+                        }
+                    }
                     if fallback_value.is_none() {
                         fallback_value = self.read_array_offset_alias(&alias);
                     }
@@ -5040,6 +5195,8 @@ enum ReferenceBindingTarget {
     CallerCellWithArrayCopySource {
         cell: VariableCell,
         source: ArrayCopySource,
+        object: PhpObject,
+        property: String,
     },
     ArrayOffset(ArrayOffsetAlias),
     ArrayOffsets(Vec<ArrayOffsetAlias>),
@@ -34561,7 +34718,23 @@ impl Interpreter {
                 }
                 self.call_builtin(&key, values, span)
             }
-            Callable::User(function) => self.call_user_function(function, args, span, caller_scope),
+            Callable::User(function) => {
+                if function.returns_by_reference {
+                    self.call_user_function(function, args, span, caller_scope)
+                } else {
+                    self.call_source_aware_user_function_with_expr_args(
+                        function.as_ref(),
+                        args,
+                        span,
+                        caller_scope,
+                        None,
+                        None,
+                        None,
+                        Vec::new(),
+                    )
+                    .map(|(value, _)| value)
+                }
+            }
         }
     }
 
@@ -34646,7 +34819,23 @@ impl Interpreter {
                 }
                 self.call_builtin(&key, values, span)
             }
-            Callable::User(function) => self.call_user_function(function, args, span, caller_scope),
+            Callable::User(function) => {
+                if function.returns_by_reference {
+                    self.call_user_function(function, args, span, caller_scope)
+                } else {
+                    self.call_source_aware_user_function_with_expr_args(
+                        function.as_ref(),
+                        args,
+                        span,
+                        caller_scope,
+                        None,
+                        None,
+                        None,
+                        Vec::new(),
+                    )
+                    .map(|(value, _)| value)
+                }
+            }
         }
     }
 
@@ -43855,14 +44044,19 @@ impl Interpreter {
                         param_name: param.name.clone(),
                         target: ReferenceBindingTarget::ArrayOffset(alias),
                     });
-                } else if let Some((caller_cell, value, name, source)) =
+                } else if let Some((caller_cell, value, name, source, object_property)) =
                     self.evaluate_visible_object_property_reference_argument(arg, caller_scope)?
                 {
                     values.push(value);
                     let target = if let Some(source) = source {
+                        let (object, property) = object_property.expect(
+                            "visible object-property copy sources carry their container target",
+                        );
                         ReferenceBindingTarget::CallerCellWithArrayCopySource {
                             cell: caller_cell,
                             source,
+                            object,
+                            property,
                         }
                     } else {
                         ReferenceBindingTarget::CallerCell {
@@ -43921,7 +44115,15 @@ impl Interpreter {
         &mut self,
         arg: &Expr,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<Option<(VariableCell, Value, String, Option<ArrayCopySource>)>> {
+    ) -> CompileResult<
+        Option<(
+            VariableCell,
+            Value,
+            String,
+            Option<ArrayCopySource>,
+            Option<(PhpObject, String)>,
+        )>,
+    > {
         let Some((object_name, property)) =
             self.direct_object_property_reference_argument_parts(arg, caller_scope)?
         else {
@@ -43985,6 +44187,7 @@ impl Interpreter {
                     value,
                     format!("${object_name}->{property}"),
                     source,
+                    Some((object, property)),
                 )))
             }
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => Ok(None),
@@ -44696,20 +44899,27 @@ impl Interpreter {
                 if name != local_name || local_alias.keys.is_empty() {
                     continue;
                 }
-                let Some(active_local_aliases) = local_scope
-                    .array_offset_alias_group_for_stored_array_path(local_name, &local_alias.keys)
-                else {
-                    continue;
+                let value = if let Some(value) =
+                    local_scope.detached_static_array_offset_value(local_name, &local_alias.keys)
+                {
+                    Some(value)
+                } else {
+                    let Some(active_local_aliases) = local_scope
+                        .array_offset_alias_group_for_stored_array_path(
+                            local_name,
+                            &local_alias.keys,
+                        )
+                    else {
+                        continue;
+                    };
+                    if !active_local_aliases.contains(local_alias) {
+                        continue;
+                    }
+                    local_scope
+                        .read_storage_named(local_name)
+                        .and_then(|value| Self::array_path_value(&value, &local_alias.keys))
                 };
-                if !active_local_aliases.contains(local_alias) {
-                    continue;
-                }
-                let Some(value) = local_scope
-                    .read_storage_named(local_name)
-                    .and_then(|value| Self::array_path_value(&value, &local_alias.keys))
-                else {
-                    continue;
-                };
+                let Some(value) = value else { continue };
 
                 for source_root in caller_scope.array_copy_source_roots(source) {
                     let mut source_keys = source.keys.clone();
@@ -44733,6 +44943,88 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    fn sync_reference_binding_array_copy_source_metadata(
+        &mut self,
+        reference_bindings: &[ReferenceBinding],
+        by_value_array_copy_source_bindings: &[(String, ArrayCopySource)],
+        local_scope: &SymbolTable,
+        caller_scope: &mut SymbolTable,
+    ) {
+        for binding in reference_bindings {
+            let has_imported_source = by_value_array_copy_source_bindings
+                .iter()
+                .any(|(param_name, _)| param_name == &binding.param_name)
+                || matches!(
+                    binding.target,
+                    ReferenceBindingTarget::CallerCellWithArrayCopySource { .. }
+                );
+            if !has_imported_source
+                || local_scope
+                    .public_object_property_array_copy_source_for_static(&binding.param_name)
+                    .is_some()
+            {
+                continue;
+            }
+
+            match &binding.target {
+                ReferenceBindingTarget::CallerCell { name, .. } => {
+                    caller_scope.remove_public_object_property_array_copy_source(name);
+                }
+                ReferenceBindingTarget::CallerCellWithArrayCopySource {
+                    object, property, ..
+                } => {
+                    caller_scope.remove_object_property_array_copy_source_paths(object, property);
+                }
+                ReferenceBindingTarget::ArrayOffset(_)
+                | ReferenceBindingTarget::ArrayOffsets(_) => {}
+            }
+        }
+    }
+
+    fn detach_reference_binding_array_copy_source_aliases(
+        &mut self,
+        reference_bindings: &[ReferenceBinding],
+        by_value_array_copy_source_bindings: &[(String, ArrayCopySource)],
+        local_scope: &SymbolTable,
+        caller_scope: &mut SymbolTable,
+    ) {
+        for binding in reference_bindings {
+            let has_imported_source = by_value_array_copy_source_bindings
+                .iter()
+                .any(|(param_name, _)| param_name == &binding.param_name)
+                || matches!(
+                    binding.target,
+                    ReferenceBindingTarget::CallerCellWithArrayCopySource { .. }
+                );
+            if !has_imported_source {
+                continue;
+            }
+
+            let detached_paths =
+                local_scope.detached_static_array_offset_values_for_root(&binding.param_name);
+            if detached_paths.is_empty() {
+                continue;
+            }
+
+            match &binding.target {
+                ReferenceBindingTarget::CallerCell { name, .. } => {
+                    caller_scope.detach_static_array_offset_alias_paths(name, &detached_paths);
+                }
+                ReferenceBindingTarget::CallerCellWithArrayCopySource {
+                    object, property, ..
+                } => {
+                    caller_scope.detach_object_property_array_offset_alias_paths(
+                        object,
+                        property,
+                        &detached_paths,
+                    );
+                }
+                ReferenceBindingTarget::ArrayOffset(_)
+                | ReferenceBindingTarget::ArrayOffsets(_) => {}
+            }
+        }
     }
 
     fn write_back_reference_parameter_object_aliases(
@@ -45382,6 +45674,12 @@ impl Interpreter {
                     if let Err(error) = result {
                         Err(error)
                     } else {
+                        self.detach_reference_binding_array_copy_source_aliases(
+                            &reference_bindings,
+                            &by_value_array_copy_source_bindings,
+                            &local_scope,
+                            reference_scope,
+                        );
                         let result = self.write_back_by_value_array_copy_aliases(
                             &by_value_array_copy_alias_writebacks,
                             &local_scope,
@@ -45399,6 +45697,12 @@ impl Interpreter {
                             result
                         };
                         if result.is_ok() {
+                            self.sync_reference_binding_array_copy_source_metadata(
+                                &reference_bindings,
+                                &by_value_array_copy_source_bindings,
+                                &local_scope,
+                                reference_scope,
+                            );
                             if let Some(this_object) = this_object_for_alias_transfer.as_ref() {
                                 reference_scope
                                     .sync_array_offset_aliases_for_object_value(this_object);

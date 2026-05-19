@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2025:
+The current in-progress implementation frontier is Lane 2030:
+
+- Lanes 2026 through 2030 preserve COW behavior for bounded sequential helper
+  bodies that first mutate a copied reference-backed leaf and then replace
+  that reference's parent before the copied bucket is returned. Covered bodies
+  include visible by-value `__get()`, public by-value
+  `ArrayAccess::offsetGet()`, visible local object-property containers,
+  dynamic local properties, `$this` instance-method helpers, and direct
+  closure helpers. Focused system-PHP coverage proves the earlier leaf write
+  updates the selected original backing reference while the later parent
+  replacement stays local to the returned copy. This is still not arbitrary
+  method-body support: arbitrary object graphs, side-effecting property names
+  or keys, `call_user_func*` callback containers, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 2021 through 2025 preserve COW behavior when those visible local
   object-property containers are passed by reference to a helper inside a
@@ -43,9 +57,8 @@ The current in-progress implementation frontier is Lane 2025:
   the selected original backing reference while ordinary nested arrays stay
   local to the returned copy. This is not arbitrary method-body support:
   arbitrary object graphs, side-effecting property names or keys,
-  sequential helper leaf-write plus parent replacement, `call_user_func*`
-  callback containers, whole-array reference identity, exact diagnostics, and
-  native reference lowering remain unsupported.
+  `call_user_func*` callback containers, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2016 through 2020 preserve copied-array COW provenance when
   supported by-value magic/`ArrayAccess` method bodies store a proven backed

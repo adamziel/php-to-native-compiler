@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T13:35:00+02:00
+
+- Checkpoint before this task: `eb1e9f36 runtime: write back
+  property-container byref COW helpers`, pushed to `origin/master`.
+- Task attempted: Lane 2026-C through Lane 2030-C bundle, preserving COW
+  behavior when a supported by-value magic/`ArrayAccess` method body calls a
+  bounded by-reference helper that first mutates a copied reference-backed leaf
+  and then replaces that reference's parent before returning the copied bucket.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2026/*`, `tests/fixtures/milestone2027/*`,
+  `tests/fixtures/milestone2028/*`, `tests/fixtures/milestone2029/*`,
+  `tests/fixtures/milestone2030/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q` passed; focused fixture snapshots and
+  system-PHP comparisons passed for `milestone2026` through `milestone2030`.
+- Remaining COW gaps: `call_user_func()` reference-warning/no-reference
+  semantics, `call_user_func_array()` by-reference callback containers,
+  arbitrary object graphs outside the local visible-property container slice,
+  side-effecting property names or keys, append expressions outside
+  by-reference call-argument positions, non-reference append-expression
+  values, dynamic `call_user_func_array()` containers not traceable to
+  current-scope local arrays, remaining scalar parent overwrite/error parity
+  outside covered roots, possible mixed `ArrayAccess` gaps in reference-return
+  or callback reference-argument paths, exact PHP diagnostics, whole-array
+  reference identity, native reference/string COW lowering, and native lowering
+  for these interpreter paths.
+- Next concrete task: run adjacent fixture and Rust regressions,
+  formatting/diff checks, and the full `tools/checkpoint.sh` bundle gate, then
+  push if it passes.
+
 ## Loop Event 2026-05-19T13:05:00+02:00
 
 - Checkpoint before this task: `661bdc75 runtime: preserve local object

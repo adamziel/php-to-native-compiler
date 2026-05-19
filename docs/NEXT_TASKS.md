@@ -20778,19 +20778,31 @@ handled.
   `ArrayAccess::offsetGet()`, dynamic local property names, `$this`
   instance-method helpers, and direct closure helpers with system-PHP
   comparisons. Keep arbitrary object graphs, side-effecting property names or
-  keys, sequential helper leaf-write plus parent replacement,
-  `call_user_func*` callback containers, whole-array reference identity, exact
-  diagnostics, and native reference lowering named as unsupported.
+  keys, `call_user_func*` callback containers, whole-array reference identity,
+  exact diagnostics, and native reference lowering named as unsupported.
+
+## Lane 2026-C through Lane 2030-C: Sequential Helper Leaf Then Parent Replacement
+
+- [x] Runtime/tests/docs bundle: preserve COW behavior when supported
+  by-value magic/`ArrayAccess` method bodies call a bounded by-reference
+  helper that first mutates a copied reference-backed leaf and then replaces
+  that reference's parent before returning the copied bucket. Cover visible
+  by-value `__get()`, public by-value `ArrayAccess::offsetGet()`, direct
+  local copied buckets, visible local object-property containers, dynamic
+  local property names, `$this` instance-method helpers, and direct closure
+  helpers with system-PHP comparisons. Keep arbitrary object graphs,
+  side-effecting property names or keys, `call_user_func*` callback
+  containers, whole-array reference identity, exact diagnostics, and native
+  reference lowering named as unsupported.
 
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
-- [ ] Probe sequential helper bodies that first mutate a copied reference leaf
-  and then replace that reference's parent, plus remaining scalar
-  parent-overwrite/error parity outside covered roots. Then probe whether any
-  covered mixed `ArrayAccess` bridge is still missing from reference-return or
-  callback reference-argument paths. Implement only bounded PHP-comparable
-  failures without claiming arbitrary side-effecting method bodies, full PHP
-  COW identity, or unsupported native lowering.
+- [ ] Probe remaining scalar parent-overwrite/error parity outside covered
+  roots, then probe whether any covered mixed `ArrayAccess` bridge is still
+  missing from reference-return or callback reference-argument paths. Implement
+  only bounded PHP-comparable failures without claiming arbitrary
+  side-effecting method bodies, full PHP COW identity, or unsupported native
+  lowering.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

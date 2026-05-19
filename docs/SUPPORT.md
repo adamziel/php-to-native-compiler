@@ -423,10 +423,9 @@
   returned copy.
   This is still bounded to visible local object-property containers with
   side-effect-free property/key recovery; arbitrary object graphs,
-  side-effecting property names or keys, sequential helper leaf-write plus
-  parent replacement, `call_user_func*` callback containers, whole-array
-  reference identity, exact diagnostics, and native reference lowering remain
-  unsupported.
+  side-effecting property names or keys, `call_user_func*` callback
+  containers, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
   These by-value magic/`ArrayAccess` bodies also preserve copied-array
   provenance when the proven bucket is passed through a by-reference
   parameter of a non-reference-return helper and then returned. Covered helper
@@ -441,12 +440,13 @@
   `$value["ref"]["value"] = "inside"` updates the original referenced backing
   slot, and the returned copy still keeps that selected reference-backed slot
   shared while ordinary nested arrays detach. Helper parent replacement is
-  bounded separately below. Sequential helper bodies that mutate a copied
-  reference leaf and later replace that reference's parent in the same helper,
-  broader helper/callback side effects, `call_user_func()` reference
-  warnings/no-reference semantics, `call_user_func_array()` by-reference
-  callback argument containers, whole-array reference identity, exact
-  diagnostics, and native reference lowering remain unsupported.
+  bounded separately below, including the sequential shape where the same
+  helper first mutates a copied reference leaf and then replaces that leaf's
+  parent before return. Broader helper/callback side effects,
+  `call_user_func()` reference warnings/no-reference semantics,
+  `call_user_func_array()` by-reference callback argument containers,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
   These bodies also preserve copied-array provenance through by-reference
   closure captures of a proven backed bucket. Covered forms include
   `use (&$bucket)` returned through direct closure invocation,
@@ -466,13 +466,17 @@
   `ArrayAccess::offsetGet()`, scalar overwrites such as
   `$bucket["ref"] = "inside"`, direct by-reference helper calls that replace
   the parent through the helper parameter, and by-reference closure captures
-  that replace the parent before returning the bucket. The replacement stays
-  local to the returned copy while the original referenced backing slot keeps
-  its previous value. This remains bounded to proven copied-bucket locals and
-  side-effect-free reached paths; arbitrary helper/callback side effects,
-  object/container provenance outside the documented local container slices,
-  whole-array reference identity, exact diagnostics, and native reference
-  lowering remain unsupported.
+  that replace the parent before returning the bucket. Sequential direct
+  helpers, visible local object-property helper arguments, dynamic local
+  property helper arguments, `$this` instance-method helpers, direct closure
+  helpers, and public by-value `ArrayAccess::offsetGet()` helper bodies may
+  first mutate the selected copied reference leaf and then replace that
+  parent: the leaf write updates the original backing reference, and the
+  replacement stays local to the returned copy. This remains bounded to proven
+  copied-bucket locals and side-effect-free reached paths; arbitrary
+  helper/callback side effects, object/container provenance outside the
+  documented local container slices, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
   Supported reference-return bodies may also delegate to non-static helpers
   through PHP's static call syntaxes when a compatible current `$this` object
   exists. Covered forms include `self::helper(...)`, `parent::helper(...)`,
