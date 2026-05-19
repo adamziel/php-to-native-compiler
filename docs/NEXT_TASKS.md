@@ -20210,6 +20210,19 @@ handled.
   diagnostic-stream parity, and native reference lowering named as
   unsupported.
 
+## Lane 1827-C through Lane 1829-C: By-Value Magic Get Reference Sources
+
+- [x] Runtime/tests/docs bundle: execute public by-value `__get()` bodies
+  that return plain arrays for covered direct and non-direct holder
+  magic-property array-offset reference sources, producing detached PHP
+  no-op aliases for selected and append paths. Reuse the combined
+  `ArrayAccess` binding path when by-value `__get()` returns a side-effecting
+  by-value outer `ArrayAccess` object that reaches a proven inner
+  by-reference bucket. Keep whole by-value magic-property reference roots,
+  arbitrary mixed chains, unsupported PHP syntax outside the interpreter
+  subset, exact diagnostic-stream parity, and native reference lowering named
+  as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

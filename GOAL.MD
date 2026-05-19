@@ -32,7 +32,18 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1826:
+The current in-progress implementation frontier is Lane 1829:
+
+- Lanes 1827 through 1829 add the magic-property counterpart to the
+  by-value `ArrayAccess` work. Public by-value `__get()` bodies that return
+  plain arrays now execute in covered direct and non-direct holder
+  array-offset reference sources, produce detached PHP no-op aliases, and do
+  not mutate the backing array. Public by-value `__get()` returning a
+  side-effecting by-value outer `ArrayAccess` object can also continue into a
+  proven inner by-reference `ArrayAccess` bucket. This still does not claim
+  whole by-value magic-property reference roots, arbitrary `__get()` bodies
+  outside the interpreter subset, arbitrary mixed chains, exact diagnostic
+  streams, or native reference lowering.
 
 - Lanes 1824 through 1826 execute side-effecting public by-value
   `ArrayAccess::offsetGet()` bodies in the covered reference-source and

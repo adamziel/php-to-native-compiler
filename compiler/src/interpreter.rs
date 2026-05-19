@@ -12767,11 +12767,11 @@ impl Interpreter {
                             let hidden_name =
                                 self.hidden_array_access_reference_object_name(&object);
                             scope.write_static(&hidden_name, Value::Object(object.clone()));
-                            if let Some(value) = self
-                                .evaluate_array_access_by_value_reference_source_value_for_object(
+                            if let Some(binding) = self
+                                .evaluate_array_access_reference_source_binding_for_object(
                                     object,
-                                    hidden_name.clone(),
-                                    array_access_keys.clone(),
+                                    hidden_name,
+                                    array_access_keys,
                                     if append_array_fallback {
                                         Some(Value::Null)
                                     } else {
@@ -12781,21 +12781,7 @@ impl Interpreter {
                                     scope,
                                 )?
                             {
-                                return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(
-                                    value,
-                                )));
-                            }
-                            if let Some((alias, _)) = self
-                                .evaluate_direct_array_access_reference_source_alias(
-                                    &hidden_name,
-                                    array_access_keys,
-                                    span,
-                                    scope,
-                                )?
-                            {
-                                return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(
-                                    alias,
-                                )));
+                                return Ok(Some(binding));
                             }
                             return Ok(None);
                         }
@@ -12841,41 +12827,69 @@ impl Interpreter {
                     Some(class_id),
                     Some(called_class_id),
                 )?;
-                let Value::Object(object) = value else {
-                    return Ok(None);
-                };
-                if !self
-                    .classes
-                    .implements_interface(object.class_id(), "ArrayAccess")
-                {
+                if let Value::Object(object) = value {
+                    if !self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess")
+                    {
+                        return Ok(None);
+                    }
+
+                    let hidden_name = self.hidden_array_access_reference_object_name(&object);
+                    scope.write_static(&hidden_name, Value::Object(object.clone()));
+                    if let Some(binding) = self
+                        .evaluate_array_access_reference_source_binding_for_object(
+                            object,
+                            hidden_name,
+                            array_access_keys,
+                            if append_array_fallback {
+                                Some(Value::Null)
+                            } else {
+                                None
+                            },
+                            span,
+                            scope,
+                        )?
+                    {
+                        return Ok(Some(binding));
+                    }
                     return Ok(None);
                 }
 
-                let hidden_name = self.hidden_array_access_reference_object_name(&object);
-                scope.write_static(&hidden_name, Value::Object(object.clone()));
-                if let Some(value) = self
-                    .evaluate_array_access_by_value_reference_source_value_for_object(
-                        object,
-                        hidden_name.clone(),
-                        array_access_keys.clone(),
-                        if append_array_fallback {
-                            Some(Value::Null)
-                        } else {
-                            None
-                        },
-                        span,
-                        scope,
-                    )?
-                {
-                    return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(value)));
+                if !allow_array_fallback {
+                    return Ok(None);
                 }
-                if let Some((alias, _)) = self.evaluate_direct_array_access_reference_source_alias(
-                    &hidden_name,
-                    array_access_keys,
+                self.emit_notice(
+                    "__get()",
+                    format!(
+                        "Indirect modification of overloaded property {class_name}::${property} has no effect"
+                    ),
                     span,
-                    scope,
-                )? {
-                    return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)));
+                )?;
+                match value {
+                    Value::Array(array) if !append_array_fallback => {
+                        let value = SymbolTable::read_nested_array_offset_alias(&array, &keys)
+                            .unwrap_or(Value::Null);
+                        return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(value)));
+                    }
+                    Value::Array(_) | Value::Null | Value::Bool(false) => {
+                        return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(
+                            Value::Null,
+                        )));
+                    }
+                    scalar @ (Value::Bool(true)
+                    | Value::Int(_)
+                    | Value::Float(_)
+                    | Value::String(_)) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::invalid_array_access(format!(
+                                "cannot read offset from {}",
+                                scalar.type_name()
+                            )),
+                        ));
+                    }
+                    _ => {}
                 }
                 Ok(None)
             }

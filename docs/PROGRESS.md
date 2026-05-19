@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 1827-C through Lane 1829-C for by-value magic `__get()` COW
+  reference-source parity. Covered direct and non-direct holder
+  magic-property array-offset reference sources now execute public by-value
+  `__get()` bodies that return plain arrays, then bind the assigned variable
+  to a detached no-op value while leaving the backing array unchanged.
+  By-value `__get()` returning a side-effecting by-value outer `ArrayAccess`
+  object can also continue into a proven inner by-reference `ArrayAccess`
+  bucket. This does not claim whole by-value magic-property reference roots,
+  arbitrary magic/`ArrayAccess` method bodies outside the interpreter subset,
+  arbitrary mixed chains, exact diagnostic-stream parity, or native reference
+  lowering. Focused verification: raw system PHP output matched the new
+  `milestone1827`, `milestone1828`, and `milestone1829` fixtures; `cargo run
+  -q -p phpc -- test --compare-php` passed each new directory plus adjacent
+  mixed magic/`ArrayAccess` milestones `1695` through `1699`, `1708`,
+  `1709`, `1722`, `1737`, `1738`, and `1824` through `1826`; focused
+  `functions_and_scopes` reference-assignment tests and `object_model`
+  `ArrayAccess` tests passed.
+
 - Added Lane 1824-C through Lane 1826-C for side-effecting by-value
   `ArrayAccess::offsetGet()` COW paths. Covered by-value `offsetGet()` bodies
   now execute before direct/property-held reference-source and nested mutation

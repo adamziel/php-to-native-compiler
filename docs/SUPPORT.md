@@ -231,7 +231,11 @@
   `$alias =& $object->missing[];` follow PHP's bounded
   indirect-modification notice/no-op behavior: the assigned variable receives
   a detached local value and later writes do not mutate the backing
-  `ArrayAccess` storage. Public by-value `offsetGet()` bodies on covered
+  `ArrayAccess` storage. Public by-value `__get()` bodies that return plain
+  arrays are also executed for covered direct and non-direct holder
+  magic-property array-offset reference sources, and the assigned variable
+  receives a detached selected value or detached append `null` while the
+  backing array stays unchanged. Public by-value `offsetGet()` bodies on covered
   direct and property-held `ArrayAccess` roots are executed before that
   detached/no-op result is produced, so method-local side effects such as
   `$this->hits[] = $offset` run. Append reference sources pass `null` to
@@ -243,8 +247,8 @@
   direct-variable reference assignment through the same temporary holder root.
   Mixed chains where a by-value outer `offsetGet()` returns an inner
   `ArrayAccess` object can continue into a public by-reference inner
-  `offsetGet()` for direct and property-held roots when the inner returned
-  bucket is otherwise covered.
+  `offsetGet()` for direct, property-held, and by-value magic `__get()`
+  provided roots when the inner returned bucket is otherwise covered.
   Public by-reference `ArrayAccess::offsetGet()` reference sources now execute
   supported top-level method-body statements before the return, so side
   effects, missing-bucket initialization, and local aliases can participate in

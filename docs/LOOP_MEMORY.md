@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T02:36:01+02:00
+
+- Checkpoint before this task: `68a30613 runtime: execute by-value
+  ArrayAccess bodies`, pushed to `origin/master`.
+- Task attempted: Lane 1827-C through Lane 1829-C bundle, executing public
+  by-value `__get()` plain-array bodies for covered magic-property
+  array-offset reference sources and carrying by-value magic-provided
+  `ArrayAccess` objects into proven inner by-reference buckets.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1827/*`, `tests/fixtures/milestone1828/*`,
+  `tests/fixtures/milestone1829/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new `milestone1827`,
+  `milestone1828`, and `milestone1829` fixtures; `cargo run -q -p phpc --
+  test --compare-php` passed each new fixture directory plus adjacent mixed
+  magic/`ArrayAccess` milestones `1695` through `1699`, `1708`, `1709`,
+  `1722`, `1737`, `1738`, and `1824` through `1826`; focused
+  `functions_and_scopes` reference-assignment tests and `object_model`
+  `ArrayAccess` tests passed; `cargo check -q -p phpc` passed.
+- Remaining COW gaps: whole by-value magic-property reference roots,
+  arbitrary mixed `ArrayAccess` chains, arbitrary magic/`ArrayAccess` method
+  bodies outside the supported interpreter subset, arbitrary callable arrays,
+  builtin callbacks as reference-return sources, full exception unwinding and
+  uncaught exception propagation, arbitrary Iterator side effects, broader
+  complex alias sinks and alias lifetime ordering, exact PHP stderr/fatal
+  text, binary/multibyte string offset behavior, and native reference/string
+  COW lowering.
+- Next concrete task: run adjacent regression checks, formatting, diff check,
+  and the full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T02:25:15+02:00
 
 - Checkpoint before this task: `66a6f3df parser: support static property
