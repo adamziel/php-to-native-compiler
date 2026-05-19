@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T08:40:42+02:00
+
+- Checkpoint before this task: `6a6cee9f runtime: preserve callback COW
+  provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1982-C through Lane 1985-C bundle, preserving
+  by-value closure-capture copied-array provenance inside magic/`ArrayAccess`
+  method bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1982/*`, `tests/fixtures/milestone1983/*`,
+  `tests/fixtures/milestone1984/*`, `tests/fixtures/milestone1985/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: a raw system-PHP probe exposed the by-value closure
+  capture COW failure, then matched after the patch. Focused system-PHP
+  comparisons passed for `milestone1982` through `milestone1985`; `cargo
+  check -q` passed.
+- Remaining COW gaps: by-reference closure captures, capture sources hidden
+  inside arbitrary array containers, dynamic `call_user_func_array()`
+  containers that cannot be traced to current-scope evaluated literals,
+  by-reference helper/callback parameters, parser support for append
+  expressions in by-reference argument position, remaining scalar parent
+  overwrite/error parity outside covered roots, possible mixed
+  `ArrayAccess` gaps in reference-return or callback reference-argument
+  paths, arbitrary PHP side effects and syntax outside the supported
+  interpreter subset, exact PHP diagnostics, whole-array reference identity,
+  native reference/string COW lowering, and native lowering for these
+  interpreter paths.
+- Next concrete task: run adjacent callback/method-body fixture comparisons,
+  formatting, diff, check, adjacent Rust regression tests, the full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T08:33:24+02:00
 
 - Checkpoint before this task: `e9f400de runtime: append through ArrayAccess
@@ -35,9 +66,10 @@ injects this file into every prompt. Each Codex pass should update it with:
   `milestone1801`, `milestone1945` through `milestone1958`, and
   `milestone1973` through `milestone1976`; `cargo check -q` passed.
 - Remaining COW gaps: dynamic `call_user_func_array()` containers that cannot
-  be traced to current-scope evaluated literals, closure capture provenance,
-  by-reference helper/callback parameters, parser support for append
-  expressions in by-reference argument position, remaining scalar parent
+  be traced to current-scope evaluated literals, closure capture provenance
+  outside the covered by-value local-copy captures, by-reference
+  helper/callback parameters, parser support for append expressions in
+  by-reference argument position, remaining scalar parent
   overwrite/error parity outside covered roots, possible mixed
   `ArrayAccess` gaps in reference-return or callback reference-argument
   paths, arbitrary PHP side effects and syntax outside the supported

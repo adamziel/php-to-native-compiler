@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1981:
+The current in-progress implementation frontier is Lane 1985:
+
+- Lanes 1982 through 1985 preserve by-value closure-capture provenance inside
+  magic/`ArrayAccess` method bodies. When a visible by-value `__get()` or
+  public by-value `ArrayAccess::offsetGet()` body assigns a proven backed
+  bucket to a local and captures that local with `use ($bucket)`, direct
+  closure invocation, `call_user_func($closure)`, and
+  `call_user_func_array($closure, $args)` can return the captured copy while
+  keeping selected reference-backed nested slots shared and ordinary nested
+  arrays detached. This is limited to by-value closure captures whose source
+  is proven at closure creation; by-reference captures, capture sources
+  hidden inside arbitrary array containers, arbitrary closure side effects,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
 
 - Lanes 1977 through 1981 broaden by-value magic/`ArrayAccess`
   method-body copied-array provenance through callback/helper bodies. Visible
@@ -45,10 +58,10 @@ The current in-progress implementation frontier is Lane 1981:
   system-PHP coverage proves the reference-backed nested slot stays shared
   while ordinary nested arrays detach. Dynamic `call_user_func_array()`
   containers that cannot be traced to a current-scope evaluated literal,
-  closure capture provenance, by-reference helper/callback parameters,
-  arbitrary side effects outside the supported interpreter subset,
-  whole-array reference identity, exact diagnostics, and native reference
-  lowering remain unsupported.
+  closure capture provenance outside the covered by-value local-copy captures,
+  by-reference helper/callback parameters, arbitrary side effects outside the
+  supported interpreter subset, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 1973 through 1976 broaden nested append reference sources below
   proven `ArrayAccess` backing buckets, including false-parent

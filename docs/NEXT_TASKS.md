@@ -20653,10 +20653,24 @@ handled.
   traced-local argument arrays, and public object array-callable helpers
   through `call_user_func()`/`call_user_func_array()` with system-PHP
   comparisons. Keep dynamic `call_user_func_array()` containers that cannot
-  be traced to a current-scope evaluated literal, closure capture provenance,
-  by-reference helper/callback parameters, arbitrary side effects outside the
-  supported interpreter subset, whole-array reference identity, exact
+  be traced to a current-scope evaluated literal, closure capture provenance
+  outside the covered by-value local-copy captures, by-reference
+  helper/callback parameters, arbitrary side effects outside the supported
+  interpreter subset, whole-array reference identity, exact
   diagnostics, and native reference lowering named as unsupported.
+
+## Lane 1982-C through Lane 1985-C: Closure Capture Copy Provenance
+
+- [x] Runtime/tests/docs bundle: preserve copied-array COW provenance through
+  by-value closure captures inside magic/`ArrayAccess` method bodies. Cover
+  visible by-value `__get()` and public by-value `ArrayAccess::offsetGet()`
+  bodies that assign a proven backed bucket to a local, capture it with
+  `use ($bucket)`, then return it through direct closure invocation,
+  `call_user_func($closure)`, or `call_user_func_array($closure, $args)` with
+  system-PHP comparisons. Keep by-reference captures, capture sources hidden
+  inside arbitrary array containers, arbitrary closure side effects,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering named as unsupported.
 
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 

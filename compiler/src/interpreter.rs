@@ -149,6 +149,7 @@ struct Interpreter {
     closure_functions: HashMap<i64, Rc<FunctionDecl>>,
     closure_values: HashMap<i64, PhpClosure>,
     closure_alias_captures: HashMap<i64, Vec<ClosureAliasCapture>>,
+    closure_array_copy_source_captures: HashMap<i64, Vec<(String, ArrayCopySource)>>,
     reflection_methods: HashMap<i64, ReflectionMethodState>,
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
@@ -4919,6 +4920,11 @@ enum PreboundLocal {
         name: String,
         value: Value,
     },
+    ValueWithArrayCopySource {
+        name: String,
+        value: Value,
+        source: ArrayCopySource,
+    },
     Cell {
         name: String,
         cell: VariableCell,
@@ -5293,6 +5299,7 @@ impl Interpreter {
             closure_functions: HashMap::new(),
             closure_values: HashMap::new(),
             closure_alias_captures: HashMap::new(),
+            closure_array_copy_source_captures: HashMap::new(),
             reflection_methods: HashMap::new(),
             reflection_parameters: HashMap::new(),
             reflection_properties: HashMap::new(),
@@ -30407,9 +30414,19 @@ impl Interpreter {
                         cell: capture.cell(),
                     }
                 } else {
+                    let value = capture.value();
+                    if let Some(source) =
+                        self.closure_array_copy_source_capture(closure, capture.name())
+                    {
+                        return PreboundLocal::ValueWithArrayCopySource {
+                            name: capture.name().to_string(),
+                            value,
+                            source,
+                        };
+                    }
                     PreboundLocal::Value {
                         name: capture.name().to_string(),
-                        value: capture.value(),
+                        value,
                     }
                 }
             })
@@ -30426,6 +30443,19 @@ impl Interpreter {
             );
         }
         locals
+    }
+
+    fn closure_array_copy_source_capture(
+        &self,
+        closure: &PhpClosure,
+        name: &str,
+    ) -> Option<ArrayCopySource> {
+        self.closure_array_copy_source_captures
+            .get(&closure.id())?
+            .iter()
+            .rev()
+            .find(|(candidate, _)| candidate == name)
+            .map(|(_, source)| source.clone())
     }
 
     fn invoke_reflection_method(
@@ -33644,6 +33674,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let mut captured_values = Vec::with_capacity(captures.len());
         let mut alias_captures = Vec::new();
+        let mut array_copy_source_captures = Vec::new();
         for capture in captures {
             if capture.by_reference {
                 if let Some(aliases) = scope.array_offset_aliases_for_name(&capture.name) {
@@ -33670,6 +33701,13 @@ impl Interpreter {
                 ));
             } else {
                 let value = scope.read_static(&capture.name, capture.span)?;
+                if let Some(source) = Self::array_copy_source_for_by_value_closure_capture(
+                    &capture.name,
+                    &value,
+                    scope,
+                ) {
+                    array_copy_source_captures.push((capture.name.clone(), source));
+                }
                 captured_values.push(PhpClosureCapture::new(capture.name.clone(), false, value));
             }
         }
@@ -33707,7 +33745,37 @@ impl Interpreter {
         if !alias_captures.is_empty() {
             self.closure_alias_captures.insert(id, alias_captures);
         }
+        if !array_copy_source_captures.is_empty() {
+            self.closure_array_copy_source_captures
+                .insert(id, array_copy_source_captures);
+        }
         Ok(Value::Closure(closure))
+    }
+
+    fn array_copy_source_for_by_value_closure_capture(
+        name: &str,
+        value: &Value,
+        scope: &SymbolTable,
+    ) -> Option<ArrayCopySource> {
+        if !matches!(value, Value::Array(_)) {
+            return None;
+        }
+
+        scope
+            .public_object_property_array_copy_source_for_static(name)
+            .or_else(|| {
+                (scope.global_symbols.is_some()
+                    && (scope.imported_globals.contains(name) || is_auto_global_name(name)))
+                .then(|| {
+                    ArrayCopySource::alias_path(
+                        ArrayOffsetAliasRoot::GlobalArray {
+                            name: name.to_string(),
+                        },
+                        Vec::new(),
+                        true,
+                    )
+                })
+            })
     }
 
     fn call_function(
@@ -35460,6 +35528,19 @@ impl Interpreter {
             ));
         }
         let function = function.as_ref();
+        if function.returns_by_reference
+            || !Self::function_accepts_source_aware_by_value_arguments(function)
+        {
+            return self
+                .invoke_closure_value_from_call_user_func_array(
+                    closure,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                )
+                .map(|value| (value, None));
+        }
+        let prebound_locals = self.closure_prebound_locals(&closure);
         if let Some(result) = self
             .call_source_aware_user_function_with_call_user_func_array_argument(
                 function,
@@ -35469,19 +35550,30 @@ impl Interpreter {
                 None,
                 None,
                 None,
-                self.closure_prebound_locals(&closure),
+                prebound_locals.clone(),
             )?
         {
             return Ok(result);
         }
 
-        self.invoke_closure_value_from_call_user_func_array(
-            closure,
+        let (values, reference_bindings) = self.evaluate_call_user_func_array_checked_arguments(
+            function,
             argument_expr,
             span,
             caller_scope,
+        )?;
+        self.ensure_user_function_call_depth(function, span)?;
+        self.call_user_function_with_checked_values_and_locals_with_array_copy_source(
+            function,
+            values,
+            None,
+            None,
+            None,
+            reference_bindings,
+            Some(caller_scope),
+            prebound_locals,
+            Vec::new(),
         )
-        .map(|value| (value, None))
     }
 
     fn evaluate_call_user_func_array_arguments(
@@ -40983,6 +41075,15 @@ impl Interpreter {
         for local in prebound_locals {
             match local {
                 PreboundLocal::Value { name, value } => local_scope.write_static(&name, value),
+                PreboundLocal::ValueWithArrayCopySource {
+                    name,
+                    value,
+                    source,
+                } => {
+                    local_scope.write_static(&name, value);
+                    local_scope.mirror_array_copy_source_aliases_from_copy(&name, &source);
+                    local_scope.record_public_object_property_array_copy_source(&name, source);
+                }
                 PreboundLocal::Cell { name, cell } => local_scope.bind_static_to_cell(&name, cell),
                 PreboundLocal::ArrayOffsets {
                     name,
@@ -43988,6 +44089,15 @@ impl Interpreter {
         for local in prebound_locals {
             match local {
                 PreboundLocal::Value { name, value } => local_scope.write_static(&name, value),
+                PreboundLocal::ValueWithArrayCopySource {
+                    name,
+                    value,
+                    source,
+                } => {
+                    local_scope.write_static(&name, value);
+                    local_scope.mirror_array_copy_source_aliases_from_copy(&name, &source);
+                    local_scope.record_public_object_property_array_copy_source(&name, source);
+                }
                 PreboundLocal::Cell { name, cell } => local_scope.bind_static_to_cell(&name, cell),
                 PreboundLocal::ArrayOffsets {
                     name,

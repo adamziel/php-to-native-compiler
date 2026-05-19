@@ -897,11 +897,18 @@
   closure callbacks reached through literal or traced-local
   `call_user_func_array()` argument arrays, and public object array-callable
   helpers reached through `call_user_func()` or `call_user_func_array()`.
+  By-value closure captures can also carry this provenance when closure
+  creation can see the captured local is a proven copied backed bucket:
+  `$bucket = $this->store[$name]; $helper = function() use ($bucket) { return $bucket; };`
+  preserves selected reference-backed nested slots when invoked directly,
+  through `call_user_func($helper)`, or through
+  `call_user_func_array($helper, $args)`.
   Dynamic/stored `call_user_func_array()` argument containers that cannot be
-  traced to a current-scope evaluated literal, closure capture provenance,
-  by-reference helper/callback parameters, and array callbacks outside the
-  covered public object-method forms do not yet preserve method-return
-  provenance through this helper-call path.
+  traced to a current-scope evaluated literal, closure capture provenance
+  outside the covered by-value local-copy captures, by-reference
+  helper/callback parameters, and array callbacks outside the covered public
+  object-method forms do not yet preserve method-return provenance through
+  this helper-call path.
   When those proven copied arrays are supplied by value to user functions or
   instance methods, their covered reference-backed elements are preserved in
   the callee's local parameter array. The same bounded preservation applies
