@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2115/dynamic_property_arrayaccess_unset_side_effects.php
+stdout:
+still|plain-gone|unset:slot|unset
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

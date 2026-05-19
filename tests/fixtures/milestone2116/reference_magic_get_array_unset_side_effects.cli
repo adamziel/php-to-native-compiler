@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2116/reference_magic_get_array_unset_side_effects.php
+stdout:
+still|plain-gone|get:slot|get
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

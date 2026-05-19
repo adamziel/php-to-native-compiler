@@ -21007,20 +21007,32 @@ handled.
   side effects, dynamic property-held `ArrayAccess::offsetExists()`, and
   dynamic property-held `ArrayAccess::offsetExists()` plus `offsetGet()` for
   `empty`, all with system-PHP comparisons and CLI snapshots. Keep unsupported
-  PHP syntax, magic array-offset `isset`/`empty` fallback, dynamic
-  `ArrayAccess` unset offsets, container unsets that hold live reference
-  leaves, full PHP COW identity, exact diagnostics, and native lowering named
-  as unsupported.
+  PHP syntax, broader non-direct dynamic containers, container unsets that
+  hold live reference leaves, full PHP COW identity, exact diagnostics, and
+  native lowering named as unsupported.
+
+## Lane 2112-C through Lane 2116-C: Magic Offset Observation/Unset Bodies
+
+- [x] Runtime/tests/docs bundle: execute covered magic array-offset
+  observation and unset method bodies instead of treating missing magic
+  property offsets as absent values. Cover named magic offset `isset`,
+  dynamic magic offset `empty`, magic `__get()` returning an `ArrayAccess`
+  object for `empty` and `unset`, dynamic property-held `ArrayAccess`
+  `offsetUnset()`, and by-reference magic `__get()` array-offset unset, all
+  with system-PHP comparisons and CLI snapshots. Keep unsupported PHP syntax,
+  non-direct dynamic containers, multi-key `ArrayAccess` unset/observation
+  chains, whole-container unsets with live reference leaves, full PHP COW
+  identity, exact diagnostics, and native lowering named as unsupported.
 
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Continue the arbitrary-method-body push in the remaining paths that
   still depend on exact static bridge metadata: future-path metadata recovery
   after supported but non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies,
-  magic array-offset `isset`/`empty` fallback, dynamic `ArrayAccess` unset
-  offsets, untracked dynamic containers, deeper mixed chains not covered by
-  executable fixtures, container unsets that hold live reference leaves, and
-  dynamic callback containers still outside the current tests. Keep
+  untracked dynamic containers, deeper mixed chains not covered by executable
+  fixtures, multi-key/non-direct `ArrayAccess` observation and unset chains,
+  container unsets that hold live reference leaves, and dynamic callback
+  containers still outside the current tests. Keep
   unsupported PHP syntax, full PHP COW identity, exact PHP fatal objects/text,
   and native lowering named as unsupported until executable coverage proves
   them.

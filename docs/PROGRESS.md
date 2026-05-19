@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Lane 2112-C through Lane 2116-C for covered magic array-offset
+  observation and unset method bodies. Missing named and dynamic
+  magic-property array-offset `isset`/`empty` forms now call visible
+  `__isset()` when present and then `__get()` when PHP would inspect the
+  returned value. Returned arrays are inspected as detached values, and
+  returned `ArrayAccess` objects dispatch `offsetExists()`/`offsetGet()` for
+  the covered one-key observation shape. Dynamic visible properties that hold
+  `ArrayAccess` objects now parse and execute `unset($holder->$name[$key])`
+  through `offsetUnset()`, and missing magic properties whose `__get()`
+  returns an `ArrayAccess` object or a by-reference array can execute covered
+  one-key unsets. Focused system-PHP coverage proves named and dynamic magic
+  offset observation, magic-returned `ArrayAccess` observation/unset, dynamic
+  property-held `ArrayAccess` unset, and by-reference magic array-offset
+  unset with reference-backed side effects. This remains bounded to supported
+  interpreter syntax, direct named/dynamic property roots, and one-key
+  `ArrayAccess` shapes; untracked containers, deeper mixed chains,
+  whole-container unsets with live reference leaves, full COW identity, exact
+  diagnostics, and native reference lowering remain unsupported.
+
 - Added Lane 2107-C through Lane 2111-C for dynamic-property magic and
   property-held `ArrayAccess` observation method bodies. Dynamic
   `isset($object->$name)` now calls visible `__isset()`, dynamic
@@ -14,10 +33,10 @@ Implemented:
   `offsetExists()` and `empty(...)` through `offsetExists()` plus
   `offsetGet()`. Focused system-PHP coverage proves side effects inside those
   supported bodies mutate reference-backed leaves. This remains bounded to
-  supported interpreter syntax and direct dynamic-property-name forms; magic
-  array-offset `isset`/`empty` fallback, dynamic `ArrayAccess` unset offsets,
-  container unsets that hold live reference leaves, full COW identity, exact
-  diagnostics, and native reference lowering remain unsupported.
+  supported interpreter syntax and direct dynamic-property-name forms;
+  broader non-direct dynamic containers, container unsets that hold live
+  reference leaves, full COW identity, exact diagnostics, and native
+  reference lowering remain unsupported.
 
 - Added Lane 2104-C through Lane 2106-C for dynamic-property magic `__set()`
   COW value cells. Dynamic property assignment now tries visible

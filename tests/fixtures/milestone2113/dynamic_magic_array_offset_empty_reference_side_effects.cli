@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2113/dynamic_magic_array_offset_empty_reference_side_effects.php
+stdout:
+filled|isset:slot,get:slot|get|plain-original
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

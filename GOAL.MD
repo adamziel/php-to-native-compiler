@@ -32,7 +32,26 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2111:
+The current in-progress implementation frontier is Lane 2116:
+
+- Lanes 2112 through 2116 execute covered magic array-offset observation and
+  unset method bodies. Missing named and dynamic magic-property array-offset
+  `isset`/`empty` forms now call `__isset()` when present, then `__get()` when
+  PHP would inspect the returned value; returned arrays are inspected as
+  detached values, and returned `ArrayAccess` objects call `offsetExists()`
+  and `offsetGet()` for the covered one-key shape. Dynamic visible properties
+  that hold an `ArrayAccess` object can now dispatch `unset($holder->$name[$key])`
+  to `offsetUnset()`, and missing magic properties whose visible `__get()`
+  returns an `ArrayAccess` object or a by-reference array can dispatch covered
+  one-key unsets while preserving reference-backed side effects. Focused
+  system-PHP coverage proves named and dynamic magic offset observation,
+  magic-returned `ArrayAccess` observation/unset, dynamic property-held
+  `ArrayAccess` unset, and by-reference magic array-offset unset. This remains
+  bounded to supported interpreter syntax, direct named/dynamic property
+  roots, and one-key `ArrayAccess` unset/observation shapes; untracked
+  containers, deeper mixed chains, whole-container unsets with live reference
+  leaves, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
 
 - Lanes 2107 through 2111 execute the remaining covered dynamic-property
   observation magic and property-held `ArrayAccess` methods. Dynamic
@@ -44,11 +63,10 @@ The current in-progress implementation frontier is Lane 2111:
   `offsetExists()` plus `offsetGet()` for `empty`. Focused system-PHP
   coverage proves these supported method bodies execute side effects that
   mutate reference-backed leaves. This remains bounded to supported
-  interpreter syntax and direct dynamic-property-name forms; magic
-  array-offset `isset`/`empty` fallback, dynamic `ArrayAccess` unset offsets,
-  container unsets that hold live reference leaves, whole-array reference
-  identity, exact diagnostics, and native reference lowering remain
-  unsupported.
+  interpreter syntax and direct dynamic-property-name forms; broader
+  non-direct dynamic containers, container unsets that hold live reference
+  leaves, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
 
 - Lanes 2104 through 2106 route dynamic property assignment through visible
   `__set()` before falling back to dynamic public-property creation, matching

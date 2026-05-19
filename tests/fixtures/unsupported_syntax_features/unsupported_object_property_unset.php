@@ -5,4 +5,4 @@ class Box {
 
 $box = new Box();
 $name = "name";
-unset($box->$name["x"]);
+unset($box->$name["x"]->child);

@@ -523,6 +523,12 @@ pub enum UnsetTarget {
         indices: Vec<Expr>,
         span: Span,
     },
+    DynamicObjectPropertyArrayIndex {
+        object: String,
+        property: Expr,
+        indices: Vec<Expr>,
+        span: Span,
+    },
     ObjectProperty {
         object: String,
         property: String,

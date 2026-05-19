@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2112/magic_array_offset_isset_reference_side_effects.php
+stdout:
+yes|isset:slot,get:slot|get|plain-original
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

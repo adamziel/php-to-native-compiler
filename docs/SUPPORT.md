@@ -5264,10 +5264,19 @@
   leaves under object-property arrays. Dynamic properties that visibly hold an
   `ArrayAccess` object are also covered for `isset($holder->$property[$key])`
   and `empty($holder->$property[$key])`, routing through `offsetExists()` and
-  `offsetGet()` as PHP does. Magic fallback for missing dynamic
-  property-array offsets, dynamic `ArrayAccess` offset unset forms, unsetting
-  whole containers that hold live reference leaves, exact diagnostics, and
-  native lowering remain unsupported.
+  `offsetGet()` as PHP does. Missing named and dynamic magic-property
+  array-offset `isset`/`empty` forms now call `__isset()` when present and
+  then `__get()` when PHP would inspect the returned value. Returned arrays
+  are inspected as detached values, and returned `ArrayAccess` objects route
+  the covered one-key shape through `offsetExists()`/`offsetGet()`. Dynamic
+  visible properties that hold an `ArrayAccess` object also support
+  `unset($holder->$property[$key])` through `offsetUnset()`. Missing magic
+  properties whose visible `__get()` returns an `ArrayAccess` object or a
+  by-reference array can execute covered one-key unsets, preserving
+  reference-backed side effects. Non-direct dynamic containers, multi-key
+  `ArrayAccess` unset/observation chains, unsetting whole containers that
+  hold live reference leaves, exact diagnostics, and native lowering remain
+  unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

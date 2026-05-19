@@ -275,7 +275,11 @@ fn is_static_member_assign_target(target: &AssignTarget) -> bool {
 }
 
 fn is_object_property_array_access_unset_target(target: &UnsetTarget) -> bool {
-    matches!(target, UnsetTarget::ObjectPropertyArrayIndex { .. })
+    matches!(
+        target,
+        UnsetTarget::ObjectPropertyArrayIndex { .. }
+            | UnsetTarget::DynamicObjectPropertyArrayIndex { .. }
+    )
 }
 
 fn is_array_access_offset_expr(expr: &Expr) -> bool {

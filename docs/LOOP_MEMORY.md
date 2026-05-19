@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T15:41:45+02:00
+
+- Checkpoint before this task: `b9d5170b runtime: execute dynamic magic
+  observation bodies`, pushed to `origin/master`.
+- Task attempted: Lane 2112-C through Lane 2116-C bundle, executing covered
+  magic array-offset `isset`/`empty` fallback bodies and covered
+  `ArrayAccess`/by-reference magic array-offset unset bodies.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/codegen.rs`, `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2112/*`, `tests/fixtures/milestone2113/*`,
+  `tests/fixtures/milestone2114/*`, `tests/fixtures/milestone2115/*`,
+  `tests/fixtures/milestone2116/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2112` through `milestone2116`; adjacent comparisons passed for
+  `milestone2107` through `milestone2116` and `milestone2086` through
+  `milestone2116`; broad COW fixture runs passed for `milestone1880` through
+  `milestone2116`; focused Rust suites passed for `object_model`, `empty`,
+  `array_isset`, `array_unset`, `dynamic_features`, and the
+  `syntax_boundaries` unsupported-unset filter.
+- Remaining COW gaps: future-path metadata recovery after supported but
+  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies, untracked dynamic
+  containers, deeper mixed chains and dynamic callback containers not covered
+  by fixtures, multi-key/non-direct `ArrayAccess` observation and unset
+  chains, whole-container unsets with live reference leaves, whole-array
+  reference identity, exact PHP diagnostics/Throwable objects, and native
+  reference/string COW lowering.
+- Next concrete task: run formatting/check/diff gates, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T15:32:37+02:00
 
 - Checkpoint before this task: `dc64e03c runtime: route dynamic magic set COW

@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2114/magic_arrayaccess_observation_and_unset_side_effects.php
+stdout:
+filled|still|plain-gone|isset:missing,get:missing,get:missing|exists:slot,get:slot,unset:slot|unset
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

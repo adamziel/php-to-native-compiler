@@ -10704,6 +10704,14 @@ impl Interpreter {
             } => self.execute_unset_object_property_nested_array_index(
                 object, property, indices, span, scope,
             ),
+            UnsetTarget::DynamicObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } => self.execute_unset_dynamic_object_property_nested_array_index(
+                object, property, indices, span, scope,
+            ),
             UnsetTarget::StaticProperty {
                 class_name,
                 property,
@@ -10771,6 +10779,24 @@ impl Interpreter {
     ) -> CompileResult<()> {
         let property_name = self.evaluate_dynamic_property_name(property, span, scope)?;
         self.execute_unset_object_property(object_name, &property_name, span, scope, true)
+    }
+
+    fn execute_unset_dynamic_object_property_nested_array_index(
+        &mut self,
+        object_name: &str,
+        property: &Expr,
+        indices: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let property_name = self.evaluate_dynamic_property_name(property, span, scope)?;
+        self.execute_unset_object_property_nested_array_index(
+            object_name,
+            &property_name,
+            indices,
+            span,
+            scope,
+        )
     }
 
     fn execute_unset_array_index(
@@ -10930,7 +10956,7 @@ impl Interpreter {
             .read_property_for_isset_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(span, error))?
         else {
-            return Ok(());
+            return self.execute_unset_magic_get_array_index(object, property, &keys, span, scope);
         };
 
         match &mut slot {
@@ -10980,6 +11006,131 @@ impl Interpreter {
             }
             Value::Null => Ok(()),
             other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot unset offset on {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn execute_unset_magic_get_array_index(
+        &mut self,
+        object: PhpObject,
+        property: &str,
+        keys: &[ArrayKey],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__get")
+        else {
+            return Ok(());
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__get()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, "__get", visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            let Some(cell) = self.call_magic_get_reference_return_cell(object, property, span)?
+            else {
+                return Ok(());
+            };
+            match cell.value_cloned() {
+                Value::Object(object)
+                    if keys.len() == 1
+                        && self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    self.call_array_access_method(
+                        object,
+                        "offsetUnset",
+                        vec![Self::array_key_value(Some(keys[0].clone()))],
+                        span,
+                    )?;
+                    Ok(())
+                }
+                Value::Array(_) | Value::Null => {
+                    let temp_name = self.next_foreach_temporary_array_name();
+                    scope.bind_static_to_cell(&temp_name, cell);
+                    self.execute_unset_static_array_keys(&temp_name, keys, span, scope)
+                }
+                _ => Ok(()),
+            }
+        } else {
+            ensure_supported_function_signature(function, 1, span)?;
+            let called_class_id = object.class_id();
+            let value = self.call_user_function_with_this(
+                function,
+                object,
+                vec![Value::String(property.to_string())],
+                Some(class_id),
+                Some(called_class_id),
+            )?;
+            match value {
+                Value::Object(object)
+                    if keys.len() == 1
+                        && self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    self.call_array_access_method(
+                        object,
+                        "offsetUnset",
+                        vec![Self::array_key_value(Some(keys[0].clone()))],
+                        span,
+                    )?;
+                    Ok(())
+                }
+                Value::Array(_) => {
+                    self.emit_notice(
+                        "__get()",
+                        format!(
+                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
+                        ),
+                        span,
+                    )?;
+                    Ok(())
+                }
+                _ => Ok(()),
+            }
+        }
+    }
+
+    fn execute_unset_static_array_keys(
+        &mut self,
+        name: &str,
+        keys: &[ArrayKey],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        match scope.read_named(name) {
+            Some(Value::Array(mut array)) => {
+                let unset_paths = scope.unset_paths_for_array_root(name, keys);
+                scope.detach_array_offset_aliases_for_unset_paths(&unset_paths);
+                Self::unset_nested_array_value(&mut array, keys, span)?;
+                scope.write_static(name, Value::Array(array));
+                Ok(())
+            }
+            Some(Value::Null) | None => Ok(()),
+            Some(other) => Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access(format!(
                     "cannot unset offset on {}",
@@ -55157,7 +55308,54 @@ impl Interpreter {
                 self.array_access_offset_exists(object, keys[0].clone(), target.span())
             }
             Some(value) => Ok(Self::array_path_isset(&value, &keys)),
-            None => Ok(false),
+            None => self.is_magic_object_property_array_path_set(
+                object,
+                &property,
+                &keys,
+                target.span(),
+                caller_scope,
+            ),
+        }
+    }
+
+    fn is_magic_object_property_array_path_set(
+        &mut self,
+        object: PhpObject,
+        property: &str,
+        keys: &[ArrayKey],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        if let Some(isset_value) =
+            self.call_magic_property_method(object.clone(), "__isset", property, span)?
+        {
+            if !isset_value.is_truthy() {
+                return Ok(false);
+            }
+        }
+
+        let Some(value) = self
+            .call_magic_get_property_value_with_array_copy_source(
+                object,
+                property,
+                span,
+                caller_scope,
+            )?
+            .map(|(value, _)| value)
+        else {
+            return Ok(false);
+        };
+
+        match value {
+            Value::Object(object)
+                if keys.len() == 1
+                    && self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                self.array_access_offset_exists(object, keys[0].clone(), span)
+            }
+            value => Ok(Self::array_path_isset(&value, keys)),
         }
     }
 
@@ -55622,7 +55820,54 @@ impl Interpreter {
                 self.is_array_access_offset_empty(object, keys[0].clone(), target.span())
             }
             Some(value) => Ok(Self::array_path_empty(&value, &keys)),
-            None => Ok(true),
+            None => self.is_magic_object_property_array_path_empty(
+                object,
+                &property,
+                &keys,
+                target.span(),
+                caller_scope,
+            ),
+        }
+    }
+
+    fn is_magic_object_property_array_path_empty(
+        &mut self,
+        object: PhpObject,
+        property: &str,
+        keys: &[ArrayKey],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        if let Some(isset_value) =
+            self.call_magic_property_method(object.clone(), "__isset", property, span)?
+        {
+            if !isset_value.is_truthy() {
+                return Ok(true);
+            }
+        }
+
+        let Some(value) = self
+            .call_magic_get_property_value_with_array_copy_source(
+                object,
+                property,
+                span,
+                caller_scope,
+            )?
+            .map(|(value, _)| value)
+        else {
+            return Ok(true);
+        };
+
+        match value {
+            Value::Object(object)
+                if keys.len() == 1
+                    && self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                self.is_array_access_offset_empty(object, keys[0].clone(), span)
+            }
+            value => Ok(Self::array_path_empty(&value, keys)),
         }
     }
 
