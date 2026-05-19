@@ -20404,6 +20404,19 @@ handled.
   unwinding, whole-array reference identity, exact diagnostics, and native
   reference lowering named as unsupported.
 
+## Lane 1890-C through Lane 1894-C: Executed Magic/ArrayAccess Body Copy Provenance
+
+- [x] Runtime/tests/docs bundle: carry by-value copied-array COW provenance
+  through executed public by-value `ArrayAccess::offsetGet()` and visible
+  by-value `__get()` method bodies in the supported interpreter subset. Cover
+  supported control flow, tracked locals, helper method calls, property and
+  dynamic-property reads, nested method-call targets, magic-property indexed
+  reads, and a mixed magic-provided `ArrayAccess` chain with system-PHP
+  comparisons. Keep unsupported syntax/builtins, arbitrary callback/builtin
+  reference returns, recursive `$GLOBALS` materialization, thrown exception
+  unwinding, whole-array reference identity, exact diagnostics, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

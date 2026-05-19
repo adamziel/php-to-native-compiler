@@ -776,12 +776,22 @@
   backed object-property array bucket, including direct `$this[$group]`,
   property-held `$this->bag[$group]`, dynamic property-held roots,
   expression-root object results such as `$this->make()[$group]`, and
-  by-value magic `__get()` roots returning the `ArrayAccess` object.
-  Arbitrary returned expressions, arbitrary `offsetGet()` result expressions,
-  untracked temporary construction, thrown exception unwinding, whole-array
-  reference identity in returned values, and arbitrary side-effecting
-  copied-key expressions remain unsupported for this by-value method-return
-  provenance path. When a declared
+  by-value magic `__get()` roots returning the `ArrayAccess` object. The
+  same executed-body provenance path now covers public by-value
+  `ArrayAccess::offsetGet()` and visible by-value `__get()` bodies whose
+  reached return value is a backed object-property array copy through the
+  supported interpreter subset: control flow, tracked locals, helper method
+  calls, direct property reads, dynamic property reads, and nested
+  method-call targets such as `$this->bucket($offset)["group"]`. Existing
+  simple direct-return `offsetGet()`/`__get()` shapes keep their prior bounded
+  bridge and no-effect controls. Mixed magic-provided `ArrayAccess` chains
+  are covered when the reached
+  `offsetGet()` body can prove the backing object-property array bucket.
+  Unsupported syntax/builtins, arbitrary callback or builtin reference-return
+  sources, recursive `$GLOBALS` materialization, thrown exception unwinding,
+  whole-array reference identity in returned values, and arbitrary
+  side-effecting copied-key expressions remain unsupported for this
+  by-value method-return provenance path. When a declared
   public object property array with a covered direct object-property
   array-offset reference target is copied into a direct static variable, the
   copied slot also joins the same bounded alias group: writes through the

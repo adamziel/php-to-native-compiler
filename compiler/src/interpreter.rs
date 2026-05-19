@@ -29,7 +29,7 @@ use crate::ast::{
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
 
-pub const MAX_USER_FUNCTION_CALL_DEPTH: usize = 128;
+pub const MAX_USER_FUNCTION_CALL_DEPTH: usize = 64;
 const SESSION_NOCACHE_HEADERS: [&str; 3] = [
     "Expires: Thu, 19 Nov 1981 08:52:00 GMT",
     "Cache-Control: no-store, no-cache, must-revalidate",
@@ -6773,6 +6773,41 @@ impl Interpreter {
         Ok((Flow::Normal, None))
     }
 
+    fn evaluate_value_with_array_copy_source(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+        match expr {
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => self.evaluate_array_index_with_array_copy_source(target, index, *span, scope),
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => self.evaluate_property_read_with_array_copy_source(target, property, *span, scope),
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => self.evaluate_dynamic_property_read_with_array_copy_source(
+                target, property, *span, scope,
+            ),
+            Expr::MethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => {
+                self.call_instance_method_with_array_copy_source(target, method, args, *span, scope)
+            }
+            _ => Ok((self.evaluate(expr, scope)?, None)),
+        }
+    }
+
     fn return_flow_with_array_copy_source(
         &mut self,
         value: Option<&Expr>,
@@ -6787,6 +6822,27 @@ impl Interpreter {
                 index,
                 span,
             } => self.evaluate_array_index_with_array_copy_source(target, index, *span, scope)?,
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => {
+                self.evaluate_property_read_with_array_copy_source(target, property, *span, scope)?
+            }
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => self.evaluate_dynamic_property_read_with_array_copy_source(
+                target, property, *span, scope,
+            )?,
+            Expr::MethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => self
+                .call_instance_method_with_array_copy_source(target, method, args, *span, scope)?,
             _ => (self.evaluate(expr, scope)?, None),
         };
         let source = if matches!(value, Value::Array(_)) {
@@ -16477,7 +16533,11 @@ impl Interpreter {
                         )?;
                         (value, Vec::new(), source)
                     }
-                    _ => (self.evaluate(expr, scope)?, Vec::new(), None),
+                    _ => {
+                        let (value, source) =
+                            self.evaluate_value_with_array_copy_source(expr, scope)?;
+                        (value, Vec::new(), source)
+                    }
                 };
                 let target_is_alias = scope.is_array_offset_alias_name(name);
                 let replaces_copied_array_provenance = scope.has_copied_array_provenance_path(name);
@@ -27366,7 +27426,7 @@ impl Interpreter {
                 index,
                 span,
             } => self.evaluate_array_index_with_array_copy_source(target, index, *span, scope)?,
-            _ => (self.evaluate(target, scope)?, None),
+            _ => self.evaluate_value_with_array_copy_source(target, scope)?,
         };
 
         match target_value {
@@ -27717,6 +27777,55 @@ impl Interpreter {
         }
     }
 
+    fn evaluate_property_read_with_array_copy_source(
+        &mut self,
+        target: &Expr,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+        let target_value = self.evaluate(target, scope)?;
+
+        match target_value {
+            Value::Object(object) => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                match object.read_property_from_context(
+                    property,
+                    current_class_id,
+                    &protected_class_ids,
+                ) {
+                    Ok(value) => {
+                        let source = if matches!(value, Value::Array(_)) {
+                            Some(PublicObjectPropertyArrayCopySource {
+                                object,
+                                property: property.to_string(),
+                                keys: Vec::new(),
+                                include_exact_path: true,
+                            })
+                        } else {
+                            None
+                        };
+                        Ok((value, source))
+                    }
+                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => self
+                        .call_magic_get_property_value_with_array_copy_source(
+                            object, property, span, scope,
+                        )?
+                        .ok_or_else(|| runtime_error(span, error)),
+                    Err(error) => Err(runtime_error(span, error)),
+                }
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_property_access(format!(
+                    "cannot read property ${property} from {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
     fn call_magic_property_method(
         &mut self,
         object: PhpObject,
@@ -27789,6 +27898,75 @@ impl Interpreter {
             args,
             Some(class_id),
             Some(called_class_id),
+        )
+        .map(Some)
+    }
+
+    fn call_magic_get_property_value_with_array_copy_source(
+        &mut self,
+        object: PhpObject,
+        property: &str,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(Value, Option<PublicObjectPropertyArrayCopySource>)>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__get")
+        else {
+            return Ok(None);
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__get()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, "__get", visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let called_class_id = object.class_id();
+        let args = vec![Value::String(property.to_string())];
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            let cell = self.call_reference_return_function_with_checked_values(
+                function,
+                args,
+                Some(object),
+                Some(class_id),
+                Some(called_class_id),
+                Vec::new(),
+                None,
+            )?;
+            return Ok(Some((cell.value_cloned(), None)));
+        }
+
+        ensure_supported_function_signature(function, 1, span)?;
+        if let Ok(Some(_)) = self.reference_return_this_property_name(function, property, span) {
+            let value = self.call_user_function_with_this(
+                function,
+                object,
+                args,
+                Some(class_id),
+                Some(called_class_id),
+            )?;
+            return Ok(Some((value, None)));
+        }
+
+        self.call_user_function_with_this_and_array_copy_source(
+            function,
+            object,
+            args,
+            Some(class_id),
+            Some(called_class_id),
+            caller_scope,
         )
         .map(Some)
     }
@@ -27994,6 +28172,17 @@ impl Interpreter {
         }
     }
 
+    fn evaluate_dynamic_property_read_with_array_copy_source(
+        &mut self,
+        target: &Expr,
+        property: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+        let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+        self.evaluate_property_read_with_array_copy_source(target, &property, span, scope)
+    }
+
     fn evaluate_dynamic_property_name(
         &mut self,
         property: &Expr,
@@ -28021,6 +28210,24 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        self.call_instance_method_with_array_copy_source(
+            target,
+            method_name,
+            args,
+            span,
+            caller_scope,
+        )
+        .map(|(value, _)| value)
+    }
+
+    fn call_instance_method_with_array_copy_source(
+        &mut self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
         let target_value = self.evaluate(target, caller_scope)?;
         let object = match target_value {
             Value::Object(object) => object,
@@ -28035,58 +28242,46 @@ impl Interpreter {
             }
         };
         if object.class_name().eq_ignore_ascii_case("ReflectionClass") {
-            return self.call_reflection_class_method(
-                object,
-                method_name,
-                args,
-                span,
-                caller_scope,
-            );
+            return self
+                .call_reflection_class_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
         }
         if object
             .class_name()
             .eq_ignore_ascii_case("ReflectionFunction")
         {
-            return self.call_reflection_function_method(
-                object,
-                method_name,
-                args,
-                span,
-                caller_scope,
-            );
+            return self
+                .call_reflection_function_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
         }
         if object.class_name().eq_ignore_ascii_case("ReflectionMethod") {
-            return self.call_reflection_method_method(
-                object,
-                method_name,
-                args,
-                span,
-                caller_scope,
-            );
+            return self
+                .call_reflection_method_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
         }
         if object
             .class_name()
             .eq_ignore_ascii_case("ReflectionParameter")
         {
-            return self.call_reflection_parameter_method(object, method_name, args, span);
+            return self
+                .call_reflection_parameter_method(object, method_name, args, span)
+                .map(|value| (value, None));
         }
         if object
             .class_name()
             .eq_ignore_ascii_case("ReflectionProperty")
         {
-            return self.call_reflection_property_method(
-                object,
-                method_name,
-                args,
-                span,
-                caller_scope,
-            );
+            return self
+                .call_reflection_property_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
         }
         if object
             .class_name()
             .eq_ignore_ascii_case("ReflectionNamedType")
         {
-            return self.call_reflection_named_type_method(object, method_name, args, span);
+            return self
+                .call_reflection_named_type_method(object, method_name, args, span)
+                .map(|value| (value, None));
         }
         if object
             .class_name()
@@ -28095,7 +28290,9 @@ impl Interpreter {
                 .class_name()
                 .eq_ignore_ascii_case("ReflectionIntersectionType")
         {
-            return self.call_reflection_compound_type_method(object, method_name, args, span);
+            return self
+                .call_reflection_compound_type_method(object, method_name, args, span)
+                .map(|value| (value, None));
         }
 
         let (class_id, class_name, resolved_method_name, visibility, is_static) = {
@@ -28113,7 +28310,7 @@ impl Interpreter {
                     span,
                     caller_scope,
                 )? {
-                    Some(value) => Ok(value),
+                    Some(value) => Ok((value, None)),
                     None => Err(runtime_error(
                         span,
                         RuntimeError::undefined_function(format!(
@@ -28163,7 +28360,7 @@ impl Interpreter {
                 reference_bindings,
                 caller_scope,
             )?;
-            return Ok(returned_value);
+            return Ok((returned_value, None));
         }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
@@ -28172,7 +28369,7 @@ impl Interpreter {
             self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
 
         let called_class_id = object.class_id();
-        self.call_user_function_with_checked_values(
+        self.call_user_function_with_checked_values_and_locals_with_array_copy_source(
             function,
             values,
             Some(object),
@@ -28180,6 +28377,8 @@ impl Interpreter {
             Some(called_class_id),
             reference_bindings,
             Some(caller_scope),
+            Vec::new(),
+            Vec::new(),
         )
     }
 
@@ -41277,10 +41476,36 @@ impl Interpreter {
         class_context: Option<ClassId>,
         called_class_context: Option<ClassId>,
         reference_bindings: Vec<ReferenceBinding>,
-        mut reference_scope: Option<&mut SymbolTable>,
+        reference_scope: Option<&mut SymbolTable>,
         prebound_locals: Vec<PreboundLocal>,
         by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
     ) -> CompileResult<Value> {
+        self.call_user_function_with_checked_values_and_locals_with_array_copy_source(
+            function,
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            reference_bindings,
+            reference_scope,
+            prebound_locals,
+            by_value_array_copy_bindings,
+        )
+        .map(|(value, _)| value)
+    }
+
+    fn call_user_function_with_checked_values_and_locals_with_array_copy_source(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        reference_bindings: Vec<ReferenceBinding>,
+        mut reference_scope: Option<&mut SymbolTable>,
+        prebound_locals: Vec<PreboundLocal>,
+        by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
+    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
             self.class_context.push(class_context);
@@ -41598,7 +41823,7 @@ impl Interpreter {
         writeback_result?;
         let (flow, array_copy_source) = flow?;
         match flow {
-            Flow::Normal => Ok(Value::Null),
+            Flow::Normal => Ok((Value::Null, None)),
             Flow::Break { span, .. } => Err(runtime_error(
                 span,
                 RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
@@ -41607,16 +41832,19 @@ impl Interpreter {
                 span,
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
-            Flow::Return(value) => Ok(reference_scope
-                .as_deref_mut()
-                .map(|scope| {
-                    scope.value_with_object_property_aliases_from_array_copy(
-                        value.clone(),
-                        array_copy_source.clone(),
-                    )
-                })
-                .unwrap_or(value)),
-            Flow::Exit(_) => Ok(Value::Null),
+            Flow::Return(value) => {
+                let value = reference_scope
+                    .as_deref_mut()
+                    .map(|scope| {
+                        scope.value_with_object_property_aliases_from_array_copy(
+                            value.clone(),
+                            array_copy_source.clone(),
+                        )
+                    })
+                    .unwrap_or(value);
+                Ok((value, array_copy_source))
+            }
+            Flow::Exit(_) => Ok((Value::Null, None)),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }
@@ -41637,6 +41865,28 @@ impl Interpreter {
             called_class_context,
             Vec::new(),
             None,
+        )
+    }
+
+    fn call_user_function_with_this_and_array_copy_source(
+        &mut self,
+        function: &FunctionDecl,
+        this_object: PhpObject,
+        args: Vec<Value>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+        self.call_user_function_with_checked_values_and_locals_with_array_copy_source(
+            function,
+            args,
+            Some(this_object),
+            class_context,
+            called_class_context,
+            Vec::new(),
+            Some(caller_scope),
+            Vec::new(),
+            Vec::new(),
         )
     }
 
@@ -49108,10 +49358,59 @@ impl Interpreter {
                     self.read_reference_return_binding_value(function, &binding, caller_scope)?;
                 return Ok((value, source));
             }
+
+            if is_static {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::offsetGet()"),
+                        "static magic instance methods are not implemented in the current subset",
+                    ),
+                ));
+            }
+            self.ensure_instance_method_visible(
+                class_id,
+                &class_name,
+                "offsetGet",
+                visibility,
+                span,
+            )?;
+            ensure_user_function_arity(function, 1, span)?;
+            ensure_supported_function_signature(function, 1, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+
+            let called_class_id = object.class_id();
+            if self
+                .array_access_offset_get_reference_target(function, span)
+                .is_ok()
+            {
+                let value = self.call_user_function_with_this(
+                    function,
+                    object,
+                    vec![offset_arg],
+                    Some(class_id),
+                    Some(called_class_id),
+                )?;
+                return Ok((value, None));
+            }
+
+            return self.call_user_function_with_this_and_array_copy_source(
+                function,
+                object,
+                vec![offset_arg],
+                Some(class_id),
+                Some(called_class_id),
+                caller_scope,
+            );
         }
 
-        let value = self.call_array_access_method(object, "offsetGet", vec![offset_arg], span)?;
-        Ok((value, None))
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "ArrayAccess::offsetGet()",
+                "ArrayAccess objects must declare the required offset method in the current subset",
+            ),
+        ))
     }
 
     fn is_countable_value(&self, value: &Value) -> bool {

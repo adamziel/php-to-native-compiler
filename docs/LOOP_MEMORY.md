@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T04:59:07+02:00
+
+- Checkpoint before this task: `d05c46b9 runtime: prove arrayaccess return
+  COW provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1890-C through Lane 1894-C bundle, carrying by-value
+  copied-array COW provenance through executed public by-value
+  `ArrayAccess::offsetGet()` and visible by-value `__get()` bodies in the
+  supported interpreter subset.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1890/*`, `tests/fixtures/milestone1891/*`,
+  `tests/fixtures/milestone1892/*`, `tests/fixtures/milestone1893/*`,
+  `tests/fixtures/milestone1894/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes matched the five new fixtures;
+  `cargo check -q -p phpc` passed; focused `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1890 --compare-php` through `milestone1894`
+  passed; adjacent `object_model`, `functions_and_scopes`, and `foreach`
+  Rust tests passed; adjacent fixture comparisons for `milestone1838`
+  through `milestone1841`, `milestone1875` through `milestone1894`,
+  `milestone1673c`, and `runtime_errors` passed; aggregate `cargo run -q -p
+  phpc -- test` passed with `1972` fixtures.
+- Remaining COW gaps: recursive `$GLOBALS` materialization, arbitrary
+  callback and builtin reference-return sources, unsupported PHP side effects
+  outside the interpreter subset, full exception unwinding and uncaught
+  propagation, broader complex alias sinks and alias lifetime ordering, exact
+  PHP stderr/fatal text, binary/multibyte string offset behavior,
+  whole-array reference identity, and native reference/string COW lowering.
+- Next concrete task: run formatting, diff check, the full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T04:48:18+02:00
 
 - Checkpoint before this task: `53ede2b0 runtime: preserve temporary return

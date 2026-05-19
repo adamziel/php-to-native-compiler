@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Lane 1890-C through Lane 1894-C for by-value copied-array COW
+  provenance through executed magic/`ArrayAccess` method bodies. The
+  provenance-preserving call path now returns both the value and the backed
+  object-property source, so non-reference `ArrayAccess::offsetGet()`,
+  by-value `__get()`, property reads, dynamic property reads, and helper
+  method calls can carry copied-array provenance through supported body
+  statements, tracked locals, and nested method-call targets beyond the
+  existing direct-return bridge. Focused coverage includes arbitrary
+  supported `offsetGet()` and `__get()` bodies,
+  magic-property indexed reads, an `offsetGet()` body returning
+  `$this->bucket($offset)["group"]`, and a mixed magic-provided
+  `ArrayAccess` chain. This remains bounded to the interpreter subset and
+  does not claim unsupported syntax/builtins, thrown exception unwinding,
+  whole-array reference identity, exact diagnostics, or native reference
+  lowering. The runtime recursion guard was lowered from `128` to `64` frames
+  so the added provenance frames still report the structured call-depth error
+  before the native stack is exhausted. Focused verification:
+  `cargo run -q -p phpc -- test
+  --compare-php` passed the new `milestone1890`, `milestone1891`,
+  `milestone1892`, `milestone1893`, and `milestone1894` fixtures with
+  system-PHP comparisons.
+
 - Added Lane 1885-C through Lane 1889-C for by-value method returns that copy
   arrays directly from proven `ArrayAccess` offset expressions. The
   return-source provenance path now covers direct `$this[$group]`,
@@ -29245,7 +29267,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/invalid_dynamic_callable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/invalid_dynamic_callable.php:3:6: unsupported call dynamic function call: callable expression must evaluate to string, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/runaway_recursion.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/runaway_recursion.php:3:12: maximum user function call depth exceeded for loop(): limit 128`.
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/runaway_recursion.php:3:12: maximum user function call depth exceeded for loop(): limit 64`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/duplicate_class.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/duplicate_class.php:3:1: class box is already defined`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_class.php`

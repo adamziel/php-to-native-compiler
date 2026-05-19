@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1889:
+The current in-progress implementation frontier is Lane 1894:
+
+- Lanes 1890 through 1894 preserve by-value copied-array COW provenance
+  through executed, non-reference magic/`ArrayAccess` method bodies in the
+  interpreter subset. Public by-value `ArrayAccess::offsetGet()` and
+  `__get()` can now return backed object-property array copies through
+  supported control flow, tracked locals, and helper method calls, including
+  nested method-call targets such as `$this->bucket($offset)["group"]` and a
+  mixed magic-provided `ArrayAccess` chain. This is still not a claim of
+  arbitrary PHP side effects: unsupported syntax/builtins remain unsupported,
+  thrown exception unwinding, recursive `$GLOBALS` materialization, arbitrary
+  callback/builtin reference returns, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 1885 through 1889 preserve by-value method-return copied-array COW
   provenance for direct `ArrayAccess` offset return expressions backed by the
