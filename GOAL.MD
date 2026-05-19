@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2232:
+The current in-progress implementation frontier is Lane 2236:
+
+- Lanes 2233 through 2236 rehydrate copied-source reference leaves when a
+  supported helper returns an array literal directly. Direct returned literals
+  such as `return array($copy);` and nested returned literals such as
+  `return array("wrap" => array($copy));` now use the same reference/copy-source
+  materialization path as array-literal assignments, so visible `__get()` and
+  public `ArrayAccess::offsetGet()` callers can index the helper result without
+  losing reference leaves from the original copied bucket. Focused system-PHP
+  coverage proves direct helper calls and reflected user-function
+  `ReflectionFunction::invoke()`/`invokeArgs()` paths. This remains bounded to
+  supported function bodies, portable copied-source roots, and concrete returned
+  array literals; it does not claim arbitrary unsupported method-body syntax,
+  untracked dynamic containers, full whole-array reference identity, exact
+  diagnostics, or native reference/string COW lowering.
 
 - Lanes 2227 through 2232 close two broader method-body callback/container
   paths. `call_user_func_array()` callback expressions can now be produced by

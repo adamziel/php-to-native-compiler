@@ -8423,6 +8423,19 @@ impl Interpreter {
         let Some(expr) = value else {
             return Ok((Flow::Return(Value::Null), None));
         };
+        if let Expr::Array { items, span } = expr {
+            let (value, references, copy_sources) =
+                self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+            let value = self.value_with_assignment_reference_cells(
+                value,
+                expr,
+                &references,
+                &copy_sources,
+                scope,
+                *span,
+            )?;
+            return Ok((Flow::Return(value), None));
+        }
         let (value, array_copy_source) = self.evaluate_value_with_array_copy_source(expr, scope)?;
         let value = if array_copy_source.is_none() {
             self.value_with_local_array_aliases_for_expr(value, expr, scope, true)

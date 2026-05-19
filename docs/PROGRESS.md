@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2233-C through Lane 2236-C for direct returned array-literal COW
+  rehydration. Supported helper functions that receive a copied bucket and
+  return `array($copy)` or a nested literal such as
+  `array("wrap" => array($copy))` now pass their return expression through the
+  same reference/copy-source materialization path used by array-literal
+  assignments. Focused system-PHP coverage proves visible `__get()` and public
+  `ArrayAccess::offsetGet()` callers indexing direct helper results and
+  reflected user-function `ReflectionFunction::invoke()`/`invokeArgs()` results
+  without detaching selected reference leaves, while plain copied leaves remain
+  detached. This remains bounded to supported function bodies, concrete
+  returned array literals, and portable copied-source roots; arbitrary
+  unsupported method-body syntax, untracked dynamic containers, full
+  whole-array reference identity, exact diagnostics, and native
+  reference/string COW lowering remain unsupported.
+
 - Added Lane 2227-C through Lane 2232-C for broader
   `call_user_func_array()` callback and local argument-container side effects
   inside supported magic/`ArrayAccess` method bodies. Callback expressions can

@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2236/arrayaccess_offsetget_reflection_invokeargs_returns_nested_array_literal_copy_cow.php

@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2235/magic_get_reflection_user_function_returns_array_literal_copy_cow.php

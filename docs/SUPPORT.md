@@ -110,6 +110,11 @@
   parameters import portable array-literal copied-source metadata into the
   callee and sync dirty paths back to the caller, so a local `$args` container
   can still promote the original selected source leaf.
+  Supported helper functions may also return array literals built from copied
+  buckets, including nested literals such as `array("wrap" => array($copy))`;
+  those returned literals rehydrate copied-source reference leaves before the
+  caller indexes them, including through supported reflected user-function
+  `ReflectionFunction::invoke()` and `invokeArgs()` dispatch.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.

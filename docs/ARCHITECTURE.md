@@ -234,6 +234,15 @@ reuse the existing callable dispatch path; the new part is preserving the
 argument-container provenance when the callback-producing helper mutates the
 container first.
 
+Direct array literals returned from supported function bodies use the same
+reference and copied-source materialization path as array-literal assignments.
+When a helper returns `array($copy)` or a nested literal built from a copied
+bucket, the return boundary rehydrates reference-backed leaves into that
+literal before the value leaves the callee. This keeps caller-side indexing of
+direct helper and reflected user-function results aligned with PHP COW for
+covered copied-source roots without introducing arbitrary callee-local path
+names into the caller.
+
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller

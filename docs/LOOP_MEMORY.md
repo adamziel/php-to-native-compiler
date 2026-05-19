@@ -23,6 +23,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T23:13:21+02:00
+
+- Checkpoint before this task: `8918f28a checkpoint: 2026-05-19 21:04:08
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2233-C through Lane 2236-C bundle, rehydrating
+  copied-source reference leaves for direct returned array literals from
+  supported helper functions used inside visible `__get()` and public
+  `ArrayAccess::offsetGet()` bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2233/*` through
+  `tests/fixtures/milestone2236/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2233` through `milestone2236`; adjacent system-PHP comparisons
+  passed for `milestone2227` through `milestone2232`; focused
+  `object_model magic`, `object_model arrayaccess`, `object_model
+  reflection`, and `functions_and_scopes function` Rust test filters passed.
+- Remaining COW gaps: remaining portable-root/container cases where
+  copied-source metadata still cannot be synced without leaking callee-local
+  names; arbitrary unsupported magic/`ArrayAccess` method syntax; untracked
+  dynamic containers; broader whole-array reference identity beyond covered
+  returned literals; exact diagnostics/Throwable objects; and native
+  reference/string COW lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes. After checkpoint,
+  attack another whole-container identity case where returned or stored
+  containers cross helper boundaries without concrete copied-source roots.
+
 ## Loop Event 2026-05-19T22:59:48+02:00
 
 - Checkpoint before this task: `5f5a5dc3 checkpoint: 2026-05-19 20:40:03

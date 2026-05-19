@@ -118,13 +118,19 @@ handled.
   reference-returning holder helpers that recreate shared holder args, and
   direct caller-cell by-reference helper parameters now sync portable
   array-literal copied-source paths back to local `$args` containers.
+- [x] Lane 2233-C through 2236-C: rehydrate copied-source reference leaves for
+  direct returned array literals from supported helpers, covering visible
+  `__get()` and public `ArrayAccess::offsetGet()` callers that index direct
+  helper results and reflected user-function `ReflectionFunction::invoke()` /
+  `invokeArgs()` results.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
   holders expose real cells or concrete writeback roots instead of stale paths.
-  Known next probes should target non-closure reflected user functions and
-  remaining portable-root/container cases where copied-source metadata still
-  cannot be synced without leaking callee-local symbol names.
+  Known next probes should target remaining portable-root/container cases where
+  copied-source metadata still cannot be synced without leaking callee-local
+  symbol names, plus broader whole-array reference identity cases not covered
+  by returned-literal rehydration.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference
