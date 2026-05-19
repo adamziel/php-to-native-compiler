@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1911-C through Lane 1915-C for mixed nested `ArrayAccess`
+  reference-return chains in executed method bodies. Reference-return bodies
+  can now delegate a returned lvalue through an inner `ArrayAccess` object
+  reached via direct `$this` properties, nested suffixes below that inner
+  bucket, dynamic `$this->{$property}` properties, expression-root helper
+  calls returning the inner object, and helper-local `ArrayAccess` variables.
+  The resolver now routes those object roots to the existing proven public
+  by-reference `offsetGet()` alias bridge and remaps the returned object
+  property alias back into the caller scope. Focused coverage uses
+  system-PHP comparisons for `milestone1911` through `milestone1915`.
+  Unsupported key-expression side-effect ordering, by-value inner
+  `offsetGet()` reference containers, arbitrary mixed chains, exact
+  diagnostics, whole-array reference identity, and native reference lowering
+  remain unsupported.
+
 - Added Lane 1907-C through Lane 1910-C for copied-array COW provenance across
   by-value user-call argument boundaries. Proven magic/`ArrayAccess` backed
   array copies are now converted to array values with reference-backed slots

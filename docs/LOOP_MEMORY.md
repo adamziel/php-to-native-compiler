@@ -18,6 +18,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T06:05:34+02:00
+
+- Checkpoint before this task: `95a3d085 runtime: preserve by-value argument
+  COW`, pushed to `origin/master`.
+- Task attempted: Lane 1911-C through Lane 1915-C bundle, broadening mixed
+  nested `ArrayAccess` reference-return chains when each reached object can
+  use the existing public by-reference `offsetGet()` alias bridge.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1911/*`, `tests/fixtures/milestone1912/*`,
+  `tests/fixtures/milestone1913/*`, `tests/fixtures/milestone1914/*`,
+  `tests/fixtures/milestone1915/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo fmt --all --check`, `cargo check -q -p phpc`,
+  and `git diff --check` passed; focused
+  `cargo run -q -p phpc -- test --compare-php` passed `milestone1911`,
+  `milestone1912`, `milestone1913`, `milestone1914`, and `milestone1915`;
+  adjacent Rust tests `object_model`, `functions_and_scopes`, and
+  `call_user_func_builtin` passed; adjacent fixture comparisons passed
+  `milestone1722`, `milestone1738`, `milestone1858` through `milestone1863`,
+  `milestone1903` through `milestone1906`, and `milestone1911` through
+  `milestone1915`.
+- Remaining COW gaps: side-effecting key-order parity, by-value inner
+  `offsetGet()` reference containers, arbitrary mixed chains, unsupported
+  syntax/builtins and PHP side effects outside the interpreter subset, full
+  exception unwinding and uncaught propagation, broader builtin callback
+  signatures, broader complex alias sinks and alias lifetime ordering, exact
+  PHP stderr/fatal text, binary/multibyte string offset behavior,
+  whole-array reference identity, full direct `$GLOBALS` array
+  materialization, and native reference/string COW lowering.
+- Next concrete task: run the full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-19T05:52:27+02:00
 
 - Checkpoint before this task: `39c8546d runtime: preserve magic ArrayAccess

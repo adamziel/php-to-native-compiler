@@ -20466,6 +20466,19 @@ handled.
   interpreter subset, whole-array reference identity, exact diagnostics, and
   native reference lowering named as unsupported.
 
+## Lane 1911-C through Lane 1915-C: Mixed ArrayAccess Reference-Return Chains
+
+- [x] Runtime/tests/docs bundle: broaden executed reference-return method
+  bodies so returned lvalues can pass through an inner `ArrayAccess` object
+  when the existing public by-reference `offsetGet()` bridge can prove the
+  backing bucket. Cover direct `$this` property roots, nested suffixes below
+  the inner bucket, dynamic `$this->{$property}` roots, expression-root helper
+  calls, and helper-local `ArrayAccess` variables with system-PHP
+  comparisons. Keep side-effecting key-order parity, by-value inner
+  `offsetGet()` reference containers, arbitrary mixed chains, exact
+  diagnostics, whole-array reference identity, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

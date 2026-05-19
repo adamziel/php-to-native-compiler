@@ -381,6 +381,15 @@
   auto-superglobals, so direct helpers or magic/`ArrayAccess` bodies can use
   `global $store; return $store[$key];` or
   `return $_REQUEST[$offset];` for covered array slots.
+  Mixed nested `ArrayAccess` chains in reference-return bodies are covered
+  when each reached object can be routed through the existing public
+  by-reference `offsetGet()` alias bridge. Covered roots include
+  `$this->inner[$offset]`, `$this->inner[$offset]["leaf"]`,
+  `$this->{$property}[$offset]`, expression roots such as
+  `$this->pick()[$offset]`, and helper locals such as `return $bag[$offset];`
+  when `$bag` holds an `ArrayAccess` object. The returned alias is remapped
+  from any temporary hidden object root back to the caller-visible object
+  handle before it is bound.
   The bounded `__get()` and `offsetGet()` backing analyzers also accept one
   local variable bound by reference to an indexed `$this->property[...]`
   backing bucket, followed by returning that local or a literal child below
@@ -397,7 +406,8 @@
   outside this method-body executor; arbitrary side-effect analysis or
   non-executed static bridge inference for every dynamic backing-key shape; arbitrary
   Iterator side effects, arbitrary PHP syntax outside the interpreter subset;
-  arbitrary mixed nested `ArrayAccess` object chains; broad same-container
+  arbitrary mixed nested `ArrayAccess` object chains beyond these proven
+  reference-return roots; broad same-container
   identity for
   reference-returning function,
   method/static/callback dispatch, general magic-property reference containers,

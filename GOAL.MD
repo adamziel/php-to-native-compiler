@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1910:
+The current in-progress implementation frontier is Lane 1915:
+
+- Lanes 1911 through 1915 broaden mixed nested `ArrayAccess` chains in
+  by-reference method bodies when each reached object can be statically routed
+  through the existing proven `offsetGet()` alias bridge. A reference-return
+  body can now return `$this->inner[$offset]`,
+  `$this->inner[$offset]["leaf"]`, `$this->{$property}[$offset]`,
+  `$this->pick()[$offset]`, or a helper-local `$bag[$offset]` when the
+  selected object is an `ArrayAccess` object whose public by-reference
+  `offsetGet()` returns a covered lvalue. The returned alias is remapped back
+  to the caller-visible object handle, so writes through the alias and backing
+  bucket stay shared. Side-effecting key-order parity, unsupported PHP
+  syntax/builtins outside the interpreter subset, by-value inner
+  `offsetGet()` reference containers, arbitrary mixed chains, exact
+  diagnostics, whole-array reference identity, and native reference lowering
+  remain unsupported.
 
 - Lanes 1907 through 1910 preserve copied-array COW reference slots across
   by-value user-call boundaries when the argument expression is a proven

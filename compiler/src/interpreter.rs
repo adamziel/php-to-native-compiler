@@ -40673,6 +40673,115 @@ impl Interpreter {
         Ok(ReferenceReturnBodyFlow::Normal)
     }
 
+    fn reference_return_this_property_array_access_local_binding(
+        &mut self,
+        function: &FunctionDecl,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnLocalBinding>> {
+        let Some(Value::Object(object)) = scope.read_named("this") else {
+            return Ok(None);
+        };
+        self.reference_return_property_value_array_access_local_binding(
+            function, object, property, keys, span, scope,
+        )
+    }
+
+    fn reference_return_object_property_array_access_local_binding(
+        &mut self,
+        function: &FunctionDecl,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnLocalBinding>> {
+        let Some(Value::Object(object)) = scope.read_named(object_name) else {
+            return Ok(None);
+        };
+        self.reference_return_property_value_array_access_local_binding(
+            function, object, property, keys, span, scope,
+        )
+    }
+
+    fn reference_return_property_value_array_access_local_binding(
+        &mut self,
+        function: &FunctionDecl,
+        object: PhpObject,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnLocalBinding>> {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let Ok(Value::Object(array_access_object)) =
+            object.read_property_from_context(property, current_class_id, &protected_class_ids)
+        else {
+            return Ok(None);
+        };
+        if !self
+            .classes
+            .implements_interface(array_access_object.class_id(), "ArrayAccess")
+        {
+            return Ok(None);
+        }
+
+        let hidden_name = self.hidden_array_access_reference_object_name(&array_access_object);
+        scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
+        self.reference_return_array_access_local_binding_for_object(
+            function,
+            array_access_object,
+            hidden_name,
+            keys,
+            span,
+            scope,
+        )
+    }
+
+    fn reference_return_array_access_local_binding_for_object(
+        &mut self,
+        function: &FunctionDecl,
+        object: PhpObject,
+        object_name: String,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnLocalBinding>> {
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return Ok(None);
+        }
+
+        let Some(binding) = self.evaluate_array_access_reference_source_binding_for_object(
+            object,
+            object_name,
+            keys,
+            None,
+            span,
+            scope,
+        )?
+        else {
+            return Ok(None);
+        };
+
+        match binding {
+            NonDirectReferenceSourceBinding::ArrayOffset(alias) => Ok(Some(
+                ReferenceReturnLocalBinding::ArrayOffsetAliases(vec![alias]),
+            )),
+            NonDirectReferenceSourceBinding::DetachedValue(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "reference-return ArrayAccess expressions require by-reference offsetGet() returning a covered lvalue in the current subset",
+                ),
+            )),
+        }
+    }
+
     fn reference_return_local_binding_from_expr(
         &mut self,
         function: &FunctionDecl,
@@ -40725,6 +40834,20 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if let Some(Value::Object(object)) = scope.read_named(root_name) {
+                        if let Some(binding) = self
+                            .reference_return_array_access_local_binding_for_object(
+                                function,
+                                object,
+                                root_name.to_string(),
+                                keys.clone(),
+                                span,
+                                scope,
+                            )?
+                        {
+                            return Ok(binding);
+                        }
+                    }
                     if root_name == "GLOBALS" {
                         let (global_name, keys) =
                             SymbolTable::split_globals_reference_path(keys, span)?;
@@ -40774,6 +40897,13 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if let Some(binding) = self
+                        .reference_return_this_property_array_access_local_binding(
+                            function, property, keys.clone(), span, scope,
+                        )?
+                    {
+                        return Ok(binding);
+                    }
                     let root = self.this_object_property_alias_root(property, scope, span)?;
                     let alias = ArrayOffsetAlias { root, keys };
                     scope.materialize_array_offset_alias(&alias, span)?;
@@ -40790,6 +40920,18 @@ impl Interpreter {
                             .iter()
                             .map(|index| self.evaluate_array_key(index, scope))
                             .collect::<CompileResult<Vec<_>>>()?;
+                        if let Some(binding) = self
+                            .reference_return_object_property_array_access_local_binding(
+                                function,
+                                object_name,
+                                property,
+                                keys.clone(),
+                                span,
+                                scope,
+                            )?
+                        {
+                            return Ok(binding);
+                        }
                         let root = self.context_object_property_alias_root(
                             object_name,
                             property,
@@ -40810,6 +40952,17 @@ impl Interpreter {
                 {
                     if matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
                         let key = self.evaluate_array_key(index, scope)?;
+                        if let Some(binding) = self
+                            .reference_return_this_property_array_access_local_binding(
+                                function,
+                                property,
+                                vec![key.clone()],
+                                span,
+                                scope,
+                            )?
+                        {
+                            return Ok(binding);
+                        }
                         let root = self.this_object_property_alias_root(property, scope, span)?;
                         let alias = ArrayOffsetAlias {
                             root,
@@ -40832,6 +40985,17 @@ impl Interpreter {
                             .iter()
                             .map(|index| self.evaluate_array_key(index, scope))
                             .collect::<CompileResult<Vec<_>>>()?;
+                        if let Some(binding) = self
+                            .reference_return_this_property_array_access_local_binding(
+                                function,
+                                &property,
+                                keys.clone(),
+                                span,
+                                scope,
+                            )?
+                        {
+                            return Ok(binding);
+                        }
                         let root = self.this_object_property_alias_root(&property, scope, span)?;
                         let alias = ArrayOffsetAlias { root, keys };
                         scope.materialize_array_offset_alias(&alias, span)?;
@@ -40855,6 +41019,29 @@ impl Interpreter {
                         scope,
                     )?;
                     return Ok(ReferenceReturnLocalBinding::Cell(cell));
+                }
+
+                let (root, indices) = Self::collect_array_index_path(target, index);
+                let root_value = self.evaluate(root, scope)?;
+                if let Value::Object(object) = root_value {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let hidden_name = self.hidden_array_access_reference_object_name(&object);
+                    scope.write_static(&hidden_name, Value::Object(object.clone()));
+                    if let Some(binding) = self
+                        .reference_return_array_access_local_binding_for_object(
+                            function,
+                            object,
+                            hidden_name,
+                            keys,
+                            span,
+                            scope,
+                        )?
+                    {
+                        return Ok(binding);
+                    }
                 }
 
                 Err(runtime_error(
@@ -49177,6 +49364,22 @@ impl Interpreter {
                 _ => return None,
             }
         }
+    }
+
+    fn collect_array_index_path<'a>(
+        target: &'a Expr,
+        index: &'a Expr,
+    ) -> (&'a Expr, Vec<&'a Expr>) {
+        let mut indices = vec![index];
+        let mut current = target;
+
+        while let Expr::Index { target, index, .. } = current {
+            indices.push(index);
+            current = target;
+        }
+
+        indices.reverse();
+        (current, indices)
     }
 
     fn collect_direct_object_property_array_index_path<'a>(
