@@ -12344,12 +12344,12 @@ impl Interpreter {
                 scope.materialize_array_offset_alias(&alias, span)?;
                 Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
             }
-            Value::String(_) => Err(runtime_error(
-                span,
-                RuntimeError::invalid_array_access(
-                    "cannot create references to/from string offsets".to_string(),
-                ),
-            )),
+            Value::String(_) => {
+                Err(self.expression_root_string_reference_source_error(&keys, false, span))
+            }
+            Value::Bool(true) | Value::Int(_) | Value::Float(_) => {
+                Err(Self::expression_root_scalar_reference_source_error(span))
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access(format!(
@@ -12441,12 +12441,12 @@ impl Interpreter {
                 )?;
                 Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
             }
-            Value::String(_) => Err(runtime_error(
-                span,
-                RuntimeError::invalid_array_access(
-                    "cannot create references to/from string offsets".to_string(),
-                ),
-            )),
+            Value::String(_) => {
+                Err(self.expression_root_string_reference_source_error(&keys, true, span))
+            }
+            Value::Bool(true) | Value::Int(_) | Value::Float(_) => {
+                Err(Self::expression_root_scalar_reference_source_error(span))
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access(format!(
@@ -12454,6 +12454,42 @@ impl Interpreter {
                     other.type_name()
                 )),
             )),
+        }
+    }
+
+    fn expression_root_scalar_reference_source_error(span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::invalid_array_access("cannot use a scalar value as an array".to_string()),
+        )
+    }
+
+    fn expression_root_string_reference_source_error(
+        &self,
+        keys: &[ArrayKey],
+        is_append: bool,
+        span: Span,
+    ) -> Diagnostic {
+        let message = match keys.first() {
+            None if is_append => "[] operator not supported for strings",
+            None => "cannot create references to/from string offsets",
+            Some(key) if !Self::array_key_is_string_offset(key) => {
+                "cannot access offset of type string on string"
+            }
+            Some(_) if is_append || keys.len() > 1 => "cannot use string offset as an array",
+            Some(_) => "cannot create references to/from string offsets",
+        };
+
+        runtime_error(
+            span,
+            RuntimeError::invalid_array_access(message.to_string()),
+        )
+    }
+
+    fn array_key_is_string_offset(key: &ArrayKey) -> bool {
+        match key {
+            ArrayKey::Int(_) => true,
+            ArrayKey::String(value) => Self::parse_string_offset_key(value).is_some(),
         }
     }
 

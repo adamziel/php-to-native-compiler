@@ -32,7 +32,17 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1854:
+The current in-progress implementation frontier is Lane 1857:
+
+- Lanes 1855 through 1857 tighten scalar/string temporary behavior for
+  expression-root array-offset and append reference sources. Direct variable
+  targets still materialize `null` and `false` temporaries as detached arrays
+  for keyed and nested append paths, while `true`, int, and float temporaries
+  now fail with the bounded scalar-as-array error. String temporaries split
+  the covered PHP-shaped failures for integer offset references, non-integer
+  string offsets, root appends, and nested string-offset appends. Exact PHP
+  fatal text/stack traces remain outside the current diagnostic parity claim,
+  and native reference lowering is still unsupported.
 
 - Lanes 1850 through 1854 broaden executed magic/`ArrayAccess`
   reference-return method-body delegation for non-static helpers reached

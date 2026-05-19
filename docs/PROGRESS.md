@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1855-C through Lane 1857-C for expression-root scalar/string
+  temporary reference-source parity. Direct variable targets now have covered
+  keyed and nested append materialization for `null` and `false` temporaries,
+  with `false` deprecations suppressible through `error_reporting(0)`, while
+  `true`, int, and float temporaries fail with the bounded
+  scalar-as-array error. String temporaries now distinguish integer-offset
+  reference attempts, non-integer string offsets, root appends, and nested
+  string-offset appends. Exact PHP fatal text/stack traces and native
+  reference lowering remain unsupported. Focused verification: `cargo run -q
+  -p phpc -- test --compare-php` passed the new `milestone1855`,
+  `milestone1856`, and `milestone1857` fixtures; `milestone1855` includes a
+  system-PHP comparison, while fatal diagnostics stay `phpc-only`.
+
 - Added Lane 1850-C through Lane 1854-C for non-static helper delegation from
   executed magic/`ArrayAccess` reference-return bodies. Public by-reference
   `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies can now

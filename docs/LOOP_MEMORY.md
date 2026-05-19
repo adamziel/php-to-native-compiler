@@ -18,6 +18,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T03:44:04+02:00
+
+- Checkpoint before this task: `f952ed07 runtime: support nonstatic static
+  reference helpers`, pushed to `origin/master`.
+- Task attempted: Lane 1855-C through Lane 1857-C bundle, tightening
+  expression-root scalar/string temporary reference-source behavior for
+  direct-variable keyed and append sources.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1855/*`, `tests/fixtures/milestone1856/*`,
+  `tests/fixtures/milestone1857/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; `cargo run -q -p phpc
+  -- test --compare-php` passed `milestone1855`, `milestone1856`, and
+  `milestone1857`. `milestone1855` has a system-PHP comparison for
+  `null`/`false` materialization; fatal scalar/string diagnostics are
+  `phpc-only` because exact PHP fatal text/stack traces remain unsupported.
+- Remaining COW gaps: arbitrary callback and builtin reference-return sources,
+  arbitrary PHP and magic/`ArrayAccess` side effects outside the interpreter
+  subset, full exception unwinding and uncaught propagation, arbitrary
+  Iterator side effects, broader scalar/string temporary matrices outside the
+  covered expression-root paths, broader complex alias sinks and alias
+  lifetime ordering, exact PHP stderr/fatal text, binary/multibyte string
+  offset behavior, and native reference/string COW lowering.
+- Next concrete task: run adjacent expression-root and scalar-parent
+  regression checks, formatting, diff check, and the full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T03:34:31+02:00
 
 - Checkpoint before this task: `b90d023c runtime: support nested expression

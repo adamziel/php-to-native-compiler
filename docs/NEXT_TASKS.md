@@ -20298,6 +20298,17 @@ handled.
   signatures, full exception unwinding, exact diagnostics, and native
   reference lowering named as unsupported.
 
+## Lane 1855-C through Lane 1857-C: Expression-Root Scalar Temporaries
+
+- [x] Runtime/tests/docs bundle: tighten expression-root scalar/string
+  temporary behavior for direct-variable reference assignments. Cover
+  `null`/`false` keyed and nested append materialization with system-PHP
+  comparison, and pin bounded `phpc-only` diagnostics for `true`/int/float
+  scalar-as-array failures plus string integer-offset, non-integer-offset,
+  append, and nested string-offset failures. Keep exact PHP fatal text/stack
+  traces, broader scalar/string temporary matrices outside expression-root
+  reference sources, and native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
