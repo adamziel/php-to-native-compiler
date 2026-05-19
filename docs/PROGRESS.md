@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2016-C through Lane 2020-C for copied-array COW provenance
+  through visible properties of current-scope local object containers inside
+  supported by-value magic/`ArrayAccess` method bodies. Object-property
+  assignment now records proven copied-bucket sources for local object
+  properties, and source-aware property/index reads recover those sources
+  before return. Focused system-PHP coverage proves visible by-value
+  `__get()`, public by-value `ArrayAccess::offsetGet()`, dynamic local
+  property names, non-reference helper returns, and nested array-literal
+  containers stored in local properties preserve selected reference-backed
+  nested slots while ordinary nested arrays detach. This remains bounded to
+  visible local object-property containers with side-effect-free property/key
+  recovery; arbitrary object graphs, side-effecting property names or keys,
+  by-reference property-container helper parameters, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
+
 - Added Lane 2011-C through Lane 2015-C for nested-leaf writes through
   by-reference helper parameters that receive proven copied buckets from
   supported by-value magic/`ArrayAccess` method bodies. The source-aware

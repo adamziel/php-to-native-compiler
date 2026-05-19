@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2015:
+The current in-progress implementation frontier is Lane 2020:
+
+- Lanes 2016 through 2020 preserve copied-array COW provenance when
+  supported by-value magic/`ArrayAccess` method bodies store a proven backed
+  bucket inside a visible property of a current-scope local object container
+  before returning it. Covered bodies include visible by-value `__get()`,
+  public by-value `ArrayAccess::offsetGet()`, dynamically selected local
+  object properties, a non-reference helper returning the local property by
+  value, and a nested array-literal container stored in the local property.
+  Focused system-PHP coverage proves the returned copy keeps selected
+  reference-backed nested slots shared while ordinary nested arrays detach.
+  This is bounded to visible local object-property containers with
+  side-effect-free property/index recovery; arbitrary object graphs,
+  side-effecting property names or keys, by-reference property-container
+  helper parameters, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
 
 - Lanes 2011 through 2015 preserve PHP COW behavior when supported
   by-value magic/`ArrayAccess` method bodies pass a proven copied bucket into
@@ -93,9 +108,10 @@ The current in-progress implementation frontier is Lane 2015:
   recovered container slot. Focused system-PHP coverage proves the selected
   reference-backed nested slot stays shared while ordinary nested arrays
   detach. This is still bounded to current-scope local array containers with
-  side-effect-free int/string container keys; arbitrary object containers,
-  by-reference helper/callback parameters, whole-array reference identity,
-  exact diagnostics, and native reference lowering remain unsupported.
+  side-effect-free int/string container keys; object containers outside the
+  later visible local-property slice, by-reference helper/callback
+  parameters, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
 
 - Lanes 1986 through 1990 add append-offset expressions in by-reference
   function-argument position for the covered direct array and proven

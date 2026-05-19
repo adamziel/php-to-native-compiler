@@ -20693,10 +20693,10 @@ handled.
   Cover local array literals, nested local array literals, keyed local
   container writes, nested keyed local container writes, and a stored
   `call_user_func_array()` argument array built from the recovered container
-  slot with system-PHP comparisons. Keep arbitrary object containers,
-  side-effecting container-key analysis, by-reference helper/callback
-  parameters, whole-array reference identity, exact diagnostics, and native
-  reference lowering named as unsupported.
+  slot with system-PHP comparisons. Keep object containers outside the later
+  visible local-property slice, side-effecting container-key analysis,
+  by-reference helper/callback parameters, whole-array reference identity,
+  exact diagnostics, and native reference lowering named as unsupported.
 
 ## Lane 1996-C through Lane 2000-C: By-Reference Helper Return Provenance
 
@@ -20756,6 +20756,19 @@ handled.
   `call_user_func_array()` by-reference callback containers, whole-array
   reference identity, exact diagnostics, and native reference lowering named
   as unsupported.
+
+## Lane 2016-C through Lane 2020-C: Local Object-Property Containers
+
+- [x] Runtime/tests/docs bundle: preserve copied-array COW provenance when a
+  supported by-value magic/`ArrayAccess` method body stores a proven backed
+  bucket inside a visible property of a current-scope local object container
+  and later returns it. Cover visible by-value `__get()`, public by-value
+  `ArrayAccess::offsetGet()`, dynamically selected local properties,
+  non-reference helper returns, and nested array-literal containers stored in
+  local properties with system-PHP comparisons. Keep arbitrary object graphs,
+  side-effecting property names or keys, by-reference property-container
+  helper/callback parameters, whole-array reference identity, exact
+  diagnostics, and native reference lowering named as unsupported.
 
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 

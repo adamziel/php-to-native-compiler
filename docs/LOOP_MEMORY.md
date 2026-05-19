@@ -18,6 +18,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T12:20:00+02:00
+
+- Checkpoint before this task: `07e4581a runtime: write back byref helper COW
+  leaf mutations`, pushed to `origin/master`.
+- Task attempted: Lane 2016-C through Lane 2020-C bundle, preserving
+  copied-array COW provenance when supported by-value magic/`ArrayAccess`
+  method bodies route a proven backed bucket through a visible property of a
+  current-scope local object container before returning it.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2016/*`, `tests/fixtures/milestone2017/*`,
+  `tests/fixtures/milestone2018/*`, `tests/fixtures/milestone2019/*`,
+  `tests/fixtures/milestone2020/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused fixture snapshots and system-PHP comparisons
+  passed for `milestone2016` through `milestone2020`; adjacent snapshot and
+  system-PHP comparisons passed for `milestone2006` through `milestone2020`;
+  regression comparison passed for `milestone1673c`; focused Rust suites
+  `object_model`, `functions_and_scopes`, `call_user_func_builtin`, and
+  `array_reference_literals` passed; `cargo check -q`, `cargo fmt --check`,
+  and `git diff --check` passed.
+- Remaining COW gaps: sequential helper bodies that mutate a copied reference
+  leaf and later replace that reference's parent in the same helper,
+  `call_user_func()` reference-warning/no-reference semantics,
+  `call_user_func_array()` by-reference callback containers, arbitrary object
+  graphs outside the local visible-property container slice, side-effecting
+  property names or keys, append expressions outside by-reference
+  call-argument positions, non-reference append-expression values, dynamic
+  `call_user_func_array()` containers not traceable to current-scope local
+  arrays, remaining scalar parent overwrite/error parity outside covered
+  roots, possible mixed `ArrayAccess` gaps in reference-return or callback
+  reference-argument paths, exact PHP diagnostics, whole-array reference
+  identity, native reference/string COW lowering, and native lowering for
+  these interpreter paths.
+- Next concrete task: run focused Rust tests, formatting/diff checks, and the
+  full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T11:31:00+02:00
 
 - Checkpoint before this task: `c16c1029 runtime: detach copied bucket parent

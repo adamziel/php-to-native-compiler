@@ -403,9 +403,20 @@
   `$holder["outer"]["copy"] = $bucket`, and stored
   `call_user_func_array()` argument arrays built from a recovered container
   slot. Container keys must be side-effect-free int/string keys in the current
-  scope; arbitrary object containers, side-effecting key expressions,
-  by-reference helper/callback parameters, whole-array reference identity,
-  exact diagnostics, and native reference lowering remain unsupported.
+  scope.
+  These bodies also preserve copied-array provenance when a proven backed
+  bucket is stored in a visible property of a current-scope local object
+  container before return. Covered object-property container forms include
+  direct local properties such as `$holder->bucket = $bucket`, dynamic local
+  property names such as `$holder->{$property}`, public by-value
+  `ArrayAccess::offsetGet()` bodies, non-reference helpers that return the
+  local property by value, and nested array-literal containers stored in the
+  local property such as `$holder->bucket = array("wrapped" => $bucket)`.
+  This is still bounded to visible local object-property containers with
+  side-effect-free property/key recovery; arbitrary object graphs,
+  side-effecting property names or keys, by-reference property-container
+  helper/callback parameters, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
   These by-value magic/`ArrayAccess` bodies also preserve copied-array
   provenance when the proven bucket is passed through a by-reference
   parameter of a non-reference-return helper and then returned. Covered helper
@@ -436,9 +447,9 @@
   live copied-bucket reference before returning the bucket; the returned copy
   still preserves selected reference-backed nested slots while ordinary
   nested arrays detach. Replacing a parent of a live copied-bucket reference,
-  arbitrary capture roots, arbitrary object/container provenance,
-  whole-array reference identity, exact diagnostics, and native reference
-  lowering remain unsupported.
+  arbitrary capture roots, object/container provenance outside the documented
+  local container slices, whole-array reference identity, exact diagnostics,
+  and native reference lowering remain unsupported.
   These copied-bucket bodies also detach correctly when an assignment replaces
   a parent of a live nested copied-bucket reference. Covered parent
   replacement forms include visible by-value `__get()`, public by-value
@@ -449,8 +460,9 @@
   local to the returned copy while the original referenced backing slot keeps
   its previous value. This remains bounded to proven copied-bucket locals and
   side-effect-free reached paths; arbitrary helper/callback side effects,
-  arbitrary object/container provenance, whole-array reference identity, exact
-  diagnostics, and native reference lowering remain unsupported.
+  object/container provenance outside the documented local container slices,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
   Supported reference-return bodies may also delegate to non-static helpers
   through PHP's static call syntaxes when a compatible current `$this` object
   exists. Covered forms include `self::helper(...)`, `parent::helper(...)`,
