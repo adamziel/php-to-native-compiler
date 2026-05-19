@@ -148,6 +148,11 @@ handled.
   through fresh helper-returned `stdClass` holders used by visible `__get()`,
   public `ArrayAccess::offsetGet()`, and public `ArrayAccess::offsetSet()`
   bodies.
+- [x] Lane 2258-C through 2261-C: sync dirty array-literal copied-source
+  paths back to object-property by-reference helper targets, covering visible
+  `__get()`, public `ArrayAccess::offsetGet()`, public
+  `ArrayAccess::offsetSet()`, and a whole-array value-copy no-over-promotion
+  guard.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic

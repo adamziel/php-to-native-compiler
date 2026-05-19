@@ -51200,9 +51200,6 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) {
         for binding in reference_bindings {
-            let ReferenceBindingTarget::CallerCell { name, .. } = &binding.target else {
-                continue;
-            };
             if !local_scope
                 .dirty_array_literal_copy_source_roots
                 .contains(&binding.param_name)
@@ -51226,7 +51223,25 @@ impl Interpreter {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            caller_scope.record_array_literal_copy_source_paths(name, portable_paths);
+            match &binding.target {
+                ReferenceBindingTarget::CallerCell { name, .. } => {
+                    caller_scope.record_array_literal_copy_source_paths(name, portable_paths);
+                }
+                ReferenceBindingTarget::CallerCellWithArrayCopySource {
+                    object, property, ..
+                } => {
+                    caller_scope.record_object_property_array_copy_source_paths(
+                        object,
+                        property,
+                        portable_paths,
+                    );
+                }
+                ReferenceBindingTarget::ValueWithArrayCopySource { .. }
+                | ReferenceBindingTarget::ValueWithArrayCopySourceAtPath { .. }
+                | ReferenceBindingTarget::ValueCopy
+                | ReferenceBindingTarget::ArrayOffset(_)
+                | ReferenceBindingTarget::ArrayOffsets(_) => {}
+            }
         }
     }
 

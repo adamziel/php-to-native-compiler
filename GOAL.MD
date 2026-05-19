@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2257:
+The current in-progress implementation frontier is Lane 2261:
+
+- Lanes 2258 through 2261 sync copied-source metadata for object-property
+  argument containers rebuilt through by-reference helper parameters. When
+  supported magic `__get()`, public `ArrayAccess::offsetGet()`, or public
+  `ArrayAccess::offsetSet()` bodies call helpers such as
+  `prepare($bucket, $this->args)` where `prepare()` assigns
+  `$args = array($copy)`, the dirty array-literal copied-source paths now
+  write back to the caller's concrete object property. A paired whole-copy
+  guard proves that copied locals stored in those containers still detach from
+  the original backing array. This remains bounded to concrete object
+  properties, portable copied-source roots, terminal selected reference
+  leaves, and supported method-body syntax; arbitrary untracked containers,
+  full whole-array identity outside covered roots, exact diagnostics, and
+  native reference/string COW lowering remain unsupported.
 
 - Lanes 2254 through 2257 let named public writes materialize dynamic
   `stdClass` slots and use those fresh helper-returned holders in the COW

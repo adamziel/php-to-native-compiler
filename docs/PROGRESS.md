@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2258-C through Lane 2261-C for object-property
+  `call_user_func_array()` argument containers rebuilt through by-reference
+  helper parameters. Dirty array-literal copied-source paths from a helper
+  frame now sync back to `CallerCellWithArrayCopySource` object-property
+  targets, so supported visible `__get()`, public `ArrayAccess::offsetGet()`,
+  and public `ArrayAccess::offsetSet()` bodies can pass `$this->args` by
+  reference to a helper that assigns `$args = array($copy)` and still let the
+  later reference-return callback promote the original selected source leaf.
+  A paired whole-array value-copy guard proves this does not over-promote
+  copied locals. This remains bounded to concrete object-property targets,
+  portable copied-source roots, terminal selected leaves, and supported
+  method-body syntax; arbitrary untracked containers, full whole-array
+  identity outside covered roots, exact diagnostics, and native
+  reference/string COW lowering remain unsupported.
+
 - Added Lane 2254-C through Lane 2257-C for fresh helper-returned `stdClass`
   holders in covered COW method bodies. Named public property writes now
   materialize dynamic slots on allowed dynamic-property objects such as

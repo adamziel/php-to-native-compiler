@@ -149,6 +149,11 @@
   `$holder->args`. This covers visible `__get()`, public
   `ArrayAccess::offsetGet()`, and public `ArrayAccess::offsetSet()` bodies for
   terminal selected reference leaves.
+  Object-property argument arrays rebuilt through by-reference helper
+  parameters are covered for the same selected-leaf path: if a helper assigns
+  `$args = array($copy)` through `&$this->args`, portable copied-source paths
+  from the helper frame sync back to that concrete object property before a
+  later `call_user_func_array($this->args)` dispatch.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.

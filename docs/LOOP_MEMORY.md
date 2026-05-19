@@ -23,6 +23,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T01:22:00+02:00
+
+- Checkpoint before this task: `45b8d8f6 runtime: support stdclass holder cow
+  containers`, pushed to `origin/master`.
+- Task attempted: Lane 2258-C through Lane 2261-C bundle, syncing
+  array-literal copied-source metadata back to object-property by-reference
+  helper targets so rebuilt `$this->args` containers remain usable by later
+  `call_user_func_array()` callbacks inside supported magic/`ArrayAccess`
+  bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2258/*` through
+  `tests/fixtures/milestone2261/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo build -q -p phpc` passed; focused fixture runner
+  and `--compare-php` checks passed for `milestone2258` through
+  `milestone2261`; adjacent fixture comparisons passed for `milestone2249`
+  through `milestone2257`; adjacent Rust regressions passed for
+  `php_runtime object_properties`, `object_model dynamic`, `object_model
+  magic`, `object_model arrayaccess`, `functions_and_scopes function`, and
+  `milestone1_fixtures_pass`; `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, and `git diff --check` passed.
+- Remaining COW gaps: whole-array reference identity outside covered
+  non-empty array-offset roots, untracked dynamic containers that expose
+  neither materialized reference cells nor portable copied-source roots,
+  unsupported syntax outside the current dynamic instance-call slice, exact
+  diagnostics/Throwable objects, and native reference/string COW lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-20T01:01:33+02:00
 
 - Checkpoint before this task: `fee2c36e runtime: promote copied bucket

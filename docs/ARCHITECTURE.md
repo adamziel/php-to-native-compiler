@@ -234,6 +234,14 @@ reuse the existing callable dispatch path; the new part is preserving the
 argument-container provenance when the callback-producing helper mutates the
 container first.
 
+Object-property by-reference parameters use the same copied-source path
+writeback when the target is a concrete object property with an imported
+source. If a helper receives `&$this->args` and assigns a new array literal
+containing a copied bucket, dirty portable paths from the helper frame are
+recorded on that object property, so later stored-root callback dispatch can
+recover the copied source without treating ordinary whole-array value copies
+as source aliases.
+
 Direct array literals returned from supported function bodies use the same
 reference and copied-source materialization path as array-literal assignments.
 When a helper returns `array($copy)` or a nested literal built from a copied
@@ -289,6 +297,10 @@ this model. Named writes on allowed dynamic-property objects materialize public
 dynamic slots through the same runtime policy as dynamic-property-name writes,
 so helpers can return `$holder->args` arrays that carry copied-bucket metadata
 into `call_user_func_array()` from supported magic and `ArrayAccess` bodies.
+Object-property argument containers rebuilt through by-reference helper
+parameters follow the same concrete-container rule once the target property is
+known, with copied-source paths synced back to the caller property on normal
+return.
 
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`

@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2261/arrayaccess_offsetget_byref_property_args_whole_copy_guard.php
