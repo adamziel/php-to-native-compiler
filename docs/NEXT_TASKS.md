@@ -13,10 +13,13 @@ handled.
 - [x] Lane 2121-C through 2125-C: preserve reference-cell fallbacks when
   covered whole-container unsets/overwrites detach aliases with live
   reference leaves.
+- [x] Lane 2126-C through 2128-C: import covered non-public object-property
+  leaf aliases into method scope so private/protected property unsets detach
+  caller aliases instead of leaving stale roots.
 - [ ] Next COW gap: recover future-path metadata after supported but
   non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies, or broaden
-  non-public/cross-scope object-property alias transfer without overclaiming
-  full PHP reference containers.
+  non-public ancestor-container alias detach without overclaiming full PHP
+  reference containers.
 - [ ] Remaining hard gaps: untracked dynamic containers, broader callback
   containers, whole-array reference identity, exact PHP diagnostics/Throwable
   objects, and native reference/string COW lowering.

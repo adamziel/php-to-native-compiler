@@ -2126,10 +2126,7 @@ impl SymbolTable {
                         ArrayOffsetAliasRoot::StaticArray { name } if name == root_name
                     )
                 })
-                .and_then(|alias| {
-                    self.read_array_offset_alias_reference_cell(alias)
-                        .or_else(|| self.read_array_offset_alias(alias).map(value_cell))
-                });
+                .and_then(|alias| self.detached_array_offset_alias_fallback_cell(alias));
             if let Some(cell) = fallback_cell.clone() {
                 for alias in &existing_aliases {
                     if let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root {
@@ -2384,8 +2381,7 @@ impl SymbolTable {
                 let root_alias = aliases
                     .iter()
                     .find(|alias| alias.root.matches_object_property(object_name, property))?;
-                self.read_array_offset_alias_reference_cell(root_alias)
-                    .or_else(|| self.read_array_offset_alias(root_alias).map(value_cell))
+                self.detached_array_offset_alias_fallback_cell(root_alias)
                     .map(|cell| (alias_name.clone(), cell))
             })
             .collect()
@@ -2401,8 +2397,7 @@ impl SymbolTable {
                 let root_alias = aliases
                     .iter()
                     .find(|alias| alias.root.matches_object(object_name))?;
-                self.read_array_offset_alias_reference_cell(root_alias)
-                    .or_else(|| self.read_array_offset_alias(root_alias).map(value_cell))
+                self.detached_array_offset_alias_fallback_cell(root_alias)
                     .map(|cell| (alias_name.clone(), cell))
             })
             .collect()
@@ -2497,9 +2492,7 @@ impl SymbolTable {
                 });
                 if should_detach {
                     if fallback_cell.is_none() {
-                        fallback_cell = self
-                            .read_array_offset_alias_reference_cell(&alias)
-                            .or_else(|| self.read_array_offset_alias(&alias).map(value_cell));
+                        fallback_cell = self.detached_array_offset_alias_fallback_cell(&alias);
                     }
                 } else {
                     aliases.push(alias);
@@ -2606,6 +2599,51 @@ impl SymbolTable {
             },
             keys: keys.to_vec(),
         }]
+    }
+
+    fn detached_array_offset_alias_fallback_cell(
+        &self,
+        alias: &ArrayOffsetAlias,
+    ) -> Option<VariableCell> {
+        if let Some(reference) = self.read_array_offset_alias_reference_cell(alias) {
+            if let Value::Array(mut array) = reference.value_cloned() {
+                self.rehydrate_descendant_reference_cells_for_detached_alias(alias, &mut array);
+                reference.set_value(Value::Array(array));
+            }
+            return Some(reference);
+        }
+
+        let mut value = self.read_array_offset_alias(alias)?;
+        if let Value::Array(array) = &mut value {
+            self.rehydrate_descendant_reference_cells_for_detached_alias(alias, array);
+        }
+        Some(value_cell(value))
+    }
+
+    fn rehydrate_descendant_reference_cells_for_detached_alias(
+        &self,
+        base_alias: &ArrayOffsetAlias,
+        array: &mut PhpArray,
+    ) {
+        let descendants = self
+            .array_offset_aliases
+            .values()
+            .flat_map(|aliases| aliases.iter())
+            .filter(|alias| {
+                alias.root == base_alias.root
+                    && alias.keys.starts_with(&base_alias.keys)
+                    && alias.keys.len() > base_alias.keys.len()
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for descendant in descendants {
+            let Some(reference) = self.read_array_offset_alias_reference_cell(&descendant) else {
+                continue;
+            };
+            let relative_keys = descendant.keys[base_alias.keys.len()..].to_vec();
+            Self::write_nested_array_offset_alias_reference(array, &relative_keys, reference);
+        }
     }
 
     fn mirror_static_array_offset_aliases_from_copy(
@@ -3162,25 +3200,45 @@ impl SymbolTable {
             .array_offset_aliases
             .iter()
             .flat_map(|(alias_name, aliases)| {
-                aliases.iter().filter_map(move |alias| {
-                    let ArrayOffsetAliasRoot::PublicObjectProperty { object, property } =
-                        &alias.root
-                    else {
-                        return None;
-                    };
-                    match source_scope.read_storage_named(object) {
+                aliases.iter().filter_map(move |alias| match &alias.root {
+                    ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
+                        match source_scope.read_storage_named(object) {
+                            Some(Value::Object(candidate)) if candidate == *source_object => {
+                                Some((
+                                    alias_name.clone(),
+                                    ArrayOffsetAlias {
+                                        root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                                            object: local_object_name.to_string(),
+                                            property: property.clone(),
+                                        },
+                                        keys: alias.keys.clone(),
+                                    },
+                                ))
+                            }
+                            _ => None,
+                        }
+                    }
+                    ArrayOffsetAliasRoot::ContextObjectProperty {
+                        object,
+                        property,
+                        current_class_id,
+                        protected_class_ids,
+                    } => match source_scope.read_storage_named(object) {
                         Some(Value::Object(candidate)) if candidate == *source_object => Some((
                             alias_name.clone(),
                             ArrayOffsetAlias {
-                                root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                                root: ArrayOffsetAliasRoot::ContextObjectProperty {
                                     object: local_object_name.to_string(),
                                     property: property.clone(),
+                                    current_class_id: *current_class_id,
+                                    protected_class_ids: protected_class_ids.clone(),
                                 },
                                 keys: alias.keys.clone(),
                             },
                         )),
                         _ => None,
-                    }
+                    },
+                    _ => None,
                 })
             })
             .collect();
@@ -4019,8 +4077,7 @@ impl SymbolTable {
             .or_else(|| {
                 aliases
                     .iter()
-                    .find_map(|alias| self.read_array_offset_alias(alias))
-                    .map(PhpReferenceCell::new)
+                    .find_map(|alias| self.detached_array_offset_alias_fallback_cell(alias))
             })?;
 
         for alias in aliases {
@@ -16818,10 +16875,9 @@ impl Interpreter {
                     .iter()
                     .find_map(|alias| scope.read_array_offset_alias_reference_cell(alias))
                     .or_else(|| {
-                        aliases
-                            .iter()
-                            .find_map(|alias| scope.read_array_offset_alias(alias))
-                            .map(PhpReferenceCell::new)
+                        aliases.iter().find_map(|alias| {
+                            scope.detached_array_offset_alias_fallback_cell(alias)
+                        })
                     })?;
                 for alias in &aliases {
                     if !scope.promote_array_offset_alias_to_reference_cell(alias, reference.clone())

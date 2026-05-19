@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone2127/private_magic_unset_reference_leaf_fallback.php
+mutated|mutated

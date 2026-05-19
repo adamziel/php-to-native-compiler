@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Lane 2126-C through Lane 2128-C for non-public object-property leaf
+  aliases imported into method scope. Private and protected `$this->property`
+  array-offset aliases can now detach when a direct method body or public
+  `__unset()` body unsets the containing property, so the caller's selected
+  reference leaf remains live after control returns. Focused system-PHP
+  coverage proves private method-body unset, private magic `__unset()`, and
+  protected inherited method-body unset shapes. This remains bounded to
+  selected leaf aliases and supported interpreter syntax; non-public
+  ancestor-container alias detach on property overwrite, untracked dynamic
+  containers, arbitrary future-path metadata recovery, full COW identity,
+  exact diagnostics, and native reference lowering remain unsupported.
+
 - Added Lane 2121-C through Lane 2125-C for whole-container COW detach
   fallbacks that contain live reference leaves. Direct array-root unsets,
   visible object-property unsets and overwrites, object-root unsets, direct
@@ -15,7 +27,7 @@ Implemented:
   visible property roots, object roots, direct method bodies, and public
   magic `__unset()` bodies. This remains bounded to visible public
   object-property alias imports and supported interpreter syntax; non-public
-  property alias transfer, untracked dynamic containers, arbitrary
+  ancestor-container alias detach, untracked dynamic containers, arbitrary
   future-path metadata recovery, full COW identity, exact diagnostics, and
   native reference lowering remain unsupported.
 

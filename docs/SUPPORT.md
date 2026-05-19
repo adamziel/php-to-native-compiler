@@ -539,11 +539,15 @@
   object-root unsets, direct method-body `unset($this->publicProperty)`, and
   public `__unset()` bodies detach affected aliases to existing runtime
   reference cells when available, so later writes through the detached
-  ancestor alias can still update nested reference-backed leaves. This is
-  limited to visible public object-property alias imports and the supported
-  interpreter subset; non-public property alias transfer, arbitrary dynamic
-  containers, whole-array reference identity, exact diagnostics, and native
-  reference lowering remain unsupported.
+  ancestor alias can still update nested reference-backed leaves. Covered
+  private and protected `$this->property` leaf aliases imported into method
+  scope also detach when a direct method body or public `__unset()` body
+  unsets the containing property. This is limited to visible public
+  object-property ancestor aliases, selected non-public leaf aliases, and the
+  supported interpreter subset; non-public ancestor-container detach on
+  property overwrite, arbitrary dynamic containers, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
   Bounded `call_user_func()` callbacks whose reached callback parameter is
   declared by reference use PHP's warning/no-reference behavior while carrying
   copied-bucket provenance through supported bodies. Covered forms include

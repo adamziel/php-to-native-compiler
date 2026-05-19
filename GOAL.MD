@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2125:
+The current in-progress implementation frontier is Lane 2128:
+
+- Lanes 2126 through 2128 extend the method-scope alias transfer used by the
+  previous public-property detach work to covered non-public object-property
+  leaf aliases. Private and protected `$this->property` array-offset aliases
+  imported from a caller can now detach when a direct method body or public
+  `__unset()` body unsets the containing property, preserving the live
+  reference leaf after control returns. Focused system-PHP coverage proves
+  private method-body unset, private magic `__unset()`, and protected
+  inherited method-body unset shapes. This remains bounded to selected leaf
+  aliases and supported interpreter syntax; non-public ancestor-container
+  alias detach on property overwrite, untracked dynamic containers,
+  arbitrary future-path metadata recovery, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2121 through 2125 preserve reference-cell identity when covered
   whole-container detach paths cut aliases loose. Direct array-root unsets,
@@ -44,7 +57,7 @@ The current in-progress implementation frontier is Lane 2125:
   visible property roots, object roots, direct method bodies, and public
   magic `__unset()` bodies. This remains bounded to aliases imported through
   visible public object-property roots and supported interpreter syntax;
-  non-public property alias transfer, untracked dynamic containers,
+  non-public ancestor-container alias detach, untracked dynamic containers,
   arbitrary future-path metadata recovery, whole-array reference identity,
   exact diagnostics, and native reference lowering remain unsupported.
 

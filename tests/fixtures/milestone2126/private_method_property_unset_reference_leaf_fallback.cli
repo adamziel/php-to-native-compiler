@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone2126/private_method_property_unset_reference_leaf_fallback.php
+mutated|mutated

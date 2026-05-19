@@ -44,6 +44,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
   if it passes.
 
+## Loop Event 2026-05-19T16:56:04+02:00
+
+- Checkpoint before this task: `4c3a2f5e runtime: preserve COW container
+  detach references`, pushed to `origin/master`.
+- Task attempted: Lane 2126-C through Lane 2128-C bundle, importing covered
+  non-public object-property leaf aliases into method scope so private and
+  protected property unsets detach caller aliases instead of leaving stale
+  roots.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2126/*`, `tests/fixtures/milestone2127/*`,
+  `tests/fixtures/milestone2128/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2126` through `milestone2128`; adjacent system-PHP comparisons
+  passed for `milestone2086` through `milestone2128`; focused Rust suites
+  passed for `object_model`, `functions_and_scopes`, `array_unset`, and
+  `dynamic_features`; `cargo fmt --check`, `cargo check -q`, and
+  `git diff --check` passed.
+- Remaining COW gaps: non-public ancestor-container alias detach on property
+  overwrite, future-path metadata recovery after supported but non-exact
+  `offsetSet()`/`offsetGet()`/`__get()` bodies, untracked dynamic containers,
+  broader dynamic callback containers, whole-array reference identity, exact
+  PHP diagnostics/Throwable objects, and native reference/string COW
+  lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-19T16:02:12+02:00
 
 - Checkpoint before this task: `277f98df runtime: execute magic offset COW
