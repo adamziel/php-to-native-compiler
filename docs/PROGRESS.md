@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 2196-C through Lane 2200-C for source-aware
+  `call_user_func_array()` argument arrays stored behind object-property
+  holders inside supported magic/`ArrayAccess` method bodies. Stored argument
+  arrays now use a general stored-root lookup for direct variables, visible
+  object properties, dynamic properties, and nested object-property array
+  roots when collecting copied-source entries. Reference-return callbacks that
+  receive a value-copy array can promote a proven source object-property leaf
+  to a real `PhpReferenceCell`, so assigning through the returned reference
+  mutates the original selected leaf while plain copied leaves remain
+  detached. Focused system-PHP coverage proves visible `__get()`,
+  `ArrayAccess::offsetGet()`, dynamic holder-property, nested holder-property,
+  and by-value callback-return shapes. This remains bounded to supported
+  interpreter syntax, visible object-property holder roots, concrete
+  copied-source paths, and selected reference-backed leaves; arbitrary
+  callback containers, unsupported method-body syntax, exact diagnostics, and
+  native reference/string COW lowering remain unsupported.
+
 - Added Lane 2189-C through Lane 2195-C for by-value overloaded arrays that
   carry concrete object handles plus source-aware `__call()` dispatch. When
   public by-value `ArrayAccess::offsetGet()` or visible `__get()` returns a

@@ -76,12 +76,17 @@ handled.
   concrete inner `ArrayAccess` objects for keyed, append, magic `__get()`, and
   covered reference-source paths, and preserve copied-source provenance when
   supported `offsetGet()`/`__get()` bodies delegate through `__call()`.
+- [x] Lane 2196-C through 2200-C: carry copied-source provenance through
+  `call_user_func_array()` argument arrays stored behind visible
+  object-property holders inside supported magic/`ArrayAccess` method bodies,
+  covering direct, dynamic, and nested holder-property roots plus
+  reference-return source-leaf promotion and by-value callback returns.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
   holders expose real cells or concrete writeback roots instead of stale paths.
-  A known next probe is `call_user_func_array()` argument arrays stored behind
-  an object-property holder inside magic method bodies.
+  A known next probe is a non-direct holder or callback container that cannot
+  be reduced to the current visible stored-root model.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

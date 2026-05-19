@@ -78,7 +78,12 @@
   detached copy. Missing instance-method dispatch through `__call()` preserves
   copied-source metadata for supported returned arrays, so `offsetGet()` and
   `__get()` bodies may delegate through supported `__call()` methods without
-  dropping selected reference-backed leaves. This does
+  dropping selected reference-backed leaves. Source-aware
+  `call_user_func_array()` argument handling also covers stored arrays behind
+  visible object-property holder roots inside those method bodies, including
+  dynamic property names and nested holder-property array roots; covered
+  reference-return callbacks promote proven source leaves to real cells before
+  returning the reference. This does
   not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
   dynamic callables or reflection targets, unsupported method-body syntax,

@@ -162,6 +162,17 @@ or argument-array invocation path. Reflected helper returns and reflected
 setter payloads therefore preserve the same copied-source metadata as direct
 method calls. Reflection still only covers the runtime's supported reflection
 targets and method bodies; it is not arbitrary reflection side-effect recovery.
+Stored `call_user_func_array()` argument arrays now use the same stored-root
+identity model for source-aware value arguments that reference slots already
+used. Direct variables, visible object-property holder roots, dynamic holder
+properties, and nested object-property array roots can expose copied-source
+entries to callback invocation. If a reference-return callback returns a
+selected leaf from a value-copy parameter, the interpreter first looks for a
+source reference cell at the copied path and can promote a proven
+object-property source leaf into a `PhpReferenceCell`; otherwise it falls back
+to the detached local copied value. This is still bounded to concrete
+stored-root paths and selected leaves, not arbitrary callback-container graph
+analysis.
 
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`

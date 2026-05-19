@@ -23,6 +23,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T21:10:00+02:00
+
+- Checkpoint before this task: `06d841ab checkpoint: 2026-05-19 18:50:27
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2196-C through Lane 2200-C bundle, extending
+  source-aware `call_user_func_array()` argument handling from direct stored
+  variables to stored-root argument arrays behind visible object-property
+  holders inside supported magic/`ArrayAccess` method bodies. Direct holder
+  properties, dynamic holder properties, and nested holder-property array roots
+  now expose copied-source entries; reference-return callbacks can promote a
+  proven source object-property leaf to a `PhpReferenceCell` instead of
+  returning a stale local copied leaf.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2196/*`, `tests/fixtures/milestone2197/*`,
+  `tests/fixtures/milestone2198/*`, `tests/fixtures/milestone2199/*`,
+  `tests/fixtures/milestone2200/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2196` through `milestone2200`; adjacent comparisons passed for
+  `milestone2033`, `milestone2035`, `milestone2080`, `milestone2081`,
+  `milestone2082`, and `milestone2098`; `cargo check -q -p phpc` passed;
+  `cargo test -q -p phpc --test array_reference_literals` passed; focused
+  `functions_and_scopes` and `object_model` filters passed.
+- Remaining COW gaps: non-direct holders and callback containers that cannot
+  be reduced to the current visible stored-root model, arbitrary unsupported
+  magic/`ArrayAccess` method syntax, untracked dynamic containers, full
+  whole-array reference identity, exact PHP diagnostics/Throwable objects, and
+  native reference/string COW lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes. After checkpoint,
+  attack the next non-direct holder/callback-container COW path that still
+  loses concrete source identity.
+
 ## Loop Event 2026-05-19T22:10:00+02:00
 
 - Checkpoint before this task: `5b1b4a3a checkpoint: 2026-05-19 18:30:39

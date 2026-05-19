@@ -32,7 +32,24 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2195:
+The current in-progress implementation frontier is Lane 2200:
+
+- Lanes 2196 through 2200 move the stored `call_user_func_array()` argument
+  path onto the same source-aware stored-root model used by reference slots.
+  Argument arrays stored behind visible object properties, dynamic property
+  names, and nested object-property array roots can now expose copied-source
+  entries to supported callbacks inside magic/`ArrayAccess` method bodies.
+  When a reference-return callback receives a value-copy array and returns a
+  selected copied leaf by reference, the runtime promotes the proven source
+  object-property leaf to a `PhpReferenceCell` instead of binding the returned
+  reference to a stale local copy. Focused system-PHP coverage proves visible
+  `__get()` and public `ArrayAccess::offsetGet()` holder-property argument
+  arrays, dynamic holder properties, nested holder property arrays, and a
+  by-value callback return. This remains bounded to supported interpreter
+  syntax, visible object-property holder roots, concrete copied-source paths,
+  and selected reference-backed leaves; it does not claim arbitrary callback
+  containers, unsupported method-body syntax, whole-array reference identity,
+  exact diagnostics, or native reference/string COW lowering.
 
 - Lanes 2189 through 2195 close two higher-order method-body COW gaps.
   By-value `ArrayAccess::offsetGet()` and visible `__get()` results that are
