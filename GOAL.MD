@@ -32,7 +32,25 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2171:
+The current in-progress implementation frontier is Lane 2178:
+
+- Lanes 2172 through 2178 broaden supported magic/`ArrayAccess` method-body
+  dispatch while preserving copied-array COW provenance. Dynamic calls where
+  the callee expression evaluates to a PHP array callable now reuse the
+  existing direct callable-array invocation path, including the source-aware
+  variant. `ReflectionMethod::invoke()` and `invokeArgs()` now re-enter
+  supported user methods through source-aware invocation instead of dropping
+  copied-source metadata. Focused system-PHP coverage proves
+  `ArrayAccess::offsetSet()` copied-source storage through property-held and
+  indexed dynamic array callables, by-value `ArrayAccess::offsetGet()` returns
+  through dynamic array callables and reflection, magic `__set()` copied-source
+  storage through a dynamic array callable, magic `__get()` reflection
+  `invokeArgs()` returns, and reflection-dispatched `offsetSet()` helper
+  storage. This removes real method-body dispatch holes, but still does not
+  claim arbitrary unsupported PHP syntax, untracked dynamic containers, side
+  effects that cannot be expressed through the supported interpreter/writeback
+  paths, whole-array reference identity, exact diagnostics, or native
+  reference/string COW lowering.
 
 - Lanes 2167 through 2171 broaden supported magic/`ArrayAccess` method-body
   assignment targets for copied-source COW propagation. Expression-form

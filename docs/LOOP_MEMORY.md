@@ -23,6 +23,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T20:45:00+02:00
+
+- Checkpoint before this task: `822601a5 runtime: broaden holder COW array
+  writes`, pushed to `origin/master`.
+- Task attempted: Lane 2172-C through Lane 2178-C bundle, routing supported
+  dynamic array-callable and `ReflectionMethod::invoke()`/`invokeArgs()` calls
+  inside magic/`ArrayAccess` method bodies through source-aware dispatch and
+  copied-source invocation paths.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/type_introspection_builtins.rs`,
+  `tests/fixtures/milestone2172/*`, `tests/fixtures/milestone2173/*`,
+  `tests/fixtures/milestone2174/*`, `tests/fixtures/milestone2175/*`,
+  `tests/fixtures/milestone2176/*`, `tests/fixtures/milestone2177/*`,
+  `tests/fixtures/milestone2178/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed before reflection fixture
+  creation;
+  focused system-PHP comparisons passed for `milestone2172` through
+  `milestone2178`; adjacent comparisons passed for `milestone2152` through
+  `milestone2171`; filtered Rust regression checks passed for reflection,
+  dynamic features, object model, and call_user_func, with earlier filters
+  also passing for functions/scopes, array reference literals, assignment, and
+  closure; the full checkpoint exposed a stale type-introspection expectation
+  for array-callable dynamic invocation, and the focused
+  `cargo test -q -p phpc --test type_introspection_builtins` check passed
+  after updating that expectation.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies outside
+  supported interpreter syntax and tracked writeback roots, untracked dynamic
+  containers, broader callback containers, whole-array reference identity,
+  exact PHP diagnostics/Throwable objects, and native reference/string COW
+  lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes. After checkpoint,
+  continue with the general method-body side-effect/value propagation model
+  rather than one-off shape broadening.
+
 ## Loop Event 2026-05-19T20:10:00+02:00
 
 - Checkpoint before this task: `81d99218 runtime: propagate nested append COW

@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2174/dynamic_array_callable_offsetget_return_copy_source.php

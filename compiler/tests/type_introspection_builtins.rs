@@ -172,7 +172,7 @@ echo is_callable(["Box", "named"], false) ? "1" : "0";
 }
 
 #[test]
-fn is_callable_rejects_unsupported_output_arguments_and_invocation_for_now() {
+fn is_callable_rejects_unsupported_output_arguments_and_invokes_array_callables() {
     let syntax_error = run_source("<?php\nvar_dump(is_callable(\"missing\", 1));\n").unwrap_err();
 
     assert_eq!(syntax_error.phase, Phase::Runtime);
@@ -194,25 +194,20 @@ fn is_callable_rejects_unsupported_output_arguments_and_invocation_for_now() {
         "arity mismatch for is_callable(): expected 1 to 2 argument(s), got 3"
     );
 
-    let invocation_error = run_source(
+    let execution = run_source(
         r#"<?php
 class Box {
-    public function open() {}
+    public function open() { echo "ok"; }
 }
 $box = new Box();
 $callable = [$box, "open"];
 $callable();
 "#,
     )
-    .unwrap_err();
+    .expect("array callable variable invocation should execute");
 
-    assert_eq!(invocation_error.phase, Phase::Runtime);
-    assert_eq!(invocation_error.line, 7);
-    assert_eq!(invocation_error.column, 1);
-    assert_eq!(
-        invocation_error.message,
-        "unsupported call dynamic function call: callable expression must evaluate to string, got array"
-    );
+    assert_eq!(execution.stdout, "ok");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

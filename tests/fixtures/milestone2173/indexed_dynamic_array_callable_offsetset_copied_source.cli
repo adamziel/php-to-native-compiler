@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2173/indexed_dynamic_array_callable_offsetset_copied_source.php

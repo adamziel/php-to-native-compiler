@@ -54,6 +54,12 @@ handled.
   arrays reach the general object-property array COW propagation path,
   covering keyed, dynamic-keyed, append-suffix, dynamic append-suffix, and
   direct dynamic-property append copied-source stores.
+- [x] Lane 2172-C through 2178-C: route supported dynamic array-callable and
+  `ReflectionMethod::invoke()`/`invokeArgs()` method-body calls through
+  source-aware invocation paths, including copied-source propagation for
+  `ArrayAccess::offsetSet()`, by-value `ArrayAccess::offsetGet()` returns,
+  indexed callback containers, magic `__set()` payload storage, magic
+  `__get()` reflection returns, and reflection-dispatched setter helpers.
 - [ ] Next COW gap, hard-first: keep extending the general
   magic/`ArrayAccess` method-body side-effect/writeback model so helper,
   callback, dynamic-holder, and arbitrary supported side-effect bodies use one

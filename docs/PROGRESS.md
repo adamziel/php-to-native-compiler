@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Lane 2172-C through Lane 2178-C for source-aware method-body dispatch
+  inside supported magic/`ArrayAccess` bodies. Dynamic calls whose callee
+  expression evaluates to an array callable now use the same direct
+  array-callable invocation helper as `call_user_func()`/reference-return
+  paths, including the source-aware copied-array COW path.
+  `ReflectionMethod::invoke()` and `invokeArgs()` now route supported user
+  methods through the same source-aware invocation architecture instead of
+  dropping copied-source metadata. Focused system-PHP coverage proves
+  `ArrayAccess::offsetSet()` copied-source storage through property-held and
+  indexed dynamic array callables, by-value `ArrayAccess::offsetGet()` returns
+  through dynamic array callables and reflection, magic `__set()` copied-source
+  storage through a dynamic array callable, magic `__get()` reflection
+  `invokeArgs()` returns, and reflection-dispatched setter helper storage
+  while preserving selected reference-backed leaves and detaching ordinary
+  copied leaves. This remains bounded to supported interpreter syntax,
+  callable-array values and reflection targets the runtime already
+  understands, tracked copied-source roots, and the existing method-body
+  writeback model; arbitrary unsupported method-body syntax, untracked dynamic
+  containers, arbitrary side effects beyond covered writeback paths,
+  whole-array reference identity, exact diagnostics, and native
+  reference/string COW lowering remain unsupported.
+
 - Added Lane 2167-C through Lane 2171-C for supported method-body
   object-property array writes that previously stopped at parser or bounded
   bridge boundaries. Expression-form non-direct holder assignments now produce

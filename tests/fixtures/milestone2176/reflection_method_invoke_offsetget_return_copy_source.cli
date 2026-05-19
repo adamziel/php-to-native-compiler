@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2176/reflection_method_invoke_offsetget_return_copy_source.php

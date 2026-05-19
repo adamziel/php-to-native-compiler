@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2177/reflection_method_invokeargs_magic_get_return_copy_source.php

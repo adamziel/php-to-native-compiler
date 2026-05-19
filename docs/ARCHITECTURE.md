@@ -122,6 +122,21 @@ reference-cell binding, copied-source mirroring, and alias-sync helpers as
 direct object-property array writes. The path is still bounded to supported
 interpreter syntax and tracked object-property roots; it is not arbitrary PHP
 side-effect recovery for untracked dynamic containers.
+Dynamic calls inside supported method bodies now accept callee expressions
+that evaluate to the runtime's supported PHP array callable shape. Those calls
+reuse the direct array-callable invocation helper, and the source-aware
+dynamic-call variant reuses the matching copied-source helper so setter
+payloads and by-value `offsetGet()` returns keep their tracked COW provenance
+across property-held or indexed callback variables. This is dispatch
+broadening for known callable-array values, not a general side-effect-analysis
+model for arbitrary dynamic callback containers.
+`ReflectionMethod::invoke()` and `invokeArgs()` follow the same rule for
+supported reflected user methods: after validating the reflected target, the
+interpreter enters the reflected function through the source-aware expression
+or argument-array invocation path. Reflected helper returns and reflected
+setter payloads therefore preserve the same copied-source metadata as direct
+method calls. Reflection still only covers the runtime's supported reflection
+targets and method bodies; it is not arbitrary reflection side-effect recovery.
 
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`

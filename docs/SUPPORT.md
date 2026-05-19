@@ -49,10 +49,18 @@
   expression-form writes to non-direct holder object-property arrays, including
   dynamic property names and append-with-suffix stores, reuse the same
   object-property array reference/copy-source propagation when the holder
-  evaluates to a tracked object. This does not provide general PHP reference
-  containers, `Closure::bind`/`bindTo`, untracked dynamic container recovery,
-  unsupported method-body syntax, whole-array reference identity, exact PHP
-  diagnostics, or native COW lowering.
+  evaluates to a tracked object. Dynamic method-body calls whose callee
+  expression evaluates to a supported array callable also execute through the
+  same direct array-callable dispatch, including copied-source propagation for
+  setter payloads and by-value `offsetGet()` returns. Supported
+  `ReflectionMethod::invoke()` and `invokeArgs()` calls inside those method
+  bodies also re-enter reflected user methods through source-aware dispatch,
+  so covered reflected helper returns and setter payloads keep copied-source
+  metadata. This does not provide general PHP reference containers,
+  `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
+  dynamic callables or reflection targets, unsupported method-body syntax,
+  arbitrary side effects beyond covered writeback paths, whole-array reference
+  identity, exact PHP diagnostics, or native COW lowering.
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or
   declaration-contained declarations can be loaded. The executing subset
@@ -2161,8 +2169,13 @@
   source forms, and native lowering remain unsupported.
 - positional function calls with optional trailing commas in argument lists
 - dynamic function calls through string-valued expressions that resolve to the
-  documented callable builtin subset or user-defined functions, with optional
-  trailing commas in argument lists
+  documented callable builtin subset or user-defined functions, and through
+  supported `[object, method]` or `["ClassName", "method"]` array callables,
+  with optional trailing commas in argument lists. Array-callable dynamic
+  invocation is bounded to the same public object-method and public static
+  method subset as direct array-callable dispatch; arbitrary callback
+  containers, object `__invoke`, first-class callables, and exact PHP callable
+  diagnostics remain unsupported.
 - trailing default parameter values for user functions over the documented
   constant-expression subset, including bare references to previously defined
   unqualified constants, the current built-in global constant slice, and
@@ -2815,9 +2828,9 @@
   Class-string receivers are true for public static declared methods, or for
   missing/inaccessible methods when the class declares or inherits public
   static `__callStatic`. This `is_callable()` magic-method introspection does
-  not broaden the currently executable array-callback dispatch subset. Array
-  callable dynamic invocation, callable-name output, object `__invoke`
-  callables, private/protected caller-context method callability,
+  not broaden the currently executable array-callback dispatch subset.
+  Callable-name output, object `__invoke` callables, private/protected
+  caller-context method callability,
   `__callStatic` parity for declared public non-static methods, first-class callable syntax,
   namespace/autoload behavior, exact native `TypeError` behavior, native
   lowering, and the environment-specific legacy `is_real` alias are not
