@@ -20247,6 +20247,19 @@ handled.
   callback/builtin reference-return sources, arbitrary PHP outside the
   interpreter subset, and native reference lowering named as unsupported.
 
+## Lane 1838-C through Lane 1841-C: Executed ArrayAccess Copy Sources
+
+- [x] Runtime/tests/docs bundle: derive copied-array COW provenance from
+  executed public by-reference `ArrayAccess::offsetGet()` bindings during
+  normal reads. Cover direct, property-held, expression-root, and
+  magic-provided roots whose supported method bodies perform side effects,
+  initialize missing buckets, bind local aliases, and return a backing bucket
+  before the copied bucket is mutated through covered reference slots. Keep
+  append-offset expression roots, arbitrary PHP outside the interpreter
+  subset, arbitrary magic/`ArrayAccess` side effects that the interpreter
+  cannot execute, exact diagnostic streams, and native reference lowering
+  named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

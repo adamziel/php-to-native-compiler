@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T03:09:31+02:00
+
+- Checkpoint before this task: `62bf431a runtime: support expression-root
+  reference sources`, pushed to `origin/master`.
+- Task attempted: Lane 1838-C through Lane 1841-C bundle, deriving
+  copied-array COW provenance from executed public by-reference
+  `ArrayAccess::offsetGet()` bindings during normal reads for direct,
+  property-held, expression-root, and magic-provided roots.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1838/*`, `tests/fixtures/milestone1839/*`,
+  `tests/fixtures/milestone1840/*`, `tests/fixtures/milestone1841/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new `milestone1838`
+  through `milestone1841` fixtures; `cargo run -q -p phpc -- test
+  --compare-php` passed each new fixture directory and adjacent
+  `milestone1532`, `milestone1672`, `milestone1751`, `milestone1802`, and
+  `milestone1834` through `milestone1837`; focused `object_model`
+  ArrayAccess, `functions_and_scopes` reference, and `syntax_boundaries`
+  reference-assignment Rust tests passed; `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, and `git diff --check` passed.
+- Remaining COW gaps: append-offset expression roots, scalar/string
+  temporary reference parity, arbitrary callback and builtin reference-return
+  sources, arbitrary PHP and magic/`ArrayAccess` side effects outside the
+  interpreter subset, full exception unwinding and uncaught propagation,
+  arbitrary Iterator side effects, broader complex alias sinks and alias
+  lifetime ordering, exact PHP stderr/fatal text, binary/multibyte string
+  offset behavior, and native reference/string COW lowering.
+- Next concrete task: run focused Rust tests, formatting, diff check, and the
+  full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T02:59:32+02:00
 
 - Checkpoint before this task: `31d003a5 runtime: detach by-value magic get

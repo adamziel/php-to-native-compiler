@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1838-C through Lane 1841-C for executed `ArrayAccess` copy-source
+  COW provenance. Normal array reads from direct, property-held,
+  expression-root, and magic-provided `ArrayAccess` roots now derive copied
+  reference-slot provenance from the executed public by-reference
+  `offsetGet()` binding, so supported method-body side effects, missing-bucket
+  initialization, and local aliases are honored before a copied bucket is used
+  by by-reference `foreach` or helper calls. This does not claim append-offset
+  expression roots, arbitrary PHP outside the interpreter subset, arbitrary
+  magic/`ArrayAccess` side effects that the interpreter cannot execute, exact
+  diagnostic streams, or native reference lowering. Focused verification:
+  `cargo run -q -p phpc -- test --compare-php` passed the new
+  `milestone1838`, `milestone1839`, `milestone1840`, and `milestone1841`
+  fixtures plus adjacent `milestone1532`, `milestone1672`, `milestone1751`,
+  `milestone1802`, and `milestone1834` through `milestone1837`.
+
 - Added Lane 1834-C through Lane 1837-C for expression-root array-offset
   reference sources. Direct variable targets now bind through arrays,
   direct function-call results, direct method-call results, and recursive

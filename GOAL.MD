@@ -32,7 +32,18 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1837:
+The current in-progress implementation frontier is Lane 1841:
+
+- Lanes 1838 through 1841 derive copied-array COW provenance from executed
+  public by-reference `ArrayAccess::offsetGet()` bodies during normal reads.
+  Direct, property-held, expression-root, and magic-provided `ArrayAccess`
+  roots such as `$bucket = $bag[10]`, `$bucket = $holder->bag[10]`, and
+  `$bucket = $box->missing[10]` can now run supported side effects and local
+  alias setup inside `offsetGet()` before preserving reference slots in the
+  copied array. This still does not claim append-offset expression roots,
+  arbitrary PHP outside the interpreter subset, arbitrary magic/`ArrayAccess`
+  side effects that the interpreter cannot execute, exact diagnostic streams,
+  or native reference lowering.
 
 - Lanes 1834 through 1837 add expression-root array-offset reference
   sources. Direct variable targets can now bind to selected buckets below

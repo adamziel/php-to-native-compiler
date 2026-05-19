@@ -272,6 +272,12 @@
   the returned bucket binding. Covered examples include
   `$this->hits[] = $offset; if (!isset($this->items[$offset])) { ... }`
   followed by `$bucket =& $this->items[$offset]; return $bucket[$leaf];`.
+  Normal array reads from direct, property-held, expression-root, and
+  magic-provided `ArrayAccess` roots also use that executed by-reference
+  `offsetGet()` binding to derive copied-array reference-slot provenance, so
+  `$bucket = $bag[10]`, `$bucket = $holder->bag[10]`, and
+  `$bucket = $box->missing[10]` preserve covered referenced elements in the
+  copied bucket after supported method-body side effects run.
   Covered reference-return bodies may also return from executed `if`/`else`
   branches when the returned expression is one of the supported lvalue shapes,
   so branch-selected backing buckets such as

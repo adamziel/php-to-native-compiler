@@ -26261,15 +26261,18 @@ impl Interpreter {
                         .map_err(|error| runtime_error(index.span(), error))?;
                     (Self::array_key_value(Some(key.clone())), Some(key))
                 };
-                let value = self.call_array_access_method(
-                    object.clone(),
-                    "offsetGet",
-                    vec![offset_arg],
-                    span,
-                )?;
+                let (value, executed_source) = self
+                    .call_array_access_offset_get_with_array_copy_source(
+                        object.clone(),
+                        offset_arg,
+                        span,
+                        scope,
+                    )?;
                 let source = if matches!(value, Value::Array(_)) {
-                    copy_source_key.and_then(|key| {
-                        self.array_access_array_copy_source_for_object(object, key, span)
+                    executed_source.or_else(|| {
+                        copy_source_key.and_then(|key| {
+                            self.array_access_array_copy_source_for_object(object, key, span)
+                        })
                     })
                 } else {
                     None
@@ -47818,6 +47821,67 @@ impl Interpreter {
                     ),
                 )
             })
+    }
+
+    fn call_array_access_offset_get_with_array_copy_source(
+        &mut self,
+        object: PhpObject,
+        offset_arg: Value,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<PublicObjectPropertyArrayCopySource>)> {
+        if let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "offsetGet")
+        {
+            let function =
+                self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+            let function = function.as_ref();
+            if function.returns_by_reference {
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::offsetGet()"),
+                            "static ArrayAccess offsetGet() reference sources are not implemented",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::offsetGet()"),
+                            "ArrayAccess offsetGet() reference sources require a public method in the current subset",
+                        ),
+                    ));
+                }
+                ensure_user_function_arity(function, 1, span)?;
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+
+                let called_class_id = object.class_id();
+                let binding = self
+                    .call_reference_return_function_with_checked_values_for_reference_assignment(
+                        function,
+                        vec![offset_arg],
+                        Some(object),
+                        Some(class_id),
+                        Some(called_class_id),
+                        Vec::new(),
+                        caller_scope,
+                    )?;
+                let source = Self::public_object_property_array_copy_source_from_reference_binding(
+                    &binding,
+                    caller_scope,
+                );
+                let value =
+                    self.read_reference_return_binding_value(function, &binding, caller_scope)?;
+                return Ok((value, source));
+            }
+        }
+
+        let value = self.call_array_access_method(object, "offsetGet", vec![offset_arg], span)?;
+        Ok((value, None))
     }
 
     fn is_countable_value(&self, value: &Value) -> bool {
