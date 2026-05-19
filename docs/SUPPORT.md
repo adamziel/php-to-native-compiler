@@ -5246,6 +5246,16 @@
   and array-offset unsets that detach reference-backed local aliases, string
   COW identity, and native reference lowering remain
   unsupported.
+  Dynamic property assignment on objects with visible `__set()` now follows
+  the same magic setter value-cell path as named property assignment for the
+  covered direct dynamic-property-name form. Array literals, stored arrays,
+  and by-value `ArrayAccess::offsetGet()` RHS values passed to
+  `$object->$name = ...` are rehydrated before `__set()` executes, so
+  supported setter bodies that store into a backing array through local keys
+  preserve selected reference-backed leaves. Dynamic-property expressions
+  outside direct object variables, unsupported setter body syntax, untracked
+  dynamic containers, full PHP COW identity, exact diagnostics, and native
+  lowering remain unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

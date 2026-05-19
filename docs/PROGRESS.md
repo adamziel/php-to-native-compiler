@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 2104-C through Lane 2106-C for dynamic-property magic `__set()`
+  COW value cells. Dynamic property assignment now tries visible
+  `__set($name, $value)` before falling back to dynamic public-property
+  creation, and it passes the same rehydrated assignment value used by the
+  named-property magic path. Supported `__set()` bodies that store through
+  local keys therefore keep reference-backed leaves from array literals,
+  stored arrays, and by-value `ArrayAccess::offsetGet()` RHS values. Focused
+  system-PHP coverage proves all three shapes. This remains bounded to
+  supported interpreter syntax and direct dynamic property names; untracked
+  dynamic containers, arbitrary future-path metadata recovery, whole-array
+  reference identity, exact diagnostics, and native reference lowering remain
+  unsupported.
+
 - Added Lane 2101-C through Lane 2103-C for the remaining static
   magic/`ArrayAccess` method-body gap covered in this bundle. Direct
   append-style `ArrayAccess` writes now always execute `offsetSet(null, ...)`

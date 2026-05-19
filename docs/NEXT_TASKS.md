@@ -20986,6 +20986,18 @@ handled.
   containers, arbitrary future-path metadata recovery, full PHP COW identity,
   exact diagnostics, and native lowering named as unsupported.
 
+## Lane 2104-C through Lane 2106-C: Dynamic Magic `__set()` Value Cells
+
+- [x] Runtime/tests/docs bundle: route dynamic property assignment through
+  visible `__set($name, $value)` before falling back to dynamic public-property
+  creation, using the same rehydrated assignment value as named magic
+  property assignment. Cover dynamic `__set()` with a literal reference array,
+  a stored reference array, and a by-value `ArrayAccess::offsetGet()` RHS that
+  returns an array with reference cells, all with system-PHP comparisons and
+  CLI snapshots. Keep unsupported PHP syntax, untracked dynamic containers,
+  arbitrary future-path metadata recovery, full PHP COW identity, exact
+  diagnostics, and native lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Continue the arbitrary-method-body push in the remaining paths that

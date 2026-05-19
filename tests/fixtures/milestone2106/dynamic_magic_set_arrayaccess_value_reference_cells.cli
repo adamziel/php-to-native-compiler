@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2106/dynamic_magic_set_arrayaccess_value_reference_cells.php
+stdout:
+copy|plain-original|local
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2105/dynamic_magic_set_stored_reference_cells.php
+stdout:
+copy|plain-original
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

@@ -18,6 +18,30 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T15:22:36+02:00
+
+- Checkpoint before this task: `248b6d7f runtime: execute magic ArrayAccess
+  COW method bodies`, pushed to `origin/master`.
+- Task attempted: Lane 2104-C through Lane 2106-C bundle, routing dynamic
+  property assignment through visible `__set()` with the same rehydrated
+  value-cell path as named magic property assignment.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2104/*`, `tests/fixtures/milestone2105/*`,
+  `tests/fixtures/milestone2106/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes matched for dynamic `__set()` with
+  literal reference arrays, stored reference arrays, and by-value
+  `ArrayAccess::offsetGet()` RHS arrays; focused fixture comparisons passed
+  for `milestone2104` through `milestone2106`.
+- Remaining COW gaps: future-path metadata recovery after supported but
+  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies, untracked dynamic
+  containers, deeper mixed chains and dynamic callback containers not covered
+  by fixtures, whole-array reference identity, exact PHP diagnostics/Throwable
+  objects, and native reference/string COW lowering.
+- Next concrete task: run adjacent/broad COW regression, focused object and
+  magic-property Rust suites, formatting/check/diff gates, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T15:10:53+02:00
 
 - Checkpoint before this task: `dd94f11d runtime: preserve by-value overloaded

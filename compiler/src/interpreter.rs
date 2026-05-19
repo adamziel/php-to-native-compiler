@@ -20193,9 +20193,30 @@ impl Interpreter {
                             },
                         ) {
                             Ok(()) => {}
-                            Err(error) if Self::is_undefined_property_error(&error) => object_value
-                                .write_dynamic_public_property(&property, value.clone())
-                                .map_err(|error| runtime_error(*span, error))?,
+                            Err(error) if Self::is_undefined_property_error(&error) => {
+                                let method_value = self.value_with_assignment_reference_cells(
+                                    value.clone(),
+                                    expr,
+                                    &array_literal_references,
+                                    &array_copy_sources,
+                                    scope,
+                                    expr.span(),
+                                )?;
+                                if self
+                                    .call_magic_instance_method_with_values(
+                                        object_value.clone(),
+                                        "__set",
+                                        vec![Value::String(property.clone()), method_value],
+                                        *span,
+                                    )?
+                                    .is_some()
+                                {
+                                    return Ok(value);
+                                }
+                                object_value
+                                    .write_dynamic_public_property(&property, value.clone())
+                                    .map_err(|error| runtime_error(*span, error))?;
+                            }
                             Err(error) => return Err(runtime_error(*span, error)),
                         }
                         scope.remove_public_object_property_root_from_array_offset_aliases(

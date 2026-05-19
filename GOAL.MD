@@ -32,7 +32,23 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2103:
+The current in-progress implementation frontier is Lane 2106:
+
+- Lanes 2104 through 2106 route dynamic property assignment through visible
+  `__set()` before falling back to dynamic public-property creation, matching
+  the named-property magic path and preserving COW value cells through
+  supported `__set()` bodies. Dynamic `$object->$name = ...` now rehydrates
+  array-literal reference elements and copied reference-cell arrays before
+  invoking `__set($name, $value)`, so bodies that store through local keys
+  such as `$key = $name; $this->store[$key] = $value;` keep selected
+  reference-backed leaves. Focused system-PHP coverage proves dynamic
+  `__set()` with a literal reference array, a stored reference array, and a
+  by-value `ArrayAccess::offsetGet()` RHS that returns an array with reference
+  cells. This remains bounded to supported interpreter syntax, direct dynamic
+  property names, and recoverable method-body effects; untracked dynamic
+  containers, arbitrary future-path metadata recovery, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 2101 through 2103 remove one remaining static fast path from
   append-style `ArrayAccess::offsetSet(null, ...)` writes and add focused
