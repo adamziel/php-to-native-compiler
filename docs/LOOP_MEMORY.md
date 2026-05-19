@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T12:32:21+02:00
+
+- Checkpoint before this task: `3953ad60 runtime: preserve call_user_func
+  warning COW copies`, pushed to `origin/master`.
+- Task attempted: Lane 2051-C through Lane 2055-C bundle, preserving
+  copied-bucket COW behavior for bounded `call_user_func()` callbacks whose
+  reached callback parameter is variadic and declared by reference inside
+  supported by-value magic/`ArrayAccess` method bodies. PHP warns and passes
+  values for these calls; the implementation now imports copied-source
+  aliases under variadic rest-element paths such as `$values[0]` and strips
+  that local prefix during writeback.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2051/*`, `tests/fixtures/milestone2052/*`,
+  `tests/fixtures/milestone2053/*`, `tests/fixtures/milestone2054/*`,
+  `tests/fixtures/milestone2055/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for `milestone2051`
+  through `milestone2055`; adjacent comparisons passed for `milestone1673c`
+  and `milestone2041` through `milestone2055`; the broader existing COW band
+  `milestone1880` through `milestone2055` passed; focused Rust suites passed
+  for `functions_and_scopes`, `object_model`, `call_user_func_builtin`, and
+  `array_reference_literals`; `cargo check -q`, `cargo fmt`,
+  `cargo fmt --check`, and `git diff --check` passed before the docs update.
+- Remaining COW gaps: arbitrary untracked magic/`ArrayAccess` side effects,
+  untracked dynamic containers, whole-array reference identity, exact PHP
+  diagnostics, native reference/string COW lowering, native lowering for
+  these interpreter paths, and remaining scalar parent/mixed `ArrayAccess`
+  parity outside covered roots.
+- Next concrete task: run final formatting/check/diff gates and one full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T12:16:54+02:00
 
 - Checkpoint before this task: `1b4486a5 runtime: preserve exact magic COW

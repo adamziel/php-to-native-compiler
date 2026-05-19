@@ -442,8 +442,7 @@
   shared while ordinary nested arrays detach. Helper parent replacement is
   bounded separately below, including the sequential shape where the same
   helper first mutates a copied reference leaf and then replaces that leaf's
-  parent before return. Broader helper/callback side effects,
-  variadic by-reference `call_user_func()` callback parameters, untraced
+  parent before return. Broader helper/callback side effects, untraced
   `call_user_func_array()` by-reference callback argument containers,
   whole-array reference identity, exact diagnostics, and native reference
   lowering remain unsupported.
@@ -507,10 +506,15 @@
   array-callable callbacks, visible by-value `__get()`, and public by-value
   `ArrayAccess::offsetGet()`. Callback leaf writes update the selected
   original backing reference, and the returned copy keeps that selected
-  reference-backed leaf shared while ordinary nested arrays detach. This does
-  not cover variadic by-reference `call_user_func()` callbacks, arbitrary
-  callback side effects, whole-array reference identity, exact diagnostics,
-  or native reference lowering.
+  reference-backed leaf shared while ordinary nested arrays detach. Variadic
+  callback parameters declared by reference are covered for the same
+  warning/no-reference behavior when the rest array contains proven copied
+  buckets, including `$values[0]` and the same rest path after a fixed
+  argument. Rest-element leaf writes update the selected original backing
+  reference, ordinary nested arrays detach, and a later parent replacement
+  stays local to the returned copy. This does not cover arbitrary callback
+  side effects, whole-array reference identity, exact diagnostics, or native
+  reference lowering.
   Bounded `call_user_func_array()` callback containers with reached
   by-reference callback parameters can also preserve copied-bucket COW
   provenance in these bodies. Covered forms include literal

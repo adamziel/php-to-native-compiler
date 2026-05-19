@@ -2693,8 +2693,9 @@ impl SymbolTable {
         source_keys: &[ArrayKey],
         source_scope: &SymbolTable,
     ) -> Vec<ArrayOffsetAlias> {
-        let mut imported = self.import_array_offset_aliases_from_path_copy(
+        let mut imported = self.import_array_offset_aliases_from_path_copy_to_path(
             target_name,
+            &[],
             source_scope,
             &ArrayOffsetAliasRoot::StaticArray {
                 name: source_name.to_string(),
@@ -2707,8 +2708,9 @@ impl SymbolTable {
             for source_alias in source_aliases {
                 let mut keys = source_alias.keys;
                 keys.extend(source_keys.iter().cloned());
-                imported.extend(self.import_array_offset_aliases_from_path_copy(
+                imported.extend(self.import_array_offset_aliases_from_path_copy_to_path(
                     target_name,
+                    &[],
                     source_scope,
                     &source_alias.root,
                     &keys,
@@ -2775,9 +2777,10 @@ impl SymbolTable {
         }
     }
 
-    fn import_array_offset_aliases_from_path_copy(
+    fn import_array_offset_aliases_from_path_copy_to_path(
         &mut self,
         target_name: &str,
+        target_keys: &[ArrayKey],
         source_scope: &SymbolTable,
         source_root: &ArrayOffsetAliasRoot,
         source_keys: &[ArrayKey],
@@ -2803,13 +2806,15 @@ impl SymbolTable {
                             && alias.keys.starts_with(source_keys)
                             && (include_exact_path || alias.keys.len() > source_keys.len())
                         {
+                            let mut keys = target_keys.to_vec();
+                            keys.extend(alias.keys[source_keys.len()..].iter().cloned());
                             return Some((
                                 alias_name.clone(),
                                 ArrayOffsetAlias {
                                     root: ArrayOffsetAliasRoot::StaticArray {
                                         name: target_name.to_string(),
                                     },
-                                    keys: alias.keys[source_keys.len()..].to_vec(),
+                                    keys,
                                 },
                             ));
                         }
@@ -2883,10 +2888,26 @@ impl SymbolTable {
         source: &ArrayCopySource,
         source_scope: &SymbolTable,
     ) -> Vec<ArrayOffsetAlias> {
+        self.import_array_copy_source_aliases_from_copy_to_path(
+            target_name,
+            &[],
+            source,
+            source_scope,
+        )
+    }
+
+    fn import_array_copy_source_aliases_from_copy_to_path(
+        &mut self,
+        target_name: &str,
+        target_keys: &[ArrayKey],
+        source: &ArrayCopySource,
+        source_scope: &SymbolTable,
+    ) -> Vec<ArrayOffsetAlias> {
         let mut imported = Vec::new();
         for source_root in source_scope.array_copy_source_roots(source) {
-            imported.extend(self.import_array_offset_aliases_from_path_copy(
+            imported.extend(self.import_array_offset_aliases_from_path_copy_to_path(
                 target_name,
+                target_keys,
                 source_scope,
                 &source_root,
                 &source.keys,
@@ -5300,6 +5321,14 @@ struct ArrayCopySource {
     keys: Vec<ArrayKey>,
     include_exact_path: bool,
 }
+
+type ArrayCopySourceBinding = (String, Vec<ArrayKey>, ArrayCopySource);
+type ArrayCopySourceAliasWriteback = (
+    String,
+    Vec<ArrayKey>,
+    ArrayCopySource,
+    Vec<ArrayOffsetAlias>,
+);
 
 #[derive(Debug, Clone)]
 enum ArrayCopySourceRoot {
@@ -35569,21 +35598,6 @@ impl Interpreter {
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        if function
-            .params
-            .iter()
-            .enumerate()
-            .any(|(index, param)| param.by_reference && param.is_variadic && index < args.len())
-        {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    callable_name(&function.name),
-                    "call_user_func() variadic reference parameter invocation is not implemented",
-                ),
-            ));
-        }
-
         let (values, by_value_array_copy_source_bindings) = self
             .evaluate_by_value_call_arguments_with_array_copy_sources(
                 function,
@@ -35615,21 +35629,6 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Vec<Value>> {
-        if function
-            .params
-            .iter()
-            .enumerate()
-            .any(|(index, param)| param.by_reference && param.is_variadic && index < args.len())
-        {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    callable_name(&function.name),
-                    "call_user_func() variadic reference parameter invocation is not implemented",
-                ),
-            ));
-        }
-
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
             values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
@@ -36514,7 +36513,7 @@ impl Interpreter {
     fn array_copy_source_bindings_for_reference_bindings(
         reference_bindings: &[ReferenceBinding],
         caller_scope: &SymbolTable,
-    ) -> Vec<(String, ArrayCopySource)> {
+    ) -> Vec<ArrayCopySourceBinding> {
         let mut bindings = Vec::new();
         for binding in reference_bindings {
             let source = match &binding.target {
@@ -36537,11 +36536,11 @@ impl Interpreter {
             };
             if bindings
                 .iter()
-                .any(|(param_name, _)| param_name == &binding.param_name)
+                .any(|(param_name, _, _)| param_name == &binding.param_name)
             {
                 continue;
             }
-            bindings.push((binding.param_name.clone(), source));
+            bindings.push((binding.param_name.clone(), Vec::new(), source));
         }
         bindings
     }
@@ -37844,7 +37843,7 @@ impl Interpreter {
         items: &[ArrayItem],
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Vec<Value>, Vec<(String, ArrayCopySource)>)> {
+    ) -> CompileResult<(Vec<Value>, Vec<ArrayCopySourceBinding>)> {
         let mut argument_array = PhpArray::new();
         let mut entry_sources = Vec::new();
 
@@ -37897,7 +37896,7 @@ impl Interpreter {
         argument_expr: &Expr,
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<Option<(Vec<Value>, Vec<(String, ArrayCopySource)>)>> {
+    ) -> CompileResult<Option<(Vec<Value>, Vec<ArrayCopySourceBinding>)>> {
         let Expr::Variable(source_name, _) = argument_expr else {
             return Ok(None);
         };
@@ -37974,7 +37973,7 @@ impl Interpreter {
         span: Span,
         entry_sources: &[(ArrayKey, ArrayCopySource)],
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Vec<Value>, Vec<(String, ArrayCopySource)>)> {
+    ) -> CompileResult<(Vec<Value>, Vec<ArrayCopySourceBinding>)> {
         if Self::call_user_func_array_value_has_string_keys(argument_array) {
             return self
                 .call_user_func_array_named_value_arguments_with_array_copy_sources_from_array(
@@ -38007,7 +38006,7 @@ impl Interpreter {
                 continue;
             }
             if let Some(source) = entry_source {
-                copy_source_bindings.push((param.name.clone(), source));
+                copy_source_bindings.push((param.name.clone(), Vec::new(), source));
             }
         }
 
@@ -38022,7 +38021,7 @@ impl Interpreter {
         span: Span,
         entry_sources: &[(ArrayKey, ArrayCopySource)],
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Vec<Value>, Vec<(String, ArrayCopySource)>)> {
+    ) -> CompileResult<(Vec<Value>, Vec<ArrayCopySourceBinding>)> {
         if function.params.iter().any(|param| param.is_variadic) {
             return Err(runtime_error(
                 span,
@@ -38118,7 +38117,7 @@ impl Interpreter {
             );
             if matches!(value, Value::Array(_)) {
                 if let Some(source) = entry_source {
-                    copy_source_bindings.push((param.name.clone(), source));
+                    copy_source_bindings.push((param.name.clone(), Vec::new(), source));
                 }
             }
             values_by_param[param_index] = Some(value);
@@ -40839,7 +40838,7 @@ impl Interpreter {
     ) -> CompileResult<
         Option<(
             Vec<Value>,
-            Vec<(String, ArrayCopySource)>,
+            Vec<ArrayCopySourceBinding>,
             Vec<(String, String, Vec<ArrayKey>)>,
         )>,
     > {
@@ -40895,20 +40894,27 @@ impl Interpreter {
         function: &FunctionDecl,
         args: &[Expr],
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Vec<Value>, Vec<(String, ArrayCopySource)>)> {
+    ) -> CompileResult<(Vec<Value>, Vec<ArrayCopySourceBinding>)> {
         let mut values = Vec::with_capacity(args.len());
         let mut copy_source_bindings = Vec::new();
 
         for (index, arg) in args.iter().enumerate() {
-            let Some(param) = function.params.get(index) else {
+            let Some((param_index, param)) = function
+                .params
+                .get(index)
+                .map(|param| (index, param))
+                .or_else(|| {
+                    function
+                        .params
+                        .iter()
+                        .enumerate()
+                        .next_back()
+                        .filter(|(_, param)| param.is_variadic)
+                })
+            else {
                 values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
                 continue;
             };
-
-            if param.is_variadic {
-                values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
-                continue;
-            }
 
             let (value, array_copy_source) =
                 self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
@@ -40919,7 +40925,12 @@ impl Interpreter {
             );
             if matches!(value, Value::Array(_)) {
                 if let Some(source) = array_copy_source {
-                    copy_source_bindings.push((param.name.clone(), source));
+                    let target_keys = if param.is_variadic {
+                        vec![ArrayKey::Int((index - param_index) as i64)]
+                    } else {
+                        Vec::new()
+                    };
+                    copy_source_bindings.push((param.name.clone(), target_keys, source));
                 }
             }
             values.push(value);
@@ -40933,7 +40944,7 @@ impl Interpreter {
         function: &FunctionDecl,
         args: &[Expr],
         caller_scope: &SymbolTable,
-    ) -> Vec<(String, ArrayCopySource)> {
+    ) -> Vec<ArrayCopySourceBinding> {
         function
             .params
             .iter()
@@ -40944,7 +40955,7 @@ impl Interpreter {
                 }
                 let source = self
                     .public_object_property_array_copy_source_for_value_expr(arg, caller_scope)?;
-                Some((param.name.clone(), source))
+                Some((param.name.clone(), Vec::new(), source))
             })
             .collect()
     }
@@ -45103,17 +45114,21 @@ impl Interpreter {
 
     fn write_back_array_copy_source_aliases(
         &mut self,
-        alias_writebacks: &[(String, ArrayCopySource, Vec<ArrayOffsetAlias>)],
+        alias_writebacks: &[ArrayCopySourceAliasWriteback],
         local_scope: &SymbolTable,
         caller_scope: &mut SymbolTable,
         span: Span,
     ) -> CompileResult<()> {
-        for (local_name, source, local_aliases) in alias_writebacks {
+        for (local_name, local_prefix_keys, source, local_aliases) in alias_writebacks {
             for local_alias in local_aliases {
                 let ArrayOffsetAliasRoot::StaticArray { name } = &local_alias.root else {
                     continue;
                 };
-                if name != local_name || local_alias.keys.is_empty() {
+                if name != local_name
+                    || local_alias.keys.is_empty()
+                    || !local_alias.keys.starts_with(local_prefix_keys)
+                    || local_alias.keys.len() <= local_prefix_keys.len()
+                {
                     continue;
                 }
                 let value = if let Some(value) =
@@ -45140,7 +45155,7 @@ impl Interpreter {
 
                 for source_root in caller_scope.array_copy_source_roots(source) {
                     let mut source_keys = source.keys.clone();
-                    source_keys.extend(local_alias.keys.iter().cloned());
+                    source_keys.extend(local_alias.keys[local_prefix_keys.len()..].iter().cloned());
                     let source_alias = ArrayOffsetAlias {
                         root: source_root,
                         keys: source_keys,
@@ -45179,14 +45194,14 @@ impl Interpreter {
     fn sync_reference_binding_array_copy_source_metadata(
         &mut self,
         reference_bindings: &[ReferenceBinding],
-        by_value_array_copy_source_bindings: &[(String, ArrayCopySource)],
+        by_value_array_copy_source_bindings: &[ArrayCopySourceBinding],
         local_scope: &SymbolTable,
         caller_scope: &mut SymbolTable,
     ) {
         for binding in reference_bindings {
             let has_imported_source = by_value_array_copy_source_bindings
                 .iter()
-                .any(|(param_name, _)| param_name == &binding.param_name)
+                .any(|(param_name, _, _)| param_name == &binding.param_name)
                 || matches!(
                     binding.target,
                     ReferenceBindingTarget::CallerCellWithArrayCopySource { .. }
@@ -45217,14 +45232,14 @@ impl Interpreter {
     fn detach_reference_binding_array_copy_source_aliases(
         &mut self,
         reference_bindings: &[ReferenceBinding],
-        by_value_array_copy_source_bindings: &[(String, ArrayCopySource)],
+        by_value_array_copy_source_bindings: &[ArrayCopySourceBinding],
         local_scope: &SymbolTable,
         caller_scope: &mut SymbolTable,
     ) {
         for binding in reference_bindings {
             let has_imported_source = by_value_array_copy_source_bindings
                 .iter()
-                .any(|(param_name, _)| param_name == &binding.param_name)
+                .any(|(param_name, _, _)| param_name == &binding.param_name)
                 || matches!(
                     binding.target,
                     ReferenceBindingTarget::CallerCellWithArrayCopySource { .. }
@@ -45516,7 +45531,7 @@ impl Interpreter {
         mut reference_scope: Option<&mut SymbolTable>,
         prebound_locals: Vec<PreboundLocal>,
         by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
-        by_value_array_copy_source_bindings: Vec<(String, ArrayCopySource)>,
+        by_value_array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
@@ -45543,11 +45558,7 @@ impl Interpreter {
             Vec<ArrayKey>,
             Vec<ArrayOffsetAlias>,
         )> = Vec::new();
-        let mut array_copy_source_alias_writebacks: Vec<(
-            String,
-            ArrayCopySource,
-            Vec<ArrayOffsetAlias>,
-        )> = Vec::new();
+        let mut array_copy_source_alias_writebacks: Vec<ArrayCopySourceAliasWriteback> = Vec::new();
         for local in prebound_locals {
             match local {
                 PreboundLocal::Value { name, value } => local_scope.write_static(&name, value),
@@ -45620,6 +45631,52 @@ impl Interpreter {
                         .map_err(|error| runtime_error(param.span, error))?;
                 }
                 local_scope.write_static(&param.name, Value::Array(rest));
+                if let Some(source_scope) = reference_scope.as_deref() {
+                    for (rest_index, arg) in args.iter().skip(index).enumerate() {
+                        if !matches!(arg, Value::Array(_)) {
+                            continue;
+                        }
+                        let target_keys = vec![ArrayKey::Int(rest_index as i64)];
+                        let Some((_, _, source)) = by_value_array_copy_source_bindings.iter().find(
+                            |(param_name, candidate_keys, _)| {
+                                param_name == &param.name && candidate_keys == &target_keys
+                            },
+                        ) else {
+                            continue;
+                        };
+                        let imported_aliases = local_scope
+                            .import_array_copy_source_aliases_from_copy_to_path(
+                                &param.name,
+                                &target_keys,
+                                source,
+                                source_scope,
+                            );
+                        let imported_aliases: Vec<_> = imported_aliases
+                            .into_iter()
+                            .filter(|alias| {
+                                matches!(
+                                    &alias.root,
+                                    ArrayOffsetAliasRoot::StaticArray { name }
+                                        if name == &param.name
+                                ) && alias.keys.starts_with(&target_keys)
+                                    && alias.keys.len() > target_keys.len()
+                            })
+                            .collect();
+                        local_scope.record_array_literal_copy_source_path(
+                            &param.name,
+                            target_keys.clone(),
+                            source.clone(),
+                        );
+                        if !imported_aliases.is_empty() {
+                            array_copy_source_alias_writebacks.push((
+                                param.name.clone(),
+                                target_keys,
+                                source.clone(),
+                                imported_aliases,
+                            ));
+                        }
+                    }
+                }
                 break;
             }
 
@@ -45655,6 +45712,7 @@ impl Interpreter {
                             if !imported_aliases.is_empty() {
                                 array_copy_source_alias_writebacks.push((
                                     param.name.clone(),
+                                    Vec::new(),
                                     source.clone(),
                                     imported_aliases,
                                 ));
@@ -45761,9 +45819,11 @@ impl Interpreter {
                     .get(index)
                     .is_some_and(|arg| matches!(arg, Value::Array(_)))
                 {
-                    if let Some((_, source)) = by_value_array_copy_source_bindings
+                    if let Some((_, target_keys, source)) = by_value_array_copy_source_bindings
                         .iter()
-                        .find(|(param_name, _)| param_name == &param.name)
+                        .find(|(param_name, target_keys, _)| {
+                            param_name == &param.name && target_keys.is_empty()
+                        })
                     {
                         if let Some(source_scope) = reference_scope.as_deref() {
                             let imported_aliases = local_scope
@@ -45785,6 +45845,7 @@ impl Interpreter {
                             if !imported_aliases.is_empty() {
                                 array_copy_source_alias_writebacks.push((
                                     param.name.clone(),
+                                    target_keys.clone(),
                                     source.clone(),
                                     imported_aliases,
                                 ));
@@ -45825,9 +45886,11 @@ impl Interpreter {
             let value_is_array = matches!(value, Value::Array(_));
             local_scope.write_static(&param.name, value);
             if value_is_array {
-                if let Some((_, source)) = by_value_array_copy_source_bindings
+                if let Some((_, target_keys, source)) = by_value_array_copy_source_bindings
                     .iter()
-                    .find(|(param_name, _)| param_name == &param.name)
+                    .find(|(param_name, target_keys, _)| {
+                        param_name == &param.name && target_keys.is_empty()
+                    })
                 {
                     if let Some(source_scope) = reference_scope.as_deref() {
                         let imported_aliases = local_scope
@@ -45849,6 +45912,7 @@ impl Interpreter {
                         if !imported_aliases.is_empty() {
                             array_copy_source_alias_writebacks.push((
                                 param.name.clone(),
+                                target_keys.clone(),
                                 source.clone(),
                                 imported_aliases,
                             ));

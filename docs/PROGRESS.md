@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2051-C through Lane 2055-C for `call_user_func()` callbacks
+  whose reached callback parameter is both variadic and declared by
+  reference inside supported by-value magic/`ArrayAccess` method bodies. PHP
+  emits warnings and passes values for these calls; the interpreter now keeps
+  the no-reference call shape while importing copied-source aliases below
+  variadic rest-element paths such as `$values[0]` and stripping that local
+  prefix during writeback. Focused system-PHP coverage proves visible public
+  `__get()`, public by-value `ArrayAccess::offsetGet()`, string callbacks,
+  closure callbacks, public object array-callable callbacks, and a fixed
+  argument before the variadic rest parameter. Selected original
+  reference-backed leaves update, ordinary nested arrays detach, and later
+  parent replacement stays local to the returned copy. This remains bounded
+  to supported interpreter syntax and tracked copied-source roots; arbitrary
+  untracked side effects, whole-array reference identity, exact diagnostics,
+  and native reference lowering remain unsupported.
+
 - Added Lane 2046-C through Lane 2050-C for `call_user_func()` callbacks
   whose reached callback parameter is declared by reference inside supported
   by-value magic/`ArrayAccess` method bodies. PHP emits a warning and passes

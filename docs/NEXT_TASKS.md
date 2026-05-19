@@ -20840,10 +20840,22 @@ handled.
   bodies. Cover PHP's warning/no-reference value-passing semantics for string
   callbacks, dynamic string callbacks, closure callbacks, public object
   array-callable callbacks, visible public `__get()`, and public by-value
-  `ArrayAccess::offsetGet()` with system-PHP comparisons. Keep variadic
-  by-reference `call_user_func()` callbacks, arbitrary untracked side effects,
-  whole-array reference identity, exact diagnostics, and native reference
-  lowering named as unsupported.
+  `ArrayAccess::offsetGet()` with system-PHP comparisons. Keep arbitrary
+  untracked side effects, whole-array reference identity, exact diagnostics,
+  and native reference lowering named as unsupported.
+
+## Lane 2051-C through Lane 2055-C: Variadic `call_user_func()` Warning Copies
+
+- [x] Runtime/tests/docs bundle: preserve copied-bucket COW behavior for
+  bounded `call_user_func()` callbacks whose reached callback parameter is
+  variadic and declared by reference inside supported by-value
+  magic/`ArrayAccess` method bodies. Cover PHP's warning/no-reference
+  value-passing semantics for string callbacks, closure callbacks, public
+  object array-callable callbacks, visible public `__get()`, public by-value
+  `ArrayAccess::offsetGet()`, rest parameter index zero, and a fixed argument
+  before the variadic rest parameter with system-PHP comparisons. Keep
+  arbitrary untracked side effects, whole-array reference identity, exact
+  diagnostics, and native reference lowering named as unsupported.
 
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
