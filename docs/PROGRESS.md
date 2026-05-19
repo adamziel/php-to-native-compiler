@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1945-C through Lane 1949-C for source-aware by-value user helper
+  calls in magic/`ArrayAccess` method bodies. Non-reference direct user
+  functions, instance-method helpers, and string user callbacks through
+  `call_user_func()` now record proven array-copy sources on by-value callee
+  parameters, so returning the parameter or a tracked helper local preserves
+  the copied bucket's reference-backed nested slots. Focused system-PHP
+  coverage includes visible by-value `__get()` helper calls, a public
+  by-value `ArrayAccess::offsetGet()` helper body, and a `call_user_func()`
+  string user callback wrapper. `call_user_func_array()`, closures, array
+  callbacks, by-reference helper parameters, arbitrary PHP side effects,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 1940-C through Lane 1944-C for wrapper-expression by-value
   magic/`ArrayAccess` method-body copied-array COW provenance. The
   source-aware return/evaluation path now carries backed array-copy metadata

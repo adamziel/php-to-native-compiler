@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T09:14:00+02:00
+
+- Checkpoint before this task: `bad604a3 runtime: preserve wrapper COW
+  provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1945-C through Lane 1949-C bundle, preserving
+  copied-array COW provenance through non-reference user helper calls in
+  by-value magic/`ArrayAccess` method-body returns.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1945/*`, `tests/fixtures/milestone1946/*`,
+  `tests/fixtures/milestone1947/*`, `tests/fixtures/milestone1948/*`,
+  `tests/fixtures/milestone1949/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes exposed direct user helper,
+  instance helper, and `call_user_func()` string user callback provenance
+  loss, then matched after the patch. Focused system-PHP comparisons passed
+  for `milestone1945`, `milestone1946`, `milestone1947`, `milestone1948`,
+  and `milestone1949`; adjacent comparisons passed for `milestone1940`
+  through `milestone1949`; adjacent Rust tests `call_user_func_builtin`,
+  `functions_and_scopes`, `object_model`, `array_reference_literals`, and
+  `assignment_expression` passed.
+- Remaining COW gaps: `call_user_func_array()` helper-return provenance,
+  closures and array callbacks, by-reference helper parameters, arbitrary PHP
+  side effects outside the interpreter subset, unsupported method-body syntax,
+  side-effecting copied-key parity gaps that still fail probes, scalar parent
+  overwrite/error parity gaps, broad alias lifetime ordering, exact PHP
+  diagnostics, whole-array reference identity, native reference/string COW
+  lowering, and native lowering for these interpreter paths.
+- Next concrete task: run formatting, cargo check/fmt/diff-check, and the
+  full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T08:40:00+02:00
 
 - Checkpoint before this task: `5c3d6111 runtime: preserve conditional COW

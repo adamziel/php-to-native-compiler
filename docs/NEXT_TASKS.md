@@ -20555,15 +20555,27 @@ handled.
   copied-key parity, whole-array reference identity, exact diagnostics, and
   native reference lowering named as unsupported.
 
+## Lane 1945-C through Lane 1949-C: Helper-Call Method Body Copy Provenance
+
+- [x] Runtime/tests/docs bundle: preserve by-value copied-array COW
+  provenance when visible magic/`ArrayAccess` bodies pass a proven backed
+  bucket through non-reference user helper calls before returning it. Cover
+  direct user-function helpers, helper locals assigned from the parameter,
+  instance-method helpers, public by-value `ArrayAccess::offsetGet()` helper
+  bodies, and string user callbacks through `call_user_func()` with
+  system-PHP comparisons. Keep `call_user_func_array()`, closures, array
+  callbacks, by-reference helper parameters, arbitrary PHP side effects,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
-- [ ] Pick the next bounded magic/`ArrayAccess` body shape from a system-PHP
-  probe and implement it only when the backing-bucket bridge can be proven.
-  Prioritize method-body expression/control-flow forms that currently execute
-  but lose copied-array provenance, plus scalar-parent overwrite/error parity
-  for covered append/keyed/reference paths. Keep arbitrary side-effecting
-  method bodies and full PHP COW identity out of the support claim until the
-  value model can prove them directly.
+- [ ] Extend the helper-call provenance path to the next proven callback shape,
+  likely literal `call_user_func_array()` argument arrays, or switch to scalar
+  parent overwrite/error parity for covered append/keyed/reference paths if a
+  system-PHP probe shows higher risk. Keep arbitrary side-effecting method
+  bodies and full PHP COW identity out of the support claim until the value
+  model can prove them directly.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

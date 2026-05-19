@@ -840,6 +840,16 @@
   null-coalescing assignment expressions such as
   `return $bucket ??= $this->store[$name];`. The variable `??=` assignment
   branch records RHS provenance when it writes the local array.
+  Non-reference user helper calls can also carry that provenance through
+  by-value callee parameters when the argument expression is a proven backed
+  array copy. Covered helper forms include direct user functions such as
+  `return helper($this->store[$name]);`, helper bodies that assign the
+  parameter to a tracked local before returning it, instance-method helpers
+  such as `return $this->helper($this->store[$name]);`, public by-value
+  `ArrayAccess::offsetGet()` bodies using those direct helpers, and string
+  user callbacks through `call_user_func()`. `call_user_func_array()`,
+  closures, array callbacks, and by-reference helper parameters do not yet
+  preserve method-return provenance through this helper-call path.
   When those proven copied arrays are supplied by value to user functions or
   instance methods, their covered reference-backed elements are preserved in
   the callee's local parameter array. The same bounded preservation applies

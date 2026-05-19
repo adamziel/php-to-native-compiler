@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1944:
+The current in-progress implementation frontier is Lane 1949:
+
+- Lanes 1945 through 1949 preserve by-value copied-array COW provenance when
+  visible magic/`ArrayAccess` method bodies pass a proven backed bucket
+  through non-reference user helper calls before returning it. Covered calls
+  include direct user functions, helper locals inside those functions,
+  instance-method helpers, public by-value `ArrayAccess::offsetGet()` helper
+  bodies, and string user callbacks through `call_user_func()`. The callee
+  parameter records the argument's proven array-copy source, so returns of
+  the parameter or a tracked local keep selected reference-backed nested
+  slots shared while ordinary nested values stay detached. This does not yet
+  cover `call_user_func_array()`, closures, array callbacks, by-reference
+  helper parameters, arbitrary PHP side effects, whole-array reference
+  identity, exact diagnostics, or native reference lowering.
 
 - Lanes 1940 through 1944 preserve by-value copied-array COW provenance when
   visible magic/`ArrayAccess` method bodies return a proven backed bucket
