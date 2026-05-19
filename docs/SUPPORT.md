@@ -847,7 +847,12 @@
   parameter to a tracked local before returning it, instance-method helpers
   such as `return $this->helper($this->store[$name]);`, public by-value
   `ArrayAccess::offsetGet()` bodies using those direct helpers, and string
-  user callbacks through `call_user_func()`. `call_user_func_array()`,
+  user callbacks through `call_user_func()`. Literal positional
+  `call_user_func_array()` argument arrays also preserve this provenance for
+  non-reference string user callbacks, including explicit integer-keyed
+  positional arrays such as
+  `return call_user_func_array("helper", array(0 => $this->store[$name]));`.
+  Dynamic, stored, or named `call_user_func_array()` argument arrays,
   closures, array callbacks, and by-reference helper parameters do not yet
   preserve method-return provenance through this helper-call path.
   When those proven copied arrays are supplied by value to user functions or

@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T09:20:00+02:00
+
+- Checkpoint before this task: `7850fad7 runtime: preserve helper-call COW
+  provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1950-C through Lane 1954-C bundle, preserving
+  copied-array COW provenance through literal positional
+  `call_user_func_array()` wrappers in by-value magic/`ArrayAccess`
+  method-body returns.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1950/*`, `tests/fixtures/milestone1951/*`,
+  `tests/fixtures/milestone1952/*`, `tests/fixtures/milestone1953/*`,
+  `tests/fixtures/milestone1954/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probe exposed literal
+  `call_user_func_array()` helper-return provenance loss, then matched after
+  the patch. Focused system-PHP comparisons passed for `milestone1950`,
+  `milestone1951`, `milestone1952`, `milestone1953`, and `milestone1954`;
+  adjacent comparisons passed for `milestone1945` through `milestone1954`;
+  adjacent Rust tests `call_user_func_builtin`, `functions_and_scopes`,
+  `object_model`, and `array_reference_literals` passed.
+- Remaining COW gaps: dynamic, stored, or named `call_user_func_array()`
+  helper-return provenance, closures and array callbacks, by-reference helper
+  parameters, arbitrary PHP side effects outside the interpreter subset,
+  unsupported method-body syntax, scalar parent overwrite/error parity gaps,
+  broad alias lifetime ordering, exact PHP diagnostics, whole-array reference
+  identity, native reference/string COW lowering, and native lowering for
+  these interpreter paths.
+- Next concrete task: run formatting, cargo check/fmt/diff-check, and the
+  full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T09:14:00+02:00
 
 - Checkpoint before this task: `bad604a3 runtime: preserve wrapper COW

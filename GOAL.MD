@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1949:
+The current in-progress implementation frontier is Lane 1954:
+
+- Lanes 1950 through 1954 extend helper-call copied-array provenance to
+  literal positional `call_user_func_array()` wrappers for non-reference user
+  callbacks. Visible by-value `__get()` and public by-value
+  `ArrayAccess::offsetGet()` bodies can pass a proven backed bucket through a
+  literal argument array, including explicit integer-keyed positional arrays,
+  and return the callback parameter or a tracked local while preserving the
+  copied bucket's selected reference-backed nested slots. A by-value
+  user-call argument sourced from an `ArrayAccess::offsetGet()` wrapper keeps
+  the same referenced slot shared in the callee. Dynamic/stored/named
+  `call_user_func_array()` argument arrays, closures, array callbacks,
+  by-reference callback parameters, arbitrary PHP side effects, whole-array
+  reference identity, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 1945 through 1949 preserve by-value copied-array COW provenance when
   visible magic/`ArrayAccess` method bodies pass a proven backed bucket

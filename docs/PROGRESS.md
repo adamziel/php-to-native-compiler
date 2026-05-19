@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1950-C through Lane 1954-C for literal
+  `call_user_func_array()` helper wrappers in by-value magic/`ArrayAccess`
+  method bodies. Non-reference string user callbacks now preserve proven
+  array-copy sources when the callback arguments come from a literal
+  positional array, including explicit integer-keyed positional arrays.
+  Focused system-PHP coverage includes visible by-value `__get()` wrappers,
+  helper-local callback returns, public by-value `ArrayAccess::offsetGet()`
+  wrappers, and a by-value user-call argument sourced from an `ArrayAccess`
+  wrapper. Dynamic, stored, or named `call_user_func_array()` argument arrays,
+  closures, array callbacks, by-reference callback parameters, arbitrary PHP
+  side effects, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
+
 - Added Lane 1945-C through Lane 1949-C for source-aware by-value user helper
   calls in magic/`ArrayAccess` method bodies. Non-reference direct user
   functions, instance-method helpers, and string user callbacks through

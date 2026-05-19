@@ -33355,6 +33355,14 @@ impl Interpreter {
         if key == "call_user_func" || fallback_key.as_deref() == Some("call_user_func") {
             return self.call_user_func_direct_with_array_copy_source(args, span, caller_scope);
         }
+        if key == "call_user_func_array" || fallback_key.as_deref() == Some("call_user_func_array")
+        {
+            return self.call_user_func_array_direct_with_array_copy_source(
+                args,
+                span,
+                caller_scope,
+            );
+        }
 
         let callable = self.lookup_direct_function_call(name).ok_or_else(|| {
             runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
@@ -34559,6 +34567,92 @@ impl Interpreter {
         }
     }
 
+    fn call_user_func_array_direct_with_array_copy_source(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        if args.len() != 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "call_user_func_array()",
+                    ArityExpectation::Exactly(2),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let callback = self.evaluate(&args[0], caller_scope)?;
+
+        match &callback {
+            Value::String(callback_name) => {
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                if let Callable::Builtin(key) = &callable {
+                    if let Some(function) = mysqli_stmt_execute_function_label(key) {
+                        let positional_args = self.evaluate_call_user_func_array_arguments(
+                            &args[1],
+                            span,
+                            caller_scope,
+                        )?;
+                        return self
+                            .call_mysqli_stmt_execute_with_refresh(
+                                function,
+                                &positional_args,
+                                span,
+                                caller_scope,
+                            )
+                            .map(|value| (value, None));
+                    }
+                    return self
+                        .call_builtin_callback_from_call_user_func_array(
+                            key,
+                            &args[1],
+                            span,
+                            caller_scope,
+                        )
+                        .map(|value| (value, None));
+                }
+                if let Callable::User(function) = callable {
+                    return self.call_user_func_array_user_function_with_array_copy_source(
+                        function,
+                        &args[1],
+                        span,
+                        caller_scope,
+                    );
+                }
+                unreachable!("callable should be handled by builtin or user-function branch")
+            }
+            Value::Array(callback) => self
+                .call_user_func_array_array_callable(callback, &args[1], span, caller_scope)
+                .map(|value| (value, None)),
+            Value::Closure(closure) => self
+                .invoke_closure_value_from_call_user_func_array(
+                    closure.clone(),
+                    &args[1],
+                    span,
+                    caller_scope,
+                )
+                .map(|value| (value, None)),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    format!(
+                        "callback must evaluate to string, closure, or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
     fn invoke_closure_value_from_call_user_func_array(
         &mut self,
         closure: PhpClosure,
@@ -34736,6 +34830,62 @@ impl Interpreter {
             Some(caller_scope),
             Vec::new(),
             by_value_array_copy_bindings,
+        )
+    }
+
+    fn call_user_func_array_user_function_with_array_copy_source(
+        &mut self,
+        function: Rc<FunctionDecl>,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let function_ref = function.as_ref();
+        if function_ref.returns_by_reference
+            || !Self::function_accepts_source_aware_by_value_arguments(function_ref)
+        {
+            return self
+                .call_user_func_array_user_function(function, argument_expr, span, caller_scope)
+                .map(|value| (value, None));
+        }
+        let Expr::Array { items, .. } = argument_expr else {
+            return self
+                .call_user_func_array_user_function(function, argument_expr, span, caller_scope)
+                .map(|value| (value, None));
+        };
+        if !Self::literal_call_user_func_array_can_preserve_copy_sources(items) {
+            return self
+                .call_user_func_array_user_function(function, argument_expr, span, caller_scope)
+                .map(|value| (value, None));
+        }
+
+        ensure_user_function_arity(function_ref, items.len(), span)?;
+        ensure_supported_function_metadata(function_ref, span)?;
+        self.ensure_user_function_call_depth(function_ref, span)?;
+
+        let (values, by_value_array_copy_source_bindings) = self
+            .evaluate_literal_call_user_func_array_value_arguments_with_array_copy_sources(
+                function_ref,
+                items,
+                caller_scope,
+            )?;
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
+                function_ref,
+                argument_expr,
+            );
+
+        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+            function_ref,
+            values,
+            None,
+            None,
+            None,
+            Vec::new(),
+            Some(caller_scope),
+            Vec::new(),
+            by_value_array_copy_bindings,
+            by_value_array_copy_source_bindings,
         )
     }
 
@@ -35892,6 +36042,59 @@ impl Interpreter {
         }
 
         Ok((values, reference_bindings))
+    }
+
+    fn literal_call_user_func_array_can_preserve_copy_sources(items: &[ArrayItem]) -> bool {
+        items.iter().all(|item| {
+            !item.by_reference
+                && item
+                    .key
+                    .as_ref()
+                    .is_none_or(|key_expr| matches!(key_expr, Expr::Int(_, _) | Expr::Bool(_, _)))
+        })
+    }
+
+    fn evaluate_literal_call_user_func_array_value_arguments_with_array_copy_sources(
+        &mut self,
+        function: &FunctionDecl,
+        items: &[ArrayItem],
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Vec<Value>, Vec<(String, ArrayCopySource)>)> {
+        let mut values = Vec::with_capacity(items.len());
+        let mut copy_source_bindings = Vec::new();
+
+        for (index, item) in items.iter().enumerate() {
+            if let Some(key_expr) = &item.key {
+                let _ = self.evaluate_array_key(key_expr, caller_scope)?;
+            }
+            let Some(param) = function.params.get(index) else {
+                values.push(
+                    self.evaluate_by_value_argument_with_cow_source(&item.value, caller_scope)?,
+                );
+                continue;
+            };
+            if param.is_variadic {
+                values.push(
+                    self.evaluate_by_value_argument_with_cow_source(&item.value, caller_scope)?,
+                );
+                continue;
+            }
+
+            let (value, array_copy_source) =
+                self.evaluate_value_with_array_copy_source(&item.value, caller_scope)?;
+            let value = caller_scope.value_with_object_property_aliases_from_array_copy(
+                value,
+                array_copy_source.clone(),
+            );
+            if matches!(value, Value::Array(_)) {
+                if let Some(source) = array_copy_source {
+                    copy_source_bindings.push((param.name.clone(), source));
+                }
+            }
+            values.push(value);
+        }
+
+        Ok((values, copy_source_bindings))
     }
 
     fn evaluate_literal_call_user_func_array_value_array(
