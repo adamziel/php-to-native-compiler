@@ -18,6 +18,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T14:06:18+02:00
+
+- Checkpoint before this task: `1a197150 runtime: preserve ArrayAccess
+  reference arg COW copies`, pushed to `origin/master`.
+- Task attempted: Lane 2071-C through Lane 2075-C bundle, executing supported
+  by-value `ArrayAccess::offsetGet()` and visible by-value `__get()` method
+  bodies in by-reference user-function argument paths and preserving returned
+  copied-array provenance, rather than requiring exact static return bridge
+  proofs before method execution.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2071/*`, `tests/fixtures/milestone2072/*`,
+  `tests/fixtures/milestone2073/*`, `tests/fixtures/milestone2074/*`,
+  `tests/fixtures/milestone2075/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP probes matched direct branch-selected
+  by-value `offsetGet()`, direct by-value `__get()`, nested by-value magic
+  array reads, dynamic property-held `ArrayAccess`, and parent replacement;
+  focused system-PHP comparisons passed for `milestone2071` through
+  `milestone2075`; regression comparisons passed for `milestone1960` through
+  `milestone1970`; adjacent `milestone2046` through `milestone2075`
+  comparisons passed; broad `milestone1880` through `milestone2075` fixture
+  tests passed after fixing a double-dispatch regression in existing mixed
+  direct/magic `ArrayAccess` chains; focused Rust suites
+  `functions_and_scopes`, `object_model`, `array_reference_literals`, and
+  `call_user_func_builtin` passed; `cargo fmt --check`, `cargo check -q`, and
+  `git diff --check` passed.
+- Remaining COW gaps: callback and reference-return magic/`ArrayAccess`
+  executed-body paths, arbitrary `offsetSet()` reference propagation,
+  untracked dynamic containers, whole-array reference identity, exact PHP
+  diagnostics/Throwable objects, and native reference/string COW lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-19T13:34:42+02:00
 
 - Checkpoint before this task: `6661c921 runtime: preserve local reference

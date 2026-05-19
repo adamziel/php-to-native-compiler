@@ -20892,15 +20892,30 @@ handled.
   method side effects, unproven dynamic containers, full PHP COW identity,
   exact diagnostics, and native reference lowering named as unsupported.
 
+## Lane 2071-C through Lane 2075-C: Executed Magic/ArrayAccess Reference-Argument Bodies
+
+- [x] Runtime/tests/docs bundle: execute supported by-value
+  `ArrayAccess::offsetGet()` and visible by-value `__get()` method bodies in
+  the by-reference user-function argument path, carrying returned copied-array
+  provenance into the callee instead of relying only on exact static return
+  bridge proofs. Cover branch-selected local references in `offsetGet()`,
+  dynamic property-held `ArrayAccess` roots, direct by-value magic properties,
+  nested by-value magic array reads, and parent replacement below the returned
+  magic copy with system-PHP comparisons and CLI snapshots. Keep unsupported
+  PHP syntax, untracked dynamic containers, arbitrary `offsetSet()` reference
+  propagation, full PHP COW identity, exact diagnostics, and native reference
+  lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
-- [ ] Continue probing covered mixed `ArrayAccess` object-chain bridges and
-  source-aware method-body aliases that still miss PHP behavior in
-  reference-return, callback reference-argument, no-reference callback-value,
-  and nested append/keyed write paths. Implement only statically proven
-  backing-bucket bridges without claiming arbitrary side-effecting method
-  bodies, full PHP COW identity, exact PHP fatal objects/text, or unsupported
-  native lowering.
+- [ ] Continue the arbitrary-method-body push by removing remaining exact
+  static bridge dependencies where supported magic/`ArrayAccess` bodies are
+  already executable: callback reference-argument paths, reference-return
+  paths, and nested append/keyed write paths. Prioritize executed-body
+  provenance and observed write effects, while keeping unsupported PHP syntax,
+  untracked dynamic containers, arbitrary `offsetSet()` reference
+  propagation, full PHP COW identity, exact PHP fatal objects/text, and native
+  lowering named as unsupported until executable coverage proves them.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

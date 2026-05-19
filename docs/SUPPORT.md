@@ -530,11 +530,18 @@
   by-value `ArrayAccess::offsetGet()` array results through the same PHP
   overloaded value/no-reference path. Covered forms include direct
   `ArrayAccess` roots, mixed outer-to-inner `ArrayAccess` chains,
-  direct property-held roots, and side-effect-free dynamic property roots when
-  the terminal `offsetGet()` backing bucket can be proven statically. Selected
-  nested reference-backed leaves update the original backing reference while
-  ordinary parent/plain-array replacements stay local to the passed copy.
-  Arbitrary method side effects, unproven dynamic containers, whole-array
+  direct property-held roots, and side-effect-free dynamic property roots.
+  For public by-value `offsetGet()` bodies and visible by-value `__get()`
+  bodies, the reference-argument path now executes supported interpreter-body
+  statements once and can carry returned copied-array provenance from tracked
+  locals and branch-selected local references, instead of requiring every
+  backing bucket to be proven by an exact return expression before execution.
+  The same path covers direct magic properties and nested magic array reads
+  such as `$box->group["slot"]` when the executed `__get()` body returns a
+  tracked copied array. Selected nested reference-backed leaves update the
+  original backing reference while ordinary parent/plain-array replacements
+  stay local to the passed copy. Unsupported PHP syntax, untracked dynamic
+  containers, arbitrary `offsetSet()` reference propagation, whole-array
   reference identity, exact diagnostics, and native reference lowering remain
   unsupported.
   Covered by-value `ArrayAccess::offsetGet()` paths also reject scalar parents

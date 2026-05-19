@@ -32,7 +32,23 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2070:
+The current in-progress implementation frontier is Lane 2075:
+
+- Lanes 2071 through 2075 remove another exact-static bridge from
+  by-reference user-function parameters that receive overloaded by-value
+  magic/`ArrayAccess` arrays. The interpreter now executes supported
+  `ArrayAccess::offsetGet()` and `__get()` method bodies once and carries the
+  returned copied-array provenance into the callee, rather than requiring the
+  terminal backing bucket to be proven from a single exact return expression
+  before execution. Focused system-PHP coverage proves branch-selected local
+  references inside public by-value `offsetGet()`, direct and dynamic
+  property-held `ArrayAccess` roots, direct by-value `__get()`, nested
+  by-value magic array reads, and parent replacement below the returned magic
+  copy. This is still bounded to supported interpreter-body syntax and
+  tracked copied-array sources; arbitrary PHP syntax, untracked dynamic
+  containers, whole-array reference identity, exact diagnostics, arbitrary
+  `offsetSet()` reference propagation, and native reference lowering remain
+  unsupported.
 
 - Lanes 2066 through 2070 preserve copied-bucket COW behavior when a
   by-reference user-function parameter receives a covered by-value

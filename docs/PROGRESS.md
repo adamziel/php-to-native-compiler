@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2071-C through Lane 2075-C for by-reference user-function
+  parameters receiving overloaded by-value magic/`ArrayAccess` arrays from
+  supported but non-exact method bodies. The interpreter now executes public
+  by-value `ArrayAccess::offsetGet()` and visible by-value `__get()` bodies
+  once in the reference-argument path and carries returned copied-array
+  provenance into the callee. Focused system-PHP coverage proves
+  branch-selected local reference buckets inside `offsetGet()`, dynamic
+  property-held `ArrayAccess` roots, direct magic properties, nested magic
+  array reads, and parent replacement below the returned magic copy. This is a
+  real broadening beyond static exact-return bridge proofs, but it remains
+  bounded to supported interpreter-body syntax and tracked copied-array
+  sources; arbitrary PHP syntax, untracked dynamic containers, arbitrary
+  `offsetSet()` reference propagation, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
+
 - Added Lane 2066-C through Lane 2070-C for by-reference user-function
   parameters receiving covered by-value `ArrayAccess::offsetGet()` array
   results. The interpreter now treats terminal by-value `offsetGet()` buckets

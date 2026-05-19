@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2072/dynamic_property_arrayaccess_branch_reference_arg_copy.php
+stdout:
+copy|copy|store|plain-original|copy|plain-copy
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+
