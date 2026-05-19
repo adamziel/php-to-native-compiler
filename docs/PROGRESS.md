@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2215-C through Lane 2218-C for reference-returning helper
+  methods that mutate shared stored `call_user_func_array()` argument
+  containers inside magic/`ArrayAccess` method bodies. Direct helper calls now
+  carry by-value copied-array source metadata into reference-returning method
+  scopes, array-callable `call_user_func()` helper dispatch uses the same
+  value-copy source path, and successful reference-return helper execution
+  syncs dirty object-property copied-source metadata plus stale object aliases
+  back to the caller. Focused system-PHP coverage proves visible `__get()` and
+  public `ArrayAccess::offsetGet()` for direct and callback-dispatched
+  reference-return holder helpers that unset and recreate a shared holder's
+  argument array while preserving source-leaf promotion. This remains bounded
+  to supported helper dispatch, direct-variable reference-return bodies,
+  concrete shared holder objects, and portable copied-source roots; arbitrary
+  unsupported method-body syntax, untracked dynamic containers, exact
+  diagnostics, and native reference/string COW lowering remain unsupported.
+
 - Added Lane 2211-C through Lane 2214-C for supported helper side effects that
   unset or recreate stored `call_user_func_array()` argument containers inside
   magic/`ArrayAccess` method bodies. Non-direct object-property unset targets

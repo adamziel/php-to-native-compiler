@@ -192,6 +192,18 @@ PHP's single-evaluation ordering for supported helper calls, dynamic property
 names, and index-key expressions while still letting the callback path use the
 root metadata for copied-source promotion.
 
+Reference-returning helper methods that are invoked for their value use the
+same metadata transfer when they are direct visible method calls or supported
+array-callable `call_user_func()` dispatches. The caller records copied-array
+sources for by-value array arguments, the reference-return helper imports that
+metadata into its local parameter, and successful helper execution syncs dirty
+object-property copied-source metadata plus stale object aliases back to the
+caller. This lets a helper return a shared holder by reference after unsetting
+and recreating the holder's stored argument array without losing the source
+leaf needed by a later reference-return callback. This is still scoped to
+supported helper dispatch and portable copied-source roots, not arbitrary
+effect analysis for every possible callback body.
+
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller

@@ -90,6 +90,11 @@
   object-property holder's stored argument container through supported named,
   dynamic, or nested holder-property paths; covered reference-return callbacks
   promote proven source leaves to real cells before returning the reference.
+  Reference-returning holder helpers used as values can also participate in
+  this path when dispatched directly or through a supported array-callable
+  `call_user_func()` call: by-value copied-array source metadata is imported
+  into the helper scope, and dirty shared-holder copied-source metadata is
+  synced back before the returned holder property is read.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.
@@ -97,9 +102,10 @@
   not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
   dynamic callables or reflection targets, unsupported method-body syntax,
-  arbitrary side effects beyond covered writeback paths, helper/callback
-  mutation of containers whose copied-source roots cannot be synced through a
-  concrete shared object property or global root, full whole-array reference
+  arbitrary side effects beyond covered writeback paths, closure or broader
+  dynamic callback mutation of containers whose copied-source roots cannot be
+  synced through a concrete shared object property or global root, full
+  whole-array reference
   identity, exact PHP diagnostics, or native COW lowering.
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or

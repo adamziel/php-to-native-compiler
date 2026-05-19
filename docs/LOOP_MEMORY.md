@@ -23,6 +23,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T22:24:28+02:00
+
+- Checkpoint before this task: `8460cc9b checkpoint: 2026-05-19 20:15:40
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2215-C through Lane 2218-C bundle, carrying
+  copied-source metadata through reference-returning holder helpers that are
+  invoked as values while mutating shared stored `call_user_func_array()`
+  argument containers.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2215/*` through
+  `tests/fixtures/milestone2218/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; focused system-PHP
+  comparisons passed for `milestone2215` through `milestone2218`; adjacent
+  system-PHP comparisons passed for `milestone2211` through `milestone2214`;
+  focused `functions_and_scopes call_user_func`, `object_model magic`, and
+  `assignment_expression` Rust tests passed.
+- Remaining COW gaps: closure or broader dynamic callback containers that
+  mutate shared stored containers; portable-root gaps where copied-source
+  metadata cannot be synced without leaking callee-local symbol names;
+  arbitrary unsupported magic/`ArrayAccess` method syntax; untracked dynamic
+  containers; whole-array reference identity; exact diagnostics/Throwable
+  objects; and native reference/string COW lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes. After checkpoint,
+  attack closure-valued or dynamically stored callback helpers that mutate a
+  shared holder's stored argument container.
+
 ## Loop Event 2026-05-19T22:09:04+02:00
 
 - Checkpoint before this task: `8d65604e checkpoint: 2026-05-19 19:54:22

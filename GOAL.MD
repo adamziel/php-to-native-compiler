@@ -32,7 +32,26 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2214:
+The current in-progress implementation frontier is Lane 2218:
+
+- Lanes 2215 through 2218 carry copied-source metadata into
+  reference-returning helper method bodies that are used as values while they
+  mutate shared holder objects. Direct visible helper calls such as
+  `$this->holderRef($bucket)->args` now import the by-value copied-array source
+  for `$bucket`; array-callable `call_user_func([$this, "holderRef"], $bucket)`
+  uses the same value-copy reference-return argument path. Reference-return
+  helper scopes also sync dirty object-property copied-source metadata and
+  stale object aliases back to the caller before the returned holder is read.
+  Focused system-PHP coverage proves visible `__get()` and public
+  `ArrayAccess::offsetGet()` for direct and callback-dispatched
+  reference-return holder helpers that unset and recreate the stored
+  `call_user_func_array()` argument container while the callback still
+  promotes the original selected reference leaf. This remains bounded to
+  supported direct/array-callable helper dispatch, portable copied-source
+  roots, direct-variable reference-return bodies, and concrete shared holder
+  objects; it does not claim arbitrary unsupported method-body syntax,
+  untracked dynamic containers, whole-array reference identity, exact
+  diagnostics, or native reference/string COW lowering.
 
 - Lanes 2211 through 2214 carry object-property copied-source metadata across
   supported helper method side effects on shared holder objects. When a

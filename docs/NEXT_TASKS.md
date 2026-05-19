@@ -97,12 +97,17 @@ handled.
   holder objects unset or recreate stored `call_user_func_array()` argument
   containers, covering named, dynamic, nested, magic `__get()`, and public
   `ArrayAccess::offsetGet()` paths while preserving source-leaf promotion.
+- [x] Lane 2215-C through 2218-C: carry by-value copied-array source metadata
+  into supported reference-returning helper methods used as values, including
+  direct and array-callable `call_user_func()` holder helpers inside visible
+  `__get()` and public `ArrayAccess::offsetGet()` bodies, and sync their dirty
+  shared holder copied-source metadata back to the caller.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
   holders expose real cells or concrete writeback roots instead of stale paths.
-  Known next probes should target callback-dispatched helpers and
-  reference-returning helpers that mutate shared stored containers, plus
+  Known next probes should target callback-dispatched closures or broader
+  dynamic callback containers that mutate shared stored containers, plus
   portable-root gaps where copied-source metadata currently cannot be synced
   without leaking callee-local symbol names.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
