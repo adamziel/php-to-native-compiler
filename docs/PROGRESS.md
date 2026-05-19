@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 2066-C through Lane 2070-C for by-reference user-function
+  parameters receiving covered by-value `ArrayAccess::offsetGet()` array
+  results. The interpreter now treats terminal by-value `offsetGet()` buckets
+  as PHP's no-reference overloaded value path while preserving copied-bucket
+  provenance, so nested writes through selected reference-backed leaves update
+  the original backing reference and ordinary parent/plain-array replacements
+  stay local. Focused system-PHP coverage proves direct `ArrayAccess` roots,
+  mixed outer-to-inner `ArrayAccess` chains, direct property-held roots,
+  side-effect-free dynamic property roots, and parent replacement. This is
+  still bounded to statically proven terminal buckets; arbitrary method side
+  effects, unproven dynamic containers, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
+
 - Added Lane 2061-C through Lane 2065-C for source-aware by-value method
   bodies that return a local variable first bound by reference to an
   object-property array source. The interpreter now derives copied-array

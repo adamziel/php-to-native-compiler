@@ -20881,6 +20881,17 @@ handled.
   PHP COW identity, exact diagnostics, and native reference lowering named as
   unsupported.
 
+## Lane 2066-C through Lane 2070-C: By-Value `ArrayAccess` Reference-Parameter COW
+
+- [x] Runtime/tests/docs bundle: route by-reference user-function parameters
+  receiving covered by-value `ArrayAccess::offsetGet()` arrays through PHP's
+  overloaded value/no-reference path while preserving copied-bucket provenance.
+  Cover direct roots, mixed outer-to-inner `ArrayAccess` chains,
+  property-held roots, side-effect-free dynamic property roots, and parent
+  replacement with system-PHP comparisons and CLI snapshots. Keep arbitrary
+  method side effects, unproven dynamic containers, full PHP COW identity,
+  exact diagnostics, and native reference lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Continue probing covered mixed `ArrayAccess` object-chain bridges and

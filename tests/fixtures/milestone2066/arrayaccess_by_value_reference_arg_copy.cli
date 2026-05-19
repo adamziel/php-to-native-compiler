@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2066/arrayaccess_by_value_reference_arg_copy.php
+stdout:
+copy|copy|plain-original|copy|plain-copy
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

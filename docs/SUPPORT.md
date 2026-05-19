@@ -526,6 +526,17 @@
   stays local to the returned copy. This does not cover arbitrary callback
   side effects, whole-array reference identity, exact diagnostics, or native
   reference lowering.
+  Direct user-function parameters declared by reference can receive covered
+  by-value `ArrayAccess::offsetGet()` array results through the same PHP
+  overloaded value/no-reference path. Covered forms include direct
+  `ArrayAccess` roots, mixed outer-to-inner `ArrayAccess` chains,
+  direct property-held roots, and side-effect-free dynamic property roots when
+  the terminal `offsetGet()` backing bucket can be proven statically. Selected
+  nested reference-backed leaves update the original backing reference while
+  ordinary parent/plain-array replacements stay local to the passed copy.
+  Arbitrary method side effects, unproven dynamic containers, whole-array
+  reference identity, exact diagnostics, and native reference lowering remain
+  unsupported.
   Covered by-value `ArrayAccess::offsetGet()` paths also reject scalar parents
   when the caller attempts a nested keyed write, nested append, property-held
   reference target, or magic-provided reference target below the returned

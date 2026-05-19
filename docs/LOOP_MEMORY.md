@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T13:34:42+02:00
+
+- Checkpoint before this task: `6661c921 runtime: preserve local reference
+  alias COW returns`, pushed to `origin/master`.
+- Task attempted: Lane 2066-C through Lane 2070-C bundle, routing
+  by-reference user-function parameters that receive covered by-value
+  `ArrayAccess::offsetGet()` array results through PHP's overloaded
+  value/no-reference path while preserving copied-bucket provenance.
+- Files changed: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2066/*`, `tests/fixtures/milestone2067/*`,
+  `tests/fixtures/milestone2068/*`, `tests/fixtures/milestone2069/*`,
+  `tests/fixtures/milestone2070/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run before checkpoint: focused system-PHP comparisons passed for
+  `milestone2066` through `milestone2070`; adjacent `milestone2041` through
+  `milestone2070` fixture tests passed; broad `milestone1880` through
+  `milestone2070` fixture tests passed; `functions_and_scopes`,
+  `object_model`, `array_reference_literals`, and `call_user_func_builtin`
+  Rust suites passed; and `cargo fmt --check`, `cargo check -q`, and
+  `git diff --check` passed after formatting.
+- Remaining COW gaps: broader reference-return and callback reference-argument
+  mixed `ArrayAccess` bridges, arbitrary untracked magic/`ArrayAccess` side
+  effects, broader source-aware alias graphs and dynamic containers,
+  whole-array reference identity, PHP-catchable fatal `Throwable`
+  objects/exact diagnostics, and native reference/string COW lowering.
+- Next concrete task after this bundle lands: continue callback and
+  reference-return mixed `ArrayAccess` object-chain bridges where backing
+  buckets can be proven statically.
+
 ## Loop Event 2026-05-19T13:01:07+02:00
 
 - Checkpoint before this task: `5007c193 runtime: reject scalar ArrayAccess

@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2065:
+The current in-progress implementation frontier is Lane 2070:
+
+- Lanes 2066 through 2070 preserve copied-bucket COW behavior when a
+  by-reference user-function parameter receives a covered by-value
+  `ArrayAccess::offsetGet()` array result. PHP treats this as an overloaded
+  value/no-reference path; the interpreter now mirrors that for direct
+  `ArrayAccess` roots, mixed outer-to-inner `ArrayAccess` chains,
+  direct property-held roots, side-effect-free dynamic property roots, and
+  parent replacement below the returned copy. Focused system-PHP coverage
+  proves selected nested reference-backed leaves update the original backing
+  reference while ordinary parent/plain-array writes stay local. This is still
+  bounded to statically proven terminal buckets; arbitrary side effects,
+  unproven dynamic containers, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2061 through 2065 broaden source-aware by-value method bodies to
   preserve copied-array provenance when the returned local was first bound by

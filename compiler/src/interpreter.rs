@@ -5275,6 +5275,9 @@ enum ReferenceBindingTarget {
         object: PhpObject,
         property: String,
     },
+    ValueWithArrayCopySource {
+        source: ArrayCopySource,
+    },
     ArrayOffset(ArrayOffsetAlias),
     ArrayOffsets(Vec<ArrayOffsetAlias>),
 }
@@ -8026,14 +8029,42 @@ impl Interpreter {
         span: Span,
         scope: &SymbolTable,
     ) -> Option<ArrayCopySource> {
-        if indices.len() != 1 {
-            return None;
-        }
+        let keys = Self::side_effect_free_array_keys(indices, scope)?;
+        self.array_access_array_copy_source_for_direct_variable_keys(
+            object_name,
+            &keys,
+            span,
+            scope,
+        )
+    }
+
+    fn array_access_array_copy_source_for_direct_variable_keys(
+        &self,
+        object_name: &str,
+        keys: &[ArrayKey],
+        span: Span,
+        scope: &SymbolTable,
+    ) -> Option<ArrayCopySource> {
+        self.array_access_array_copy_source_for_direct_variable_keys_with_terminal_ref(
+            object_name,
+            keys,
+            span,
+            scope,
+        )
+        .map(|(source, _)| source)
+    }
+
+    fn array_access_array_copy_source_for_direct_variable_keys_with_terminal_ref(
+        &self,
+        object_name: &str,
+        keys: &[ArrayKey],
+        span: Span,
+        scope: &SymbolTable,
+    ) -> Option<(ArrayCopySource, bool)> {
         let Value::Object(object) = scope.read_named(object_name)? else {
             return None;
         };
-        let key = Self::side_effect_free_array_key(indices[0], scope)?;
-        self.array_access_array_copy_source_for_object(object, key, span)
+        self.array_access_array_copy_source_for_object_path_with_terminal_ref(object, keys, span)
     }
 
     fn array_access_array_copy_source_for_object_property_index(
@@ -8044,9 +8075,42 @@ impl Interpreter {
         span: Span,
         scope: &SymbolTable,
     ) -> Option<ArrayCopySource> {
-        if indices.len() != 1 {
-            return None;
-        }
+        let keys = Self::side_effect_free_array_keys(indices, scope)?;
+        self.array_access_array_copy_source_for_object_property_keys(
+            object_name,
+            property,
+            &keys,
+            span,
+            scope,
+        )
+    }
+
+    fn array_access_array_copy_source_for_object_property_keys(
+        &self,
+        object_name: &str,
+        property: &str,
+        keys: &[ArrayKey],
+        span: Span,
+        scope: &SymbolTable,
+    ) -> Option<ArrayCopySource> {
+        self.array_access_array_copy_source_for_object_property_keys_with_terminal_ref(
+            object_name,
+            property,
+            keys,
+            span,
+            scope,
+        )
+        .map(|(source, _)| source)
+    }
+
+    fn array_access_array_copy_source_for_object_property_keys_with_terminal_ref(
+        &self,
+        object_name: &str,
+        property: &str,
+        keys: &[ArrayKey],
+        span: Span,
+        scope: &SymbolTable,
+    ) -> Option<(ArrayCopySource, bool)> {
         let Value::Object(holder) = scope.read_named(object_name)? else {
             return None;
         };
@@ -8057,8 +8121,7 @@ impl Interpreter {
         else {
             return None;
         };
-        let key = Self::side_effect_free_array_key(indices[0], scope)?;
-        self.array_access_array_copy_source_for_object(object, key, span)
+        self.array_access_array_copy_source_for_object_path_with_terminal_ref(object, keys, span)
     }
 
     fn array_access_array_copy_source_for_object(
@@ -8067,6 +8130,73 @@ impl Interpreter {
         key: ArrayKey,
         span: Span,
     ) -> Option<ArrayCopySource> {
+        self.array_access_array_copy_source_for_object_path(object, &[key], span)
+    }
+
+    fn array_access_array_copy_source_for_object_path(
+        &self,
+        object: PhpObject,
+        keys: &[ArrayKey],
+        span: Span,
+    ) -> Option<ArrayCopySource> {
+        self.array_access_array_copy_source_for_object_path_with_terminal_ref(object, keys, span)
+            .map(|(source, _)| source)
+    }
+
+    fn array_access_array_copy_source_for_object_path_with_terminal_ref(
+        &self,
+        object: PhpObject,
+        keys: &[ArrayKey],
+        span: Span,
+    ) -> Option<(ArrayCopySource, bool)> {
+        let (first_key, rest_keys) = keys.split_first()?;
+        let (return_target, class_id, returns_by_reference) =
+            self.array_access_offset_get_target_for_object(&object, span)?;
+        let target_keys =
+            Self::array_access_offset_get_reference_keys(&return_target, &[first_key.clone()]);
+
+        if rest_keys.is_empty() {
+            return Some((
+                ArrayCopySource::object_property(
+                    object,
+                    return_target.property,
+                    target_keys,
+                    false,
+                ),
+                returns_by_reference,
+            ));
+        }
+
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        let property_value = object
+            .read_property_from_context(
+                &return_target.property,
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .ok()?;
+        let Value::Object(nested_object) = Self::array_path_value(&property_value, &target_keys)?
+        else {
+            return None;
+        };
+        if !self
+            .classes
+            .implements_interface(nested_object.class_id(), "ArrayAccess")
+        {
+            return None;
+        }
+        self.array_access_array_copy_source_for_object_path_with_terminal_ref(
+            nested_object,
+            rest_keys,
+            span,
+        )
+    }
+
+    fn array_access_offset_get_target_for_object(
+        &self,
+        object: &PhpObject,
+        span: Span,
+    ) -> Option<(ArrayAccessOffsetGetReferenceTarget, ClassId, bool)> {
         if !self
             .classes
             .implements_interface(object.class_id(), "ArrayAccess")
@@ -8096,13 +8226,18 @@ impl Interpreter {
                 &protected_class_ids,
             )
             .ok()?;
-        let keys = Self::array_access_offset_get_reference_keys(&return_target, &[key]);
-        Some(ArrayCopySource::object_property(
-            object,
-            return_target.property,
-            keys,
-            false,
-        ))
+        Some((return_target, class_id, function.returns_by_reference))
+    }
+
+    fn side_effect_free_array_keys(
+        indices: &[&Expr],
+        scope: &SymbolTable,
+    ) -> Option<Vec<ArrayKey>> {
+        let mut keys = Vec::with_capacity(indices.len());
+        for index in indices {
+            keys.push(Self::side_effect_free_array_key(index, scope)?);
+        }
+        Some(keys)
     }
 
     fn side_effect_free_array_key(expr: &Expr, scope: &SymbolTable) -> Option<ArrayKey> {
@@ -36792,6 +36927,7 @@ impl Interpreter {
                 ReferenceBindingTarget::CallerCellWithArrayCopySource { source, .. } => {
                     Some(source.clone())
                 }
+                ReferenceBindingTarget::ValueWithArrayCopySource { source } => Some(source.clone()),
                 ReferenceBindingTarget::ArrayOffset(alias) => caller_scope
                     .public_object_property_array_copy_source_for_alias_group(
                         std::slice::from_ref(alias),
@@ -42428,6 +42564,22 @@ impl Interpreter {
                             source.clone(),
                         );
                     }
+                    ReferenceBindingTarget::ValueWithArrayCopySource { source } => {
+                        if let Some(arg) = args.get(index) {
+                            local_scope.write_static(&param.name, arg.clone());
+                            local_scope.import_array_copy_source_aliases_from_copy(
+                                &param.name,
+                                source,
+                                caller_scope,
+                            );
+                            local_scope
+                                .mirror_array_copy_source_aliases_from_copy(&param.name, source);
+                            local_scope.record_public_object_property_array_copy_source(
+                                &param.name,
+                                source.clone(),
+                            );
+                        }
+                    }
                     ReferenceBindingTarget::ArrayOffset(alias) => {
                         if let Some(arg) = args.get(index) {
                             let aliases = vec![alias.clone()];
@@ -42848,6 +43000,24 @@ impl Interpreter {
                             &param.name,
                             source.clone(),
                         );
+                    }
+                    ReferenceBindingTarget::ValueWithArrayCopySource { source } => {
+                        if let Some(arg) = args.get(index) {
+                            local_scope.write_static(&param.name, arg.clone());
+                            if let Some(source_scope) = writeback_scope.as_deref() {
+                                local_scope.import_array_copy_source_aliases_from_copy(
+                                    &param.name,
+                                    source,
+                                    source_scope,
+                                );
+                            }
+                            local_scope
+                                .mirror_array_copy_source_aliases_from_copy(&param.name, source);
+                            local_scope.record_public_object_property_array_copy_source(
+                                &param.name,
+                                source.clone(),
+                            );
+                        }
                     }
                     ReferenceBindingTarget::ArrayOffset(alias) => {
                         if let Some(arg) = args.get(index) {
@@ -44469,121 +44639,136 @@ impl Interpreter {
                             cell: caller_cell,
                         },
                     });
-                } else if let Some((alias, value)) =
-                    self.evaluate_append_array_reference_argument(arg, caller_scope)?
-                {
-                    if function.returns_by_reference && !allow_reference_return_array_bindings {
-                        return Err(runtime_error(
+                } else {
+                    if !function.returns_by_reference {
+                        if let Some((value, source)) = self
+                            .evaluate_by_value_array_access_reference_argument(arg, caller_scope)?
+                        {
+                            values.push(value);
+                            reference_bindings.push(ReferenceBinding {
+                                param_name: param.name.clone(),
+                                target: ReferenceBindingTarget::ValueWithArrayCopySource { source },
+                            });
+                            continue;
+                        }
+                    }
+
+                    if let Some((alias, value)) =
+                        self.evaluate_append_array_reference_argument(arg, caller_scope)?
+                    {
+                        if function.returns_by_reference && !allow_reference_return_array_bindings {
+                            return Err(runtime_error(
                             arg.span(),
                             RuntimeError::unsupported_call(
                                 callable_name(&function.name),
                                 "append array reference arguments are not implemented for reference-returning functions in the current subset",
                             ),
                         ));
-                    }
-                    values.push(value);
-                    reference_bindings.push(ReferenceBinding {
-                        param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::ArrayOffset(alias),
-                    });
-                } else if let Some((alias, value)) =
-                    self.evaluate_direct_array_reference_argument(arg, caller_scope)?
-                {
-                    if function.returns_by_reference && !allow_reference_return_array_bindings {
-                        return Err(runtime_error(
+                        }
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target: ReferenceBindingTarget::ArrayOffset(alias),
+                        });
+                    } else if let Some((alias, value)) =
+                        self.evaluate_direct_array_reference_argument(arg, caller_scope)?
+                    {
+                        if function.returns_by_reference && !allow_reference_return_array_bindings {
+                            return Err(runtime_error(
                             arg.span(),
                             RuntimeError::unsupported_call(
                                 callable_name(&function.name),
                                 "direct array reference arguments are not implemented for reference-returning functions in the current subset",
                             ),
                         ));
-                    }
-                    values.push(value);
-                    reference_bindings.push(ReferenceBinding {
-                        param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::ArrayOffset(alias),
-                    });
-                } else if let Some((alias, value)) =
-                    self.evaluate_magic_get_array_reference_argument(arg, caller_scope)?
-                {
-                    if function.returns_by_reference && !allow_reference_return_array_bindings {
-                        return Err(runtime_error(
+                        }
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target: ReferenceBindingTarget::ArrayOffset(alias),
+                        });
+                    } else if let Some((alias, value)) =
+                        self.evaluate_magic_get_array_reference_argument(arg, caller_scope)?
+                    {
+                        if function.returns_by_reference && !allow_reference_return_array_bindings {
+                            return Err(runtime_error(
                             arg.span(),
                             RuntimeError::unsupported_call(
                                 callable_name(&function.name),
                                 "magic __get array reference arguments are not implemented for reference-returning functions in the current subset",
                             ),
                         ));
-                    }
-                    values.push(value);
-                    reference_bindings.push(ReferenceBinding {
-                        param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::ArrayOffset(alias),
-                    });
-                } else if let Some((alias, value)) = self
-                    .evaluate_visible_object_property_array_reference_argument(
-                        arg,
-                        caller_scope,
-                        true,
-                    )?
-                {
-                    if function.returns_by_reference && !allow_reference_return_array_bindings {
-                        return Err(runtime_error(
+                        }
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target: ReferenceBindingTarget::ArrayOffset(alias),
+                        });
+                    } else if let Some((alias, value)) = self
+                        .evaluate_visible_object_property_array_reference_argument(
+                            arg,
+                            caller_scope,
+                            true,
+                        )?
+                    {
+                        if function.returns_by_reference && !allow_reference_return_array_bindings {
+                            return Err(runtime_error(
                             arg.span(),
                             RuntimeError::unsupported_call(
                                 callable_name(&function.name),
                                 "object-property array reference arguments are not implemented for reference-returning functions in the current subset",
                             ),
                         ));
-                    }
-                    values.push(value);
-                    reference_bindings.push(ReferenceBinding {
-                        param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::ArrayOffset(alias),
-                    });
-                } else if let Some((caller_cell, value, name, source, object_property)) =
-                    self.evaluate_visible_object_property_reference_argument(arg, caller_scope)?
-                {
-                    values.push(value);
-                    let target = if let Some(source) = source {
-                        let (object, property) = object_property.expect(
-                            "visible object-property copy sources carry their container target",
-                        );
-                        ReferenceBindingTarget::CallerCellWithArrayCopySource {
-                            cell: caller_cell,
-                            source,
-                            object,
-                            property,
                         }
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target: ReferenceBindingTarget::ArrayOffset(alias),
+                        });
+                    } else if let Some((caller_cell, value, name, source, object_property)) =
+                        self.evaluate_visible_object_property_reference_argument(arg, caller_scope)?
+                    {
+                        values.push(value);
+                        let target = if let Some(source) = source {
+                            let (object, property) = object_property.expect(
+                                "visible object-property copy sources carry their container target",
+                            );
+                            ReferenceBindingTarget::CallerCellWithArrayCopySource {
+                                cell: caller_cell,
+                                source,
+                                object,
+                                property,
+                            }
+                        } else {
+                            ReferenceBindingTarget::CallerCell {
+                                name,
+                                cell: caller_cell,
+                            }
+                        };
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target,
+                        });
+                    } else if let Some((caller_cell, value)) =
+                        self.evaluate_magic_get_reference_argument(arg, caller_scope)?
+                    {
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target: ReferenceBindingTarget::CallerCell {
+                                name: "<magic __get>".to_string(),
+                                cell: caller_cell,
+                            },
+                        });
                     } else {
-                        ReferenceBindingTarget::CallerCell {
-                            name,
-                            cell: caller_cell,
-                        }
-                    };
-                    reference_bindings.push(ReferenceBinding {
-                        param_name: param.name.clone(),
-                        target,
-                    });
-                } else if let Some((caller_cell, value)) =
-                    self.evaluate_magic_get_reference_argument(arg, caller_scope)?
-                {
-                    values.push(value);
-                    reference_bindings.push(ReferenceBinding {
-                        param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::CallerCell {
-                            name: "<magic __get>".to_string(),
-                            cell: caller_cell,
-                        },
-                    });
-                } else {
-                    return Err(runtime_error(
+                        return Err(runtime_error(
                         arg.span(),
                         RuntimeError::unsupported_call(
                             callable_name(&function.name),
                             "reference parameter invocation is only implemented for direct variable, direct array-offset, direct public object-property array-offset, and bounded magic __get reference arguments in the current subset",
                         ),
                     ));
+                    }
                 }
             } else {
                 values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
@@ -44830,6 +45015,152 @@ impl Interpreter {
         }
 
         Ok(None)
+    }
+
+    fn evaluate_by_value_array_access_reference_argument(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(Value, ArrayCopySource)>> {
+        let Expr::Index { target, index, .. } = arg else {
+            return Ok(None);
+        };
+
+        if let Some((name, indices)) = Self::collect_direct_variable_array_index_path(target, index)
+        {
+            let keys = indices
+                .iter()
+                .map(|index| self.evaluate_array_key(index, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            let Some((source, terminal_returns_by_reference)) = self
+                .array_access_array_copy_source_for_direct_variable_keys_with_terminal_ref(
+                    name,
+                    &keys,
+                    arg.span(),
+                    caller_scope,
+                )
+            else {
+                return Ok(None);
+            };
+            if terminal_returns_by_reference {
+                return Ok(None);
+            }
+            let Some(binding) = self.evaluate_direct_array_access_reference_source_binding(
+                name,
+                keys,
+                arg.span(),
+                caller_scope,
+            )?
+            else {
+                return Ok(None);
+            };
+            return Self::detached_array_access_reference_argument_value(
+                binding,
+                source,
+                caller_scope,
+            );
+        }
+
+        if let Some((object_name, property, indices)) =
+            Self::collect_direct_object_property_array_index_path(target, index)
+        {
+            let keys = indices
+                .iter()
+                .map(|index| self.evaluate_array_key(index, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            let Some((source, terminal_returns_by_reference)) = self
+                .array_access_array_copy_source_for_object_property_keys_with_terminal_ref(
+                    object_name,
+                    property,
+                    &keys,
+                    arg.span(),
+                    caller_scope,
+                )
+            else {
+                return Ok(None);
+            };
+            if terminal_returns_by_reference {
+                return Ok(None);
+            }
+            let Some(binding) = self
+                .evaluate_object_property_array_access_reference_source_binding(
+                    object_name,
+                    property,
+                    keys,
+                    arg.span(),
+                    caller_scope,
+                )?
+            else {
+                return Ok(None);
+            };
+            return Self::detached_array_access_reference_argument_value(
+                binding,
+                source,
+                caller_scope,
+            );
+        }
+
+        if let Some((object_name, property, indices)) =
+            Self::collect_direct_dynamic_object_property_array_index_path(target, index)
+        {
+            let property =
+                self.evaluate_dynamic_property_name(property, arg.span(), caller_scope)?;
+            let keys = indices
+                .iter()
+                .map(|index| self.evaluate_array_key(index, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            let Some((source, terminal_returns_by_reference)) = self
+                .array_access_array_copy_source_for_object_property_keys_with_terminal_ref(
+                    object_name,
+                    &property,
+                    &keys,
+                    arg.span(),
+                    caller_scope,
+                )
+            else {
+                return Ok(None);
+            };
+            if terminal_returns_by_reference {
+                return Ok(None);
+            }
+            let Some(binding) = self
+                .evaluate_object_property_array_access_reference_source_binding(
+                    object_name,
+                    &property,
+                    keys,
+                    arg.span(),
+                    caller_scope,
+                )?
+            else {
+                return Ok(None);
+            };
+            return Self::detached_array_access_reference_argument_value(
+                binding,
+                source,
+                caller_scope,
+            );
+        }
+
+        Ok(None)
+    }
+
+    fn detached_array_access_reference_argument_value(
+        binding: NonDirectReferenceSourceBinding,
+        source: ArrayCopySource,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(Value, ArrayCopySource)>> {
+        let NonDirectReferenceSourceBinding::DetachedValue(value) = binding else {
+            return Ok(None);
+        };
+        if !matches!(value, Value::Array(_)) {
+            return Ok(None);
+        }
+        let value = caller_scope.value_with_object_property_aliases_from_array_copy(
+            value,
+            Some(source.clone()),
+            true,
+        );
+        Ok(Some((value, source)))
     }
 
     fn evaluate_direct_array_reference_argument(
@@ -45492,6 +45823,7 @@ impl Interpreter {
                 } => {
                     caller_scope.remove_object_property_array_copy_source_paths(object, property);
                 }
+                ReferenceBindingTarget::ValueWithArrayCopySource { .. } => {}
                 ReferenceBindingTarget::ArrayOffset(_)
                 | ReferenceBindingTarget::ArrayOffsets(_) => {}
             }
@@ -45536,6 +45868,7 @@ impl Interpreter {
                         &detached_paths,
                     );
                 }
+                ReferenceBindingTarget::ValueWithArrayCopySource { .. } => {}
                 ReferenceBindingTarget::ArrayOffset(_)
                 | ReferenceBindingTarget::ArrayOffsets(_) => {}
             }
@@ -45992,6 +46325,43 @@ impl Interpreter {
                             &param.name,
                             source.clone(),
                         );
+                    }
+                    ReferenceBindingTarget::ValueWithArrayCopySource { source } => {
+                        if let Some(arg) = args.get(index) {
+                            local_scope.write_static(&param.name, arg.clone());
+                            if let Some(source_scope) = reference_scope.as_deref() {
+                                let imported_aliases = local_scope
+                                    .import_array_copy_source_aliases_from_copy(
+                                        &param.name,
+                                        source,
+                                        source_scope,
+                                    );
+                                let imported_aliases: Vec<_> = imported_aliases
+                                    .into_iter()
+                                    .filter(|alias| {
+                                        matches!(
+                                            &alias.root,
+                                            ArrayOffsetAliasRoot::StaticArray { name }
+                                                if name == &param.name
+                                        ) && !alias.keys.is_empty()
+                                    })
+                                    .collect();
+                                if !imported_aliases.is_empty() {
+                                    array_copy_source_alias_writebacks.push((
+                                        param.name.clone(),
+                                        Vec::new(),
+                                        source.clone(),
+                                        imported_aliases,
+                                    ));
+                                }
+                            }
+                            local_scope
+                                .mirror_array_copy_source_aliases_from_copy(&param.name, source);
+                            local_scope.record_public_object_property_array_copy_source(
+                                &param.name,
+                                source.clone(),
+                            );
+                        }
                     }
                     ReferenceBindingTarget::ArrayOffset(_) => {
                         if let Some(arg) = args.get(index) {
