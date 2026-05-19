@@ -27936,16 +27936,23 @@ impl Interpreter {
         let args = vec![Value::String(property.to_string())];
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
-            let cell = self.call_reference_return_function_with_checked_values(
-                function,
-                args,
-                Some(object),
-                Some(class_id),
-                Some(called_class_id),
-                Vec::new(),
-                None,
-            )?;
-            return Ok(Some((cell.value_cloned(), None)));
+            let binding = self
+                .call_reference_return_function_with_checked_values_for_reference_assignment(
+                    function,
+                    args,
+                    Some(object),
+                    Some(class_id),
+                    Some(called_class_id),
+                    Vec::new(),
+                    caller_scope,
+                )?;
+            let source = Self::public_object_property_array_copy_source_from_reference_binding(
+                &binding,
+                caller_scope,
+            );
+            let value =
+                self.read_reference_return_binding_value(function, &binding, caller_scope)?;
+            return Ok(Some((value, source)));
         }
 
         ensure_supported_function_signature(function, 1, span)?;
@@ -27953,7 +27960,7 @@ impl Interpreter {
             let value = self.call_user_function_with_this(
                 function,
                 object,
-                args,
+                vec![Value::String(property.to_string())],
                 Some(class_id),
                 Some(called_class_id),
             )?;
@@ -27963,7 +27970,7 @@ impl Interpreter {
         self.call_user_function_with_this_and_array_copy_source(
             function,
             object,
-            args,
+            vec![Value::String(property.to_string())],
             Some(class_id),
             Some(called_class_id),
             caller_scope,
@@ -40634,8 +40641,15 @@ impl Interpreter {
             | Expr::ObjectStaticMethodCall { .. }
             | Expr::DynamicCall { .. } => {
                 let binding = self.evaluate_reference_return_call_binding(value, span, scope)?;
-                let cell = self.reference_return_binding_cell(function, binding, span, scope)?;
-                Ok(ReferenceReturnLocalBinding::Cell(cell))
+                match binding {
+                    ReferenceReturnBinding::Cell(cell) => Ok(ReferenceReturnLocalBinding::Cell(cell)),
+                    ReferenceReturnBinding::ArrayOffset(alias) => {
+                        Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(vec![alias]))
+                    }
+                    ReferenceReturnBinding::ArrayOffsets(aliases) => {
+                        Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(aliases))
+                    }
+                }
             }
             Expr::Variable(name, variable_span) => {
                 if let Some(aliases) = scope.array_offset_aliases_for_name(name) {

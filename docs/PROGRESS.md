@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1903-C through Lane 1906-C for executed reference-return helper
+  chains in magic/`ArrayAccess` COW copy provenance. Reference-return method
+  bodies that return another reference-return call now preserve returned
+  array-offset bindings, so public by-reference `ArrayAccess::offsetGet()`
+  helper bodies and public by-reference `__get()` helper bodies can feed the
+  same backed object-property copy source used by direct returned lvalues.
+  By-reference `__get()` value reads now derive copied-array provenance from
+  the returned binding instead of discarding it as an anonymous cell. Focused
+  coverage includes direct `ArrayAccess`, direct magic `__get()`, dynamic and
+  non-direct holder magic property reads, and a mixed magic-provided
+  `ArrayAccess` chain, all with system-PHP comparisons. Unsupported
+  syntax/builtins, PHP side effects outside the interpreter subset, thrown
+  exception unwinding, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
+
 - Added Lane 1899-C through Lane 1902-C for selected builtin callbacks with
   by-reference array parameters. `call_user_func()` now evaluates covered
   `array_pop`, `array_unshift`, and `next` callback arguments by value,

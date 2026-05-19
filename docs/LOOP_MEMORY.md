@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T05:41:14+02:00
+
+- Checkpoint before this task: `2786b662 runtime: support builtin callback
+  reference params`, pushed to `origin/master`.
+- Task attempted: Lane 1903-C through Lane 1906-C bundle, preserving
+  copied-array COW provenance through executed reference-return helper chains
+  in public by-reference magic/`ArrayAccess` method bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1903/*`, `tests/fixtures/milestone1904/*`,
+  `tests/fixtures/milestone1905/*`, `tests/fixtures/milestone1906/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes exposed and then matched the
+  `ArrayAccess::offsetGet()` and magic `__get()` helper-body COW cases;
+  focused `cargo run -q -p phpc -- test --compare-php` passed
+  `milestone1903`, `milestone1904`, `milestone1905`, and `milestone1906`.
+  `cargo fmt --all --check`, `cargo check -q -p phpc`, and
+  `git diff --check` passed. Adjacent Rust tests passed for `object_model`
+  and `functions_and_scopes`. Adjacent fixture comparisons passed for
+  `milestone1850` through `milestone1854`, `milestone1858` through
+  `milestone1863`, `milestone1890` through `milestone1894`, and
+  `milestone1903` through `milestone1906`.
+- Remaining COW gaps: unsupported syntax/builtins and PHP side effects outside
+  the interpreter subset, full exception unwinding and uncaught propagation,
+  broader builtin callback signatures, broader complex alias sinks and alias
+  lifetime ordering, exact PHP stderr/fatal text, binary/multibyte string
+  offset behavior, whole-array reference identity, full direct `$GLOBALS`
+  array materialization, and native reference/string COW lowering.
+- Next concrete task: run the full `tools/checkpoint.sh` bundle gate, then
+  push if it passes.
+
 ## Loop Event 2026-05-19T05:30:12+02:00
 
 - Checkpoint before this task: `1cf733be runtime: route recursive GLOBALS key

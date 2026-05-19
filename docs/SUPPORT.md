@@ -342,6 +342,15 @@
   objects caught by a parent class catch clause in this bounded path.
   Public by-reference `__get()` uses the same assignment-capable return path
   for covered array-offset returns such as `return $this->store[$name];`.
+  Reference-return bodies may also return another reference-return call
+  without losing the returned array-offset binding. This covers helper-backed
+  public by-reference `ArrayAccess::offsetGet()` and `__get()` bodies such as
+  `return $this->pick($offset);` when the helper executes inside the current
+  interpreter subset and returns a covered backed object-property lvalue.
+  Normal by-value reads from those by-reference magic/`ArrayAccess` bodies
+  preserve copied-array reference-slot provenance for direct roots, dynamic
+  magic-property reads, non-direct holder magic-property reads, and the
+  documented mixed magic-provided `ArrayAccess` chain.
   Supported reference-return bodies may also delegate to non-static helpers
   through PHP's static call syntaxes when a compatible current `$this` object
   exists. Covered forms include `self::helper(...)`, `parent::helper(...)`,

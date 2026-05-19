@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1902:
+The current in-progress implementation frontier is Lane 1906:
+
+- Lanes 1903 through 1906 preserve copied-array COW provenance through
+  executed reference-return helper chains in magic/`ArrayAccess` bodies. A
+  reference-return method that returns another reference-return call now keeps
+  the returned array-offset binding instead of collapsing it to a detached
+  cell, and by-reference `__get()` value reads derive the backed
+  object-property copy source from that binding. Focused coverage includes
+  public by-reference `ArrayAccess::offsetGet()` helper bodies, public
+  by-reference `__get()` helper bodies, dynamic-property and non-direct holder
+  magic reads, and a mixed magic-provided `ArrayAccess` chain. This is an
+  executed-method-body improvement inside the current interpreter subset; it
+  still does not claim unsupported syntax/builtins, arbitrary PHP side
+  effects outside that subset, thrown exception unwinding, whole-array
+  reference identity, exact diagnostics, or native reference lowering.
 
 - Lanes 1899 through 1902 add a bounded builtin-callback reference/COW
   parity slice for selected array-mutating builtins. `call_user_func()` now

@@ -20443,6 +20443,18 @@ handled.
   reference identity, full PHP internal pointer semantics, and native
   reference lowering named as unsupported.
 
+## Lane 1903-C through Lane 1906-C: Reference-Return Helper Body Copy Provenance
+
+- [x] Runtime/tests/docs bundle: preserve copied-array COW provenance when
+  executed by-reference magic/`ArrayAccess` method bodies return backed
+  buckets through reference-return helper calls. Cover direct
+  `ArrayAccess::offsetGet()`, direct magic `__get()`, dynamic and non-direct
+  holder magic-property reads, and a mixed magic-provided `ArrayAccess` chain
+  with system-PHP comparisons. Keep unsupported syntax/builtins, arbitrary
+  PHP side effects outside the interpreter subset, thrown exception
+  unwinding, whole-array reference identity, exact diagnostics, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,
