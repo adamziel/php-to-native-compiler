@@ -32,7 +32,23 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2116:
+The current in-progress implementation frontier is Lane 2120:
+
+- Lanes 2117 through 2120 broaden mixed nested `ArrayAccess` observation and
+  unset chains beyond the previous one-key bridge. Direct `ArrayAccess`
+  variables, visible property-held `ArrayAccess` objects, and magic `__get()`
+  roots that return `ArrayAccess` objects now recursively execute
+  `offsetExists()`, `offsetGet()`, and `offsetUnset()` for supported nested
+  `isset`, `empty`, and `unset` paths. Public by-reference `offsetGet()`
+  roots that return backing arrays can also unset nested array leaves through
+  the returned reference after executing the method body. Focused system-PHP
+  coverage proves direct, property-held, magic-provided, and by-reference
+  array-returning nested chains. This remains bounded to supported
+  interpreter syntax, direct/property-held/magic roots, and nested
+  `ArrayAccess` or by-reference array returns; untracked dynamic containers,
+  arbitrary future-path metadata recovery, whole-container unsets with live
+  reference leaves, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
 
 - Lanes 2112 through 2116 execute covered magic array-offset observation and
   unset method bodies. Missing named and dynamic magic-property array-offset

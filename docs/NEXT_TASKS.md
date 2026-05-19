@@ -5,6 +5,19 @@ time unless a task explicitly depends on another. Mark a task checked only after
 code, tests, CLI coverage, documentation, and unsupported edge cases are all
 handled.
 
+## Active COW Frontier
+
+- [x] Lane 2117-C through 2120-C: execute mixed nested `ArrayAccess`
+  observation/unset chains for direct roots, visible property-held roots,
+  magic `__get()` roots, and by-reference `offsetGet()` array returns.
+- [ ] Next COW gap: recover future-path metadata after supported but
+  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies, or handle
+  whole-container unsets with live reference leaves without overclaiming full
+  PHP reference containers.
+- [ ] Remaining hard gaps: untracked dynamic containers, broader callback
+  containers, whole-array reference identity, exact PHP diagnostics/Throwable
+  objects, and native reference/string COW lowering.
+
 ## Milestone 2: Value Model and Runtime
 
 - [x] Add structured runtime errors with stable messages and tests for at

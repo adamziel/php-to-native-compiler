@@ -1414,9 +1414,14 @@
   call `offsetExists($key)` and fetch with `offsetGet($key)` only when needed,
   direct `empty($object[$key])` calls `offsetExists($key)` then `offsetGet`
   for present offsets, and direct `unset($object[$key])` calls
-  `offsetUnset($key)`. The same direct single-key read/write/`isset`/`empty`/
-  `??`/`unset` dispatch is supported when a visible direct object property
-  holds an `ArrayAccess` object, such as `$holder->bag[$key]`. Direct append
+  `offsetUnset($key)`. Nested direct `isset`, `empty`, and `unset` chains such
+  as `$outer["box"]["leaf"]` recursively execute supported `offsetExists()`,
+  `offsetGet()`, and `offsetUnset()` bodies when intermediate values are
+  `ArrayAccess` objects; public by-reference `offsetGet()` roots that return
+  backing arrays also allow nested `unset` to remove the returned reference's
+  selected leaf. The same direct read/write/`isset`/`empty`/`??`/`unset`
+  dispatch is supported when a visible direct object property holds an
+  `ArrayAccess` object, such as `$holder->bag[$key]`. Direct append
   writes through visible property-held `ArrayAccess` objects, such as
   `$holder->bag[] = $value`, call `offsetSet(null, $value)`. When direct
   variable assignment copies an array returned by a direct object variable's
@@ -2559,7 +2564,12 @@
   `unset($array[$outer][$inner])` for direct array variables, plus nested
   object-property array offset removal such as
   `unset($object->items[$outer][$inner])` for direct object variables and named
-  properties, over the current integer/string key subset. Direct and dynamic
+  properties, over the current integer/string key subset. Direct, visible
+  property-held, and magic-returned nested `ArrayAccess` chains such as
+  `unset($bag["box"]["leaf"])`, `unset($holder->bag["box"]["leaf"])`, and
+  `unset($object->missing["box"]["leaf"])` execute supported
+  `offsetGet()`/`offsetUnset()` bodies; by-reference `offsetGet()` array
+  returns can remove the selected nested backing-array leaf. Direct and dynamic
   object-property removal such as `unset($object->property)` and
   `unset($object->$name)` are supported for direct object variables by removing
   the visible property slot in the current value model; covered aliases below a
@@ -2573,14 +2583,17 @@
   subset
 - direct object-property array-offset `isset(...)` paths such as
   `isset($object->items[$outer][$inner])` over visible array-valued properties
-  and the current integer/string key subset. Missing/null/non-array path
-  components return false; dynamic property paths, nested/mixed ArrayAccess,
-  references, copy-on-write, and native lowering remain unsupported.
+  and the current integer/string key subset. Direct, visible property-held,
+  and magic-returned nested `ArrayAccess` chains execute supported
+  `offsetExists()`/`offsetGet()` bodies. Missing/null/non-array path
+  components return false; untracked dynamic containers, full references/COW,
+  and native lowering remain unsupported.
 - `empty($name)`, `empty($array[$key])`, nested direct-variable array-offset
   paths such as `empty($array[$outer][$inner])`,
   `empty($object->publicProperty)`, direct object-property array-offset paths
-  such as `empty($object->items[$outer][$inner])`, and supported static
-  property operands for direct variables, direct array-variable offset
+  such as `empty($object->items[$outer][$inner])`, nested direct,
+  property-held, and magic-returned `ArrayAccess` chains, and supported
+  static property operands for direct variables, direct array-variable offset
   operands, direct object-variable property operands, and the current static
   property slice over the current value model
 - null coalescing `??` for direct static variables, direct array-variable
@@ -5268,15 +5281,15 @@
   array-offset `isset`/`empty` forms now call `__isset()` when present and
   then `__get()` when PHP would inspect the returned value. Returned arrays
   are inspected as detached values, and returned `ArrayAccess` objects route
-  the covered one-key shape through `offsetExists()`/`offsetGet()`. Dynamic
-  visible properties that hold an `ArrayAccess` object also support
-  `unset($holder->$property[$key])` through `offsetUnset()`. Missing magic
-  properties whose visible `__get()` returns an `ArrayAccess` object or a
-  by-reference array can execute covered one-key unsets, preserving
-  reference-backed side effects. Non-direct dynamic containers, multi-key
-  `ArrayAccess` unset/observation chains, unsetting whole containers that
-  hold live reference leaves, exact diagnostics, and native lowering remain
-  unsupported.
+  direct nested chains through `offsetExists()`/`offsetGet()`. Dynamic
+  visible properties and missing magic properties that return an `ArrayAccess`
+  object also support nested `unset` through recursive
+  `offsetGet()`/`offsetUnset()` dispatch. Missing magic properties whose
+  visible `__get()` returns a by-reference array can execute nested unsets on
+  the returned backing array while preserving reference-backed side effects.
+  Non-direct dynamic containers, arbitrary untracked mixed containers,
+  unsetting whole containers that hold live reference leaves, exact
+  diagnostics, and native lowering remain unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

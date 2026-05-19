@@ -18,6 +18,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T16:02:12+02:00
+
+- Checkpoint before this task: `277f98df runtime: execute magic offset COW
+  observation bodies`, pushed to `origin/master`.
+- Task attempted: Lane 2117-C through Lane 2120-C bundle, broadening nested
+  `ArrayAccess` observation/unset chains for direct roots, visible
+  property-held roots, magic `__get()` roots, and public by-reference
+  `offsetGet()` array returns.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2117/*`, `tests/fixtures/milestone2118/*`,
+  `tests/fixtures/milestone2119/*`, `tests/fixtures/milestone2120/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2117` through `milestone2120`; adjacent system-PHP comparisons
+  passed for `milestone2086` through `milestone2120`; focused Rust suites
+  passed for `array_isset`, `empty`, `array_unset`, `object_model`, and
+  `dynamic_features`.
+- Remaining COW gaps: future-path metadata recovery after supported but
+  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies, untracked dynamic
+  containers, broader dynamic callback containers, whole-container unsets
+  with live reference leaves, whole-array reference identity, exact PHP
+  diagnostics/Throwable objects, and native reference/string COW lowering.
+- Next concrete task: run formatting/check/diff gates, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T15:41:45+02:00
 
 - Checkpoint before this task: `b9d5170b runtime: execute dynamic magic

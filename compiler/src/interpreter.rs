@@ -10882,6 +10882,13 @@ impl Interpreter {
                 scope.write_static(name, Value::Array(array));
                 Ok(())
             }
+            Some(Value::Object(object))
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                self.execute_unset_array_access_path(object, &keys, span, scope)
+            }
             Some(Value::Null) | None => Ok(()),
             Some(other) => Err(runtime_error(
                 span,
@@ -10991,18 +10998,11 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))
             }
             Value::Object(object)
-                if keys.len() == 1
-                    && self
-                        .classes
-                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
             {
-                self.call_array_access_method(
-                    object.clone(),
-                    "offsetUnset",
-                    vec![Self::array_key_value(Some(keys[0].clone()))],
-                    span,
-                )?;
-                Ok(())
+                self.execute_unset_array_access_path(object.clone(), &keys, span, scope)
             }
             Value::Null => Ok(()),
             other => Err(runtime_error(
@@ -11054,18 +11054,11 @@ impl Interpreter {
             };
             match cell.value_cloned() {
                 Value::Object(object)
-                    if keys.len() == 1
-                        && self
-                            .classes
-                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                    if self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
                 {
-                    self.call_array_access_method(
-                        object,
-                        "offsetUnset",
-                        vec![Self::array_key_value(Some(keys[0].clone()))],
-                        span,
-                    )?;
-                    Ok(())
+                    self.execute_unset_array_access_path(object, keys, span, scope)
                 }
                 Value::Array(_) | Value::Null => {
                     let temp_name = self.next_foreach_temporary_array_name();
@@ -11086,18 +11079,11 @@ impl Interpreter {
             )?;
             match value {
                 Value::Object(object)
-                    if keys.len() == 1
-                        && self
-                            .classes
-                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                    if self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
                 {
-                    self.call_array_access_method(
-                        object,
-                        "offsetUnset",
-                        vec![Self::array_key_value(Some(keys[0].clone()))],
-                        span,
-                    )?;
-                    Ok(())
+                    self.execute_unset_array_access_path(object, keys, span, scope)
                 }
                 Value::Array(_) => {
                     self.emit_notice(
@@ -11111,6 +11097,160 @@ impl Interpreter {
                 }
                 _ => Ok(()),
             }
+        }
+    }
+
+    fn execute_unset_array_access_path(
+        &mut self,
+        object: PhpObject,
+        keys: &[ArrayKey],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let Some((first_key, rest_keys)) = keys.split_first() else {
+            return Ok(());
+        };
+
+        let offset_get_returns_by_reference =
+            if let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                self.resolve_instance_method(object.class_id(), "offsetGet")
+            {
+                if is_static || visibility != Visibility::Public {
+                    false
+                } else {
+                    let function =
+                        self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                    function.as_ref().returns_by_reference
+                }
+            } else {
+                false
+            };
+
+        if offset_get_returns_by_reference && !rest_keys.is_empty() {
+            let hidden_name = self.hidden_array_access_reference_object_name(&object);
+            scope.write_static(&hidden_name, Value::Object(object.clone()));
+            if let Some(binding) = self.evaluate_array_access_reference_source_binding_for_object(
+                object.clone(),
+                hidden_name,
+                keys.to_vec(),
+                None,
+                span,
+                scope,
+            )? {
+                match binding {
+                    NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                        return self.execute_unset_array_offset_alias_path(alias, span, scope);
+                    }
+                    NonDirectReferenceSourceBinding::DetachedValue(_) => return Ok(()),
+                }
+            }
+        }
+
+        if rest_keys.is_empty() {
+            self.call_array_access_method(
+                object,
+                "offsetUnset",
+                vec![Self::array_key_value(Some(first_key.clone()))],
+                span,
+            )?;
+            return Ok(());
+        }
+
+        let class_name = object.class_name().to_string();
+        let value = self.call_array_access_method(
+            object,
+            "offsetGet",
+            vec![Self::array_key_value(Some(first_key.clone()))],
+            span,
+        )?;
+        match value {
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                self.execute_unset_array_access_path(object, rest_keys, span, scope)
+            }
+            Value::Array(_) | Value::Null | Value::Bool(false) => {
+                self.emit_notice(
+                    "ArrayAccess::offsetGet()",
+                    format!(
+                        "Indirect modification of overloaded element of {class_name} has no effect"
+                    ),
+                    span,
+                )?;
+                Ok(())
+            }
+            Value::String(_) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access("cannot unset string offsets".to_string()),
+            )),
+            Value::Bool(true) | Value::Int(_) | Value::Float(_) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot unset offset in a non-array variable".to_string(),
+                ),
+            )),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot unset offset on {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn execute_unset_array_offset_alias_path(
+        &mut self,
+        mut alias: ArrayOffsetAlias,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let Some(last_key) = alias.keys.pop() else {
+            return Ok(());
+        };
+        let unset_alias = ArrayOffsetAlias {
+            root: alias.root.clone(),
+            keys: {
+                let mut keys = alias.keys.clone();
+                keys.push(last_key.clone());
+                keys
+            },
+        };
+
+        match scope.read_array_offset_alias(&alias) {
+            Some(Value::Array(mut array)) => {
+                scope.detach_array_offset_aliases_for_unset_paths(&[unset_alias]);
+                Self::unset_nested_array_value(&mut array, &[last_key], span)?;
+                if !scope.write_array_offset_alias(&alias, Value::Array(array)) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(
+                            "cannot unset ArrayAccess reference-return array offset".to_string(),
+                        ),
+                    ));
+                }
+                Ok(())
+            }
+            Some(Value::Null) | None => Ok(()),
+            Some(Value::String(_)) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access("cannot unset string offsets".to_string()),
+            )),
+            Some(Value::Bool(true) | Value::Int(_) | Value::Float(_)) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot unset offset in a non-array variable".to_string(),
+                ),
+            )),
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot unset offset on {}",
+                    other.type_name()
+                )),
+            )),
         }
     }
 
@@ -55250,12 +55390,11 @@ impl Interpreter {
 
             return match caller_scope.read_named(name) {
                 Some(Value::Object(object))
-                    if keys.len() == 1
-                        && self
-                            .classes
-                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                    if self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
                 {
-                    self.array_access_offset_exists(object, keys[0].clone(), target.span())
+                    self.array_access_path_isset(object, &keys, target.span(), caller_scope)
                 }
                 Some(value) => Ok(Self::array_path_isset(&value, &keys)),
                 None => Ok(false),
@@ -55300,12 +55439,11 @@ impl Interpreter {
             .map_err(|error| runtime_error(target.span(), error))?
         {
             Some(Value::Object(object))
-                if keys.len() == 1
-                    && self
-                        .classes
-                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
             {
-                self.array_access_offset_exists(object, keys[0].clone(), target.span())
+                self.array_access_path_isset(object, &keys, target.span(), caller_scope)
             }
             Some(value) => Ok(Self::array_path_isset(&value, &keys)),
             None => self.is_magic_object_property_array_path_set(
@@ -55348,12 +55486,11 @@ impl Interpreter {
 
         match value {
             Value::Object(object)
-                if keys.len() == 1
-                    && self
-                        .classes
-                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
             {
-                self.array_access_offset_exists(object, keys[0].clone(), span)
+                self.array_access_path_isset(object, keys, span, caller_scope)
             }
             value => Ok(Self::array_path_isset(&value, keys)),
         }
@@ -55762,12 +55899,11 @@ impl Interpreter {
 
             return match caller_scope.read_named(name) {
                 Some(Value::Object(object))
-                    if keys.len() == 1
-                        && self
-                            .classes
-                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                    if self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
                 {
-                    self.is_array_access_offset_empty(object, keys[0].clone(), target.span())
+                    self.array_access_path_empty(object, &keys, target.span(), caller_scope)
                 }
                 Some(value) => Ok(Self::array_path_empty(&value, &keys)),
                 None => Ok(true),
@@ -55812,12 +55948,11 @@ impl Interpreter {
             .map_err(|error| runtime_error(target.span(), error))?
         {
             Some(Value::Object(object))
-                if keys.len() == 1
-                    && self
-                        .classes
-                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
             {
-                self.is_array_access_offset_empty(object, keys[0].clone(), target.span())
+                self.array_access_path_empty(object, &keys, target.span(), caller_scope)
             }
             Some(value) => Ok(Self::array_path_empty(&value, &keys)),
             None => self.is_magic_object_property_array_path_empty(
@@ -55860,12 +55995,11 @@ impl Interpreter {
 
         match value {
             Value::Object(object)
-                if keys.len() == 1
-                    && self
-                        .classes
-                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
             {
-                self.is_array_access_offset_empty(object, keys[0].clone(), span)
+                self.array_access_path_empty(object, keys, span, caller_scope)
             }
             value => Ok(Self::array_path_empty(&value, keys)),
         }
@@ -56237,24 +56371,77 @@ impl Interpreter {
             .is_truthy())
     }
 
-    fn is_array_access_offset_empty(
+    fn array_access_path_isset(
         &mut self,
         object: PhpObject,
-        key: ArrayKey,
+        keys: &[ArrayKey],
         span: Span,
+        caller_scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
-        if !self.array_access_offset_exists(object.clone(), key.clone(), span)? {
+        let Some((first_key, rest_keys)) = keys.split_first() else {
+            return Ok(false);
+        };
+
+        if !self.array_access_offset_exists(object.clone(), first_key.clone(), span)? {
+            return Ok(false);
+        }
+        if rest_keys.is_empty() {
             return Ok(true);
         }
 
-        Ok(!self
-            .call_array_access_method(
-                object,
-                "offsetGet",
-                vec![Self::array_key_value(Some(key))],
-                span,
-            )?
-            .is_truthy())
+        let (value, _) = self.call_array_access_offset_get_with_array_copy_source(
+            object,
+            Self::array_key_value(Some(first_key.clone())),
+            span,
+            caller_scope,
+        )?;
+        match value {
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                self.array_access_path_isset(object, rest_keys, span, caller_scope)
+            }
+            value => Ok(Self::array_path_isset(&value, rest_keys)),
+        }
+    }
+
+    fn array_access_path_empty(
+        &mut self,
+        object: PhpObject,
+        keys: &[ArrayKey],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some((first_key, rest_keys)) = keys.split_first() else {
+            return Ok(true);
+        };
+
+        if !self.array_access_offset_exists(object.clone(), first_key.clone(), span)? {
+            return Ok(true);
+        }
+
+        let (value, _) = self.call_array_access_offset_get_with_array_copy_source(
+            object,
+            Self::array_key_value(Some(first_key.clone())),
+            span,
+            caller_scope,
+        )?;
+        if rest_keys.is_empty() {
+            return Ok(!value.is_truthy());
+        }
+
+        match value {
+            Value::Object(object)
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                self.array_access_path_empty(object, rest_keys, span, caller_scope)
+            }
+            value => Ok(Self::array_path_empty(&value, rest_keys)),
+        }
     }
 
     fn object_to_string_with_magic(

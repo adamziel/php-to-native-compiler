@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2117-C through Lane 2120-C for mixed nested `ArrayAccess`
+  observation and unset chains. Direct `ArrayAccess` variables, visible
+  property-held `ArrayAccess` objects, and magic `__get()` roots returning
+  `ArrayAccess` objects now recursively execute supported `offsetExists()`,
+  `offsetGet()`, and `offsetUnset()` bodies for nested `isset`, `empty`, and
+  `unset` paths. Public by-reference `offsetGet()` roots that return backing
+  arrays can also unset nested array leaves through the returned reference
+  after executing the method body. Focused system-PHP coverage proves direct,
+  property-held, magic-provided, and by-reference array-returning nested
+  chains. This remains bounded to supported interpreter syntax,
+  direct/property-held/magic roots, nested `ArrayAccess` objects or
+  by-reference array returns, and approximate diagnostics; untracked dynamic
+  containers, arbitrary future-path metadata recovery, whole-container unsets
+  with live reference leaves, full COW identity, and native reference lowering
+  remain unsupported.
+
 - Added Lane 2112-C through Lane 2116-C for covered magic array-offset
   observation and unset method bodies. Missing named and dynamic
   magic-property array-offset `isset`/`empty` forms now call visible

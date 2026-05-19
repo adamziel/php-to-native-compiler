@@ -1,0 +1,3 @@
+$ phpc run tests/fixtures/milestone2120/reference_arrayaccess_nested_array_unset_side_effects.php
+stdout:
+yes|filled|gone|side|exists:box,get:box,exists:box,get:box,get:box

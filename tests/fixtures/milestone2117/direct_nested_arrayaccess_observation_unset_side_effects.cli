@@ -1,0 +1,3 @@
+$ phpc run tests/fixtures/milestone2117/direct_nested_arrayaccess_observation_unset_side_effects.php
+stdout:
+yes|filled|gone|exists:box,get:box,exists:box,get:box,get:box|iexists:leaf,iexists:leaf,iget:leaf,iunset:leaf
