@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1996-C through Lane 2000-C for copied-array COW provenance
+  through by-reference helper parameters inside supported by-value
+  magic/`ArrayAccess` method bodies. The source-aware user-function call path
+  can now evaluate non-reference-return helpers with reference parameters and
+  record proven array-copy sources on the bound helper parameter. Focused
+  system-PHP coverage proves visible by-value `__get()` and public by-value
+  `ArrayAccess::offsetGet()` bodies preserve reference-backed nested slots
+  through direct free-function helpers, `$this` instance-method helpers,
+  direct closure helpers, dynamic string helper calls, and an `ArrayAccess`
+  helper body. Writes performed inside those helpers through the
+  by-reference parameter, `call_user_func()` warning/no-reference semantics,
+  `call_user_func_array()` by-reference callback containers, whole-array
+  reference identity, exact diagnostics, and native reference lowering remain
+  unsupported.
+
 - Added Lane 1991-C through Lane 1995-C for copied-array COW provenance
   hidden inside local array containers in supported by-value
   magic/`ArrayAccess` method bodies. Source-aware local array reads now

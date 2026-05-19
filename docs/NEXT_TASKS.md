@@ -20698,6 +20698,20 @@ handled.
   parameters, whole-array reference identity, exact diagnostics, and native
   reference lowering named as unsupported.
 
+## Lane 1996-C through Lane 2000-C: By-Reference Helper Return Provenance
+
+- [x] Runtime/tests/docs bundle: preserve copied-array COW provenance when a
+  supported by-value magic/`ArrayAccess` method body passes a proven backed
+  bucket through a by-reference helper parameter and returns it. Cover direct
+  free-function helpers, `$this` instance-method helpers, public by-value
+  `ArrayAccess::offsetGet()` helper bodies, direct closure helpers, and
+  dynamic string helper calls with system-PHP comparisons. Keep writes
+  performed inside those helpers through the by-reference parameter,
+  `call_user_func()` warning/no-reference semantics,
+  `call_user_func_array()` by-reference callback containers, whole-array
+  reference identity, exact diagnostics, and native reference lowering named
+  as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe the remaining scalar parent overwrite/error parity for covered

@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1995:
+The current in-progress implementation frontier is Lane 2000:
+
+- Lanes 1996 through 2000 preserve copied-array COW provenance when supported
+  by-value magic/`ArrayAccess` method bodies pass a proven backed bucket
+  through a by-reference helper parameter before returning it. Covered bodies
+  include direct free-function helpers, `$this` instance-method helpers,
+  public by-value `ArrayAccess::offsetGet()` helpers, direct closure helpers,
+  and dynamic string helper calls. Focused system-PHP coverage proves the
+  returned copy keeps selected reference-backed nested slots shared while
+  ordinary nested arrays detach. Writes performed inside the by-reference
+  helper through that parameter, `call_user_func()` warning/no-reference
+  semantics, `call_user_func_array()` by-reference callback containers,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
 
 - Lanes 1991 through 1995 preserve copied-array COW provenance when supported
   by-value magic/`ArrayAccess` method bodies hide a proven backed bucket

@@ -18,6 +18,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T09:42:56+02:00
+
+- Checkpoint before this task: `eeaf3096 runtime: preserve local container
+  COW provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1996-C through Lane 2000-C bundle, preserving
+  copied-array COW provenance when supported by-value magic/`ArrayAccess`
+  method bodies pass a proven backed bucket through a by-reference helper
+  parameter before returning it.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1996/*`, `tests/fixtures/milestone1997/*`,
+  `tests/fixtures/milestone1998/*`, `tests/fixtures/milestone1999/*`,
+  `tests/fixtures/milestone2000/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone1996` through `milestone2000`; `cargo check -q` passed while
+  developing the bundle.
+- Remaining COW gaps: writes performed inside by-reference helpers through
+  the by-reference parameter, `call_user_func()` reference-warning/no-reference
+  semantics, `call_user_func_array()` by-reference callback containers,
+  arbitrary object/container provenance, side-effecting container-key
+  analysis, by-reference closure captures, append expressions outside
+  by-reference call-argument positions, non-reference append-expression
+  values, dynamic `call_user_func_array()` containers not traceable to
+  current-scope local arrays, remaining scalar parent overwrite/error parity
+  outside covered roots, possible mixed `ArrayAccess` gaps in
+  reference-return or callback reference-argument paths, exact PHP
+  diagnostics, whole-array reference identity, native reference/string COW
+  lowering, and native lowering for these interpreter paths.
+- Next concrete task: run adjacent fixture comparisons, focused Rust tests,
+  formatting/diff checks, and the full `tools/checkpoint.sh` bundle gate,
+  then push if it passes.
+
 ## Loop Event 2026-05-19T09:18:23+02:00
 
 - Checkpoint before this task: `4bf7b6e1 runtime: bind append reference

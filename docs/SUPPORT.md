@@ -406,6 +406,17 @@
   scope; arbitrary object containers, side-effecting key expressions,
   by-reference helper/callback parameters, whole-array reference identity,
   exact diagnostics, and native reference lowering remain unsupported.
+  These by-value magic/`ArrayAccess` bodies also preserve copied-array
+  provenance when the proven bucket is passed through a by-reference
+  parameter of a non-reference-return helper and then returned. Covered helper
+  forms are direct free functions, `$this` instance methods, direct closures,
+  dynamic string function calls, and the same direct helper shape from public
+  by-value `ArrayAccess::offsetGet()`. The helper parameter receives the
+  proven copy source for return evaluation; writes performed inside the
+  helper through that by-reference parameter, `call_user_func()` reference
+  warnings/no-reference semantics, `call_user_func_array()` by-reference
+  callback argument containers, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
   Supported reference-return bodies may also delegate to non-static helpers
   through PHP's static call syntaxes when a compatible current `$this` object
   exists. Covered forms include `self::helper(...)`, `parent::helper(...)`,
