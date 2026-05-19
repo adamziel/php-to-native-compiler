@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 1895-C through Lane 1898-C for bounded recursive
+  string-keyed `$GLOBALS["GLOBALS"]` routing. The direct assignment path now
+  handles `$GLOBALS[...]` before ordinary string-offset writes, so an existing
+  scalar global variable named `GLOBALS` no longer makes
+  `$GLOBALS["GLOBALS"] = ...` look like a string offset mutation. Focused
+  coverage proves nested writes, deep reference-source aliases, function-scope
+  append references, repeated root overwrites, and root overwrites after
+  `$GLOBALS["GLOBALS"] =& $x`, all with system-PHP comparisons. This treats
+  the first `"GLOBALS"` key as an ordinary root global variable name, not as
+  full direct `$GLOBALS` array materialization; dynamic global names,
+  non-string `$GLOBALS` keys, `$GLOBALS[] =&`, exact diagnostics,
+  whole-array reference identity, and native reference lowering remain
+  unsupported.
+
 - Added Lane 1890-C through Lane 1894-C for by-value copied-array COW
   provenance through executed magic/`ArrayAccess` method bodies. The
   provenance-preserving call path now returns both the value and the backed

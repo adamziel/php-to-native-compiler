@@ -788,8 +788,8 @@
   are covered when the reached
   `offsetGet()` body can prove the backing object-property array bucket.
   Unsupported syntax/builtins, arbitrary callback or builtin reference-return
-  sources, recursive `$GLOBALS` materialization, thrown exception unwinding,
-  whole-array reference identity in returned values, and arbitrary
+  sources, full direct `$GLOBALS` array materialization, thrown exception
+  unwinding, whole-array reference identity in returned values, and arbitrary
   side-effecting copied-key expressions remain unsupported for this
   by-value method-return provenance path. When a declared
   public object property array with a covered direct object-property
@@ -1691,7 +1691,7 @@
   unqualified constants, the current built-in global constant slice, and
   class-method `self::CONST` defaults resolved from the declaring class context
   when an omitted argument is bound
-- recursive user-function calls up to a fixed 128-frame user-function call-depth
+- recursive user-function calls up to a fixed 64-frame user-function call-depth
   guard
 - `return`
 - direct `exit()`/`die()` calls as a bounded termination construct, not a
@@ -1745,12 +1745,15 @@
   covered alias-group slots observe the same value, and `unset($value)`
   detaches only the source name. Nested by-value writes through supported
   string-keyed `$GLOBALS` paths route through the root global symbol table and
-  sync covered aliases. Full PHP `$GLOBALS` array materialization, recursive
-  `$GLOBALS` contents, non-string keyed `$GLOBALS` access, `$GLOBALS[] =&
-  $value`, non-direct sources, function-local alias metadata that must survive
-  after the source scope returns, dynamic global names, exact warning/notice
-  behavior, included-file scope interactions, copy-on-write, and native
-  lowering remain unsupported.
+  sync covered aliases. The recursive literal-key spelling
+  `$GLOBALS['GLOBALS']` is covered as the ordinary root global variable named
+  `GLOBALS` for direct nested writes, reference sources, append reference
+  sources, and root overwrites. Full PHP direct `$GLOBALS` array
+  materialization, dynamic recursive self contents, non-string keyed
+  `$GLOBALS` access, `$GLOBALS[] =& $value`, non-direct sources,
+  function-local alias metadata that must survive after the source scope
+  returns, dynamic global names, exact warning/notice behavior, included-file
+  scope interactions, copy-on-write, and native lowering remain unsupported.
 - `$_SERVER` is seeded as a bounded root superglobal for `phpc run` with
   deterministic CLI request defaults for `SERVER_SOFTWARE`, `REQUEST_URI`,
   `HTTP_HOST`, `PHP_SELF`, `SCRIPT_NAME`, `SCRIPT_FILENAME`, and
@@ -6536,7 +6539,7 @@
   Top-level `global $name, ...;` declarations execute as no-op/import-compatible
   statements. Function-scope `global` declarations still fail with a stable
   runtime error because reference-backed global imports are not implemented.
-  Recursive user-function calls are supported until the fixed 128-frame
+  Recursive user-function calls are supported until the fixed 64-frame
   user-function call-depth guard is reached.
   That guard is a project-specific runtime diagnostic, not PHP's native stack or
   memory exhaustion behavior; it is not configurable and does not produce stack
@@ -8469,11 +8472,13 @@
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - full `global`/`$GLOBALS` semantics beyond direct string-keyed `$GLOBALS`
-  root-symbol reads/writes, nested by-value writes, and the bounded direct-
-  variable reference-target slices: recursive `$GLOBALS` materialization,
-  dynamic global names, `$GLOBALS[] =& $value`, non-direct reference sources,
-  superglobals, included-file scope interactions, copy-on-write, exact
-  warning/notice behavior, and native lowering
+  root-symbol reads/writes, nested by-value writes, bounded direct-variable
+  reference-target slices, and the covered `$GLOBALS["GLOBALS"]` ordinary
+  root-global spelling: full direct `$GLOBALS` array materialization, dynamic
+  recursive self contents, dynamic global names, `$GLOBALS[] =& $value`,
+  non-direct reference sources, superglobals, included-file scope
+  interactions, copy-on-write, exact warning/notice behavior, and native
+  lowering
 - default parameter values outside the documented constant-expression,
   unqualified constant-reference, and class-method `self::CONST` subset
 - required parameters after default parameters

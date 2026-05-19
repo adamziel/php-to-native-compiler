@@ -16824,13 +16824,6 @@ impl Interpreter {
                     }
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
-                if let Some(key) = key.as_ref() {
-                    if let Some(Value::String(mut string)) = scope.read_named(name) {
-                        self.write_ascii_string_offset(&mut string, key, value.clone(), *span)?;
-                        scope.write_static(name, Value::String(string));
-                        return Ok(value);
-                    }
-                }
                 if name == "GLOBALS" {
                     let Some(key) = key.as_ref() else {
                         return Err(runtime_error(
@@ -16869,6 +16862,13 @@ impl Interpreter {
                         )?;
                     }
                     return Ok(value);
+                }
+                if let Some(key) = key.as_ref() {
+                    if let Some(Value::String(mut string)) = scope.read_named(name) {
+                        self.write_ascii_string_offset(&mut string, key, value.clone(), *span)?;
+                        scope.write_static(name, Value::String(string));
+                        return Ok(value);
+                    }
                 }
                 if let Some(key) = key.as_ref() {
                     if scope.write_alias_backed_array_offset_checked_with_object_type_resolver(

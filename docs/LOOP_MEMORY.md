@@ -18,6 +18,30 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T05:18:26+02:00
+
+- Checkpoint before this task: `b9d543a0 runtime: carry magic ArrayAccess body
+  COW provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1895-C through Lane 1898-C bundle, closing the bounded
+  recursive string-keyed `$GLOBALS["GLOBALS"]` route as an ordinary root
+  global variable named `GLOBALS`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1895/*`, `tests/fixtures/milestone1896/*`,
+  `tests/fixtures/milestone1897/*`, `tests/fixtures/milestone1898/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes matched the new shapes; focused
+  `cargo run -q -p phpc -- test --compare-php` passed `milestone1895`,
+  `milestone1896`, `milestone1897`, and `milestone1898`.
+- Remaining COW gaps: arbitrary callback and builtin reference-return sources,
+  unsupported PHP side effects outside the interpreter subset, full exception
+  unwinding and uncaught propagation, broader complex alias sinks and alias
+  lifetime ordering, exact PHP stderr/fatal text, binary/multibyte string
+  offset behavior, whole-array reference identity, full direct `$GLOBALS`
+  array materialization, and native reference/string COW lowering.
+- Next concrete task: run adjacent regression checks, formatting, diff check,
+  and the full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T04:59:07+02:00
 
 - Checkpoint before this task: `d05c46b9 runtime: prove arrayaccess return

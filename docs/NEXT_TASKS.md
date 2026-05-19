@@ -20413,9 +20413,22 @@ handled.
   dynamic-property reads, nested method-call targets, magic-property indexed
   reads, and a mixed magic-provided `ArrayAccess` chain with system-PHP
   comparisons. Keep unsupported syntax/builtins, arbitrary callback/builtin
-  reference returns, recursive `$GLOBALS` materialization, thrown exception
-  unwinding, whole-array reference identity, exact diagnostics, and native
-  reference lowering named as unsupported.
+  reference returns, full direct `$GLOBALS` array materialization, thrown
+  exception unwinding, whole-array reference identity, exact diagnostics, and
+  native reference lowering named as unsupported.
+
+## Lane 1895-C through Lane 1898-C: Recursive `$GLOBALS` Key Routing
+
+- [x] Runtime/tests/docs bundle: close the bounded recursive string-keyed
+  `$GLOBALS["GLOBALS"]` route as an ordinary root global variable named
+  `GLOBALS`. Cover nested writes that leave the real `$x` root unchanged,
+  deep reference-source aliases, function-scope append references, repeated
+  direct root overwrites, and root overwrites after
+  `$GLOBALS["GLOBALS"] =& $x`, all with system-PHP comparisons. Keep full
+  direct `$GLOBALS` array materialization, dynamic recursive self contents,
+  dynamic global names, non-string `$GLOBALS` keys, `$GLOBALS[] =&`, exact
+  diagnostics, whole-array reference identity, and native reference lowering
+  named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

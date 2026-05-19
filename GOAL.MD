@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1894:
+The current in-progress implementation frontier is Lane 1898:
+
+- Lanes 1895 through 1898 close a bounded recursive string-keyed
+  `$GLOBALS["GLOBALS"]` slice. Direct nested writes, reference sources,
+  append reference sources, and root overwrites now treat the first
+  `"GLOBALS"` key as the ordinary root global variable named `GLOBALS`,
+  matching the covered PHP behavior instead of inventing a recursive global
+  table. Focused coverage includes nested writes that leave `$x` unchanged,
+  deep reference-slot write-through below `$GLOBALS["GLOBALS"]`, function
+  scope append references, and repeated/root reference-bound
+  `$GLOBALS["GLOBALS"]` overwrites. Full direct `$GLOBALS` array
+  materialization, dynamic global names, non-string `$GLOBALS` keys,
+  `$GLOBALS[] =&`, exact diagnostics, whole-array reference identity, and
+  native reference lowering remain unsupported.
 
 - Lanes 1890 through 1894 preserve by-value copied-array COW provenance
   through executed, non-reference magic/`ArrayAccess` method bodies in the
@@ -42,9 +55,9 @@ The current in-progress implementation frontier is Lane 1894:
   nested method-call targets such as `$this->bucket($offset)["group"]` and a
   mixed magic-provided `ArrayAccess` chain. This is still not a claim of
   arbitrary PHP side effects: unsupported syntax/builtins remain unsupported,
-  thrown exception unwinding, recursive `$GLOBALS` materialization, arbitrary
-  callback/builtin reference returns, whole-array reference identity, exact
-  diagnostics, and native reference lowering remain unsupported.
+  thrown exception unwinding, full direct `$GLOBALS` array materialization,
+  arbitrary callback/builtin reference returns, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 1885 through 1889 preserve by-value method-return copied-array COW
   provenance for direct `ArrayAccess` offset return expressions backed by the
