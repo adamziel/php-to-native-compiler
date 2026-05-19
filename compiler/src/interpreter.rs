@@ -12369,10 +12369,141 @@ impl Interpreter {
     ) -> CompileResult<NonDirectReferenceSourceBinding> {
         match self.evaluate(target, scope)? {
             Value::Object(object)
-                if keys.is_empty()
-                    && self
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                let appending_root = keys.is_empty();
+                let hidden_name = self.hidden_array_access_reference_object_name(&object);
+                scope.write_static(&hidden_name, Value::Object(object.clone()));
+                let binding = self.evaluate_array_access_reference_source_binding_for_object(
+                    object,
+                    hidden_name,
+                    if appending_root {
+                        vec![Self::array_access_append_reference_key()]
+                    } else {
+                        keys
+                    },
+                    if appending_root {
+                        Some(Value::Null)
+                    } else {
+                        None
+                    },
+                    span,
+                    scope,
+                )?
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "reference assignment",
+                            "expression-root ArrayAccess append reference source could not bind a covered offsetGet() result",
+                        ),
+                    )
+                })?;
+                if appending_root {
+                    Ok(binding)
+                } else {
+                    self.append_to_non_direct_reference_source_binding(binding, span, scope)
+                }
+            }
+            Value::Array(array) => {
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Array(array));
+                let alias = scope.append_array_offset_reference_alias(
+                    &temp_name,
+                    keys,
+                    Value::Null,
+                    span,
+                )?;
+                Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
+            }
+            Value::Null => {
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Array(PhpArray::new()));
+                let alias = scope.append_array_offset_reference_alias(
+                    &temp_name,
+                    keys,
+                    Value::Null,
+                    span,
+                )?;
+                Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
+            }
+            Value::Bool(false) => {
+                self.emit_false_to_array_deprecation(span)?;
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Array(PhpArray::new()));
+                let alias = scope.append_array_offset_reference_alias(
+                    &temp_name,
+                    keys,
+                    Value::Null,
+                    span,
+                )?;
+                Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
+            }
+            Value::String(_) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot create references to/from string offsets".to_string(),
+                ),
+            )),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot use {} as an expression-root array append reference source",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn append_to_non_direct_reference_source_binding(
+        &mut self,
+        binding: NonDirectReferenceSourceBinding,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<NonDirectReferenceSourceBinding> {
+        match binding {
+            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                if let Some(Value::Object(object)) = scope.read_array_offset_alias(&alias) {
+                    if self
                         .classes
-                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                        .implements_interface(object.class_id(), "ArrayAccess")
+                    {
+                        let hidden_name = self.hidden_array_access_reference_object_name(&object);
+                        scope.write_static(&hidden_name, Value::Object(object.clone()));
+                        return self
+                            .evaluate_array_access_reference_source_binding_for_object(
+                                object,
+                                hidden_name,
+                                vec![Self::array_access_append_reference_key()],
+                                Some(Value::Null),
+                                span,
+                                scope,
+                            )?
+                            .ok_or_else(|| {
+                                runtime_error(
+                                    span,
+                                    RuntimeError::unsupported_call(
+                                        "reference assignment",
+                                        "expression-root nested ArrayAccess append reference source could not bind a covered offsetGet(null) result",
+                                    ),
+                                )
+                            });
+                    }
+                }
+                let appended = scope.append_object_property_array_offset_reference_alias(
+                    alias.root,
+                    alias.keys,
+                    Value::Null,
+                    span,
+                )?;
+                Ok(NonDirectReferenceSourceBinding::ArrayOffset(appended))
+            }
+            NonDirectReferenceSourceBinding::DetachedValue(Value::Object(object))
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
             {
                 let hidden_name = self.hidden_array_access_reference_object_name(&object);
                 scope.write_static(&hidden_name, Value::Object(object.clone()));
@@ -12389,59 +12520,22 @@ impl Interpreter {
                         span,
                         RuntimeError::unsupported_call(
                             "reference assignment",
-                            "expression-root ArrayAccess append reference source could not bind a covered offsetGet(null) result",
+                            "expression-root nested ArrayAccess append reference source could not bind a covered offsetGet(null) result",
                         ),
                     )
                 })
             }
-            Value::Object(object)
-                if self
-                    .classes
-                    .implements_interface(object.class_id(), "ArrayAccess") =>
-            {
-                Err(runtime_error(
+            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, value);
+                let alias = scope.append_array_offset_reference_alias(
+                    &temp_name,
+                    Vec::new(),
+                    Value::Null,
                     span,
-                    RuntimeError::unsupported_call(
-                        "reference assignment",
-                        "nested expression-root ArrayAccess append reference sources are not implemented",
-                    ),
-                ))
-            }
-            Value::Array(array) => {
-                let temp_name = self.next_foreach_temporary_array_name();
-                scope.write_static(&temp_name, Value::Array(array));
-                let alias =
-                    scope.append_array_offset_reference_alias(&temp_name, keys, Value::Null, span)?;
+                )?;
                 Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
             }
-            Value::Null => {
-                let temp_name = self.next_foreach_temporary_array_name();
-                scope.write_static(&temp_name, Value::Array(PhpArray::new()));
-                let alias =
-                    scope.append_array_offset_reference_alias(&temp_name, keys, Value::Null, span)?;
-                Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
-            }
-            Value::Bool(false) => {
-                self.emit_false_to_array_deprecation(span)?;
-                let temp_name = self.next_foreach_temporary_array_name();
-                scope.write_static(&temp_name, Value::Array(PhpArray::new()));
-                let alias =
-                    scope.append_array_offset_reference_alias(&temp_name, keys, Value::Null, span)?;
-                Ok(NonDirectReferenceSourceBinding::ArrayOffset(alias))
-            }
-            Value::String(_) => Err(runtime_error(
-                span,
-                RuntimeError::invalid_array_access(
-                    "cannot create references to/from string offsets".to_string(),
-                ),
-            )),
-            other => Err(runtime_error(
-                span,
-                RuntimeError::invalid_array_access(format!(
-                    "cannot use {} as an expression-root array append reference source",
-                    other.type_name()
-                )),
-            )),
         }
     }
 

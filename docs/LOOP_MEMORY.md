@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T03:23:01+02:00
+
+- Checkpoint before this task: `d0e7f044 runtime: support expression append
+  reference roots`, pushed to `origin/master`.
+- Task attempted: Lane 1846-C through Lane 1849-C bundle, allowing
+  append-offset expression-root sources below selected `ArrayAccess` buckets
+  and selected inner `ArrayAccess` objects, including by-value outer object
+  handle returns.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1846/*`, `tests/fixtures/milestone1847/*`,
+  `tests/fixtures/milestone1848/*`, `tests/fixtures/milestone1849/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo run -q -p phpc -- test --compare-php` passed each
+  new fixture directory plus adjacent `milestone1825`, `milestone1826`,
+  `milestone1836`, `milestone1842`, `milestone1844`, and `milestone1845`;
+  focused `functions_and_scopes` reference-assignment, `object_model`
+  ArrayAccess, and `syntax_boundaries` reference-assignment Rust tests passed;
+  `cargo fmt`, `cargo fmt --check`, `cargo check -q -p phpc`, and `git diff
+  --check` passed.
+- Remaining COW gaps: scalar/string temporary reference parity, arbitrary
+  callback and builtin reference-return sources, arbitrary PHP and
+  magic/`ArrayAccess` side effects outside the interpreter subset, full
+  exception unwinding and uncaught propagation, arbitrary Iterator side
+  effects, broader complex alias sinks and alias lifetime ordering, exact PHP
+  stderr/fatal text, binary/multibyte string offset behavior, and native
+  reference/string COW lowering.
+- Next concrete task: run focused Rust tests, formatting, diff check, and the
+  full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T03:16:26+02:00
 
 - Checkpoint before this task: `890284df runtime: preserve executed

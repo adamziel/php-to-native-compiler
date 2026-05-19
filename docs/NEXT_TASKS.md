@@ -20270,10 +20270,20 @@ handled.
   `$alias =& make_array()["outer"][]`, `$alias =& make_bag()[]`, and
   `$alias =& $factory->make()[]`, including `offsetGet(null)` and
   empty-string backing-key coercion for the covered `ArrayAccess` path. Keep
-  nested expression-root `ArrayAccess` append suffixes, scalar/string
-  temporary reference parity, arbitrary PHP outside the interpreter subset,
-  exact diagnostic streams, and native reference lowering named as
-  unsupported.
+  scalar/string temporary reference parity, arbitrary PHP outside the
+  interpreter subset, exact diagnostic streams, and native reference lowering
+  named as unsupported.
+
+## Lane 1846-C through Lane 1849-C: Nested Expression-Root ArrayAccess Appends
+
+- [x] Runtime/tests/docs bundle: append below expression-root `ArrayAccess`
+  selections when the selected parent is a backed array bucket or selected
+  inner `ArrayAccess` object. Cover direct function and method expression
+  roots, by-reference outer buckets, selected inner `ArrayAccess` objects,
+  and by-value outer `offsetGet()` returning an inner object handle. Keep
+  scalar/string temporary reference parity, arbitrary PHP outside the
+  interpreter subset, exact diagnostic streams, and native reference lowering
+  named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

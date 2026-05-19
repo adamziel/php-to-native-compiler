@@ -269,7 +269,14 @@
   `$alias =& make_array()["outer"][]`, `$alias =& make_bag()[]`, and
   `$alias =& $factory->make()[]`. The `ArrayAccess` append form passes
   `null` to `offsetGet()` and uses PHP's empty-string null-key coercion for
-  the covered backing array bucket.
+  the covered backing array bucket. Append suffixes below expression-root
+  `ArrayAccess` selections are also covered when the selected parent is a
+  backed array bucket or a selected inner `ArrayAccess` object, including
+  `$alias =& make_bag()["outer"][]`,
+  `$alias =& $factory->make()["outer"][]`, and
+  `$alias =& make_outer()["box"][]`. The selected inner-object case is covered
+  both when the outer `offsetGet()` returns by reference and when a by-value
+  outer `offsetGet()` returns the inner object handle.
   Mixed chains where a by-value outer `offsetGet()` returns an inner
   `ArrayAccess` object can continue into a public by-reference inner
   `offsetGet()` for direct, property-held, and by-value magic `__get()`
@@ -349,10 +356,9 @@
   it, for example `$bucket =& $this->items[$offset]; return $bucket["leaf"];`.
   Backing paths may also use locals initialized from literal int/string keys,
   such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
-  This does not add nested expression-root `ArrayAccess` append suffixes,
-  scalar/string temporary reference parity, magic `__get()` roots beyond the
-  covered direct, dynamic, non-direct holder, expression-root,
-  variable/property/backing-offset returns; incompatible typed
+  This does not add scalar/string temporary reference parity, magic `__get()`
+  roots beyond the covered direct, dynamic, non-direct holder,
+  expression-root, variable/property/backing-offset returns; incompatible typed
   reference-return signatures or arbitrary type enforcement; full exception
   unwinding, uncaught exception propagation,
   non-object throws, exact exception diagnostics, or global `throw` support

@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 1846-C through Lane 1849-C for append suffixes below
+  expression-root `ArrayAccess` selections. Direct variable targets can now
+  append below arrays returned from an expression-root `offsetGet()` and can
+  continue into selected inner `ArrayAccess` objects before applying the
+  append, including `$alias =& make_bag()["outer"][]`,
+  `$alias =& $factory->make()["outer"][]`, and
+  `$alias =& make_outer()["box"][]`. The covered mixed path also handles a
+  by-value outer `offsetGet()` that returns an inner `ArrayAccess` object
+  handle. This does not claim scalar/string temporary reference parity,
+  arbitrary PHP outside the interpreter subset, exact diagnostic streams, or
+  native reference lowering. Focused verification: `cargo run -q -p phpc --
+  test --compare-php` passed the new `milestone1846`, `milestone1847`,
+  `milestone1848`, and `milestone1849` fixtures plus adjacent
+  `milestone1825`, `milestone1826`, `milestone1836`, `milestone1842`,
+  `milestone1844`, and `milestone1845`.
+
 - Added Lane 1842-C through Lane 1845-C for append-offset expression-root
   reference sources. Direct variable targets now bind through appended slots
   below returned arrays, null temporaries, and direct function/method results
@@ -12,9 +28,9 @@ Implemented:
   `$alias =& make_bag()[]`, and `$alias =& $factory->make()[]`.
   `ArrayAccess` expression append roots pass `null` to `offsetGet()` while
   the covered backing array key uses PHP's empty-string null-key coercion.
-  This does not claim nested expression-root `ArrayAccess` append suffixes,
-  scalar/string temporary reference parity, arbitrary PHP outside the
-  interpreter subset, exact diagnostic streams, or native reference lowering.
+  This does not claim scalar/string temporary reference parity, arbitrary PHP
+  outside the interpreter subset, exact diagnostic streams, or native
+  reference lowering.
   Focused verification: `cargo run -q -p phpc -- test --compare-php` passed
   the new `milestone1842`, `milestone1843`, `milestone1844`, and
   `milestone1845` fixtures plus adjacent append/expression/ArrayAccess
