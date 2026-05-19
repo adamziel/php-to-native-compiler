@@ -20392,6 +20392,18 @@ handled.
   construction, thrown exception unwinding, whole-array reference identity,
   exact diagnostics, and native reference lowering named as unsupported.
 
+## Lane 1885-C through Lane 1889-C: Direct ArrayAccess Return Copy Provenance
+
+- [x] Runtime/tests/docs bundle: carry by-value method-return copied-array COW
+  provenance through direct `ArrayAccess` offset return expressions backed by
+  the existing `offsetGet()` bridge. Cover direct `$this[$group]`,
+  property-held `$this->bag[$group]`, dynamic property-held roots,
+  expression-root object results, and by-value magic `__get()` roots returning
+  the `ArrayAccess` object with system-PHP comparisons. Keep arbitrary
+  `offsetGet()` result expressions, untracked temporaries, thrown exception
+  unwinding, whole-array reference identity, exact diagnostics, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

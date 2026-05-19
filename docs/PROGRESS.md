@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1885-C through Lane 1889-C for by-value method returns that copy
+  arrays directly from proven `ArrayAccess` offset expressions. The
+  return-source provenance path now covers direct `$this[$group]`,
+  property-held `$this->bag[$group]`, dynamic property-held roots,
+  expression-root object results such as `$this->make()[$group]`, and
+  by-value magic `__get()` roots returning the `ArrayAccess` object when the
+  reached `offsetGet()` bridge maps to a backed object-property array bucket.
+  This remains bounded to the existing public `offsetGet()` bridge and does
+  not claim arbitrary `offsetGet()` result expressions, untracked temporaries,
+  thrown exception unwinding, whole-array reference identity, or native
+  reference lowering. Focused verification: `cargo run -q -p phpc -- test
+  --compare-php` passed the new `milestone1885`, `milestone1886`,
+  `milestone1887`, `milestone1888`, and `milestone1889` fixtures with
+  system-PHP comparisons.
+
 - Added Lane 1880-C through Lane 1884-C for by-value method returns that copy
   backed object-property arrays through bounded local temporaries. The
   return-source provenance path now records proven local array copy sources

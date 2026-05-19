@@ -771,11 +771,17 @@
   dynamic property copies, selected property buckets, local `ArrayAccess`
   offset copies backed by the existing `offsetGet()` bridge, and by-value
   Iterator loop variables whose `current()` value carried direct
-  object-property array provenance. Arbitrary returned expressions, untracked
-  temporary construction, thrown exception unwinding, whole-array reference
-  identity in returned values, and arbitrary side-effecting copied-key
-  expressions remain unsupported for this by-value method-return provenance
-  path. When a declared
+  object-property array provenance. Direct `ArrayAccess` offset return
+  expressions can also retain provenance when `offsetGet()` maps to a proven
+  backed object-property array bucket, including direct `$this[$group]`,
+  property-held `$this->bag[$group]`, dynamic property-held roots,
+  expression-root object results such as `$this->make()[$group]`, and
+  by-value magic `__get()` roots returning the `ArrayAccess` object.
+  Arbitrary returned expressions, arbitrary `offsetGet()` result expressions,
+  untracked temporary construction, thrown exception unwinding, whole-array
+  reference identity in returned values, and arbitrary side-effecting
+  copied-key expressions remain unsupported for this by-value method-return
+  provenance path. When a declared
   public object property array with a covered direct object-property
   array-offset reference target is copied into a direct static variable, the
   copied slot also joins the same bounded alias group: writes through the

@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1884:
+The current in-progress implementation frontier is Lane 1889:
+
+- Lanes 1885 through 1889 preserve by-value method-return copied-array COW
+  provenance for direct `ArrayAccess` offset return expressions backed by the
+  proven `offsetGet()` bridge. Covered roots include `return $this[$group]`,
+  property-held roots such as `return $this->bag[$group]`, dynamic
+  property-held roots, expression roots such as `return $this->make()[$group]`,
+  and by-value magic `__get()` roots returning the `ArrayAccess` object. This
+  remains bounded to public `offsetGet()` shapes that return a statically
+  proven object-property array bucket; arbitrary `offsetGet()` result
+  expressions, untracked temporaries, thrown exception unwinding,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
 
 - Lanes 1880 through 1884 preserve by-value method-return copied-array COW
   provenance through bounded local temporary returns. A local variable assigned
