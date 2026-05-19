@@ -88,6 +88,9 @@
   identity, and unchanged copied-array source metadata is preserved across the
   helper call used to fetch the holder; covered reference-return callbacks
   promote proven source leaves to real cells before returning the reference.
+  Recovered stored argument roots also carry the already-read argument-array
+  value, so supported helper calls, dynamic property names, and key
+  expressions used to recover those roots are not evaluated a second time.
   This does
   not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary

@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2206-C through Lane 2210-C for PHP-order single evaluation of
+  recovered stored `call_user_func_array()` argument roots in the
+  source-aware COW path. Root recovery now returns both the concrete root and
+  the already-read argument-array value, so helper calls used as non-direct
+  holders, dynamic property expressions, and array-index key expressions are
+  not evaluated a second time before reference-return callback binding.
+  Focused system-PHP coverage proves visible `__get()` and public
+  `ArrayAccess::offsetGet()` bodies where the helper intentionally replaces
+  the copied local array while the stored argument array still points at the
+  original selected source leaf; the callback mutates that original reference
+  leaf and the helper call counter remains PHP-parity `1`. This remains
+  bounded to recovered concrete stored roots and supported interpreter syntax;
+  arbitrary side-effect reconstruction, untracked dynamic containers, exact
+  diagnostics, and native reference/string COW lowering remain unsupported.
+
 - Added Lane 2201-C through Lane 2205-C for non-direct holder and callback
   containers in the stored `call_user_func_array()` COW path inside supported
   magic/`ArrayAccess` method bodies. Simple non-direct property assignment is

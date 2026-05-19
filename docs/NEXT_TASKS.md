@@ -87,13 +87,18 @@ handled.
   holders, dynamic non-direct holder properties, nested holder-array roots,
   and non-direct property-held array callables while preserving unchanged
   local copied-array provenance across holder helper calls.
+- [x] Lane 2206-C through 2210-C: carry the already-evaluated stored argument
+  array value alongside recovered `call_user_func_array()` roots, so
+  side-effecting helper calls, dynamic property names, and index-key
+  expressions execute once like PHP while source-aware reference-return
+  callbacks still promote the original selected source leaf.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
   holders expose real cells or concrete writeback roots instead of stale paths.
-  A known next probe is a holder/callback expression whose supported side
-  effects intentionally replace, unset, or recreate copied local arrays while
-  later COW provenance still needs exact PHP identity.
+  A known next probe is a supported helper/callback side effect that unsets or
+  recreates tracked copied locals or stored containers while later COW
+  provenance still needs exact PHP identity.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

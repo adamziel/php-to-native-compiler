@@ -184,6 +184,14 @@ temporary roots for the same holder object to share alias metadata. This is
 concrete holder identity preservation, not arbitrary graph or side-effect
 reconstruction.
 
+Stored-root recovery returns both the recovered concrete root and, when root
+recovery already evaluated part of the expression, the argument-array value
+read from that root. `call_user_func_array()` then consumes that carried value
+instead of evaluating the original argument expression again. This preserves
+PHP's single-evaluation ordering for supported helper calls, dynamic property
+names, and index-key expressions while still letting the callback path use the
+root metadata for copied-source promotion.
+
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller

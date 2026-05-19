@@ -1174,6 +1174,12 @@ enum StoredArgumentArrayRoot {
     ObjectProperty(ArrayOffsetAliasRoot),
 }
 
+#[derive(Debug, Clone)]
+struct StoredArgumentArrayEvaluation {
+    root: StoredArgumentArrayRoot,
+    value: Option<Value>,
+}
+
 impl ArrayOffsetAliasRoot {
     fn matches_object_property(&self, object_name: &str, property_name: &str) -> bool {
         match self {
@@ -40778,7 +40784,24 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
 
         let Expr::Array { items, .. } = argument_expr else {
-            let argument_array_value = self.evaluate(argument_expr, caller_scope)?;
+            let stored_argument = match argument_expr {
+                Expr::Variable(array_name, _) => Some(StoredArgumentArrayEvaluation {
+                    root: StoredArgumentArrayRoot::DirectVariable(array_name.clone()),
+                    value: None,
+                }),
+                _ => self.stored_call_user_func_array_argument_root(
+                    argument_expr,
+                    argument_expr.span(),
+                    caller_scope,
+                )?,
+            };
+            let argument_array_value = match stored_argument
+                .as_ref()
+                .and_then(|stored| stored.value.clone())
+            {
+                Some(value) => value,
+                None => self.evaluate(argument_expr, caller_scope)?,
+            };
             let Value::Array(argument_array) = &argument_array_value else {
                 return Err(runtime_error(
                     span,
@@ -40814,36 +40837,20 @@ impl Interpreter {
                 ));
             }
 
-            let Expr::Variable(array_name, _) = argument_expr else {
-                let Some(stored_root) = self.stored_call_user_func_array_argument_root(
-                    argument_expr,
-                    argument_expr.span(),
-                    caller_scope,
-                )?
-                else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "call_user_func_array() reference-return alias binding requires an array literal, direct stored array, or direct visible object-property stored array with covered reference slots in the current subset",
-                        ),
-                    ));
-                };
-                return self.evaluate_stored_call_user_func_array_reference_arguments(
-                    function,
-                    argument_expr,
-                    &argument_array,
-                    stored_root,
-                    caller_scope,
-                    true,
-                );
+            let Some(stored_argument) = stored_argument else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "call_user_func_array() reference-return alias binding requires an array literal, direct stored array, or direct visible object-property stored array with covered reference slots in the current subset",
+                    ),
+                ));
             };
-
             return self.evaluate_stored_call_user_func_array_reference_arguments(
                 function,
                 argument_expr,
                 &argument_array,
-                StoredArgumentArrayRoot::DirectVariable(array_name.clone()),
+                stored_argument.root,
                 caller_scope,
                 true,
             );
@@ -41224,7 +41231,24 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
         let Expr::Array { items, .. } = argument_expr else {
-            let argument_array_value = self.evaluate(argument_expr, caller_scope)?;
+            let stored_argument = match argument_expr {
+                Expr::Variable(array_name, _) => Some(StoredArgumentArrayEvaluation {
+                    root: StoredArgumentArrayRoot::DirectVariable(array_name.clone()),
+                    value: None,
+                }),
+                _ => self.stored_call_user_func_array_argument_root(
+                    argument_expr,
+                    argument_expr.span(),
+                    caller_scope,
+                )?,
+            };
+            let argument_array_value = match stored_argument
+                .as_ref()
+                .and_then(|stored| stored.value.clone())
+            {
+                Some(value) => value,
+                None => self.evaluate(argument_expr, caller_scope)?,
+            };
             let Value::Array(argument_array) = &argument_array_value else {
                 return Err(runtime_error(
                     span,
@@ -41276,36 +41300,20 @@ impl Interpreter {
                 ));
             }
 
-            let Expr::Variable(array_name, _) = argument_expr else {
-                let Some(stored_root) = self.stored_call_user_func_array_argument_root(
-                    argument_expr,
-                    argument_expr.span(),
-                    caller_scope,
-                )?
-                else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "call_user_func_array() reference parameter invocation requires an array literal, direct stored array, or direct visible object-property stored array with covered reference slots in the current subset",
-                        ),
-                    ));
-                };
-                return self.evaluate_stored_call_user_func_array_reference_arguments(
-                    function,
-                    argument_expr,
-                    &argument_array,
-                    stored_root,
-                    caller_scope,
-                    false,
-                );
+            let Some(stored_argument) = stored_argument else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "call_user_func_array() reference parameter invocation requires an array literal, direct stored array, or direct visible object-property stored array with covered reference slots in the current subset",
+                    ),
+                ));
             };
-
             return self.evaluate_stored_call_user_func_array_reference_arguments(
                 function,
                 argument_expr,
                 &argument_array,
-                StoredArgumentArrayRoot::DirectVariable(array_name.clone()),
+                stored_argument.root,
                 caller_scope,
                 false,
             );
@@ -41650,10 +41658,13 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         include_reference_params: bool,
     ) -> CompileResult<Option<(Vec<Value>, Vec<ArrayCopySourceBinding>)>> {
-        let stored_root = if let Expr::Variable(source_name, _) = argument_expr {
-            StoredArgumentArrayRoot::DirectVariable(source_name.clone())
+        let stored_argument = if let Expr::Variable(source_name, _) = argument_expr {
+            StoredArgumentArrayEvaluation {
+                root: StoredArgumentArrayRoot::DirectVariable(source_name.clone()),
+                value: None,
+            }
         } else {
-            let Some(root) = self.stored_call_user_func_array_argument_root(
+            let Some(stored_argument) = self.stored_call_user_func_array_argument_root(
                 argument_expr,
                 argument_expr.span(),
                 caller_scope,
@@ -41661,9 +41672,13 @@ impl Interpreter {
             else {
                 return Ok(None);
             };
-            root
+            stored_argument
         };
-        let argument_array_value = self.evaluate(argument_expr, caller_scope)?;
+        let stored_root = stored_argument.root;
+        let argument_array_value = match stored_argument.value {
+            Some(value) => value,
+            None => self.evaluate(argument_expr, caller_scope)?,
+        };
         let Value::Array(argument_array) = &argument_array_value else {
             return Err(runtime_error(
                 span,
@@ -42435,7 +42450,7 @@ impl Interpreter {
         argument_expr: &Expr,
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<Option<StoredArgumentArrayRoot>> {
+    ) -> CompileResult<Option<StoredArgumentArrayEvaluation>> {
         match argument_expr {
             Expr::Property {
                 target, property, ..
@@ -42447,7 +42462,16 @@ impl Interpreter {
                         span,
                         caller_scope,
                     )?;
-                    return Ok(Some(StoredArgumentArrayRoot::ObjectProperty(root)));
+                    let root = StoredArgumentArrayRoot::ObjectProperty(root);
+                    let value = Self::read_stored_call_user_func_array_argument_value(
+                        &root,
+                        span,
+                        caller_scope,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayEvaluation {
+                        root,
+                        value: Some(value),
+                    }));
                 };
 
                 let (_, root) = self.non_direct_object_property_alias_root_with_temp(
@@ -42456,7 +42480,16 @@ impl Interpreter {
                     caller_scope,
                     span,
                 )?;
-                Ok(Some(StoredArgumentArrayRoot::ObjectProperty(root)))
+                let root = StoredArgumentArrayRoot::ObjectProperty(root);
+                let value = Self::read_stored_call_user_func_array_argument_value(
+                    &root,
+                    span,
+                    caller_scope,
+                )?;
+                Ok(Some(StoredArgumentArrayEvaluation {
+                    root,
+                    value: Some(value),
+                }))
             }
             Expr::DynamicProperty {
                 target, property, ..
@@ -42470,7 +42503,16 @@ impl Interpreter {
                         span,
                         caller_scope,
                     )?;
-                    return Ok(Some(StoredArgumentArrayRoot::ObjectProperty(root)));
+                    let root = StoredArgumentArrayRoot::ObjectProperty(root);
+                    let value = Self::read_stored_call_user_func_array_argument_value(
+                        &root,
+                        span,
+                        caller_scope,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayEvaluation {
+                        root,
+                        value: Some(value),
+                    }));
                 };
                 let source_snapshot = caller_scope.public_array_copy_source_snapshot();
                 let target_value = self.evaluate(target, caller_scope)?;
@@ -42496,7 +42538,16 @@ impl Interpreter {
                     span,
                     caller_scope,
                 )?;
-                Ok(Some(StoredArgumentArrayRoot::ObjectProperty(root)))
+                let root = StoredArgumentArrayRoot::ObjectProperty(root);
+                let value = Self::read_stored_call_user_func_array_argument_value(
+                    &root,
+                    span,
+                    caller_scope,
+                )?;
+                Ok(Some(StoredArgumentArrayEvaluation {
+                    root,
+                    value: Some(value),
+                }))
             }
             Expr::Index { target, index, .. } => {
                 if let Some((name, indices)) =
@@ -42509,12 +42560,19 @@ impl Interpreter {
                     if name == "GLOBALS" {
                         let (global_name, keys) =
                             SymbolTable::split_globals_reference_path(keys, span)?;
-                        return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
-                            ArrayOffsetAlias {
-                                root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
-                                keys,
-                            },
-                        )));
+                        let root = StoredArgumentArrayRoot::ArrayOffset(ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+                            keys,
+                        });
+                        let value = Self::read_stored_call_user_func_array_argument_value(
+                            &root,
+                            span,
+                            caller_scope,
+                        )?;
+                        return Ok(Some(StoredArgumentArrayEvaluation {
+                            root,
+                            value: Some(value),
+                        }));
                     }
                     if let Some((alias, _)) = self
                         .evaluate_direct_array_access_reference_source_alias(
@@ -42524,16 +42582,32 @@ impl Interpreter {
                             caller_scope,
                         )?
                     {
-                        return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(alias)));
+                        let root = StoredArgumentArrayRoot::ArrayOffset(alias);
+                        let value = Self::read_stored_call_user_func_array_argument_value(
+                            &root,
+                            span,
+                            caller_scope,
+                        )?;
+                        return Ok(Some(StoredArgumentArrayEvaluation {
+                            root,
+                            value: Some(value),
+                        }));
                     }
-                    return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
-                        ArrayOffsetAlias {
-                            root: ArrayOffsetAliasRoot::StaticArray {
-                                name: name.to_string(),
-                            },
-                            keys,
+                    let root = StoredArgumentArrayRoot::ArrayOffset(ArrayOffsetAlias {
+                        root: ArrayOffsetAliasRoot::StaticArray {
+                            name: name.to_string(),
                         },
-                    )));
+                        keys,
+                    });
+                    let value = Self::read_stored_call_user_func_array_argument_value(
+                        &root,
+                        span,
+                        caller_scope,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayEvaluation {
+                        root,
+                        value: Some(value),
+                    }));
                 }
                 if let Some((object_name, property, indices)) =
                     Self::collect_direct_object_property_array_index_path(target, index)
@@ -42548,9 +42622,17 @@ impl Interpreter {
                         span,
                         caller_scope,
                     )?;
-                    return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
-                        ArrayOffsetAlias { root, keys },
-                    )));
+                    let root =
+                        StoredArgumentArrayRoot::ArrayOffset(ArrayOffsetAlias { root, keys });
+                    let value = Self::read_stored_call_user_func_array_argument_value(
+                        &root,
+                        span,
+                        caller_scope,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayEvaluation {
+                        root,
+                        value: Some(value),
+                    }));
                 }
                 if let Some((object_name, property, indices)) =
                     Self::collect_direct_dynamic_object_property_array_index_path(target, index)
@@ -42567,9 +42649,17 @@ impl Interpreter {
                         span,
                         caller_scope,
                     )?;
-                    return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
-                        ArrayOffsetAlias { root, keys },
-                    )));
+                    let root =
+                        StoredArgumentArrayRoot::ArrayOffset(ArrayOffsetAlias { root, keys });
+                    let value = Self::read_stored_call_user_func_array_argument_value(
+                        &root,
+                        span,
+                        caller_scope,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayEvaluation {
+                        root,
+                        value: Some(value),
+                    }));
                 }
                 if let Some((holder, property, indices)) =
                     Self::collect_object_property_array_index_path(target, index)
@@ -42584,9 +42674,17 @@ impl Interpreter {
                         caller_scope,
                         span,
                     )?;
-                    return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
-                        ArrayOffsetAlias { root, keys },
-                    )));
+                    let root =
+                        StoredArgumentArrayRoot::ArrayOffset(ArrayOffsetAlias { root, keys });
+                    let value = Self::read_stored_call_user_func_array_argument_value(
+                        &root,
+                        span,
+                        caller_scope,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayEvaluation {
+                        root,
+                        value: Some(value),
+                    }));
                 }
                 if let Some((holder, property, indices)) =
                     Self::collect_dynamic_object_property_array_index_path(target, index)
@@ -42620,14 +42718,44 @@ impl Interpreter {
                         span,
                         caller_scope,
                     )?;
-                    return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
-                        ArrayOffsetAlias { root, keys },
-                    )));
+                    let root =
+                        StoredArgumentArrayRoot::ArrayOffset(ArrayOffsetAlias { root, keys });
+                    let value = Self::read_stored_call_user_func_array_argument_value(
+                        &root,
+                        span,
+                        caller_scope,
+                    )?;
+                    return Ok(Some(StoredArgumentArrayEvaluation {
+                        root,
+                        value: Some(value),
+                    }));
                 }
 
                 Ok(None)
             }
             _ => Ok(None),
+        }
+    }
+
+    fn read_stored_call_user_func_array_argument_value(
+        root: &StoredArgumentArrayRoot,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        match root {
+            StoredArgumentArrayRoot::DirectVariable(name) => caller_scope.read_static(name, span),
+            StoredArgumentArrayRoot::ArrayOffset(alias) => Ok(caller_scope
+                .read_array_offset_alias(alias)
+                .unwrap_or(Value::Null)),
+            StoredArgumentArrayRoot::ObjectProperty(root) => caller_scope
+                .read_alias_root_value(
+                    &ArrayOffsetAlias {
+                        root: root.clone(),
+                        keys: Vec::new(),
+                    },
+                    span,
+                )
+                .map(|value| value.unwrap_or(Value::Null)),
         }
     }
 

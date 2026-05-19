@@ -23,6 +23,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T21:53:18+02:00
+
+- Checkpoint before this task: `03af6d7b checkpoint: 2026-05-19 19:41:34
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2206-C through Lane 2210-C bundle, fixing
+  source-aware stored `call_user_func_array()` root recovery so concrete roots
+  carry the already-read argument-array value and side-effecting helper,
+  dynamic-property, and key expressions are not evaluated twice.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2206/*` through
+  `tests/fixtures/milestone2210/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2206` through `milestone2210`; adjacent comparisons passed for
+  `milestone2196` through `milestone2205`; `cargo check -q -p phpc` passed;
+  focused `functions_and_scopes` filters for `call_user_func_array` and
+  `non_direct_magic_property` passed; `cargo test -q -p phpc --test
+  assignment_expression` passed.
+- Remaining COW gaps: supported side effects that unset or recreate copied
+  local arrays or stored containers while provenance must survive; arbitrary
+  unsupported magic/`ArrayAccess` method syntax; untracked dynamic containers;
+  whole-array reference identity; exact diagnostics/Throwable objects; and
+  native reference/string COW lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T21:33:53+02:00
 
 - Checkpoint before this task: `c3f5fddb checkpoint: 2026-05-19 19:11:50

@@ -32,7 +32,23 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2205:
+The current in-progress implementation frontier is Lane 2210:
+
+- Lanes 2206 through 2210 fix a broader stored `call_user_func_array()`
+  evaluation-order hole in the source-aware COW path. Recovered stored
+  argument roots now carry the already-read argument-array value, so direct
+  property roots, dynamic property roots, direct/nested indexed roots, and
+  non-direct holder roots do not re-evaluate helper calls, dynamic property
+  expressions, or key expressions after root recovery. Focused system-PHP
+  coverage proves visible `__get()`, public `ArrayAccess::offsetGet()`,
+  non-direct named/dynamic/nested holders, direct indexed roots, and local
+  replacement side effects where the helper intentionally replaces the copied
+  local while the callback still mutates the original selected reference leaf.
+  This is PHP-order single-evaluation for recovered concrete stored roots; it
+  still does not claim arbitrary unsupported method-body syntax, untracked
+  dynamic containers, arbitrary side-effect reconstruction outside supported
+  writeback paths, whole-array reference identity, exact diagnostics, or
+  native reference/string COW lowering.
 
 - Lanes 2201 through 2205 extend the stored `call_user_func_array()`
   source-aware model to non-direct holder expressions inside supported
