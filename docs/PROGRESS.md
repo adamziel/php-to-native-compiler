@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 1916-C through Lane 1920-C for bounded direct `$GLOBALS` value
+  materialization. Direct reads of `$GLOBALS` now produce a PHP array snapshot
+  of the root global symbol table from top-level and function scope. Plain
+  unaliased globals detach when the snapshot is mutated, while direct
+  variable reference groups and nested reference-backed array slots remain
+  shared inside the copied snapshot. The recursive string-keyed
+  `$GLOBALS["GLOBALS"]` spelling is included as an ordinary key when that
+  global exists. Focused coverage uses system-PHP comparisons for
+  `milestone1916` through `milestone1920`. Full PHP global insertion order,
+  dynamic recursive self contents, `$GLOBALS` by-reference binding,
+  non-string keyed direct `$GLOBALS` access, broad alias lifetime across
+  returned function-local metadata, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 1911-C through Lane 1915-C for mixed nested `ArrayAccess`
   reference-return chains in executed method bodies. Reference-return bodies
   can now delegate a returned lvalue through an inner `ArrayAccess` object

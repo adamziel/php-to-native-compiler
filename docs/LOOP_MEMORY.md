@@ -18,6 +18,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T06:13:35+02:00
+
+- Checkpoint before this task: `54fda4c8 runtime: support mixed ArrayAccess
+  return chains`, pushed to `origin/master`.
+- Task attempted: Lane 1916-C through Lane 1920-C bundle, adding bounded
+  direct `$GLOBALS` value materialization as a root-global array snapshot with
+  COW/reference slot preservation for covered cells.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1916/*`, `tests/fixtures/milestone1917/*`,
+  `tests/fixtures/milestone1918/*`, `tests/fixtures/milestone1919/*`,
+  `tests/fixtures/milestone1920/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo fmt --all --check`, `cargo check -q -p phpc`,
+  and `git diff --check` passed; focused
+  `cargo run -q -p phpc -- test --compare-php` passed `milestone1916`,
+  `milestone1917`, `milestone1918`, `milestone1919`, and `milestone1920`;
+  adjacent Rust tests `superglobals`, `functions_and_scopes`, and
+  `array_reference_literals` passed; adjacent fixture comparisons passed
+  `milestone1895` through `milestone1898` and `milestone1916` through
+  `milestone1920`.
+- Remaining COW gaps: full PHP global insertion order, dynamic recursive
+  `$GLOBALS` self contents, `$GLOBALS` by-reference binding, non-string keyed
+  direct `$GLOBALS` access, broad function-local alias lifetime, side-effecting
+  key-order parity, by-value inner `offsetGet()` reference containers,
+  arbitrary mixed chains, unsupported syntax/builtins and PHP side effects
+  outside the interpreter subset, full exception unwinding and uncaught
+  propagation, broader builtin callback signatures, broader complex alias
+  sinks and alias lifetime ordering, exact PHP stderr/fatal text,
+  binary/multibyte string offset behavior, whole-array reference identity, and
+  native reference/string COW lowering.
+- Next concrete task: run the full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-19T06:05:34+02:00
 
 - Checkpoint before this task: `95a3d085 runtime: preserve by-value argument

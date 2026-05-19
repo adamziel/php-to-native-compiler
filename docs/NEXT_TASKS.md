@@ -20479,6 +20479,18 @@ handled.
   diagnostics, whole-array reference identity, and native reference lowering
   named as unsupported.
 
+## Lane 1916-C through Lane 1920-C: Direct GLOBALS Value Materialization
+
+- [x] Runtime/tests/docs bundle: materialize direct `$GLOBALS` value reads as
+  a bounded root-global snapshot. Cover plain global detachment, direct
+  variable reference-group preservation, nested reference-backed array slots,
+  function-scope reads of root globals, and `$GLOBALS["GLOBALS"]` as an
+  ordinary materialized key with system-PHP comparisons. Keep full PHP global
+  insertion order, dynamic recursive self contents, `$GLOBALS` by-reference
+  binding, non-string keyed direct `$GLOBALS` access, broad function-local
+  alias lifetime, exact diagnostics, and native reference lowering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1915:
+The current in-progress implementation frontier is Lane 1920:
+
+- Lanes 1916 through 1920 add bounded direct `$GLOBALS` value
+  materialization. Reading `$GLOBALS` now produces a PHP array snapshot of the
+  current root global symbol table in both top-level and function scope.
+  Ordinary unaliased globals detach when the snapshot is mutated, while direct
+  variable reference groups and nested reference-backed array slots remain
+  shared inside the copied snapshot, matching the covered COW behavior. The
+  previously covered `$GLOBALS["GLOBALS"]` spelling appears as an ordinary
+  key when that root global exists. This is still not full PHP
+  `$GLOBALS` semantics: PHP's exact global insertion order, dynamic recursive
+  self contents, `$GLOBALS` by-reference binding, non-string keyed direct
+  `$GLOBALS` access, broad alias lifetime across returned function-local
+  metadata, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 1911 through 1915 broaden mixed nested `ArrayAccess` chains in
   by-reference method bodies when each reached object can be statically routed

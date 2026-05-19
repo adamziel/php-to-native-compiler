@@ -1776,12 +1776,17 @@
   sync covered aliases. The recursive literal-key spelling
   `$GLOBALS['GLOBALS']` is covered as the ordinary root global variable named
   `GLOBALS` for direct nested writes, reference sources, append reference
-  sources, and root overwrites. Full PHP direct `$GLOBALS` array
-  materialization, dynamic recursive self contents, non-string keyed
+  sources, and root overwrites. Direct `$GLOBALS` value reads materialize a
+  bounded array snapshot of the root global symbol table. Plain unaliased
+  globals detach when the snapshot is mutated, while direct variable
+  reference groups and nested reference-backed array slots remain shared in
+  the copied snapshot. The materialized snapshot is available from top-level
+  and function scope. Full PHP global insertion order, dynamic recursive self
+  contents, `$GLOBALS` by-reference binding, non-string keyed direct
   `$GLOBALS` access, `$GLOBALS[] =& $value`, non-direct sources,
   function-local alias metadata that must survive after the source scope
   returns, dynamic global names, exact warning/notice behavior, included-file
-  scope interactions, copy-on-write, and native lowering remain unsupported.
+  scope interactions, and native lowering remain unsupported.
 - `$_SERVER` is seeded as a bounded root superglobal for `phpc run` with
   deterministic CLI request defaults for `SERVER_SOFTWARE`, `REQUEST_URI`,
   `HTTP_HOST`, `PHP_SELF`, `SCRIPT_NAME`, `SCRIPT_FILENAME`, and

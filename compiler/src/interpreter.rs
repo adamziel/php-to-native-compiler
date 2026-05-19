@@ -12,8 +12,8 @@ use php_runtime::{
     coerce_property_value_with_object_type_resolver, ArityExpectation, ArrayColumnKey, ArrayKey,
     ArrayKeyCase, ClassId, ClassMemberKind, Comparison, ObjectProperty, PhpArray,
     PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture, PhpMethodMetadata,
-    PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata, PhpReferenceCell, RuntimeError,
-    RuntimeErrorKind, RuntimeResult, Value, Visibility,
+    PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata, PhpReferenceCell,
+    PhpReferenceCellId, RuntimeError, RuntimeErrorKind, RuntimeResult, Value, Visibility,
 };
 use sha2::Sha256;
 
@@ -1249,6 +1249,31 @@ impl SymbolTable {
     fn read_static(&self, name: &str, span: Span) -> CompileResult<Value> {
         self.read_named(name)
             .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(name)))
+    }
+
+    fn materialized_globals_array_value(&self) -> Value {
+        let storage = self.global_storage().borrow();
+        let mut entries: Vec<(String, VariableCell)> = storage
+            .iter()
+            .filter(|(name, _)| !name.starts_with('\0'))
+            .map(|(name, cell)| (name.clone(), cell.clone()))
+            .collect();
+        entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+        let mut reference_counts: HashMap<PhpReferenceCellId, usize> = HashMap::new();
+        for (_, cell) in &entries {
+            *reference_counts.entry(cell.id()).or_default() += 1;
+        }
+
+        let mut array = PhpArray::new();
+        for (name, cell) in entries {
+            if reference_counts.get(&cell.id()).copied().unwrap_or(0) > 1 {
+                array.insert_reference(name, cell);
+            } else {
+                array.insert(name, cell.value_cloned());
+            }
+        }
+        Value::Array(array)
     }
 
     fn write_static(&mut self, name: &str, value: Value) {
@@ -9738,6 +9763,9 @@ impl Interpreter {
                 self.evaluate_interpolated_string(parts, *span, scope)
             }
             Expr::Variable(name, span) => {
+                if name == "GLOBALS" {
+                    return Ok(scope.materialized_globals_array_value());
+                }
                 if name.eq_ignore_ascii_case("this") && scope.read_named("this").is_none() {
                     return Err(runtime_error(
                         *span,
