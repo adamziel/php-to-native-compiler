@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T14:55:00+02:00
+
+- Checkpoint before this task: `f81f1f73 runtime: preserve byref
+  call_user_func_array COW containers`, pushed to `origin/master`.
+- Task attempted: Lane 2036-C through Lane 2040-C bundle, retaining copied
+  by-value magic/`ArrayAccess` COW provenance across supported method-body
+  container mutations after local array roots are rewritten by scalar nested
+  writes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2036/*`, `tests/fixtures/milestone2037/*`,
+  `tests/fixtures/milestone2038/*`, `tests/fixtures/milestone2039/*`,
+  `tests/fixtures/milestone2040/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused fixture snapshots and system-PHP comparisons
+  passed for `milestone2036` through `milestone2040`; `$this` property
+  reference regression comparisons passed for `milestone1701` through
+  `milestone1710` and `milestone1736`; the checkpoint initially caught a
+  `milestone1673c` callback-name reuse regression from broad reference-cell
+  materialization, so the implementation was tightened to retain copied-source
+  metadata instead; `milestone1673c` now passes; adjacent COW comparisons
+  passed for `milestone1991` through `milestone2040`; focused Rust suites
+  passed for `functions_and_scopes`, `object_model`,
+  `call_user_func_builtin`, and `array_reference_literals`; `cargo check -q`,
+  `cargo fmt --check`, and `git diff --check` passed.
+- Remaining COW gaps: unsupported PHP syntax in magic/`ArrayAccess` bodies,
+  untracked dynamic containers, whole-array reference identity, exact PHP
+  diagnostics, native reference/string COW lowering, native lowering for these
+  interpreter paths, and remaining non-method-body COW parity gaps.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate, then
+  push if it passes.
+
 ## Loop Event 2026-05-19T13:55:00+02:00
 
 - Checkpoint before this task: `f9cafb5c runtime: detach sequential byref COW

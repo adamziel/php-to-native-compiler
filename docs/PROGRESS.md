@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 2036-C through Lane 2040-C for retaining copied-bucket
+  provenance across supported method-body container mutations inside by-value
+  magic/`ArrayAccess` bodies. Direct local-array writes now restore unaffected
+  copied-source paths after scalar nested writes rewrite the local array root,
+  while overwritten prefixes are still removed. Focused system-PHP coverage
+  proves visible by-value `__get()`, public by-value
+  `ArrayAccess::offsetGet()`, side-effecting helper-selected keys, local array
+  containers, local object-property containers, and looped body movement. This
+  broadens arbitrary supported method-body COW behavior after the copied
+  bucket is read, while unsupported PHP syntax, untracked dynamic containers,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 2031-C through Lane 2035-C for copied-bucket COW provenance
   through bounded `call_user_func_array()` callback containers with
   by-reference callback parameters inside supported by-value

@@ -477,6 +477,18 @@
   helper/callback side effects, object/container provenance outside the
   documented local container slices, whole-array reference identity, exact
   diagnostics, and native reference lowering remain unsupported.
+  By-value magic/`ArrayAccess` bodies also retain copied-bucket provenance
+  across later supported method-body container mutations. Direct local-array
+  writes restore unaffected copied-source paths after scalar nested writes
+  rewrite the local array root, while overwritten prefixes are still removed.
+  This lets later supported statements move the copy through local array
+  containers, visible local object-property containers, helper-selected keys,
+  and loop/branch bodies without losing selected reference-backed leaves;
+  ordinary nested arrays still detach. This is bounded to supported
+  interpreter syntax and tracked object-property/`ArrayAccess` roots;
+  untracked dynamic containers, arbitrary PHP syntax, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
   Bounded `call_user_func_array()` callback containers with reached
   by-reference callback parameters can also preserve copied-bucket COW
   provenance in these bodies. Covered forms include literal

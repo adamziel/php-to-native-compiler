@@ -20808,6 +20808,18 @@ handled.
   whole-array reference identity, exact diagnostics, and native reference
   lowering named as unsupported.
 
+## Lane 2036-C through Lane 2040-C: Retained Method-Body COW Copies
+
+- [x] Runtime/tests/docs bundle: retain copied-bucket provenance across
+  supported by-value magic/`ArrayAccess` method-body container mutations after
+  local array roots are rewritten by scalar nested writes.
+  Cover visible by-value `__get()`, public by-value
+  `ArrayAccess::offsetGet()`, side-effecting helper-selected keys, local
+  array containers, local object-property containers, and loop/branch body
+  movement with system-PHP comparisons. Keep unsupported PHP syntax, untracked
+  dynamic containers, whole-array reference identity, exact diagnostics, and
+  native reference lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe remaining scalar parent-overwrite/error parity outside covered

@@ -17797,6 +17797,11 @@ impl Interpreter {
                 } else {
                     scope.clear_array_literal_copy_source_paths_for_root(name);
                 }
+                let retained_array_literal_copy_source_paths = scope
+                    .array_literal_copy_source_paths
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_default();
                 let (
                     value,
                     array_literal_references,
@@ -18101,6 +18106,10 @@ impl Interpreter {
                     }
                 }
                 scope.write_static(name, slot);
+                scope.record_array_literal_copy_source_paths(
+                    name,
+                    retained_array_literal_copy_source_paths,
+                );
                 if let Some(source) = retained_array_copy_source {
                     scope.record_public_object_property_array_copy_source(name, source);
                 }
@@ -18173,6 +18182,11 @@ impl Interpreter {
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
                 scope.remove_array_literal_copy_source_paths_for_static_prefix(name, &keys);
+                let retained_array_literal_copy_source_paths = scope
+                    .array_literal_copy_source_paths
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_default();
                 let (
                     value,
                     array_literal_references,
@@ -18266,6 +18280,10 @@ impl Interpreter {
                     keys: keys.clone(),
                 }]);
                 self.write_nested_array_assignment(name, &keys, value.clone(), *span, scope)?;
+                scope.record_array_literal_copy_source_paths(
+                    name,
+                    retained_array_literal_copy_source_paths,
+                );
                 if let Some(source) = retained_array_copy_source {
                     scope.record_public_object_property_array_copy_source(name, source);
                 }

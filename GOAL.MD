@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2035:
+The current in-progress implementation frontier is Lane 2040:
+
+- Lanes 2036 through 2040 preserve copied-bucket COW provenance across later
+  supported method-body container mutations instead of losing it when a local
+  array container root is rewritten. Covered by-value magic `__get()`/public
+  `ArrayAccess::offsetGet()` bodies now retain tracked copied-source paths
+  after scalar nested writes below a copied container, while still removing
+  overwritten paths. Focused system-PHP coverage proves selected
+  reference-backed leaves remain shared after local array-container movement,
+  local object-property container movement, side-effecting helper-selected
+  keys, and loop/branch bodies. This is broader than the previous
+  return-expression source recovery, but it is still bounded to supported
+  interpreter syntax and tracked object-property/`ArrayAccess` roots;
+  arbitrary PHP syntax, untracked dynamic containers, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 2031 through 2035 preserve copied-bucket COW provenance through
   bounded `call_user_func_array()` callback containers whose reached callback
