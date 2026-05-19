@@ -20946,15 +20946,30 @@ handled.
   untracked dynamic containers, full PHP COW identity, exact diagnostics, and
   native reference lowering named as unsupported.
 
+## Lane 2091-C through Lane 2095-C: By-Value Overloaded Nested Writes
+
+- [x] Runtime/tests/docs bundle: apply nested keyed writes and nested appends
+  to by-value overloaded arrays returned by supported `ArrayAccess::offsetGet()`
+  and visible `__get()` bodies so selected reference-backed leaves mutate
+  while ordinary copied leaves remain detached. Cover direct `ArrayAccess`
+  keyed writes, visible magic keyed writes, direct `ArrayAccess` appends,
+  visible magic appends, array-literal reference assignment through a returned
+  reference leaf, and one by-value outer-to-inner `ArrayAccess` object chain
+  with system-PHP comparisons and CLI snapshots. Keep unsupported PHP syntax,
+  untracked dynamic containers, full PHP COW identity, exact diagnostics,
+  arbitrary future-path metadata recovery, and native lowering named as
+  unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Continue the arbitrary-method-body push in the remaining paths that
-  still depend on exact static bridge metadata: nested append/keyed write
-  recovery, arbitrary `offsetSet()` reference propagation beyond value-cell
-  storage, untracked dynamic containers, and any callback reference-return
-  shapes not covered by executable fixtures. Keep unsupported PHP syntax, full
-  PHP COW identity, exact PHP fatal objects/text, and native lowering named as
-  unsupported until executable coverage proves them.
+  still depend on exact static bridge metadata: future-path metadata recovery
+  after arbitrary `offsetSet()`/`offsetGet()`/`__get()` bodies, untracked
+  dynamic containers, deeper mixed chains not covered by executable fixtures,
+  and any callback reference-return shapes still outside the current tests.
+  Keep unsupported PHP syntax, full PHP COW identity, exact PHP fatal
+  objects/text, and native lowering named as unsupported until executable
+  coverage proves them.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

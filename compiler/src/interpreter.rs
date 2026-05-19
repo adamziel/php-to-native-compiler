@@ -16610,6 +16610,176 @@ impl Interpreter {
         Ok(Some(Value::Null))
     }
 
+    fn write_array_access_by_value_nested_with_reference_cells_for_object(
+        &mut self,
+        object: PhpObject,
+        keys: Vec<ArrayKey>,
+        first_key_value: Option<Value>,
+        suffix_keys: &[ArrayKey],
+        value: Value,
+        expr: &Expr,
+        array_literal_references: &[ArrayLiteralReferenceElement],
+        check_terminal_scalar_parent: bool,
+        is_append_to_parent: bool,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "offsetGet")
+        else {
+            return Ok(false);
+        };
+        if is_static || visibility != Visibility::Public {
+            return Ok(false);
+        }
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        if function.returns_by_reference {
+            return Ok(false);
+        }
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_function_signature(function, 1, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let Some((first_key, rest_keys)) = keys.split_first() else {
+            return Ok(false);
+        };
+        let called_class_id = object.class_id();
+        let first_value = self.call_user_function_with_this(
+            function,
+            object,
+            vec![first_key_value.unwrap_or_else(|| Self::array_key_value(Some(first_key.clone())))],
+            Some(class_id),
+            Some(called_class_id),
+        )?;
+
+        if let Value::Object(nested_object) = &first_value {
+            if self
+                .classes
+                .implements_interface(nested_object.class_id(), "ArrayAccess")
+            {
+                return if is_append_to_parent {
+                    if rest_keys.is_empty() {
+                        self.write_array_access_object_append_with_reference_propagation(
+                            nested_object.clone(),
+                            suffix_keys,
+                            value,
+                            expr,
+                            array_literal_references.to_vec(),
+                            span,
+                            scope,
+                        )
+                    } else {
+                        self.write_array_access_object_nested_append_with_reference_propagation(
+                            nested_object.clone(),
+                            rest_keys.to_vec(),
+                            suffix_keys,
+                            value,
+                            expr,
+                            array_literal_references.to_vec(),
+                            span,
+                            scope,
+                        )
+                    }
+                } else if rest_keys.len() == 1 {
+                    self.write_array_access_object_keyed_with_reference_propagation(
+                        nested_object.clone(),
+                        rest_keys[0].clone(),
+                        value,
+                        expr,
+                        array_literal_references.to_vec(),
+                        span,
+                        scope,
+                    )
+                } else {
+                    self.write_array_access_object_nested_keyed_with_reference_propagation(
+                        nested_object.clone(),
+                        rest_keys.to_vec(),
+                        value,
+                        expr,
+                        array_literal_references.to_vec(),
+                        span,
+                        scope,
+                    )
+                };
+            }
+        }
+
+        self.emit_notice(
+            "ArrayAccess::offsetGet()",
+            format!("Indirect modification of overloaded element of {class_name} has no effect"),
+            span,
+        )?;
+
+        if !rest_keys.is_empty() || check_terminal_scalar_parent {
+            self.reject_by_value_array_access_scalar_parent_for_nested_write(
+                &first_value,
+                rest_keys,
+                is_append_to_parent,
+                span,
+            )?;
+        }
+
+        self.write_by_value_overloaded_array_reference_cells(
+            first_value,
+            rest_keys,
+            suffix_keys,
+            value,
+            expr,
+            array_literal_references,
+            is_append_to_parent,
+            span,
+            scope,
+        )
+    }
+
+    fn write_by_value_overloaded_array_reference_cells(
+        &mut self,
+        returned_value: Value,
+        keys: &[ArrayKey],
+        suffix_keys: &[ArrayKey],
+        value: Value,
+        expr: &Expr,
+        array_literal_references: &[ArrayLiteralReferenceElement],
+        is_append: bool,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Value::Array(mut array) = returned_value else {
+            return Ok(true);
+        };
+
+        let value = self.value_with_assignment_reference_cells(
+            value,
+            expr,
+            array_literal_references,
+            &[],
+            scope,
+            expr.span(),
+        )?;
+
+        if is_append {
+            let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
+            let _ = SymbolTable::append_nested_array_offset_alias(
+                &mut array,
+                keys,
+                stored_value,
+                span,
+            )?;
+        } else {
+            let _ = SymbolTable::write_nested_array_offset_alias_checked_with_object_type_resolver(
+                &mut array,
+                keys,
+                value,
+                &|object, type_name| self.object_satisfies_live_property_type(object, type_name),
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        }
+
+        Ok(true)
+    }
+
     fn reject_by_value_array_access_scalar_parent_for_nested_write(
         &mut self,
         value: &Value,
@@ -20762,7 +20932,27 @@ impl Interpreter {
                         scope,
                     )
                 }
-                Some(Value::Array(_)) | Some(Value::Null) | Some(Value::Bool(false)) => {
+                Some(returned_value @ Value::Array(_)) => {
+                    self.emit_notice(
+                        "__get()",
+                        format!(
+                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
+                        ),
+                        span,
+                    )?;
+                    self.write_by_value_overloaded_array_reference_cells(
+                        returned_value,
+                        &keys,
+                        suffix_keys,
+                        value,
+                        expr,
+                        &array_literal_references,
+                        true,
+                        span,
+                        scope,
+                    )
+                }
+                Some(Value::Null) | Some(Value::Bool(false)) => {
                     self.emit_notice(
                         "__get()",
                         format!(
@@ -20995,7 +21185,27 @@ impl Interpreter {
                 {
                     Some(object)
                 }
-                Some(Value::Array(_)) | Some(Value::Null) | Some(Value::Bool(false)) => {
+                Some(returned_value @ Value::Array(_)) => {
+                    self.emit_notice(
+                        "__get()",
+                        format!(
+                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
+                        ),
+                        span,
+                    )?;
+                    return self.write_by_value_overloaded_array_reference_cells(
+                        returned_value,
+                        &keys,
+                        &[],
+                        value,
+                        expr,
+                        &array_literal_references,
+                        false,
+                        span,
+                        scope,
+                    );
+                }
+                Some(Value::Null) | Some(Value::Bool(false)) => {
                     self.emit_notice(
                         "__get()",
                         format!(
@@ -21326,19 +21536,19 @@ impl Interpreter {
         let hidden_name = self.hidden_array_access_reference_object_name(&array_access_object);
         scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
 
-        if self
-            .evaluate_array_access_by_value_reference_source_value_for_object(
-                array_access_object.clone(),
-                hidden_name.clone(),
-                keys.clone(),
-                None,
-                true,
-                true,
-                span,
-                scope,
-            )?
-            .is_some()
-        {
+        if self.write_array_access_by_value_nested_with_reference_cells_for_object(
+            array_access_object.clone(),
+            keys.clone(),
+            None,
+            suffix_keys,
+            value.clone(),
+            expr,
+            &array_literal_references,
+            true,
+            true,
+            span,
+            scope,
+        )? {
             return Ok(true);
         }
 
@@ -21521,19 +21731,19 @@ impl Interpreter {
         let hidden_name = self.hidden_array_access_reference_object_name(&array_access_object);
         scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
 
-        if self
-            .evaluate_array_access_by_value_reference_source_value_for_object(
-                array_access_object.clone(),
-                hidden_name.clone(),
-                keys.clone(),
-                None,
-                false,
-                false,
-                span,
-                scope,
-            )?
-            .is_some()
-        {
+        if self.write_array_access_by_value_nested_with_reference_cells_for_object(
+            array_access_object.clone(),
+            keys.clone(),
+            None,
+            &[],
+            value.clone(),
+            expr,
+            &array_literal_references,
+            false,
+            false,
+            span,
+            scope,
+        )? {
             return Ok(true);
         }
 

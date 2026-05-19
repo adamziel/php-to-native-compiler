@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2093/arrayaccess_by_value_nested_append_reference_cells.php
+stdout:
+copy|1
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

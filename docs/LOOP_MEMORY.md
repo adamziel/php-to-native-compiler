@@ -18,6 +18,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T14:49:58+02:00
+
+- Checkpoint before this task: `600f983a runtime: carry magic ArrayAccess COW
+  value cells`, pushed to `origin/master`.
+- Task attempted: Lane 2091-C through Lane 2095-C bundle, preserving by-value
+  overloaded nested writes through returned reference-cell arrays and one
+  by-value outer-to-inner `ArrayAccess` object handoff.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2091/*`, `tests/fixtures/milestone2092/*`,
+  `tests/fixtures/milestone2093/*`, `tests/fixtures/milestone2094/*`,
+  `tests/fixtures/milestone2095/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw probes and focused system-PHP comparisons passed for
+  direct `ArrayAccess` keyed writes, visible by-value `__get()` keyed writes,
+  direct `ArrayAccess` appends, visible by-value `__get()` appends, and a
+  by-value outer-to-inner `ArrayAccess` object chain; focused comparisons
+  passed for `milestone2091` through `milestone2095`; adjacent comparisons
+  passed for `milestone2086` through `milestone2095`; `cargo check -q`
+  passed.
+- Remaining COW gaps: future-path metadata recovery after arbitrary
+  `offsetSet()`/`offsetGet()`/`__get()` bodies, untracked dynamic containers,
+  deeper mixed chains not covered by fixtures, whole-array reference
+  identity, exact PHP diagnostics/Throwable objects, and native
+  reference/string COW lowering.
+- Next concrete task: run broad COW regression plus formatting/check/diff
+  gates, then one full `tools/checkpoint.sh` bundle gate and push if it
+  passes.
+
 ## Loop Event 2026-05-19T14:36:07+02:00
 
 - Checkpoint before this task: `65e020f9 runtime: preserve call_user_func_array

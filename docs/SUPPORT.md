@@ -522,10 +522,17 @@
   $value;` preserve selected reference leaves. Supported by-value
   `offsetGet()` and `__get()` bodies that build a local array containing
   reference elements and return it by value preserve those reference leaves in
-  the returned copy while ordinary nested arrays detach. This remains bounded
-  to supported interpreter syntax and current reference-cell/alias metadata;
-  untracked dynamic containers, whole-array reference identity, exact
-  diagnostics, and native reference lowering remain unsupported.
+  the returned copy while ordinary nested arrays detach. Nested keyed writes
+  and nested appends through those by-value overloaded arrays still follow
+  PHP's indirect-modification notice/no-backing-write behavior for ordinary
+  copied leaves, but they now apply the attempted write to the detached value
+  copy so any selected reference-backed leaf observes the mutation. Array
+  literals assigned through one of those returned reference leaves are
+  rehydrated first, so their current supported reference elements remain
+  shared. This remains bounded to supported interpreter syntax and current
+  reference-cell/alias metadata; untracked dynamic containers, whole-array
+  reference identity, exact diagnostics, arbitrary future-path metadata
+  recovery, and native reference lowering remain unsupported.
   Bounded `call_user_func()` callbacks whose reached callback parameter is
   declared by reference use PHP's warning/no-reference behavior while carrying
   copied-bucket provenance through supported bodies. Covered forms include
@@ -1535,10 +1542,15 @@
   direct `$this->property`, then used as the return root with the existing
   literal-key and local parameter-copy index rules, such as
   `$items =& $this->items; $slot = $offset; return $items[$slot];`.
-  By-value terminal/plain-array nested mutation, unsupported future-path
-  metadata recovery for `offsetSet()`/`offsetGet()`/`__get()` body shapes
-  beyond those proven analyzer forms, broader mixed chains, and native lowering remain
-  unsupported.
+  Selected by-value terminal/plain-array nested mutations are also supported
+  through the reference-cell value path documented above: keyed writes and
+  appends into returned arrays update selected reference-backed leaves while
+  keeping ordinary copied leaves detached. A by-value outer `ArrayAccess`
+  result that is itself an `ArrayAccess` object can also hand a nested keyed
+  write to the inner object's supported `offsetSet()` body. Unsupported
+  future-path metadata recovery for `offsetSet()`/`offsetGet()`/`__get()` body
+  shapes beyond those proven analyzer forms, broader mixed chains, and native
+  lowering remain unsupported.
   Direct magic-property append stores
   such as `$box->missing[] = $array` and `$box->{$name}[] = $array` are also
   supported for this focused stored-bucket COW shape when visible public

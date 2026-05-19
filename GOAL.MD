@@ -32,7 +32,26 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2090:
+The current in-progress implementation frontier is Lane 2095:
+
+- Lanes 2091 through 2095 preserve PHP's by-value overloaded nested-write
+  behavior when supported `ArrayAccess::offsetGet()` or visible `__get()`
+  bodies return arrays that contain real reference cells. Nested keyed writes
+  and nested appends still emit the overloaded indirect-modification notice
+  and keep ordinary copied leaves detached, but writes that land on a
+  reference-backed leaf update that referenced value. The same write helper
+  rehydrates array-literal reference elements before assigning through a
+  returned reference leaf, and by-value outer `ArrayAccess` results that are
+  themselves `ArrayAccess` objects now hand nested keyed writes to the inner
+  object's supported `offsetSet()` path. Focused system-PHP coverage proves
+  direct `ArrayAccess` keyed writes, visible magic `__get()` keyed writes,
+  direct `ArrayAccess` appends, visible magic `__get()` appends, nested
+  array-literal reference assignment through a returned leaf, and an
+  outer-to-inner by-value `ArrayAccess` object chain. This remains bounded to
+  supported interpreter syntax, current reference-cell value paths, and
+  covered nested write forms; untracked dynamic containers, whole-array
+  reference identity, exact diagnostics, arbitrary future-path metadata
+  recovery, and native reference lowering remain unsupported.
 
 - Lanes 2086 through 2090 move a key part of magic/`ArrayAccess` COW from
   static bridge proofs into the value model. Direct variable assignments from

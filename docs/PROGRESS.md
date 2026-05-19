@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 2091-C through Lane 2095-C for by-value overloaded nested writes
+  through arrays returned by supported magic/`ArrayAccess` bodies. The
+  interpreter now applies nested keyed writes and nested appends to the
+  detached returned array copy so reference-backed slots perform their PHP
+  side effect while ordinary copied leaves remain detached. The same path
+  rehydrates array-literal reference elements before assigning through a
+  returned reference leaf, and by-value outer `ArrayAccess` object results can
+  dispatch nested keyed writes into the inner object's supported `offsetSet()`
+  body. Focused system-PHP coverage proves direct `ArrayAccess` keyed writes,
+  visible by-value `__get()` keyed writes, direct `ArrayAccess` appends,
+  visible by-value `__get()` appends, nested array-literal reference
+  assignment through a returned leaf, and one outer-to-inner by-value
+  `ArrayAccess` chain. This remains bounded to supported interpreter syntax
+  and current reference-cell value paths; untracked dynamic containers,
+  whole-array reference identity, exact diagnostics, arbitrary future-path
+  metadata recovery, and native reference lowering remain unsupported.
+
 - Added Lane 2086-C through Lane 2090-C for arbitrary supported magic/
   `ArrayAccess` method-body COW value cells. Array literals with reference
   elements now materialize real reference cells in direct variables after

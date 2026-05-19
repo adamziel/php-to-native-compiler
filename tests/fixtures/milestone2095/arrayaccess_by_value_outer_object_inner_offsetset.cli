@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2095/arrayaccess_by_value_outer_object_inner_offsetset.php
+stdout:
+copy
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+
