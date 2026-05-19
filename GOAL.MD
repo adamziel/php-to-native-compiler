@@ -32,20 +32,32 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1820:
+The current in-progress implementation frontier is Lane 1823:
+
+- Lanes 1821 through 1823 add direct reference-assignment sources for
+  declared static-property roots and selected static-property array buckets.
+  Direct variable targets can now bind to `ClassName::$slots`,
+  `ClassName::$slots[$key]`, nested selected buckets, `static::$slots`, and
+  dynamic receiver forms such as `$class::$slots[$key]` and
+  `$object::$slots`. This still does not claim arbitrary reference-assignment
+  targets from static-property sources, arbitrary static-property reference
+  containers beyond cell-backed declared roots and selected buckets, typed
+  static-property enforcement through returned aliases, arbitrary PHP syntax
+  or side effects outside the executed interpreter subset, exact PHP
+  diagnostics, or native reference lowering.
 
 - Lanes 1818 through 1820 move declared static properties onto shared
   reference cells and add whole static-property reference-return roots.
   Covered by-reference functions, magic `__get()`, and
   `ArrayAccess::offsetGet()` bodies can now return named, `self::`,
-  `static::`, or dynamic class-string static properties such as
-  `return static::$slots;` or `return $class::$slots;`; aliases observe later
-  direct static-property overwrites and writes through aliases update the
-  property. This still does not claim arbitrary static-property reference
+  `static::`, object-receiver, or dynamic class-string static properties such
+  as `return static::$slots;` or `return $class::$slots;`; aliases observe
+  later direct static-property overwrites and writes through aliases update
+  the property. This still does not claim arbitrary static-property reference
   containers beyond the cell-backed declared roots, typed static-property
-  enforcement through returned aliases, object-receiver static property roots,
-  arbitrary PHP syntax or side effects outside the executed interpreter
-  subset, exact PHP diagnostics, or native reference lowering.
+  enforcement through returned aliases, arbitrary PHP syntax or side effects
+  outside the executed interpreter subset, exact PHP diagnostics, or native
+  reference lowering.
 
 - Lanes 1815 through 1817 add bounded static-property array-offset roots to
   reference-return execution. Covered by-reference functions and magic/static

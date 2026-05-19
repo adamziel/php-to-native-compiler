@@ -18,6 +18,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T02:07:12+02:00
+
+- Checkpoint before this task: `3b72e1f7 runtime: support static property
+  reference roots`, pushed to `origin/master`.
+- Task attempted: Lane 1821-C through Lane 1823-C bundle, allowing direct
+  variable targets to bind by reference to declared static-property roots and
+  selected static-property array buckets.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `tests/fixtures/milestone1821/*`,
+  `tests/fixtures/milestone1822/*`, `tests/fixtures/milestone1823/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched the new `milestone1821`, `milestone1822`, and `milestone1823`
+  fixtures; `cargo run -q -p phpc -- test --compare-php` passed each new
+  fixture directory and adjacent `milestone1818` through `milestone1823`;
+  focused `functions_and_scopes` reference-assignment tests, `object_model`
+  static-property tests, and `syntax_boundaries` reference-assignment tests
+  passed.
+- Remaining COW gaps: arbitrary reference-assignment targets from
+  static-property sources, arbitrary static-property reference containers
+  beyond cell-backed declared roots and selected buckets, typed
+  static-property enforcement through returned aliases, arbitrary callable
+  arrays, builtin callbacks as reference-return sources, unsupported PHP
+  syntax and side effects outside the executed method-body subset, arbitrary
+  type enforcement and incompatible typed reference-return signatures, full
+  exception unwinding and uncaught exception propagation, arbitrary Iterator
+  side effects, broader complex alias sinks and alias lifetime ordering,
+  exact PHP stderr/fatal text, binary/multibyte string offset behavior, and
+  native reference/string COW lowering.
+- Next concrete task: run formatting, diff, adjacent checks, then the full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T01:59:48+02:00
 
 - Checkpoint before this task: `ac72afb2 runtime: support static property

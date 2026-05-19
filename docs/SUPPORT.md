@@ -72,13 +72,17 @@
   its executed body returns a proven lvalue. The same reference-return path
   supports whole declared static-property roots and bounded static-property
   array-offset roots reached through named, `self::`, `parent::`, `static::`,
-  and dynamic class-string static property expressions, including
-  `return static::$slots;` and nested selected buckets such as
+  object-receiver, and dynamic class-string static property expressions,
+  including `return static::$slots;` and nested selected buckets such as
   `$class::$slots["nested"][$key]`. Root aliases observe later direct
   static-property overwrites and writes through aliases update the property.
-  Arbitrary static-property reference containers, typed static-property
-  enforcement through returned aliases, and object-receiver static property
-  roots remain unsupported.
+  Direct variable reference-assignment targets can also bind to those
+  declared static-property roots or selected buckets, such as
+  `$alias =& ClassName::$slots;` and
+  `$alias =& $class::$slots["nested"]["leaf"];`. Arbitrary
+  reference-assignment targets from static-property sources, arbitrary
+  static-property reference containers, and typed static-property enforcement
+  through returned aliases remain unsupported.
   Direct free-function, direct visible object-method, direct named static
   method, `self::` static method, `parent::` static method,
   `static::` late-static method, and dynamic static receiver reference-return
@@ -1210,15 +1214,17 @@
   Whole static-property roots and bounded static-property array-offset roots
   are accepted when the executed by-reference body returns a declared static
   property or selected bucket through a named, `self::`, `parent::`,
-  `static::`, or dynamic class-string static property expression. Static
-  property roots are cell-backed, so aliases observe later direct
-  static-property overwrites and writes through aliases update the property.
-  The bucket bridge materializes missing selected buckets as `null` and
-  promotes the slot to a shared reference cell; nested selected buckets are
-  covered when each parent value is an array, `null`, `false`, or absent.
-  Arbitrary static-property reference containers, typed static-property
-  enforcement through returned aliases, and object-receiver static property
-  roots remain unsupported.
+  `static::`, object-receiver, or dynamic class-string static property
+  expression. Static property roots are cell-backed, so aliases observe later
+  direct static-property overwrites and writes through aliases update the
+  property. Direct variable reference-assignment targets can also bind to
+  those roots or selected buckets. The bucket bridge materializes missing
+  selected buckets as `null` and promotes the slot to a shared reference cell;
+  nested selected buckets are covered when each parent value is an array,
+  `null`, `false`, or absent. Arbitrary reference-assignment targets from
+  static-property sources, arbitrary static-property reference containers, and
+  typed static-property enforcement through returned aliases remain
+  unsupported.
   Bounded magic
   `__call()` is supported for direct missing instance method calls and object
   array-callable paths when `__call()` is public, returns by reference, and

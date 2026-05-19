@@ -462,6 +462,15 @@ pub enum ReferenceSource {
         expr: Expr,
         span: Span,
     },
+    StaticProperty {
+        expr: Expr,
+        span: Span,
+    },
+    StaticPropertyArrayIndex {
+        expr: Expr,
+        indices: Vec<Expr>,
+        span: Span,
+    },
     MethodCall {
         expr: Expr,
         span: Span,

@@ -20174,15 +20174,28 @@ handled.
 - [x] Runtime/value-model/tests/docs bundle: store declared static properties
   in shared reference cells and allow covered reference-return bodies to
   return whole static-property roots through named, `self::`, `static::`, and
-  dynamic class-string static property expressions. Cover late-static and
-  dynamic static method roots, magic `__get()` returning `self::$slots`, and
-  `ArrayAccess::offsetGet()` returning `self::$slots`, including root-alias
-  observation of later direct static-property overwrites. Keep arbitrary
+  dynamic class-string or object-receiver static property expressions. Cover
+  late-static and dynamic static method roots, magic `__get()` returning
+  `self::$slots`, and `ArrayAccess::offsetGet()` returning `self::$slots`,
+  including root-alias observation of later direct static-property
+  overwrites. Keep arbitrary
   static-property reference containers beyond cell-backed declared roots,
-  typed static-property enforcement through returned aliases, object-receiver
-  static property roots, arbitrary PHP syntax and side effects outside the
-  executed method-body subset, exact PHP diagnostics, and native reference
-  lowering named as unsupported.
+  typed static-property enforcement through returned aliases, arbitrary PHP
+  syntax and side effects outside the executed method-body subset, exact PHP
+  diagnostics, and native reference lowering named as unsupported.
+
+## Lane 1821-C through Lane 1823-C: Static Property Reference Sources
+
+- [x] Parser/runtime/tests/docs bundle: allow direct variable targets to bind
+  by reference to declared static-property roots and selected
+  static-property array buckets. Cover `ClassName::$slots`, nested selected
+  buckets, `static::$slots`, `$class::$slots[$key]`, and
+  `$object::$slots`. Keep arbitrary reference-assignment targets from
+  static-property sources, arbitrary static-property reference containers
+  beyond cell-backed declared roots and selected buckets, typed
+  static-property enforcement through returned aliases, arbitrary PHP syntax
+  and side effects outside the executed method-body subset, exact PHP
+  diagnostics, and native reference lowering named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

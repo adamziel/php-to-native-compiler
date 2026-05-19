@@ -9688,6 +9688,20 @@ impl Interpreter {
                 } = source
                 {
                     scope.bind_static_to_static(name, source_name, span)?;
+                } else if let ReferenceSource::StaticProperty { expr, .. } = source {
+                    let cell = self.static_property_reference_cell_from_expr(expr, span, scope)?;
+                    scope.bind_static_to_cell(name, cell);
+                } else if let ReferenceSource::StaticPropertyArrayIndex { expr, indices, .. } =
+                    source
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let cell = self.static_property_array_offset_reference_cell_from_expr(
+                        expr, &keys, span, scope,
+                    )?;
+                    scope.bind_static_to_cell(name, cell);
                 } else if let ReferenceSource::ArrayIndex {
                     name: array_name,
                     index,
@@ -14742,6 +14756,16 @@ impl Interpreter {
         let value = match source {
             ReferenceSource::Variable { name, .. } => scope.read_static(name, span)?,
             ReferenceSource::Property { expr, .. } => self.evaluate(expr, scope)?,
+            ReferenceSource::StaticProperty { .. }
+            | ReferenceSource::StaticPropertyArrayIndex { .. } => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "static property reference sources require a direct variable target in the current subset",
+                    ),
+                ));
+            }
             ReferenceSource::ArrayIndex { name, index, .. } => {
                 return self.reject_array_offset_reference_source(name, index, span, scope);
             }
@@ -14797,6 +14821,16 @@ impl Interpreter {
         let value = match source {
             ReferenceSource::Variable { name, .. } => scope.read_static(name, span)?,
             ReferenceSource::Property { expr, .. } => self.evaluate(expr, scope)?,
+            ReferenceSource::StaticProperty { .. }
+            | ReferenceSource::StaticPropertyArrayIndex { .. } => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "static property reference sources require a direct variable target in the current subset",
+                    ),
+                ));
+            }
             ReferenceSource::ArrayIndex { name, index, .. } => {
                 return self.reject_array_offset_reference_source(name, index, span, scope);
             }

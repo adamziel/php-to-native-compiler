@@ -4,20 +4,40 @@
 
 Implemented:
 
+- Added Lane 1821-C through Lane 1823-C for direct static-property
+  reference-assignment sources. The parser now accepts static-property roots
+  and selected static-property array buckets as reference sources, and direct
+  variable targets bind to the same cell-backed static-property root or
+  promoted bucket used by the reference-return path. Covered fixtures
+  exercise `ClassName::$slots`, nested selected buckets, `static::$slots`,
+  `$class::$slots[$key]`, and object-receiver `$object::$slots`. This does
+  not claim arbitrary reference-assignment targets from static-property
+  sources, arbitrary static-property reference containers beyond cell-backed
+  declared roots and selected buckets, typed static-property enforcement
+  through returned aliases, arbitrary PHP syntax or side effects outside the
+  executed interpreter subset, exact PHP diagnostics, or native reference
+  lowering. Focused verification: raw system PHP output matched the new
+  `milestone1821`, `milestone1822`, and `milestone1823` fixtures; `cargo run
+  -q -p phpc -- test --compare-php` passed each new directory plus adjacent
+  `milestone1818` through `milestone1823`; focused `functions_and_scopes`
+  reference-assignment tests, `object_model` static-property tests, and
+  `syntax_boundaries` reference-assignment tests passed.
+
 - Added Lane 1818-C through Lane 1820-C for whole static-property
   reference-return roots. Static property storage now uses shared reference
   cells, so covered by-reference methods and magic/`ArrayAccess` bodies can
   return declared static property roots through named, `self::`, `static::`,
-  and dynamic class-string static property expressions. The root alias now
-  observes later direct static-property overwrites, and writes through the
-  alias update the property. Covered fixtures exercise late-static/dynamic
-  static method roots, magic `__get()` returning `self::$slots`, and
-  `ArrayAccess::offsetGet()` returning `self::$slots`. This does not claim
+  object-receiver, and dynamic class-string static property expressions. The
+  root alias now observes later direct static-property overwrites, and writes
+  through the alias update the property. Covered fixtures exercise
+  late-static/dynamic static method roots, magic `__get()` returning
+  `self::$slots`, and `ArrayAccess::offsetGet()` returning `self::$slots`.
+  This does not claim
   arbitrary static-property reference containers beyond cell-backed declared
   roots, typed static-property enforcement through returned aliases,
-  object-receiver static property roots, arbitrary PHP syntax or side effects
-  outside the executed interpreter subset, exact PHP diagnostics, or native
-  reference lowering. Focused verification: raw system PHP output matched the
+  arbitrary PHP syntax or side effects outside the executed interpreter
+  subset, exact PHP diagnostics, or native reference lowering. Focused
+  verification: raw system PHP output matched the
   new `milestone1818`, `milestone1819`, and `milestone1820` fixtures; `cargo
   run -q -p phpc -- test --compare-php` passed each new directory plus
   adjacent `milestone1815` through `milestone1820`; focused
