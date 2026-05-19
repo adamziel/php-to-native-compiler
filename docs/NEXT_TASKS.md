@@ -158,6 +158,13 @@ handled.
   computed/repeated/constant keys and append writes, and track simple
   `ArrayAccess::offsetSet()` value aliases when recovering copied-source
   backing targets.
+- [x] Lane 2267-C through 2270-C: preserve copied-source COW metadata for
+  `call_user_func_array()` argument arrays stored behind direct and
+  object-property `ArrayAccess` holders with statically proven public
+  `offsetGet()` backing buckets, including nested by-value parameter source
+  paths, whole-array assignment propagation, reference-return mirror
+  promotion, visible `__get()`, public `ArrayAccess::offsetGet()`, and a
+  whole-copy guard.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic

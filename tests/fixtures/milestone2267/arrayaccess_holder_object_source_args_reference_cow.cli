@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2267/arrayaccess_holder_object_source_args_reference_cow.php

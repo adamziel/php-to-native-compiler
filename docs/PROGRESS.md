@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2267-C through Lane 2270-C for `ArrayAccess` holder-backed
+  `call_user_func_array()` argument arrays. Stored argument-root recovery now
+  recognizes direct variables and object properties whose value is a concrete
+  `ArrayAccess` object with a statically proven public `offsetGet()` backing
+  bucket. By-value function setup preserves nested copied-source bindings
+  such as `$value[0]`, whole-array assignments carry those nested paths
+  forward, and reference-return callbacks promote mirrored holder paths to
+  the same source reference cell. Focused system-PHP coverage proves direct
+  object-source holders, visible `__get()` holder bodies, public
+  `ArrayAccess::offsetGet()` holder bodies, and a whole-copy guard. This
+  remains bounded to supported method bodies, public/proven holder bridges,
+  portable copied-source roots, and selected reference leaves; arbitrary
+  magic/`ArrayAccess` side effects, untracked containers, exact diagnostics,
+  and native reference/string COW lowering remain unsupported.
+
 - Added Lane 2262-C through Lane 2266-C for static-recognizer fallthrough in
   covered reference-return magic `__get()` bodies and simple
   `ArrayAccess::offsetSet()` value aliases. The magic backing-root recognizer

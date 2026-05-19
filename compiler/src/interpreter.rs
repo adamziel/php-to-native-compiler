@@ -2125,6 +2125,13 @@ impl SymbolTable {
                 let Value::Object(object) = self.read_named(object)? else {
                     return None;
                 };
+                if let Some(source) = self.object_property_array_copy_source_for_path_or_prefix(
+                    &object,
+                    property,
+                    &alias.keys,
+                ) {
+                    return Some(source);
+                }
                 Some(ArrayCopySource::object_property(
                     object,
                     property.clone(),
@@ -2252,6 +2259,28 @@ impl SymbolTable {
             .rev()
             .find(|(candidate_keys, _)| candidate_keys.as_slice() == keys)
             .map(|(_, source)| source.clone())
+    }
+
+    fn object_property_array_copy_source_for_path_or_prefix(
+        &self,
+        object: &PhpObject,
+        property: &str,
+        keys: &[ArrayKey],
+    ) -> Option<ArrayCopySource> {
+        self.object_property_array_copy_sources
+            .get(&(object.id(), property.to_string()))?
+            .iter()
+            .rev()
+            .find_map(|(candidate_keys, source)| {
+                if !keys.starts_with(candidate_keys.as_slice()) {
+                    return None;
+                }
+                let mut source = source.clone();
+                source
+                    .keys
+                    .extend(keys[candidate_keys.len()..].iter().cloned());
+                Some(source)
+            })
     }
 
     fn sync_dirty_object_property_array_copy_sources_from_scope(
@@ -5128,6 +5157,36 @@ impl SymbolTable {
                 }
                 match cell.value_cloned() {
                     Value::Object(candidate) if &candidate == object => Some(name.clone()),
+                    _ => None,
+                }
+            }));
+        }
+        names.sort_by(|left, right| {
+            left.starts_with('\0')
+                .cmp(&right.starts_with('\0'))
+                .then_with(|| left.cmp(right))
+        });
+        names.dedup();
+        names
+    }
+
+    fn object_names_for_id(&self, object_id: i64) -> Vec<String> {
+        let mut names: Vec<_> = self
+            .symbols
+            .borrow()
+            .iter()
+            .filter_map(|(name, cell)| match cell.value_cloned() {
+                Value::Object(candidate) if candidate.id() == object_id => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        if let Some(global_symbols) = &self.global_symbols {
+            names.extend(global_symbols.borrow().iter().filter_map(|(name, cell)| {
+                if !self.name_routes_to_global_storage(name) {
+                    return None;
+                }
+                match cell.value_cloned() {
+                    Value::Object(candidate) if candidate.id() == object_id => Some(name.clone()),
                     _ => None,
                 }
             }));
@@ -8863,9 +8922,15 @@ impl Interpreter {
                     true,
                 );
                 let copy_sources = if value_is_array {
-                    source
+                    let mut copy_sources = source
                         .map(|source| vec![(Vec::new(), source)])
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+                    if let Expr::Variable(name, _) = expr {
+                        if let Some(paths) = scope.array_literal_copy_source_paths.get(name) {
+                            copy_sources.extend(paths.iter().cloned());
+                        }
+                    }
+                    copy_sources
                 } else {
                     Vec::new()
                 };
@@ -18025,6 +18090,68 @@ impl Interpreter {
                     .unwrap_or_else(|| vec![alias]);
                 scope.reference_cell_for_array_offset_alias_group(&aliases)
             }
+        }
+    }
+
+    fn promote_array_copy_source_mirror_paths_to_reference_cell(
+        &self,
+        source: &ArrayCopySource,
+        suffix_keys: &[ArrayKey],
+        reference: VariableCell,
+        scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<()> {
+        let copy_source_paths = scope.object_property_array_copy_sources.clone();
+        for ((object_id, property), paths) in copy_source_paths {
+            let object_names = scope.object_names_for_id(object_id);
+            if object_names.is_empty() {
+                continue;
+            }
+            for (copy_keys, copy_source) in paths {
+                if !Self::array_copy_source_root_matches(&copy_source.root, &source.root)
+                    || !source.keys.starts_with(copy_source.keys.as_slice())
+                {
+                    continue;
+                }
+
+                let mut target_keys = copy_keys.clone();
+                target_keys.extend(source.keys[copy_source.keys.len()..].iter().cloned());
+                target_keys.extend(suffix_keys.iter().cloned());
+                for object_name in &object_names {
+                    let alias = ArrayOffsetAlias {
+                        root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                            object: object_name.clone(),
+                            property: property.clone(),
+                        },
+                        keys: target_keys.clone(),
+                    };
+                    scope.materialize_array_offset_alias(&alias, span)?;
+                    scope.promote_array_offset_alias_to_reference_cell(&alias, reference.clone());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn array_copy_source_root_matches(
+        left: &ArrayCopySourceRoot,
+        right: &ArrayCopySourceRoot,
+    ) -> bool {
+        match (left, right) {
+            (
+                ArrayCopySourceRoot::ObjectProperty {
+                    object: left_object,
+                    property: left_property,
+                },
+                ArrayCopySourceRoot::ObjectProperty {
+                    object: right_object,
+                    property: right_property,
+                },
+            ) => left_object == right_object && left_property == right_property,
+            (ArrayCopySourceRoot::AliasPath(left), ArrayCopySourceRoot::AliasPath(right)) => {
+                left == right
+            }
+            _ => false,
         }
     }
 
@@ -42675,7 +42802,7 @@ impl Interpreter {
                 let Value::Object(object_value) = caller_scope.read_named(object)? else {
                     return None;
                 };
-                caller_scope.object_property_array_copy_source_for_path(
+                caller_scope.object_property_array_copy_source_for_path_or_prefix(
                     &object_value,
                     property,
                     keys,
@@ -43352,6 +43479,18 @@ impl Interpreter {
                     for index in indices {
                         keys.push(self.evaluate_array_key(index, caller_scope)?);
                     }
+                    if let Some(Value::Object(object)) = caller_scope.read_named(name) {
+                        if let Some(stored_argument) = self
+                            .stored_call_user_func_array_access_argument_root_for_object(
+                                object,
+                                keys.clone(),
+                                span,
+                                caller_scope,
+                            )?
+                        {
+                            return Ok(Some(stored_argument));
+                        }
+                    }
                     if name == "GLOBALS" {
                         let (global_name, keys) =
                             SymbolTable::split_globals_reference_path(keys, span)?;
@@ -43411,6 +43550,23 @@ impl Interpreter {
                     for index in indices {
                         keys.push(self.evaluate_array_key(index, caller_scope)?);
                     }
+                    if let Some(object) = self.direct_object_property_value_as_object(
+                        object_name,
+                        property,
+                        span,
+                        caller_scope,
+                    )? {
+                        if let Some(stored_argument) = self
+                            .stored_call_user_func_array_access_argument_root_for_object(
+                                object,
+                                keys.clone(),
+                                span,
+                                caller_scope,
+                            )?
+                        {
+                            return Ok(Some(stored_argument));
+                        }
+                    }
                     let root = self.context_object_property_alias_root(
                         object_name,
                         property,
@@ -43437,6 +43593,23 @@ impl Interpreter {
                     let mut keys = Vec::with_capacity(indices.len());
                     for index in indices {
                         keys.push(self.evaluate_array_key(index, caller_scope)?);
+                    }
+                    if let Some(object) = self.direct_object_property_value_as_object(
+                        object_name,
+                        &property,
+                        span,
+                        caller_scope,
+                    )? {
+                        if let Some(stored_argument) = self
+                            .stored_call_user_func_array_access_argument_root_for_object(
+                                object,
+                                keys.clone(),
+                                span,
+                                caller_scope,
+                            )?
+                        {
+                            return Ok(Some(stored_argument));
+                        }
                     }
                     let root = self.context_object_property_alias_root(
                         object_name,
@@ -43530,6 +43703,109 @@ impl Interpreter {
             }
             _ => Ok(None),
         }
+    }
+
+    fn direct_object_property_value_as_object(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<PhpObject>> {
+        let Some(Value::Object(object)) = scope.read_named(object_name) else {
+            return Ok(None);
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
+            Ok(Value::Object(property_object)) => Ok(Some(property_object)),
+            Ok(_) => Ok(None),
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => Ok(None),
+            Err(error) => Err(runtime_error(span, error)),
+        }
+    }
+
+    fn stored_call_user_func_array_access_argument_root_for_object(
+        &mut self,
+        object: PhpObject,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<StoredArgumentArrayEvaluation>> {
+        let Some(alias) = self.array_access_offset_get_backing_alias_for_stored_argument(
+            object,
+            keys,
+            span,
+            caller_scope,
+        )?
+        else {
+            return Ok(None);
+        };
+        let root = StoredArgumentArrayRoot::ArrayOffset(alias);
+        let value =
+            Self::read_stored_call_user_func_array_argument_value(&root, span, caller_scope)?;
+        Ok(Some(StoredArgumentArrayEvaluation {
+            root,
+            value: Some(value),
+        }))
+    }
+
+    fn array_access_offset_get_backing_alias_for_stored_argument(
+        &mut self,
+        object: PhpObject,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ArrayOffsetAlias>> {
+        if keys.is_empty()
+            || !self
+                .classes
+                .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return Ok(None);
+        }
+        let Some((class_id, _class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "offsetGet")
+        else {
+            return Ok(None);
+        };
+        if is_static || visibility != Visibility::Public {
+            return Ok(None);
+        }
+
+        let function =
+            self.method_function(class_id, object.class_name(), &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        let return_target = match self.array_access_offset_get_reference_target(function, span) {
+            Ok(return_target) => return_target,
+            Err(_) => return Ok(None),
+        };
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        let property_visibility = object
+            .property_visibility_from_context(
+                &return_target.property,
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        let hidden_name = self.hidden_array_access_reference_object_name(&object);
+        scope.write_static(&hidden_name, Value::Object(object));
+        let root = if property_visibility == Visibility::Public {
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: hidden_name,
+                property: return_target.property.clone(),
+            }
+        } else {
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object: hidden_name,
+                property: return_target.property.clone(),
+                current_class_id: Some(class_id),
+                protected_class_ids,
+            }
+        };
+        let root = scope.canonical_equivalent_object_property_alias_root(&root);
+        let keys = Self::array_access_offset_get_reference_keys(&return_target, &keys);
+        Ok(Some(ArrayOffsetAlias { root, keys }))
     }
 
     fn read_stored_call_user_func_array_argument_value(
@@ -47482,12 +47758,20 @@ impl Interpreter {
                     .iter()
                     .find(|(param_name, _)| param_name == root_name)
                 {
-                    self.reference_cell_for_array_copy_source_return_path(
+                    if let Some(cell) = self.reference_cell_for_array_copy_source_return_path(
                         source,
                         keys,
                         caller_scope,
-                    )
-                    .or_else(|| {
+                    ) {
+                        self.promote_array_copy_source_mirror_paths_to_reference_cell(
+                            source,
+                            keys,
+                            cell.clone(),
+                            caller_scope,
+                            function.span,
+                        )?;
+                        Some(cell)
+                    } else {
                         let alias = ArrayOffsetAlias {
                             root: ArrayOffsetAliasRoot::StaticArray {
                                 name: root_name.clone(),
@@ -47501,7 +47785,7 @@ impl Interpreter {
                             &mut local_scope,
                         )
                         .ok()
-                    })
+                    }
                 } else {
                     let alias = ArrayOffsetAlias {
                         root: ArrayOffsetAliasRoot::StaticArray {
@@ -47695,6 +47979,21 @@ impl Interpreter {
         if let Some(cell) = returned_value_copy_param_cell {
             Ok(ReferenceReturnBinding::Cell(cell))
         } else if let Some(aliases) = returned_array_offset {
+            if let Some(source) =
+                caller_scope.public_object_property_array_copy_source_for_alias_group(&aliases)
+            {
+                if let Some(cell) = self.reference_cell_for_array_copy_source_return_path(
+                    &source,
+                    &[],
+                    caller_scope,
+                ) {
+                    for alias in &aliases {
+                        caller_scope.materialize_array_offset_alias(alias, function.span)?;
+                        caller_scope
+                            .promote_array_offset_alias_to_reference_cell(alias, cell.clone());
+                    }
+                }
+            }
             for alias in &aliases {
                 caller_scope.materialize_array_offset_alias(alias, function.span)?;
             }
@@ -51990,42 +52289,76 @@ impl Interpreter {
             let value_is_array = matches!(value, Value::Array(_));
             local_scope.write_static(&param.name, value);
             if value_is_array {
-                if let Some((_, target_keys, source)) = by_value_array_copy_source_bindings
+                for (_, target_keys, source) in by_value_array_copy_source_bindings
                     .iter()
-                    .find(|(param_name, target_keys, _)| {
-                        param_name == &param.name && target_keys.is_empty()
-                    })
+                    .filter(|(param_name, _, _)| param_name == &param.name)
                 {
-                    if let Some(source_scope) = reference_scope.as_deref() {
-                        let imported_aliases = local_scope
-                            .import_array_copy_source_aliases_from_copy(
-                                &param.name,
-                                source,
-                                source_scope,
-                            );
-                        let imported_aliases: Vec<_> = imported_aliases
-                            .into_iter()
-                            .filter(|alias| {
-                                matches!(
-                                    &alias.root,
-                                    ArrayOffsetAliasRoot::StaticArray { name }
-                                        if name == &param.name
-                                ) && !alias.keys.is_empty()
-                            })
-                            .collect();
-                        if !imported_aliases.is_empty() {
-                            array_copy_source_alias_writebacks.push((
-                                param.name.clone(),
-                                target_keys.clone(),
-                                source.clone(),
-                                imported_aliases,
-                            ));
+                    if target_keys.is_empty() {
+                        if let Some(source_scope) = reference_scope.as_deref() {
+                            let imported_aliases = local_scope
+                                .import_array_copy_source_aliases_from_copy(
+                                    &param.name,
+                                    source,
+                                    source_scope,
+                                );
+                            let imported_aliases: Vec<_> = imported_aliases
+                                .into_iter()
+                                .filter(|alias| {
+                                    matches!(
+                                        &alias.root,
+                                        ArrayOffsetAliasRoot::StaticArray { name }
+                                            if name == &param.name
+                                    ) && !alias.keys.is_empty()
+                                })
+                                .collect();
+                            if !imported_aliases.is_empty() {
+                                array_copy_source_alias_writebacks.push((
+                                    param.name.clone(),
+                                    target_keys.clone(),
+                                    source.clone(),
+                                    imported_aliases,
+                                ));
+                            }
                         }
+                        local_scope.record_public_object_property_array_copy_source(
+                            &param.name,
+                            source.clone(),
+                        );
+                    } else {
+                        if let Some(source_scope) = reference_scope.as_deref() {
+                            let imported_aliases = local_scope
+                                .import_array_copy_source_aliases_from_copy_to_path(
+                                    &param.name,
+                                    target_keys,
+                                    source,
+                                    source_scope,
+                                );
+                            let imported_aliases: Vec<_> = imported_aliases
+                                .into_iter()
+                                .filter(|alias| {
+                                    matches!(
+                                        &alias.root,
+                                        ArrayOffsetAliasRoot::StaticArray { name }
+                                            if name == &param.name
+                                    ) && alias.keys.starts_with(target_keys)
+                                        && alias.keys.len() > target_keys.len()
+                                })
+                                .collect();
+                            if !imported_aliases.is_empty() {
+                                array_copy_source_alias_writebacks.push((
+                                    param.name.clone(),
+                                    target_keys.clone(),
+                                    source.clone(),
+                                    imported_aliases,
+                                ));
+                            }
+                        }
+                        local_scope.record_array_literal_copy_source_path(
+                            &param.name,
+                            target_keys.clone(),
+                            source.clone(),
+                        );
                     }
-                    local_scope.record_public_object_property_array_copy_source(
-                        &param.name,
-                        source.clone(),
-                    );
                 }
             }
             if let Some(source_scope) = reference_scope.as_deref() {

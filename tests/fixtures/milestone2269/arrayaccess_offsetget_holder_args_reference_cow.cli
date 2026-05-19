@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2269/arrayaccess_offsetget_holder_args_reference_cow.php

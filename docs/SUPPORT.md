@@ -154,6 +154,14 @@
   `$args = array($copy)` through `&$this->args`, portable copied-source paths
   from the helper frame sync back to that concrete object property before a
   later `call_user_func_array($this->args)` dispatch.
+  Argument arrays stored behind concrete `ArrayAccess` holders are also
+  covered when the holder's public `offsetGet()` body has a statically proven
+  backing bucket. This includes direct holders and object-property holders
+  reached from visible `__get()` or public `ArrayAccess::offsetGet()` bodies:
+  nested by-value copied-source paths such as `$value[0]` are preserved
+  through `offsetSet()`, whole-array assignment of that parameter carries the
+  nested paths forward, and reference-return callbacks promote the holder copy
+  and original selected source leaf to the same reference cell.
   For reference-return magic `__get()`, static backing-root recognition is now
   only an optimization. If the body is supported but uses a computed selector
   key, repeated selector key, append, or constant backing key that the static

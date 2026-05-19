@@ -173,6 +173,17 @@ object-property source leaf into a `PhpReferenceCell`; otherwise it falls back
 to the detached local copied value. This is still bounded to concrete
 stored-root paths and selected leaves, not arbitrary callback-container graph
 analysis.
+When the stored argument array itself lives behind a concrete `ArrayAccess`
+holder, root recovery may use a statically proven public `offsetGet()` backing
+bucket to translate `$holder["args"]` or `$this->holder["args"]` into the
+holder object's tracked property path. By-value call setup records copied
+sources under parameter paths such as `$value[0]`, whole-array assignments
+copy those nested source paths into the destination object property, and
+reference-return callbacks promote any mirrored holder path that points back
+to the same copied source onto the source reference cell. This keeps direct
+holders, visible `__get()` bodies, and public `ArrayAccess::offsetGet()`
+bodies in the same COW model without claiming arbitrary `ArrayAccess` method
+side effects.
 
 Non-direct holder expressions use the same identity model after evaluating the
 holder once into a temporary object root. The interpreter snapshots public

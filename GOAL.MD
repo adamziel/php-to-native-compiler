@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2266:
+The current in-progress implementation frontier is Lane 2270:
+
+- Lanes 2267 through 2270 carry copied-source COW metadata through
+  `ArrayAccess` holder argument arrays whose backing bucket is statically
+  proven by the holder's public `offsetGet()` bridge. Nested by-value
+  argument copy-source bindings are now imported into callee parameters even
+  when the source is under a parameter path such as `$value[0]`, whole-array
+  assignments carry those nested paths forward, and reference-return
+  `call_user_func_array()` promotes mirrored holder paths to the same source
+  reference cell. Focused system-PHP coverage proves direct object-source
+  holders, visible `__get()` bodies, public `ArrayAccess::offsetGet()` bodies,
+  and a whole-copy guard. This remains bounded to supported method bodies,
+  public/proven `ArrayAccess::offsetGet()` backing roots, portable
+  copied-source roots, and selected reference leaves; arbitrary magic or
+  `ArrayAccess` side effects, untracked containers, exact diagnostics, and
+  native reference/string COW lowering remain unsupported.
 
 - Lanes 2262 through 2266 let supported reference-return magic `__get()`
   bodies fall through from the narrow static backing-root recognizer into the

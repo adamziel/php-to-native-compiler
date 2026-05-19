@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2268/magic_get_arrayaccess_holder_args_reference_cow.php

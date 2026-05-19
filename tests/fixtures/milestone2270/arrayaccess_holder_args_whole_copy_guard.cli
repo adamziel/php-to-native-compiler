@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2270/arrayaccess_holder_args_whole_copy_guard.php

@@ -23,6 +23,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T01:54:47+02:00
+
+- Checkpoint before this task: `55bbeae8 runtime: fall through magic reference
+  roots`, pushed to `origin/master`.
+- Task attempted: Lane 2267-C through Lane 2270-C bundle, preserving
+  copied-source COW metadata for `call_user_func_array()` argument arrays
+  stored behind concrete `ArrayAccess` holders with statically proven public
+  `offsetGet()` backing buckets.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2267/*` through
+  `tests/fixtures/milestone2270/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: raw system PHP and `phpc` outputs matched for
+  `milestone2267` through `milestone2270`; `cargo build -q -p phpc` passed;
+  adjacent Rust regressions passed for `object_model magic`,
+  `object_model arrayaccess`, `functions_and_scopes function`, and
+  `milestone1_fixtures_pass`.
+- Remaining COW gaps: whole-array reference identity outside covered
+  non-empty array-offset roots, untracked dynamic containers that expose
+  neither materialized reference cells nor portable copied-source roots,
+  arbitrary unsupported magic/`ArrayAccess` method syntax and side effects,
+  exact diagnostics/Throwable objects, and native reference/string COW
+  lowering.
+- Next concrete task: run formatting, diff, check, broader adjacent
+  comparisons, and one full `tools/checkpoint.sh` bundle gate; push if it
+  passes.
+
 ## Loop Event 2026-05-20T01:23:40+02:00
 
 - Checkpoint before this task: `94e85f10 runtime: sync object property cow arg
