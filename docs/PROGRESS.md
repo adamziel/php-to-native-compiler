@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 2134-C through Lane 2138-C for caller-scope alias transfer while
+  executing covered magic/`ArrayAccess` method bodies with side effects.
+  Named `__set()`, visible `__isset()`, direct
+  `ArrayAccess::offsetSet()`, `ArrayAccess::offsetUnset()`, and
+  `ArrayAccess::offsetExists()` now execute supported method-body code with
+  access to caller aliases, so overwriting a tracked object-property
+  container detaches stale caller aliases instead of letting a later alias
+  write recreate the old bucket. Detached ancestor aliases keep nested
+  reference leaves connected, including when the backing property is
+  non-public. Focused system-PHP coverage proves magic assignment, magic
+  observation, ArrayAccess keyed assignment, ArrayAccess unset, and
+  ArrayAccess `isset()` overwrite shapes. This remains bounded to supported
+  interpreter syntax and tracked object-property containers; untracked dynamic
+  containers, unsupported PHP side-effect syntax, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
+
 - Added Lane 2129-C through Lane 2133-C for value-position array literals with
   reference elements inside supported magic/`ArrayAccess` method bodies.
   Runtime array-literal reference evaluation can now promote covered

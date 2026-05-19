@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2133:
+The current in-progress implementation frontier is Lane 2138:
+
+- Lanes 2134 through 2138 route the covered magic/`ArrayAccess`
+  side-effecting method dispatches through caller-scope alias transfer instead
+  of executing them as isolated helper calls. Named `__set()`, visible
+  `__isset()`, direct `ArrayAccess::offsetSet()`,
+  `ArrayAccess::offsetUnset()`, and `ArrayAccess::offsetExists()` bodies now
+  detach caller aliases when supported method-body code overwrites a tracked
+  object-property container, including non-public backing properties, while
+  preserving nested reference leaves in detached aliases. Focused system-PHP
+  coverage proves magic assignment, magic observation, ArrayAccess keyed
+  assignment, ArrayAccess unset, and ArrayAccess `isset()` shapes. This is
+  still bounded to supported interpreter syntax and tracked object-property
+  containers; untracked dynamic containers, arbitrary unsupported PHP
+  side-effect syntax, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
 
 - Lanes 2129 through 2133 broaden the supported magic/`ArrayAccess`
   method-body value model for array literals with reference elements.

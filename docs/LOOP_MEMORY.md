@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T17:08:25+02:00
+
+- Checkpoint before this task: `2b1173c0 runtime: promote magic ArrayAccess
+  literal reference cells`, pushed to `origin/master`.
+- Task attempted: Lane 2134-C through Lane 2138-C bundle, routing covered
+  magic/`ArrayAccess` side-effecting method calls through caller-scope alias
+  transfer so supported `__set()`, `__isset()`, `offsetSet()`,
+  `offsetUnset()`, and `offsetExists()` bodies can detach stale caller aliases
+  after overwriting tracked object-property containers.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2134/*`, `tests/fixtures/milestone2135/*`,
+  `tests/fixtures/milestone2136/*`, `tests/fixtures/milestone2137/*`,
+  `tests/fixtures/milestone2138/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2134` through `milestone2138`; adjacent system-PHP comparisons
+  passed for `milestone2129` through `milestone2133`; broader system-PHP
+  COW comparison sweep passed for `milestone2101` through `milestone2138`;
+  focused Rust suites passed for `object_model`, `functions_and_scopes`,
+  `dynamic_features`, `array_unset`, `array_isset`, and `empty`; raw
+  system-PHP probes matched for `__set()`, `__isset()`, `offsetSet()`,
+  `offsetUnset()`, and `offsetExists()` property-overwrite alias detach.
+- Remaining COW gaps: future-path metadata recovery outside the current
+  value-literal/reference-cell and caller-scope alias-transfer paths,
+  untracked dynamic containers, broader dynamic callback containers,
+  whole-array reference identity, exact PHP diagnostics/Throwable objects,
+  and native reference/string COW lowering.
+- Next concrete task: run formatting/check/diff gates, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T16:48:15+02:00
 
 - Checkpoint before this task: `9e3560e4 runtime: detach nonpublic COW

@@ -30,6 +30,16 @@
   aliases detach with their last observed value instead of routing through the
   removed root; `unset(...)` may include multiple supported operands and
   executes them left to right
+- covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,
+  visible `__isset()`, direct `ArrayAccess::offsetSet()`,
+  `ArrayAccess::offsetUnset()`, and `ArrayAccess::offsetExists()` execute
+  supported interpreter bodies with caller-scope alias transfer, so overwrites
+  or unsets of tracked object-property array containers detach stale caller
+  aliases while preserving nested reference leaves in the detached value,
+  including non-public backing properties reached from the method body. This
+  does not provide general PHP reference containers, untracked dynamic
+  container recovery, unsupported method-body syntax, whole-array reference
+  identity, exact PHP diagnostics, or native COW lowering.
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or
   declaration-contained declarations can be loaded. The executing subset

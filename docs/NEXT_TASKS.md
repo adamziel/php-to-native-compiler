@@ -20,10 +20,14 @@ handled.
   reference elements inside supported magic/`ArrayAccess` bodies to real
   object-property reference cells, covering direct/helper `offsetGet()` and
   `__get()` return arrays plus helper-based magic payload storage.
+- [x] Lane 2134-C through 2138-C: execute covered magic/`ArrayAccess`
+  side-effecting method bodies with caller-scope alias transfer, so `__set()`,
+  `__isset()`, `offsetSet()`, `offsetUnset()`, and `offsetExists()` property
+  overwrites detach stale caller aliases while preserving nested reference
+  leaves.
 - [ ] Next COW gap: recover future-path metadata after supported but
-  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies outside the new
-  value-literal reference-cell path, or broaden non-public ancestor-container
-  alias detach without overclaiming full PHP reference containers.
+  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies outside the current
+  value-literal/reference-cell and caller-scope alias-transfer paths.
 - [ ] Remaining hard gaps: untracked dynamic containers, broader callback
   containers, whole-array reference identity, exact PHP diagnostics/Throwable
   objects, and native reference/string COW lowering.

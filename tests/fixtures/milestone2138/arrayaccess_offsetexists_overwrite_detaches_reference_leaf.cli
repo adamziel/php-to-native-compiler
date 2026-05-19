@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2138/arrayaccess_offsetexists_overwrite_detaches_reference_leaf.php

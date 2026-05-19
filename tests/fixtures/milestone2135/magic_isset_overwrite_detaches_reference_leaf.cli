@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2135/magic_isset_overwrite_detaches_reference_leaf.php

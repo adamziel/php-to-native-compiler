@@ -2375,16 +2375,71 @@ impl SymbolTable {
         object_name: &str,
         property: &str,
     ) -> HashMap<String, VariableCell> {
-        self.array_offset_aliases
+        let matching_aliases = self
+            .array_offset_aliases
             .iter()
             .filter_map(|(alias_name, aliases)| {
-                let root_alias = aliases
+                let aliases = aliases
                     .iter()
-                    .find(|alias| alias.root.matches_object_property(object_name, property))?;
-                self.detached_array_offset_alias_fallback_cell(root_alias)
+                    .filter(|alias| alias.root.matches_object_property(object_name, property))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                (!aliases.is_empty()).then(|| (alias_name.clone(), aliases))
+            })
+            .collect::<Vec<_>>();
+
+        let fallbacks = matching_aliases
+            .iter()
+            .filter_map(|(alias_name, aliases)| {
+                aliases
+                    .first()
+                    .and_then(|alias| self.detached_array_offset_alias_fallback_cell(alias))
                     .map(|cell| (alias_name.clone(), cell))
             })
-            .collect()
+            .collect::<HashMap<_, _>>();
+        self.rehydrate_object_property_alias_fallback_cells(&matching_aliases, &fallbacks);
+        fallbacks
+    }
+
+    fn rehydrate_object_property_alias_fallback_cells(
+        &self,
+        matching_aliases: &[(String, Vec<ArrayOffsetAlias>)],
+        fallbacks: &HashMap<String, VariableCell>,
+    ) {
+        for (alias_name, base_aliases) in matching_aliases {
+            let Some(base_cell) = fallbacks.get(alias_name) else {
+                continue;
+            };
+            let Value::Array(mut array) = base_cell.value_cloned() else {
+                continue;
+            };
+            let mut changed = false;
+
+            for base_alias in base_aliases {
+                for (descendant_name, descendant_aliases) in matching_aliases {
+                    let Some(descendant_cell) = fallbacks.get(descendant_name) else {
+                        continue;
+                    };
+                    for descendant_alias in descendant_aliases {
+                        if descendant_alias.root == base_alias.root
+                            && descendant_alias.keys.starts_with(&base_alias.keys)
+                            && descendant_alias.keys.len() > base_alias.keys.len()
+                        {
+                            let relative_keys = &descendant_alias.keys[base_alias.keys.len()..];
+                            changed |= Self::write_nested_array_offset_alias_reference(
+                                &mut array,
+                                relative_keys,
+                                descendant_cell.clone(),
+                            );
+                        }
+                    }
+                }
+            }
+
+            if changed {
+                base_cell.set_value(Value::Array(array));
+            }
+        }
     }
 
     fn public_object_roots_alias_fallbacks(
@@ -10997,11 +11052,12 @@ impl Interpreter {
                 Ok(())
             }
             Some(Value::Object(object)) => {
-                self.call_array_access_method(
+                self.call_array_access_method_with_caller_scope(
                     object,
                     "offsetUnset",
                     vec![Self::array_key_value(Some(key))],
                     span,
+                    scope,
                 )?;
                 Ok(())
             }
@@ -11301,21 +11357,23 @@ impl Interpreter {
         }
 
         if rest_keys.is_empty() {
-            self.call_array_access_method(
+            self.call_array_access_method_with_caller_scope(
                 object,
                 "offsetUnset",
                 vec![Self::array_key_value(Some(first_key.clone()))],
                 span,
+                scope,
             )?;
             return Ok(());
         }
 
         let class_name = object.class_name().to_string();
-        let value = self.call_array_access_method(
+        let value = self.call_array_access_method_with_caller_scope(
             object,
             "offsetGet",
             vec![Self::array_key_value(Some(first_key.clone()))],
             span,
+            scope,
         )?;
         match value {
             Value::Object(object)
@@ -19323,11 +19381,12 @@ impl Interpreter {
                         scope,
                         expr.span(),
                     )?;
-                    self.call_array_access_method(
+                    self.call_array_access_method_with_caller_scope(
                         object.clone(),
                         "offsetSet",
                         vec![Self::array_key_value(key), method_value],
                         *span,
+                        scope,
                     )?;
                     if matches!(value, Value::Array(_)) {
                         if let Some((root, reference_keys)) = self
@@ -19824,11 +19883,12 @@ impl Interpreter {
                                     scope,
                                     expr.span(),
                                 )?;
-                                match self.call_magic_instance_method_with_values(
+                                match self.call_magic_instance_method_with_values_and_caller_scope(
                                     object_value,
                                     "__set",
                                     vec![Value::String(property.clone()), method_value],
                                     *span,
+                                    scope,
                                 )? {
                                     Some(_) => Ok(value),
                                     None => Err(runtime_error(*span, error)),
@@ -20647,11 +20707,12 @@ impl Interpreter {
                                     expr.span(),
                                 )?;
                                 if self
-                                    .call_magic_instance_method_with_values(
+                                    .call_magic_instance_method_with_values_and_caller_scope(
                                         object_value.clone(),
                                         "__set",
                                         vec![Value::String(property.clone()), method_value],
                                         *span,
+                                        scope,
                                     )?
                                     .is_some()
                                 {
@@ -22015,11 +22076,12 @@ impl Interpreter {
             expr.span(),
         )?;
         let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, method_value, span)?;
-        self.call_array_access_method(
+        self.call_array_access_method_with_caller_scope(
             array_access_object.clone(),
             "offsetSet",
             vec![Self::array_key_value(None), stored_value],
             span,
+            scope,
         )?;
         if let Some((root, reference_keys)) = self.array_access_offset_set_alias_for_object(
             array_access_object.clone(),
@@ -22063,11 +22125,12 @@ impl Interpreter {
             scope,
             expr.span(),
         )?;
-        self.call_array_access_method(
+        self.call_array_access_method_with_caller_scope(
             array_access_object.clone(),
             "offsetSet",
             vec![Self::array_key_value(Some(key.clone())), method_value],
             span,
+            scope,
         )?;
         if let Some((root, reference_keys)) = self.array_access_offset_set_alias_for_object(
             array_access_object,
@@ -22274,11 +22337,12 @@ impl Interpreter {
                     .classes
                     .implements_interface(object.class_id(), "ArrayAccess")
             {
-                self.call_array_access_method(
+                self.call_array_access_method_with_caller_scope(
                     object,
                     "offsetSet",
                     vec![Self::array_key_value(Some(keys[0].clone())), value],
                     span,
+                    scope,
                 )?;
                 return Ok(());
             }
@@ -22365,11 +22429,12 @@ impl Interpreter {
                     .classes
                     .implements_interface(object.class_id(), "ArrayAccess")
             {
-                self.call_array_access_method(
+                self.call_array_access_method_with_caller_scope(
                     object,
                     "offsetSet",
                     vec![Self::array_key_value(None), value],
                     span,
+                    scope,
                 )?;
                 return Ok(());
             }
@@ -22799,11 +22864,12 @@ impl Interpreter {
                         ))
                     }
                     Some(Value::Object(object)) => {
-                        let value = self.call_array_access_method(
+                        let value = self.call_array_access_method_with_caller_scope(
                             object,
                             "offsetGet",
                             vec![Self::array_key_value(Some(key.clone()))],
                             span,
+                            scope,
                         )?;
                         Ok((
                             CompoundAssignmentPlace::ArrayAccessOffset {
@@ -22866,11 +22932,12 @@ impl Interpreter {
                                     "ArrayAccess",
                                 )
                             {
-                                let left = self.call_array_access_method(
+                                let left = self.call_array_access_method_with_caller_scope(
                                     array_access_object,
                                     "offsetGet",
                                     vec![Self::array_key_value(Some(keys[0].clone()))],
                                     span,
+                                    scope,
                                 )?;
                                 return Ok((
                                     CompoundAssignmentPlace::ObjectPropertyArrayAccessOffset {
@@ -23026,11 +23093,12 @@ impl Interpreter {
             CompoundAssignmentPlace::ArrayAccessOffset { name, key } => {
                 match scope.read_named(&name) {
                     Some(Value::Object(object)) => self
-                        .call_array_access_method(
+                        .call_array_access_method_with_caller_scope(
                             object,
                             "offsetSet",
                             vec![Self::array_key_value(Some(key)), value],
                             span,
+                            scope,
                         )
                         .map(|_| ()),
                     Some(other) => Err(runtime_error(
@@ -23062,11 +23130,12 @@ impl Interpreter {
                             .map_err(|error| runtime_error(span, error))?;
                         match property_value {
                             Value::Object(array_access_object) => self
-                                .call_array_access_method(
+                                .call_array_access_method_with_caller_scope(
                                     array_access_object,
                                     "offsetSet",
                                     vec![Self::array_key_value(Some(key)), value],
                                     span,
+                                    scope,
                                 )
                                 .map(|_| ()),
                             other => Err(runtime_error(
@@ -23274,11 +23343,12 @@ impl Interpreter {
                         ))
                     }
                     Some(Value::Object(object)) => {
-                        let value = self.call_array_access_method(
+                        let value = self.call_array_access_method_with_caller_scope(
                             object,
                             "offsetGet",
                             vec![Self::array_key_value(Some(key))],
                             span,
+                            scope,
                         )?;
                         Ok((CompoundAssignmentPlace::ArrayAccessTemporary, value))
                     }
@@ -23339,11 +23409,12 @@ impl Interpreter {
                             .map_err(|error| runtime_error(span, error))?;
                         match property_value {
                             Value::Object(array_access_object) => {
-                                let value = self.call_array_access_method(
+                                let value = self.call_array_access_method_with_caller_scope(
                                     array_access_object,
                                     "offsetGet",
                                     vec![Self::array_key_value(Some(keys[0].clone()))],
                                     span,
+                                    scope,
                                 )?;
                                 Ok((CompoundAssignmentPlace::ArrayAccessTemporary, value))
                             }
@@ -30245,14 +30316,16 @@ impl Interpreter {
                         object.clone(),
                         key.clone(),
                         index.span(),
+                        Some(&mut *scope),
                     )? {
                         return Ok(None);
                     }
-                    Ok(Some(self.call_array_access_method(
+                    Ok(Some(self.call_array_access_method_with_caller_scope(
                         object,
                         "offsetGet",
                         vec![Self::array_key_value(Some(key))],
                         index.span(),
+                        scope,
                     )?)
                     .filter(|value| !matches!(value, Value::Null)))
                 }
@@ -30295,14 +30368,16 @@ impl Interpreter {
                         object.clone(),
                         keys[0].clone(),
                         index.span(),
+                        Some(&mut *scope),
                     )? {
                         return Ok(None);
                     }
-                    Ok(Some(self.call_array_access_method(
+                    Ok(Some(self.call_array_access_method_with_caller_scope(
                         object,
                         "offsetGet",
                         vec![Self::array_key_value(Some(keys[0].clone()))],
                         index.span(),
+                        scope,
                     )?)
                     .filter(|value| !matches!(value, Value::Null)))
                 }
@@ -30441,7 +30516,10 @@ impl Interpreter {
                 ) {
                     Ok(value) => Ok(value),
                     Err(error) if Self::is_magic_get_fallback_property_error(&error) => self
-                        .call_magic_property_method(object, "__get", property, span)?
+                        .call_magic_get_property_value_with_array_copy_source(
+                            object, property, span, scope,
+                        )?
+                        .map(|(value, _)| value)
                         .ok_or_else(|| runtime_error(span, error)),
                     Err(error) => Err(runtime_error(span, error)),
                 }
@@ -30514,25 +30592,6 @@ impl Interpreter {
         }
     }
 
-    fn call_magic_property_method(
-        &mut self,
-        object: PhpObject,
-        method_name: &str,
-        property: &str,
-        span: Span,
-    ) -> CompileResult<Option<Value>> {
-        if method_name == "__get" {
-            return self.call_magic_get_property_value(object, property, span);
-        }
-
-        self.call_magic_instance_method_with_values(
-            object,
-            method_name,
-            vec![Value::String(property.to_string())],
-            span,
-        )
-    }
-
     fn call_magic_property_method_with_caller_scope(
         &mut self,
         object: PhpObject,
@@ -30584,7 +30643,7 @@ impl Interpreter {
             Some(class_id),
             Some(called_class_id),
             Vec::new(),
-            Some(caller_scope),
+            Some(&mut *caller_scope),
         )
         .map(Some)
     }
@@ -30810,6 +30869,51 @@ impl Interpreter {
         .map(Some)
     }
 
+    fn call_magic_instance_method_with_values_and_caller_scope(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), method_name)
+        else {
+            return Ok(None);
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_signature(function, args.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let called_class_id = object.class_id();
+        self.call_user_function_with_checked_values(
+            function,
+            args,
+            Some(object),
+            Some(class_id),
+            Some(called_class_id),
+            Vec::new(),
+            Some(&mut *caller_scope),
+        )
+        .map(Some)
+    }
+
     fn call_reference_return_magic_instance_method_with_values(
         &mut self,
         object: PhpObject,
@@ -30897,7 +31001,10 @@ impl Interpreter {
                 ) {
                     Ok(value) => Ok(value),
                     Err(error) if Self::is_magic_get_fallback_property_error(&error) => self
-                        .call_magic_property_method(object, "__get", &property, span)?
+                        .call_magic_get_property_value_with_array_copy_source(
+                            object, &property, span, scope,
+                        )?
+                        .map(|(value, _)| value)
                         .ok_or_else(|| runtime_error(span, error)),
                     Err(error) => Err(runtime_error(span, error)),
                 }
@@ -51095,11 +51202,12 @@ impl Interpreter {
                         Ok(())
                     }
                     Err(error) if Self::is_undefined_property_error(&error) => {
-                        match self.call_magic_instance_method_with_values(
+                        match self.call_magic_instance_method_with_values_and_caller_scope(
                             object_value,
                             "__set",
                             vec![Value::String(property.to_string()), value],
                             span,
+                            caller_scope,
                         )? {
                             Some(_) => Ok(()),
                             None => Err(runtime_error(span, error)),
@@ -55677,9 +55785,13 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
-        if let Some(isset_value) =
-            self.call_magic_property_method(object.clone(), "__isset", property, span)?
-        {
+        if let Some(isset_value) = self.call_magic_property_method_with_caller_scope(
+            object.clone(),
+            "__isset",
+            property,
+            span,
+            caller_scope,
+        )? {
             if !isset_value.is_truthy() {
                 return Ok(false);
             }
@@ -55740,7 +55852,13 @@ impl Interpreter {
                 {
                     Some(value) => Ok(!matches!(value, Value::Null)),
                     None => Ok(self
-                        .call_magic_property_method(object, "__isset", property, span)?
+                        .call_magic_property_method_with_caller_scope(
+                            object,
+                            "__isset",
+                            property,
+                            span,
+                            caller_scope,
+                        )?
                         .is_some_and(|value| value.is_truthy())),
                 }
             }
@@ -56186,9 +56304,13 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
-        if let Some(isset_value) =
-            self.call_magic_property_method(object.clone(), "__isset", property, span)?
-        {
+        if let Some(isset_value) = self.call_magic_property_method_with_caller_scope(
+            object.clone(),
+            "__isset",
+            property,
+            span,
+            caller_scope,
+        )? {
             if !isset_value.is_truthy() {
                 return Ok(true);
             }
@@ -56249,11 +56371,12 @@ impl Interpreter {
                 {
                     Some(value) => Ok(!value.is_truthy()),
                     None => {
-                        let Some(isset_value) = self.call_magic_property_method(
+                        let Some(isset_value) = self.call_magic_property_method_with_caller_scope(
                             object.clone(),
                             "__isset",
                             property,
                             span,
+                            caller_scope,
                         )?
                         else {
                             return Ok(true);
@@ -56263,7 +56386,13 @@ impl Interpreter {
                         }
 
                         Ok(self
-                            .call_magic_property_method(object, "__get", property, span)?
+                            .call_magic_property_method_with_caller_scope(
+                                object,
+                                "__get",
+                                property,
+                                span,
+                                caller_scope,
+                            )?
                             .map_or(true, |value| !value.is_truthy()))
                     }
                 }
@@ -56400,6 +56529,104 @@ impl Interpreter {
                     ),
                 )
             })
+    }
+
+    fn call_array_access_method_with_caller_scope(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "object of class {} does not implement ArrayAccess",
+                    object.class_name()
+                )),
+            ));
+        }
+
+        if let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), method_name)
+        {
+            let function =
+                self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+            let function = function.as_ref();
+            if function.returns_by_reference {
+                if !method_name.eq_ignore_ascii_case("offsetGet") {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "ArrayAccess reference-return methods other than offsetGet() are not implemented",
+                        ),
+                    ));
+                }
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::offsetGet()"),
+                            "static ArrayAccess offsetGet() reference sources are not implemented",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::offsetGet()"),
+                            "ArrayAccess offsetGet() reference sources require a public method in the current subset",
+                        ),
+                    ));
+                }
+                ensure_user_function_arity(function, args.len(), span)?;
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                let key_value = args.first().ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "ArrayAccess::offsetGet()",
+                            ArityExpectation::Exactly(1),
+                            args.len(),
+                        ),
+                    )
+                })?;
+                let binding = self.call_array_access_offset_get_reference_return_binding(
+                    object,
+                    function,
+                    key_value.clone(),
+                    class_id,
+                    span,
+                    caller_scope,
+                )?;
+                return self.read_reference_return_binding_value(function, &binding, caller_scope);
+            }
+        }
+
+        self.call_magic_instance_method_with_values_and_caller_scope(
+            object,
+            method_name,
+            args,
+            span,
+            caller_scope,
+        )?
+        .ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("ArrayAccess::{method_name}()"),
+                    "ArrayAccess objects must declare the required offset method in the current subset",
+                ),
+            )
+        })
     }
 
     fn call_array_access_offset_get_with_array_copy_source(
@@ -56573,15 +56800,25 @@ impl Interpreter {
         object: PhpObject,
         key: ArrayKey,
         span: Span,
+        caller_scope: Option<&mut SymbolTable>,
     ) -> CompileResult<bool> {
-        Ok(self
-            .call_array_access_method(
+        let value = if let Some(caller_scope) = caller_scope {
+            self.call_array_access_method_with_caller_scope(
+                object,
+                "offsetExists",
+                vec![Self::array_key_value(Some(key))],
+                span,
+                caller_scope,
+            )?
+        } else {
+            self.call_array_access_method(
                 object,
                 "offsetExists",
                 vec![Self::array_key_value(Some(key))],
                 span,
             )?
-            .is_truthy())
+        };
+        Ok(value.is_truthy())
     }
 
     fn array_access_path_isset(
@@ -56595,7 +56832,12 @@ impl Interpreter {
             return Ok(false);
         };
 
-        if !self.array_access_offset_exists(object.clone(), first_key.clone(), span)? {
+        if !self.array_access_offset_exists(
+            object.clone(),
+            first_key.clone(),
+            span,
+            Some(caller_scope),
+        )? {
             return Ok(false);
         }
         if rest_keys.is_empty() {
@@ -56631,7 +56873,12 @@ impl Interpreter {
             return Ok(true);
         };
 
-        if !self.array_access_offset_exists(object.clone(), first_key.clone(), span)? {
+        if !self.array_access_offset_exists(
+            object.clone(),
+            first_key.clone(),
+            span,
+            Some(caller_scope),
+        )? {
             return Ok(true);
         }
 
