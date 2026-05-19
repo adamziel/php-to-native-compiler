@@ -279,6 +279,8 @@ fn is_object_property_array_access_unset_target(target: &UnsetTarget) -> bool {
         target,
         UnsetTarget::ObjectPropertyArrayIndex { .. }
             | UnsetTarget::DynamicObjectPropertyArrayIndex { .. }
+            | UnsetTarget::NonDirectObjectPropertyArrayIndex { .. }
+            | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
     )
 }
 

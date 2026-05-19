@@ -1134,6 +1134,7 @@ struct SymbolTable {
     public_object_property_array_copy_sources: HashMap<String, ArrayCopySource>,
     object_property_array_copy_sources:
         HashMap<(i64, String), Vec<(Vec<ArrayKey>, ArrayCopySource)>>,
+    dirty_object_property_array_copy_sources: HashSet<(i64, String)>,
     array_literal_copy_source_paths: HashMap<String, Vec<(Vec<ArrayKey>, ArrayCopySource)>>,
 }
 
@@ -1232,6 +1233,7 @@ impl SymbolTable {
             copied_array_provenance_paths: HashMap::new(),
             public_object_property_array_copy_sources: HashMap::new(),
             object_property_array_copy_sources: HashMap::new(),
+            dirty_object_property_array_copy_sources: HashSet::new(),
             array_literal_copy_source_paths: HashMap::new(),
         }
     }
@@ -1247,6 +1249,7 @@ impl SymbolTable {
             copied_array_provenance_paths: HashMap::new(),
             public_object_property_array_copy_sources: HashMap::new(),
             object_property_array_copy_sources: HashMap::new(),
+            dirty_object_property_array_copy_sources: HashSet::new(),
             array_literal_copy_source_paths: HashMap::new(),
         }
     }
@@ -2000,6 +2003,8 @@ impl SymbolTable {
         paths: Vec<(Vec<ArrayKey>, ArrayCopySource)>,
     ) {
         let key = (object.id(), property.to_string());
+        self.dirty_object_property_array_copy_sources
+            .insert(key.clone());
         if paths.is_empty() {
             self.object_property_array_copy_sources.remove(&key);
             return;
@@ -2012,8 +2017,10 @@ impl SymbolTable {
         object: &PhpObject,
         property: &str,
     ) {
-        self.object_property_array_copy_sources
-            .remove(&(object.id(), property.to_string()));
+        let key = (object.id(), property.to_string());
+        self.dirty_object_property_array_copy_sources
+            .insert(key.clone());
+        self.object_property_array_copy_sources.remove(&key);
     }
 
     fn remove_object_property_array_copy_source_paths_for_prefix(
@@ -2022,6 +2029,8 @@ impl SymbolTable {
         property: &str,
         prefix: &[ArrayKey],
     ) {
+        self.dirty_object_property_array_copy_sources
+            .insert((object.id(), property.to_string()));
         if prefix.is_empty() {
             self.remove_object_property_array_copy_source_paths(object, property);
             return;
@@ -2044,6 +2053,8 @@ impl SymbolTable {
         keys: Vec<ArrayKey>,
         source: ArrayCopySource,
     ) {
+        self.dirty_object_property_array_copy_sources
+            .insert((object.id(), property.to_string()));
         self.remove_object_property_array_copy_source_paths_for_prefix(object, property, &keys);
         self.object_property_array_copy_sources
             .entry((object.id(), property.to_string()))
@@ -2077,6 +2088,71 @@ impl SymbolTable {
             .rev()
             .find(|(candidate_keys, _)| candidate_keys.as_slice() == keys)
             .map(|(_, source)| source.clone())
+    }
+
+    fn sync_dirty_object_property_array_copy_sources_from_scope(
+        &mut self,
+        source_scope: &SymbolTable,
+    ) {
+        for key in &source_scope.dirty_object_property_array_copy_sources {
+            let Some(paths) = source_scope.object_property_array_copy_sources.get(key) else {
+                self.object_property_array_copy_sources.remove(key);
+                self.dirty_object_property_array_copy_sources
+                    .insert(key.clone());
+                continue;
+            };
+
+            let portable_paths = paths
+                .iter()
+                .filter_map(|(keys, source)| {
+                    Self::portable_array_copy_source_from_scope(source, source_scope)
+                        .map(|source| (keys.clone(), source))
+                })
+                .collect::<Vec<_>>();
+            if portable_paths.is_empty() {
+                self.object_property_array_copy_sources.remove(key);
+            } else {
+                self.object_property_array_copy_sources
+                    .insert(key.clone(), portable_paths);
+            }
+            self.dirty_object_property_array_copy_sources
+                .insert(key.clone());
+        }
+    }
+
+    fn portable_array_copy_source_from_scope(
+        source: &ArrayCopySource,
+        source_scope: &SymbolTable,
+    ) -> Option<ArrayCopySource> {
+        match &source.root {
+            ArrayCopySourceRoot::ObjectProperty { .. } => Some(source.clone()),
+            ArrayCopySourceRoot::AliasPath(ArrayOffsetAliasRoot::GlobalArray { .. }) => {
+                Some(source.clone())
+            }
+            ArrayCopySourceRoot::AliasPath(ArrayOffsetAliasRoot::StaticArray { name }) => {
+                let mut base =
+                    source_scope.public_object_property_array_copy_source_for_static(name)?;
+                base.keys.extend(source.keys.iter().cloned());
+                base.include_exact_path = source.include_exact_path;
+                Some(base)
+            }
+            ArrayCopySourceRoot::AliasPath(
+                ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                | ArrayOffsetAliasRoot::ContextObjectProperty {
+                    object, property, ..
+                },
+            ) => {
+                let Value::Object(object) = source_scope.read_storage_named(object)? else {
+                    return None;
+                };
+                Some(ArrayCopySource::object_property(
+                    object,
+                    property.clone(),
+                    source.keys.clone(),
+                    source.include_exact_path,
+                ))
+            }
+        }
     }
 
     fn clear_array_literal_copy_source_paths_for_root(&mut self, name: &str) {
@@ -11377,6 +11453,14 @@ impl Interpreter {
             UnsetTarget::DynamicObjectProperty {
                 object, property, ..
             } => self.execute_unset_dynamic_object_property(object, property, span, scope),
+            UnsetTarget::NonDirectObjectProperty {
+                holder, property, ..
+            } => self.execute_unset_non_direct_object_property(holder, property, span, scope),
+            UnsetTarget::NonDirectDynamicObjectProperty {
+                holder, property, ..
+            } => {
+                self.execute_unset_non_direct_dynamic_object_property(holder, property, span, scope)
+            }
             UnsetTarget::ObjectPropertyArrayIndex {
                 object,
                 property,
@@ -11392,6 +11476,22 @@ impl Interpreter {
                 ..
             } => self.execute_unset_dynamic_object_property_nested_array_index(
                 object, property, indices, span, scope,
+            ),
+            UnsetTarget::NonDirectObjectPropertyArrayIndex {
+                holder,
+                property,
+                indices,
+                ..
+            } => self.execute_unset_non_direct_object_property_nested_array_index(
+                holder, property, indices, span, scope,
+            ),
+            UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+                holder,
+                property,
+                indices,
+                ..
+            } => self.execute_unset_non_direct_dynamic_object_property_nested_array_index(
+                holder, property, indices, span, scope,
             ),
             UnsetTarget::StaticProperty {
                 class_name,
@@ -11464,6 +11564,29 @@ impl Interpreter {
         self.execute_unset_object_property(object_name, &property_name, span, scope, true)
     }
 
+    fn execute_unset_non_direct_object_property(
+        &mut self,
+        holder: &Expr,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let temp_name = self.non_direct_object_holder_temp(holder, property, scope, span)?;
+        self.execute_unset_object_property(&temp_name, property, span, scope, true)
+    }
+
+    fn execute_unset_non_direct_dynamic_object_property(
+        &mut self,
+        holder: &Expr,
+        property: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let property_name = self.evaluate_dynamic_property_name(property, span, scope)?;
+        let temp_name = self.non_direct_object_holder_temp(holder, &property_name, scope, span)?;
+        self.execute_unset_object_property(&temp_name, &property_name, span, scope, true)
+    }
+
     fn execute_unset_dynamic_object_property_nested_array_index(
         &mut self,
         object_name: &str,
@@ -11475,6 +11598,39 @@ impl Interpreter {
         let property_name = self.evaluate_dynamic_property_name(property, span, scope)?;
         self.execute_unset_object_property_nested_array_index(
             object_name,
+            &property_name,
+            indices,
+            span,
+            scope,
+        )
+    }
+
+    fn execute_unset_non_direct_object_property_nested_array_index(
+        &mut self,
+        holder: &Expr,
+        property: &str,
+        indices: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let temp_name = self.non_direct_object_holder_temp(holder, property, scope, span)?;
+        self.execute_unset_object_property_nested_array_index(
+            &temp_name, property, indices, span, scope,
+        )
+    }
+
+    fn execute_unset_non_direct_dynamic_object_property_nested_array_index(
+        &mut self,
+        holder: &Expr,
+        property: &Expr,
+        indices: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let property_name = self.evaluate_dynamic_property_name(property, span, scope)?;
+        let temp_name = self.non_direct_object_holder_temp(holder, &property_name, scope, span)?;
+        self.execute_unset_object_property_nested_array_index(
+            &temp_name,
             &property_name,
             indices,
             span,
@@ -51058,6 +51214,10 @@ impl Interpreter {
                                 reference_scope
                                     .sync_array_offset_aliases_for_object_value(this_object);
                             }
+                            reference_scope
+                                .sync_dirty_object_property_array_copy_sources_from_scope(
+                                    &local_scope,
+                                );
                         }
                         result
                     }

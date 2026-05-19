@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone2211/magic_get_call_user_func_array_helper_recreates_args_cow.php
+stdout:
+inside|local-replacement|plain-original|local-replacement|1;inside|copy|plain-original|plain-copy|1
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

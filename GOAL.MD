@@ -32,7 +32,26 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2210:
+The current in-progress implementation frontier is Lane 2214:
+
+- Lanes 2211 through 2214 carry object-property copied-source metadata across
+  supported helper method side effects on shared holder objects. When a
+  supported magic `__get()` or public `ArrayAccess::offsetGet()` body calls a
+  helper that unsets or recreates the stored `call_user_func_array()` argument
+  container, object-property copy-source dirtiness is synced back from the
+  callee scope to the caller scope. Non-direct unset targets such as
+  `$this->holder->args`, dynamic holder properties, and nested holder-array
+  roots are parsed and executed through the same temporary object-root unset
+  machinery. Focused system-PHP coverage proves visible `__get()`, dynamic
+  holder properties, nested holder-array roots, and public
+  `ArrayAccess::offsetGet()` where the helper recreates the argument
+  container, then replaces the copied local, while the reference-return
+  callback still mutates the original selected reference leaf exactly once.
+  This remains bounded to supported interpreter syntax, shared object-property
+  holders with portable copied-source roots, and concrete stored
+  `call_user_func_array()` containers; it does not claim arbitrary unsupported
+  method-body syntax, untracked dynamic containers, whole-array reference
+  identity, exact diagnostics, or native reference/string COW lowering.
 
 - Lanes 2206 through 2210 fix a broader stored `call_user_func_array()`
   evaluation-order hole in the source-aware COW path. Recovered stored

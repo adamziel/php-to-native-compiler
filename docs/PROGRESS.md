@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2211-C through Lane 2214-C for supported helper side effects that
+  unset or recreate stored `call_user_func_array()` argument containers inside
+  magic/`ArrayAccess` method bodies. Non-direct object-property unset targets
+  now cover named, dynamic, and nested holder-property paths. Object-property
+  copied-source metadata now records dirty keys and syncs portable
+  object-property/global copied-source roots from a callee method scope back to
+  the caller, so a helper can recreate a shared holder's argument array,
+  replace the copied local by reference, and still let a reference-return
+  callback promote the original selected source leaf. Focused system-PHP
+  coverage proves visible `__get()`, dynamic holder properties, nested holder
+  array roots, and public `ArrayAccess::offsetGet()`. This remains bounded to
+  supported interpreter syntax, shared object-property holders with portable
+  copied-source roots, and concrete stored argument containers; arbitrary
+  unsupported method-body syntax, exact diagnostics, and native
+  reference/string COW lowering remain unsupported.
+
 - Added Lane 2206-C through Lane 2210-C for PHP-order single evaluation of
   recovered stored `call_user_func_array()` argument roots in the
   source-aware COW path. Root recovery now returns both the concrete root and

@@ -85,8 +85,10 @@
   `$this->holder()->args`, nested holder-property array roots, and
   property-held array callables. Holder expressions evaluate once to concrete
   object roots, equivalent property roots are canonicalized by object
-  identity, and unchanged copied-array source metadata is preserved across the
-  helper call used to fetch the holder; covered reference-return callbacks
+  identity, and copied-array source metadata is preserved across helper calls
+  that either leave the copied local unchanged or recreate a shared
+  object-property holder's stored argument container through supported named,
+  dynamic, or nested holder-property paths; covered reference-return callbacks
   promote proven source leaves to real cells before returning the reference.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
@@ -95,10 +97,10 @@
   not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
   dynamic callables or reflection targets, unsupported method-body syntax,
-  arbitrary side effects beyond covered writeback paths, helper calls that
-  destroy and recreate copied locals while provenance must survive, full
-  whole-array reference identity, exact PHP diagnostics, or native COW
-  lowering.
+  arbitrary side effects beyond covered writeback paths, helper/callback
+  mutation of containers whose copied-source roots cannot be synced through a
+  concrete shared object property or global root, full whole-array reference
+  identity, exact PHP diagnostics, or native COW lowering.
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or
   declaration-contained declarations can be loaded. The executing subset

@@ -1359,6 +1359,13 @@ routed through covered array-offset alias metadata, including ordinary array
 roots, request/global roots, and visible object-property array roots; slot
 writes and stored-slot lookups compose the argument-array root alias with the
 selected integer key before binding or writing back.
+When a supported helper method mutates a shared holder object before returning
+it, object-property copied-source metadata records dirty object/property keys
+in the callee scope and syncs portable copied-source roots back to the caller
+scope. This lets recreated holder properties such as `$this->holder->args`,
+dynamic holder properties, and nested holder-array roots remain visible to the
+stored `call_user_func_array()` source-aware path after the helper returns,
+without treating arbitrary local symbol names as caller-visible provenance.
 The stored callback path also has a narrow anonymous alias-group route for
 reference assignments from covered append-offset sources into stored argument
 slots, such as `$args[] =& $items[]` or

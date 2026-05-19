@@ -1,2 +1,2 @@
-parse error at 8:23: unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), direct object properties like unset($object->property), and direct static property operands like unset(ClassName::$property) are implemented; dynamic property offsets, append, and broader nested unset forms are not implemented
+parse error at 8:23: unsupported unset: supported operands are direct variables, direct/nested array offsets, direct or bounded non-direct object properties and object-property array offsets, and direct static properties; append unset, object operators after array offsets, and broader dynamic expression roots are not implemented
 

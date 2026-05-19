@@ -23,6 +23,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T22:09:04+02:00
+
+- Checkpoint before this task: `8d65604e checkpoint: 2026-05-19 19:54:22
+  UTC`, pushed to `origin/master`.
+- Task attempted: Lane 2211-C through Lane 2214-C bundle, attacking supported
+  helper side effects that unset or recreate stored `call_user_func_array()`
+  argument containers while copied-source provenance must still promote the
+  original selected source leaf.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/codegen.rs`, `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2211/*` through
+  `tests/fixtures/milestone2214/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_*unset.stderr`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_*unset.cli`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2211` through `milestone2214`; adjacent comparisons passed for
+  `milestone2206` through `milestone2210`; `cargo check -q -p phpc` passed;
+  `cargo test -q -p phpc --test array_unset` passed; focused
+  `functions_and_scopes call_user_func_array`, `assignment_expression`, and
+  `object_model magic` filters passed; `cargo test -q -p phpc --test
+  milestone1 milestone1_fixtures_pass` passed after updating the two
+  unsupported-unset fixture stderr snapshots for the corrected diagnostic;
+  `cargo test -q -p phpc --test unsupported_syntax_features_cli` passed after
+  updating the matching CLI snapshots. The `object_model non_direct` filter
+  matched zero tests and is not counted as meaningful coverage.
+- Remaining COW gaps: callback-dispatched and reference-returning helpers
+  that mutate shared stored containers; portable-root gaps where copied-source
+  metadata cannot be synced without leaking callee-local symbol names;
+  arbitrary unsupported magic/`ArrayAccess` method syntax; untracked dynamic
+  containers; whole-array reference identity; exact diagnostics/Throwable
+  objects; and native reference/string COW lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T21:53:18+02:00
 
 - Checkpoint before this task: `03af6d7b checkpoint: 2026-05-19 19:41:34

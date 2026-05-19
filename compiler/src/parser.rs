@@ -2407,7 +2407,11 @@ impl Parser {
                     span,
                 }),
                 target @ (UnsetTarget::ObjectPropertyArrayIndex { .. }
-                | UnsetTarget::DynamicObjectPropertyArrayIndex { .. }) => Ok(Stmt::UnsetMany {
+                | UnsetTarget::DynamicObjectPropertyArrayIndex { .. }
+                | UnsetTarget::NonDirectObjectPropertyArrayIndex { .. }
+                | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+                | UnsetTarget::NonDirectObjectProperty { .. }
+                | UnsetTarget::NonDirectDynamicObjectProperty { .. }) => Ok(Stmt::UnsetMany {
                     targets: vec![target],
                     span,
                 }),
@@ -2459,105 +2463,13 @@ impl Parser {
         if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
             if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
                 let operator_span = self.previous().span;
-                if matches!(self.peek().kind, TokenKind::Variable(_) | TokenKind::LBrace) {
-                    let property = self.parse_dynamic_property_name_expr(operator_span)?;
-                    if self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
-                        return Ok(UnsetTarget::DynamicObjectProperty {
-                            object: name,
-                            property,
-                            span: target_span,
-                        });
-                    }
-                    if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-                        let bracket_span = self.previous().span;
-                        if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
-                            return Err(self.error_at(bracket_span, unsupported_unset_message()));
-                        }
-                        let first_index = self.parse_expression()?;
-                        self.consume_keyword(
-                            TokenKind::RBracket,
-                            "expected ']' after array index",
-                        )?;
-                        let mut indices = vec![first_index];
-
-                        while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-                            let bracket_span = self.previous().span;
-                            if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
-                                return Err(
-                                    self.error_at(bracket_span, unsupported_unset_message())
-                                );
-                            }
-                            let index = self.parse_expression()?;
-                            self.consume_keyword(
-                                TokenKind::RBracket,
-                                "expected ']' after array index",
-                            )?;
-                            indices.push(index);
-                        }
-
-                        if self.check(|kind| matches!(kind, TokenKind::ObjectOperator)) {
-                            return Err(
-                                self.error_at(self.peek().span, unsupported_unset_message())
-                            );
-                        }
-                        if !self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma))
-                        {
-                            return Err(
-                                self.error_at(self.peek().span, unsupported_unset_message())
-                            );
-                        }
-
-                        return Ok(UnsetTarget::DynamicObjectPropertyArrayIndex {
-                            object: name,
-                            property,
-                            indices,
-                            span: target_span,
-                        });
-                    }
-                    return Err(self.error_at(target_span, unsupported_unset_message()));
-                }
-                let (property, _) = self.consume_object_property_name(operator_span)?;
-                if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-                    if self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
-                        return Ok(UnsetTarget::ObjectProperty {
-                            object: name,
-                            property,
-                            span: target_span,
-                        });
-                    }
-                    return Err(self.error_at(target_span, unsupported_unset_message()));
-                }
-                let bracket_span = self.previous().span;
-                if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
-                    return Err(self.error_at(bracket_span, unsupported_unset_message()));
-                }
-                let first_index = self.parse_expression()?;
-                self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
-                let mut indices = vec![first_index];
-
-                while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-                    let bracket_span = self.previous().span;
-                    if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
-                        return Err(self.error_at(bracket_span, unsupported_unset_message()));
-                    }
-                    let index = self.parse_expression()?;
-                    self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
-                    indices.push(index);
-                }
-
-                if self.check(|kind| matches!(kind, TokenKind::ObjectOperator)) {
-                    return Err(self.error_at(self.peek().span, unsupported_unset_message()));
-                }
-                if !self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
-                    return Err(self.error_at(self.peek().span, unsupported_unset_message()));
-                }
-
-                return Ok(UnsetTarget::ObjectPropertyArrayIndex {
-                    object: name,
-                    property,
-                    indices,
-                    span: target_span,
-                });
+                let holder = Expr::Variable(name.clone(), target_span);
+                return self.parse_object_property_unset_target_after_operator(
+                    holder,
+                    Some(name),
+                    operator_span,
+                    target_span,
+                );
             }
             if self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
                 return Ok(UnsetTarget::Variable {
@@ -2606,6 +2518,136 @@ impl Parser {
                 span: target_span,
             })
         }
+    }
+
+    fn parse_object_property_unset_target_after_operator(
+        &mut self,
+        mut holder: Expr,
+        mut direct_object: Option<String>,
+        mut operator_span: Span,
+        target_span: Span,
+    ) -> CompileResult<UnsetTarget> {
+        loop {
+            if matches!(self.peek().kind, TokenKind::Variable(_) | TokenKind::LBrace) {
+                let property = self.parse_dynamic_property_name_expr(operator_span)?;
+                if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
+                    holder = Expr::DynamicProperty {
+                        target: Box::new(holder),
+                        property: Box::new(property),
+                        span: operator_span,
+                    };
+                    direct_object = None;
+                    operator_span = self.previous().span;
+                    continue;
+                }
+                if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+                    let indices = self.parse_unset_indices_after_open_bracket()?;
+                    self.ensure_unset_target_tail_is_done()?;
+                    return Ok(match direct_object {
+                        Some(object) => UnsetTarget::DynamicObjectPropertyArrayIndex {
+                            object,
+                            property,
+                            indices,
+                            span: target_span,
+                        },
+                        None => UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+                            holder,
+                            property,
+                            indices,
+                            span: target_span,
+                        },
+                    });
+                }
+                self.ensure_unset_target_tail_is_done()?;
+                return Ok(match direct_object {
+                    Some(object) => UnsetTarget::DynamicObjectProperty {
+                        object,
+                        property,
+                        span: target_span,
+                    },
+                    None => UnsetTarget::NonDirectDynamicObjectProperty {
+                        holder,
+                        property,
+                        span: target_span,
+                    },
+                });
+            }
+
+            let (property, _) = self.consume_object_property_name(operator_span)?;
+            if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
+                holder = Expr::Property {
+                    target: Box::new(holder),
+                    property,
+                    span: operator_span,
+                };
+                direct_object = None;
+                operator_span = self.previous().span;
+                continue;
+            }
+            if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+                let indices = self.parse_unset_indices_after_open_bracket()?;
+                self.ensure_unset_target_tail_is_done()?;
+                return Ok(match direct_object {
+                    Some(object) => UnsetTarget::ObjectPropertyArrayIndex {
+                        object,
+                        property,
+                        indices,
+                        span: target_span,
+                    },
+                    None => UnsetTarget::NonDirectObjectPropertyArrayIndex {
+                        holder,
+                        property,
+                        indices,
+                        span: target_span,
+                    },
+                });
+            }
+            self.ensure_unset_target_tail_is_done()?;
+            return Ok(match direct_object {
+                Some(object) => UnsetTarget::ObjectProperty {
+                    object,
+                    property,
+                    span: target_span,
+                },
+                None => UnsetTarget::NonDirectObjectProperty {
+                    holder,
+                    property,
+                    span: target_span,
+                },
+            });
+        }
+    }
+
+    fn parse_unset_indices_after_open_bracket(&mut self) -> CompileResult<Vec<Expr>> {
+        let bracket_span = self.previous().span;
+        if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+            return Err(self.error_at(bracket_span, unsupported_unset_message()));
+        }
+        let first_index = self.parse_expression()?;
+        self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+        let mut indices = vec![first_index];
+
+        while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            let bracket_span = self.previous().span;
+            if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+                return Err(self.error_at(bracket_span, unsupported_unset_message()));
+            }
+            let index = self.parse_expression()?;
+            self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+            indices.push(index);
+        }
+
+        Ok(indices)
+    }
+
+    fn ensure_unset_target_tail_is_done(&self) -> CompileResult<()> {
+        if self.check(|kind| matches!(kind, TokenKind::ObjectOperator)) {
+            return Err(self.error_at(self.peek().span, unsupported_unset_message()));
+        }
+        if !self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
+            return Err(self.error_at(self.peek().span, unsupported_unset_message()));
+        }
+        Ok(())
     }
 
     fn parse_static_property_unset_target(
@@ -7521,7 +7563,7 @@ fn unsupported_named_argument_message() -> &'static str {
 }
 
 fn unsupported_unset_message() -> &'static str {
-    "unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), direct object properties like unset($object->property), and direct static property operands like unset(ClassName::$property) are implemented; dynamic property offsets, append, and broader nested unset forms are not implemented"
+    "unsupported unset: supported operands are direct variables, direct/nested array offsets, direct or bounded non-direct object properties and object-property array offsets, and direct static properties; append unset, object operators after array offsets, and broader dynamic expression roots are not implemented"
 }
 
 fn unsupported_foreach_expression_message() -> &'static str {

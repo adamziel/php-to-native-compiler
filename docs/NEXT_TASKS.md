@@ -92,13 +92,19 @@ handled.
   side-effecting helper calls, dynamic property names, and index-key
   expressions execute once like PHP while source-aware reference-return
   callbacks still promote the original selected source leaf.
+- [x] Lane 2211-C through 2214-C: sync dirty object-property copied-source
+  metadata from supported helper method scopes back to callers when shared
+  holder objects unset or recreate stored `call_user_func_array()` argument
+  containers, covering named, dynamic, nested, magic `__get()`, and public
+  `ArrayAccess::offsetGet()` paths while preserving source-leaf promotion.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic
   holders expose real cells or concrete writeback roots instead of stale paths.
-  A known next probe is a supported helper/callback side effect that unsets or
-  recreates tracked copied locals or stored containers while later COW
-  provenance still needs exact PHP identity.
+  Known next probes should target callback-dispatched helpers and
+  reference-returning helpers that mutate shared stored containers, plus
+  portable-root gaps where copied-source metadata currently cannot be synced
+  without leaking callee-local symbol names.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

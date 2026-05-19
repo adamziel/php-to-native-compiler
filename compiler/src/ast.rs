@@ -534,6 +534,18 @@ pub enum UnsetTarget {
         indices: Vec<Expr>,
         span: Span,
     },
+    NonDirectObjectPropertyArrayIndex {
+        holder: Expr,
+        property: String,
+        indices: Vec<Expr>,
+        span: Span,
+    },
+    NonDirectDynamicObjectPropertyArrayIndex {
+        holder: Expr,
+        property: Expr,
+        indices: Vec<Expr>,
+        span: Span,
+    },
     ObjectProperty {
         object: String,
         property: String,
@@ -541,6 +553,16 @@ pub enum UnsetTarget {
     },
     DynamicObjectProperty {
         object: String,
+        property: Expr,
+        span: Span,
+    },
+    NonDirectObjectProperty {
+        holder: Expr,
+        property: String,
+        span: Span,
+    },
+    NonDirectDynamicObjectProperty {
+        holder: Expr,
         property: Expr,
         span: Span,
     },
