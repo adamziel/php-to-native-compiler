@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1866:
+The current in-progress implementation frontier is Lane 1870:
+
+- Lanes 1867 through 1870 preserve copied-array COW provenance when a
+  by-value user method returns a backed object-property array after supported
+  magic/`ArrayAccess` aliases have already created reference slots below that
+  property. Covered public/private `ArrayAccess::offsetGet()` and
+  `__get()` paths now keep scalar slot write-through when a later method
+  returns `$this->store`, `$this->{$property}`, or `$this->store[$group]`.
+  This is bounded to top-level by-value method returns whose return expression
+  is a direct visible object-property array path with side-effect-free copied
+  keys; arbitrary returned temporaries, return sources hidden inside nested
+  control flow, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
 
 - Lanes 1864 through 1866 tighten scalar/string parent failures for direct
   variable, `$GLOBALS`, and imported-global array-offset reference sources.

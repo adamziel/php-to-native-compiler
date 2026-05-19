@@ -20345,6 +20345,18 @@ handled.
   matrices outside covered paths, and native reference lowering named as
   unsupported.
 
+## Lane 1867-C through Lane 1870-C: Method Return Copy Provenance
+
+- [x] Runtime/tests/docs bundle: preserve copied-array COW provenance when a
+  by-value user method returns a backed object-property array after supported
+  magic/`ArrayAccess` aliases have established reference slots below it. Cover
+  public/private `ArrayAccess::offsetGet()` backing arrays, `__get()` backing
+  arrays, dynamic `$this->{$property}` returns, and selected
+  `$this->store[$group]` returns with system-PHP comparisons. Keep arbitrary
+  returned temporaries, nested-control-flow return-source provenance,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

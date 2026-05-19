@@ -747,7 +747,19 @@
   path keys are mirrored in this slice; variable, append, and side-effecting
   copied path keys below the selected root remain ordinary value copies unless
   another documented alias route covers them. Plain arrays without reference
-  elements still copy by value under the current array model. When a declared
+  elements still copy by value under the current array model. By-value user
+  methods can also return a copied array value with the same bounded
+  object-property provenance when the top-level return expression is a direct
+  visible object-property array path, including method-context
+  private/protected properties, dynamic `$this->{$property}` properties, and
+  selected paths such as `return $this->store[$group];` when copied keys are
+  side-effect-free. This covers supported magic/`ArrayAccess` aliases created
+  before the method return, so later writes through the returned array's
+  mirrored scalar reference slots still reach the original backing property.
+  Returned temporaries, return sources hidden inside nested control flow,
+  whole-array reference identity in returned values, and arbitrary
+  side-effecting copied-key expressions remain unsupported for this by-value
+  method-return provenance path. When a declared
   public object property array with a covered direct object-property
   array-offset reference target is copied into a direct static variable, the
   copied slot also joins the same bounded alias group: writes through the

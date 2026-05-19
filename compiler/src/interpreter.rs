@@ -2514,6 +2514,54 @@ impl SymbolTable {
         }
     }
 
+    fn value_with_object_property_aliases_from_array_copy(
+        &mut self,
+        value: Value,
+        source: Option<PublicObjectPropertyArrayCopySource>,
+    ) -> Value {
+        let Some(source) = source else {
+            return value;
+        };
+        let Value::Array(mut array) = value else {
+            return value;
+        };
+
+        let source_roots =
+            self.public_object_property_alias_roots_for_object(&source.object, &source.property);
+        for source_root in source_roots {
+            let matching_aliases = self
+                .array_offset_aliases
+                .values()
+                .flat_map(|aliases| aliases.iter())
+                .filter(|alias| {
+                    alias.root == source_root
+                        && alias.keys.starts_with(source.keys.as_slice())
+                        && (source.include_exact_path || alias.keys.len() > source.keys.len())
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+
+            for alias in matching_aliases {
+                let relative_keys = alias.keys[source.keys.len()..].to_vec();
+                if relative_keys.is_empty() {
+                    continue;
+                }
+                let Some(reference) =
+                    self.reference_cell_for_array_offset_alias_group(std::slice::from_ref(&alias))
+                else {
+                    continue;
+                };
+                Self::write_nested_array_offset_alias_reference(
+                    &mut array,
+                    &relative_keys,
+                    reference,
+                );
+            }
+        }
+
+        Value::Array(array)
+    }
+
     fn public_object_property_alias_roots_for_object(
         &self,
         source_object: &PhpObject,
@@ -6108,7 +6156,11 @@ impl Interpreter {
                 let Value::Object(object) = scope.read_named(object_name)? else {
                     return None;
                 };
-                object.read_public_property(property).ok()?;
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                object
+                    .read_property_from_context(property, current_class_id, &protected_class_ids)
+                    .ok()?;
                 Some(PublicObjectPropertyArrayCopySource {
                     object,
                     property: property.clone(),
@@ -6116,20 +6168,67 @@ impl Interpreter {
                     include_exact_path: true,
                 })
             }
-            Expr::Index { target, index, .. } => {
-                let (object_name, property, indices) =
-                    Self::collect_direct_object_property_array_index_path(target, index)?;
+            Expr::DynamicProperty {
+                target, property, ..
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return None;
+                };
                 let Value::Object(object) = scope.read_named(object_name)? else {
                     return None;
                 };
-                object.read_public_property(property).ok()?;
+                let property = Self::side_effect_free_value(property, scope)?;
+                let property = match property {
+                    Value::String(value) => value,
+                    Value::Int(value) => value.to_string(),
+                    _ => return None,
+                };
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                object
+                    .read_property_from_context(&property, current_class_id, &protected_class_ids)
+                    .ok()?;
+                Some(PublicObjectPropertyArrayCopySource {
+                    object,
+                    property,
+                    keys: Vec::new(),
+                    include_exact_path: true,
+                })
+            }
+            Expr::Index { target, index, .. } => {
+                let (object_name, property, indices) =
+                    if let Some((object_name, property, indices)) =
+                        Self::collect_direct_object_property_array_index_path(target, index)
+                    {
+                        (object_name, property.to_string(), indices)
+                    } else {
+                        let (object_name, property, indices) =
+                            Self::collect_direct_dynamic_object_property_array_index_path(
+                                target, index,
+                            )?;
+                        let property = Self::side_effect_free_value(property, scope)?;
+                        let property = match property {
+                            Value::String(value) => value,
+                            Value::Int(value) => value.to_string(),
+                            _ => return None,
+                        };
+                        (object_name, property, indices)
+                    };
+                let Value::Object(object) = scope.read_named(object_name)? else {
+                    return None;
+                };
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                object
+                    .read_property_from_context(&property, current_class_id, &protected_class_ids)
+                    .ok()?;
                 let mut keys = Vec::with_capacity(indices.len());
                 for index in indices {
                     keys.push(Self::side_effect_free_array_key(index, scope)?);
                 }
                 Some(PublicObjectPropertyArrayCopySource {
                     object,
-                    property: property.to_string(),
+                    property,
                     keys,
                     include_exact_path: false,
                 })
@@ -6147,7 +6246,11 @@ impl Interpreter {
             ReferenceReturnBinding::ArrayOffsets(aliases) => aliases.first()?,
             ReferenceReturnBinding::Cell(_) => return None,
         };
-        let ArrayOffsetAliasRoot::PublicObjectProperty { object, property } = &alias.root else {
+        let (ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+        | ArrayOffsetAliasRoot::ContextObjectProperty {
+            object, property, ..
+        }) = &alias.root
+        else {
             return None;
         };
         let Value::Object(object) = scope.read_named(object)? else {
@@ -40652,12 +40755,14 @@ impl Interpreter {
 
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
-        let flow = self.execute_statements(&function.body, &mut local_scope);
+        let flow =
+            self.execute_statements_with_array_copy_return_source(&function.body, &mut local_scope);
         let writeback_result = if matches!(
             &flow,
-            Ok(Flow::Normal) | Ok(Flow::Return(_)) | Ok(Flow::Exit(_))
+            Ok((Flow::Normal, _)) | Ok((Flow::Return(_), _)) | Ok((Flow::Exit(_), _))
         ) {
-            let reference_writeback = if let Some(reference_scope) = reference_scope {
+            let reference_writeback = if let Some(reference_scope) = reference_scope.as_deref_mut()
+            {
                 let result = self.write_back_reference_bindings(
                     &array_offset_binding_cells,
                     &local_scope,
@@ -40741,7 +40846,7 @@ impl Interpreter {
         }
 
         writeback_result?;
-        let flow = flow?;
+        let (flow, array_copy_source) = flow?;
         match flow {
             Flow::Normal => Ok(Value::Null),
             Flow::Break { span, .. } => Err(runtime_error(
@@ -40752,7 +40857,15 @@ impl Interpreter {
                 span,
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
-            Flow::Return(value) => Ok(value),
+            Flow::Return(value) => Ok(reference_scope
+                .as_deref_mut()
+                .map(|scope| {
+                    scope.value_with_object_property_aliases_from_array_copy(
+                        value.clone(),
+                        array_copy_source.clone(),
+                    )
+                })
+                .unwrap_or(value)),
             Flow::Exit(_) => Ok(Value::Null),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }

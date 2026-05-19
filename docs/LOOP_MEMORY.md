@@ -18,6 +18,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T04:19:05+02:00
+
+- Checkpoint before this task: `355fb5c7 runtime: tighten direct scalar
+  reference errors`, pushed to `origin/master`.
+- Task attempted: Lane 1867-C through Lane 1870-C bundle, preserving
+  copied-array COW provenance for by-value user method returns of backed
+  object-property arrays after supported magic/`ArrayAccess` aliases have
+  established reference slots below those arrays.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1867/*`, `tests/fixtures/milestone1868/*`,
+  `tests/fixtures/milestone1869/*`, `tests/fixtures/milestone1870/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo run -q -p phpc -- test --compare-php` passed
+  `milestone1867`, `milestone1868`, `milestone1869`, and `milestone1870`
+  with system-PHP comparisons; adjacent focused `object_model arrayaccess`
+  and `functions_and_scopes reference_assignment` Rust filters passed.
+- Remaining COW gaps: recursive `$GLOBALS` materialization, arbitrary
+  callback and builtin reference-return sources, arbitrary PHP and
+  magic/`ArrayAccess` side effects outside the interpreter subset, full
+  exception unwinding and uncaught propagation, arbitrary Iterator side
+  effects, broader complex alias sinks and alias lifetime ordering, exact PHP
+  stderr/fatal text, binary/multibyte string offset behavior, and native
+  reference/string COW lowering.
+- Next concrete task: run adjacent regression checks, formatting, diff check,
+  and the full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T04:02:05+02:00
 
 - Checkpoint before this task: `fd309f44 runtime: support imported global
