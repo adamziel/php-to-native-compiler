@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2060:
+The current in-progress implementation frontier is Lane 2065:
+
+- Lanes 2061 through 2065 broaden source-aware by-value method bodies to
+  preserve copied-array provenance when the returned local was first bound by
+  reference to a covered object-property array source. Covered forms include
+  visible public `__get()` and ordinary public methods returning `$bucket`
+  after `$bucket =& $this->store[$name]`, returning `$items[$name]` after
+  `$items =& $this->store`, and side-effect-free dynamic-property bucket
+  selection through `$this->{$property}[$name]`. Focused system-PHP coverage
+  proves selected nested reference slots remain shared in the returned copy
+  while ordinary nested arrays detach. This is still bounded to proven local
+  alias bindings; arbitrary side effects, unproven dynamic containers,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
 
 - Lanes 2056 through 2060 close a proven scalar-parent miss below covered
   by-value `ArrayAccess::offsetGet()` results. Nested keyed writes, nested
@@ -1517,7 +1530,8 @@ Highest-value concrete candidates:
   magic roots, especially object-chain bridges for nested append/keyed writes,
   reference-return bodies, callback reference arguments, and no-reference
   callback value paths where backing buckets can be statically proven.
-- Broader but still proven `offsetGet()` and `__get()` return-body shapes.
+- Broader but still proven `offsetGet()`, `__get()`, and ordinary method
+  return-body alias shapes.
 - Broader method-return or factory expression roots beyond the one covered
   magic/`ArrayAccess` reference-source backing-write shape.
 - Broader lifetime/detach tests for covered magic and `ArrayAccess` aliases,

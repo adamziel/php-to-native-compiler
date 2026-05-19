@@ -18,6 +18,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T13:01:07+02:00
+
+- Checkpoint before this task: `5007c193 runtime: reject scalar ArrayAccess
+  COW parents`, pushed to `origin/master`.
+- Task attempted: Lane 2061-C through Lane 2065-C bundle, deriving copied-array
+  provenance from local variables that are bound by reference to covered
+  object-property array sources during source-aware by-value method execution.
+  This covers visible public `__get()` and ordinary public methods returning a
+  selected local reference bucket, returning an indexed root-property alias,
+  and selecting through a side-effect-free dynamic property.
+- Files changed: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2061/*`, `tests/fixtures/milestone2062/*`,
+  `tests/fixtures/milestone2063/*`, `tests/fixtures/milestone2064/*`,
+  `tests/fixtures/milestone2065/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run before checkpoint: raw system PHP probes matched the intended local-reference
+  alias-return behavior; focused system-PHP comparisons passed for
+  `milestone2061` through `milestone2065`; adjacent comparisons passed for
+  `milestone1890`, `milestone1894`, `milestone2041`, and `milestone2045`;
+  broad `milestone1880` through `milestone2065` fixture tests passed;
+  focused Rust suites `object_model`, `functions_and_scopes`,
+  `array_reference_literals`, and `call_user_func_builtin` passed; and
+  `cargo fmt --check`, `cargo check -q`, and `git diff --check` passed after
+  formatting.
+- Remaining COW gaps: complete mixed `ArrayAccess` object-chain bridges,
+  arbitrary untracked magic/`ArrayAccess` side effects, broader source-aware
+  alias graphs and dynamic containers, whole-array reference identity,
+  PHP-catchable fatal `Throwable` objects/exact diagnostics, native
+  reference/string COW lowering, and native lowering for these interpreter
+  paths.
+- Next concrete task after this bundle lands: continue mixed `ArrayAccess`
+  object-chain bridges and source-aware method-body aliases where backing
+  buckets can be proven statically, without claiming arbitrary side effects.
+
 ## Loop Event 2026-05-19T12:48:17+02:00
 
 - Checkpoint before this task: `1d4ef693 runtime: preserve variadic

@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 2061-C through Lane 2065-C for source-aware by-value method
+  bodies that return a local variable first bound by reference to an
+  object-property array source. The interpreter now derives copied-array
+  provenance from existing local alias bindings in source-aware execution, so
+  visible public `__get()` and ordinary public methods preserve selected
+  nested reference slots for `$bucket =& $this->store[$name]; return $bucket;`
+  and `$items =& $this->store; return $items[$name];` forms. Focused
+  system-PHP coverage also proves dynamic-property bucket selection through
+  `$this->{$property}[$name]`. Ordinary nested arrays still detach. This is a
+  bounded return-body broadening only; arbitrary side effects, unproven
+  dynamic containers, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
+
 - Added Lane 2056-C through Lane 2060-C for scalar-parent parity below
   covered by-value `ArrayAccess::offsetGet()` roots. Nested keyed writes,
   nested appends, property-held reference targets, and magic-provided

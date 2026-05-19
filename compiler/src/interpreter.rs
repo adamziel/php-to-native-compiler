@@ -1883,12 +1883,44 @@ impl SymbolTable {
             return Some(source);
         }
 
+        if let Some(source) = aliases
+            .iter()
+            .find_map(|alias| self.array_copy_source_for_alias(alias))
+        {
+            return Some(source);
+        }
+
         aliases.iter().find_map(|alias| {
             let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root else {
                 return None;
             };
             self.array_literal_copy_source_for_static_path(name, &alias.keys)
         })
+    }
+
+    fn array_copy_source_for_alias(&self, alias: &ArrayOffsetAlias) -> Option<ArrayCopySource> {
+        match &alias.root {
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+            | ArrayOffsetAliasRoot::ContextObjectProperty {
+                object, property, ..
+            } => {
+                let Value::Object(object) = self.read_named(object)? else {
+                    return None;
+                };
+                Some(ArrayCopySource::object_property(
+                    object,
+                    property.clone(),
+                    alias.keys.clone(),
+                    false,
+                ))
+            }
+            ArrayOffsetAliasRoot::GlobalArray { .. } => Some(ArrayCopySource::alias_path(
+                alias.root.clone(),
+                alias.keys.clone(),
+                false,
+            )),
+            ArrayOffsetAliasRoot::StaticArray { .. } => None,
+        }
     }
 
     fn record_object_property_array_copy_source_paths(
@@ -6910,6 +6942,24 @@ impl Interpreter {
                 }
                 return Ok(try_flow);
             }
+            Stmt::ReferenceAssign {
+                target:
+                    target @ AssignTarget::Variable {
+                        name: target_name, ..
+                    },
+                source,
+                span,
+            } => {
+                self.execute_reference_assignment(target, source, *span, scope)?;
+                if matches!(scope.read_named(target_name), Some(Value::Array(_))) {
+                    if let Some(source) =
+                        self.array_copy_source_for_reference_assignment_source(source, scope)
+                    {
+                        scope.record_public_object_property_array_copy_source(target_name, source);
+                    }
+                }
+                return Ok(ArrayCopyReturnBodyFlow::Normal);
+            }
             _ => {}
         }
 
@@ -7765,6 +7815,147 @@ impl Interpreter {
         }
     }
 
+    fn array_copy_source_for_reference_assignment_source(
+        &self,
+        source: &ReferenceSource,
+        scope: &SymbolTable,
+    ) -> Option<ArrayCopySource> {
+        match source {
+            ReferenceSource::Property { expr, .. } => {
+                let (object_name, property, include_exact_path) = match expr {
+                    Expr::Property {
+                        target, property, ..
+                    } => {
+                        let Expr::Variable(object_name, _) = target.as_ref() else {
+                            return None;
+                        };
+                        (object_name.as_str(), property.clone(), true)
+                    }
+                    Expr::DynamicProperty {
+                        target, property, ..
+                    } => {
+                        let Expr::Variable(object_name, _) = target.as_ref() else {
+                            return None;
+                        };
+                        let property = Self::side_effect_free_value(property, scope)?;
+                        let property = match property {
+                            Value::String(value) => value,
+                            Value::Int(value) => value.to_string(),
+                            _ => return None,
+                        };
+                        (object_name.as_str(), property, true)
+                    }
+                    _ => return None,
+                };
+                self.array_copy_source_for_object_property_path(
+                    object_name,
+                    property,
+                    Vec::new(),
+                    include_exact_path,
+                    scope,
+                )
+            }
+            ReferenceSource::ObjectPropertyArrayIndex {
+                object,
+                property,
+                index,
+                ..
+            } => {
+                let key = Self::side_effect_free_array_key(index, scope)?;
+                self.array_copy_source_for_object_property_path(
+                    object,
+                    property.clone(),
+                    vec![key],
+                    false,
+                    scope,
+                )
+            }
+            ReferenceSource::DynamicObjectPropertyArrayIndex {
+                object,
+                property,
+                index,
+                ..
+            } => {
+                let property = Self::side_effect_free_value(property, scope)?;
+                let property = match property {
+                    Value::String(value) => value,
+                    Value::Int(value) => value.to_string(),
+                    _ => return None,
+                };
+                let key = Self::side_effect_free_array_key(index, scope)?;
+                self.array_copy_source_for_object_property_path(
+                    object,
+                    property,
+                    vec![key],
+                    false,
+                    scope,
+                )
+            }
+            ReferenceSource::ObjectPropertyNestedArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                let mut keys = Vec::with_capacity(indices.len());
+                for index in indices {
+                    keys.push(Self::side_effect_free_array_key(index, scope)?);
+                }
+                self.array_copy_source_for_object_property_path(
+                    object,
+                    property.clone(),
+                    keys,
+                    false,
+                    scope,
+                )
+            }
+            ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                let property = Self::side_effect_free_value(property, scope)?;
+                let property = match property {
+                    Value::String(value) => value,
+                    Value::Int(value) => value.to_string(),
+                    _ => return None,
+                };
+                let mut keys = Vec::with_capacity(indices.len());
+                for index in indices {
+                    keys.push(Self::side_effect_free_array_key(index, scope)?);
+                }
+                self.array_copy_source_for_object_property_path(
+                    object, property, keys, false, scope,
+                )
+            }
+            _ => None,
+        }
+    }
+
+    fn array_copy_source_for_object_property_path(
+        &self,
+        object_name: &str,
+        property: String,
+        keys: Vec<ArrayKey>,
+        include_exact_path: bool,
+        scope: &SymbolTable,
+    ) -> Option<ArrayCopySource> {
+        let Value::Object(object) = scope.read_named(object_name)? else {
+            return None;
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        object
+            .read_property_from_context(&property, current_class_id, &protected_class_ids)
+            .ok()?;
+        Some(ArrayCopySource::object_property(
+            object,
+            property,
+            keys,
+            include_exact_path,
+        ))
+    }
+
     fn public_object_property_array_copy_source_for_value_expr(
         &self,
         expr: &Expr,
@@ -7773,6 +7964,13 @@ impl Interpreter {
         if let Expr::Variable(name, _) = expr {
             return scope
                 .public_object_property_array_copy_source_for_static(name)
+                .or_else(|| {
+                    scope
+                        .array_offset_aliases_for_name(name)
+                        .and_then(|aliases| {
+                            scope.public_object_property_array_copy_source_for_alias_group(&aliases)
+                        })
+                })
                 .or_else(|| {
                     (scope.global_symbols.is_some()
                         && (scope.imported_globals.contains(name) || is_auto_global_name(name)))

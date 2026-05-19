@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2061/magic_get_local_reference_bucket_return_copy.php
+stdout:
+copy|copy|copy|plain-original|plain-copy
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

@@ -499,6 +499,17 @@
   arrays detach. This does not claim arbitrary untracked magic/`ArrayAccess`
   side effects, whole-array reference identity, exact diagnostics, or native
   reference lowering.
+  Source-aware by-value method bodies also preserve copied-array provenance
+  when the returned local was first bound by reference to a covered
+  object-property array source. Covered forms include visible public
+  `__get()` and ordinary public methods returning `$bucket` after
+  `$bucket =& $this->store[$name]`, returning `$items[$name]` after
+  `$items =& $this->store`, and dynamic-property bucket selection through
+  `$this->{$property}[$name]` when the property expression is side-effect-free.
+  These forms keep selected nested reference slots shared in the returned
+  copy while ordinary nested arrays detach. Broader alias graphs, arbitrary
+  side effects, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
   Bounded `call_user_func()` callbacks whose reached callback parameter is
   declared by reference use PHP's warning/no-reference behavior while carrying
   copied-bucket provenance through supported bodies. Covered forms include

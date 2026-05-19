@@ -20869,14 +20869,27 @@ handled.
   fatal text, whole-array reference identity, and native reference lowering
   named as unsupported.
 
+## Lane 2061-C through Lane 2065-C: Local Reference Alias Return COW Sources
+
+- [x] Runtime/tests/docs bundle: derive copied-array provenance from local
+  variables bound by reference to covered object-property array sources during
+  source-aware by-value method execution. Cover visible public `__get()` and
+  ordinary public methods returning selected local reference buckets,
+  root-property aliases indexed on return, and side-effect-free dynamic
+  property bucket aliases with system-PHP comparisons and CLI snapshots. Keep
+  arbitrary side-effecting method bodies, unproven dynamic containers, full
+  PHP COW identity, exact diagnostics, and native reference lowering named as
+  unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
-- [ ] Probe covered mixed `ArrayAccess` object-chain bridges that still miss
-  PHP behavior in reference-return, callback reference-argument,
-  no-reference callback-value, and nested append/keyed write paths. Implement
-  only statically proven backing-bucket bridges without claiming arbitrary
-  side-effecting method bodies, full PHP COW identity, exact PHP fatal
-  objects/text, or unsupported native lowering.
+- [ ] Continue probing covered mixed `ArrayAccess` object-chain bridges and
+  source-aware method-body aliases that still miss PHP behavior in
+  reference-return, callback reference-argument, no-reference callback-value,
+  and nested append/keyed write paths. Implement only statically proven
+  backing-bucket bridges without claiming arbitrary side-effecting method
+  bodies, full PHP COW identity, exact PHP fatal objects/text, or unsupported
+  native lowering.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
