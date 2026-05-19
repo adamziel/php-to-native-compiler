@@ -29304,17 +29304,6 @@ impl Interpreter {
         }
 
         ensure_supported_function_signature(function, 1, span)?;
-        if let Ok(Some(_)) = self.reference_return_this_property_name(function, property, span) {
-            let value = self.call_user_function_with_this(
-                function,
-                object,
-                vec![Value::String(property.to_string())],
-                Some(class_id),
-                Some(called_class_id),
-            )?;
-            return Ok(Some((value, None)));
-        }
-
         self.call_user_function_with_this_and_array_copy_source(
             function,
             object,
@@ -53797,20 +53786,6 @@ impl Interpreter {
             self.ensure_user_function_call_depth(function, span)?;
 
             let called_class_id = object.class_id();
-            if self
-                .array_access_offset_get_reference_target(function, span)
-                .is_ok()
-            {
-                let value = self.call_user_function_with_this(
-                    function,
-                    object,
-                    vec![offset_arg],
-                    Some(class_id),
-                    Some(called_class_id),
-                )?;
-                return Ok((value, None));
-            }
-
             return self.call_user_function_with_this_and_array_copy_source(
                 function,
                 object,

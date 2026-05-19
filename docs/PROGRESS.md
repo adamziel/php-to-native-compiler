@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2041-C through Lane 2045-C for exact by-value
+  magic/`ArrayAccess` backing-bucket returns that previously bypassed
+  source-aware copied-bucket tracking. Exact public by-value `__get()` and
+  public by-value `ArrayAccess::offsetGet()` bodies now run through the
+  source-aware method executor, preserving selected reference-backed leaves for
+  `$this->property[$name]`, whole `$this->property` arrays, returned magic
+  arrays consumed by a later nested read, inaccessible dynamic `$this->{$name}`
+  properties, and literal-prefix `offsetGet()` buckets. Focused system-PHP
+  coverage proves returned-copy mutations update the selected original
+  reference-backed leaf while ordinary nested arrays detach. This remains
+  bounded to supported interpreter syntax and tracked object-property /
+  `ArrayAccess` roots; arbitrary untracked side effects, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
+
 - Added Lane 2036-C through Lane 2040-C for retaining copied-bucket
   provenance across supported method-body container mutations inside by-value
   magic/`ArrayAccess` bodies. Direct local-array writes now restore unaffected

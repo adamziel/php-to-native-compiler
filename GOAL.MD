@@ -32,7 +32,23 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2040:
+The current in-progress implementation frontier is Lane 2045:
+
+- Lanes 2041 through 2045 route exact by-value magic/`ArrayAccess`
+  backing-bucket returns through the same source-aware method executor as
+  broader supported method bodies, instead of letting the older exact-return
+  fast paths drop copied-bucket provenance. Covered shapes include visible
+  by-value `__get()` returning `$this->property[$name]`, returning a whole
+  `$this->property` array, feeding a later nested read from the returned magic
+  array, returning an inaccessible dynamic `$this->{$name}` property from
+  inside `__get()`, and public by-value `ArrayAccess::offsetGet()` returning
+  a literal-prefix `$this->property["bucket"][$offset]` bucket. Focused
+  system-PHP coverage proves selected reference-backed leaves remain shared
+  after the returned copy is mutated while ordinary nested arrays detach. This
+  removes a legacy exact-return source-loss path, but it is still bounded to
+  supported interpreter syntax and tracked object-property/`ArrayAccess`
+  roots; arbitrary untracked side effects, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2036 through 2040 preserve copied-bucket COW provenance across later
   supported method-body container mutations instead of losing it when a local

@@ -20820,6 +20820,18 @@ handled.
   dynamic containers, whole-array reference identity, exact diagnostics, and
   native reference lowering named as unsupported.
 
+## Lane 2041-C through Lane 2045-C: Exact Magic/ArrayAccess Source-Aware Returns
+
+- [x] Runtime/tests/docs bundle: route exact by-value magic/`ArrayAccess`
+  backing-bucket returns through source-aware method execution so older
+  exact-return fast paths do not drop copied-bucket provenance. Cover visible
+  public `__get()` selected buckets, whole property roots, returned magic
+  arrays consumed by a later nested read, inaccessible dynamic properties, and
+  public by-value `ArrayAccess::offsetGet()` literal-prefix buckets with
+  system-PHP comparisons. Keep arbitrary untracked side effects, whole-array
+  reference identity, exact diagnostics, and native reference lowering named
+  as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe remaining scalar parent-overwrite/error parity outside covered

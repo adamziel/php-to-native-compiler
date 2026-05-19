@@ -18,6 +18,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T16:10:00+02:00
+
+- Checkpoint before this task: `2da5fb5a runtime: retain method-body COW
+  container provenance`, pushed to `origin/master`.
+- Task attempted: Lane 2041-C through Lane 2045-C bundle, routing exact
+  by-value magic/`ArrayAccess` backing-bucket returns through source-aware
+  method execution so the legacy exact-return fast paths do not drop copied
+  COW provenance.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2041/*`, `tests/fixtures/milestone2042/*`,
+  `tests/fixtures/milestone2043/*`, `tests/fixtures/milestone2044/*`,
+  `tests/fixtures/milestone2045/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for `milestone2041`
+  through `milestone2045`; adjacent comparisons passed for `milestone1673c`,
+  `milestone2031` through `milestone2045`, and the broader existing COW band
+  `milestone1880` through `milestone2045`; `cargo check -q`, `cargo fmt`,
+  `cargo fmt --check`, and `git diff --check` passed; focused Rust suites
+  passed for `functions_and_scopes`, `object_model`, `call_user_func_builtin`,
+  and `array_reference_literals`.
+- Remaining COW gaps: arbitrary untracked magic/`ArrayAccess` side effects,
+  untracked dynamic containers, whole-array reference identity, exact PHP
+  diagnostics, native reference/string COW lowering, native lowering for these
+  interpreter paths, and remaining non-method-body COW parity gaps.
+- Next concrete task: run formatting/diff checks and one full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T14:55:00+02:00
 
 - Checkpoint before this task: `f81f1f73 runtime: preserve byref

@@ -489,6 +489,17 @@
   untracked dynamic containers, arbitrary PHP syntax, whole-array reference
   identity, exact diagnostics, and native reference lowering remain
   unsupported.
+  Exact by-value backing-bucket returns use the same source-aware method-body
+  path. Covered exact forms include visible public `__get()` returning a
+  selected `$this->property[$name]` bucket, a whole `$this->property` array,
+  an inaccessible dynamic `$this->{$name}` property from inside the declaring
+  method, a magic array that is immediately indexed again by the caller, and
+  public by-value `ArrayAccess::offsetGet()` returning
+  `$this->property["bucket"][$offset]`. These forms keep selected
+  reference-backed leaves shared in the returned copy while ordinary nested
+  arrays detach. This does not claim arbitrary untracked magic/`ArrayAccess`
+  side effects, whole-array reference identity, exact diagnostics, or native
+  reference lowering.
   Bounded `call_user_func_array()` callback containers with reached
   by-reference callback parameters can also preserve copied-bucket COW
   provenance in these bodies. Covered forms include literal
