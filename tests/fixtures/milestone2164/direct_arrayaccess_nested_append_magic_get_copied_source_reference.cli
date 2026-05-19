@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2164/direct_arrayaccess_nested_append_magic_get_copied_source_reference.php

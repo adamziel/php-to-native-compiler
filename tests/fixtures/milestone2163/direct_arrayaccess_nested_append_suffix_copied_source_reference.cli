@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2163/direct_arrayaccess_nested_append_suffix_copied_source_reference.php

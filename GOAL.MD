@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2161:
+The current in-progress implementation frontier is Lane 2166:
+
+- Lanes 2162 through 2166 route nested append assignment through the same
+  source-aware assignment value path used by keyed stores. Direct nested
+  `ArrayAccess` append targets, suffix append targets such as
+  `$target["outer"][]["payload"]`, plain nested arrays, and string-keyed
+  `$GLOBALS` paths now rehydrate copied-source arrays before storing them, so
+  selected reference-backed leaves remain connected while ordinary copied
+  leaves detach. Focused system-PHP coverage proves RHS arrays copied from
+  direct by-value `ArrayAccess::offsetGet()`, visible magic `__get()`, and
+  object-property-held `ArrayAccess` sources. This closes the covered
+  append/suffix copied-source provenance gap, but still does not claim
+  arbitrary unsupported PHP syntax or side effects inside magic/`ArrayAccess`
+  methods, untracked dynamic containers, whole-array reference identity, exact
+  diagnostics, or native reference/string COW lowering.
 
 - Lanes 2157 through 2161 carry PHP's non-static closure binding into
   closures created inside supported magic/`ArrayAccess` method bodies. A

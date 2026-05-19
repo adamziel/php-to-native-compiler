@@ -41,7 +41,11 @@
   their `$this` and class/called-class context for direct closure invocation,
   closure-valued `call_user_func()`, and positional
   `call_user_func_array()`, so bound closure callbacks can participate in the
-  same tracked COW side-effect/writeback model. This does not provide general
+  same tracked COW side-effect/writeback model. Nested append assignment uses
+  the same source-aware value path for covered direct `ArrayAccess`, plain
+  array, and string-keyed `$GLOBALS` targets, including suffix appends and RHS
+  arrays copied from visible `__get()`, direct by-value `offsetGet()`, or
+  object-property-held `ArrayAccess` sources. This does not provide general
   PHP reference containers, `Closure::bind`/`bindTo`, untracked dynamic
   container recovery, unsupported method-body syntax, whole-array reference
   identity, exact PHP diagnostics, or native COW lowering.

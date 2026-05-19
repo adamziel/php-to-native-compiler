@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2166/plain_global_nested_append_copied_source_reference.php

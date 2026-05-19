@@ -44,10 +44,15 @@ handled.
   bodies, covering direct closure calls, closure-valued `call_user_func()`,
   positional `call_user_func_array()`, and setter storage of copied-source
   payloads through a bound closure.
+- [x] Lane 2162-C through 2166-C: route nested append and suffix append
+  assignment through source-aware copied-source rehydration for direct
+  `ArrayAccess` targets, visible magic `__get()`/object-property-held
+  `ArrayAccess` RHS values, plain nested arrays, and string-keyed `$GLOBALS`
+  paths.
 - [ ] Next COW gap, hard-first: keep extending the general
   magic/`ArrayAccess` method-body side-effect/writeback model so helper,
-  dynamic-holder, append/suffix setter storage, and copied-source provenance
-  all use one propagation architecture instead of new shape checks.
+  callback, dynamic-holder, and arbitrary supported side-effect bodies use one
+  propagation architecture instead of new shape checks.
 - [ ] Remaining hard gaps: untracked dynamic containers, broader callback
   containers, whole-array reference identity, exact PHP diagnostics/Throwable
   objects, and native reference/string COW lowering.

@@ -104,7 +104,18 @@ behavior and the exact bridge's empty-string backing key.
 Statement-form reference assignment can also bind expression-root
 object-property array sources such as `factory()->items["slot"]` and
 non-direct magic `__get()` append sources such as
-`$holders["box"]->missing[]`. Direct free-function calls
+`$holders["box"]->missing[]`.
+
+Nested append assignment reuses the same assignment-value metadata path before
+storing the appended value. When the RHS is a proven copied-source array from a
+direct by-value `ArrayAccess::offsetGet()`, visible magic `__get()`, or
+visible object-property-held `ArrayAccess` source, selected reference-backed
+leaves are materialized into runtime reference cells before the value is
+wrapped by any suffix append keys and stored into a direct nested array,
+string-keyed `$GLOBALS` path, or covered direct `ArrayAccess` nested append
+target. Ordinary copied leaves remain plain copied values.
+
+Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller
 variable cell, such as a by-reference parameter; the interpreter binds a

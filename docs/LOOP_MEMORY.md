@@ -23,6 +23,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T19:20:00+02:00
+
+- Checkpoint before this task: `7cd2b364 runtime: bind closure method COW
+  contexts`, pushed to `origin/master`.
+- Task attempted: Lane 2162-C through Lane 2166-C bundle, routing nested
+  append and suffix append assignment through source-aware copied-source
+  rehydration for direct `ArrayAccess`, plain nested array, and string-keyed
+  `$GLOBALS` targets.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2162/*`, `tests/fixtures/milestone2163/*`,
+  `tests/fixtures/milestone2164/*`, `tests/fixtures/milestone2165/*`,
+  `tests/fixtures/milestone2166/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: raw system-PHP probes matched for direct nested
+  `ArrayAccess` append, suffix append, visible magic `__get()` RHS, plain
+  nested array append, and `$GLOBALS` append; focused system-PHP comparisons
+  passed for `milestone2162` through `milestone2166`; adjacent comparisons
+  passed for `milestone2157` through `milestone2166`; the broader COW
+  comparison sweep passed for `milestone2101` through `milestone2166`;
+  filtered Rust regression checks passed for object model, scopes, dynamic
+  features, array reference literals, assignment, unset/isset/empty, and
+  closure; `cargo fmt`, `cargo fmt --check`, `cargo check -q -p phpc`, and
+  `git diff --check` passed.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies outside
+  the supported interpreter/writeback subset, helper/callback/dynamic-holder
+  copied-source propagation that still depends on bounded static recovery,
+  untracked dynamic containers, broader callback containers, whole-array
+  reference identity, exact PHP diagnostics/Throwable objects, and native
+  reference/string COW lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes; after that, attack the general method-body effect/value model
+  for arbitrary supported magic/`ArrayAccess` bodies before lesser shape
+  broadening.
+
 ## Loop Event 2026-05-19T17:46:50+02:00
 
 - Checkpoint before this task: `efb472f1 runtime: source-aware overloaded

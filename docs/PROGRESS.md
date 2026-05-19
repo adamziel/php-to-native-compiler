@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 2162-C through Lane 2166-C for nested append assignment with
+  copied-source COW provenance. Direct nested `ArrayAccess` append assignment,
+  suffix append assignment, plain nested array append, and string-keyed
+  `$GLOBALS` append now evaluate RHS arrays through the source-aware assignment
+  metadata path and materialize selected reference-backed leaves before the
+  value is stored. Focused system-PHP coverage proves copied RHS arrays from
+  direct by-value `ArrayAccess::offsetGet()`, visible magic `__get()`, and
+  object-property-held `ArrayAccess` sources, while ordinary copied leaves
+  remain detached. This remains bounded to supported interpreter syntax and
+  statically recovered copied-source roots; arbitrary unsupported method-body
+  side effects, untracked dynamic containers, whole-array reference identity,
+  exact diagnostics, and native reference/string COW lowering remain
+  unsupported.
+
 - Added Lane 2157-C through Lane 2161-C for non-static closure binding inside
   supported magic/`ArrayAccess` method bodies. Anonymous closures created with
   `$this` in scope now retain the receiver plus class/called-class context, and

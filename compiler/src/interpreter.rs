@@ -20162,18 +20162,26 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let (value, array_literal_references) = match expr {
-                    Expr::Array { items, span } => {
-                        let (value, references, _) =
-                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references)
-                    }
-                    _ => (self.evaluate(expr, scope)?, Vec::new()),
-                };
-                let stored_value =
-                    Self::wrap_value_in_array_suffix(&suffix_keys, value.clone(), *span)?;
+                let (value, array_literal_references, array_literal_copy_sources) =
+                    self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
                 if name == "GLOBALS" {
-                    if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
+                    if matches!(value, Value::Array(_))
+                        && (!array_literal_references.is_empty()
+                            || !array_literal_copy_sources.is_empty())
+                    {
+                        let value_with_references = self.value_with_assignment_reference_cells(
+                            value.clone(),
+                            expr,
+                            &array_literal_references,
+                            &array_literal_copy_sources,
+                            scope,
+                            expr.span(),
+                        )?;
+                        let stored_value = Self::wrap_value_in_array_suffix(
+                            &suffix_keys,
+                            value_with_references,
+                            *span,
+                        )?;
                         let target_alias = scope.append_global_array_offset_reference_alias(
                             keys,
                             stored_value,
@@ -20181,14 +20189,17 @@ impl Interpreter {
                         )?;
                         let mut reference_keys = target_alias.keys;
                         reference_keys.extend(suffix_keys.iter().cloned());
-                        self.bind_array_literal_references_to_alias_root_with_prefix(
+                        self.bind_or_mirror_array_references_to_alias_root(
+                            expr,
                             target_alias.root,
                             reference_keys,
                             array_literal_references,
-                            expr.span(),
+                            &array_literal_copy_sources,
                             scope,
                         )?;
                     } else {
+                        let stored_value =
+                            Self::wrap_value_in_array_suffix(&suffix_keys, value.clone(), *span)?;
                         self.write_global_nested_array_append(&keys, stored_value, *span, scope)?;
                     }
                     return Ok(value);
@@ -20204,7 +20215,7 @@ impl Interpreter {
                             value.clone(),
                             expr,
                             array_literal_references.clone(),
-                            &[],
+                            &array_literal_copy_sources,
                             *span,
                             scope,
                         )?
@@ -20212,8 +20223,24 @@ impl Interpreter {
                         return Ok(value);
                     }
                 }
-                if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
+                if matches!(value, Value::Array(_))
+                    && (!array_literal_references.is_empty()
+                        || !array_literal_copy_sources.is_empty())
+                {
                     self.reject_array_access_reference_target_if_needed(name, *span, scope)?;
+                    let value_with_references = self.value_with_assignment_reference_cells(
+                        value.clone(),
+                        expr,
+                        &array_literal_references,
+                        &array_literal_copy_sources,
+                        scope,
+                        expr.span(),
+                    )?;
+                    let stored_value = Self::wrap_value_in_array_suffix(
+                        &suffix_keys,
+                        value_with_references,
+                        *span,
+                    )?;
                     if let Some(target_alias) = scope.append_alias_backed_array_offset(
                         name,
                         &keys,
@@ -20222,11 +20249,12 @@ impl Interpreter {
                     )? {
                         let mut reference_keys = target_alias.keys;
                         reference_keys.extend(suffix_keys.iter().cloned());
-                        self.bind_array_literal_references_to_alias_root_with_prefix(
+                        self.bind_or_mirror_array_references_to_alias_root(
+                            expr,
                             target_alias.root,
                             reference_keys,
                             array_literal_references,
-                            expr.span(),
+                            &array_literal_copy_sources,
                             scope,
                         )?;
                         return Ok(value);
@@ -20239,21 +20267,29 @@ impl Interpreter {
                     )?;
                     let mut reference_keys = target_alias.keys;
                     reference_keys.extend(suffix_keys.iter().cloned());
-                    self.bind_array_literal_references_to_alias_root_with_prefix(
+                    self.bind_or_mirror_array_references_to_alias_root(
+                        expr,
                         target_alias.root,
                         reference_keys,
                         array_literal_references,
-                        expr.span(),
+                        &array_literal_copy_sources,
                         scope,
                     )?;
                     return Ok(value);
                 }
                 if scope
-                    .append_alias_backed_array_offset(name, &keys, stored_value.clone(), *span)?
+                    .append_alias_backed_array_offset(
+                        name,
+                        &keys,
+                        Self::wrap_value_in_array_suffix(&suffix_keys, value.clone(), *span)?,
+                        *span,
+                    )?
                     .is_some()
                 {
                     return Ok(value);
                 }
+                let stored_value =
+                    Self::wrap_value_in_array_suffix(&suffix_keys, value.clone(), *span)?;
                 self.write_nested_array_append(name, &keys, stored_value, *span, scope)?;
                 Ok(value)
             }
@@ -21354,6 +21390,22 @@ impl Interpreter {
                 if let Some((source_name, indices)) =
                     Self::collect_direct_variable_array_index_path(target, index)
                 {
+                    if let Some(source) = self
+                        .array_access_array_copy_source_for_direct_variable_index(
+                            source_name,
+                            &indices,
+                            expr.span(),
+                            scope,
+                        )
+                    {
+                        self.mirror_array_copy_source_aliases_to_alias_root(
+                            target_root,
+                            target_keys,
+                            &source,
+                            scope,
+                        );
+                        return;
+                    }
                     if let Some(keys) = Self::literal_array_key_path(&indices) {
                         if source_name == "GLOBALS" {
                             if let Ok((global_name, keys)) =
@@ -21382,6 +21434,23 @@ impl Interpreter {
                 } else if let Some((object_name, property, indices)) =
                     Self::collect_direct_object_property_array_index_path(target, index)
                 {
+                    if let Some(source) = self
+                        .array_access_array_copy_source_for_object_property_index(
+                            object_name,
+                            property,
+                            &indices,
+                            expr.span(),
+                            scope,
+                        )
+                    {
+                        self.mirror_array_copy_source_aliases_to_alias_root(
+                            target_root,
+                            target_keys,
+                            &source,
+                            scope,
+                        );
+                        return;
+                    }
                     if let Some(keys) = Self::literal_array_key_path(&indices) {
                         if let Ok(source_root) = self.foreach_object_property_alias_root(
                             object_name,
@@ -21396,6 +21465,30 @@ impl Interpreter {
                                 &keys,
                                 false,
                             );
+                        }
+                    }
+                } else if let Some((object_name, property, indices)) =
+                    Self::collect_direct_dynamic_object_property_array_index_path(target, index)
+                {
+                    if let Ok(property) =
+                        self.evaluate_dynamic_property_name(property, expr.span(), scope)
+                    {
+                        if let Some(source) = self
+                            .array_access_array_copy_source_for_object_property_index(
+                                object_name,
+                                &property,
+                                &indices,
+                                expr.span(),
+                                scope,
+                            )
+                        {
+                            self.mirror_array_copy_source_aliases_to_alias_root(
+                                target_root,
+                                target_keys,
+                                &source,
+                                scope,
+                            );
+                            return;
                         }
                     }
                 }
@@ -22625,6 +22718,14 @@ impl Interpreter {
             None,
             span,
             scope,
+        )?;
+        let value = self.value_with_assignment_reference_cells(
+            value,
+            expr,
+            &array_literal_references,
+            array_literal_copy_sources,
+            scope,
+            expr.span(),
         )?;
         let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
         let target_alias = scope.append_object_property_array_offset_reference_alias(
