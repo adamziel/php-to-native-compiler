@@ -20960,13 +20960,39 @@ handled.
   arbitrary future-path metadata recovery, and native lowering named as
   unsupported.
 
+## Lane 2096-C through Lane 2100-C: Callback Value-Copy Reference Cells
+
+- [x] Runtime/tests/docs bundle: preserve reference-return callback aliases
+  when `call_user_func()` or positional `call_user_func_array()` passes a
+  by-value array to a reached by-reference parameter and that value already
+  contains runtime reference cells. Cover direct `call_user_func()`, literal
+  `call_user_func_array()`, stored `call_user_func_array()`, by-reference
+  variadic rest index zero, and a fixed argument before the selected variadic
+  rest value with system-PHP comparisons and CLI snapshots. Keep unsupported
+  PHP syntax, untracked dynamic containers, arbitrary callback side effects,
+  full PHP COW identity, exact diagnostics, and native lowering named as
+  unsupported.
+
+## Lane 2101-C through Lane 2103-C: Executed Magic/ArrayAccess Method Bodies
+
+- [x] Runtime/tests/docs bundle: remove the direct append
+  `ArrayAccess::offsetSet(null, ...)` static fast path so supported
+  `offsetSet()` bodies execute before any exact backing-bucket metadata is
+  used for post-call reference/provenance repair. Cover append
+  `offsetSet(null, ...)` side effects, by-value `offsetGet()` side effects
+  during nested reference-cell mutation, and visible by-value `__get()` side
+  effects during nested reference-cell mutation with system-PHP comparisons
+  and CLI snapshots. Keep unsupported PHP syntax, untracked dynamic
+  containers, arbitrary future-path metadata recovery, full PHP COW identity,
+  exact diagnostics, and native lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Continue the arbitrary-method-body push in the remaining paths that
   still depend on exact static bridge metadata: future-path metadata recovery
-  after arbitrary `offsetSet()`/`offsetGet()`/`__get()` bodies, untracked
-  dynamic containers, deeper mixed chains not covered by executable fixtures,
-  and any callback reference-return shapes still outside the current tests.
+  after supported but non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies,
+  untracked dynamic containers, deeper mixed chains not covered by executable
+  fixtures, and dynamic callback containers still outside the current tests.
   Keep unsupported PHP syntax, full PHP COW identity, exact PHP fatal
   objects/text, and native lowering named as unsupported until executable
   coverage proves them.

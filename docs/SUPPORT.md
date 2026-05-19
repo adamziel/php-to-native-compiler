@@ -574,10 +574,16 @@
   Covered dispatch includes direct user functions, dynamic string calls, and
   `call_user_func()` string or public object array-callable callbacks, while
   preserving `call_user_func()` warning/no-reference value-passing semantics.
-  Variadic value-copy callback reference returns, `call_user_func_array()`
-  value-copy containers, untracked dynamic containers, whole-array reference
-  identity, exact diagnostics, and native reference lowering remain
-  unsupported.
+  The warning/no-reference path also supports `call_user_func()` and
+  `call_user_func_array()` arguments whose by-value array already contains
+  runtime reference cells even when no copied-source metadata exists: returned
+  child slots can bind to those cells while ordinary copied leaves remain
+  local. Positional `call_user_func_array()` containers cover direct literal
+  and direct stored arrays, and by-reference variadic rest parameters map
+  positional entries into the local rest array, including rest index zero and
+  rest entries after fixed arguments. Untracked dynamic containers, arbitrary
+  callback side effects, whole-array reference identity, exact diagnostics,
+  and native reference lowering remain unsupported.
   `call_user_func_array()` reference-return callbacks are covered for the same
   value-copy COW shape when the argument container is a direct literal or a
   direct stored array with traced copied-source entries. Covered containers may
@@ -585,10 +591,12 @@
   `__get()` arrays; covered callbacks include string user callbacks, closures,
   and public object array-callables. The callback still receives a value for
   the reached by-reference parameter, but returned child references can bind to
-  selected nested reference-backed leaves from the copied source. Variadic
-  value-copy callback reference returns, untraced stored containers, arbitrary
-  callback side effects, whole-array reference identity, exact diagnostics,
-  and native reference lowering remain unsupported.
+  selected nested reference-backed leaves from the copied source. The
+  reference-cell value-copy path above also covers direct literal/stored
+  containers without copied-source metadata when the values themselves carry
+  reference cells. Untraced dynamic containers, arbitrary callback side
+  effects, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
   Covered by-value `ArrayAccess::offsetGet()` paths also reject scalar parents
   when the caller attempts a nested keyed write, nested append, property-held
   reference target, or magic-provided reference target below the returned
@@ -5226,8 +5234,10 @@
   are substrate for later PHP-visible reference containers and COW separation;
   broader append target forms outside the currently parsed direct,
   dynamic-property, non-direct holder, dynamic non-direct holder, and
-  magic-provided `ArrayAccess` suffix shapes after `[]`, arbitrary
-  magic/`ArrayAccess` method bodies, scalar nested `ArrayAccess`
+  magic-provided `ArrayAccess` suffix shapes after `[]`, arbitrary PHP syntax
+  inside magic/`ArrayAccess` method bodies outside the supported interpreter
+  subset, future-path metadata recovery after supported but non-exact method
+  bodies, scalar nested `ArrayAccess`
   writes outside the current proven backing-bucket paths, broader mixed array element
   bindings, arbitrary writes through remaining complex typed-property alias
   sinks, exact PHP fatal text for invalid typed-reference writes, arbitrary

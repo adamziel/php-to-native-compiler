@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2096/call_user_func_reference_return_value_copy_reference_cells.php
+stdout:
+copy|plain-original
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

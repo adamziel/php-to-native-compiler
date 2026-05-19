@@ -4,6 +4,36 @@
 
 Implemented:
 
+- Added Lane 2101-C through Lane 2103-C for the remaining static
+  magic/`ArrayAccess` method-body gap covered in this bundle. Direct
+  append-style `ArrayAccess` writes now always execute `offsetSet(null, ...)`
+  before using exact backing-bucket metadata for reference/provenance repair,
+  so arbitrary supported side effects in `offsetSet()` are no longer skipped.
+  Focused system-PHP coverage also proves that supported by-value
+  `offsetGet()` and visible by-value `__get()` bodies execute side effects
+  before nested writes propagate through returned reference cells. This
+  remains bounded to supported interpreter syntax and recoverable
+  method-body effects; untracked dynamic containers, arbitrary future-path
+  metadata recovery, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
+
+- Added Lane 2096-C through Lane 2100-C for reference-return callbacks that
+  receive by-reference parameters through PHP's warning/no-reference
+  value-copy path while the copied value already contains runtime reference
+  cells. `call_user_func()` and `call_user_func_array()` now mark those
+  by-value array parameters as local value-copy reference roots even without
+  copied-source metadata, so returned child slots can bind to existing
+  reference-backed array entries. Positional `call_user_func_array()` mapping
+  now also tracks by-reference variadic rest parameters, including rest index
+  zero and rest entries after a fixed argument. Focused system-PHP coverage
+  proves direct `call_user_func()`, literal `call_user_func_array()`, stored
+  `call_user_func_array()`, variadic `ArrayAccess` value copies, and a fixed
+  argument before the selected variadic rest value. This remains bounded to
+  supported callback bodies and arrays that already carry runtime reference
+  cells; arbitrary callback side effects, untracked dynamic containers,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 2091-C through Lane 2095-C for by-value overloaded nested writes
   through arrays returned by supported magic/`ArrayAccess` bodies. The
   interpreter now applies nested keyed writes and nested appends to the

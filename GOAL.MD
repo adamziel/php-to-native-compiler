@@ -32,7 +32,40 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2095:
+The current in-progress implementation frontier is Lane 2103:
+
+- Lanes 2101 through 2103 remove one remaining static fast path from
+  append-style `ArrayAccess::offsetSet(null, ...)` writes and add focused
+  evidence that supported magic/`ArrayAccess` method bodies execute their
+  side effects before COW reference-cell propagation is observed. Direct
+  `ArrayAccess` append assignment now invokes `offsetSet()` instead of
+  mutating the inferred backing bucket directly, then reuses the proven
+  backing metadata only for post-call reference/provenance repair. Focused
+  system-PHP coverage proves append `offsetSet(null, ...)` side effects,
+  by-value `offsetGet()` side effects during nested reference-cell mutation,
+  and visible by-value `__get()` side effects during nested reference-cell
+  mutation. This remains bounded to supported interpreter syntax and
+  recoverable method-body effects; untracked dynamic containers, arbitrary
+  future-path metadata recovery, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
+
+- Lanes 2096 through 2100 extend reference-return callback value-copy COW to
+  actual reference cells carried inside by-value arguments, even when no
+  copied-source metadata exists. `call_user_func()` and
+  `call_user_func_array()` callbacks whose reached parameter is declared by
+  reference still use PHP's warning/no-reference value-passing shape, but if
+  the local value copy contains a reference-backed child slot then a returned
+  reference such as `return $param["ref"];` binds to that cell. Literal and
+  stored `call_user_func_array()` argument arrays are covered, and
+  by-reference variadic rest parameters map positional entries into the local
+  rest array so `return $values[0]["ref"];` and later rest offsets preserve
+  selected reference leaves. Focused system-PHP coverage proves
+  `call_user_func()`, literal `call_user_func_array()`, stored
+  `call_user_func_array()`, variadic rest index zero, and variadic rest after
+  a fixed argument. This remains bounded to supported callback bodies and
+  value arrays that already carry runtime reference cells; arbitrary callback
+  side effects, untracked dynamic containers, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2091 through 2095 preserve PHP's by-value overloaded nested-write
   behavior when supported `ArrayAccess::offsetGet()` or visible `__get()`

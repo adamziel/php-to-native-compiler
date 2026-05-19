@@ -18,6 +18,67 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T15:10:53+02:00
+
+- Checkpoint before this task: `dd94f11d runtime: preserve by-value overloaded
+  nested COW writes`, pushed to `origin/master`.
+- Task attempted: Lane 2096-C through Lane 2103-C bundle, preserving
+  reference-return callback aliases for value-copy arrays with runtime
+  reference cells and removing one append `ArrayAccess::offsetSet(null, ...)`
+  static fast path so supported method-body side effects execute.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2096/*`, `tests/fixtures/milestone2097/*`,
+  `tests/fixtures/milestone2098/*`, `tests/fixtures/milestone2099/*`,
+  `tests/fixtures/milestone2100/*`, `tests/fixtures/milestone2101/*`,
+  `tests/fixtures/milestone2102/*`, `tests/fixtures/milestone2103/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2096` through `milestone2103`; adjacent comparisons passed for
+  `milestone2081` through `milestone2100`; `cargo test -q -p phpc --test
+  call_user_func_builtin -- --test-threads=1` passed after fixing explicit
+  stored reference-slot fallback routing; focused `object_model array_access`
+  and `functions_and_scopes array_access` filters passed after the
+  `offsetSet(null, ...)` fast-path removal; `milestone1442` and the
+  `milestone1_fixtures_pass` aggregator passed after narrowing the value-copy
+  fallback away from stored alias-backed argument slots.
+- Remaining COW gaps: future-path metadata recovery after supported but
+  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies, untracked dynamic
+  containers, deeper mixed chains and dynamic callback containers not covered
+  by fixtures, whole-array reference identity, exact PHP diagnostics/Throwable
+  objects, and native reference/string COW lowering.
+- Next concrete task: run broad COW regression plus focused callback/object
+  suites and formatting/check/diff gates, then one full `tools/checkpoint.sh`
+  bundle gate and push if it passes.
+
+## Loop Event 2026-05-19T15:01:11+02:00
+
+- Checkpoint before this task: `dd94f11d runtime: preserve by-value overloaded
+  nested COW writes`, pushed to `origin/master`.
+- Task attempted: Lane 2096-C through Lane 2100-C bundle, preserving
+  reference-return callback aliases for `call_user_func()` and positional
+  `call_user_func_array()` value-copy arguments that already contain runtime
+  reference cells, including by-reference variadic rest parameters.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2096/*`, `tests/fixtures/milestone2097/*`,
+  `tests/fixtures/milestone2098/*`, `tests/fixtures/milestone2099/*`,
+  `tests/fixtures/milestone2100/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw probes and focused system-PHP comparisons passed for
+  direct `call_user_func()`, literal `call_user_func_array()`, stored
+  `call_user_func_array()`, variadic `ArrayAccess` value-copy rest index zero,
+  and a fixed argument before the selected variadic rest value; adjacent
+  comparisons passed for `milestone2081` through `milestone2100`;
+  `cargo check -q` passed.
+- Remaining COW gaps: future-path metadata recovery after arbitrary
+  `offsetSet()`/`offsetGet()`/`__get()` bodies, untracked dynamic containers,
+  deeper mixed chains and dynamic callback containers not covered by fixtures,
+  whole-array reference identity, exact PHP diagnostics/Throwable objects, and
+  native reference/string COW lowering.
+- Next concrete task: run broad COW regression plus focused callback/object
+  suites and formatting/check/diff gates, then one full `tools/checkpoint.sh`
+  bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T14:49:58+02:00
 
 - Checkpoint before this task: `600f983a runtime: carry magic ArrayAccess COW

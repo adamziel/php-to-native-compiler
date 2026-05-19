@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2101/arrayaccess_append_offsetset_side_effects.php
+stdout:
+set:null|new|plain-original
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

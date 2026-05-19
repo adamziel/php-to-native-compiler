@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2102/arrayaccess_byvalue_offsetget_side_effect_reference_cells.php
+stdout:
+get:slot|new|plain-original|side
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+
