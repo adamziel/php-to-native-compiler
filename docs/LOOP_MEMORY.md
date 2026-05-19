@@ -18,6 +18,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T16:40:19+02:00
+
+- Checkpoint before this task: `a530c3d5 docs: clarify ArrayAccess COW body
+  support`, pushed to `origin/master`.
+- Task attempted: Lane 2121-C through Lane 2125-C bundle, preserving
+  reference-cell fallbacks when covered whole-container unsets/overwrites
+  detach aliases whose ancestor containers contain live reference leaves.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2121/*`, `tests/fixtures/milestone2122/*`,
+  `tests/fixtures/milestone2123/*`, `tests/fixtures/milestone2124/*`,
+  `tests/fixtures/milestone2125/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2121` through `milestone2125`; adjacent system-PHP comparisons
+  passed for `milestone2086` through `milestone2125`; focused Rust suites
+  passed for `array_unset`, `object_model`, `dynamic_features`,
+  `functions_and_scopes`, and `array_isset`; `cargo fmt --check`,
+  `cargo check -q`, and `git diff --check` passed.
+- Remaining COW gaps: future-path metadata recovery after supported but
+  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies, non-public
+  object-property alias transfer, untracked dynamic containers, broader
+  dynamic callback containers, whole-array reference identity, exact PHP
+  diagnostics/Throwable objects, and native reference/string COW lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-19T16:02:12+02:00
 
 - Checkpoint before this task: `277f98df runtime: execute magic offset COW

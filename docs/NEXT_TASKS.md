@@ -10,10 +10,13 @@ handled.
 - [x] Lane 2117-C through 2120-C: execute mixed nested `ArrayAccess`
   observation/unset chains for direct roots, visible property-held roots,
   magic `__get()` roots, and by-reference `offsetGet()` array returns.
+- [x] Lane 2121-C through 2125-C: preserve reference-cell fallbacks when
+  covered whole-container unsets/overwrites detach aliases with live
+  reference leaves.
 - [ ] Next COW gap: recover future-path metadata after supported but
-  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies, or handle
-  whole-container unsets with live reference leaves without overclaiming full
-  PHP reference containers.
+  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies, or broaden
+  non-public/cross-scope object-property alias transfer without overclaiming
+  full PHP reference containers.
 - [ ] Remaining hard gaps: untracked dynamic containers, broader callback
   containers, whole-array reference identity, exact PHP diagnostics/Throwable
   objects, and native reference/string COW lowering.

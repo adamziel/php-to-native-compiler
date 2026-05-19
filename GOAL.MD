@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2120:
+The current in-progress implementation frontier is Lane 2125:
+
+- Lanes 2121 through 2125 preserve reference-cell identity when covered
+  whole-container detach paths cut aliases loose. Direct array-root unsets,
+  visible object-property unsets and overwrites, object-root unsets, direct
+  method-body `unset($this->publicProperty)`, and public `__unset()` bodies
+  now detach aliases to existing runtime reference cells instead of cloning
+  plain fallback values, so aliases to ancestor containers keep nested
+  reference leaves live. Focused system-PHP coverage proves static roots,
+  visible property roots, object roots, direct method bodies, and public
+  magic `__unset()` bodies. This remains bounded to aliases imported through
+  visible public object-property roots and supported interpreter syntax;
+  non-public property alias transfer, untracked dynamic containers,
+  arbitrary future-path metadata recovery, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2117 through 2120 broaden mixed nested `ArrayAccess` observation and
   unset chains beyond the previous one-key bridge. Direct `ArrayAccess`
@@ -46,9 +60,8 @@ The current in-progress implementation frontier is Lane 2120:
   array-returning nested chains. This remains bounded to supported
   interpreter syntax, direct/property-held/magic roots, and nested
   `ArrayAccess` or by-reference array returns; untracked dynamic containers,
-  arbitrary future-path metadata recovery, whole-container unsets with live
-  reference leaves, whole-array reference identity, exact diagnostics, and
-  native reference lowering remain unsupported.
+  arbitrary future-path metadata recovery, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2112 through 2116 execute covered magic array-offset observation and
   unset method bodies. Missing named and dynamic magic-property array-offset

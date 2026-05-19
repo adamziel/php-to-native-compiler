@@ -533,6 +533,17 @@
   reference-cell/alias metadata; untracked dynamic containers, whole-array
   reference identity, exact diagnostics, arbitrary future-path metadata
   recovery, and native reference lowering remain unsupported.
+  Covered whole-container detach paths now preserve reference-cell fallbacks
+  for aliases that point at an ancestor container with live reference leaves.
+  Direct array-root unsets, visible object-property unsets and overwrites,
+  object-root unsets, direct method-body `unset($this->publicProperty)`, and
+  public `__unset()` bodies detach affected aliases to existing runtime
+  reference cells when available, so later writes through the detached
+  ancestor alias can still update nested reference-backed leaves. This is
+  limited to visible public object-property alias imports and the supported
+  interpreter subset; non-public property alias transfer, arbitrary dynamic
+  containers, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
   Bounded `call_user_func()` callbacks whose reached callback parameter is
   declared by reference use PHP's warning/no-reference behavior while carrying
   copied-bucket provenance through supported bodies. Covered forms include

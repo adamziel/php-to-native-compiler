@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone2123/object_root_unset_property_container_reference_leaf_fallback.php
+mutated|mutated

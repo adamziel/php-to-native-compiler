@@ -2118,7 +2118,7 @@ impl SymbolTable {
                 continue;
             };
             let previous_aliases = existing_aliases.clone();
-            let fallback_value = existing_aliases
+            let fallback_cell = existing_aliases
                 .iter()
                 .find(|alias| {
                     matches!(
@@ -2126,15 +2126,18 @@ impl SymbolTable {
                         ArrayOffsetAliasRoot::StaticArray { name } if name == root_name
                     )
                 })
-                .and_then(|alias| self.read_array_offset_alias(alias));
-            if let Some(value) = fallback_value.clone() {
+                .and_then(|alias| {
+                    self.read_array_offset_alias_reference_cell(alias)
+                        .or_else(|| self.read_array_offset_alias(alias).map(value_cell))
+                });
+            if let Some(cell) = fallback_cell.clone() {
                 for alias in &existing_aliases {
                     if let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root {
                         if name == root_name {
                             self.record_detached_static_array_offset_value(
                                 root_name,
                                 &alias.keys,
-                                value.clone(),
+                                cell.value_cloned(),
                             );
                         }
                     }
@@ -2155,7 +2158,7 @@ impl SymbolTable {
                 self.bind_detached_array_offset_alias_fallback(
                     &alias_name,
                     &previous_aliases,
-                    fallback_value.map(value_cell),
+                    fallback_cell,
                     &mut detached_groups,
                 );
             } else {
@@ -2374,28 +2377,33 @@ impl SymbolTable {
         &self,
         object_name: &str,
         property: &str,
-    ) -> HashMap<String, Value> {
+    ) -> HashMap<String, VariableCell> {
         self.array_offset_aliases
             .iter()
             .filter_map(|(alias_name, aliases)| {
                 let root_alias = aliases
                     .iter()
                     .find(|alias| alias.root.matches_object_property(object_name, property))?;
-                self.read_array_offset_alias(root_alias)
-                    .map(|value| (alias_name.clone(), value))
+                self.read_array_offset_alias_reference_cell(root_alias)
+                    .or_else(|| self.read_array_offset_alias(root_alias).map(value_cell))
+                    .map(|cell| (alias_name.clone(), cell))
             })
             .collect()
     }
 
-    fn public_object_roots_alias_fallbacks(&self, object_name: &str) -> HashMap<String, Value> {
+    fn public_object_roots_alias_fallbacks(
+        &self,
+        object_name: &str,
+    ) -> HashMap<String, VariableCell> {
         self.array_offset_aliases
             .iter()
             .filter_map(|(alias_name, aliases)| {
                 let root_alias = aliases
                     .iter()
                     .find(|alias| alias.root.matches_object(object_name))?;
-                self.read_array_offset_alias(root_alias)
-                    .map(|value| (alias_name.clone(), value))
+                self.read_array_offset_alias_reference_cell(root_alias)
+                    .or_else(|| self.read_array_offset_alias(root_alias).map(value_cell))
+                    .map(|cell| (alias_name.clone(), cell))
             })
             .collect()
     }
@@ -2404,7 +2412,7 @@ impl SymbolTable {
         &mut self,
         object_name: &str,
         property: &str,
-        fallbacks: &HashMap<String, Value>,
+        fallbacks: &HashMap<String, VariableCell>,
     ) {
         let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
         let mut detached_groups = Vec::new();
@@ -2427,7 +2435,7 @@ impl SymbolTable {
                 self.bind_detached_array_offset_alias_fallback(
                     &alias_name,
                     &previous_aliases,
-                    fallbacks.get(&alias_name).cloned().map(value_cell),
+                    fallbacks.get(&alias_name).cloned(),
                     &mut detached_groups,
                 );
             } else {
@@ -2439,7 +2447,7 @@ impl SymbolTable {
     fn remove_public_object_roots_from_array_offset_aliases(
         &mut self,
         object_name: &str,
-        fallbacks: &HashMap<String, Value>,
+        fallbacks: &HashMap<String, VariableCell>,
     ) {
         let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
         let mut detached_groups = Vec::new();
@@ -2459,7 +2467,7 @@ impl SymbolTable {
                 self.bind_detached_array_offset_alias_fallback(
                     &alias_name,
                     &previous_aliases,
-                    fallbacks.get(&alias_name).cloned().map(value_cell),
+                    fallbacks.get(&alias_name).cloned(),
                     &mut detached_groups,
                 );
             } else {
@@ -3319,6 +3327,59 @@ impl SymbolTable {
 
         for (object, property) in roots {
             self.sync_array_offset_aliases_for_object_property_root(&object, &property);
+        }
+    }
+
+    fn detach_stale_object_aliases_from_local_scope(
+        &mut self,
+        local_scope: &SymbolTable,
+        source_object: &PhpObject,
+    ) {
+        let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+        let mut detached_groups = Vec::new();
+
+        for alias_name in alias_names {
+            let Some(fallback_cell) = local_scope.read_cell(&alias_name) else {
+                continue;
+            };
+            let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
+                continue;
+            };
+
+            let previous_aliases = existing_aliases.clone();
+            let mut aliases = Vec::new();
+            for alias in existing_aliases {
+                let should_detach = match &alias.root {
+                    ArrayOffsetAliasRoot::PublicObjectProperty { object, .. }
+                    | ArrayOffsetAliasRoot::ContextObjectProperty { object, .. } => {
+                        matches!(
+                            self.read_storage_named(object),
+                            Some(Value::Object(candidate)) if candidate == *source_object
+                        ) && self.read_array_offset_alias(&alias).is_none()
+                    }
+                    _ => false,
+                };
+
+                if !should_detach {
+                    aliases.push(alias);
+                }
+            }
+
+            if aliases.len() == previous_aliases.len() {
+                continue;
+            }
+
+            if aliases.is_empty() {
+                self.array_offset_aliases.remove(&alias_name);
+                self.bind_detached_array_offset_alias_fallback(
+                    &alias_name,
+                    &previous_aliases,
+                    Some(fallback_cell),
+                    &mut detached_groups,
+                );
+            } else {
+                self.array_offset_aliases.insert(alias_name, aliases);
+            }
         }
     }
 
@@ -10764,7 +10825,9 @@ impl Interpreter {
             );
         } else {
             if call_magic_on_missing {
-                self.call_magic_property_method(object, "__unset", property, span)?;
+                self.call_magic_property_method_with_caller_scope(
+                    object, "__unset", property, span, scope,
+                )?;
             }
         }
         Ok(())
@@ -30380,6 +30443,62 @@ impl Interpreter {
         )
     }
 
+    fn call_magic_property_method_with_caller_scope(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        property: &str,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        if method_name == "__get" {
+            return self
+                .call_magic_get_property_value_with_array_copy_source(
+                    object,
+                    property,
+                    span,
+                    caller_scope,
+                )
+                .map(|value| value.map(|(value, _)| value));
+        }
+
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), method_name)
+        else {
+            return Ok(None);
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_function_signature(function, 1, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let called_class_id = object.class_id();
+        self.call_user_function_with_checked_values(
+            function,
+            vec![Value::String(property.to_string())],
+            Some(object),
+            Some(class_id),
+            Some(called_class_id),
+            Vec::new(),
+            Some(caller_scope),
+        )
+        .map(Some)
+    }
+
     fn call_magic_get_property_value(
         &mut self,
         object: PhpObject,
@@ -48273,6 +48392,10 @@ impl Interpreter {
                                 reference_scope,
                             );
                             if let Some(this_object) = this_object_for_alias_transfer.as_ref() {
+                                reference_scope.detach_stale_object_aliases_from_local_scope(
+                                    &local_scope,
+                                    this_object,
+                                );
                                 reference_scope
                                     .sync_array_offset_aliases_for_object_value(this_object);
                             }

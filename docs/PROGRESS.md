@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2121-C through Lane 2125-C for whole-container COW detach
+  fallbacks that contain live reference leaves. Direct array-root unsets,
+  visible object-property unsets and overwrites, object-root unsets, direct
+  method-body `unset($this->publicProperty)`, and public `__unset()` bodies
+  now detach affected aliases to existing runtime reference cells instead of
+  cloning plain fallback values. Aliases to ancestor containers therefore keep
+  nested reference-backed leaves connected after the original container is
+  removed or replaced. Focused system-PHP coverage proves static roots,
+  visible property roots, object roots, direct method bodies, and public
+  magic `__unset()` bodies. This remains bounded to visible public
+  object-property alias imports and supported interpreter syntax; non-public
+  property alias transfer, untracked dynamic containers, arbitrary
+  future-path metadata recovery, full COW identity, exact diagnostics, and
+  native reference lowering remain unsupported.
+
 - Added Lane 2117-C through Lane 2120-C for mixed nested `ArrayAccess`
   observation and unset chains. Direct `ArrayAccess` variables, visible
   property-held `ArrayAccess` objects, and magic `__get()` roots returning
@@ -16,9 +31,8 @@ Implemented:
   chains. This remains bounded to supported interpreter syntax,
   direct/property-held/magic roots, nested `ArrayAccess` objects or
   by-reference array returns, and approximate diagnostics; untracked dynamic
-  containers, arbitrary future-path metadata recovery, whole-container unsets
-  with live reference leaves, full COW identity, and native reference lowering
-  remain unsupported.
+  containers, arbitrary future-path metadata recovery, full COW identity, and
+  native reference lowering remain unsupported.
 
 - Added Lane 2112-C through Lane 2116-C for covered magic array-offset
   observation and unset method bodies. Missing named and dynamic
