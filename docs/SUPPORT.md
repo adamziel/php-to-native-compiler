@@ -824,6 +824,14 @@
   `return $_REQUEST["store"][$offset];`,
   `$bucket = $_REQUEST["store"][$offset]; return $bucket;`, and visible
   by-value `__get()` bodies returning `$_REQUEST` buckets.
+  Conditional by-value magic/`ArrayAccess` bodies also retain this bounded
+  copied-array provenance when the selected branch returns a proven backed
+  bucket. Covered expression forms are ternary returns such as
+  `return $name === "slot" ? $this->store[$name] : array();`,
+  short-ternary returns of a tracked local bucket such as
+  `$bucket = $this->store[$name]; return $bucket ?: array();`, and
+  null-coalescing fallback returns such as
+  `return $this->store[$name] ?? array();`.
   When those proven copied arrays are supplied by value to user functions or
   instance methods, their covered reference-backed elements are preserved in
   the callee's local parameter array. The same bounded preservation applies

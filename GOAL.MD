@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1934:
+The current in-progress implementation frontier is Lane 1939:
+
+- Lanes 1935 through 1939 preserve by-value copied-array COW provenance when
+  visible magic/`ArrayAccess` method bodies return a backed bucket through
+  conditional expressions. Covered bodies include full ternary returns,
+  short-ternary returns of a tracked local bucket, and null-coalescing
+  fallback returns for object-property backed buckets. The copied array keeps
+  selected reference-backed nested slots shared while ordinary nested values
+  remain detached, including a by-value user-call argument sourced from an
+  `ArrayAccess` null-coalescing body. This is a bounded source-aware
+  expression broadening; arbitrary PHP side effects, unsupported method-body
+  syntax, side-effecting copied-key parity, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 1931 through 1934 prove the same alias-root by-value COW provenance
   for covered auto-superglobal buckets. Public by-value

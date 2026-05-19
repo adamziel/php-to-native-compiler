@@ -6838,17 +6838,10 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         match expr {
-            Expr::Variable(name, _) => {
+            Expr::Variable(_, _) => {
                 let value = self.evaluate(expr, scope)?;
-                let source = if matches!(value, Value::Array(_))
-                    && scope.global_symbols.is_some()
-                    && (scope.imported_globals.contains(name) || is_auto_global_name(name))
-                {
-                    Some(ArrayCopySource::alias_path(
-                        ArrayOffsetAliasRoot::GlobalArray { name: name.clone() },
-                        Vec::new(),
-                        true,
-                    ))
+                let source = if matches!(value, Value::Array(_)) {
+                    self.public_object_property_array_copy_source_for_value_expr(expr, scope)
                 } else {
                     None
                 };
@@ -6879,6 +6872,48 @@ impl Interpreter {
             } => {
                 self.call_instance_method_with_array_copy_source(target, method, args, *span, scope)
             }
+            Expr::Ternary {
+                condition,
+                if_true,
+                if_false,
+                ..
+            } => {
+                if self.evaluate(condition, scope)?.is_truthy() {
+                    self.evaluate_value_with_array_copy_source(if_true, scope)
+                } else {
+                    self.evaluate_value_with_array_copy_source(if_false, scope)
+                }
+            }
+            Expr::ShortTernary {
+                condition,
+                if_false,
+                ..
+            } => {
+                let (condition_value, condition_source) =
+                    self.evaluate_value_with_array_copy_source(condition, scope)?;
+                if condition_value.is_truthy() {
+                    let source = if matches!(condition_value, Value::Array(_)) {
+                        condition_source.or_else(|| {
+                            self.public_object_property_array_copy_source_for_value_expr(
+                                condition, scope,
+                            )
+                        })
+                    } else {
+                        None
+                    };
+                    Ok((condition_value, source))
+                } else {
+                    self.evaluate_value_with_array_copy_source(if_false, scope)
+                }
+            }
+            Expr::Binary {
+                left,
+                op,
+                right,
+                span,
+            } if matches!(op, BinaryOp::NullCoalesce) => {
+                self.evaluate_null_coalescing_with_array_copy_source(left, right, *span, scope)
+            }
             _ => Ok((self.evaluate(expr, scope)?, None)),
         }
     }
@@ -6891,35 +6926,7 @@ impl Interpreter {
         let Some(expr) = value else {
             return Ok((Flow::Return(Value::Null), None));
         };
-        let (value, array_copy_source) = match expr {
-            Expr::Index {
-                target,
-                index,
-                span,
-            } => self.evaluate_array_index_with_array_copy_source(target, index, *span, scope)?,
-            Expr::Property {
-                target,
-                property,
-                span,
-            } => {
-                self.evaluate_property_read_with_array_copy_source(target, property, *span, scope)?
-            }
-            Expr::DynamicProperty {
-                target,
-                property,
-                span,
-            } => self.evaluate_dynamic_property_read_with_array_copy_source(
-                target, property, *span, scope,
-            )?,
-            Expr::MethodCall {
-                target,
-                method,
-                args,
-                span,
-            } => self
-                .call_instance_method_with_array_copy_source(target, method, args, *span, scope)?,
-            _ => (self.evaluate(expr, scope)?, None),
-        };
+        let (value, array_copy_source) = self.evaluate_value_with_array_copy_source(expr, scope)?;
         let source = if matches!(value, Value::Array(_)) {
             array_copy_source.or_else(|| {
                 self.public_object_property_array_copy_source_for_value_expr(expr, scope)
@@ -7138,7 +7145,19 @@ impl Interpreter {
         scope: &SymbolTable,
     ) -> Option<ArrayCopySource> {
         if let Expr::Variable(name, _) = expr {
-            return scope.public_object_property_array_copy_source_for_static(name);
+            return scope
+                .public_object_property_array_copy_source_for_static(name)
+                .or_else(|| {
+                    (scope.global_symbols.is_some()
+                        && (scope.imported_globals.contains(name) || is_auto_global_name(name)))
+                    .then(|| {
+                        ArrayCopySource::alias_path(
+                            ArrayOffsetAliasRoot::GlobalArray { name: name.clone() },
+                            Vec::new(),
+                            true,
+                        )
+                    })
+                });
         }
         self.public_object_property_array_copy_source_for_expr(expr, scope)
     }
@@ -27675,6 +27694,66 @@ impl Interpreter {
         match value {
             Some(value) => Ok(value),
             None => self.evaluate(right, scope),
+        }
+    }
+
+    fn evaluate_null_coalescing_with_array_copy_source(
+        &mut self,
+        left: &Expr,
+        right: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let value = match left {
+            Expr::Variable(name, _) => scope
+                .read_named(name)
+                .filter(|value| !matches!(value, Value::Null)),
+            Expr::Index { target, index, .. } => {
+                self.evaluate_direct_array_offset_for_null_coalescing(target, index, scope)?
+            }
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => self.evaluate_direct_object_property_for_null_coalescing(
+                target, property, *span, scope,
+            )?,
+            Expr::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => self
+                .evaluate_named_static_property_for_null_coalescing(class_name, property, *span)?,
+            Expr::SelfStaticProperty { property, span } => {
+                self.evaluate_self_static_property_for_null_coalescing(property, *span)?
+            }
+            Expr::ParentStaticProperty { property, span } => {
+                self.evaluate_parent_static_property_for_null_coalescing(property, *span)?
+            }
+            Expr::LateStaticProperty { property, span } => {
+                self.evaluate_late_static_property_for_null_coalescing(property, *span)?
+            }
+            _ => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "??",
+                        "left operand must be a direct variable, direct array offset, direct object property, or supported static property in the current subset",
+                    ),
+                ));
+            }
+        };
+
+        match value {
+            Some(value) => {
+                let source = if matches!(value, Value::Array(_)) {
+                    self.public_object_property_array_copy_source_for_value_expr(left, scope)
+                } else {
+                    None
+                };
+                Ok((value, source))
+            }
+            None => self.evaluate_value_with_array_copy_source(right, scope),
         }
     }
 

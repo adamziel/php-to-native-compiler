@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1935-C through Lane 1939-C for conditional by-value
+  magic/`ArrayAccess` method-body copied-array COW provenance. The
+  source-aware return/evaluation path now carries backed array-copy metadata
+  through selected ternary expressions, short ternaries that return a tracked
+  local bucket, and null-coalescing fallback expressions. Focused system-PHP
+  coverage includes visible by-value `__get()` ternary, short ternary, and
+  null-coalescing bodies; public by-value `ArrayAccess::offsetGet()` ternary
+  bodies; and a by-value user-call argument sourced from an `ArrayAccess`
+  null-coalescing body. Arbitrary PHP side effects outside the interpreter
+  subset, unsupported method-body syntax, side-effecting copied-key parity,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 1931-C through Lane 1934-C for auto-superglobal by-value
   magic/`ArrayAccess` copied-array COW provenance. The generic alias-root
   copy source model now has focused system-PHP coverage for `$_REQUEST`
