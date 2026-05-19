@@ -9771,6 +9771,13 @@ impl Interpreter {
                         return Ok(());
                     }
                     self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
+                    self.reject_direct_scalar_string_reference_source_if_needed(
+                        array_name,
+                        std::slice::from_ref(&key),
+                        false,
+                        span,
+                        scope,
+                    )?;
                     if array_name == "GLOBALS" {
                         let (global_name, keys) =
                             SymbolTable::split_globals_reference_path(vec![key], span)?;
@@ -9812,6 +9819,9 @@ impl Interpreter {
                         return Ok(());
                     }
                     self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
+                    self.reject_direct_scalar_string_reference_source_if_needed(
+                        array_name, &keys, false, span, scope,
+                    )?;
                     if array_name == "GLOBALS" {
                         let (global_name, keys) =
                             SymbolTable::split_globals_reference_path(keys, span)?;
@@ -9855,6 +9865,9 @@ impl Interpreter {
                         }
                     }
                     self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
+                    self.reject_direct_scalar_string_reference_source_if_needed(
+                        array_name, &keys, true, span, scope,
+                    )?;
                     scope.bind_static_to_appended_array_offset(name, array_name, keys, span)?;
                 } else if let ReferenceSource::ObjectPropertyArrayIndex {
                     object,
@@ -12484,6 +12497,36 @@ impl Interpreter {
             span,
             RuntimeError::invalid_array_access(message.to_string()),
         )
+    }
+
+    fn reject_direct_scalar_string_reference_source_if_needed(
+        &self,
+        root_name: &str,
+        keys: &[ArrayKey],
+        is_append: bool,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let (value, keys) = if root_name == "GLOBALS" {
+            let (global_name, keys) =
+                SymbolTable::split_globals_reference_path(keys.to_vec(), span)?;
+            if keys.is_empty() && !is_append {
+                return Ok(());
+            }
+            (scope.read_global_name(&global_name), keys)
+        } else {
+            (scope.read_named(root_name), keys.to_vec())
+        };
+
+        match value {
+            Some(Value::String(_)) => {
+                Err(self.expression_root_string_reference_source_error(&keys, is_append, span))
+            }
+            Some(Value::Bool(true) | Value::Int(_) | Value::Float(_)) => {
+                Err(Self::expression_root_scalar_reference_source_error(span))
+            }
+            _ => Ok(()),
+        }
     }
 
     fn array_key_is_string_offset(key: &ArrayKey) -> bool {

@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Lane 1864-C through Lane 1866-C for direct variable, `$GLOBALS`, and
+  imported-global scalar/string parent failure classes in array-offset
+  reference sources. Covered keyed, append, and nested append `=&` paths now
+  distinguish string integer-offset references, non-integer string offsets,
+  string root appends, nested string appends, and `true`/int/float
+  scalar-as-array failures while preserving existing `null`/`false`
+  materialization behavior. Exact PHP fatal text/stack traces and native
+  reference lowering remain unsupported. Focused verification: `cargo run -q
+  -p phpc -- test --compare-php` passed the new `milestone1864`,
+  `milestone1865`, and `milestone1866` phpc-only fatal fixtures.
+
 - Added Lane 1861-C through Lane 1863-C for imported-global and superglobal
   array slots returned from reference-return bodies. Direct helpers can now
   `global $store; return $store[$key];`, and covered public by-reference

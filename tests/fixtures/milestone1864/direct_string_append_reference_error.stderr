@@ -1,0 +1,2 @@
+runtime error at 4:1: invalid array access: [] operator not supported for strings
+

@@ -20333,6 +20333,18 @@ handled.
   outside the interpreter subset, exact diagnostics, and native reference
   lowering named as unsupported.
 
+## Lane 1864-C through Lane 1866-C: Direct Scalar Parent Failure Classes
+
+- [x] Runtime/tests/docs bundle: tighten scalar/string parent failures for
+  direct variable, `$GLOBALS`, and imported-global array-offset reference
+  sources. Cover direct string integer-offset, named-offset, append, and
+  nested append failures; direct `true`/int/float scalar failures; and
+  `$GLOBALS`/imported-global string/scalar failure paths with phpc-only fatal
+  fixtures. Preserve `null`/`false` materialization. Keep exact PHP fatal
+  text/stack traces, object/resource parent parity, broader scalar/string
+  matrices outside covered paths, and native reference lowering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

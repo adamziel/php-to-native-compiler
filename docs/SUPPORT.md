@@ -378,8 +378,8 @@
   it, for example `$bucket =& $this->items[$offset]; return $bucket["leaf"];`.
   Backing paths may also use locals initialized from literal int/string keys,
   such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
-  This does not add scalar/string temporary reference parity beyond the
-  expression-root materialization and failure classes documented above, magic
+  This does not add scalar/string reference parity beyond the documented
+  expression-root and direct/global materialization and failure classes, magic
   `__get()` roots beyond the covered direct, dynamic, non-direct holder,
   expression-root, variable/property/backing-offset returns; incompatible typed
   reference-return signatures or arbitrary type enforcement; full exception
@@ -1336,7 +1336,13 @@
   append path accepts scalar payloads, array payloads with copied nested
   references, and the currently parsed direct object-property suffix payload
   shape after `[]`, such as `$holder->bag["outer"][]["leaf"] = $value`.
-  Magic-property `ArrayAccess` nested append paths beyond the focused
+  Direct variable, `$GLOBALS`, and imported-global array-offset reference
+  sources now use bounded PHP-shaped scalar/string failure classes for covered
+  keyed, append, and nested append paths while preserving existing `null` and
+  `false` materialization. Covered string failures distinguish integer-offset
+  references, non-integer string offsets, root appends, and nested
+  string-offset appends; `true`, int, and float fail as scalar array-reference
+  sources. Magic-property `ArrayAccess` nested append paths beyond the focused
   by-reference or by-value-object intermediate `offsetGet()` bucket, tested
   plain-array suffix shapes, the one tested mixed nested `ArrayAccess` append
   chain, and the tested mixed nested by-reference/by-value magic
@@ -1349,7 +1355,8 @@
   return unsupported expressions beyond direct variables, one local
   parameter-copy return, and the focused visible/private `$this` property
   append/keyed routes, exact PHP deprecation/fatal diagnostic text for scalar
-  parent conversion/errors, dynamic property names that trigger
+  parent conversion/errors beyond the bounded classes documented here,
+  dynamic property names that trigger
   unsupported fallback or inaccessible properties, append compound assignment
   through object-property
   `ArrayAccess`, ArrayAccess iteration, broader

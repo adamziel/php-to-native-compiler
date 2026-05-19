@@ -2501,7 +2501,7 @@ $alias =& $items[0];
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid array access: cannot read offset on int"
+        "invalid array access: cannot use a scalar value as an array"
     );
 }
 

@@ -32,7 +32,17 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1863:
+The current in-progress implementation frontier is Lane 1866:
+
+- Lanes 1864 through 1866 tighten scalar/string parent failures for direct
+  variable, `$GLOBALS`, and imported-global array-offset reference sources.
+  Covered direct keyed, append, and nested append `=&` paths now use the same
+  bounded failure classes as expression-root temporaries: string integer
+  offsets, non-integer string offsets, string root appends, nested string
+  appends, and `true`/int/float scalar-as-array failures. `null` and `false`
+  materialization remains unchanged. Exact PHP fatal text/stack traces,
+  object/resource parent failures, and native reference lowering remain
+  unsupported.
 
 - Lanes 1861 through 1863 extend the same executed reference-return body
   global-root alias path to imported globals and auto-superglobal array slots.

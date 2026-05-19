@@ -1,0 +1,2 @@
+runtime error at 4:1: invalid array access: cannot access offset of type string on string
+
