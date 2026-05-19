@@ -11280,12 +11280,13 @@ impl Interpreter {
         } else {
             ensure_supported_function_signature(function, 1, span)?;
             let called_class_id = object.class_id();
-            let value = self.call_user_function_with_this(
+            let (value, _) = self.call_user_function_with_this_and_array_copy_source(
                 function,
                 object,
                 vec![Value::String(property.to_string())],
                 Some(class_id),
                 Some(called_class_id),
+                scope,
             )?;
             match value {
                 Value::Object(object)
@@ -15890,8 +15891,10 @@ impl Interpreter {
                 self.ensure_user_function_call_depth(function, span)?;
 
                 if !function.returns_by_reference {
-                    match self.call_magic_get_property_value(object, property, span)? {
-                        Some(Value::Object(array_access_object))
+                    match self.call_magic_get_property_value_with_array_copy_source(
+                        object, property, span, scope,
+                    )? {
+                        Some((Value::Object(array_access_object), _))
                             if self.classes.implements_interface(
                                 array_access_object.class_id(),
                                 "ArrayAccess",
@@ -16201,13 +16204,21 @@ impl Interpreter {
                 }
 
                 ensure_supported_function_signature(function, 1, span)?;
-                let value = self.call_user_function_with_this(
+                let (value, source) = self.call_user_function_with_this_and_array_copy_source(
                     function,
                     holder,
                     vec![Value::String(property.to_string())],
                     Some(class_id),
                     Some(called_class_id),
+                    scope,
                 )?;
+                let source = if matches!(value, Value::Array(_)) {
+                    source
+                } else {
+                    None
+                };
+                let value =
+                    scope.value_with_object_property_aliases_from_array_copy(value, source, true);
                 if let Value::Object(object) = value {
                     if !self
                         .classes
@@ -17057,13 +17068,24 @@ impl Interpreter {
             return Ok(None);
         };
         let called_class_id = object.class_id();
-        let first_value = self.call_user_function_with_this(
+        let (first_value, first_source) = self.call_user_function_with_this_and_array_copy_source(
             function,
             object,
             vec![first_key_value.unwrap_or_else(|| Self::array_key_value(Some(first_key.clone())))],
             Some(class_id),
             Some(called_class_id),
+            scope,
         )?;
+        let first_source = if matches!(first_value, Value::Array(_)) {
+            first_source
+        } else {
+            None
+        };
+        let first_value = scope.value_with_object_property_aliases_from_array_copy(
+            first_value,
+            first_source,
+            true,
+        );
         if let Value::Object(nested_object) = &first_value {
             if self
                 .classes
@@ -17149,13 +17171,24 @@ impl Interpreter {
             return Ok(false);
         };
         let called_class_id = object.class_id();
-        let first_value = self.call_user_function_with_this(
+        let (first_value, first_source) = self.call_user_function_with_this_and_array_copy_source(
             function,
             object,
             vec![first_key_value.unwrap_or_else(|| Self::array_key_value(Some(first_key.clone())))],
             Some(class_id),
             Some(called_class_id),
+            scope,
         )?;
+        let first_source = if matches!(first_value, Value::Array(_)) {
+            first_source
+        } else {
+            None
+        };
+        let first_value = scope.value_with_object_property_aliases_from_array_copy(
+            first_value,
+            first_source,
+            true,
+        );
 
         if let Value::Object(nested_object) = &first_value {
             if self
@@ -17419,13 +17452,24 @@ impl Interpreter {
             return Ok(None);
         };
         let called_class_id = object.class_id();
-        let first_value = self.call_user_function_with_this(
+        let (first_value, first_source) = self.call_user_function_with_this_and_array_copy_source(
             function,
             object,
             vec![first_key_value.unwrap_or_else(|| Self::array_key_value(Some(first_key.clone())))],
             Some(class_id),
             Some(called_class_id),
+            scope,
         )?;
+        let first_source = if matches!(first_value, Value::Array(_)) {
+            first_source
+        } else {
+            None
+        };
+        let first_value = scope.value_with_object_property_aliases_from_array_copy(
+            first_value,
+            first_source,
+            true,
+        );
         if let Value::Object(nested_object) = &first_value {
             if self
                 .classes
@@ -18520,7 +18564,7 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
-        match self.call_magic_get_reference_root_binding(object.clone(), property, span)? {
+        match self.call_magic_get_reference_root_binding(object.clone(), property, span, scope)? {
             Some(MagicGetReferenceRootBinding::Cell(cell)) => {
                 scope.bind_static_to_cell(target_name, cell);
                 Ok(())
@@ -18544,6 +18588,7 @@ impl Interpreter {
         object: PhpObject,
         property: &str,
         span: Span,
+        scope: &mut SymbolTable,
     ) -> CompileResult<Option<MagicGetReferenceRootBinding>> {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), "__get")
@@ -18591,13 +18636,20 @@ impl Interpreter {
         }
 
         ensure_supported_function_signature(function, 1, span)?;
-        let value = self.call_user_function_with_this(
+        let (value, source) = self.call_user_function_with_this_and_array_copy_source(
             function,
             object,
             args,
             Some(class_id),
             Some(called_class_id),
+            scope,
         )?;
+        let source = if matches!(value, Value::Array(_)) {
+            source
+        } else {
+            None
+        };
+        let value = scope.value_with_object_property_aliases_from_array_copy(value, source, true);
         self.emit_notice(
             "__get()",
             format!(
@@ -21373,7 +21425,19 @@ impl Interpreter {
                 _ => Ok(false),
             }
         } else {
-            match self.call_magic_get_property_value(holder, property, span)? {
+            let magic_value = self
+                .call_magic_get_property_value_with_array_copy_source(
+                    holder, property, span, scope,
+                )?
+                .map(|(value, source)| {
+                    let source = if matches!(value, Value::Array(_)) {
+                        source
+                    } else {
+                        None
+                    };
+                    scope.value_with_object_property_aliases_from_array_copy(value, source, true)
+                });
+            match magic_value {
                 Some(Value::Object(object))
                     if keys.is_empty()
                         && self
@@ -21652,7 +21716,19 @@ impl Interpreter {
                 }
             }
         } else {
-            match self.call_magic_get_property_value(holder, property, span)? {
+            let magic_value = self
+                .call_magic_get_property_value_with_array_copy_source(
+                    holder, property, span, scope,
+                )?
+                .map(|(value, source)| {
+                    let source = if matches!(value, Value::Array(_)) {
+                        source
+                    } else {
+                        None
+                    };
+                    scope.value_with_object_property_aliases_from_array_copy(value, source, true)
+                });
+            match magic_value {
                 Some(Value::Object(object))
                     if self
                         .classes
@@ -30644,63 +30720,6 @@ impl Interpreter {
             Some(called_class_id),
             Vec::new(),
             Some(&mut *caller_scope),
-        )
-        .map(Some)
-    }
-
-    fn call_magic_get_property_value(
-        &mut self,
-        object: PhpObject,
-        property: &str,
-        span: Span,
-    ) -> CompileResult<Option<Value>> {
-        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
-            self.resolve_instance_method(object.class_id(), "__get")
-        else {
-            return Ok(None);
-        };
-
-        if is_static {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{class_name}::__get()"),
-                    "static magic instance methods are not implemented in the current subset",
-                ),
-            ));
-        }
-
-        self.ensure_instance_method_visible(class_id, &class_name, "__get", visibility, span)?;
-
-        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
-        let function = function.as_ref();
-        ensure_user_function_arity(function, 1, span)?;
-        self.ensure_user_function_call_depth(function, span)?;
-
-        let called_class_id = object.class_id();
-        let args = vec![Value::String(property.to_string())];
-        if function.returns_by_reference {
-            ensure_supported_reference_return_function_metadata(function, span)?;
-            let cell = self.call_reference_return_function_with_checked_values(
-                function,
-                args,
-                Some(object),
-                Some(class_id),
-                Some(called_class_id),
-                Vec::new(),
-                None,
-            )?;
-            let value = cell.value_cloned();
-            return Ok(Some(value));
-        }
-
-        ensure_supported_function_signature(function, 1, span)?;
-        self.call_user_function_with_this(
-            function,
-            object,
-            args,
-            Some(class_id),
-            Some(called_class_id),
         )
         .map(Some)
     }
@@ -46501,7 +46520,12 @@ impl Interpreter {
         match object.read_property_from_context(&property, current_class_id, &protected_class_ids) {
             Ok(_) => Ok(None),
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
-                match self.call_magic_get_reference_root_binding(object, &property, arg.span())? {
+                match self.call_magic_get_reference_root_binding(
+                    object,
+                    &property,
+                    arg.span(),
+                    caller_scope,
+                )? {
                     Some(MagicGetReferenceRootBinding::Cell(cell)) => {
                         let value = cell.value_cloned();
                         Ok(Some((cell, value)))

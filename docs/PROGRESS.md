@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Lane 2139-C through Lane 2143-C for immediate by-value overloaded
+  reference consumers from supported non-exact magic/`ArrayAccess` method
+  bodies. Nested writes, append/write helpers, and reference assignment paths
+  that consume visible by-value `__get()` or public by-value
+  `ArrayAccess::offsetGet()` arrays now execute those bodies with source-aware
+  return provenance and promote selected copied-source aliases to reference
+  cells before mutating the detached overloaded copy. This preserves PHP's
+  behavior where writes to reference-backed leaves update the original
+  referenced backing slot while ordinary copied leaves remain detached and the
+  overloaded parent is not written back. Focused system-PHP coverage proves
+  ArrayAccess and magic keyed writes, ArrayAccess and magic nested reference
+  assignment, and magic root reference assignment through branch/local
+  `offsetGet()`/`__get()` bodies. This remains bounded to supported
+  interpreter syntax and tracked object-property array sources; untracked
+  dynamic containers, stored future-path metadata after broader setter
+  bodies, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
+
 - Added Lane 2134-C through Lane 2138-C for caller-scope alias transfer while
   executing covered magic/`ArrayAccess` method bodies with side effects.
   Named `__set()`, visible `__isset()`, direct

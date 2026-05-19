@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2138:
+The current in-progress implementation frontier is Lane 2143:
+
+- Lanes 2139 through 2143 route immediate by-value overloaded reference
+  consumers through the source-aware method-body executor. Public by-value
+  `ArrayAccess::offsetGet()` and visible by-value `__get()` bodies whose
+  supported code reaches a backed object-property array copy through control
+  flow, locals, or local references now preserve selected reference-backed
+  leaves for nested keyed writes, reference assignment to returned leaves, and
+  magic root reference assignment. Ordinary copied leaves still detach, and
+  PHP's indirect-modification/no-backing-write behavior remains. Focused
+  system-PHP coverage proves ArrayAccess and magic keyed writes, ArrayAccess
+  and magic nested reference assignment, and magic root reference assignment.
+  This is still bounded to supported interpreter syntax and tracked
+  object-property sources; untracked dynamic containers, stored future-path
+  metadata after broader setter bodies, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2134 through 2138 route the covered magic/`ArrayAccess`
   side-effecting method dispatches through caller-scope alias transfer instead

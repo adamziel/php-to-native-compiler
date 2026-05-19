@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T17:29:49+02:00
+
+- Checkpoint before this task: `f2bcf43c runtime: execute magic ArrayAccess
+  COW bodies with caller aliases`, pushed to `origin/master`.
+- Task attempted: Lane 2139-C through Lane 2143-C bundle, routing immediate
+  by-value `ArrayAccess::offsetGet()` and magic `__get()` overloaded nested
+  writes/reference assignments through source-aware method-body execution so
+  supported non-exact bodies preserve selected reference-backed leaves in the
+  detached returned copy.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2139/*`, `tests/fixtures/milestone2140/*`,
+  `tests/fixtures/milestone2141/*`, `tests/fixtures/milestone2142/*`,
+  `tests/fixtures/milestone2143/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2139` through `milestone2143`; adjacent system-PHP comparisons
+  passed for `milestone2129` through `milestone2143`; broader COW
+  system-PHP sweep passed for `milestone2101` through `milestone2143`;
+  focused Rust filters passed for `object_model`, `functions_and_scopes`,
+  `dynamic_features`, `array_unset`, `array_isset`, and `empty`; raw
+  system-PHP probes matched for ArrayAccess/magic nested writes, nested
+  reference assignments, append into returned reference-backed arrays, and
+  magic/ArrayAccess root reference assignment.
+- Remaining COW gaps: stored future-path metadata after broader non-exact
+  setter/storage bodies, untracked dynamic containers, broader callback
+  containers, whole-array reference identity, exact PHP diagnostics/Throwable
+  objects, and native reference/string COW lowering.
+- Next concrete task: run formatting/check/diff gates, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T17:08:25+02:00
 
 - Checkpoint before this task: `2b1173c0 runtime: promote magic ArrayAccess

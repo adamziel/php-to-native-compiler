@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2139/arrayaccess_byvalue_nonexact_reference_leaf_write.php

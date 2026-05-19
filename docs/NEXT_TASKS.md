@@ -25,9 +25,13 @@ handled.
   `__isset()`, `offsetSet()`, `offsetUnset()`, and `offsetExists()` property
   overwrites detach stale caller aliases while preserving nested reference
   leaves.
-- [ ] Next COW gap: recover future-path metadata after supported but
-  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies outside the current
-  value-literal/reference-cell and caller-scope alias-transfer paths.
+- [x] Lane 2139-C through 2143-C: use source-aware execution for immediate
+  by-value `offsetGet()`/`__get()` overloaded nested writes and reference
+  assignments, so supported non-exact bodies preserve selected
+  reference-backed leaves in the detached returned copy.
+- [ ] Next COW gap: recover stored future-path metadata after supported but
+  non-exact setter/storage bodies, especially `offsetSet()`/`__set()` paths
+  that move copied arrays through broader containers after the call.
 - [ ] Remaining hard gaps: untracked dynamic containers, broader callback
   containers, whole-array reference identity, exact PHP diagnostics/Throwable
   objects, and native reference/string COW lowering.

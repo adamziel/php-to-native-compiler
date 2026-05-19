@@ -521,6 +521,19 @@
   outside the documented value-cell shapes below, whole-array reference
   identity, exact diagnostics, and native reference lowering remain
   unsupported.
+  Immediate overloaded-reference consumers also use this source-aware
+  execution path for supported non-exact visible by-value `__get()` and public
+  by-value `ArrayAccess::offsetGet()` bodies. Nested keyed writes, appends,
+  reference assignment to returned child slots, and magic root reference
+  assignment promote selected copied-source aliases to reference cells in the
+  detached returned copy before applying the operation. Reference-backed
+  leaves therefore update the original referenced backing slot, while
+  ordinary copied leaves and parent replacements remain local to the returned
+  overloaded value. This is bounded to supported interpreter syntax and
+  tracked object-property array sources; untracked dynamic containers, stored
+  future-path metadata after broader setter/storage bodies, whole-array
+  reference identity, exact diagnostics, and native reference lowering remain
+  unsupported.
   Supported by-value magic/`ArrayAccess` method bodies also carry actual
   reference cells for the current array-literal and local-array value-model
   shapes, rather than relying only on exact backing-bucket bridge recovery.
@@ -546,8 +559,8 @@
   remain shared. This remains bounded to supported interpreter syntax and
   current reference-cell/alias metadata; untracked dynamic containers,
   side-effecting dynamic property/key expressions, whole-array reference
-  identity, exact diagnostics, broader future-path metadata recovery, and
-  native reference lowering remain unsupported.
+  identity, exact diagnostics, broader stored future-path metadata recovery,
+  and native reference lowering remain unsupported.
   Covered whole-container detach paths now preserve reference-cell fallbacks
   for aliases that point at an ancestor container with live reference leaves.
   Direct array-root unsets, visible object-property unsets and overwrites,
