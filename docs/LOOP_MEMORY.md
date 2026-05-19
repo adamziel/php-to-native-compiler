@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T07:26:00+02:00
+
+- Checkpoint before this task: `4f346173 runtime: preserve global-backed
+  ArrayAccess COW`, pushed to `origin/master`.
+- Task attempted: Lane 1931-C through Lane 1934-C bundle, proving the generic
+  alias-root by-value magic/`ArrayAccess` copied-array provenance for covered
+  auto-superglobal buckets.
+- Files changed so far: `tests/fixtures/milestone1931/*`,
+  `tests/fixtures/milestone1932/*`, `tests/fixtures/milestone1933/*`,
+  `tests/fixtures/milestone1934/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes matched the `$_REQUEST`
+  `ArrayAccess` bucket copy behavior; focused system-PHP comparisons passed
+  for `milestone1931`, `milestone1932`, `milestone1933`, and
+  `milestone1934`; `cargo fmt --all`, `cargo fmt --all --check`,
+  `cargo check -q -p phpc`, and `git diff --check` passed. Adjacent Rust
+  tests `superglobals`, `object_model`, `functions_and_scopes`,
+  `call_user_func_builtin`, and `array_reference_literals` passed. Adjacent
+  fixture comparisons passed for `milestone1926` through `milestone1934`.
+- Remaining COW gaps: full SAPI/request semantics, arbitrary PHP side effects
+  outside the interpreter subset, arbitrary unsupported magic/`ArrayAccess`
+  method-body syntax, side-effecting key-order parity, broad alias lifetime
+  ordering, exact PHP diagnostics, whole-array reference identity, native
+  reference/string COW lowering, and native lowering for these interpreter
+  paths.
+- Next concrete task: run formatting, cargo check, diff check, adjacent
+  regression comparisons, and the full `tools/checkpoint.sh` bundle gate, then
+  push if it passes.
+
 ## Loop Event 2026-05-19T07:02:00+02:00
 
 - Checkpoint before this task: `21ea0ccd runtime: preserve by-value

@@ -819,6 +819,11 @@
   `return $GLOBALS["store"][$offset];`,
   `global $store; return $store[$offset];`, and
   `$bucket = $GLOBALS["store"][$offset]; return $bucket;`.
+  Covered auto-superglobal buckets use the same alias-root path for current
+  interpreter roots, with focused coverage for `$_REQUEST`, including
+  `return $_REQUEST["store"][$offset];`,
+  `$bucket = $_REQUEST["store"][$offset]; return $bucket;`, and visible
+  by-value `__get()` bodies returning `$_REQUEST` buckets.
   When those proven copied arrays are supplied by value to user functions or
   instance methods, their covered reference-backed elements are preserved in
   the callee's local parameter array. The same bounded preservation applies
@@ -827,10 +832,11 @@
   referenced elements inside the callee update the original backing slot,
   while ordinary nested elements remain by-value copies.
   Unsupported syntax/builtins, arbitrary callback or builtin reference-return
-  sources, full direct `$GLOBALS` array materialization, alias-root sources
-  beyond the documented object-property/direct-`$GLOBALS`/imported-global
-  buckets, thrown exception unwinding, whole-array reference identity in
-  returned values, and arbitrary side-effecting copied-key expressions remain unsupported for this
+  sources, full direct `$GLOBALS` array materialization, full SAPI/request
+  semantics, alias-root sources beyond the documented
+  object-property/direct-`$GLOBALS`/imported-global/auto-superglobal buckets,
+  thrown exception unwinding, whole-array reference identity in returned
+  values, and arbitrary side-effecting copied-key expressions remain unsupported for this
   by-value method-return provenance path. When a declared
   public object property array with a covered direct object-property
   array-offset reference target is copied into a direct static variable, the

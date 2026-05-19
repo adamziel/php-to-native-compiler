@@ -20516,6 +20516,19 @@ handled.
   unsupported method-body syntax, whole-array reference identity, exact
   diagnostics, and native reference lowering named as unsupported.
 
+## Lane 1931-C through Lane 1934-C: Auto-Superglobal Method Body Copy Provenance
+
+- [x] Runtime/tests/docs bundle: prove the generic alias-root by-value
+  magic/`ArrayAccess` copied-array provenance for covered auto-superglobal
+  buckets. Cover direct `ArrayAccess::offsetGet()` returning `$_REQUEST`
+  buckets, by-value magic `__get()` returning `$_REQUEST` buckets, tracked
+  locals assigned from `$_REQUEST` buckets before return, and by-value
+  user-call arguments sourced from request-backed `ArrayAccess` buckets using
+  system-PHP comparisons. Keep full SAPI/request semantics, arbitrary PHP
+  side effects outside the interpreter subset, arbitrary unsupported
+  method-body syntax, whole-array reference identity, exact diagnostics, and
+  native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

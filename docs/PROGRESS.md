@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Lane 1931-C through Lane 1934-C for auto-superglobal by-value
+  magic/`ArrayAccess` copied-array COW provenance. The generic alias-root
+  copy source model now has focused system-PHP coverage for `$_REQUEST`
+  buckets returned from public by-value `ArrayAccess::offsetGet()` and
+  visible by-value `__get()` bodies. Tracked locals assigned from those
+  request buckets keep provenance, and by-value user-call arguments sourced
+  from the returned copy preserve referenced nested slots in the callee while
+  ordinary nested values remain detached. Full SAPI/request semantics,
+  arbitrary PHP side effects outside the interpreter subset, arbitrary
+  unsupported method-body syntax, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
+
 - Added Lane 1926-C through Lane 1930-C for alias-root by-value
   magic/`ArrayAccess` copied-array COW provenance. The array-copy source model
   now covers direct `$GLOBALS` buckets and imported-global buckets in addition

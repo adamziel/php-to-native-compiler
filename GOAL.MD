@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1930:
+The current in-progress implementation frontier is Lane 1934:
+
+- Lanes 1931 through 1934 prove the same alias-root by-value COW provenance
+  for covered auto-superglobal buckets. Public by-value
+  `ArrayAccess::offsetGet()` and visible by-value `__get()` bodies can return
+  `$_REQUEST` buckets by value while preserving selected reference-backed
+  nested slots in the copied array. Tracked locals assigned from those request
+  buckets keep the same provenance, and by-value user-call arguments sourced
+  from the returned copy preserve referenced nested slots in the callee while
+  ordinary nested values remain detached. This is bounded to the current
+  auto-superglobal interpreter roots and does not claim full SAPI/request
+  semantics, arbitrary PHP side effects, arbitrary unsupported method-body
+  syntax, whole-array reference identity, exact diagnostics, or native
+  reference lowering.
 
 - Lanes 1926 through 1930 generalize by-value copied-array COW provenance for
   magic/`ArrayAccess` method bodies beyond object-property backing roots to
