@@ -23,6 +23,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T21:35:00+02:00
+
+- Checkpoint before this task: `cf576d10 runtime: support source-aware method
+  dispatch COW`, pushed to `origin/master`.
+- Task attempted: Lane 2179-C through Lane 2183-C bundle, attacking the hard
+  COW path issues found by audit: stale by-reference direct-alias-variable
+  path writeback after whole-parent replacement, and magic/`ArrayAccess`
+  method-body writes through `ArrayAccess` objects stored inside tracked
+  object-property arrays.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2179/*`, `tests/fixtures/milestone2180/*`,
+  `tests/fixtures/milestone2181/*`, `tests/fixtures/milestone2182/*`,
+  `tests/fixtures/milestone2183/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2179` through `milestone2183`; adjacent system-PHP comparisons
+  passed for `milestone2152`, `milestone2153`, `milestone2156`,
+  `milestone2167`, `milestone2174`, and `milestone2178`; after narrowing
+  direct alias-variable cell binding to by-reference argument evaluation,
+  `cargo test -q -p phpc --test array_reference_literals` passed; the
+  format, compile, and diff whitespace gates also passed.
+- Remaining COW gaps: arbitrary unsupported magic/`ArrayAccess` method syntax,
+  untracked dynamic containers that cannot expose a concrete bucket/object,
+  broader callback containers, full whole-array reference identity, exact PHP
+  diagnostics/Throwable objects, and native reference/string COW lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T20:45:00+02:00
 
 - Checkpoint before this task: `822601a5 runtime: broaden holder COW array

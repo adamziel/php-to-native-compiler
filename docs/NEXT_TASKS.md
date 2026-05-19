@@ -60,13 +60,22 @@ handled.
   `ArrayAccess::offsetSet()`, by-value `ArrayAccess::offsetGet()` returns,
   indexed callback containers, magic `__set()` payload storage, magic
   `__get()` reflection returns, and reflection-dispatched setter helpers.
+- [x] Lane 2179-C through 2183-C: promote direct alias variables passed to
+  by-reference parameters to real reference cells before call-frame binding,
+  avoiding stale path writeback after another by-reference parameter replaces
+  the parent array, and route supported object-property array writes through
+  `ArrayAccess` objects stored inside those arrays for keyed, dynamic-property,
+  append, magic `__set()`, and `ArrayAccess::offsetSet()` method-body shapes.
 - [ ] Next COW gap, hard-first: keep extending the general
-  magic/`ArrayAccess` method-body side-effect/writeback model so helper,
-  callback, dynamic-holder, and arbitrary supported side-effect bodies use one
-  propagation architecture instead of new shape checks.
-- [ ] Remaining hard gaps: untracked dynamic containers, broader callback
-  containers, whole-array reference identity, exact PHP diagnostics/Throwable
-  objects, and native reference/string COW lowering.
+  value/container identity model behind magic/`ArrayAccess` method-body
+  side-effect/writeback so supported helper, callback, dynamic-holder, and
+  mixed-container bodies expose real cells or concrete writeback roots instead
+  of stale paths.
+- [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
+  syntax, untracked dynamic containers that cannot expose a concrete
+  bucket/object, broader callback containers, full whole-array reference
+  identity, exact PHP diagnostics/Throwable objects, and native
+  reference/string COW lowering.
 
 ## Milestone 2: Value Model and Runtime
 

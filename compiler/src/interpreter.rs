@@ -21822,7 +21822,40 @@ impl Interpreter {
             Ok(value) => value,
             Err(_) => return Ok(false),
         }) else {
-            return Ok(false);
+            let Ok(property_value) =
+                holder.read_property_from_context(property, current_class_id, &protected_class_ids)
+            else {
+                return Ok(false);
+            };
+            let Some((array_access_object, remaining_keys)) =
+                self.array_access_object_in_array_value_path(&property_value, &keys, true)
+            else {
+                return Ok(false);
+            };
+            return if remaining_keys.is_empty() {
+                self.write_array_access_object_append_with_reference_propagation(
+                    array_access_object,
+                    suffix_keys,
+                    value,
+                    expr,
+                    array_literal_references,
+                    array_literal_copy_sources,
+                    span,
+                    scope,
+                )
+            } else {
+                self.write_array_access_object_nested_append_with_reference_propagation(
+                    array_access_object,
+                    remaining_keys,
+                    suffix_keys,
+                    value,
+                    expr,
+                    array_literal_references,
+                    array_literal_copy_sources,
+                    span,
+                    scope,
+                )
+            };
         };
         if !self
             .classes
@@ -21913,7 +21946,39 @@ impl Interpreter {
             Ok(value) => value,
             Err(_) => return Ok(false),
         }) else {
-            return Ok(false);
+            let Ok(property_value) =
+                holder.read_property_from_context(property, current_class_id, &protected_class_ids)
+            else {
+                return Ok(false);
+            };
+            let Some((array_access_object, remaining_keys)) =
+                self.array_access_object_in_array_value_path(&property_value, &keys, false)
+            else {
+                return Ok(false);
+            };
+            return if remaining_keys.len() == 1 {
+                self.write_array_access_object_keyed_with_reference_propagation(
+                    array_access_object,
+                    remaining_keys[0].clone(),
+                    value,
+                    expr,
+                    array_literal_references,
+                    array_literal_copy_sources,
+                    span,
+                    scope,
+                )
+            } else {
+                self.write_array_access_object_nested_keyed_with_reference_propagation(
+                    array_access_object,
+                    remaining_keys,
+                    value,
+                    expr,
+                    array_literal_references,
+                    array_literal_copy_sources,
+                    span,
+                    scope,
+                )
+            };
         };
         if !self
             .classes
@@ -21932,6 +21997,33 @@ impl Interpreter {
             span,
             scope,
         )
+    }
+
+    fn array_access_object_in_array_value_path(
+        &self,
+        value: &Value,
+        keys: &[ArrayKey],
+        allow_full_path: bool,
+    ) -> Option<(PhpObject, Vec<ArrayKey>)> {
+        let max_prefix_len = if allow_full_path {
+            keys.len()
+        } else {
+            keys.len().saturating_sub(1)
+        };
+        for prefix_len in 1..=max_prefix_len {
+            let candidate = Self::array_path_value(value, &keys[..prefix_len])?;
+            let Value::Object(object) = candidate else {
+                continue;
+            };
+            if !self
+                .classes
+                .implements_interface(object.class_id(), "ArrayAccess")
+            {
+                continue;
+            }
+            return Some((object, keys[prefix_len..].to_vec()));
+        }
+        None
     }
 
     fn write_magic_get_array_access_append_with_reference_propagation(
@@ -47436,6 +47528,20 @@ impl Interpreter {
             if param.by_reference {
                 if let Expr::Variable(caller_name, _) = arg {
                     if let Some(aliases) = caller_scope.array_offset_aliases_for_name(caller_name) {
+                        if let Some(cell) =
+                            caller_scope.reference_cell_for_array_offset_alias_group(&aliases)
+                        {
+                            caller_scope.bind_static_to_cell(caller_name, cell.clone());
+                            values.push(cell.value_cloned());
+                            reference_bindings.push(ReferenceBinding {
+                                param_name: param.name.clone(),
+                                target: ReferenceBindingTarget::CallerCell {
+                                    name: caller_name.clone(),
+                                    cell,
+                                },
+                            });
+                            continue;
+                        }
                         let value = caller_scope.read_named(caller_name).ok_or_else(|| {
                             runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
                         })?;
@@ -49635,30 +49741,29 @@ impl Interpreter {
                                     cell,
                                 ));
                             } else {
-                                let cell = if let Some(scope) = reference_scope.as_deref_mut() {
+                                let bound_to_caller_cell = if let Some(scope) =
+                                    reference_scope.as_deref_mut()
+                                {
                                     if let Some(cell) =
                                         scope.reference_cell_for_array_offset_alias_group(&aliases)
                                     {
                                         local_scope.bind_static_to_cell(&param.name, cell.clone());
-                                        Some(cell)
+                                        true
                                     } else {
-                                        None
+                                        false
                                     }
                                 } else {
-                                    None
+                                    false
                                 };
-                                let cell = if cell.is_none() {
+                                if !bound_to_caller_cell {
                                     local_scope.write_static(&param.name, arg.clone());
-                                    local_scope.read_cell(&param.name)
-                                } else {
-                                    cell
-                                };
-                                if let Some(cell) = cell {
-                                    array_offset_binding_cells.push((
-                                        param.name.clone(),
-                                        aliases,
-                                        cell,
-                                    ));
+                                    if let Some(cell) = local_scope.read_cell(&param.name) {
+                                        array_offset_binding_cells.push((
+                                            param.name.clone(),
+                                            aliases,
+                                            cell,
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -49680,30 +49785,29 @@ impl Interpreter {
                                     cell,
                                 ));
                             } else {
-                                let cell = if let Some(scope) = reference_scope.as_deref_mut() {
+                                let bound_to_caller_cell = if let Some(scope) =
+                                    reference_scope.as_deref_mut()
+                                {
                                     if let Some(cell) =
                                         scope.reference_cell_for_array_offset_alias_group(aliases)
                                     {
                                         local_scope.bind_static_to_cell(&param.name, cell.clone());
-                                        Some(cell)
+                                        true
                                     } else {
-                                        None
+                                        false
                                     }
                                 } else {
-                                    None
+                                    false
                                 };
-                                let cell = if cell.is_none() {
+                                if !bound_to_caller_cell {
                                     local_scope.write_static(&param.name, arg.clone());
-                                    local_scope.read_cell(&param.name)
-                                } else {
-                                    cell
-                                };
-                                if let Some(cell) = cell {
-                                    array_offset_binding_cells.push((
-                                        param.name.clone(),
-                                        aliases.clone(),
-                                        cell,
-                                    ));
+                                    if let Some(cell) = local_scope.read_cell(&param.name) {
+                                        array_offset_binding_cells.push((
+                                            param.name.clone(),
+                                            aliases.clone(),
+                                            cell,
+                                        ));
+                                    }
                                 }
                             }
                         }

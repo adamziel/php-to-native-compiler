@@ -86,6 +86,16 @@ bounded level when an intermediate selected offset contains another
 assignment to direct and property-held `ArrayAccess` offset targets remains a
 runtime boundary; the current runtime does not invent aliases for object array
 dimensions.
+When a direct alias variable is passed to a by-reference parameter and its
+array-offset alias can be materialized as a real `PhpReferenceCell`, the
+caller-visible variable is moved onto that cell for the call instead of using a
+path-only writeback. This keeps child references attached to the old cell when
+another by-reference path replaces the parent array. The same
+method-body write helpers can also traverse a tracked object-property array
+until a selected concrete bucket contains an `ArrayAccess` object, then pass
+the remaining keyed or append path to that object's existing source-aware
+`offsetSet()` machinery. This is still not a general container graph: the
+runtime needs a concrete array bucket/object and supported interpreter syntax.
 Statement-form reference assignment from by-value exact-bridge `ArrayAccess`
 offset sources follows PHP's indirect-modification notice/no-op behavior for
 direct object roots, visible direct property-held roots, bounded non-direct

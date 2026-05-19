@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2179/byref_array_offset_param_root_replacement_detaches_child.php

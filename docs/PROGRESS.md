@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Lane 2179-C through Lane 2183-C for two hard COW/value-model
+  surfaces. Direct alias variables passed to by-reference parameters now
+  promote their array-offset alias to a real `PhpReferenceCell`, bind the
+  caller-visible variable to that cell, and skip stale path writeback, so
+  replacing a parent array through another by-reference parameter no longer
+  routes the child alias into the replacement array. Supported
+  object-property array writes inside magic/`ArrayAccess` method bodies can
+  now continue through an `ArrayAccess` object stored inside the property
+  array, handing the remaining keyed or append path to the existing
+  source-aware `offsetSet()` propagation path. Focused system-PHP coverage
+  proves whole-root replacement with a child reference parameter, magic
+  `__set()` keyed and append stores through array-contained `ArrayAccess`
+  objects, dynamic-property array-container stores, and
+  `ArrayAccess::offsetSet()` bodies that forward into an inner
+  array-contained `ArrayAccess` object while preserving selected
+  reference-backed leaves and detaching ordinary copied leaves. This remains
+  bounded to promoted reference cells, supported interpreter syntax, tracked
+  object-property arrays, and `ArrayAccess` objects reached through concrete
+  array buckets; arbitrary unsupported method-body syntax, untracked
+  containers that cannot expose a concrete bucket/object, exact diagnostics,
+  and native reference/string COW lowering remain unsupported.
+
 - Added Lane 2172-C through Lane 2178-C for source-aware method-body dispatch
   inside supported magic/`ArrayAccess` bodies. Dynamic calls whose callee
   expression evaluates to an array callable now use the same direct

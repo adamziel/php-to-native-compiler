@@ -56,11 +56,20 @@
   `ReflectionMethod::invoke()` and `invokeArgs()` calls inside those method
   bodies also re-enter reflected user methods through source-aware dispatch,
   so covered reflected helper returns and setter payloads keep copied-source
-  metadata. This does not provide general PHP reference containers,
+  metadata. When a tracked object-property array contains an `ArrayAccess`
+  object in a concrete selected bucket, supported keyed and append writes
+  continue through that inner object's source-aware `offsetSet()` path,
+  including magic `__set()` bodies, dynamic-property spellings, and outer
+  `ArrayAccess::offsetSet()` bodies. Direct alias variables passed to
+  by-reference parameters can promote their array-offset alias to a real
+  reference cell and bind the caller-visible variable directly to that cell
+  instead of relying on stale path writeback, so a separate by-reference
+  parent-array replacement leaves the child alias on its old cell. This does
+  not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
   dynamic callables or reflection targets, unsupported method-body syntax,
-  arbitrary side effects beyond covered writeback paths, whole-array reference
-  identity, exact PHP diagnostics, or native COW lowering.
+  arbitrary side effects beyond covered writeback paths, full whole-array
+  reference identity, exact PHP diagnostics, or native COW lowering.
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or
   declaration-contained declarations can be loaded. The executing subset
