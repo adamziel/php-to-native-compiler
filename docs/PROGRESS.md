@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 1880-C through Lane 1884-C for by-value method returns that copy
+  backed object-property arrays through bounded local temporaries. The
+  return-source provenance path now records proven local array copy sources
+  and reuses them for `return $tmp` when `$tmp` came from a whole visible
+  object-property array, a dynamic property array, a selected property bucket,
+  a local `ArrayAccess` offset backed by the existing `offsetGet()` bridge, or
+  a by-value Iterator loop variable whose `current()` value carried direct
+  object-property array provenance. This remains bounded to tracked local
+  variables in the interpreter subset and does not claim arbitrary returned
+  expressions, untracked temporary construction, thrown exception unwinding,
+  whole-array reference identity, or native reference lowering. Focused
+  verification: `cargo run -q -p phpc -- test --compare-php` passed the new
+  `milestone1880`, `milestone1881`, `milestone1882`, `milestone1883`, and
+  `milestone1884` fixtures with system-PHP comparisons.
+
 - Added Lane 1875-C through Lane 1879-C for by-value method returns that copy
   backed object-property arrays from supported `foreach` method bodies after
   magic/`ArrayAccess` reference slots have been established. The return-source
@@ -13,8 +28,9 @@ Implemented:
   `IteratorAggregate` returning a userland `Iterator` when the reached return
   expression is one of the existing direct visible object-property array
   shapes. This remains bounded to the interpreter subset and does not claim
-  arbitrary returned temporaries, thrown exception unwinding, whole-array
-  reference identity, or native reference lowering. Focused verification:
+  arbitrary returned expressions, untracked temporary construction, thrown
+  exception unwinding, whole-array reference identity, or native reference
+  lowering. Focused verification:
   `cargo run -q -p phpc -- test --compare-php` passed the new
   `milestone1875`, `milestone1876`, `milestone1877`, `milestone1878`, and
   `milestone1879` fixtures with system-PHP comparisons.

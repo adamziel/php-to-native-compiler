@@ -1127,6 +1127,7 @@ struct SymbolTable {
     array_offset_aliases: HashMap<String, Vec<ArrayOffsetAlias>>,
     detached_array_offset_values: Vec<(String, Vec<ArrayKey>, Value)>,
     copied_array_provenance_paths: HashMap<String, Vec<Vec<ArrayKey>>>,
+    public_object_property_array_copy_sources: HashMap<String, PublicObjectPropertyArrayCopySource>,
 }
 
 type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
@@ -1214,6 +1215,7 @@ impl SymbolTable {
             array_offset_aliases: HashMap::new(),
             detached_array_offset_values: Vec::new(),
             copied_array_provenance_paths: HashMap::new(),
+            public_object_property_array_copy_sources: HashMap::new(),
         }
     }
 
@@ -1225,6 +1227,7 @@ impl SymbolTable {
             array_offset_aliases: HashMap::new(),
             detached_array_offset_values: Vec::new(),
             copied_array_provenance_paths: HashMap::new(),
+            public_object_property_array_copy_sources: HashMap::new(),
         }
     }
 
@@ -1266,6 +1269,7 @@ impl SymbolTable {
     }
 
     fn write_detached_static(&mut self, name: &str, value: Value) {
+        self.public_object_property_array_copy_sources.remove(name);
         let target_is_alias = self.array_offset_aliases.remove(name).is_some();
         let replaces_copied_array_provenance = self.has_copied_array_provenance_path(name);
         if replaces_copied_array_provenance {
@@ -1295,6 +1299,7 @@ impl SymbolTable {
     }
 
     fn unset_static(&mut self, name: &str) {
+        self.public_object_property_array_copy_sources.remove(name);
         let target_is_alias = self.array_offset_aliases.remove(name).is_some();
         if !target_is_alias {
             let object_alias_fallbacks = self.public_object_roots_alias_fallbacks(name);
@@ -1384,6 +1389,7 @@ impl SymbolTable {
     }
 
     fn write_global_name(&mut self, name: &str, value: Value) {
+        self.public_object_property_array_copy_sources.remove(name);
         let storage = self.global_storage().clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
@@ -1402,6 +1408,7 @@ impl SymbolTable {
         span: Span,
         object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
     ) -> CompileResult<()> {
+        self.public_object_property_array_copy_sources.remove(name);
         let storage = self.global_storage().clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
@@ -1424,6 +1431,7 @@ impl SymbolTable {
     }
 
     fn write_storage_named(&mut self, name: &str, value: Value) {
+        self.public_object_property_array_copy_sources.remove(name);
         let storage = self.routed_storage(name).clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
@@ -1445,6 +1453,7 @@ impl SymbolTable {
     where
         F: Fn(&PhpObject, &str) -> bool,
     {
+        self.public_object_property_array_copy_sources.remove(name);
         let storage = self.routed_storage(name).clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
@@ -1784,6 +1793,24 @@ impl SymbolTable {
         self.copied_array_provenance_paths
             .get(name)
             .is_some_and(|paths| !paths.is_empty())
+    }
+
+    fn record_public_object_property_array_copy_source(
+        &mut self,
+        name: &str,
+        source: PublicObjectPropertyArrayCopySource,
+    ) {
+        self.public_object_property_array_copy_sources
+            .insert(name.to_string(), source);
+    }
+
+    fn public_object_property_array_copy_source_for_static(
+        &self,
+        name: &str,
+    ) -> Option<PublicObjectPropertyArrayCopySource> {
+        self.public_object_property_array_copy_sources
+            .get(name)
+            .cloned()
     }
 
     fn array_offset_aliases_for_name(&self, name: &str) -> Option<Vec<ArrayOffsetAlias>> {
@@ -6705,6 +6732,7 @@ impl Interpreter {
                         &source.keys,
                         source.include_exact_path,
                     );
+                    scope.record_public_object_property_array_copy_source(value, source);
                 }
             }
 
@@ -6753,9 +6781,18 @@ impl Interpreter {
         let Some(expr) = value else {
             return Ok((Flow::Return(Value::Null), None));
         };
-        let value = self.evaluate(expr, scope)?;
+        let (value, array_copy_source) = match expr {
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => self.evaluate_array_index_with_array_copy_source(target, index, *span, scope)?,
+            _ => (self.evaluate(expr, scope)?, None),
+        };
         let source = if matches!(value, Value::Array(_)) {
-            self.public_object_property_array_copy_source_for_expr(expr, scope)
+            array_copy_source.or_else(|| {
+                self.public_object_property_array_copy_source_for_value_expr(expr, scope)
+            })
         } else {
             None
         };
@@ -6930,6 +6967,17 @@ impl Interpreter {
             }
             _ => None,
         }
+    }
+
+    fn public_object_property_array_copy_source_for_value_expr(
+        &self,
+        expr: &Expr,
+        scope: &SymbolTable,
+    ) -> Option<PublicObjectPropertyArrayCopySource> {
+        if let Expr::Variable(name, _) = expr {
+            return scope.public_object_property_array_copy_source_for_static(name);
+        }
+        self.public_object_property_array_copy_source_for_expr(expr, scope)
     }
 
     fn public_object_property_array_copy_source_from_reference_binding(
@@ -7141,6 +7189,7 @@ impl Interpreter {
                         &source.keys,
                         source.include_exact_path,
                     );
+                    scope.record_public_object_property_array_copy_source(value, source);
                 }
             }
 
@@ -16453,6 +16502,9 @@ impl Interpreter {
                     |object, type_name| self.object_satisfies_live_property_type(object, type_name),
                 )?;
                 if !target_is_alias && matches!(value, Value::Array(_)) {
+                    let assigned_array_copy_source = array_copy_source.clone().or_else(|| {
+                        self.public_object_property_array_copy_source_for_value_expr(expr, scope)
+                    });
                     match expr {
                         Expr::Variable(source_name, _) => {
                             scope.mirror_static_array_offset_aliases_from_copy(name, source_name);
@@ -16633,6 +16685,9 @@ impl Interpreter {
                             &source.keys,
                             source.include_exact_path,
                         );
+                    }
+                    if let Some(source) = assigned_array_copy_source {
+                        scope.record_public_object_property_array_copy_source(name, source);
                     }
                 }
                 for reference in array_literal_references {

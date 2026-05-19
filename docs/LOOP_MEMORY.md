@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T04:43:09+02:00
+
+- Checkpoint before this task: `21416cd9 runtime: preserve foreach return COW
+  provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1880-C through Lane 1884-C bundle, carrying by-value
+  method-return copied-array COW provenance through tracked local variables
+  returned as `return $tmp`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1880/*`, `tests/fixtures/milestone1881/*`,
+  `tests/fixtures/milestone1882/*`, `tests/fixtures/milestone1883/*`,
+  `tests/fixtures/milestone1884/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes matched phpc for local whole
+  property, dynamic property, selected property bucket, local ArrayAccess
+  offset, and Iterator loop-value returns; `cargo check -q -p phpc` passed;
+  `cargo run -q -p phpc -- test --compare-php` passed `milestone1880`,
+  `milestone1881`, `milestone1882`, `milestone1883`, and `milestone1884`;
+  adjacent `object_model`, `functions_and_scopes`, `foreach`, and
+  `iterable_type_builtin` Rust tests passed; adjacent `milestone1867`
+  through `milestone1884` fixture comparisons passed.
+- Remaining COW gaps: recursive `$GLOBALS` materialization, arbitrary
+  callback and builtin reference-return sources, arbitrary PHP and
+  magic/`ArrayAccess` side effects outside the interpreter subset, full
+  exception unwinding and uncaught propagation, broader complex alias sinks
+  and alias lifetime ordering, exact PHP stderr/fatal text,
+  binary/multibyte string offset behavior, whole-array reference identity,
+  and native reference/string COW lowering.
+- Next concrete task: run formatting, diff check, the full
+  `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T04:34:24+02:00
 
 - Checkpoint before this task: `e06a28d4 runtime: preserve control-flow

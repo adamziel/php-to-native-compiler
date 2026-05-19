@@ -765,10 +765,17 @@
   supported return expression is reached through by-value array foreach,
   by-reference foreach over supported array roots, by-value foreach over
   ordinary public-property objects, bounded userland `Iterator`, or bounded
-  `IteratorAggregate` returning a userland `Iterator`. Returned temporaries,
-  thrown exception unwinding, whole-array reference identity in returned
-  values, and arbitrary side-effecting copied-key expressions remain
-  unsupported for this by-value method-return provenance path. When a declared
+  `IteratorAggregate` returning a userland `Iterator`. Tracked local variables
+  assigned from those proven copy sources can also be returned while retaining
+  the same bounded provenance, including whole visible property copies,
+  dynamic property copies, selected property buckets, local `ArrayAccess`
+  offset copies backed by the existing `offsetGet()` bridge, and by-value
+  Iterator loop variables whose `current()` value carried direct
+  object-property array provenance. Arbitrary returned expressions, untracked
+  temporary construction, thrown exception unwinding, whole-array reference
+  identity in returned values, and arbitrary side-effecting copied-key
+  expressions remain unsupported for this by-value method-return provenance
+  path. When a declared
   public object property array with a covered direct object-property
   array-offset reference target is copied into a direct static variable, the
   copied slot also joins the same bounded alias group: writes through the

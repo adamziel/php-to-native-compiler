@@ -20364,7 +20364,7 @@ handled.
   Cover `if`/`else`, `switch`/`case`/`default`, loop-body return, and
   `try`/`finally` paths with system-PHP comparisons for ArrayAccess-backed
   and magic-backed object-property arrays. Keep arbitrary returned
-  temporaries, `foreach`/Iterator body returns, thrown exception unwinding,
+  expressions, untracked temporary construction, thrown exception unwinding,
   whole-array reference identity, exact diagnostics, and native reference
   lowering named as unsupported.
 
@@ -20376,9 +20376,21 @@ handled.
   public-property object foreach, bounded userland `Iterator`, and bounded
   `IteratorAggregate` returning a userland `Iterator` with system-PHP
   comparisons for ArrayAccess-backed and magic-backed object-property arrays.
-  Keep arbitrary returned temporaries, thrown exception unwinding,
-  whole-array reference identity, exact diagnostics, and native reference
-  lowering named as unsupported.
+  Keep arbitrary returned expressions, untracked temporary construction,
+  thrown exception unwinding, whole-array reference identity, exact
+  diagnostics, and native reference lowering named as unsupported.
+
+## Lane 1880-C through Lane 1884-C: Local Temporary Return Copy Provenance
+
+- [x] Runtime/tests/docs bundle: carry by-value method-return copied-array COW
+  provenance through tracked local variables returned as `return $tmp`. Cover
+  local variables assigned from whole visible object-property arrays, dynamic
+  object-property arrays, selected object-property buckets, local ArrayAccess
+  offsets backed by the existing `offsetGet()` bridge, and by-value Iterator
+  loop variables whose `current()` value carried direct object-property array
+  provenance. Keep arbitrary returned expressions, untracked temporary
+  construction, thrown exception unwinding, whole-array reference identity,
+  exact diagnostics, and native reference lowering named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

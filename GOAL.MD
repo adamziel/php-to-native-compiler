@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1879:
+The current in-progress implementation frontier is Lane 1884:
+
+- Lanes 1880 through 1884 preserve by-value method-return copied-array COW
+  provenance through bounded local temporary returns. A local variable assigned
+  from a proven object-property array copy can now be returned while retaining
+  the same mirrored reference slots. Covered sources include whole visible
+  `$this->store` copies, dynamic `$this->{$property}` copies, selected
+  `$this->store[$group]` copies, local `ArrayAccess` offset copies backed by a
+  proven `offsetGet()` bridge, and by-value Iterator loop variables whose
+  `current()` value carried direct object-property array provenance. This
+  remains bounded to tracked local variables in the interpreter subset;
+  arbitrary returned expressions, untracked temporary construction,
+  side-effecting copied-key expressions, thrown exception unwinding,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
 
 - Lanes 1875 through 1879 preserve by-value method-return copied-array COW
   provenance when the covered return expression is reached from supported
@@ -44,9 +58,9 @@ The current in-progress implementation frontier is Lane 1879:
   by-reference, public-object, and IteratorAggregate foreach returns plus a
   magic `__get()` Iterator return. This remains bounded to the interpreter
   subset and the existing direct visible object-property array return shapes;
-  arbitrary returned temporaries, thrown exception unwinding, whole-array
-  reference identity, exact diagnostics, and native reference lowering remain
-  unsupported.
+  arbitrary returned expressions, untracked temporary construction, thrown
+  exception unwinding, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
 
 - Lanes 1871 through 1874 preserve the same by-value method-return
   copied-array COW provenance when the covered return expression is reached
