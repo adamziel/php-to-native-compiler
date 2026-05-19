@@ -70,12 +70,15 @@
   supported for missing named static, `self::`, `static::`, and dynamic static
   receiver calls when public static `__callStatic()` returns by reference and
   its executed body returns a proven lvalue. The same reference-return path
-  supports bounded static-property array-offset roots for declared static
-  property arrays reached through named, `self::`, `parent::`, `static::`, and
-  dynamic class-string static property expressions, including nested selected
-  buckets such as `$class::$slots["nested"][$key]`. Whole static-property
-  reference roots, arbitrary static-property reference containers, and typed
-  static-property enforcement through returned aliases remain unsupported.
+  supports whole declared static-property roots and bounded static-property
+  array-offset roots reached through named, `self::`, `parent::`, `static::`,
+  and dynamic class-string static property expressions, including
+  `return static::$slots;` and nested selected buckets such as
+  `$class::$slots["nested"][$key]`. Root aliases observe later direct
+  static-property overwrites and writes through aliases update the property.
+  Arbitrary static-property reference containers, typed static-property
+  enforcement through returned aliases, and object-receiver static property
+  roots remain unsupported.
   Direct free-function, direct visible object-method, direct named static
   method, `self::` static method, `parent::` static method,
   `static::` late-static method, and dynamic static receiver reference-return
@@ -1204,14 +1207,16 @@
   direct `$cb(...)` reference-assignment sources, `call_user_func($cb, ...)`,
   and `call_user_func_array($cb, ...)`. Arbitrary callable arrays and builtin
   callbacks remain unsupported for reference-return sources.
-  Bounded static-property array-offset roots are accepted when the executed
-  by-reference body returns a selected bucket from a declared static property
-  array through a named, `self::`, `parent::`, `static::`, or dynamic
-  class-string static property expression. The bridge materializes missing
-  selected buckets as `null` and promotes the slot to a shared reference cell;
-  nested selected buckets are covered when each parent value is an array,
-  `null`, `false`, or absent. Whole static-property reference roots,
-  arbitrary static-property reference containers, typed static-property
+  Whole static-property roots and bounded static-property array-offset roots
+  are accepted when the executed by-reference body returns a declared static
+  property or selected bucket through a named, `self::`, `parent::`,
+  `static::`, or dynamic class-string static property expression. Static
+  property roots are cell-backed, so aliases observe later direct
+  static-property overwrites and writes through aliases update the property.
+  The bucket bridge materializes missing selected buckets as `null` and
+  promotes the slot to a shared reference cell; nested selected buckets are
+  covered when each parent value is an array, `null`, `false`, or absent.
+  Arbitrary static-property reference containers, typed static-property
   enforcement through returned aliases, and object-receiver static property
   roots remain unsupported.
   Bounded magic

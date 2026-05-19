@@ -20154,8 +20154,7 @@ handled.
   callable arrays, builtin callbacks as reference-return sources, arbitrary
   PHP syntax and side effects outside the executed method-body subset,
   incompatible typed signatures, full exception unwinding, exact PHP
-  diagnostics, whole static-property reference roots, and native reference
-  lowering named as unsupported.
+  diagnostics and native reference lowering named as unsupported.
 
 ## Lane 1815-C through Lane 1817-C: Static Property Slot Reference Roots
 
@@ -20164,12 +20163,26 @@ handled.
   `self::`, `static::`, and dynamic class-string static property expressions.
   Cover magic `__callStatic()` returning `self::$slots[$key]`, late-static
   child storage through `static::$slots[$key]`, and dynamic class-string
-  nested roots such as `$class::$slots["nested"][$key]`. Keep whole
-  static-property reference roots, arbitrary static-property reference
-  containers, typed static-property enforcement through returned aliases,
-  arbitrary PHP syntax and side effects outside the executed method-body
-  subset, exact PHP diagnostics, and native reference lowering named as
-  unsupported.
+  nested roots such as `$class::$slots["nested"][$key]`. Keep arbitrary
+  static-property reference containers, typed static-property enforcement
+  through returned aliases, arbitrary PHP syntax and side effects outside the
+  executed method-body subset, exact PHP diagnostics, and native reference
+  lowering named as unsupported.
+
+## Lane 1818-C through Lane 1820-C: Static Property Root Reference Returns
+
+- [x] Runtime/value-model/tests/docs bundle: store declared static properties
+  in shared reference cells and allow covered reference-return bodies to
+  return whole static-property roots through named, `self::`, `static::`, and
+  dynamic class-string static property expressions. Cover late-static and
+  dynamic static method roots, magic `__get()` returning `self::$slots`, and
+  `ArrayAccess::offsetGet()` returning `self::$slots`, including root-alias
+  observation of later direct static-property overwrites. Keep arbitrary
+  static-property reference containers beyond cell-backed declared roots,
+  typed static-property enforcement through returned aliases, object-receiver
+  static property roots, arbitrary PHP syntax and side effects outside the
+  executed method-body subset, exact PHP diagnostics, and native reference
+  lowering named as unsupported.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

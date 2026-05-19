@@ -113,7 +113,7 @@ struct Interpreter {
     enums: Vec<Rc<EnumDecl>>,
     enum_lookup: HashMap<String, Rc<EnumDecl>>,
     class_constants: HashMap<(ClassId, String), ClassConstantDecl>,
-    static_properties: HashMap<(ClassId, String), Value>,
+    static_properties: HashMap<(ClassId, String), VariableCell>,
     instance_property_defaults: HashMap<(ClassId, String), Value>,
     classes: PhpClassTable,
     constants: ConstantTable,
@@ -6470,7 +6470,7 @@ impl Interpreter {
                 let mut default_scope = SymbolTable::new();
                 let value = self.evaluate(default, &mut default_scope)?;
                 self.static_properties
-                    .insert((class_id, property.name.clone()), value);
+                    .insert((class_id, property.name.clone()), VariableCell::new(value));
             }
         }
 
@@ -6797,7 +6797,7 @@ impl Interpreter {
             let mut default_scope = SymbolTable::new();
             let value = self.evaluate(default, &mut default_scope)?;
             self.static_properties
-                .insert((class_id, property.name.clone()), value);
+                .insert((class_id, property.name.clone()), VariableCell::new(value));
         }
 
         for member in &class.members {
@@ -6814,7 +6814,7 @@ impl Interpreter {
             let mut default_scope = SymbolTable::new();
             let value = self.evaluate(default, &mut default_scope)?;
             self.static_properties
-                .insert((class_id, property.name.clone()), value);
+                .insert((class_id, property.name.clone()), VariableCell::new(value));
         }
 
         Ok(())
@@ -18959,8 +18959,15 @@ impl Interpreter {
                 declaring_class_id,
                 property,
             } => {
-                self.static_properties
-                    .insert((declaring_class_id, property), value);
+                if let Some(cell) = self
+                    .static_properties
+                    .get(&(declaring_class_id, property.clone()))
+                {
+                    cell.set_value(value);
+                } else {
+                    self.static_properties
+                        .insert((declaring_class_id, property), VariableCell::new(value));
+                }
                 Ok(())
             }
         }
@@ -19443,8 +19450,17 @@ impl Interpreter {
                 }
 
                 let value = self.evaluate(expr, scope)?;
-                self.static_properties
-                    .insert((declaring_class_id, property), value.clone());
+                if let Some(cell) = self
+                    .static_properties
+                    .get(&(declaring_class_id, property.clone()))
+                {
+                    cell.set_value(value.clone());
+                } else {
+                    self.static_properties.insert(
+                        (declaring_class_id, property),
+                        VariableCell::new(value.clone()),
+                    );
+                }
                 Ok(value)
             }
         }
@@ -28369,7 +28385,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         self.static_properties
             .get(&(state.declaring_class_id, state.name.clone()))
-            .cloned()
+            .map(VariableCell::value_cloned)
             .ok_or_else(|| {
                 runtime_error(
                     span,
@@ -28419,7 +28435,7 @@ impl Interpreter {
         if state.is_static {
             self.static_properties
                 .get(&(state.declaring_class_id, state.name.clone()))
-                .cloned()
+                .map(VariableCell::value_cloned)
                 .unwrap_or(Value::Null)
         } else {
             self.instance_property_defaults
@@ -29302,10 +29318,9 @@ impl Interpreter {
         self.read_resolved_static_property(called_class_id, &called_class_name, property, span)
     }
 
-    fn static_property_array_offset_reference_cell_from_expr(
+    fn static_property_reference_cell_from_expr(
         &mut self,
         expr: &Expr,
-        keys: &[ArrayKey],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<VariableCell> {
@@ -29360,7 +29375,7 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "reference return",
-                        "static property array-offset reference roots require a static property expression",
+                        "static property reference roots require a static property expression",
                     ),
                 ));
             }
@@ -29368,25 +29383,32 @@ impl Interpreter {
 
         let (declaring_class_id, declaring_class_name) =
             self.resolve_static_property_storage(class_id, &class_name, &property, span)?;
-        let value = self
-            .static_properties
-            .get_mut(&(declaring_class_id, property.clone()))
+        self.static_properties
+            .get(&(declaring_class_id, property.clone()))
+            .cloned()
             .ok_or_else(|| {
                 runtime_error(
                     span,
                     RuntimeError::uninitialized_typed_property(declaring_class_name, &property),
                 )
-            })?;
+            })
+    }
 
-        let array = match value {
+    fn static_property_array_offset_reference_cell_from_expr(
+        &mut self,
+        expr: &Expr,
+        keys: &[ArrayKey],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        let cell = self.static_property_reference_cell_from_expr(expr, span, scope)?;
+        let mut value = cell.value_cloned();
+        if matches!(value, Value::Null | Value::Bool(false)) {
+            value = Value::Array(PhpArray::new());
+        }
+
+        let array = match &mut value {
             Value::Array(array) => array,
-            Value::Null | Value::Bool(false) => {
-                *value = Value::Array(PhpArray::new());
-                let Value::Array(array) = value else {
-                    unreachable!("static property was just initialized as array")
-                };
-                array
-            }
             other => {
                 return Err(runtime_error(
                     span,
@@ -29398,7 +29420,9 @@ impl Interpreter {
             }
         };
 
-        Self::static_property_array_offset_reference_cell(array, keys, span)
+        let reference = Self::static_property_array_offset_reference_cell(array, keys, span)?;
+        cell.set_value(value);
+        Ok(reference)
     }
 
     fn static_property_array_offset_reference_cell(
@@ -29587,7 +29611,7 @@ impl Interpreter {
         let value = self
             .static_properties
             .get(&(declaring_class_id, property.clone()))
-            .cloned()
+            .map(VariableCell::value_cloned)
             .ok_or_else(|| {
                 runtime_error(
                     span,
@@ -29712,7 +29736,7 @@ impl Interpreter {
         if let Some(value) = self
             .static_properties
             .get(&(declaring_class_id, property.to_string()))
-            .cloned()
+            .map(VariableCell::value_cloned)
         {
             return Ok(value);
         }
@@ -29747,7 +29771,7 @@ impl Interpreter {
         Ok(self
             .static_properties
             .get(&(declaring_class_id, property.to_string()))
-            .cloned()
+            .map(VariableCell::value_cloned)
             .filter(|value| !matches!(value, Value::Null)))
     }
 
@@ -29769,8 +29793,17 @@ impl Interpreter {
             span,
         )?;
 
-        self.static_properties
-            .insert((declaring_class_id, property.to_string()), value.clone());
+        if let Some(cell) = self
+            .static_properties
+            .get(&(declaring_class_id, property.to_string()))
+        {
+            cell.set_value(value.clone());
+        } else {
+            self.static_properties.insert(
+                (declaring_class_id, property.to_string()),
+                VariableCell::new(value.clone()),
+            );
+        }
         Ok(value)
     }
 
@@ -30675,7 +30708,7 @@ impl Interpreter {
                 let value = if property.is_static() {
                     self.static_properties
                         .get(&(class.id(), property.name().to_string()))
-                        .cloned()
+                        .map(VariableCell::value_cloned)
                         .unwrap_or(Value::Null)
                 } else {
                     self.instance_property_defaults
@@ -38336,6 +38369,14 @@ impl Interpreter {
                     .read_cell(name)
                     .map(ReferenceReturnLocalBinding::Cell)
                     .ok_or_else(|| runtime_error(*variable_span, RuntimeError::undefined_variable(name)))
+            }
+            Expr::StaticProperty { .. }
+            | Expr::ObjectStaticProperty { .. }
+            | Expr::SelfStaticProperty { .. }
+            | Expr::ParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. } => {
+                let cell = self.static_property_reference_cell_from_expr(value, span, scope)?;
+                Ok(ReferenceReturnLocalBinding::Cell(cell))
             }
             Expr::Index { target, index, .. } => {
                 if let Some((root_name, indices)) =
@@ -48270,7 +48311,7 @@ fn register_enum_name(
 
 fn register_class_member_runtime_tables(
     class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
-    static_properties: &mut HashMap<(ClassId, String), Value>,
+    static_properties: &mut HashMap<(ClassId, String), VariableCell>,
     property_source_metadata: &mut HashMap<(ClassId, String), PropertySourceMetadata>,
     methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
     method_signatures: &mut HashMap<(ClassId, String), MethodSignature>,
@@ -48290,7 +48331,10 @@ fn register_class_member_runtime_tables(
             property_source_metadata_from_decl(&property),
         );
         if property.is_static && (property.type_decl.is_none() || property.default.is_some()) {
-            static_properties.insert((class_id, property.name.clone()), Value::Null);
+            static_properties.insert(
+                (class_id, property.name.clone()),
+                VariableCell::new(Value::Null),
+            );
         }
     }
 
@@ -48314,7 +48358,10 @@ fn register_class_member_runtime_tables(
                     property_source_metadata_from_decl(property),
                 );
                 if property.type_decl.is_none() || property.default.is_some() {
-                    static_properties.insert((class_id, property.name.clone()), Value::Null);
+                    static_properties.insert(
+                        (class_id, property.name.clone()),
+                        VariableCell::new(Value::Null),
+                    );
                 }
             }
             ClassMember::Method(method) => {
@@ -48415,7 +48462,7 @@ fn seed_core_class_constant_runtime_tables(
 
 fn remove_class_member_runtime_tables(
     class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
-    static_properties: &mut HashMap<(ClassId, String), Value>,
+    static_properties: &mut HashMap<(ClassId, String), VariableCell>,
     property_source_metadata: &mut HashMap<(ClassId, String), PropertySourceMetadata>,
     methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
     method_signatures: &mut HashMap<(ClassId, String), MethodSignature>,

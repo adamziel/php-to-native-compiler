@@ -18,6 +18,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T01:59:48+02:00
+
+- Checkpoint before this task: `ac72afb2 runtime: support static property
+  reference slots`, pushed to `origin/master`.
+- Task attempted: Lane 1818-C through Lane 1820-C bundle, moving declared
+  static properties to shared reference cells and allowing covered
+  by-reference bodies to return whole static-property roots through named,
+  `self::`, `static::`, and dynamic class-string static property expressions.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1818/*`, `tests/fixtures/milestone1819/*`,
+  `tests/fixtures/milestone1820/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched the new `milestone1818`, `milestone1819`, and `milestone1820`
+  fixtures; `cargo run -q -p phpc -- test --compare-php` passed each new
+  fixture directory and adjacent `milestone1815` through `milestone1820`;
+  focused `functions_and_scopes` reference-return tests, `object_model`
+  static-property tests, object-introspection CLI tests, null-coalescing
+  static-property tests, and compound-assignment static-property tests passed.
+- Remaining COW gaps: arbitrary static-property reference containers beyond
+  cell-backed declared roots, typed static-property enforcement through
+  returned aliases, object-receiver static property roots, arbitrary callable
+  arrays, builtin callbacks as reference-return sources, unsupported PHP
+  syntax and side effects outside the executed method-body subset, arbitrary
+  type enforcement and incompatible typed reference-return signatures, full
+  exception unwinding and uncaught exception propagation, arbitrary Iterator
+  side effects, broader complex alias sinks and alias lifetime ordering,
+  exact PHP stderr/fatal text, binary/multibyte string offset behavior, and
+  native reference/string COW lowering.
+- Next concrete task: run formatting, diff, adjacent checks, then the full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T01:49:53+02:00
 
 - Checkpoint before this task: `3efbf493 parser: accept dynamic reference

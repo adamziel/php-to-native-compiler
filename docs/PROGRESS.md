@@ -4,17 +4,38 @@
 
 Implemented:
 
+- Added Lane 1818-C through Lane 1820-C for whole static-property
+  reference-return roots. Static property storage now uses shared reference
+  cells, so covered by-reference methods and magic/`ArrayAccess` bodies can
+  return declared static property roots through named, `self::`, `static::`,
+  and dynamic class-string static property expressions. The root alias now
+  observes later direct static-property overwrites, and writes through the
+  alias update the property. Covered fixtures exercise late-static/dynamic
+  static method roots, magic `__get()` returning `self::$slots`, and
+  `ArrayAccess::offsetGet()` returning `self::$slots`. This does not claim
+  arbitrary static-property reference containers beyond cell-backed declared
+  roots, typed static-property enforcement through returned aliases,
+  object-receiver static property roots, arbitrary PHP syntax or side effects
+  outside the executed interpreter subset, exact PHP diagnostics, or native
+  reference lowering. Focused verification: raw system PHP output matched the
+  new `milestone1818`, `milestone1819`, and `milestone1820` fixtures; `cargo
+  run -q -p phpc -- test --compare-php` passed each new directory plus
+  adjacent `milestone1815` through `milestone1820`; focused
+  `functions_and_scopes` reference-return tests, `object_model`
+  static-property tests, object-introspection CLI tests, null-coalescing
+  static-property tests, and compound-assignment static-property tests passed.
+
 - Added Lane 1815-C through Lane 1817-C for bounded static-property
   array-offset reference-return roots. Covered by-reference methods and
   magic/static bodies can now return selected declared static property array
   buckets for named, `self::`, `static::`, and dynamic class-string receivers,
   including nested slots such as `$class::$slots["nested"][$key]`. The
   returned bucket is promoted to the same reference-cell path used by covered
-  array/property slots. This does not claim whole static-property reference
-  roots, arbitrary static-property reference containers, typed static-property
-  enforcement through returned aliases, arbitrary PHP syntax or side effects
-  outside the executed interpreter subset, exact PHP diagnostics, or native
-  reference lowering. Focused verification: raw system PHP output matched the
+  array/property slots. This does not claim arbitrary static-property
+  reference containers, typed static-property enforcement through returned
+  aliases, arbitrary PHP syntax or side effects outside the executed
+  interpreter subset, exact PHP diagnostics, or native reference lowering.
+  Focused verification: raw system PHP output matched the
   new `milestone1815`, `milestone1816`, and `milestone1817` fixtures; `cargo
   run -q -p phpc -- test --compare-php` passed each new directory plus
   adjacent `milestone1809` through `milestone1814`; focused
@@ -31,8 +52,8 @@ Implemented:
   This does not claim arbitrary callable arrays, builtin callbacks as
   reference-return sources, arbitrary PHP syntax or side effects outside the
   executed interpreter subset, incompatible typed signatures, full exception
-  unwinding, exact PHP diagnostics, whole static-property reference roots, or
-  native reference lowering. Focused verification: raw system PHP output matched the
+  unwinding, exact PHP diagnostics, or native reference lowering. Focused
+  verification: raw system PHP output matched the
   new `milestone1812`, `milestone1813`, and `milestone1814` fixtures; `cargo
   run -q -p phpc -- test --compare-php` passed each new directory plus
   adjacent `milestone1811` with `1` fixture, `1` system PHP comparison, and
