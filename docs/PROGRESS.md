@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2107-C through Lane 2111-C for dynamic-property magic and
+  property-held `ArrayAccess` observation method bodies. Dynamic
+  `isset($object->$name)` now calls visible `__isset()`, dynamic
+  `empty($object->$name)` calls visible `__isset()` and `__get()` when
+  appropriate, and dynamic `unset($object->$name)` calls visible `__unset()`
+  when the selected property is missing. Dynamic properties that visibly hold
+  `ArrayAccess` objects now route `isset($holder->$property[$key])` through
+  `offsetExists()` and `empty(...)` through `offsetExists()` plus
+  `offsetGet()`. Focused system-PHP coverage proves side effects inside those
+  supported bodies mutate reference-backed leaves. This remains bounded to
+  supported interpreter syntax and direct dynamic-property-name forms; magic
+  array-offset `isset`/`empty` fallback, dynamic `ArrayAccess` unset offsets,
+  container unsets that hold live reference leaves, full COW identity, exact
+  diagnostics, and native reference lowering remain unsupported.
+
 - Added Lane 2104-C through Lane 2106-C for dynamic-property magic `__set()`
   COW value cells. Dynamic property assignment now tries visible
   `__set($name, $value)` before falling back to dynamic public-property

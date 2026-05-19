@@ -18,6 +18,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T15:32:37+02:00
+
+- Checkpoint before this task: `dc64e03c runtime: route dynamic magic set COW
+  values`, pushed to `origin/master`.
+- Task attempted: Lane 2107-C through Lane 2111-C bundle, executing covered
+  dynamic-property magic observation methods and dynamic property-held
+  `ArrayAccess` observation methods with reference-backed side effects.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2107/*`, `tests/fixtures/milestone2108/*`,
+  `tests/fixtures/milestone2109/*`, `tests/fixtures/milestone2110/*`,
+  `tests/fixtures/milestone2111/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone2107` through `milestone2111`; adjacent comparisons passed for
+  `milestone2104` through `milestone2111` and `milestone2086` through
+  `milestone2111`; broad COW fixture runs passed for `milestone1880` through
+  `milestone2111`; focused Rust suites passed for `object_model`, `empty`,
+  `array_isset`, `array_unset`, and `dynamic_features`.
+- Remaining COW gaps: future-path metadata recovery after supported but
+  non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies, magic array-offset
+  `isset`/`empty` fallback, dynamic `ArrayAccess` unset offsets, container
+  unsets that hold live reference leaves, untracked dynamic containers, deeper
+  mixed chains and dynamic callback containers not covered by fixtures,
+  whole-array reference identity, exact PHP diagnostics/Throwable objects, and
+  native reference/string COW lowering.
+- Next concrete task: run formatting/check/diff gates, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T15:22:36+02:00
 
 - Checkpoint before this task: `248b6d7f runtime: execute magic ArrayAccess

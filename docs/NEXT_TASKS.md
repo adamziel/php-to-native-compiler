@@ -20998,16 +20998,32 @@ handled.
   arbitrary future-path metadata recovery, full PHP COW identity, exact
   diagnostics, and native lowering named as unsupported.
 
+## Lane 2107-C through Lane 2111-C: Dynamic Magic/ArrayAccess Observation Bodies
+
+- [x] Runtime/tests/docs bundle: execute covered dynamic-property observation
+  method bodies instead of treating dynamic property names as unsupported or
+  non-magic no-ops. Cover dynamic `__isset()` reference-backed side effects,
+  dynamic `empty()` through `__isset()` plus `__get()`, dynamic `__unset()`
+  side effects, dynamic property-held `ArrayAccess::offsetExists()`, and
+  dynamic property-held `ArrayAccess::offsetExists()` plus `offsetGet()` for
+  `empty`, all with system-PHP comparisons and CLI snapshots. Keep unsupported
+  PHP syntax, magic array-offset `isset`/`empty` fallback, dynamic
+  `ArrayAccess` unset offsets, container unsets that hold live reference
+  leaves, full PHP COW identity, exact diagnostics, and native lowering named
+  as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Continue the arbitrary-method-body push in the remaining paths that
   still depend on exact static bridge metadata: future-path metadata recovery
   after supported but non-exact `offsetSet()`/`offsetGet()`/`__get()` bodies,
-  untracked dynamic containers, deeper mixed chains not covered by executable
-  fixtures, and dynamic callback containers still outside the current tests.
-  Keep unsupported PHP syntax, full PHP COW identity, exact PHP fatal
-  objects/text, and native lowering named as unsupported until executable
-  coverage proves them.
+  magic array-offset `isset`/`empty` fallback, dynamic `ArrayAccess` unset
+  offsets, untracked dynamic containers, deeper mixed chains not covered by
+  executable fixtures, container unsets that hold live reference leaves, and
+  dynamic callback containers still outside the current tests. Keep
+  unsupported PHP syntax, full PHP COW identity, exact PHP fatal objects/text,
+  and native lowering named as unsupported until executable coverage proves
+  them.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

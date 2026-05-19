@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2107/dynamic_magic_isset_reference_side_effects.php
+stdout:
+yes|isset:slot|seen|plain-original
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

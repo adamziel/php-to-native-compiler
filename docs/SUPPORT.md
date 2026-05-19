@@ -5256,6 +5256,18 @@
   outside direct object variables, unsupported setter body syntax, untracked
   dynamic containers, full PHP COW identity, exact diagnostics, and native
   lowering remain unsupported.
+  Dynamic bare property `isset`, `empty`, and `unset` now use the evaluated
+  dynamic property name for the same visible magic methods covered by named
+  properties: `__isset()` for `isset`, `__isset()` plus `__get()` for
+  `empty`, and `__unset()` for missing-property `unset`. Supported method
+  bodies execute their side effects, including writes to reference-backed
+  leaves under object-property arrays. Dynamic properties that visibly hold an
+  `ArrayAccess` object are also covered for `isset($holder->$property[$key])`
+  and `empty($holder->$property[$key])`, routing through `offsetExists()` and
+  `offsetGet()` as PHP does. Magic fallback for missing dynamic
+  property-array offsets, dynamic `ArrayAccess` offset unset forms, unsetting
+  whole containers that hold live reference leaves, exact diagnostics, and
+  native lowering remain unsupported.
   `phpc run` pre-registers top-level class declarations into this metadata
   table. Nested class declarations are marked in the AST and register only when
   execution reaches the statement, so false branches do not populate the class

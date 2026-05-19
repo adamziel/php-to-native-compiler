@@ -32,7 +32,23 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2106:
+The current in-progress implementation frontier is Lane 2111:
+
+- Lanes 2107 through 2111 execute the remaining covered dynamic-property
+  observation magic and property-held `ArrayAccess` methods. Dynamic
+  `isset($object->$name)` and `empty($object->$name)` now route through
+  visible `__isset()` and, for `empty`, visible `__get()` using the evaluated
+  dynamic property name; dynamic `unset($object->$name)` now calls visible
+  `__unset()` when the property is missing. Dynamic properties that visibly
+  hold an `ArrayAccess` object now call `offsetExists()` for `isset` and
+  `offsetExists()` plus `offsetGet()` for `empty`. Focused system-PHP
+  coverage proves these supported method bodies execute side effects that
+  mutate reference-backed leaves. This remains bounded to supported
+  interpreter syntax and direct dynamic-property-name forms; magic
+  array-offset `isset`/`empty` fallback, dynamic `ArrayAccess` unset offsets,
+  container unsets that hold live reference leaves, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 2104 through 2106 route dynamic property assignment through visible
   `__set()` before falling back to dynamic public-property creation, matching

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone2109/dynamic_magic_unset_reference_side_effects.php
+stdout:
+still|plain-gone|unset:slot|unset
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

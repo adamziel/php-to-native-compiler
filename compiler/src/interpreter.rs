@@ -10770,7 +10770,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         let property_name = self.evaluate_dynamic_property_name(property, span, scope)?;
-        self.execute_unset_object_property(object_name, &property_name, span, scope, false)
+        self.execute_unset_object_property(object_name, &property_name, span, scope, true)
     }
 
     fn execute_unset_array_index(
@@ -55036,6 +55036,14 @@ impl Interpreter {
                 property,
                 span,
             } => self.is_direct_object_property_set(target, property, *span, caller_scope),
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, caller_scope)?;
+                self.is_direct_object_property_set(target, &property, *span, caller_scope)
+            }
             Expr::StaticProperty {
                 class_name,
                 property,
@@ -55103,9 +55111,20 @@ impl Interpreter {
             };
         }
 
-        let Some((object_name, property, indices)) =
+        let object_property_path = if let Some((object_name, property, indices)) =
             Self::collect_direct_object_property_array_index_path(target, index)
-        else {
+        {
+            Some((object_name.to_string(), property.to_string(), indices))
+        } else if let Some((object_name, property, indices)) =
+            Self::collect_direct_dynamic_object_property_array_index_path(target, index)
+        {
+            let property =
+                self.evaluate_dynamic_property_name(property, target.span(), caller_scope)?;
+            Some((object_name.to_string(), property, indices))
+        } else {
+            None
+        };
+        let Some((object_name, property, indices)) = object_property_path else {
             return Err(runtime_error(
                 target.span(),
                 RuntimeError::unsupported_call(
@@ -55120,13 +55139,13 @@ impl Interpreter {
             keys.push(self.evaluate_array_key(index, caller_scope)?);
         }
 
-        let Some(Value::Object(object)) = caller_scope.read_named(object_name) else {
+        let Some(Value::Object(object)) = caller_scope.read_named(&object_name) else {
             return Ok(false);
         };
 
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
         match object
-            .read_property_for_isset_from_context(property, current_class_id, &protected_class_ids)
+            .read_property_for_isset_from_context(&property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(target.span(), error))?
         {
             Some(Value::Object(object))
@@ -55498,6 +55517,14 @@ impl Interpreter {
                 property,
                 span,
             } => self.is_direct_object_property_empty(target, property, *span, caller_scope),
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, caller_scope)?;
+                self.is_direct_object_property_empty(target, &property, *span, caller_scope)
+            }
             Expr::StaticProperty {
                 class_name,
                 property,
@@ -55549,14 +55576,25 @@ impl Interpreter {
             };
         }
 
-        let Some((object_name, property, indices)) =
+        let object_property_path = if let Some((object_name, property, indices)) =
             Self::collect_direct_object_property_array_index_path(target, index)
-        else {
+        {
+            Some((object_name.to_string(), property.to_string(), indices))
+        } else if let Some((object_name, property, indices)) =
+            Self::collect_direct_dynamic_object_property_array_index_path(target, index)
+        {
+            let property =
+                self.evaluate_dynamic_property_name(property, target.span(), caller_scope)?;
+            Some((object_name.to_string(), property, indices))
+        } else {
+            None
+        };
+        let Some((object_name, property, indices)) = object_property_path else {
             return Err(runtime_error(
                 target.span(),
-                    RuntimeError::unsupported_call(
-                        "empty()",
-                        "only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported",
+                RuntimeError::unsupported_call(
+                    "empty()",
+                    "only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported",
                 ),
             ));
         };
@@ -55566,13 +55604,13 @@ impl Interpreter {
             keys.push(self.evaluate_array_key(index, caller_scope)?);
         }
 
-        let Some(Value::Object(object)) = caller_scope.read_named(object_name) else {
+        let Some(Value::Object(object)) = caller_scope.read_named(&object_name) else {
             return Ok(true);
         };
 
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
         match object
-            .read_property_for_isset_from_context(property, current_class_id, &protected_class_ids)
+            .read_property_for_isset_from_context(&property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(target.span(), error))?
         {
             Some(Value::Object(object))

@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2110/dynamic_property_arrayaccess_isset_side_effects.php
+stdout:
+yes|exists:slot|exists|plain-original
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+
