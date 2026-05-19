@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2086/arrayaccess_offsetset_arbitrary_literal_reference_cells.php
+stdout:
+copy|plain-original|set
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

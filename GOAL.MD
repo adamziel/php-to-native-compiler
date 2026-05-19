@@ -32,7 +32,25 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2085:
+The current in-progress implementation frontier is Lane 2090:
+
+- Lanes 2086 through 2090 move a key part of magic/`ArrayAccess` COW from
+  static bridge proofs into the value model. Direct variable assignments from
+  array literals with reference elements now materialize real reference cells
+  in the stored array after alias metadata is bound. By-value magic/
+  `ArrayAccess` method arguments are rehydrated with those reference cells
+  before arbitrary supported `offsetSet()`/`__set()` bodies execute, so bodies
+  that store through locals such as `$key = $offset; $this->store[$key] =
+  $value;` preserve selected reference leaves. Supported `offsetGet()` and
+  `__get()` bodies that build and return local arrays containing reference
+  elements now return copies with those reference cells intact. Focused
+  system-PHP coverage proves direct `offsetSet()` literals, stored
+  `offsetSet()` payloads, local-reference `offsetGet()` returns,
+  local-reference `__get()` returns, and arbitrary local-key `__set()`
+  storage. This is still bounded to supported interpreter syntax and the
+  current reference cell/alias metadata model; unsupported PHP syntax,
+  untracked dynamic containers, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 2081 through 2085 extend the same reference-return value-copy COW
   bridge through `call_user_func_array()` argument containers. Literal and

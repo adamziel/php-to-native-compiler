@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 2086-C through Lane 2090-C for arbitrary supported magic/
+  `ArrayAccess` method-body COW value cells. Array literals with reference
+  elements now materialize real reference cells in direct variables after
+  alias metadata is bound; by-value `offsetSet()`/`__set()` arguments are
+  rehydrated before the method body executes; and local arrays returned from
+  supported `offsetGet()`/`__get()` bodies keep reference-backed leaves in the
+  returned copy. Focused system-PHP coverage proves direct and stored
+  `ArrayAccess::offsetSet()` payloads through local-key bodies, local
+  reference-array returns from `offsetGet()` and `__get()`, and local-key
+  `__set()` storage. This remains bounded to supported interpreter syntax and
+  current reference-cell/alias metadata; untracked dynamic containers,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
+
 - Added Lane 2081-C through Lane 2085-C for `call_user_func_array()`
   reference-return callbacks receiving covered by-value magic/`ArrayAccess`
   arrays from literal or direct stored argument containers. The source-aware

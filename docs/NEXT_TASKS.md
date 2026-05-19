@@ -20934,15 +20934,26 @@ handled.
   reference propagation, full PHP COW identity, exact diagnostics, and native
   reference lowering named as unsupported.
 
+## Lane 2086-C through Lane 2090-C: Magic/ArrayAccess Method Value Cells
+
+- [x] Runtime/tests/docs bundle: move the current array-literal/local-array
+  reference-cell shapes through arbitrary supported magic/`ArrayAccess`
+  method bodies instead of relying only on exact backing-bucket bridge proofs.
+  Cover direct `ArrayAccess::offsetSet()` array literals, stored
+  `offsetSet()` payloads, local-reference `offsetGet()` returns,
+  local-reference `__get()` returns, and local-key `__set()` storage with
+  system-PHP comparisons and CLI snapshots. Keep unsupported PHP syntax,
+  untracked dynamic containers, full PHP COW identity, exact diagnostics, and
+  native reference lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
-- [ ] Continue the arbitrary-method-body push by removing remaining exact
-  static bridge dependencies where supported magic/`ArrayAccess` bodies are
-  already executable: variadic callback reference-return value copies and
-  nested append/keyed write paths. Prioritize executed-body provenance and
-  observed write effects, while keeping unsupported PHP syntax, untracked
-  dynamic containers, arbitrary `offsetSet()` reference propagation, full PHP
-  COW identity, exact PHP fatal objects/text, and native lowering named as
+- [ ] Continue the arbitrary-method-body push in the remaining paths that
+  still depend on exact static bridge metadata: nested append/keyed write
+  recovery, arbitrary `offsetSet()` reference propagation beyond value-cell
+  storage, untracked dynamic containers, and any callback reference-return
+  shapes not covered by executable fixtures. Keep unsupported PHP syntax, full
+  PHP COW identity, exact PHP fatal objects/text, and native lowering named as
   unsupported until executable coverage proves them.
 
 ## Tests/Docs Lane: Parallel Worker Operations

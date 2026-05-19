@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone2088/arrayaccess_offsetget_local_reference_array_copy.php
+stdout:
+copy|local
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0
+

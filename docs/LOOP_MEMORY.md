@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T14:36:07+02:00
+
+- Checkpoint before this task: `65e020f9 runtime: preserve call_user_func_array
+  COW returns`, pushed to `origin/master`.
+- Task attempted: Lane 2086-C through Lane 2090-C bundle, moving the current
+  array-literal/local-array reference-cell shapes through arbitrary supported
+  magic/`ArrayAccess` method bodies instead of relying only on exact static
+  backing-bucket bridge proofs.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2086/*`, `tests/fixtures/milestone2087/*`,
+  `tests/fixtures/milestone2088/*`, `tests/fixtures/milestone2089/*`,
+  `tests/fixtures/milestone2090/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP probes matched arbitrary local-key
+  `offsetSet()` and `__set()` storage plus local-reference `offsetGet()` and
+  `__get()` returns; focused system-PHP comparisons passed for
+  `milestone2086` through `milestone2090`; adjacent `milestone2071` through
+  `milestone2090` comparisons passed; broad COW fixture tests passed for
+  `milestone1880` through `milestone2090`; focused Rust suites
+  `functions_and_scopes`, `call_user_func_builtin`, and `object_model`
+  passed; `cargo check -q` passed.
+- Remaining COW gaps: nested append/keyed write recovery still tied to exact
+  bridge metadata in several paths, arbitrary `offsetSet()` reference
+  propagation beyond value-cell storage, untracked dynamic containers,
+  whole-array reference identity, exact PHP diagnostics/Throwable objects, and
+  native reference/string COW lowering.
+- Next concrete task: run formatting/check/diff gates, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes.
+
 ## Loop Event 2026-05-19T14:06:01+02:00
 
 - Checkpoint before this task: `2e877e10 runtime: preserve reference-return

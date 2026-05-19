@@ -507,9 +507,25 @@
   `$items =& $this->store`, and dynamic-property bucket selection through
   `$this->{$property}[$name]` when the property expression is side-effect-free.
   These forms keep selected nested reference slots shared in the returned
-  copy while ordinary nested arrays detach. Broader alias graphs, arbitrary
-  side effects, whole-array reference identity, exact diagnostics, and native
-  reference lowering remain unsupported.
+  copy while ordinary nested arrays detach. Broader alias graphs, side effects
+  outside the documented value-cell shapes below, whole-array reference
+  identity, exact diagnostics, and native reference lowering remain
+  unsupported.
+  Supported by-value magic/`ArrayAccess` method bodies also carry actual
+  reference cells for the current array-literal and local-array value-model
+  shapes, rather than relying only on exact backing-bucket bridge recovery.
+  Direct variables assigned from array literals with reference elements store
+  those reference cells after alias metadata is bound. By-value
+  `ArrayAccess::offsetSet()` and `__set()` arguments are rehydrated with
+  those cells before arbitrary supported method statements execute, so bodies
+  that store through locals such as `$key = $offset; $this->store[$key] =
+  $value;` preserve selected reference leaves. Supported by-value
+  `offsetGet()` and `__get()` bodies that build a local array containing
+  reference elements and return it by value preserve those reference leaves in
+  the returned copy while ordinary nested arrays detach. This remains bounded
+  to supported interpreter syntax and current reference-cell/alias metadata;
+  untracked dynamic containers, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
   Bounded `call_user_func()` callbacks whose reached callback parameter is
   declared by reference use PHP's warning/no-reference behavior while carrying
   copied-bucket provenance through supported bodies. Covered forms include
@@ -1426,6 +1442,15 @@
   `$bucket =& $this->property["bucket"]; $bucket[$offset] = $value;`. Later
   bucket copies use the exact public `return $this->property[$offset];`
   `offsetGet()` bridge.
+  When the exact `offsetSet()` backing-bucket bridge cannot be proven but the
+  userland method body is executable, direct by-value `offsetSet()` calls
+  still receive array values with current reference cells materialized. That
+  preserves selected reference leaves when the arbitrary supported body stores
+  the value into an object property through ordinary statements and locals.
+  The same value-cell preservation applies to visible `__set()` bodies that
+  store the by-value argument into an object property. The broader alias
+  metadata bridge for future backing-bucket path recovery remains limited to
+  the proven shapes documented above.
   Direct
   append `$bag[] = $array` preserves the same nested reference slots for two
   focused public `offsetSet(null, $value)` shapes: the exact
@@ -1510,9 +1535,9 @@
   direct `$this->property`, then used as the return root with the existing
   literal-key and local parameter-copy index rules, such as
   `$items =& $this->items; $slot = $offset; return $items[$slot];`.
-  By-value terminal/plain-array nested mutation, unsupported
-  `offsetSet()`/`offsetGet()`/`__get()` body shapes beyond those proven
-  analyzer forms, broader mixed chains, and native lowering remain
+  By-value terminal/plain-array nested mutation, unsupported future-path
+  metadata recovery for `offsetSet()`/`offsetGet()`/`__get()` body shapes
+  beyond those proven analyzer forms, broader mixed chains, and native lowering remain
   unsupported.
   Direct magic-property append stores
   such as `$box->missing[] = $array` and `$box->{$name}[] = $array` are also
