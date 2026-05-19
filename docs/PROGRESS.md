@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1969-C through Lane 1972-C for caught thrown-object paths inside
+  by-value magic/`ArrayAccess` method bodies that return copied arrays with
+  COW provenance. The array-copy return-body executor now carries a bounded
+  thrown object through local `try`/`catch` matching, runs `finally` side
+  effects, and preserves proven object-property array-copy sources for visible
+  by-value `__get()` and public by-value `ArrayAccess::offsetGet()` bodies.
+  Focused system-PHP coverage includes direct catch returns, catch plus
+  finally side effects, and catch bodies returning a tracked local bucket.
+  This does not claim general PHP exception support, uncaught throw unwinding,
+  non-object throws, exact Throwable enforcement or diagnostics, arbitrary
+  magic/`ArrayAccess` method bodies, whole-array reference identity, or native
+  reference lowering.
+
 - Added Lane 1964-C through Lane 1968-C for mixed nested `ArrayAccess`
   by-reference user-function arguments. Reference-parameter invocation now
   reuses the same binding evaluator as statement-form reference sources for

@@ -18,6 +18,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T08:12:39+02:00
+
+- Checkpoint before this task: `2de5c9fc runtime: broaden ArrayAccess
+  reference arguments`, pushed to `origin/master`.
+- Task attempted: Lane 1969-C through Lane 1972-C bundle, broadening
+  by-value magic/`ArrayAccess` copied-array provenance through caught
+  thrown-object method-body paths.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1969/*`, `tests/fixtures/milestone1970/*`,
+  `tests/fixtures/milestone1971/*`, `tests/fixtures/milestone1972/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes exposed a by-value `__get()`
+  catch-return COW failure, then matched after the patch. Focused system-PHP
+  comparisons passed for `milestone1969` through `milestone1972`; adjacent
+  comparisons passed for `milestone1935` through `milestone1968`; `cargo
+  check -q`, `cargo fmt --check`, `git diff --check`,
+  `cargo test -q --test exception_boundaries`,
+  `cargo test -q --test builtin_exception_class`,
+  `cargo test -q --test object_model`,
+  `cargo test -q --test functions_and_scopes`,
+  `cargo test -q --test array_reference_literals`, and
+  `cargo test -q --test call_user_func_builtin` passed.
+- Remaining COW gaps: scalar parent overwrite/error parity for remaining
+  covered append/keyed/reference paths, possible mixed `ArrayAccess` gaps in
+  reference-return or callback reference-argument paths, dynamic
+  `call_user_func_array()` containers that cannot be traced to evaluated
+  local literals, closures and array callbacks outside covered reference
+  argument slices, by-reference helper parameters, arbitrary PHP side effects
+  and syntax outside the interpreter subset, exact PHP diagnostics,
+  whole-array reference identity, native reference/string COW lowering, and
+  native lowering for these interpreter paths.
+- Next concrete task: run adjacent Rust regression tests, `cargo fmt
+  --check`, `git diff --check`, the full `tools/checkpoint.sh` bundle gate,
+  then push if it passes.
+
 ## Loop Event 2026-05-19T11:05:00+02:00
 
 - Checkpoint before this task: `0de41ae1 runtime: broaden non-direct ArrayAccess COW chains`, pushed to `origin/master`.

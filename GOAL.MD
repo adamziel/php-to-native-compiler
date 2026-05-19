@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1968:
+The current in-progress implementation frontier is Lane 1972:
+
+- Lanes 1969 through 1972 broaden by-value magic/`ArrayAccess` method-body
+  execution for copied-array COW provenance through caught thrown-object
+  paths. Visible by-value `__get()` and public by-value
+  `ArrayAccess::offsetGet()` bodies can now throw a supported object inside
+  the method-body executor, catch it with a matching supported class, run
+  bounded `finally` side effects, and return a proven backed object-property
+  array copy directly or through a tracked local while preserving selected
+  reference-backed nested slots. This is not general PHP exception support:
+  uncaught throws, non-object throws, exact Throwable enforcement and
+  diagnostics, arbitrary unsupported method-body syntax, whole-array reference
+  identity, and native reference lowering remain unsupported.
 
 - Lanes 1964 through 1968 broaden the same mixed nested `ArrayAccess` binding
   to by-reference user-function arguments. Direct `ArrayAccess` roots,

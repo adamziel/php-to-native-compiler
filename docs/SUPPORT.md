@@ -805,8 +805,14 @@
   `while`/`do while`/`for`, or `try`/`finally` method-body paths in the
   current interpreter subset. `finally` side effects run before the copied
   return value reaches the caller, and a supported return from `finally`
-  overrides an earlier try return. The same provenance is retained when that
-  supported return expression is reached through by-value array foreach,
+  overrides an earlier try return. Caught thrown-object paths are also covered
+  inside this same by-value array-copy return-body executor when the `try`
+  body throws a supported object, a local `catch` clause matches by supported
+  class or subclass name, and the catch body returns one of the same proven
+  copied-array sources directly or through a tracked local; optional `finally`
+  side effects run before the copied return reaches the caller. The same
+  provenance is retained when that supported return expression is reached
+  through by-value array foreach,
   by-reference foreach over supported array roots, by-value foreach over
   ordinary public-property objects, bounded userland `Iterator`, or bounded
   `IteratorAggregate` returning a userland `Iterator`. Tracked local variables

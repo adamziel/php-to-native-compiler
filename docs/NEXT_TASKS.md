@@ -20620,6 +20620,18 @@ handled.
   magic/`ArrayAccess` method bodies, whole-array reference identity, exact
   diagnostics, and native reference lowering named as unsupported.
 
+## Lane 1969-C through Lane 1972-C: Caught Method-Body Copy Provenance
+
+- [x] Runtime/tests/docs bundle: broaden the by-value magic/`ArrayAccess`
+  array-copy return-body executor for caught thrown-object paths. Cover
+  visible by-value `__get()` catch returns, public by-value
+  `ArrayAccess::offsetGet()` catch returns, catch plus `finally` side effects,
+  and catch bodies returning a tracked local bucket with system-PHP
+  comparisons. Keep general PHP exception support, uncaught throw unwinding,
+  non-object throws, exact Throwable enforcement/diagnostics, arbitrary
+  magic/`ArrayAccess` method bodies, whole-array reference identity, and
+  native reference lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe the remaining scalar parent overwrite/error parity for covered

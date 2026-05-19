@@ -5073,6 +5073,31 @@ enum Flow {
     Goto { label: String, span: Span },
 }
 
+enum ArrayCopyReturnBodyFlow {
+    Normal,
+    Break {
+        depth: usize,
+        span: Span,
+    },
+    Continue {
+        depth: usize,
+        span: Span,
+    },
+    Return {
+        value: Value,
+        source: Option<ArrayCopySource>,
+    },
+    Exit(i32),
+    Goto {
+        label: String,
+        span: Span,
+    },
+    Throw {
+        object: PhpObject,
+        span: Span,
+    },
+}
+
 impl Interpreter {
     fn from_program(
         program: &Program,
@@ -6237,6 +6262,43 @@ impl Interpreter {
         statements: &[Stmt],
         scope: &mut SymbolTable,
     ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
+        let flow = self.execute_array_copy_return_statement_list(statements, scope)?;
+        self.array_copy_return_body_flow_result(flow)
+    }
+
+    fn array_copy_return_body_flow_result(
+        &self,
+        flow: ArrayCopyReturnBodyFlow,
+    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
+        match flow {
+            ArrayCopyReturnBodyFlow::Normal => Ok((Flow::Normal, None)),
+            ArrayCopyReturnBodyFlow::Break { depth, span } => {
+                Ok((Flow::Break { depth, span }, None))
+            }
+            ArrayCopyReturnBodyFlow::Continue { depth, span } => {
+                Ok((Flow::Continue { depth, span }, None))
+            }
+            ArrayCopyReturnBodyFlow::Return { value, source } => Ok((Flow::Return(value), source)),
+            ArrayCopyReturnBodyFlow::Exit(code) => Ok((Flow::Exit(code), None)),
+            ArrayCopyReturnBodyFlow::Goto { label, span } => Ok((Flow::Goto { label, span }, None)),
+            ArrayCopyReturnBodyFlow::Throw { object, span } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "throw",
+                    format!(
+                        "uncaught {} during array-copy return evaluation is not implemented",
+                        object.class_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn execute_array_copy_return_statement_list(
+        &mut self,
+        statements: &[Stmt],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ArrayCopyReturnBodyFlow> {
         let mut labels = HashMap::new();
         for (index, stmt) in statements.iter().enumerate() {
             if let Stmt::Label { name, .. } = stmt {
@@ -6247,39 +6309,44 @@ impl Interpreter {
         let mut index = 0;
         while index < statements.len() {
             let stmt = &statements[index];
-            let (flow, source) =
-                self.execute_statement_with_array_copy_return_source(stmt, scope)?;
+            let flow = self.execute_array_copy_return_statement(stmt, scope)?;
             match flow {
-                Flow::Normal => {}
-                Flow::Goto { label, span } => {
+                ArrayCopyReturnBodyFlow::Normal => {}
+                ArrayCopyReturnBodyFlow::Goto { label, span } => {
                     let Some(target) = labels.get(&label) else {
-                        return Ok((Flow::Goto { label, span }, None));
+                        return Ok(ArrayCopyReturnBodyFlow::Goto { label, span });
                     };
                     index = *target;
                     continue;
                 }
-                flow @ (Flow::Break { .. }
-                | Flow::Continue { .. }
-                | Flow::Return(_)
-                | Flow::Exit(_)) => return Ok((flow, source)),
+                flow @ (ArrayCopyReturnBodyFlow::Break { .. }
+                | ArrayCopyReturnBodyFlow::Continue { .. }
+                | ArrayCopyReturnBodyFlow::Return { .. }
+                | ArrayCopyReturnBodyFlow::Exit(_)
+                | ArrayCopyReturnBodyFlow::Throw { .. }) => return Ok(flow),
             }
             if let Some(code) = self.exit_signal {
-                return Ok((Flow::Exit(code), None));
+                return Ok(ArrayCopyReturnBodyFlow::Exit(code));
             }
             index += 1;
         }
-        Ok((Flow::Normal, None))
+        Ok(ArrayCopyReturnBodyFlow::Normal)
     }
 
-    fn execute_statement_with_array_copy_return_source(
+    fn execute_array_copy_return_statement(
         &mut self,
         stmt: &Stmt,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
+    ) -> CompileResult<ArrayCopyReturnBodyFlow> {
         match stmt {
             Stmt::Return { value, .. } => {
                 self.tick(stmt.span())?;
-                return self.return_flow_with_array_copy_source(value.as_ref(), scope);
+                let (flow, source) =
+                    self.return_flow_with_array_copy_source(value.as_ref(), scope)?;
+                let Flow::Return(value) = flow else {
+                    unreachable!("return_flow_with_array_copy_source always returns Flow::Return")
+                };
+                return Ok(ArrayCopyReturnBodyFlow::Return { value, source });
             }
             Stmt::If {
                 condition,
@@ -6293,7 +6360,7 @@ impl Interpreter {
                 } else {
                     else_branch
                 };
-                return self.execute_statements_with_array_copy_return_source(branch, scope);
+                return self.execute_array_copy_return_statement_list(branch, scope);
             }
             Stmt::While {
                 condition,
@@ -6306,36 +6373,30 @@ impl Interpreter {
                     if !self.evaluate(condition, scope)?.is_truthy() {
                         break;
                     }
-                    let (flow, source) =
-                        self.execute_statements_with_array_copy_return_source(body, scope)?;
+                    let flow = self.execute_array_copy_return_statement_list(body, scope)?;
                     match flow {
-                        Flow::Normal => {}
-                        Flow::Continue { depth, .. } if depth <= 1 => {}
-                        Flow::Continue { depth, span } => {
-                            return Ok((
-                                Flow::Continue {
-                                    depth: depth - 1,
-                                    span,
-                                },
-                                None,
-                            ));
+                        ArrayCopyReturnBodyFlow::Normal => {}
+                        ArrayCopyReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                        ArrayCopyReturnBodyFlow::Continue { depth, span } => {
+                            return Ok(ArrayCopyReturnBodyFlow::Continue {
+                                depth: depth - 1,
+                                span,
+                            });
                         }
-                        Flow::Break { depth, .. } if depth <= 1 => break,
-                        Flow::Break { depth, span } => {
-                            return Ok((
-                                Flow::Break {
-                                    depth: depth - 1,
-                                    span,
-                                },
-                                None,
-                            ));
+                        ArrayCopyReturnBodyFlow::Break { depth, .. } if depth <= 1 => break,
+                        ArrayCopyReturnBodyFlow::Break { depth, span } => {
+                            return Ok(ArrayCopyReturnBodyFlow::Break {
+                                depth: depth - 1,
+                                span,
+                            });
                         }
-                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
-                            return Ok((flow, source));
-                        }
+                        flow @ (ArrayCopyReturnBodyFlow::Return { .. }
+                        | ArrayCopyReturnBodyFlow::Goto { .. }
+                        | ArrayCopyReturnBodyFlow::Exit(_)
+                        | ArrayCopyReturnBodyFlow::Throw { .. }) => return Ok(flow),
                     }
                 }
-                return Ok((Flow::Normal, None));
+                return Ok(ArrayCopyReturnBodyFlow::Normal);
             }
             Stmt::DoWhile {
                 body,
@@ -6345,40 +6406,34 @@ impl Interpreter {
                 self.tick(stmt.span())?;
                 loop {
                     self.tick(*span)?;
-                    let (flow, source) =
-                        self.execute_statements_with_array_copy_return_source(body, scope)?;
+                    let flow = self.execute_array_copy_return_statement_list(body, scope)?;
                     match flow {
-                        Flow::Normal => {}
-                        Flow::Continue { depth, .. } if depth <= 1 => {}
-                        Flow::Continue { depth, span } => {
-                            return Ok((
-                                Flow::Continue {
-                                    depth: depth - 1,
-                                    span,
-                                },
-                                None,
-                            ));
+                        ArrayCopyReturnBodyFlow::Normal => {}
+                        ArrayCopyReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                        ArrayCopyReturnBodyFlow::Continue { depth, span } => {
+                            return Ok(ArrayCopyReturnBodyFlow::Continue {
+                                depth: depth - 1,
+                                span,
+                            });
                         }
-                        Flow::Break { depth, .. } if depth <= 1 => break,
-                        Flow::Break { depth, span } => {
-                            return Ok((
-                                Flow::Break {
-                                    depth: depth - 1,
-                                    span,
-                                },
-                                None,
-                            ));
+                        ArrayCopyReturnBodyFlow::Break { depth, .. } if depth <= 1 => break,
+                        ArrayCopyReturnBodyFlow::Break { depth, span } => {
+                            return Ok(ArrayCopyReturnBodyFlow::Break {
+                                depth: depth - 1,
+                                span,
+                            });
                         }
-                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
-                            return Ok((flow, source));
-                        }
+                        flow @ (ArrayCopyReturnBodyFlow::Return { .. }
+                        | ArrayCopyReturnBodyFlow::Goto { .. }
+                        | ArrayCopyReturnBodyFlow::Exit(_)
+                        | ArrayCopyReturnBodyFlow::Throw { .. }) => return Ok(flow),
                     }
 
                     if !self.evaluate(condition, scope)?.is_truthy() {
                         break;
                     }
                 }
-                return Ok((Flow::Normal, None));
+                return Ok(ArrayCopyReturnBodyFlow::Normal);
             }
             Stmt::For {
                 initializers,
@@ -6404,33 +6459,27 @@ impl Interpreter {
                         }
                     }
 
-                    let (flow, source) =
-                        self.execute_statements_with_array_copy_return_source(body, scope)?;
+                    let flow = self.execute_array_copy_return_statement_list(body, scope)?;
                     match flow {
-                        Flow::Normal => {}
-                        Flow::Continue { depth, .. } if depth <= 1 => {}
-                        Flow::Continue { depth, span } => {
-                            return Ok((
-                                Flow::Continue {
-                                    depth: depth - 1,
-                                    span,
-                                },
-                                None,
-                            ));
+                        ArrayCopyReturnBodyFlow::Normal => {}
+                        ArrayCopyReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                        ArrayCopyReturnBodyFlow::Continue { depth, span } => {
+                            return Ok(ArrayCopyReturnBodyFlow::Continue {
+                                depth: depth - 1,
+                                span,
+                            });
                         }
-                        Flow::Break { depth, .. } if depth <= 1 => break,
-                        Flow::Break { depth, span } => {
-                            return Ok((
-                                Flow::Break {
-                                    depth: depth - 1,
-                                    span,
-                                },
-                                None,
-                            ));
+                        ArrayCopyReturnBodyFlow::Break { depth, .. } if depth <= 1 => break,
+                        ArrayCopyReturnBodyFlow::Break { depth, span } => {
+                            return Ok(ArrayCopyReturnBodyFlow::Break {
+                                depth: depth - 1,
+                                span,
+                            });
                         }
-                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
-                            return Ok((flow, source));
-                        }
+                        flow @ (ArrayCopyReturnBodyFlow::Return { .. }
+                        | ArrayCopyReturnBodyFlow::Goto { .. }
+                        | ArrayCopyReturnBodyFlow::Exit(_)
+                        | ArrayCopyReturnBodyFlow::Throw { .. }) => return Ok(flow),
                     }
 
                     for increment in increments {
@@ -6438,11 +6487,11 @@ impl Interpreter {
                     }
                 }
 
-                return Ok((Flow::Normal, None));
+                return Ok(ArrayCopyReturnBodyFlow::Normal);
             }
             Stmt::Switch { value, cases, .. } => {
                 self.tick(stmt.span())?;
-                return self.execute_switch_with_array_copy_return_source(value, cases, scope);
+                return self.execute_array_copy_return_switch(value, cases, scope);
             }
             Stmt::Foreach {
                 iterable,
@@ -6463,16 +6512,44 @@ impl Interpreter {
                     iterable, key, value, body, *span, scope,
                 );
             }
+            Stmt::Throw { expr, span } => {
+                self.tick(stmt.span())?;
+                let thrown = self.evaluate(expr, scope)?;
+                let Value::Object(object) = thrown else {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "throw",
+                            format!(
+                                "throwing {} values during array-copy return evaluation is not implemented",
+                                thrown.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                return Ok(ArrayCopyReturnBodyFlow::Throw {
+                    object,
+                    span: *span,
+                });
+            }
             Stmt::Try {
-                body, finally_body, ..
+                body,
+                catches,
+                finally_body,
+                ..
             } => {
                 self.tick(stmt.span())?;
-                let try_flow =
-                    self.execute_statements_with_array_copy_return_source(body, scope)?;
+                let try_flow = self.execute_array_copy_return_statement_list(body, scope)?;
+                let try_flow = match try_flow {
+                    ArrayCopyReturnBodyFlow::Throw { object, span } => {
+                        self.execute_array_copy_return_catch_flow(object, span, catches, scope)?
+                    }
+                    flow => flow,
+                };
                 if let Some(finally_body) = finally_body {
                     let finally_flow =
-                        self.execute_statements_with_array_copy_return_source(finally_body, scope)?;
-                    if !matches!(finally_flow.0, Flow::Normal) {
+                        self.execute_array_copy_return_statement_list(finally_body, scope)?;
+                    if !matches!(finally_flow, ArrayCopyReturnBodyFlow::Normal) {
                         return Ok(finally_flow);
                     }
                 }
@@ -6481,7 +6558,37 @@ impl Interpreter {
             _ => {}
         }
 
-        self.execute_statement(stmt, scope).map(|flow| (flow, None))
+        match self.execute_statement(stmt, scope)? {
+            Flow::Normal => Ok(ArrayCopyReturnBodyFlow::Normal),
+            Flow::Break { depth, span } => Ok(ArrayCopyReturnBodyFlow::Break { depth, span }),
+            Flow::Continue { depth, span } => Ok(ArrayCopyReturnBodyFlow::Continue { depth, span }),
+            Flow::Return(value) => Ok(ArrayCopyReturnBodyFlow::Return {
+                value,
+                source: None,
+            }),
+            Flow::Exit(code) => Ok(ArrayCopyReturnBodyFlow::Exit(code)),
+            Flow::Goto { label, span } => Ok(ArrayCopyReturnBodyFlow::Goto { label, span }),
+        }
+    }
+
+    fn execute_array_copy_return_catch_flow(
+        &mut self,
+        object: PhpObject,
+        span: Span,
+        catches: &[CatchClause],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ArrayCopyReturnBodyFlow> {
+        for catch in catches {
+            if !self.reference_return_catch_matches(&object, catch)? {
+                continue;
+            }
+            if let Some(variable) = &catch.variable {
+                scope.write_static(variable, Value::Object(object));
+            }
+            return self.execute_array_copy_return_statement_list(&catch.body, scope);
+        }
+
+        Ok(ArrayCopyReturnBodyFlow::Throw { object, span })
     }
 
     fn execute_foreach_by_reference_with_array_copy_return_source(
@@ -6492,7 +6599,7 @@ impl Interpreter {
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
+    ) -> CompileResult<ArrayCopyReturnBodyFlow> {
         let root = self.by_reference_foreach_root(iterable, scope, span)?;
         Self::read_foreach_root_array(&root, scope, span)?;
         let mut position = 0usize;
@@ -6515,9 +6622,9 @@ impl Interpreter {
                 value_name: value.to_string(),
                 key: entry_key.clone(),
             });
-            let flow_result = self.execute_statements_with_array_copy_return_source(body, scope);
+            let flow_result = self.execute_array_copy_return_statement_list(body, scope);
             self.active_foreach_references.pop();
-            let (flow, source) = flow_result?;
+            let flow = flow_result?;
 
             let value_still_bound = if let Some(expected_aliases) =
                 foreach_root_slot_aliases(scope, &root, &entry_key)
@@ -6567,9 +6674,9 @@ impl Interpreter {
             position = next_position;
 
             match flow {
-                Flow::Normal => {}
-                Flow::Continue { depth, .. } if depth <= 1 => {}
-                Flow::Continue {
+                ArrayCopyReturnBodyFlow::Normal => {}
+                ArrayCopyReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                ArrayCopyReturnBodyFlow::Continue {
                     depth,
                     span: flow_span,
                 } => {
@@ -6580,16 +6687,13 @@ impl Interpreter {
                         lingering_reference_key,
                         span,
                     )?;
-                    return Ok((
-                        Flow::Continue {
-                            depth: depth - 1,
-                            span: flow_span,
-                        },
-                        None,
-                    ));
+                    return Ok(ArrayCopyReturnBodyFlow::Continue {
+                        depth: depth - 1,
+                        span: flow_span,
+                    });
                 }
-                Flow::Break { depth, .. } if depth <= 1 => break,
-                Flow::Break {
+                ArrayCopyReturnBodyFlow::Break { depth, .. } if depth <= 1 => break,
+                ArrayCopyReturnBodyFlow::Break {
                     depth,
                     span: flow_span,
                 } => {
@@ -6600,15 +6704,12 @@ impl Interpreter {
                         lingering_reference_key,
                         span,
                     )?;
-                    return Ok((
-                        Flow::Break {
-                            depth: depth - 1,
-                            span: flow_span,
-                        },
-                        None,
-                    ));
+                    return Ok(ArrayCopyReturnBodyFlow::Break {
+                        depth: depth - 1,
+                        span: flow_span,
+                    });
                 }
-                Flow::Goto {
+                ArrayCopyReturnBodyFlow::Goto {
                     label,
                     span: flow_span,
                 } => {
@@ -6619,22 +6720,30 @@ impl Interpreter {
                         lingering_reference_key,
                         span,
                     )?;
-                    return Ok((
-                        Flow::Goto {
-                            label,
-                            span: flow_span,
-                        },
-                        None,
-                    ));
+                    return Ok(ArrayCopyReturnBodyFlow::Goto {
+                        label,
+                        span: flow_span,
+                    });
                 }
-                flow @ (Flow::Return(_) | Flow::Exit(_)) => {
-                    return Ok((flow, source));
+                flow @ ArrayCopyReturnBodyFlow::Throw { .. } => {
+                    bind_foreach_lingering_reference(
+                        scope,
+                        value,
+                        &root,
+                        lingering_reference_key,
+                        span,
+                    )?;
+                    return Ok(flow);
+                }
+                flow @ (ArrayCopyReturnBodyFlow::Return { .. }
+                | ArrayCopyReturnBodyFlow::Exit(_)) => {
+                    return Ok(flow);
                 }
             }
         }
 
         bind_foreach_lingering_reference(scope, value, &root, lingering_reference_key, span)?;
-        Ok((Flow::Normal, None))
+        Ok(ArrayCopyReturnBodyFlow::Normal)
     }
 
     fn execute_foreach_by_value_iterable_with_array_copy_return_source(
@@ -6645,7 +6754,7 @@ impl Interpreter {
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
+    ) -> CompileResult<ArrayCopyReturnBodyFlow> {
         match iterable {
             Value::Array(array) => self.execute_foreach_array_by_value_with_array_copy_return_source(
                 array, key, value, body, span, scope,
@@ -6707,44 +6816,38 @@ impl Interpreter {
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
+    ) -> CompileResult<ArrayCopyReturnBodyFlow> {
         for entry in array.entries() {
             self.tick(span)?;
             if let Some(key) = key {
                 scope.write_static(key, value_from_array_key(&entry.key));
             }
             scope.write_static(value, entry.value_cloned());
-            let (flow, source) =
-                self.execute_statements_with_array_copy_return_source(body, scope)?;
+            let flow = self.execute_array_copy_return_statement_list(body, scope)?;
             match flow {
-                Flow::Normal => {}
-                Flow::Continue { depth, .. } if depth <= 1 => {}
-                Flow::Continue { depth, span } => {
-                    return Ok((
-                        Flow::Continue {
-                            depth: depth - 1,
-                            span,
-                        },
-                        None,
-                    ));
+                ArrayCopyReturnBodyFlow::Normal => {}
+                ArrayCopyReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                ArrayCopyReturnBodyFlow::Continue { depth, span } => {
+                    return Ok(ArrayCopyReturnBodyFlow::Continue {
+                        depth: depth - 1,
+                        span,
+                    });
                 }
-                Flow::Break { depth, .. } if depth <= 1 => break,
-                Flow::Break { depth, span } => {
-                    return Ok((
-                        Flow::Break {
-                            depth: depth - 1,
-                            span,
-                        },
-                        None,
-                    ));
+                ArrayCopyReturnBodyFlow::Break { depth, .. } if depth <= 1 => break,
+                ArrayCopyReturnBodyFlow::Break { depth, span } => {
+                    return Ok(ArrayCopyReturnBodyFlow::Break {
+                        depth: depth - 1,
+                        span,
+                    });
                 }
-                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
-                    return Ok((flow, source));
-                }
+                flow @ (ArrayCopyReturnBodyFlow::Return { .. }
+                | ArrayCopyReturnBodyFlow::Goto { .. }
+                | ArrayCopyReturnBodyFlow::Exit(_)
+                | ArrayCopyReturnBodyFlow::Throw { .. }) => return Ok(flow),
             }
         }
 
-        Ok((Flow::Normal, None))
+        Ok(ArrayCopyReturnBodyFlow::Normal)
     }
 
     fn execute_foreach_public_object_by_value_with_array_copy_return_source(
@@ -6755,7 +6858,7 @@ impl Interpreter {
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
+    ) -> CompileResult<ArrayCopyReturnBodyFlow> {
         let property_names: Vec<String> = object
             .properties()
             .into_iter()
@@ -6771,37 +6874,31 @@ impl Interpreter {
                 scope.write_static(key, Value::String(property.clone()));
             }
             scope.write_static(value, object.read_public_property(&property)?);
-            let (flow, source) =
-                self.execute_statements_with_array_copy_return_source(body, scope)?;
+            let flow = self.execute_array_copy_return_statement_list(body, scope)?;
             match flow {
-                Flow::Normal => {}
-                Flow::Continue { depth, .. } if depth <= 1 => {}
-                Flow::Continue { depth, span } => {
-                    return Ok((
-                        Flow::Continue {
-                            depth: depth - 1,
-                            span,
-                        },
-                        None,
-                    ));
+                ArrayCopyReturnBodyFlow::Normal => {}
+                ArrayCopyReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {}
+                ArrayCopyReturnBodyFlow::Continue { depth, span } => {
+                    return Ok(ArrayCopyReturnBodyFlow::Continue {
+                        depth: depth - 1,
+                        span,
+                    });
                 }
-                Flow::Break { depth, .. } if depth <= 1 => break,
-                Flow::Break { depth, span } => {
-                    return Ok((
-                        Flow::Break {
-                            depth: depth - 1,
-                            span,
-                        },
-                        None,
-                    ));
+                ArrayCopyReturnBodyFlow::Break { depth, .. } if depth <= 1 => break,
+                ArrayCopyReturnBodyFlow::Break { depth, span } => {
+                    return Ok(ArrayCopyReturnBodyFlow::Break {
+                        depth: depth - 1,
+                        span,
+                    });
                 }
-                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
-                    return Ok((flow, source));
-                }
+                flow @ (ArrayCopyReturnBodyFlow::Return { .. }
+                | ArrayCopyReturnBodyFlow::Goto { .. }
+                | ArrayCopyReturnBodyFlow::Exit(_)
+                | ArrayCopyReturnBodyFlow::Throw { .. }) => return Ok(flow),
             }
         }
 
-        Ok((Flow::Normal, None))
+        Ok(ArrayCopyReturnBodyFlow::Normal)
     }
 
     fn execute_foreach_iterator_by_value_with_array_copy_return_source(
@@ -6812,7 +6909,7 @@ impl Interpreter {
         body: &[Stmt],
         span: Span,
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
+    ) -> CompileResult<ArrayCopyReturnBodyFlow> {
         self.call_required_iterator_method(object.clone(), "rewind", span)?;
 
         loop {
@@ -6845,41 +6942,35 @@ impl Interpreter {
                 }
             }
 
-            let (flow, source) =
-                self.execute_statements_with_array_copy_return_source(body, scope)?;
+            let flow = self.execute_array_copy_return_statement_list(body, scope)?;
             match flow {
-                Flow::Normal => {
+                ArrayCopyReturnBodyFlow::Normal => {
                     self.call_required_iterator_method(object.clone(), "next", span)?;
                 }
-                Flow::Continue { depth, .. } if depth <= 1 => {
+                ArrayCopyReturnBodyFlow::Continue { depth, .. } if depth <= 1 => {
                     self.call_required_iterator_method(object.clone(), "next", span)?;
                 }
-                Flow::Continue { depth, span } => {
-                    return Ok((
-                        Flow::Continue {
-                            depth: depth - 1,
-                            span,
-                        },
-                        None,
-                    ));
+                ArrayCopyReturnBodyFlow::Continue { depth, span } => {
+                    return Ok(ArrayCopyReturnBodyFlow::Continue {
+                        depth: depth - 1,
+                        span,
+                    });
                 }
-                Flow::Break { depth, .. } if depth <= 1 => break,
-                Flow::Break { depth, span } => {
-                    return Ok((
-                        Flow::Break {
-                            depth: depth - 1,
-                            span,
-                        },
-                        None,
-                    ));
+                ArrayCopyReturnBodyFlow::Break { depth, .. } if depth <= 1 => break,
+                ArrayCopyReturnBodyFlow::Break { depth, span } => {
+                    return Ok(ArrayCopyReturnBodyFlow::Break {
+                        depth: depth - 1,
+                        span,
+                    });
                 }
-                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
-                    return Ok((flow, source));
-                }
+                flow @ (ArrayCopyReturnBodyFlow::Return { .. }
+                | ArrayCopyReturnBodyFlow::Goto { .. }
+                | ArrayCopyReturnBodyFlow::Exit(_)
+                | ArrayCopyReturnBodyFlow::Throw { .. }) => return Ok(flow),
             }
         }
 
-        Ok((Flow::Normal, None))
+        Ok(ArrayCopyReturnBodyFlow::Normal)
     }
 
     fn evaluate_value_with_array_copy_source(
@@ -7034,12 +7125,12 @@ impl Interpreter {
         Ok((Flow::Return(value), source))
     }
 
-    fn execute_switch_with_array_copy_return_source(
+    fn execute_array_copy_return_switch(
         &mut self,
         value: &Expr,
         cases: &[SwitchCase],
         scope: &mut SymbolTable,
-    ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
+    ) -> CompileResult<ArrayCopyReturnBodyFlow> {
         let switch_value = self.evaluate(value, scope)?;
         let mut default_index = None;
         let mut matched_index = None;
@@ -7063,25 +7154,23 @@ impl Interpreter {
         }
 
         let Some(mut index) = matched_index.or(default_index) else {
-            return Ok((Flow::Normal, None));
+            return Ok(ArrayCopyReturnBodyFlow::Normal);
         };
 
         while index < cases.len() {
-            let (flow, source) =
-                self.execute_statements_with_array_copy_return_source(&cases[index].body, scope)?;
+            let flow = self.execute_array_copy_return_statement_list(&cases[index].body, scope)?;
             match flow {
-                Flow::Normal => {}
-                Flow::Break { depth, .. } if depth <= 1 => return Ok((Flow::Normal, None)),
-                Flow::Break { depth, span } => {
-                    return Ok((
-                        Flow::Break {
-                            depth: depth - 1,
-                            span,
-                        },
-                        None,
-                    ));
+                ArrayCopyReturnBodyFlow::Normal => {}
+                ArrayCopyReturnBodyFlow::Break { depth, .. } if depth <= 1 => {
+                    return Ok(ArrayCopyReturnBodyFlow::Normal);
                 }
-                Flow::Continue { depth, span } if depth <= 1 => {
+                ArrayCopyReturnBodyFlow::Break { depth, span } => {
+                    return Ok(ArrayCopyReturnBodyFlow::Break {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                ArrayCopyReturnBodyFlow::Continue { depth, span } if depth <= 1 => {
                     return Err(runtime_error(
                         span,
                         RuntimeError::invalid_loop_control(
@@ -7089,23 +7178,21 @@ impl Interpreter {
                         ),
                     ));
                 }
-                Flow::Continue { depth, span } => {
-                    return Ok((
-                        Flow::Continue {
-                            depth: depth - 1,
-                            span,
-                        },
-                        None,
-                    ));
+                ArrayCopyReturnBodyFlow::Continue { depth, span } => {
+                    return Ok(ArrayCopyReturnBodyFlow::Continue {
+                        depth: depth - 1,
+                        span,
+                    });
                 }
-                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
-                    return Ok((flow, source));
-                }
+                flow @ (ArrayCopyReturnBodyFlow::Return { .. }
+                | ArrayCopyReturnBodyFlow::Goto { .. }
+                | ArrayCopyReturnBodyFlow::Exit(_)
+                | ArrayCopyReturnBodyFlow::Throw { .. }) => return Ok(flow),
             }
             index += 1;
         }
 
-        Ok((Flow::Normal, None))
+        Ok(ArrayCopyReturnBodyFlow::Normal)
     }
 
     fn public_object_property_array_copy_source_for_expr(
