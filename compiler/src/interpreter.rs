@@ -6286,6 +6286,7 @@ struct ReferenceReturnBodyAnalysis<'a> {
 struct OffsetSetBodyAnalysis<'a> {
     statements: &'a [Stmt],
     local_param_aliases: Vec<String>,
+    local_value_aliases: Vec<String>,
     local_property_aliases: Vec<ThisPropertyLocalAlias>,
     local_literal_key_aliases: Vec<LocalLiteralKeyAlias>,
 }
@@ -19118,10 +19119,14 @@ impl Interpreter {
         let Some(value_param) = function.params.get(1) else {
             return Ok(None);
         };
-        let body_analysis =
-            Self::offset_set_body_analysis(function.body.as_slice(), &offset_param.name);
+        let body_analysis = Self::offset_set_body_analysis(
+            function.body.as_slice(),
+            &offset_param.name,
+            &value_param.name,
+        );
         let body = body_analysis.statements;
         let local_param_aliases = body_analysis.local_param_aliases;
+        let local_value_aliases = body_analysis.local_value_aliases;
         let local_property_aliases = body_analysis.local_property_aliases;
         let local_literal_key_aliases = body_analysis.local_literal_key_aliases;
         let (property, keys) = if let Some(key) = key {
@@ -19129,6 +19134,7 @@ impl Interpreter {
                 body,
                 &offset_param.name,
                 &value_param.name,
+                &local_value_aliases,
                 &local_property_aliases,
             ) else {
                 return Ok(None);
@@ -19147,6 +19153,7 @@ impl Interpreter {
             let Some((property, indices)) = Self::offset_set_index_assignment_target(
                 assignment,
                 &value_param.name,
+                &local_value_aliases,
                 &local_property_aliases,
             ) else {
                 return Ok(None);
@@ -19178,6 +19185,7 @@ impl Interpreter {
                 let Some((property, indices)) = Self::offset_set_index_assignment_target(
                     keyed_assignment,
                     &value_param.name,
+                    &local_value_aliases,
                     &local_property_aliases,
                 ) else {
                     return Ok(None);
@@ -19196,6 +19204,7 @@ impl Interpreter {
                 let Some((property, indices)) = Self::offset_set_index_assignment_target(
                     keyed_assignment,
                     &value_param.name,
+                    &local_value_aliases,
                     &local_property_aliases,
                 ) else {
                     return Ok(None);
@@ -19221,6 +19230,7 @@ impl Interpreter {
             let Some(append_target) = Self::offset_set_append_target(
                 &then_branch,
                 &value_param.name,
+                &local_value_aliases,
                 require_return,
                 &local_property_aliases,
                 &local_literal_key_aliases,
@@ -19292,8 +19302,10 @@ impl Interpreter {
     fn offset_set_body_analysis<'a>(
         body: &'a [Stmt],
         offset_param: &str,
+        value_param: &str,
     ) -> OffsetSetBodyAnalysis<'a> {
         let mut local_param_aliases = Vec::new();
+        let mut local_value_aliases = Vec::new();
         let mut local_property_aliases = Vec::new();
         let mut local_literal_key_aliases = Vec::new();
         let mut statements = body;
@@ -19308,6 +19320,26 @@ impl Interpreter {
                     if source == offset_param =>
                 {
                     local_param_aliases.push(name.clone());
+                    statements = rest;
+                }
+                [Stmt::Assign {
+                    target: AssignTarget::Variable { name, .. },
+                    expr: Expr::Variable(source, _),
+                    ..
+                }, rest @ ..]
+                    if source == value_param =>
+                {
+                    local_value_aliases.push(name.clone());
+                    statements = rest;
+                }
+                [Stmt::ReferenceAssign {
+                    target: AssignTarget::Variable { name, .. },
+                    source: ReferenceSource::Variable { name: source, .. },
+                    ..
+                }, rest @ ..]
+                    if source == value_param =>
+                {
+                    local_value_aliases.push(name.clone());
                     statements = rest;
                 }
                 [Stmt::ReferenceAssign {
@@ -19392,6 +19424,7 @@ impl Interpreter {
         OffsetSetBodyAnalysis {
             statements,
             local_param_aliases,
+            local_value_aliases,
             local_property_aliases,
             local_literal_key_aliases,
         }
@@ -19400,6 +19433,7 @@ impl Interpreter {
     fn offset_set_append_target(
         then_branch: &[Stmt],
         value_param: &str,
+        value_aliases: &[String],
         require_return: bool,
         local_property_aliases: &[ThisPropertyLocalAlias],
         local_literal_key_aliases: &[LocalLiteralKeyAlias],
@@ -19423,7 +19457,7 @@ impl Interpreter {
             } => (target.as_ref(), expr.as_ref()),
             _ => return None,
         };
-        if !matches!(expr, Expr::Variable(name, _) if name == value_param) {
+        if !Self::expr_is_parameter_or_local_copy(expr, value_param, value_aliases) {
             return None;
         }
 
@@ -19497,6 +19531,7 @@ impl Interpreter {
     fn offset_set_index_assignment_target(
         statement: &Stmt,
         value_param: &str,
+        value_aliases: &[String],
         local_property_aliases: &[ThisPropertyLocalAlias],
     ) -> Option<(String, Vec<Expr>)> {
         let (target, expr) = match statement {
@@ -19507,7 +19542,7 @@ impl Interpreter {
             } => (target.as_ref(), expr.as_ref()),
             _ => return None,
         };
-        if !matches!(expr, Expr::Variable(name, _) if name == value_param) {
+        if !Self::expr_is_parameter_or_local_copy(expr, value_param, value_aliases) {
             return None;
         }
 
@@ -19546,12 +19581,14 @@ impl Interpreter {
         body: &[Stmt],
         offset_param: &str,
         value_param: &str,
+        value_aliases: &[String],
         local_property_aliases: &[ThisPropertyLocalAlias],
     ) -> Option<(String, Vec<Expr>)> {
         if let [assignment] = body {
             if let Some((property, indices)) = Self::offset_set_index_assignment_target(
                 assignment,
                 value_param,
+                value_aliases,
                 local_property_aliases,
             ) {
                 return Some((property, indices));
@@ -19571,6 +19608,7 @@ impl Interpreter {
             return Self::offset_set_index_assignment_target(
                 keyed_assignment,
                 value_param,
+                value_aliases,
                 local_property_aliases,
             );
         }
@@ -19590,6 +19628,7 @@ impl Interpreter {
             return Self::offset_set_index_assignment_target(
                 keyed_assignment,
                 value_param,
+                value_aliases,
                 local_property_aliases,
             );
         }
@@ -23829,13 +23868,7 @@ impl Interpreter {
                 target, property, ..
             } => {
                 if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "reference-return $this property expressions require return $this->property in the current subset",
-                        ),
-                    ));
+                    return Ok(None);
                 }
                 Ok(Some(ThisPropertyReferenceTarget {
                     property: property.clone(),
@@ -23847,26 +23880,14 @@ impl Interpreter {
                 target, property, ..
             } => {
                 if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "reference-return $this dynamic-property expressions require return $this->{$name} in the current subset",
-                        ),
-                    ));
+                    return Ok(None);
                 }
                 if !Self::expr_is_parameter_or_local_copy(
                     property.as_ref(),
                     &param.name,
                     &analysis.local_param_aliases,
                 ) {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "reference-return $this dynamic-property expressions require return $this->{$name} where $name is the __get parameter in the current subset",
-                        ),
-                    ));
+                    return Ok(None);
                 }
                 Ok(Some(ThisPropertyReferenceTarget {
                     property: requested_property.to_string(),
@@ -23943,7 +23964,7 @@ impl Interpreter {
         requested_property: &str,
         local_param_aliases: &[String],
         local_literal_key_aliases: &[LocalLiteralKeyAlias],
-        span: Span,
+        _span: Span,
     ) -> CompileResult<Option<ThisPropertyReferenceTarget>> {
         let Some(param) = function.params.first() else {
             return Ok(None);
@@ -23953,13 +23974,7 @@ impl Interpreter {
         for index in indices {
             if Self::expr_is_parameter_or_local_copy(index, &param.name, local_param_aliases) {
                 if used_requested_property {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "reference-return $this property offset expressions may use the __get parameter only once in the current subset",
-                        ),
-                    ));
+                    return Ok(None);
                 }
                 prefix_keys.push(ArrayKey::String(requested_property.to_string()));
                 used_requested_property = true;
@@ -23970,24 +23985,12 @@ impl Interpreter {
                 index,
                 local_literal_key_aliases,
             ) else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        callable_name(&function.name),
-                        "reference-return $this property offset expressions require exactly one __get parameter index and otherwise literal int or string keys in the current subset",
-                    ),
-                ));
+                return Ok(None);
             };
             prefix_keys.push(key);
         }
         if !used_requested_property {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    callable_name(&function.name),
-                    "reference-return $this property offset expressions require one index to be the __get parameter in the current subset",
-                ),
-            ));
+            return Ok(None);
         }
 
         Ok(Some(ThisPropertyReferenceTarget {

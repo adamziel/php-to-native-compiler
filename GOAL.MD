@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2261:
+The current in-progress implementation frontier is Lane 2266:
+
+- Lanes 2262 through 2266 let supported reference-return magic `__get()`
+  bodies fall through from the narrow static backing-root recognizer into the
+  executed reference-return path when the static proof is not exact. Computed
+  selector keys such as `$this->store[helper($name)]`, repeated selector keys,
+  appends, and constant backing keys now preserve the returned reference cell
+  instead of rejecting early. Public `ArrayAccess::offsetSet()` backing-target
+  recovery also tracks simple value-parameter aliases, including
+  `$payload =& $value`, so setter bodies can keep copied-source reference
+  leaves attached when storing through a local alias. This remains bounded to
+  supported reference-return execution, concrete object-property roots,
+  simple value aliases, and supported method-body syntax; divergent branch
+  roots, untracked containers, exact diagnostics, and native reference/string
+  COW lowering remain unsupported.
 
 - Lanes 2258 through 2261 sync copied-source metadata for object-property
   argument containers rebuilt through by-reference helper parameters. When

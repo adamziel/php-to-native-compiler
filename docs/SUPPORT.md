@@ -154,6 +154,12 @@
   `$args = array($copy)` through `&$this->args`, portable copied-source paths
   from the helper frame sync back to that concrete object property before a
   later `call_user_func_array($this->args)` dispatch.
+  For reference-return magic `__get()`, static backing-root recognition is now
+  only an optimization. If the body is supported but uses a computed selector
+  key, repeated selector key, append, or constant backing key that the static
+  proof cannot express, execution binds the returned reference cell instead
+  of rejecting early. Public `ArrayAccess::offsetSet()` backing-target
+  recovery also accepts simple local aliases of the value parameter.
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.

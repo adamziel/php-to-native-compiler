@@ -23,6 +23,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T01:23:40+02:00
+
+- Checkpoint before this task: `94e85f10 runtime: sync object property cow arg
+  rebuilds`, pushed to `origin/master`.
+- Task attempted: Lane 2262-C through Lane 2266-C bundle, letting unsupported
+  static magic `__get()` backing-root proofs fall through to executed
+  reference-return cells and tracking simple `ArrayAccess::offsetSet()` value
+  aliases during backing-target recovery.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2262/*` through
+  `tests/fixtures/milestone2266/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo build -q -p phpc` passed; focused fixture runner
+  and `--compare-php` checks passed for `milestone2262` through
+  `milestone2266`; adjacent fixture comparisons passed for `milestone2258`
+  through `milestone2261`; adjacent Rust regressions passed for
+  `object_model magic`, `object_model arrayaccess`,
+  `functions_and_scopes function`, and `milestone1_fixtures_pass`;
+  `cargo fmt`, `cargo fmt --check`, `cargo check -q -p phpc`, and
+  `git diff --check` passed.
+- Remaining COW gaps: whole-array reference identity outside covered
+  non-empty array-offset roots, untracked dynamic containers that expose
+  neither materialized reference cells nor portable copied-source roots,
+  divergent branch-root proof for static recognizers, unsupported syntax
+  outside the current dynamic instance-call slice, exact diagnostics/Throwable
+  objects, and native reference/string COW lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-20T01:22:00+02:00
 
 - Checkpoint before this task: `45b8d8f6 runtime: support stdclass holder cow

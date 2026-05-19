@@ -242,6 +242,14 @@ recorded on that object property, so later stored-root callback dispatch can
 recover the copied source without treating ordinary whole-array value copies
 as source aliases.
 
+Reference-return magic `__get()` uses static backing-root recognition only
+when it can prove the root exactly. Unsupported static proofs fall through to
+the executed reference-return body, which can bind real cells for supported
+computed keys, repeated selector keys, appends, and constant backing keys
+without leaking a stale static path. `ArrayAccess::offsetSet()` backing-target
+recovery similarly tracks simple local aliases of the value parameter before
+matching the final object-property store.
+
 Direct array literals returned from supported function bodies use the same
 reference and copied-source materialization path as array-literal assignments.
 When a helper returns `array($copy)` or a nested literal built from a copied

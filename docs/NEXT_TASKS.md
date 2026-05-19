@@ -153,6 +153,11 @@ handled.
   `__get()`, public `ArrayAccess::offsetGet()`, public
   `ArrayAccess::offsetSet()`, and a whole-array value-copy no-over-promotion
   guard.
+- [x] Lane 2262-C through 2266-C: let unsupported static magic `__get()`
+  backing-root proofs fall through to the executed reference-return path for
+  computed/repeated/constant keys and append writes, and track simple
+  `ArrayAccess::offsetSet()` value aliases when recovering copied-source
+  backing targets.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic

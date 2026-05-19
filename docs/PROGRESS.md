@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2262-C through Lane 2266-C for static-recognizer fallthrough in
+  covered reference-return magic `__get()` bodies and simple
+  `ArrayAccess::offsetSet()` value aliases. The magic backing-root recognizer
+  now returns no static proof, rather than raising an unsupported error, when
+  a supported reference-return body uses computed selector keys, repeated
+  selector keys, appends, or constant backing keys that the executor can bind
+  to real cells. Setter backing-target recovery now accepts simple
+  value-parameter aliases such as `$payload =& $value`. Focused system-PHP
+  coverage proves reference aliasing, keyed writes, append writes, constant
+  backing-key fallback, and copied-source reference leaves through an
+  `offsetSet()` value alias. This remains bounded to supported body execution,
+  concrete object-property roots, simple value aliases, and supported syntax;
+  divergent branch roots, arbitrary untracked containers, exact diagnostics,
+  and native reference/string COW lowering remain unsupported.
+
 - Added Lane 2258-C through Lane 2261-C for object-property
   `call_user_func_array()` argument containers rebuilt through by-reference
   helper parameters. Dirty array-literal copied-source paths from a helper

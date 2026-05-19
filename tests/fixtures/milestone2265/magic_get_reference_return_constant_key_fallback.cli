@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2265/magic_get_reference_return_constant_key_fallback.php
