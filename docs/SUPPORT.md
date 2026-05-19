@@ -45,10 +45,14 @@
   the same source-aware value path for covered direct `ArrayAccess`, plain
   array, and string-keyed `$GLOBALS` targets, including suffix appends and RHS
   arrays copied from visible `__get()`, direct by-value `offsetGet()`, or
-  object-property-held `ArrayAccess` sources. This does not provide general
-  PHP reference containers, `Closure::bind`/`bindTo`, untracked dynamic
-  container recovery, unsupported method-body syntax, whole-array reference
-  identity, exact PHP diagnostics, or native COW lowering.
+  object-property-held `ArrayAccess` sources. Supported method-body
+  expression-form writes to non-direct holder object-property arrays, including
+  dynamic property names and append-with-suffix stores, reuse the same
+  object-property array reference/copy-source propagation when the holder
+  evaluates to a tracked object. This does not provide general PHP reference
+  containers, `Closure::bind`/`bindTo`, untracked dynamic container recovery,
+  unsupported method-body syntax, whole-array reference identity, exact PHP
+  diagnostics, or native COW lowering.
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or
   declaration-contained declarations can be loaded. The executing subset

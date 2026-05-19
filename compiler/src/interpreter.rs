@@ -20756,6 +20756,19 @@ impl Interpreter {
                 if self.write_magic_get_array_access_keyed_with_reference_propagation(
                     &temp_name,
                     property,
+                    keys.clone(),
+                    value.clone(),
+                    expr,
+                    array_literal_references.clone(),
+                    &array_literal_copy_sources,
+                    *span,
+                    scope,
+                )? {
+                    return Ok(value);
+                }
+                self.write_plain_object_property_array_index_with_reference_propagation(
+                    &temp_name,
+                    property,
                     keys,
                     value.clone(),
                     expr,
@@ -20763,16 +20776,8 @@ impl Interpreter {
                     &array_literal_copy_sources,
                     *span,
                     scope,
-                )? {
-                    return Ok(value);
-                }
-                Err(runtime_error(
-                    *span,
-                    RuntimeError::unsupported_call(
-                        "assignment",
-                        "non-direct object-property array assignment targets are only implemented for visible ArrayAccess keyed reference propagation in the current subset",
-                    ),
-                ))
+                )?;
+                Ok(value)
             }
             AssignTarget::NonDirectObjectPropertyArrayAppend {
                 holder,
@@ -20841,7 +20846,21 @@ impl Interpreter {
                 if self.write_magic_get_array_access_append_with_reference_propagation(
                     &temp_name,
                     property,
-                    keys,
+                    keys.clone(),
+                    &suffix_keys,
+                    value.clone(),
+                    expr,
+                    array_literal_references.clone(),
+                    &array_literal_copy_sources,
+                    *span,
+                    scope,
+                )? {
+                    return Ok(value);
+                }
+                self.write_plain_object_property_array_append_with_reference_propagation(
+                    &temp_name,
+                    property,
+                    &keys,
                     &suffix_keys,
                     value.clone(),
                     expr,
@@ -20849,16 +20868,8 @@ impl Interpreter {
                     &array_literal_copy_sources,
                     *span,
                     scope,
-                )? {
-                    return Ok(value);
-                }
-                Err(runtime_error(
-                    *span,
-                    RuntimeError::unsupported_call(
-                        "assignment",
-                        "non-direct object-property append assignment targets are only implemented for visible ArrayAccess append reference propagation in the current subset",
-                    ),
-                ))
+                )?;
+                Ok(value)
             }
             AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
                 holder,
@@ -20922,6 +20933,19 @@ impl Interpreter {
                 if self.write_magic_get_array_access_keyed_with_reference_propagation(
                     &temp_name,
                     &property,
+                    keys.clone(),
+                    value.clone(),
+                    expr,
+                    array_literal_references.clone(),
+                    &array_literal_copy_sources,
+                    *span,
+                    scope,
+                )? {
+                    return Ok(value);
+                }
+                self.write_plain_object_property_array_index_with_reference_propagation(
+                    &temp_name,
+                    &property,
                     keys,
                     value.clone(),
                     expr,
@@ -20929,16 +20953,8 @@ impl Interpreter {
                     &array_literal_copy_sources,
                     *span,
                     scope,
-                )? {
-                    return Ok(value);
-                }
-                Err(runtime_error(
-                    *span,
-                    RuntimeError::unsupported_call(
-                        "assignment",
-                        "non-direct dynamic object-property array assignment targets are only implemented for visible ArrayAccess keyed reference propagation in the current subset",
-                    ),
-                ))
+                )?;
+                Ok(value)
             }
             AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
                 holder,
@@ -21008,7 +21024,21 @@ impl Interpreter {
                 if self.write_magic_get_array_access_append_with_reference_propagation(
                     &temp_name,
                     &property,
-                    keys,
+                    keys.clone(),
+                    &suffix_keys,
+                    value.clone(),
+                    expr,
+                    array_literal_references.clone(),
+                    &array_literal_copy_sources,
+                    *span,
+                    scope,
+                )? {
+                    return Ok(value);
+                }
+                self.write_plain_object_property_array_append_with_reference_propagation(
+                    &temp_name,
+                    &property,
+                    &keys,
                     &suffix_keys,
                     value.clone(),
                     expr,
@@ -21016,16 +21046,8 @@ impl Interpreter {
                     &array_literal_copy_sources,
                     *span,
                     scope,
-                )? {
-                    return Ok(value);
-                }
-                Err(runtime_error(
-                    *span,
-                    RuntimeError::unsupported_call(
-                        "assignment",
-                        "non-direct dynamic object-property append assignment targets are only implemented for visible ArrayAccess append reference propagation in the current subset",
-                    ),
-                ))
+                )?;
+                Ok(value)
             }
             AssignTarget::ObjectPropertyArrayAppend {
                 object,
@@ -21202,13 +21224,19 @@ impl Interpreter {
                 )? {
                     return Ok(value);
                 }
-                Err(runtime_error(
+                self.write_plain_object_property_array_append_with_reference_propagation(
+                    object,
+                    &property,
+                    &keys,
+                    &suffix_keys,
+                    value.clone(),
+                    expr,
+                    array_literal_references,
+                    &array_literal_copy_sources,
                     *span,
-                    RuntimeError::unsupported_call(
-                        "assignment",
-                        "dynamic object-property append assignment targets are only implemented for direct visible ArrayAccess append reference propagation in the current subset",
-                    ),
-                ))
+                    scope,
+                )?;
+                Ok(value)
             }
             AssignTarget::DynamicProperty {
                 object,
@@ -21565,6 +21593,158 @@ impl Interpreter {
                 scope,
             )?;
         }
+        Ok(())
+    }
+
+    fn write_plain_object_property_array_index_with_reference_propagation(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let root = self.context_object_property_alias_root(object_name, property, span, scope)?;
+        let root = scope.canonical_equivalent_object_property_alias_root(&root);
+        scope.detach_array_offset_aliases_below_assignment_paths(&[ArrayOffsetAlias {
+            root: root.clone(),
+            keys: keys.clone(),
+        }]);
+        self.write_object_property_nested_array_assignment(
+            object_name,
+            property,
+            &keys,
+            value.clone(),
+            span,
+            scope,
+        )?;
+        scope.sync_array_offset_aliases_for_root_path(&root, &keys);
+        let object_value = match scope.read_static(object_name, span)? {
+            Value::Object(object_value) => object_value,
+            _ => unreachable!("object property assignment already resolved object"),
+        };
+        if matches!(value, Value::Array(_)) {
+            if array_literal_references.is_empty() {
+                for (relative_keys, source) in array_literal_copy_sources {
+                    let mut target_keys = keys.clone();
+                    target_keys.extend(relative_keys.iter().cloned());
+                    self.mirror_array_copy_source_aliases_to_alias_root(
+                        root.clone(),
+                        &target_keys,
+                        source,
+                        scope,
+                    );
+                }
+                scope.record_object_property_array_copy_source_paths_with_prefix(
+                    &object_value,
+                    property,
+                    &keys,
+                    array_literal_copy_sources.to_vec(),
+                );
+                self.mirror_copied_array_aliases_to_alias_root(expr, root, &keys, scope);
+            } else {
+                self.bind_array_literal_references_to_alias_root_with_prefix(
+                    root.clone(),
+                    keys.clone(),
+                    array_literal_references,
+                    expr.span(),
+                    scope,
+                )?;
+                scope.record_object_property_array_copy_source_paths_with_prefix(
+                    &object_value,
+                    property,
+                    &keys,
+                    array_literal_copy_sources.to_vec(),
+                );
+            }
+        } else {
+            scope.remove_object_property_array_copy_source_paths_for_prefix(
+                &object_value,
+                property,
+                &keys,
+            );
+        }
+        Ok(())
+    }
+
+    fn write_plain_object_property_array_append_with_reference_propagation(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: &[ArrayKey],
+        suffix_keys: &[ArrayKey],
+        value: Value,
+        expr: &Expr,
+        array_literal_references: Vec<ArrayLiteralReferenceElement>,
+        array_literal_copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        if matches!(value, Value::Array(_))
+            && (!array_literal_references.is_empty() || !array_literal_copy_sources.is_empty())
+        {
+            self.reject_object_property_array_access_reference_target_if_needed(
+                object_name,
+                property,
+                span,
+                scope,
+            )?;
+            let root =
+                self.context_object_property_alias_root(object_name, property, span, scope)?;
+            let value = self.value_with_assignment_reference_cells(
+                value,
+                expr,
+                &array_literal_references,
+                array_literal_copy_sources,
+                scope,
+                expr.span(),
+            )?;
+            let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
+            let target_alias = scope.append_object_property_array_offset_reference_alias(
+                root,
+                keys.to_vec(),
+                stored_value,
+                span,
+            )?;
+            let mut reference_keys = target_alias.keys.clone();
+            reference_keys.extend(suffix_keys.iter().cloned());
+            self.bind_or_mirror_array_references_to_alias_root(
+                expr,
+                target_alias.root.clone(),
+                reference_keys,
+                array_literal_references,
+                array_literal_copy_sources,
+                scope,
+            )?;
+            scope.sync_array_offset_aliases_for_root_path(&target_alias.root, &target_alias.keys);
+            return Ok(());
+        }
+
+        if suffix_keys.is_empty() {
+            self.write_object_property_nested_array_append(
+                object_name,
+                property,
+                keys,
+                value,
+                span,
+                scope,
+            )?;
+        } else {
+            self.write_object_property_nested_array_append_with_suffix(
+                object_name,
+                property,
+                keys,
+                suffix_keys,
+                value,
+                span,
+                scope,
+            )?;
+        }
+        scope.sync_array_offset_aliases_for_object_property_root(object_name, property);
         Ok(())
     }
 

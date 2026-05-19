@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 2167-C through Lane 2171-C for supported method-body
+  object-property array writes that previously stopped at parser or bounded
+  bridge boundaries. Expression-form non-direct holder assignments now produce
+  the existing non-direct object-property array targets, and those targets can
+  fall back to plain object-property array keyed and append writes with the
+  same reference/copy-source propagation used by direct roots. Focused
+  system-PHP coverage proves keyed, dynamic-keyed, append-suffix, dynamic
+  append-suffix, and direct dynamic-property append copied-source stores where
+  selected reference-backed leaves remain connected and ordinary copied leaves
+  detach. This remains bounded to supported interpreter syntax and tracked
+  object-property roots; arbitrary unsupported method-body syntax, untracked
+  dynamic containers, whole-array reference identity, exact diagnostics, and
+  native reference/string COW lowering remain unsupported.
+
 - Added Lane 2162-C through Lane 2166-C for nested append assignment with
   copied-source COW provenance. Direct nested `ArrayAccess` append assignment,
   suffix append assignment, plain nested array append, and string-keyed

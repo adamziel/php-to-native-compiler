@@ -49,6 +49,11 @@ handled.
   `ArrayAccess` targets, visible magic `__get()`/object-property-held
   `ArrayAccess` RHS values, plain nested arrays, and string-keyed `$GLOBALS`
   paths.
+- [x] Lane 2167-C through 2171-C: let supported magic/`ArrayAccess`
+  method-body expression assignments to non-direct holder object-property
+  arrays reach the general object-property array COW propagation path,
+  covering keyed, dynamic-keyed, append-suffix, dynamic append-suffix, and
+  direct dynamic-property append copied-source stores.
 - [ ] Next COW gap, hard-first: keep extending the general
   magic/`ArrayAccess` method-body side-effect/writeback model so helper,
   callback, dynamic-holder, and arbitrary supported side-effect bodies use one

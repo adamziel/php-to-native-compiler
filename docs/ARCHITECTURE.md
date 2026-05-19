@@ -114,6 +114,14 @@ leaves are materialized into runtime reference cells before the value is
 wrapped by any suffix append keys and stored into a direct nested array,
 string-keyed `$GLOBALS` path, or covered direct `ArrayAccess` nested append
 target. Ordinary copied leaves remain plain copied values.
+Supported method-body expression assignments to non-direct holder
+object-property arrays reuse this write model after the holder expression is
+evaluated once into a temporary object root. Static and dynamic property names
+and append-with-suffix forms then share the same object-property alias root,
+reference-cell binding, copied-source mirroring, and alias-sync helpers as
+direct object-property array writes. The path is still bounded to supported
+interpreter syntax and tracked object-property roots; it is not arbitrary PHP
+side-effect recovery for untracked dynamic containers.
 
 Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`

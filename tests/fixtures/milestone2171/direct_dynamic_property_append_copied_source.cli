@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2171/direct_dynamic_property_append_copied_source.php

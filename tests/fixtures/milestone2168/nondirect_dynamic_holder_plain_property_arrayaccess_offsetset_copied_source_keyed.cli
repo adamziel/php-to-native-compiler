@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2168/nondirect_dynamic_holder_plain_property_arrayaccess_offsetset_copied_source_keyed.php

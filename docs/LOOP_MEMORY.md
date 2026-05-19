@@ -23,6 +23,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T20:10:00+02:00
+
+- Checkpoint before this task: `81d99218 runtime: propagate nested append COW
+  sources`, pushed to `origin/master`.
+- Task attempted: Lane 2167-C through Lane 2171-C bundle, broadening supported
+  magic/`ArrayAccess` method-body expression assignments to non-direct holder
+  object-property array writes with source-aware COW propagation.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `tests/fixtures/milestone2167/*`,
+  `tests/fixtures/milestone2168/*`, `tests/fixtures/milestone2169/*`,
+  `tests/fixtures/milestone2170/*`, `tests/fixtures/milestone2171/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; focused system-PHP
+  comparisons passed for `milestone2167` through `milestone2171`; adjacent
+  comparisons passed for `milestone2162` through `milestone2166`,
+  `milestone2144` through `milestone2161`, and the older arbitrary
+  method-body/reference-cell sweep `milestone2086` through `milestone2095`;
+  filtered Rust regression checks passed for object model, scopes, dynamic
+  features, array reference literals, assignment, unset/isset/empty, and
+  closure.
+- Remaining COW gaps: arbitrary magic/`ArrayAccess` method bodies outside
+  supported interpreter syntax and tracked writeback roots, untracked dynamic
+  containers, broader callback containers, whole-array reference identity,
+  exact PHP diagnostics/Throwable objects, and native reference/string COW
+  lowering.
+- Next concrete task: run `cargo fmt`, `cargo fmt --check`,
+  `cargo check -q -p phpc`, `git diff --check`, then one full
+  `tools/checkpoint.sh` bundle gate and push if it passes. After checkpoint,
+  keep attacking the general method-body effect/value model before narrower
+  shape broadening.
+
 ## Loop Event 2026-05-19T19:20:00+02:00
 
 - Checkpoint before this task: `7cd2b364 runtime: bind closure method COW

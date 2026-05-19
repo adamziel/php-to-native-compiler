@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2166:
+The current in-progress implementation frontier is Lane 2171:
+
+- Lanes 2167 through 2171 broaden supported magic/`ArrayAccess` method-body
+  assignment targets for copied-source COW propagation. Expression-form
+  non-direct holder writes such as `$this->holder->store[$key] = $value`,
+  dynamic-property forms such as `$this->holder->$prop[$key] = $value`,
+  non-direct append-with-suffix stores such as
+  `$this->holder->store["outer"][]["payload"] = $value`, and direct dynamic
+  property appends now reach the same object-property array write helpers as
+  direct roots. Focused system-PHP coverage proves selected reference-backed
+  leaves remain connected while ordinary copied leaves detach. This removes a
+  parser/runtime hole in otherwise supported method bodies, but still does
+  not claim arbitrary unsupported PHP syntax, untracked dynamic containers,
+  whole-array reference identity, exact diagnostics, or native
+  reference/string COW lowering.
 
 - Lanes 2162 through 2166 route nested append assignment through the same
   source-aware assignment value path used by keyed stores. Direct nested
@@ -1754,7 +1768,9 @@ Still missing:
 - Broad array/object/string copy-on-write identity.
 - References inside arrays and object properties without special-case bridges.
 - Arbitrary expression-root reference targets and sources.
-- Mixed and arbitrary nested `ArrayAccess` chains.
+- Mixed and arbitrary nested `ArrayAccess` chains, especially untracked
+  dynamic containers and callback-dispatched containers outside the current
+  supported interpreter/writeback paths.
 - Broader magic `__get()`/`__set()`/`__isset()`/`__unset()` behavior beyond
   the tested direct-variable, visible `$this->property`, private
   `$this->property`, `$this->{$name}`, and `$this->property[$name]`

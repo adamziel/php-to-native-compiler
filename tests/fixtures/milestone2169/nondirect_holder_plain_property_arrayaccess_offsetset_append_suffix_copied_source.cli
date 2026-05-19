@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2169/nondirect_holder_plain_property_arrayaccess_offsetset_append_suffix_copied_source.php

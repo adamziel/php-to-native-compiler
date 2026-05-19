@@ -3817,6 +3817,26 @@ impl Parser {
                         span,
                     });
                 }
+                if let Some((holder, property, indices, span)) =
+                    Self::non_direct_dynamic_object_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+                        holder,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+                if let Some((holder, property, indices, span)) =
+                    Self::non_direct_object_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::NonDirectObjectPropertyArrayIndex {
+                        holder,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
                 let (name, mut indices, span) = Self::array_index_path_from_expr(expr)
                     .ok_or(unsupported_assignment_expression_target_message())?;
                 if indices.len() == 1 {
