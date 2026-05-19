@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1823:
+The current in-progress implementation frontier is Lane 1826:
+
+- Lanes 1824 through 1826 execute side-effecting public by-value
+  `ArrayAccess::offsetGet()` bodies in the covered reference-source and
+  nested mutation paths before applying PHP's detached/no-op result. Direct
+  roots, property-held roots, and mixed chains where a by-value outer
+  `offsetGet()` returns an inner by-reference `ArrayAccess` object now
+  preserve the executed method side effects and the inner alias. Append
+  reference sources pass `null` to `offsetGet()` while null array keys coerce
+  to the empty-string bucket inside the executed body. This still does not
+  claim arbitrary `ArrayAccess` method bodies outside the interpreter subset,
+  by-value `__get()` plain-array reference sources, arbitrary mixed chains,
+  exact PHP diagnostic streams, or native reference lowering.
 
 - Lanes 1821 through 1823 add direct reference-assignment sources for
   declared static-property roots and selected static-property array buckets.

@@ -2842,10 +2842,11 @@ impl ArrayKey {
 
     pub fn from_value(value: &Value) -> RuntimeResult<Self> {
         match value {
+            Value::Null => Ok(Self::String(String::new())),
             Value::Int(value) => Ok(Self::Int(*value)),
             Value::String(value) => Ok(Self::string(value.clone())),
             other => Err(RuntimeError::invalid_array_key(format!(
-                "{} keys are not supported; only int and string keys are implemented",
+                "{} keys are not supported; only null, int, and string keys are implemented",
                 other.type_name()
             ))),
         }
@@ -9893,13 +9894,14 @@ mod tests {
         assert_eq!(
             error.kind(),
             &RuntimeErrorKind::InvalidArrayKey {
-                reason: "bool keys are not supported; only int and string keys are implemented"
-                    .to_string(),
+                reason:
+                    "bool keys are not supported; only null, int, and string keys are implemented"
+                        .to_string(),
             }
         );
         assert_eq!(
             error.message(),
-            "invalid array key: bool keys are not supported; only int and string keys are implemented"
+            "invalid array key: bool keys are not supported; only null, int, and string keys are implemented"
         );
     }
 

@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Lane 1824-C through Lane 1826-C for side-effecting by-value
+  `ArrayAccess::offsetGet()` COW paths. Covered by-value `offsetGet()` bodies
+  now execute before direct/property-held reference-source and nested mutation
+  no-op handling, append reference sources pass `null` into `offsetGet()`,
+  and null array keys coerce to the empty-string bucket inside the executed
+  body. Direct and property-held mixed chains where a by-value outer
+  `offsetGet()` returns an inner by-reference `ArrayAccess` object now bind
+  through the inner backing bucket without re-running the outer method. This
+  does not claim arbitrary `ArrayAccess` method bodies outside the supported
+  interpreter subset, by-value `__get()` plain-array reference sources,
+  arbitrary mixed chains, exact PHP diagnostic-stream parity, or native
+  reference lowering. Focused verification: raw system PHP output matched the
+  new `milestone1824`, `milestone1825`, and `milestone1826` fixtures; `cargo
+  run -q -p phpc -- test --compare-php` passed each new directory plus
+  adjacent mixed `ArrayAccess` milestones `1694` through `1700`, `1722`,
+  `1737`, `1738`, and `1751`; the old `milestone1073` property-held
+  `ArrayAccess` boundary was updated to the new bounded no-op behavior;
+  focused `functions_and_scopes`, `object_model`, compiler runtime-error,
+  and runtime array-key tests passed.
+
 - Added Lane 1821-C through Lane 1823-C for direct static-property
   reference-assignment sources. The parser now accepts static-property roots
   and selected static-property array buckets as reference sources, and direct
@@ -28798,7 +28818,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php:2:6: invalid arithmetic for +: string is not numeric`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_array_key.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_array_key.php:2:11: invalid array key: bool keys are not supported; only int and string keys are implemented`.
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_array_key.php:2:11: invalid array key: bool keys are not supported; only null, int, and string keys are implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/define_duplicate.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/define_duplicate.php:3:1: constant APP_NAME is already defined`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/defined_non_string.php`
@@ -28806,7 +28826,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/defined_unsupported_name.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/defined_unsupported_name.php:2:6: unsupported call defined(): constant name must be a non-empty unqualified identifier in the current subset, got 123BAD`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_key_exists_invalid_key.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_key_exists_invalid_key.php:3:6: invalid array key: bool keys are not supported; only int and string keys are implemented`.
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_key_exists_invalid_key.php:3:6: invalid array key: array keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_key_exists_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_key_exists_non_array.php:2:6: unsupported call array_key_exists(): second argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_key_first_non_array.php`

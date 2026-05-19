@@ -2956,8 +2956,8 @@ $bag["name"] =& $value;
 }
 
 #[test]
-fn reference_assignment_object_property_array_access_target_reports_stable_boundary() {
-    let error = runtime_error(
+fn reference_assignment_object_property_array_access_by_value_target_is_noop() {
+    let execution = run_source(
         r#"<?php
 class Bag implements ArrayAccess {
     public function offsetExists($offset) { return false; }
@@ -2972,15 +2972,16 @@ $holder = new Holder();
 $holder->bag = new Bag();
 $value = "Grace";
 $holder->bag["name"] =& $value;
+echo $value;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 14);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call reference assignment: ArrayAccess offset reference sources require offsetGet() to return $this->property[$offset] with optional literal prefix or suffix keys in the current subset"
-    );
+    assert_eq!(execution.stdout, "Grace");
+    assert!(execution
+        .stderr
+        .contains("Indirect modification of overloaded element of Bag has no effect"));
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

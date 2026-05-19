@@ -9709,26 +9709,22 @@ impl Interpreter {
                 } = source
                 {
                     let key = self.evaluate_array_key(index, scope)?;
-                    if let Some(value) = self
-                        .evaluate_direct_array_access_by_value_reference_source_value(
+                    if let Some(binding) = self
+                        .evaluate_direct_array_access_reference_source_binding(
                             array_name,
                             vec![key.clone()],
                             span,
                             scope,
                         )?
                     {
-                        scope.write_detached_static(name, value);
-                        return Ok(());
-                    }
-                    if let Some((alias, _)) = self
-                        .evaluate_direct_array_access_reference_source_alias(
-                            array_name,
-                            vec![key.clone()],
-                            span,
-                            scope,
-                        )?
-                    {
-                        scope.bind_static_to_array_offset_alias(name, alias);
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
                         return Ok(());
                     }
                     self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
@@ -9754,26 +9750,22 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
-                    if let Some(value) = self
-                        .evaluate_direct_array_access_by_value_reference_source_value(
+                    if let Some(binding) = self
+                        .evaluate_direct_array_access_reference_source_binding(
                             array_name,
                             keys.clone(),
                             span,
                             scope,
                         )?
                     {
-                        scope.write_detached_static(name, value);
-                        return Ok(());
-                    }
-                    if let Some((alias, _)) = self
-                        .evaluate_direct_array_access_reference_source_alias(
-                            array_name,
-                            keys.clone(),
-                            span,
-                            scope,
-                        )?
-                    {
-                        scope.bind_static_to_array_offset_alias(name, alias);
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
                         return Ok(());
                     }
                     self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
@@ -9803,11 +9795,8 @@ impl Interpreter {
                         .collect::<CompileResult<Vec<_>>>()?;
                     if keys.is_empty() {
                         if let Some(value) = self
-                            .evaluate_direct_array_access_by_value_reference_source_value(
-                                array_name,
-                                vec![Self::array_access_append_reference_key()],
-                                span,
-                                scope,
+                            .evaluate_direct_array_access_append_by_value_reference_source_value(
+                                array_name, span, scope,
                             )?
                         {
                             scope.write_detached_static(name, value);
@@ -9832,8 +9821,8 @@ impl Interpreter {
                 } = source
                 {
                     let key = self.evaluate_array_key(index, scope)?;
-                    if let Some(value) = self
-                        .evaluate_object_property_array_access_by_value_reference_source_value(
+                    if let Some(binding) = self
+                        .evaluate_object_property_array_access_reference_source_binding(
                             object,
                             property,
                             vec![key.clone()],
@@ -9841,19 +9830,14 @@ impl Interpreter {
                             scope,
                         )?
                     {
-                        scope.write_detached_static(name, value);
-                        return Ok(());
-                    }
-                    if let Some((alias, _)) = self
-                        .evaluate_object_property_array_access_reference_source_alias(
-                            object,
-                            property,
-                            vec![key.clone()],
-                            span,
-                            scope,
-                        )?
-                    {
-                        scope.bind_static_to_array_offset_alias(name, alias);
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
                         return Ok(());
                     }
                     if let Some(binding) = self
@@ -9907,8 +9891,8 @@ impl Interpreter {
                 {
                     let property = self.evaluate_dynamic_property_name(property, span, scope)?;
                     let key = self.evaluate_array_key(index, scope)?;
-                    if let Some(value) = self
-                        .evaluate_object_property_array_access_by_value_reference_source_value(
+                    if let Some(binding) = self
+                        .evaluate_object_property_array_access_reference_source_binding(
                             object,
                             &property,
                             vec![key.clone()],
@@ -9916,19 +9900,14 @@ impl Interpreter {
                             scope,
                         )?
                     {
-                        scope.write_detached_static(name, value);
-                        return Ok(());
-                    }
-                    if let Some((alias, _)) = self
-                        .evaluate_object_property_array_access_reference_source_alias(
-                            object,
-                            &property,
-                            vec![key.clone()],
-                            span,
-                            scope,
-                        )?
-                    {
-                        scope.bind_static_to_array_offset_alias(name, alias);
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
                         return Ok(());
                     }
                     if let Some(binding) = self
@@ -9984,8 +9963,8 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
-                    if let Some(value) = self
-                        .evaluate_object_property_array_access_by_value_reference_source_value(
+                    if let Some(binding) = self
+                        .evaluate_object_property_array_access_reference_source_binding(
                             object,
                             property,
                             keys.clone(),
@@ -9993,19 +9972,14 @@ impl Interpreter {
                             scope,
                         )?
                     {
-                        scope.write_detached_static(name, value);
-                        return Ok(());
-                    }
-                    if let Some((alias, _)) = self
-                        .evaluate_object_property_array_access_reference_source_alias(
-                            object,
-                            property,
-                            keys.clone(),
-                            span,
-                            scope,
-                        )?
-                    {
-                        scope.bind_static_to_array_offset_alias(name, alias);
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
                         return Ok(());
                     }
                     if let Some(binding) = self
@@ -10057,8 +10031,8 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
-                    if let Some(value) = self
-                        .evaluate_object_property_array_access_by_value_reference_source_value(
+                    if let Some(binding) = self
+                        .evaluate_object_property_array_access_reference_source_binding(
                             object,
                             &property,
                             keys.clone(),
@@ -10066,19 +10040,14 @@ impl Interpreter {
                             scope,
                         )?
                     {
-                        scope.write_detached_static(name, value);
-                        return Ok(());
-                    }
-                    if let Some((alias, _)) = self
-                        .evaluate_object_property_array_access_reference_source_alias(
-                            object,
-                            &property,
-                            keys.clone(),
-                            span,
-                            scope,
-                        )?
-                    {
-                        scope.bind_static_to_array_offset_alias(name, alias);
+                        match binding {
+                            NonDirectReferenceSourceBinding::DetachedValue(value) => {
+                                scope.write_detached_static(name, value);
+                            }
+                            NonDirectReferenceSourceBinding::ArrayOffset(alias) => {
+                                scope.bind_static_to_array_offset_alias(name, alias);
+                            }
+                        }
                         return Ok(());
                     }
                     if let Some(binding) = self
@@ -10131,12 +10100,8 @@ impl Interpreter {
                         .collect::<CompileResult<Vec<_>>>()?;
                     if keys.is_empty() {
                         if let Some(value) = self
-                            .evaluate_object_property_array_access_by_value_reference_source_value(
-                                object,
-                                property,
-                                vec![Self::array_access_append_reference_key()],
-                                span,
-                                scope,
+                            .evaluate_object_property_array_access_append_by_value_reference_source_value(
+                                object, property, span, scope,
                             )?
                         {
                             scope.write_detached_static(name, value);
@@ -10204,12 +10169,8 @@ impl Interpreter {
                         .collect::<CompileResult<Vec<_>>>()?;
                     if keys.is_empty() {
                         if let Some(value) = self
-                            .evaluate_object_property_array_access_by_value_reference_source_value(
-                                object,
-                                &property,
-                                vec![Self::array_access_append_reference_key()],
-                                span,
-                                scope,
+                            .evaluate_object_property_array_access_append_by_value_reference_source_value(
+                                object, &property, span, scope,
                             )?
                         {
                             scope.write_detached_static(name, value);
@@ -11407,18 +11368,25 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
-        let mut by_value_keys = keys.clone();
-        by_value_keys.push(Self::array_access_append_reference_key());
-        if self
-            .evaluate_object_property_array_access_by_value_reference_source_value(
+        let by_value_result = if keys.is_empty() {
+            self.evaluate_object_property_array_access_append_by_value_reference_source_value(
+                object_name,
+                property,
+                span,
+                scope,
+            )?
+        } else {
+            let mut by_value_keys = keys.clone();
+            by_value_keys.push(Self::array_access_append_reference_key());
+            self.evaluate_object_property_array_access_by_value_reference_source_value(
                 object_name,
                 property,
                 by_value_keys,
                 span,
                 scope,
             )?
-            .is_some()
-        {
+        };
+        if by_value_result.is_some() {
             return Ok(true);
         }
 
@@ -11476,18 +11444,25 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
-        let mut by_value_keys = keys.clone();
-        by_value_keys.push(Self::array_access_append_reference_key());
-        if self
-            .evaluate_object_property_array_access_by_value_reference_source_value(
+        let by_value_result = if keys.is_empty() {
+            self.evaluate_object_property_array_access_append_by_value_reference_source_value(
+                object_name,
+                property,
+                span,
+                scope,
+            )?
+        } else {
+            let mut by_value_keys = keys.clone();
+            by_value_keys.push(Self::array_access_append_reference_key());
+            self.evaluate_object_property_array_access_by_value_reference_source_value(
                 object_name,
                 property,
                 by_value_keys,
                 span,
                 scope,
             )?
-            .is_some()
-        {
+        };
+        if by_value_result.is_some() {
             return Ok(true);
         }
 
@@ -12222,10 +12197,56 @@ impl Interpreter {
         .map(Some)
     }
 
-    fn evaluate_direct_array_access_by_value_reference_source_value(
+    fn evaluate_direct_array_access_reference_source_binding(
         &mut self,
         object_name: &str,
         keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<NonDirectReferenceSourceBinding>> {
+        if keys.is_empty() {
+            return Ok(None);
+        }
+        let Some(Value::Object(object)) = scope.read_named(object_name) else {
+            return Ok(None);
+        };
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return Ok(None);
+        }
+
+        self.evaluate_array_access_reference_source_binding_for_object(
+            object,
+            object_name.to_string(),
+            keys,
+            None,
+            span,
+            scope,
+        )
+    }
+
+    fn evaluate_direct_array_access_append_by_value_reference_source_value(
+        &mut self,
+        object_name: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        self.evaluate_direct_array_access_by_value_reference_source_value_with_first_key(
+            object_name,
+            vec![Self::array_access_append_reference_key()],
+            Some(Value::Null),
+            span,
+            scope,
+        )
+    }
+
+    fn evaluate_direct_array_access_by_value_reference_source_value_with_first_key(
+        &mut self,
+        object_name: &str,
+        keys: Vec<ArrayKey>,
+        first_key_value: Option<Value>,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<Value>> {
@@ -12246,6 +12267,7 @@ impl Interpreter {
             object,
             object_name.to_string(),
             keys,
+            first_key_value,
             span,
             scope,
         )
@@ -12272,6 +12294,88 @@ impl Interpreter {
         object_name: &str,
         property: &str,
         keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        self.evaluate_object_property_array_access_by_value_reference_source_value_with_first_key(
+            object_name,
+            property,
+            keys,
+            None,
+            span,
+            scope,
+        )
+    }
+
+    fn evaluate_object_property_array_access_reference_source_binding(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<NonDirectReferenceSourceBinding>> {
+        if keys.is_empty() {
+            return Ok(None);
+        }
+        let Some(Value::Object(holder)) = scope.read_named(object_name) else {
+            return Ok(None);
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let value = match holder.read_property_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(value) => value,
+            Err(_) => return Ok(None),
+        };
+        let Value::Object(object) = value else {
+            return Ok(None);
+        };
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return Ok(None);
+        }
+
+        let hidden_name = self.hidden_array_access_reference_object_name(&object);
+        scope.write_static(&hidden_name, Value::Object(object.clone()));
+        self.evaluate_array_access_reference_source_binding_for_object(
+            object,
+            hidden_name,
+            keys,
+            None,
+            span,
+            scope,
+        )
+    }
+
+    fn evaluate_object_property_array_access_append_by_value_reference_source_value(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        self.evaluate_object_property_array_access_by_value_reference_source_value_with_first_key(
+            object_name,
+            property,
+            vec![Self::array_access_append_reference_key()],
+            Some(Value::Null),
+            span,
+            scope,
+        )
+    }
+
+    fn evaluate_object_property_array_access_by_value_reference_source_value_with_first_key(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        first_key_value: Option<Value>,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<Value>> {
@@ -12307,6 +12411,7 @@ impl Interpreter {
             object,
             hidden_name,
             keys,
+            first_key_value,
             span,
             scope,
         )
@@ -12667,6 +12772,11 @@ impl Interpreter {
                                     object,
                                     hidden_name.clone(),
                                     array_access_keys.clone(),
+                                    if append_array_fallback {
+                                        Some(Value::Null)
+                                    } else {
+                                        None
+                                    },
                                     span,
                                     scope,
                                 )?
@@ -12748,6 +12858,11 @@ impl Interpreter {
                         object,
                         hidden_name.clone(),
                         array_access_keys.clone(),
+                        if append_array_fallback {
+                            Some(Value::Null)
+                        } else {
+                            None
+                        },
                         span,
                         scope,
                     )?
@@ -12956,12 +13071,8 @@ impl Interpreter {
 
         if keys.is_empty() {
             if let Some(value) = self
-                .evaluate_object_property_array_access_by_value_reference_source_value(
-                    &temp_name,
-                    property,
-                    vec![Self::array_access_append_reference_key()],
-                    span,
-                    scope,
+                .evaluate_object_property_array_access_append_by_value_reference_source_value(
+                    &temp_name, property, span, scope,
                 )?
             {
                 return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(value)));
@@ -13533,8 +13644,9 @@ impl Interpreter {
     fn evaluate_array_access_by_value_reference_source_value_for_object(
         &mut self,
         object: PhpObject,
-        object_name: String,
+        _object_name: String,
         keys: Vec<ArrayKey>,
+        first_key_value: Option<Value>,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<Value>> {
@@ -13553,56 +13665,38 @@ impl Interpreter {
             return Ok(None);
         }
         ensure_user_function_arity(function, 1, span)?;
-        ensure_supported_reference_return_function_metadata(function, span)?;
+        ensure_supported_function_signature(function, 1, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
 
-        let return_target = self.array_access_offset_get_reference_target(function, span)?;
-
-        let protected_class_ids = self.protected_class_ids_for_context(class_id);
-        let property_visibility = object
-            .property_visibility_from_context(
-                &return_target.property,
-                Some(class_id),
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))?;
-        let root = if property_visibility == Visibility::Public {
-            ArrayOffsetAliasRoot::PublicObjectProperty {
-                object: object_name.clone(),
-                property: return_target.property.clone(),
-            }
-        } else {
-            ArrayOffsetAliasRoot::ContextObjectProperty {
-                object: object_name.clone(),
-                property: return_target.property.clone(),
-                current_class_id: Some(class_id),
-                protected_class_ids,
-            }
+        let Some((first_key, rest_keys)) = keys.split_first() else {
+            return Ok(None);
         };
-
-        if keys.len() > 1 {
-            let first_keys =
-                Self::array_access_offset_get_reference_keys(&return_target, &keys[..1]);
-            let first_alias = ArrayOffsetAlias {
-                root: root.clone(),
-                keys: first_keys,
-            };
-            if let Some(Value::Object(nested_object)) = scope.read_array_offset_alias(&first_alias)
+        let called_class_id = object.class_id();
+        let first_value = self.call_user_function_with_this(
+            function,
+            object,
+            vec![first_key_value.unwrap_or_else(|| Self::array_key_value(Some(first_key.clone())))],
+            Some(class_id),
+            Some(called_class_id),
+        )?;
+        if let Value::Object(nested_object) = &first_value {
+            if self
+                .classes
+                .implements_interface(nested_object.class_id(), "ArrayAccess")
             {
-                if self
-                    .classes
-                    .implements_interface(nested_object.class_id(), "ArrayAccess")
-                {
-                    let hidden_name =
-                        self.hidden_array_access_reference_object_name(&nested_object);
-                    scope.write_static(&hidden_name, Value::Object(nested_object.clone()));
-                    return self.evaluate_array_access_by_value_reference_source_value_for_object(
-                        nested_object,
-                        hidden_name,
-                        keys[1..].to_vec(),
-                        span,
-                        scope,
-                    );
+                if rest_keys.is_empty() {
+                    return Ok(Some(first_value));
                 }
+                let hidden_name = self.hidden_array_access_reference_object_name(nested_object);
+                scope.write_static(&hidden_name, Value::Object(nested_object.clone()));
+                return self.evaluate_array_access_by_value_reference_source_value_for_object(
+                    nested_object.clone(),
+                    hidden_name,
+                    rest_keys.to_vec(),
+                    None,
+                    span,
+                    scope,
+                );
             }
         }
 
@@ -13612,11 +13706,101 @@ impl Interpreter {
             span,
         )?;
 
-        let keys = Self::array_access_offset_get_reference_keys(&return_target, &keys);
-        let alias = ArrayOffsetAlias { root, keys };
-        Ok(Some(
-            scope.read_array_offset_alias(&alias).unwrap_or(Value::Null),
-        ))
+        if rest_keys.is_empty() {
+            return Ok(Some(first_value));
+        }
+        if let Value::Array(array) = first_value {
+            return Ok(Some(
+                SymbolTable::read_nested_array_offset_alias(&array, rest_keys)
+                    .unwrap_or(Value::Null),
+            ));
+        }
+        Ok(Some(Value::Null))
+    }
+
+    fn evaluate_array_access_reference_source_binding_for_object(
+        &mut self,
+        object: PhpObject,
+        object_name: String,
+        keys: Vec<ArrayKey>,
+        first_key_value: Option<Value>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<NonDirectReferenceSourceBinding>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "offsetGet")
+        else {
+            return Ok(None);
+        };
+        if is_static || visibility != Visibility::Public {
+            return Ok(None);
+        }
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        if function.returns_by_reference {
+            let (alias, _) = self.evaluate_array_access_reference_source_alias_for_object(
+                object,
+                object_name,
+                keys,
+                span,
+                scope,
+            )?;
+            return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)));
+        }
+
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_function_signature(function, 1, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let Some((first_key, rest_keys)) = keys.split_first() else {
+            return Ok(None);
+        };
+        let called_class_id = object.class_id();
+        let first_value = self.call_user_function_with_this(
+            function,
+            object,
+            vec![first_key_value.unwrap_or_else(|| Self::array_key_value(Some(first_key.clone())))],
+            Some(class_id),
+            Some(called_class_id),
+        )?;
+        if let Value::Object(nested_object) = &first_value {
+            if self
+                .classes
+                .implements_interface(nested_object.class_id(), "ArrayAccess")
+            {
+                if rest_keys.is_empty() {
+                    return Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(
+                        first_value,
+                    )));
+                }
+                let hidden_name = self.hidden_array_access_reference_object_name(nested_object);
+                scope.write_static(&hidden_name, Value::Object(nested_object.clone()));
+                return self.evaluate_array_access_reference_source_binding_for_object(
+                    nested_object.clone(),
+                    hidden_name,
+                    rest_keys.to_vec(),
+                    None,
+                    span,
+                    scope,
+                );
+            }
+        }
+
+        self.emit_notice(
+            "ArrayAccess::offsetGet()",
+            format!("Indirect modification of overloaded element of {class_name} has no effect"),
+            span,
+        )?;
+
+        let value = if rest_keys.is_empty() {
+            first_value
+        } else if let Value::Array(array) = first_value {
+            SymbolTable::read_nested_array_offset_alias(&array, rest_keys).unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        };
+        Ok(Some(NonDirectReferenceSourceBinding::DetachedValue(value)))
     }
 
     fn hidden_array_access_reference_object_name(&self, object: &PhpObject) -> String {
@@ -17776,6 +17960,7 @@ impl Interpreter {
                 array_access_object.clone(),
                 hidden_name.clone(),
                 keys.clone(),
+                None,
                 span,
                 scope,
             )?
@@ -17951,6 +18136,7 @@ impl Interpreter {
                 array_access_object.clone(),
                 hidden_name.clone(),
                 keys.clone(),
+                None,
                 span,
                 scope,
             )?

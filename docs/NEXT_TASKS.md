@@ -20197,6 +20197,19 @@ handled.
   and side effects outside the executed method-body subset, exact PHP
   diagnostics, and native reference lowering named as unsupported.
 
+## Lane 1824-C through Lane 1826-C: By-Value ArrayAccess Body Execution
+
+- [x] Runtime/value-model/tests/docs bundle: execute public by-value
+  `ArrayAccess::offsetGet()` bodies for covered direct and property-held
+  reference-source/no-op paths before producing detached values, pass `null`
+  to append-reference `offsetGet()` calls while coercing null array keys to
+  the empty-string bucket, and continue mixed chains where a side-effecting
+  by-value outer `offsetGet()` returns an inner by-reference `ArrayAccess`
+  object. Keep by-value `__get()` plain-array reference sources, arbitrary
+  mixed chains, unsupported PHP syntax outside the interpreter subset, exact
+  diagnostic-stream parity, and native reference lowering named as
+  unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

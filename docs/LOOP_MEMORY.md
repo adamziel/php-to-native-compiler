@@ -18,6 +18,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T02:25:15+02:00
+
+- Checkpoint before this task: `66a6f3df parser: support static property
+  reference sources`, pushed to `origin/master`.
+- Task attempted: Lane 1824-C through Lane 1826-C bundle, executing
+  side-effecting public by-value `ArrayAccess::offsetGet()` bodies in covered
+  detached/no-op paths and carrying by-value outer `ArrayAccess` object
+  results into inner by-reference `ArrayAccess` aliases.
+- Files changed so far: `compiler/src/interpreter.rs`, `runtime/src/lib.rs`,
+  `compiler/tests/runtime_errors.rs`, `tests/fixtures/milestone1824/*`,
+  `tests/fixtures/milestone1825/*`, `tests/fixtures/milestone1826/*`,
+  `tests/fixtures/runtime_errors/unsupported_array_key.*`, `GOAL.MD`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; raw system PHP output
+  matched the new `milestone1824`, `milestone1825`, and `milestone1826`
+  fixtures; `cargo run -q -p phpc -- test --compare-php` passed each new
+  fixture directory plus adjacent mixed `ArrayAccess` milestones `1694`
+  through `1700`, `1722`, `1737`, `1738`, and `1751`; `milestone1073` and
+  `runtime_errors` fixture tests passed after updating the old boundary;
+  focused `functions_and_scopes`, `object_model`, compiler runtime-error, and
+  runtime array-key tests passed; `cargo fmt --check`, `cargo check -q -p
+  phpc`, and `git diff --check` passed.
+- Remaining COW gaps: by-value `__get()` plain-array reference sources,
+  arbitrary mixed `ArrayAccess` chains, arbitrary magic/`ArrayAccess` method
+  bodies outside the supported interpreter subset, arbitrary callable arrays,
+  builtin callbacks as reference-return sources, full exception unwinding and
+  uncaught exception propagation, arbitrary Iterator side effects, broader
+  complex alias sinks and alias lifetime ordering, exact PHP stderr/fatal
+  text, binary/multibyte string offset behavior, and native reference/string
+  COW lowering.
+- Next concrete task: run adjacent regression checks, formatting, diff check,
+  and the full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T02:07:12+02:00
 
 - Checkpoint before this task: `3b72e1f7 runtime: support static property
