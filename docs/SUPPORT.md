@@ -175,7 +175,19 @@
   the selected visible property holds an `ArrayAccess` object and public
   by-reference `offsetGet($offset)` has the exact bounded body
   `return $this->property[$offset];`; writes route through the backing
-  property array slot. Direct user-function by-reference calls also accept
+  property array slot. The by-reference argument bridge also accepts the
+  focused mixed nested `ArrayAccess` shape where a by-value outer
+  `offsetGet()` returns an inner `ArrayAccess` object and that inner object
+  supplies a covered public by-reference `offsetGet()` lvalue. Covered roots
+  include direct `ArrayAccess` variables, visible named or dynamic
+  property-held `ArrayAccess`, method-returned and factory-returned holder
+  properties, and visible by-value `__get()` properties such as
+  `handler($bag["box"]["leaf"])`,
+  `handler($holder->bag["box"]["leaf"])`,
+  `handler($holder->holder()->{$name}["box"]["leaf"])`,
+  `handler(make_holder($bag)->bag["box"]["leaf"])`, and
+  `handler($object->missing["box"]["leaf"])`; callee writes route back to the
+  inner backing bucket. Direct user-function by-reference calls also accept
   direct missing or inaccessible declared named and dynamic object-property
   arguments such as `handler($object->missing)`,
   `handler($object->private)`, and `handler($object->{$name})` when a visible

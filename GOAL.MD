@@ -32,7 +32,19 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1963:
+The current in-progress implementation frontier is Lane 1968:
+
+- Lanes 1964 through 1968 broaden the same mixed nested `ArrayAccess` binding
+  to by-reference user-function arguments. Direct `ArrayAccess` roots,
+  visible property-held roots, method-returned and factory-returned holder
+  roots, dynamic selected holder properties, and visible by-value `__get()`
+  roots can now pass a selected inner by-reference `ArrayAccess` bucket to a
+  by-reference parameter when the by-value outer `offsetGet()` returns the
+  inner object handle. Callee writes route back to the inner backing bucket.
+  This is still bounded to supported interpreter-body execution and covered
+  lvalue bindings; arbitrary PHP side effects outside that subset, arbitrary
+  magic/`ArrayAccess` bodies, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
 
 - Lanes 1959 through 1963 broaden mixed nested `ArrayAccess` reference-source
   binding for visible property-held roots reached through non-direct holder

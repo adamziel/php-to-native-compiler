@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1964-C through Lane 1968-C for mixed nested `ArrayAccess`
+  by-reference user-function arguments. Reference-parameter invocation now
+  reuses the same binding evaluator as statement-form reference sources for
+  direct `ArrayAccess` roots, visible property-held roots, method-returned
+  and factory-returned holder roots, dynamic selected holder properties, and
+  visible by-value `__get()` roots when a by-value outer `offsetGet()` returns
+  an inner `ArrayAccess` object whose public by-reference `offsetGet()`
+  supplies the selected lvalue. Focused system-PHP coverage proves callee
+  writes route back to the inner backing bucket. Arbitrary PHP side effects
+  outside the supported interpreter subset, arbitrary magic/`ArrayAccess`
+  method bodies, whole-array reference identity, exact diagnostics, and
+  native reference lowering remain unsupported.
+
 - Added Lane 1959-C through Lane 1963-C for mixed nested `ArrayAccess`
   reference-source binding through visible property-held roots reached from
   non-direct holder expressions. Method-returned and factory-returned holders

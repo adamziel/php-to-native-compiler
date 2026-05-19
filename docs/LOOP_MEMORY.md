@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T11:05:00+02:00
+
+- Checkpoint before this task: `0de41ae1 runtime: broaden non-direct ArrayAccess COW chains`, pushed to `origin/master`.
+- Task attempted: Lane 1964-C through Lane 1968-C bundle, broadening mixed
+  nested `ArrayAccess` binding for by-reference user-function arguments.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1964/*`, `tests/fixtures/milestone1965/*`,
+  `tests/fixtures/milestone1966/*`, `tests/fixtures/milestone1967/*`,
+  `tests/fixtures/milestone1968/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes exposed direct, property-held,
+  method-return holder, dynamic holder, factory holder, and by-value magic
+  `__get()` mixed `ArrayAccess` reference-argument failures, then matched
+  after the patch. Focused system-PHP comparisons passed for `milestone1964`
+  through `milestone1968`; adjacent comparisons passed for `milestone1678`,
+  `milestone1679`, `milestone1825`, `milestone1826`, `milestone1829`,
+  `milestone1836`, `milestone1906`, and `milestone1959` through
+  `milestone1963`; `cargo fmt` and `cargo check -q` passed.
+- Remaining COW gaps: scalar parent overwrite/error parity for remaining
+  covered append/keyed/reference paths, possible mixed `ArrayAccess` gaps in
+  reference-return or callback reference-argument paths, dynamic
+  `call_user_func_array()` containers that cannot be traced to evaluated
+  local literals, closures and array callbacks outside covered reference
+  argument slices, by-reference helper parameters, arbitrary PHP side effects
+  outside the interpreter subset, exact PHP diagnostics, whole-array
+  reference identity, native reference/string COW lowering, and native
+  lowering for these interpreter paths.
+- Next concrete task: run `cargo check -q`, `cargo fmt --check`,
+  `git diff --check`, the full `tools/checkpoint.sh` bundle gate, then push
+  if it passes.
+
 ## Loop Event 2026-05-19T10:20:00+02:00
 
 - Checkpoint before this task: `c1b989c0 runtime: preserve stored call_user_func_array COW provenance`, pushed to `origin/master`.

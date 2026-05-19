@@ -20607,12 +20607,25 @@ handled.
   arbitrary magic/`ArrayAccess` method bodies, whole-array reference identity,
   exact diagnostics, and native reference lowering named as unsupported.
 
+## Lane 1964-C through Lane 1968-C: Mixed ArrayAccess Reference Arguments
+
+- [x] Runtime/tests/docs bundle: broaden mixed nested `ArrayAccess`
+  binding for by-reference user-function arguments. Cover direct
+  `ArrayAccess` roots, visible property-held roots, method-returned holder
+  roots with dynamic selected properties, factory-returned holder roots, and
+  visible by-value magic `__get()` roots when a by-value outer `offsetGet()`
+  returns an inner `ArrayAccess` object and the inner object supplies a
+  covered public by-reference `offsetGet()` lvalue. Keep arbitrary PHP side
+  effects outside the supported interpreter subset, arbitrary
+  magic/`ArrayAccess` method bodies, whole-array reference identity, exact
+  diagnostics, and native reference lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe the remaining scalar parent overwrite/error parity for covered
-  append/keyed/reference paths, then probe whether the same non-direct mixed
-  `ArrayAccess` bridge is still missing from by-reference argument or
-  reference-return paths. Implement only bounded PHP-comparable failures
+  append/keyed/reference paths, then probe whether any covered mixed
+  `ArrayAccess` bridge is still missing from reference-return or callback
+  reference-argument paths. Implement only bounded PHP-comparable failures
   without claiming arbitrary side-effecting method bodies, full PHP COW
   identity, or unsupported native lowering.
 

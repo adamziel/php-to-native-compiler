@@ -42537,60 +42537,20 @@ impl Interpreter {
             .iter()
             .map(|index| self.evaluate_array_key(index, caller_scope))
             .collect::<CompileResult<Vec<_>>>()?;
-        let object = match caller_scope.read_static(&object_name, arg.span())? {
-            Value::Object(object) => object,
-            other => {
-                return Err(runtime_error(
-                    arg.span(),
-                    RuntimeError::invalid_property_access(format!(
-                        "cannot read property ${property} on {}",
-                        other.type_name()
-                    )),
-                ));
-            }
+        let Some(binding) = self.evaluate_magic_get_array_access_reference_source_binding(
+            &object_name,
+            &property,
+            keys,
+            arg.span(),
+            caller_scope,
+            true,
+            false,
+        )?
+        else {
+            return Ok(None);
         };
-
-        let (current_class_id, protected_class_ids) = self.current_property_access_context();
-        match object.read_property_from_context(&property, current_class_id, &protected_class_ids) {
-            Ok(_) => Ok(None),
-            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
-                let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object, &property, arg.span())?
-                else {
-                    return Ok(None);
-                };
-                let temp_name = self.next_foreach_temporary_array_name();
-                caller_scope.bind_static_to_cell(&temp_name, cell);
-                if let Some((alias, value)) = self
-                    .evaluate_direct_array_access_reference_source_alias(
-                        &temp_name,
-                        keys.clone(),
-                        arg.span(),
-                        caller_scope,
-                    )?
-                {
-                    return Ok(Some((alias, value)));
-                }
-                let alias = ArrayOffsetAlias {
-                    root: ArrayOffsetAliasRoot::StaticArray { name: temp_name },
-                    keys,
-                };
-                caller_scope.materialize_array_offset_alias(&alias, arg.span())?;
-                let value = caller_scope
-                    .read_array_offset_alias(&alias)
-                    .ok_or_else(|| {
-                        runtime_error(
-                            arg.span(),
-                            RuntimeError::invalid_array_access(
-                                "cannot bind missing magic __get array offset reference argument"
-                                    .to_string(),
-                            ),
-                        )
-                    })?;
-                Ok(Some((alias, value)))
-            }
-            Err(error) => Err(runtime_error(arg.span(), error)),
-        }
+        self.array_offset_alias_from_reference_source_binding(binding, arg.span(), caller_scope)
+            .map(Some)
     }
 
     fn direct_or_dynamic_object_property_array_argument_parts<'a>(
@@ -42632,6 +42592,17 @@ impl Interpreter {
             .iter()
             .map(|index| self.evaluate_array_key(index, caller_scope))
             .collect::<CompileResult<Vec<_>>>()?;
+
+        if let Some(binding) = self.evaluate_direct_array_access_reference_source_binding(
+            name,
+            keys.clone(),
+            arg.span(),
+            caller_scope,
+        )? {
+            return self
+                .array_offset_alias_from_reference_source_binding(binding, arg.span(), caller_scope)
+                .map(Some);
+        }
 
         if let Some((alias, value)) = self.evaluate_direct_array_access_reference_source_alias(
             name,
@@ -42851,12 +42822,21 @@ impl Interpreter {
                 let hidden_name =
                     self.hidden_array_access_reference_object_name(&array_access_object);
                 caller_scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
-                return self
-                    .evaluate_array_access_reference_source_alias_for_object(
+                let Some(binding) = self
+                    .evaluate_array_access_reference_source_binding_for_object(
                         array_access_object,
                         hidden_name,
                         keys,
                         None,
+                        arg.span(),
+                        caller_scope,
+                    )?
+                else {
+                    return Ok(None);
+                };
+                return self
+                    .array_offset_alias_from_reference_source_binding(
+                        binding,
                         arg.span(),
                         caller_scope,
                     )
