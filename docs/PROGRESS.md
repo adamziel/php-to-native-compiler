@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Lane 1959-C through Lane 1963-C for mixed nested `ArrayAccess`
+  reference-source binding through visible property-held roots reached from
+  non-direct holder expressions. Method-returned and factory-returned holders
+  can now expose a visible property whose public by-value `offsetGet()` returns
+  an inner `ArrayAccess` object, then continue into the inner public
+  by-reference `offsetGet()` binding. Focused system-PHP coverage includes
+  method-return holders, factory-return holders, dynamic property selection,
+  nested append sources, and storable reference sources feeding another array
+  slot. Arbitrary PHP side effects outside the supported interpreter subset,
+  arbitrary magic/`ArrayAccess` method bodies, whole-array reference identity,
+  exact diagnostics, and native reference lowering remain unsupported.
+
 - Added Lane 1955-C through Lane 1958-C for stored and named
   `call_user_func_array()` helper wrappers in by-value magic/`ArrayAccess`
   method bodies. Non-reference string user callbacks now preserve proven

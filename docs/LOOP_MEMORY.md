@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T10:20:00+02:00
+
+- Checkpoint before this task: `c1b989c0 runtime: preserve stored call_user_func_array COW provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1959-C through Lane 1963-C bundle, broadening mixed
+  nested `ArrayAccess` reference-source binding through visible property-held
+  roots reached from non-direct holder expressions.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1959/*`, `tests/fixtures/milestone1960/*`,
+  `tests/fixtures/milestone1961/*`, `tests/fixtures/milestone1962/*`,
+  `tests/fixtures/milestone1963/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: focused system-PHP comparisons passed for
+  `milestone1959` through `milestone1963`; adjacent comparisons passed for
+  `milestone1678`, `milestone1679`, `milestone1825`, `milestone1826`,
+  `milestone1829`, `milestone1836`, `milestone1906`, and
+  `milestone1955` through `milestone1958`; `cargo check -q` and
+  `cargo fmt` passed.
+- Remaining COW gaps: scalar parent overwrite/error parity for remaining
+  covered append/keyed/reference paths, possible non-direct mixed
+  `ArrayAccess` gaps in by-reference argument or reference-return paths,
+  dynamic `call_user_func_array()` containers that cannot be traced to
+  evaluated local literals, closures and array callbacks, by-reference helper
+  parameters, arbitrary PHP side effects outside the interpreter subset,
+  exact PHP diagnostics, whole-array reference identity, native reference/
+  string COW lowering, and native lowering for these interpreter paths.
+- Next concrete task: run `cargo check -q`, `cargo fmt --check`,
+  `git diff --check`, the full `tools/checkpoint.sh` bundle gate, then push
+  if it passes.
+
 ## Loop Event 2026-05-19T09:50:00+02:00
 
 - Checkpoint before this task: `5cfb7f57 runtime: preserve call_user_func_array COW provenance`, pushed to `origin/master`.

@@ -20594,14 +20594,27 @@ handled.
   interpreter subset, whole-array reference identity, exact diagnostics, and
   native reference lowering named as unsupported.
 
+## Lane 1959-C through Lane 1963-C: Non-Direct Mixed ArrayAccess Reference Sources
+
+- [x] Runtime/tests/docs bundle: broaden mixed nested `ArrayAccess`
+  reference-source binding through visible property-held roots reached from
+  non-direct holder expressions. Cover method-return holders,
+  factory-return holders, dynamic selected properties, nested append sources,
+  and storable reference sources feeding another array slot when a by-value
+  outer `offsetGet()` returns an inner `ArrayAccess` object and the inner
+  object supplies a covered public by-reference `offsetGet()` lvalue. Keep
+  arbitrary PHP side effects outside the supported interpreter subset,
+  arbitrary magic/`ArrayAccess` method bodies, whole-array reference identity,
+  exact diagnostics, and native reference lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
-- [ ] Probe scalar parent overwrite/error parity for covered append/keyed/
-  reference paths, plus one broader mixed nested `ArrayAccess` chain where
-  the backing-bucket bridge can be statically proven. Implement whichever
-  produces a bounded, PHP-comparable failure without claiming arbitrary
-  side-effecting method bodies, full PHP COW identity, or unsupported native
-  lowering.
+- [ ] Probe the remaining scalar parent overwrite/error parity for covered
+  append/keyed/reference paths, then probe whether the same non-direct mixed
+  `ArrayAccess` bridge is still missing from by-reference argument or
+  reference-return paths. Implement only bounded PHP-comparable failures
+  without claiming arbitrary side-effecting method bodies, full PHP COW
+  identity, or unsupported native lowering.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

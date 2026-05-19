@@ -292,7 +292,14 @@
   Mixed chains where a by-value outer `offsetGet()` returns an inner
   `ArrayAccess` object can continue into a public by-reference inner
   `offsetGet()` for direct, property-held, and by-value magic `__get()`
-  provided roots when the inner returned bucket is otherwise covered.
+  provided roots when the inner returned bucket is otherwise covered. The same
+  bridge now covers visible property-held roots reached through bounded
+  non-direct holder expressions, including method-returned holders such as
+  `$holder->holder()->bag["box"]["leaf"]`, factory-returned holders such as
+  `make_holder($outer)->bag["box"]["leaf"]`, dynamic selected properties, a
+  nested append suffix such as `$holder->holder()->bag["box"][]`, and
+  storable reference sources such as
+  `$target["slot"] =& $holder->holder()->bag["box"]["leaf"]`.
   Public by-reference `ArrayAccess::offsetGet()` reference sources now execute
   supported top-level method-body statements before the return, so side
   effects, missing-bucket initialization, and local aliases can participate in
@@ -1008,14 +1015,22 @@
   `$alias =& $object->{$name}["outer"]["slot"]`, and
   `$alias =& $object->missing[]` when visible public `__get($name)` returns
   an `ArrayAccess` object by value or by reference and that object exposes the
-  same exact public by-value `offsetGet()` bridge. `offsetGet()` bodies with
-  side effects or broader return expressions, dynamic property-held sources
+  same exact public by-value `offsetGet()` bridge. Supported interpreter-body
+  statements on the by-value outer `offsetGet()` are also executed in the
+  focused mixed chain where that outer method returns an inner `ArrayAccess`
+  object and the inner object supplies a covered public by-reference
+  `offsetGet()` lvalue. That mixed chain is covered for direct variable,
+  direct property-held, dynamic property-held, magic-provided,
+  expression-root, method-return holder, and factory-return holder roots, plus
+  the focused nested append and storable-source forms documented above.
+  Arbitrary side effects outside the supported interpreter subset,
+  dynamic property-held sources
   outside visible property access, broader property-held alias lifetime after
   replacing non-direct/dynamic containing properties, append `ArrayAccess`
   sources outside the exact documented direct/property-held/non-direct
   visible property-held/magic-property `offsetGet(null)` bridge, mixed nested
-  `ArrayAccess` chains beyond the documented one-level bridge and focused
-  by-value terminal copied-array result, arbitrary nested reference slots
+  `ArrayAccess` chains beyond the documented by-value-object bridge and
+  focused by-value terminal copied-array result, arbitrary nested reference slots
   copied from `ArrayAccess` storage outside those documented shapes, full
   references/COW, native lowering, exact alias destruction/destructor
   ordering, and real runtime reference containers remain unsupported. Direct
@@ -1481,11 +1496,10 @@
   plain-array suffix shapes, the one tested mixed nested `ArrayAccess` append
   chain, and the tested mixed nested by-reference/by-value magic
   reference-source chains including the three-object chain, dynamic
-  non-direct
-  whole-property setup assignment, broader method-return or factory holder
-  roots beyond the focused reference-source backing-write shape, non-empty
-  nested append paths below
-  property-held or magic-property `ArrayAccess`, magic `__get()` bodies that
+  non-direct whole-property setup assignment, broader method-return or factory
+  holder roots beyond the focused reference-source, nested append, and
+  storable-source shapes, non-empty nested append paths below magic-property
+  `ArrayAccess`, magic `__get()` bodies that
   return unsupported expressions beyond direct variables, one local
   parameter-copy return, and the focused visible/private `$this` property
   append/keyed routes, exact PHP deprecation/fatal diagnostic text for scalar

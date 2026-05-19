@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1958:
+The current in-progress implementation frontier is Lane 1963:
+
+- Lanes 1959 through 1963 broaden mixed nested `ArrayAccess` reference-source
+  binding for visible property-held roots reached through non-direct holder
+  expressions. When a method-returned or factory-returned holder exposes a
+  visible property whose public by-value `offsetGet()` returns an inner
+  `ArrayAccess` object, the runtime can continue into the inner public
+  by-reference `offsetGet()` binding. Focused coverage includes direct
+  method-return holders, factory-return holders, dynamic property selection,
+  nested append sources, and storable reference sources feeding another array
+  slot. This is still a bounded executed-interpreter path; arbitrary PHP side
+  effects outside the supported body subset, arbitrary magic/`ArrayAccess`
+  bodies, whole-array reference identity, exact diagnostics, and native
+  reference lowering remain unsupported.
 
 - Lanes 1955 through 1958 extend `call_user_func_array()` helper-wrapper
   copied-array provenance beyond direct literal positional argument arrays.
