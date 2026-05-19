@@ -4374,15 +4374,22 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> CompileResult<Expr> {
-        let expr = self.parse_low_precedence_logical_or()?;
+        self.parse_expression_with_append_read(false)
+    }
+
+    fn parse_expression_with_append_read(
+        &mut self,
+        allow_append_read: bool,
+    ) -> CompileResult<Expr> {
+        let expr = self.parse_low_precedence_logical_or(allow_append_read)?;
         self.reject_assignment_expression_operator()?;
         Ok(expr)
     }
 
-    fn parse_low_precedence_logical_or(&mut self) -> CompileResult<Expr> {
-        let mut expr = self.parse_low_precedence_logical_xor()?;
+    fn parse_low_precedence_logical_or(&mut self, allow_append_read: bool) -> CompileResult<Expr> {
+        let mut expr = self.parse_low_precedence_logical_xor(allow_append_read)?;
         while self.match_identifier("or") {
-            let right = self.parse_low_precedence_logical_xor()?;
+            let right = self.parse_low_precedence_logical_xor(allow_append_read)?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -4394,10 +4401,10 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_low_precedence_logical_xor(&mut self) -> CompileResult<Expr> {
-        let mut expr = self.parse_low_precedence_logical_and()?;
+    fn parse_low_precedence_logical_xor(&mut self, allow_append_read: bool) -> CompileResult<Expr> {
+        let mut expr = self.parse_low_precedence_logical_and(allow_append_read)?;
         while self.match_identifier("xor") {
-            let right = self.parse_low_precedence_logical_and()?;
+            let right = self.parse_low_precedence_logical_and(allow_append_read)?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -4409,10 +4416,10 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_low_precedence_logical_and(&mut self) -> CompileResult<Expr> {
-        let mut expr = self.parse_assignment_expression()?;
+    fn parse_low_precedence_logical_and(&mut self, allow_append_read: bool) -> CompileResult<Expr> {
+        let mut expr = self.parse_assignment_expression_with_options(true, allow_append_read)?;
         while self.match_identifier("and") {
-            let right = self.parse_assignment_expression()?;
+            let right = self.parse_assignment_expression_with_options(true, allow_append_read)?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -4425,18 +4432,19 @@ impl Parser {
     }
 
     fn parse_assignment_expression(&mut self) -> CompileResult<Expr> {
-        self.parse_assignment_expression_with_ternary(true)
+        self.parse_assignment_expression_with_options(true, false)
     }
 
     fn parse_assignment_expression_without_unparenthesized_ternary(
         &mut self,
     ) -> CompileResult<Expr> {
-        self.parse_assignment_expression_with_ternary(false)
+        self.parse_assignment_expression_with_options(false, false)
     }
 
-    fn parse_assignment_expression_with_ternary(
+    fn parse_assignment_expression_with_options(
         &mut self,
         allow_ternary: bool,
+        allow_append_read: bool,
     ) -> CompileResult<Expr> {
         let expr = self.parse_non_assignment_expression_with_ternary(allow_ternary)?;
         if let Some(op) = self.match_compound_assignment_operator() {
@@ -4510,11 +4518,13 @@ impl Parser {
         }
 
         if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
-            if let Some(span) = Self::find_append_index_span(&expr) {
-                return Err(self.error_at(
-                    span,
-                    "cannot use [] for reading; append syntax is only supported in assignments",
-                ));
+            if !allow_append_read {
+                if let Some(span) = Self::find_append_index_span(&expr) {
+                    return Err(self.error_at(
+                        span,
+                        "cannot use [] for reading; append syntax is only supported in assignments",
+                    ));
+                }
             }
             return Ok(expr);
         }
@@ -4525,7 +4535,7 @@ impl Parser {
             .map_err(|message| self.error_at(operator_span, message))?;
         let span = target.span();
 
-        let value = self.parse_assignment_expression_with_ternary(allow_ternary)?;
+        let value = self.parse_assignment_expression_with_options(allow_ternary, false)?;
         if let Some(span) = Self::find_append_index_span(&value) {
             return Err(self.error_at(
                 span,
@@ -5923,7 +5933,7 @@ impl Parser {
         if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
             loop {
                 self.reject_unsupported_call_argument_syntax()?;
-                args.push(self.parse_expression()?);
+                args.push(self.parse_expression_with_append_read(true)?);
                 if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                     break;
                 }
@@ -6450,33 +6460,20 @@ impl Parser {
                 target, property, ..
             } => Self::find_append_index_span(target)
                 .or_else(|| Self::find_append_index_span(property)),
-            Expr::MethodCall { target, args, .. } => Self::find_append_index_span(target)
-                .or_else(|| args.iter().find_map(Self::find_append_index_span)),
-            Expr::ParentMethodCall { args, .. } => {
-                args.iter().find_map(Self::find_append_index_span)
-            }
-            Expr::StaticMethodCall { args, .. } => {
-                args.iter().find_map(Self::find_append_index_span)
-            }
-            Expr::ObjectStaticMethodCall { target, args, .. } => {
-                Self::find_append_index_span(target)
-                    .or_else(|| args.iter().find_map(Self::find_append_index_span))
-            }
+            Expr::MethodCall { target, .. } => Self::find_append_index_span(target),
+            Expr::ParentMethodCall { .. } => None,
+            Expr::StaticMethodCall { .. } => None,
+            Expr::ObjectStaticMethodCall { target, .. } => Self::find_append_index_span(target),
             Expr::ObjectStaticProperty { target, .. } => Self::find_append_index_span(target),
-            Expr::SelfMethodCall { args, .. } => args.iter().find_map(Self::find_append_index_span),
-            Expr::LateStaticMethodCall { args, .. } => {
-                args.iter().find_map(Self::find_append_index_span)
-            }
-            Expr::Call { args, .. } | Expr::New { args, .. } => {
-                args.iter().find_map(Self::find_append_index_span)
-            }
+            Expr::SelfMethodCall { .. } => None,
+            Expr::LateStaticMethodCall { .. } => None,
+            Expr::Call { .. } | Expr::New { .. } => None,
             Expr::Clone { expr, .. } => Self::find_append_index_span(expr),
             Expr::Closure { params, .. } => params
                 .iter()
                 .filter_map(|param| param.default.as_ref())
                 .find_map(Self::find_append_index_span),
-            Expr::DynamicCall { callee, args, .. } => Self::find_append_index_span(callee)
-                .or_else(|| args.iter().find_map(Self::find_append_index_span)),
+            Expr::DynamicCall { callee, .. } => Self::find_append_index_span(callee),
             Expr::InstanceOf { expr, .. } => Self::find_append_index_span(expr),
             Expr::Binary { left, right, .. } => {
                 Self::find_append_index_span(left).or_else(|| Self::find_append_index_span(right))

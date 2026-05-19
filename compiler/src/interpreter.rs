@@ -13057,6 +13057,22 @@ impl Interpreter {
                         return Ok(Some(alias));
                     }
                 }
+                if !keys.is_empty() {
+                    if let Some(binding) = self
+                        .evaluate_direct_array_access_reference_source_binding(
+                            array_name,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        let binding = self
+                            .append_to_non_direct_reference_source_binding(binding, span, scope)?;
+                        return self
+                            .array_offset_alias_from_reference_source_binding(binding, span, scope)
+                            .map(Some);
+                    }
+                }
                 self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
                 let alias = scope.append_array_offset_reference_alias(
                     array_name,
@@ -13101,6 +13117,23 @@ impl Interpreter {
                             keys.clone(),
                             span,
                             scope,
+                        )?
+                    {
+                        let binding = self
+                            .append_to_non_direct_reference_source_binding(binding, span, scope)?;
+                        return self
+                            .array_offset_alias_from_reference_source_binding(binding, span, scope)
+                            .map(Some);
+                    }
+                    if let Some(binding) = self
+                        .evaluate_magic_get_array_access_reference_source_binding(
+                            object,
+                            property,
+                            keys.clone(),
+                            span,
+                            scope,
+                            true,
+                            false,
                         )?
                     {
                         let binding = self
@@ -13160,6 +13193,23 @@ impl Interpreter {
                             keys.clone(),
                             span,
                             scope,
+                        )?
+                    {
+                        let binding = self
+                            .append_to_non_direct_reference_source_binding(binding, span, scope)?;
+                        return self
+                            .array_offset_alias_from_reference_source_binding(binding, span, scope)
+                            .map(Some);
+                    }
+                    if let Some(binding) = self
+                        .evaluate_magic_get_array_access_reference_source_binding(
+                            object,
+                            &property,
+                            keys.clone(),
+                            span,
+                            scope,
+                            true,
+                            false,
                         )?
                     {
                         let binding = self
@@ -43158,6 +43208,23 @@ impl Interpreter {
                         },
                     });
                 } else if let Some((alias, value)) =
+                    self.evaluate_append_array_reference_argument(arg, caller_scope)?
+                {
+                    if function.returns_by_reference && !allow_reference_return_array_bindings {
+                        return Err(runtime_error(
+                            arg.span(),
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "append array reference arguments are not implemented for reference-returning functions in the current subset",
+                            ),
+                        ));
+                    }
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                    });
+                } else if let Some((alias, value)) =
                     self.evaluate_direct_array_reference_argument(arg, caller_scope)?
                 {
                     if function.returns_by_reference && !allow_reference_return_array_bindings {
@@ -43454,6 +43521,137 @@ impl Interpreter {
                 )
             })?;
         Ok(Some((alias, value)))
+    }
+
+    fn evaluate_append_array_reference_argument(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        let Expr::AppendIndex { target, span } = arg else {
+            return Ok(None);
+        };
+        let Some(source) = Self::append_reference_source_from_argument_target(target, *span) else {
+            return Ok(None);
+        };
+        self.evaluate_append_reference_source_alias(&source, *span, caller_scope)
+    }
+
+    fn append_reference_source_from_argument_target(
+        target: &Expr,
+        span: Span,
+    ) -> Option<ReferenceSource> {
+        match target {
+            Expr::Variable(name, _) => Some(ReferenceSource::ArrayAppend {
+                name: name.clone(),
+                indices: Vec::new(),
+                span,
+            }),
+            Expr::Index { target, index, .. } => {
+                if let Some((object, property, indices)) =
+                    Self::collect_direct_dynamic_object_property_array_index_path(target, index)
+                {
+                    return Some(ReferenceSource::DynamicObjectPropertyArrayAppend {
+                        object: object.to_string(),
+                        property: property.clone(),
+                        indices: Self::owned_exprs(indices),
+                        span,
+                    });
+                }
+                if let Some((object, property, indices)) =
+                    Self::collect_direct_object_property_array_index_path(target, index)
+                {
+                    return Some(ReferenceSource::ObjectPropertyArrayAppend {
+                        object: object.to_string(),
+                        property: property.to_string(),
+                        indices: Self::owned_exprs(indices),
+                        span,
+                    });
+                }
+                if let Some((holder, property, indices)) =
+                    Self::collect_dynamic_object_property_array_index_path(target, index)
+                {
+                    return Some(ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+                        holder: holder.clone(),
+                        property: property.clone(),
+                        indices: Self::owned_exprs(indices),
+                        span,
+                    });
+                }
+                if let Some((holder, property, indices)) =
+                    Self::collect_object_property_array_index_path(target, index)
+                {
+                    return Some(ReferenceSource::NonDirectObjectPropertyArrayAppend {
+                        holder: holder.clone(),
+                        property: property.to_string(),
+                        indices: Self::owned_exprs(indices),
+                        span,
+                    });
+                }
+                if let Some((name, indices)) =
+                    Self::collect_direct_variable_array_index_path(target, index)
+                {
+                    return Some(ReferenceSource::ArrayAppend {
+                        name: name.to_string(),
+                        indices: Self::owned_exprs(indices),
+                        span,
+                    });
+                }
+                let (target, indices) = Self::collect_array_index_path(target, index);
+                Some(ReferenceSource::ExpressionArrayAppend {
+                    target: target.clone(),
+                    indices: Self::owned_exprs(indices),
+                    span,
+                })
+            }
+            Expr::Property {
+                target, property, ..
+            } => {
+                if let Expr::Variable(object, _) = target.as_ref() {
+                    Some(ReferenceSource::ObjectPropertyArrayAppend {
+                        object: object.clone(),
+                        property: property.clone(),
+                        indices: Vec::new(),
+                        span,
+                    })
+                } else {
+                    Some(ReferenceSource::NonDirectObjectPropertyArrayAppend {
+                        holder: target.as_ref().clone(),
+                        property: property.clone(),
+                        indices: Vec::new(),
+                        span,
+                    })
+                }
+            }
+            Expr::DynamicProperty {
+                target, property, ..
+            } => {
+                if let Expr::Variable(object, _) = target.as_ref() {
+                    Some(ReferenceSource::DynamicObjectPropertyArrayAppend {
+                        object: object.clone(),
+                        property: property.as_ref().clone(),
+                        indices: Vec::new(),
+                        span,
+                    })
+                } else {
+                    Some(ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+                        holder: target.as_ref().clone(),
+                        property: property.as_ref().clone(),
+                        indices: Vec::new(),
+                        span,
+                    })
+                }
+            }
+            _ => Some(ReferenceSource::ExpressionArrayAppend {
+                target: target.clone(),
+                indices: Vec::new(),
+                span,
+            }),
+        }
+    }
+
+    fn owned_exprs(exprs: Vec<&Expr>) -> Vec<Expr> {
+        exprs.into_iter().cloned().collect()
     }
 
     fn evaluate_visible_object_property_array_reference_argument(

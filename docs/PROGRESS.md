@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 1986-C through Lane 1990-C for append-offset expressions in
+  by-reference function-argument position. Call arguments such as
+  `mutate($items["x"][])`, `mutate($bag["x"][])`,
+  `mutate($box->missing["x"][])`, `mutate($box->{$name}["x"][])`, and
+  `mutate($holders["box"]->missing["x"][])` now parse and bind the appended
+  slot through the covered direct array, direct `ArrayAccess`, by-value magic
+  `__get()`, dynamic magic-property, and non-direct magic-holder bridges.
+  Focused system-PHP coverage proves selected `false` parents materialize as
+  arrays and by-reference callee writes update the original bucket. Append
+  expressions outside call-argument positions remain unsupported as reads,
+  non-reference call parameters still cannot consume append expressions as
+  values, and exact deprecation/diagnostic text and native reference lowering
+  remain unsupported.
+
 - Added Lane 1982-C through Lane 1985-C for by-value closure-capture
   copied-array provenance inside magic/`ArrayAccess` method bodies. Closure
   creation now records proven array-copy sources for `use ($bucket)` captures

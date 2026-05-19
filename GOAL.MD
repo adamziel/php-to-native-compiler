@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1985:
+The current in-progress implementation frontier is Lane 1990:
+
+- Lanes 1986 through 1990 add append-offset expressions in by-reference
+  function-argument position for the covered direct array and proven
+  `ArrayAccess` backing-bucket bridges. Calls such as
+  `mutate($items["x"][])`, `mutate($bag["x"][])`,
+  `mutate($box->missing["x"][])`, `mutate($box->{$name}["x"][])`, and
+  `mutate($holders["box"]->missing["x"][])` now parse, bind the appended
+  slot to the by-reference parameter, materialize selected `false` parents as
+  arrays, and write callee mutations back to the original bucket. Append
+  expressions outside call-argument positions remain unsupported as reads,
+  non-reference call parameters still cannot consume append expressions as
+  values, and exact deprecation/diagnostic text and native reference lowering
+  remain unsupported.
 
 - Lanes 1982 through 1985 preserve by-value closure-capture provenance inside
   magic/`ArrayAccess` method bodies. When a visible by-value `__get()` or

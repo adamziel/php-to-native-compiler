@@ -20672,6 +20672,19 @@ handled.
   whole-array reference identity, exact diagnostics, and native reference
   lowering named as unsupported.
 
+## Lane 1986-C through Lane 1990-C: Append Reference Arguments
+
+- [x] Runtime/parser/tests/docs bundle: support append-offset expressions in
+  by-reference function-argument position for covered direct array and proven
+  `ArrayAccess` backing-bucket bridges. Cover direct arrays, direct
+  `ArrayAccess`, by-value magic `__get()` returning `ArrayAccess`, dynamic
+  magic-property spellings, and non-direct magic-property holders with
+  selected `false` parent materialization and system-PHP comparisons. Keep
+  append expressions outside call-argument positions unsupported as reads,
+  non-reference call parameters unable to consume append expressions as
+  values, exact deprecation/diagnostic text, and native reference lowering
+  named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Probe the remaining scalar parent overwrite/error parity for covered

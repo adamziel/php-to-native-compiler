@@ -18,6 +18,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T08:51:48+02:00
+
+- Checkpoint before this task: `e199952e runtime: preserve closure capture
+  COW provenance`, pushed to `origin/master`.
+- Task attempted: Lane 1986-C through Lane 1990-C bundle, supporting
+  append-offset expressions in by-reference function-argument position for
+  covered direct array and proven `ArrayAccess` backing-bucket bridges.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `tests/fixtures/milestone1986/*`,
+  `tests/fixtures/milestone1987/*`, `tests/fixtures/milestone1988/*`,
+  `tests/fixtures/milestone1989/*`, `tests/fixtures/milestone1990/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes exposed append-argument parse and
+  direct `ArrayAccess` binding failures, then matched after the patch.
+  Focused system-PHP comparisons passed for `milestone1986` through
+  `milestone1990`; `cargo check -q` passed; focused parser regression
+  `cargo test -q --test assignment_expression
+  append_offsets_remain_unsupported_as_reads` passed.
+- Remaining COW gaps: append expressions outside call-argument positions
+  remain unsupported as reads, non-reference call parameters cannot consume
+  append expressions as values, by-reference closure captures, capture
+  sources hidden inside arbitrary array containers, dynamic
+  `call_user_func_array()` containers that cannot be traced to current-scope
+  evaluated literals, by-reference helper/callback parameters, remaining
+  scalar parent overwrite/error parity outside covered roots, possible mixed
+  `ArrayAccess` gaps in reference-return or callback reference-argument
+  paths, arbitrary PHP side effects and syntax outside the supported
+  interpreter subset, exact PHP diagnostics, whole-array reference identity,
+  native reference/string COW lowering, and native lowering for these
+  interpreter paths.
+- Next concrete task: run adjacent fixture comparisons, formatting, diff,
+  check, adjacent Rust regression tests, the full `tools/checkpoint.sh`
+  bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T08:40:42+02:00
 
 - Checkpoint before this task: `6a6cee9f runtime: preserve callback COW

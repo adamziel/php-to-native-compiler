@@ -309,6 +309,15 @@
   `$alias =& $holders["box"]->missing["outer"][]`. When the selected backed
   parent bucket is `false`, the covered append reference source materializes
   it as an array before binding the appended alias.
+  The same selected append bridge is available when the append expression is
+  supplied directly to a by-reference function parameter. Covered argument
+  forms include `mutate($items["x"][])`, `mutate($bag["x"][])`,
+  `mutate($box->missing["x"][])`, `mutate($box->{$name}["x"][])`, and
+  `mutate($holders["box"]->missing["x"][])`; callee writes update the
+  appended slot in the original direct array or proven `ArrayAccess` backing
+  bucket. Append expressions outside call-argument positions are still
+  rejected as reads, and by-value parameters cannot consume append expressions
+  as ordinary values.
   Mixed chains where a by-value outer `offsetGet()` returns an inner
   `ArrayAccess` object can continue into a public by-reference inner
   `offsetGet()` for direct, property-held, and by-value magic `__get()`
