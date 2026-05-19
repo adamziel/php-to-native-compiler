@@ -21228,7 +21228,17 @@ impl Interpreter {
                 Expr::Array { items, span } => {
                     self.evaluate_array_for_direct_assignment(items, *span, scope)?
                 }
-                _ => (self.evaluate(&item.value, scope)?, Vec::new()),
+                _ => {
+                    let (value, array_copy_source) =
+                        self.evaluate_value_with_array_copy_source(&item.value, scope)?;
+                    (
+                        scope.value_with_object_property_aliases_from_array_copy(
+                            value,
+                            array_copy_source,
+                        ),
+                        Vec::new(),
+                    )
+                }
             };
             let key = match key {
                 Some(key) => {
@@ -29604,7 +29614,7 @@ impl Interpreter {
 
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
-            values.push(self.evaluate(arg, caller_scope)?);
+            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
         }
 
         self.invoke_static_trait_reflection_method(trait_name, &function.name, values, span)
@@ -30843,7 +30853,7 @@ impl Interpreter {
 
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
-            values.push(self.evaluate(arg, caller_scope)?);
+            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
         }
 
         self.call_user_function_with_checked_values(
@@ -33662,7 +33672,7 @@ impl Interpreter {
 
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
-            values.push(self.evaluate(arg, caller_scope)?);
+            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
         }
         self.emit_call_user_func_reference_parameter_warnings(function, args.len(), span)?;
         Ok(values)
@@ -35274,29 +35284,18 @@ impl Interpreter {
             .any(|(index, param)| param.by_reference && index < items.len())
         {
             ensure_supported_function_metadata(function, span)?;
-            let argument_array_value = self.evaluate(argument_expr, caller_scope)?;
-            let Value::Array(argument_array) = &argument_array_value else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "call_user_func_array()",
-                        format!(
-                            "argument array must be array in the current subset, got {}",
-                            argument_array_value.type_name()
-                        ),
-                    ),
-                ));
-            };
+            let argument_array =
+                self.evaluate_literal_call_user_func_array_value_array(items, span, caller_scope)?;
             let positional_args =
-                if Self::call_user_func_array_value_has_string_keys(argument_array) {
+                if Self::call_user_func_array_value_has_string_keys(&argument_array) {
                     self.evaluate_call_user_func_array_named_value_arguments(
                         function,
-                        argument_array,
+                        &argument_array,
                         items.len(),
                         span,
                     )?
                 } else {
-                    Self::call_user_func_array_positional_values(argument_array, span)?
+                    Self::call_user_func_array_positional_values(&argument_array, span)?
                 };
             return Ok((positional_args, Vec::new()));
         }
@@ -35356,7 +35355,9 @@ impl Interpreter {
             }
 
             let Some(param) = function.params.get(index) else {
-                values.push(self.evaluate(&item.value, caller_scope)?);
+                values.push(
+                    self.evaluate_by_value_argument_with_cow_source(&item.value, caller_scope)?,
+                );
                 continue;
             };
 
@@ -35437,11 +35438,59 @@ impl Interpreter {
                     ));
                 }
             } else {
-                values.push(self.evaluate(&item.value, caller_scope)?);
+                values.push(
+                    self.evaluate_by_value_argument_with_cow_source(&item.value, caller_scope)?,
+                );
             }
         }
 
         Ok((values, reference_bindings))
+    }
+
+    fn evaluate_literal_call_user_func_array_value_array(
+        &mut self,
+        items: &[ArrayItem],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<PhpArray> {
+        let mut array = PhpArray::new();
+
+        for item in items {
+            let key = match &item.key {
+                Some(expr) => Some(self.evaluate_array_key(expr, caller_scope)?),
+                None => None,
+            };
+            if item.by_reference {
+                let (_, reference) =
+                    self.evaluate_array_literal_reference_cell(&item.value, caller_scope)?;
+                match key {
+                    Some(key) => {
+                        array.insert_reference(key, reference);
+                    }
+                    None => {
+                        array
+                            .append_reference(reference)
+                            .map_err(|error| runtime_error(span, error))?;
+                    }
+                }
+                continue;
+            }
+
+            let value =
+                self.evaluate_by_value_argument_with_cow_source(&item.value, caller_scope)?;
+            match key {
+                Some(key) => {
+                    array.insert(key, value);
+                }
+                None => {
+                    array
+                        .append(value)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+            }
+        }
+
+        Ok(array)
     }
 
     fn evaluate_call_user_func_array_named_value_arguments(
@@ -40950,7 +40999,7 @@ impl Interpreter {
 
         for (index, arg) in args.iter().enumerate() {
             let Some(param) = function.params.get(index) else {
-                values.push(self.evaluate(arg, caller_scope)?);
+                values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
                 continue;
             };
 
@@ -41054,7 +41103,7 @@ impl Interpreter {
                     ));
                 }
             } else {
-                values.push(self.evaluate(arg, caller_scope)?);
+                values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
             }
         }
 
@@ -41074,6 +41123,17 @@ impl Interpreter {
         }
 
         Ok((values, reference_bindings))
+    }
+
+    fn evaluate_by_value_argument_with_cow_source(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let (value, array_copy_source) =
+            self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
+        Ok(caller_scope
+            .value_with_object_property_aliases_from_array_copy(value, array_copy_source))
     }
 
     fn evaluate_magic_get_reference_argument(

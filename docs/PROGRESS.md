@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 1907-C through Lane 1910-C for copied-array COW provenance across
+  by-value user-call argument boundaries. Proven magic/`ArrayAccess` backed
+  array copies are now converted to array values with reference-backed slots
+  before being supplied to non-reference user-function parameters, including
+  direct calls, instance methods, `call_user_func()` user callbacks, and
+  literal or stored `call_user_func_array()` argument arrays. Callee writes to
+  covered referenced elements update the original backing slot, while writes
+  to ordinary nested values remain local to the copied array. Focused
+  coverage includes magic `__get()` and `ArrayAccess::offsetGet()` argument
+  sources with system-PHP comparisons. Unsupported callback signatures,
+  unsupported PHP side effects outside the interpreter subset, whole-array
+  reference identity, exact diagnostics, and native reference lowering remain
+  unsupported.
+
 - Added Lane 1903-C through Lane 1906-C for executed reference-return helper
   chains in magic/`ArrayAccess` COW copy provenance. Reference-return method
   bodies that return another reference-return call now preserve returned

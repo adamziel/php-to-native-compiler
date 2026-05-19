@@ -20455,6 +20455,17 @@ handled.
   unwinding, whole-array reference identity, exact diagnostics, and native
   reference lowering named as unsupported.
 
+## Lane 1907-C through Lane 1910-C: By-Value User-Call Argument Copy Provenance
+
+- [x] Runtime/tests/docs bundle: preserve copied-array COW reference slots
+  when proven magic/`ArrayAccess` backed array copies are supplied by value to
+  user-call parameters. Cover direct user functions, instance methods,
+  `call_user_func()` user callbacks, and literal plus stored
+  `call_user_func_array()` argument arrays with system-PHP comparisons. Keep
+  arbitrary callback signatures, unsupported PHP side effects outside the
+  interpreter subset, whole-array reference identity, exact diagnostics, and
+  native reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

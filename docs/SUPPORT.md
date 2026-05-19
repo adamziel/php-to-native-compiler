@@ -796,6 +796,13 @@
   bridge and no-effect controls. Mixed magic-provided `ArrayAccess` chains
   are covered when the reached
   `offsetGet()` body can prove the backing object-property array bucket.
+  When those proven copied arrays are supplied by value to user functions or
+  instance methods, their covered reference-backed elements are preserved in
+  the callee's local parameter array. The same bounded preservation applies
+  to user callbacks reached through `call_user_func()` and to literal or
+  stored argument arrays supplied to `call_user_func_array()`. Writes to
+  referenced elements inside the callee update the original backing slot,
+  while ordinary nested elements remain by-value copies.
   Unsupported syntax/builtins, arbitrary callback or builtin reference-return
   sources, full direct `$GLOBALS` array materialization, thrown exception
   unwinding, whole-array reference identity in returned values, and arbitrary

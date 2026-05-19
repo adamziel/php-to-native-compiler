@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1906:
+The current in-progress implementation frontier is Lane 1910:
+
+- Lanes 1907 through 1910 preserve copied-array COW reference slots across
+  by-value user-call boundaries when the argument expression is a proven
+  magic/`ArrayAccess` backed array copy. Direct user functions, instance
+  methods, `call_user_func()` user callbacks, and literal or stored
+  `call_user_func_array()` argument arrays now pass array values whose covered
+  referenced elements remain reference-backed inside the callee. Callee writes
+  to those referenced elements update the original backing slot, while writes
+  to ordinary nested values stay local to the copied array. This remains
+  bounded to proven copied-array sources in the current interpreter subset;
+  arbitrary callback signatures, unsupported PHP side effects, whole-array
+  reference identity, exact diagnostics, and native reference lowering remain
+  unsupported.
 
 - Lanes 1903 through 1906 preserve copied-array COW provenance through
   executed reference-return helper chains in magic/`ArrayAccess` bodies. A

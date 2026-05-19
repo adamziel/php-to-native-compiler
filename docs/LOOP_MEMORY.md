@@ -18,6 +18,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T05:52:27+02:00
+
+- Checkpoint before this task: `39c8546d runtime: preserve magic ArrayAccess
+  helper COW`, pushed to `origin/master`.
+- Task attempted: Lane 1907-C through Lane 1910-C bundle, preserving
+  copied-array COW reference slots when proven magic/`ArrayAccess` backed
+  array copies cross by-value user-call argument boundaries.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1907/*`, `tests/fixtures/milestone1908/*`,
+  `tests/fixtures/milestone1909/*`, `tests/fixtures/milestone1910/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system-PHP probes exposed and then matched direct
+  function, method, `call_user_func()`, and literal/stored
+  `call_user_func_array()` by-value argument COW cases; focused
+  `cargo run -q -p phpc -- test --compare-php` passed `milestone1907`,
+  `milestone1908`, `milestone1909`, and `milestone1910`; `cargo fmt --all
+  --check`, `cargo check -q -p phpc`, `git diff --check`, adjacent Rust tests
+  `object_model`, `functions_and_scopes`, `call_user_func_builtin`, and
+  `array_reference_literals`, plus fixture comparisons `milestone1890` through
+  `milestone1894` and `milestone1903` through `milestone1910` all passed.
+- Remaining COW gaps: unsupported syntax/builtins and PHP side effects outside
+  the interpreter subset, full exception unwinding and uncaught propagation,
+  broader builtin callback signatures, broader complex alias sinks and alias
+  lifetime ordering, exact PHP stderr/fatal text, binary/multibyte string
+  offset behavior, whole-array reference identity, full direct `$GLOBALS`
+  array materialization, and native reference/string COW lowering.
+- Next concrete task: run the full `tools/checkpoint.sh` bundle gate, then push
+  if it passes.
+
 ## Loop Event 2026-05-19T05:41:14+02:00
 
 - Checkpoint before this task: `2786b662 runtime: support builtin callback
