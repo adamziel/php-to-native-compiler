@@ -32,7 +32,24 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2080:
+The current in-progress implementation frontier is Lane 2085:
+
+- Lanes 2081 through 2085 extend the same reference-return value-copy COW
+  bridge through `call_user_func_array()` argument containers. Literal and
+  direct stored argument arrays that contain covered by-value magic/
+  `ArrayAccess` copied arrays now carry copied-source metadata into
+  reference-return callbacks while preserving PHP's warning/no-reference
+  value-passing shape, so returned child references such as
+  `return $param["ref"];` can bind to selected nested reference-backed leaves.
+  Focused system-PHP coverage proves literal `ArrayAccess` argument arrays,
+  stored `ArrayAccess` argument arrays, stored visible by-value `__get()`
+  argument arrays, closure callbacks, and public object array-callable
+  callbacks. This remains bounded to traced literal/direct stored containers,
+  supported interpreter-body syntax, copied-source metadata, and
+  non-variadic value-copy callback arguments; arbitrary PHP syntax, untracked
+  dynamic containers, arbitrary `offsetSet()` reference propagation,
+  whole-array reference identity, exact diagnostics, and native reference
+  lowering remain unsupported.
 
 - Lanes 2076 through 2080 extend the executed by-value magic/`ArrayAccess`
   method-body path into reference-return callees. A reference-return function,

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone2081/call_user_func_array_literal_reference_return_arrayaccess_copy.php
+stdout:
+copy|plain-original
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

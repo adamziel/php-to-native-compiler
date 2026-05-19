@@ -18,6 +18,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T14:06:01+02:00
+
+- Checkpoint before this task: `2e877e10 runtime: preserve reference-return
+  COW value copies`, pushed to `origin/master`.
+- Task attempted: Lane 2081-C through Lane 2085-C bundle, extending
+  reference-return value-copy COW provenance through `call_user_func_array()`
+  literal and direct stored argument containers.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2081/*`, `tests/fixtures/milestone2082/*`,
+  `tests/fixtures/milestone2083/*`, `tests/fixtures/milestone2084/*`,
+  `tests/fixtures/milestone2085/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP probes matched literal and stored
+  `call_user_func_array()` value-copy reference-return behavior for
+  `ArrayAccess`, visible by-value `__get()`, closure callbacks, and public
+  object array-callable callbacks; focused system-PHP comparisons passed for
+  `milestone2081` through `milestone2085`; adjacent `milestone2031` through
+  `milestone2085` comparisons passed; focused Rust suites
+  `functions_and_scopes`, `call_user_func_builtin`, and `object_model` passed;
+  `cargo check -q` passed.
+- Remaining COW gaps: variadic callback reference-return value copies, nested
+  append/keyed write paths still tied to exact bridge dependencies, arbitrary
+  `offsetSet()` reference propagation, untracked dynamic containers,
+  whole-array reference identity, exact PHP diagnostics/Throwable objects, and
+  native reference/string COW lowering.
+- Next concrete task: run broad COW fixture regression plus `cargo fmt --check`
+  and `git diff --check`, then one full `tools/checkpoint.sh` bundle gate and
+  push if it passes.
+
 ## Loop Event 2026-05-19T13:57:12+02:00
 
 - Checkpoint before this task: `19b13539 runtime: execute magic ArrayAccess

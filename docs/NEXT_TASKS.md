@@ -20920,16 +20920,29 @@ handled.
   arbitrary `offsetSet()` reference propagation, full PHP COW identity, exact
   diagnostics, and native reference lowering named as unsupported.
 
+## Lane 2081-C through Lane 2085-C: `call_user_func_array()` Reference-Return Value Copies
+
+- [x] Runtime/tests/docs bundle: preserve copied-source provenance for
+  `call_user_func_array()` reference-return callbacks whose reached
+  by-reference parameter receives a covered by-value magic/`ArrayAccess` array
+  from a literal or direct stored argument container. Cover literal
+  `ArrayAccess` argument arrays, stored `ArrayAccess` argument arrays, stored
+  visible by-value `__get()` argument arrays, closure callbacks, and public
+  object array-callable callbacks with system-PHP comparisons and CLI
+  snapshots. Keep unsupported PHP syntax, untracked dynamic containers,
+  variadic value-copy callback reference returns, arbitrary `offsetSet()`
+  reference propagation, full PHP COW identity, exact diagnostics, and native
+  reference lowering named as unsupported.
+
 ## Next COW Bundle: Remaining Method Body and Value-Model Gaps
 
 - [ ] Continue the arbitrary-method-body push by removing remaining exact
   static bridge dependencies where supported magic/`ArrayAccess` bodies are
-  already executable: `call_user_func_array()` reference-return/value-copy
-  containers, variadic callback reference-return value copies, and nested
-  append/keyed write paths. Prioritize executed-body provenance and observed
-  write effects, while keeping unsupported PHP syntax, untracked dynamic
-  containers, arbitrary `offsetSet()` reference propagation, full PHP COW
-  identity, exact PHP fatal objects/text, and native lowering named as
+  already executable: variadic callback reference-return value copies and
+  nested append/keyed write paths. Prioritize executed-body provenance and
+  observed write effects, while keeping unsupported PHP syntax, untracked
+  dynamic containers, arbitrary `offsetSet()` reference propagation, full PHP
+  COW identity, exact PHP fatal objects/text, and native lowering named as
   unsupported until executable coverage proves them.
 
 ## Tests/Docs Lane: Parallel Worker Operations

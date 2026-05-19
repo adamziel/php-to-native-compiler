@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone2083/call_user_func_array_stored_reference_return_magic_copy.php
+stdout:
+copy|plain-original
+--- stdout end ---
+stderr:
+--- stderr end ---
+exit: 0

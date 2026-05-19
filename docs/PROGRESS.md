@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2081-C through Lane 2085-C for `call_user_func_array()`
+  reference-return callbacks receiving covered by-value magic/`ArrayAccess`
+  arrays from literal or direct stored argument containers. The source-aware
+  argument-array evaluator can now include by-reference parameters on this
+  warning/no-reference value-copy path, and reference-return callbacks import
+  copied-source metadata for the reached parameter instead of requiring the
+  stored slot to have been assigned by reference. Focused system-PHP coverage
+  proves literal `ArrayAccess` argument arrays, stored `ArrayAccess` argument
+  arrays, stored visible by-value `__get()` argument arrays, closure
+  callbacks, and public object array-callable callbacks. This remains bounded
+  to traced literal/direct stored containers, supported interpreter-body
+  syntax, tracked copied-array sources, and non-variadic value-copy callback
+  arguments; arbitrary PHP syntax, untracked dynamic containers, arbitrary
+  `offsetSet()` reference propagation, whole-array reference identity, exact
+  diagnostics, and native reference lowering remain unsupported.
+
 - Added Lane 2076-C through Lane 2080-C for reference-return callees receiving
   overloaded by-value magic/`ArrayAccess` arrays. The by-reference argument
   evaluator now allows the executed by-value `offsetGet()`/`__get()` path for

@@ -555,6 +555,17 @@
   value-copy containers, untracked dynamic containers, whole-array reference
   identity, exact diagnostics, and native reference lowering remain
   unsupported.
+  `call_user_func_array()` reference-return callbacks are covered for the same
+  value-copy COW shape when the argument container is a direct literal or a
+  direct stored array with traced copied-source entries. Covered containers may
+  hold by-value public `ArrayAccess::offsetGet()` arrays or visible by-value
+  `__get()` arrays; covered callbacks include string user callbacks, closures,
+  and public object array-callables. The callback still receives a value for
+  the reached by-reference parameter, but returned child references can bind to
+  selected nested reference-backed leaves from the copied source. Variadic
+  value-copy callback reference returns, untraced stored containers, arbitrary
+  callback side effects, whole-array reference identity, exact diagnostics,
+  and native reference lowering remain unsupported.
   Covered by-value `ArrayAccess::offsetGet()` paths also reject scalar parents
   when the caller attempts a nested keyed write, nested append, property-held
   reference target, or magic-provided reference target below the returned

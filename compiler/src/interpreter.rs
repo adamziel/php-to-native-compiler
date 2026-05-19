@@ -37050,6 +37050,7 @@ impl Interpreter {
                     argument_expr,
                     span,
                     caller_scope,
+                    false,
                 )?
             {
                 ensure_supported_function_metadata(function_ref, span)?;
@@ -37093,6 +37094,7 @@ impl Interpreter {
                 items,
                 span,
                 caller_scope,
+                false,
             )?;
         let by_value_array_copy_bindings =
             Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
@@ -37168,6 +37170,27 @@ impl Interpreter {
                     ));
                 }
 
+                if let Some((values, reference_bindings)) = self
+                    .evaluate_call_user_func_array_reference_return_value_arguments(
+                        function,
+                        &args[1],
+                        span,
+                        caller_scope,
+                    )?
+                {
+                    self.ensure_user_function_call_depth(function, span)?;
+                    return self
+                        .call_reference_return_function_with_checked_values_for_reference_assignment(
+                            function,
+                            values,
+                            None,
+                            None,
+                            None,
+                            reference_bindings,
+                            caller_scope,
+                        );
+                }
+
                 let (values, reference_bindings) = self
                     .evaluate_call_user_func_array_reference_return_arguments(
                         function,
@@ -37224,6 +37247,27 @@ impl Interpreter {
                             "closure does not return by reference",
                         ),
                     ));
+                }
+                if let Some((values, reference_bindings)) = self
+                    .evaluate_call_user_func_array_reference_return_value_arguments(
+                        function,
+                        &args[1],
+                        span,
+                        caller_scope,
+                    )?
+                {
+                    self.ensure_user_function_call_depth(function, span)?;
+                    let prebound_locals = self.closure_prebound_locals(closure);
+                    return self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
+                        function,
+                        values,
+                        None,
+                        None,
+                        None,
+                        reference_bindings,
+                        caller_scope,
+                        prebound_locals,
+                    );
                 }
                 let (values, reference_bindings) = self
                     .evaluate_call_user_func_array_reference_return_arguments(
@@ -37912,6 +37956,26 @@ impl Interpreter {
                         ),
                     ));
                 }
+                if let Some((values, reference_bindings)) = self
+                    .evaluate_call_user_func_array_reference_return_value_arguments(
+                        function,
+                        argument_expr,
+                        span,
+                        caller_scope,
+                    )?
+                {
+                    self.ensure_user_function_call_depth(function, span)?;
+                    return self
+                        .call_reference_return_function_with_checked_values_for_reference_assignment(
+                            function,
+                            values,
+                            Some(object.clone()),
+                            Some(class_id),
+                            Some(object.class_id()),
+                            reference_bindings,
+                            caller_scope,
+                        );
+                }
                 let (values, reference_bindings) = self
                     .evaluate_call_user_func_array_reference_return_arguments(
                         function,
@@ -37998,6 +38062,26 @@ impl Interpreter {
                             "function does not return by reference",
                         ),
                     ));
+                }
+                if let Some((values, reference_bindings)) = self
+                    .evaluate_call_user_func_array_reference_return_value_arguments(
+                        function,
+                        argument_expr,
+                        span,
+                        caller_scope,
+                    )?
+                {
+                    self.ensure_user_function_call_depth(function, span)?;
+                    return self
+                        .call_reference_return_function_with_checked_values_for_reference_assignment(
+                            function,
+                            values,
+                            None,
+                            Some(declaring_class_id),
+                            Some(class_id),
+                            reference_bindings,
+                            caller_scope,
+                        );
                 }
                 let (values, reference_bindings) = self
                     .evaluate_call_user_func_array_reference_return_arguments(
@@ -38287,6 +38371,62 @@ impl Interpreter {
         Ok((values, reference_bindings))
     }
 
+    fn evaluate_call_user_func_array_reference_return_value_arguments(
+        &mut self,
+        function: &FunctionDecl,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(Vec<Value>, Vec<ReferenceBinding>)>> {
+        ensure_supported_reference_return_function_metadata(function, span)?;
+
+        let (values, source_bindings) = if let Expr::Array { items, .. } = argument_expr {
+            if !Self::literal_call_user_func_array_can_preserve_copy_sources(items) {
+                return Ok(None);
+            }
+            ensure_user_function_arity(function, items.len(), span)?;
+            self.evaluate_literal_call_user_func_array_value_arguments_with_array_copy_sources(
+                function,
+                items,
+                span,
+                caller_scope,
+                true,
+            )?
+        } else {
+            let Some((values, source_bindings)) = self
+                .evaluate_stored_call_user_func_array_value_arguments_with_array_copy_sources(
+                    function,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                    true,
+                )?
+            else {
+                return Ok(None);
+            };
+            (values, source_bindings)
+        };
+
+        let reference_bindings = source_bindings
+            .into_iter()
+            .filter_map(|(param_name, target_keys, source)| {
+                if !target_keys.is_empty() {
+                    return None;
+                }
+                function
+                    .params
+                    .iter()
+                    .any(|param| param.name == param_name && param.by_reference)
+                    .then_some(ReferenceBinding {
+                        param_name,
+                        target: ReferenceBindingTarget::ValueWithArrayCopySource { source },
+                    })
+            })
+            .collect::<Vec<_>>();
+        self.emit_call_user_func_reference_parameter_warnings(function, values.len(), span)?;
+        Ok(Some((values, reference_bindings)))
+    }
+
     fn literal_call_user_func_array_can_preserve_copy_sources(items: &[ArrayItem]) -> bool {
         items.iter().all(|item| {
             !item.by_reference
@@ -38305,6 +38445,7 @@ impl Interpreter {
         items: &[ArrayItem],
         span: Span,
         caller_scope: &mut SymbolTable,
+        include_reference_params: bool,
     ) -> CompileResult<(Vec<Value>, Vec<ArrayCopySourceBinding>)> {
         let mut argument_array = PhpArray::new();
         let mut entry_sources = Vec::new();
@@ -38349,6 +38490,7 @@ impl Interpreter {
             span,
             &entry_sources,
             caller_scope,
+            include_reference_params,
         )
     }
 
@@ -38358,6 +38500,7 @@ impl Interpreter {
         argument_expr: &Expr,
         span: Span,
         caller_scope: &mut SymbolTable,
+        include_reference_params: bool,
     ) -> CompileResult<Option<(Vec<Value>, Vec<ArrayCopySourceBinding>)>> {
         let Expr::Variable(source_name, _) = argument_expr else {
             return Ok(None);
@@ -38401,6 +38544,7 @@ impl Interpreter {
                 span,
                 &entry_sources,
                 caller_scope,
+                include_reference_params,
             )?,
         ))
     }
@@ -38435,6 +38579,7 @@ impl Interpreter {
         span: Span,
         entry_sources: &[(ArrayKey, ArrayCopySource)],
         caller_scope: &mut SymbolTable,
+        include_reference_params: bool,
     ) -> CompileResult<(Vec<Value>, Vec<ArrayCopySourceBinding>)> {
         if Self::call_user_func_array_value_has_string_keys(argument_array) {
             return self
@@ -38445,6 +38590,7 @@ impl Interpreter {
                     span,
                     entry_sources,
                     caller_scope,
+                    include_reference_params,
                 );
         }
 
@@ -38461,7 +38607,7 @@ impl Interpreter {
             let Some(param) = function.params.get(index) else {
                 continue;
             };
-            if param.by_reference || param.is_variadic {
+            if (param.by_reference && !include_reference_params) || param.is_variadic {
                 continue;
             }
             if !matches!(value, Value::Array(_)) {
@@ -38483,6 +38629,7 @@ impl Interpreter {
         span: Span,
         entry_sources: &[(ArrayKey, ArrayCopySource)],
         caller_scope: &mut SymbolTable,
+        include_reference_params: bool,
     ) -> CompileResult<(Vec<Value>, Vec<ArrayCopySourceBinding>)> {
         if function.params.iter().any(|param| param.is_variadic) {
             return Err(runtime_error(
@@ -38561,7 +38708,7 @@ impl Interpreter {
                     ),
                 ));
             }
-            if param.by_reference {
+            if param.by_reference && !include_reference_params {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -41316,6 +41463,7 @@ impl Interpreter {
                     items,
                     span,
                     caller_scope,
+                    false,
                 )?;
             let by_value_array_copy_bindings =
                 Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
@@ -41335,6 +41483,7 @@ impl Interpreter {
                 argument_expr,
                 span,
                 caller_scope,
+                false,
             )?
         else {
             return Ok(None);
