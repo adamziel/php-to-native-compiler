@@ -18,6 +18,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-19T02:46:26+02:00
+
+- Checkpoint before this task: `27899cea runtime: execute by-value magic get
+  sources`, pushed to `origin/master`.
+- Task attempted: Lane 1830-C through Lane 1833-C bundle, executing public
+  by-value `__get()` bodies for whole direct, dynamic, and non-direct holder
+  magic-property reference roots and by-reference parameter roots, then
+  binding the caller side to detached PHP values.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone1830/*`, `tests/fixtures/milestone1831/*`,
+  `tests/fixtures/milestone1832/*`, `tests/fixtures/milestone1833/*`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: raw system PHP output matched the new `milestone1830`,
+  `milestone1831`, `milestone1832`, and `milestone1833` fixtures;
+  `cargo run -q -p phpc -- test --compare-php` passed each new fixture
+  directory plus adjacent magic-reference milestones `1552`, `1564`,
+  `1582`, `1701`, `1702`, `1708`, `1709`, `1790`, and `1827` through
+  `1833`; focused `functions_and_scopes` reference-assignment tests passed;
+  `cargo fmt --check`, `cargo check -q -p phpc`, and `git diff --check`
+  passed.
+- Remaining COW gaps: arbitrary mixed `ArrayAccess` chains, arbitrary
+  magic/`ArrayAccess` method bodies outside the supported interpreter subset,
+  arbitrary callable arrays, builtin callbacks as reference-return sources,
+  full exception unwinding and uncaught exception propagation, arbitrary
+  Iterator side effects, broader complex alias sinks and alias lifetime
+  ordering, exact PHP stderr/fatal text, binary/multibyte string offset
+  behavior, and native reference/string COW lowering.
+- Next concrete task: run adjacent regression checks, formatting, diff check,
+  and the full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-19T02:36:01+02:00
 
 - Checkpoint before this task: `68a30613 runtime: execute by-value

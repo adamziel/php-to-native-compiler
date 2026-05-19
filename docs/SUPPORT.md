@@ -235,7 +235,15 @@
   arrays are also executed for covered direct and non-direct holder
   magic-property array-offset reference sources, and the assigned variable
   receives a detached selected value or detached append `null` while the
-  backing array stays unchanged. Public by-value `offsetGet()` bodies on covered
+  backing array stays unchanged. Whole direct, dynamic, and non-direct holder
+  magic-property roots such as `$alias =& $object->missing`,
+  `$alias =& $object->{$name}`, and
+  `$alias =& $holders["box"]->missing` also execute public by-value
+  `__get()` bodies, emit the bounded indirect-modification notice, and bind
+  the target to a detached PHP value instead of creating or mutating a dynamic
+  property. By-reference parameter calls use the same detached temporary for
+  those roots; object values remain PHP object handles, so mutating a returned
+  object still mutates that object. Public by-value `offsetGet()` bodies on covered
   direct and property-held `ArrayAccess` roots are executed before that
   detached/no-op result is produced, so method-local side effects such as
   `$this->hits[] = $offset` run. Append reference sources pass `null` to
@@ -318,8 +326,8 @@
   it, for example `$bucket =& $this->items[$offset]; return $bucket["leaf"];`.
   Backing paths may also use locals initialized from literal int/string keys,
   such as `$leaf = "leaf"; return $this->items[$offset][$leaf];`.
-  This does not add magic property roots without an array offset, magic
-  `__get()` roots beyond the covered direct variable/property/backing-offset
+  This does not add magic `__get()` roots beyond the covered direct,
+  dynamic, non-direct holder, variable/property/backing-offset
   returns; incompatible typed reference-return signatures or arbitrary type
   enforcement; full exception unwinding, uncaught exception propagation,
   non-object throws, exact exception diagnostics, or global `throw` support

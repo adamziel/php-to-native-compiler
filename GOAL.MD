@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1829:
+The current in-progress implementation frontier is Lane 1833:
+
+- Lanes 1830 through 1833 close the whole by-value magic-property root
+  counterpart to the preceding array-offset work. Direct, dynamic, and
+  non-direct holder roots such as `$alias =& $box->missing`,
+  `$alias =& $box->{$name}`, and `$alias =& $holders["box"]->missing` now
+  execute public by-value `__get()` bodies, emit the bounded
+  indirect-modification notice, and bind the target to a detached PHP value
+  instead of creating or mutating a dynamic property. By-reference parameter
+  calls receive the same detached temporary. Object values remain PHP object
+  handles, so mutating the detached object mutates the returned object itself.
+  This still does not claim arbitrary magic/`ArrayAccess` bodies outside the
+  interpreter subset, arbitrary mixed chains, exact diagnostic streams, or
+  native reference lowering.
 
 - Lanes 1827 through 1829 add the magic-property counterpart to the
   by-value `ArrayAccess` work. Public by-value `__get()` bodies that return
@@ -41,9 +54,8 @@ The current in-progress implementation frontier is Lane 1829:
   not mutate the backing array. Public by-value `__get()` returning a
   side-effecting by-value outer `ArrayAccess` object can also continue into a
   proven inner by-reference `ArrayAccess` bucket. This still does not claim
-  whole by-value magic-property reference roots, arbitrary `__get()` bodies
-  outside the interpreter subset, arbitrary mixed chains, exact diagnostic
-  streams, or native reference lowering.
+  arbitrary `__get()` bodies outside the interpreter subset, arbitrary mixed
+  chains, exact diagnostic streams, or native reference lowering.
 
 - Lanes 1824 through 1826 execute side-effecting public by-value
   `ArrayAccess::offsetGet()` bodies in the covered reference-source and

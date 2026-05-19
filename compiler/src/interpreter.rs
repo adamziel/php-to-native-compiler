@@ -4785,6 +4785,11 @@ enum NonDirectReferenceSourceBinding {
     ArrayOffset(ArrayOffsetAlias),
 }
 
+enum MagicGetReferenceRootBinding {
+    Cell(VariableCell),
+    DetachedValue(Value),
+}
+
 #[derive(Debug, Clone)]
 enum ReferenceReturnLocalBinding {
     Cell(VariableCell),
@@ -14745,20 +14750,15 @@ impl Interpreter {
                 scope.bind_static_to_cell(target_name, cell);
                 Ok(())
             }
-            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
-                if let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object.clone(), property, span)?
-                {
-                    scope.bind_static_to_cell(target_name, cell);
-                    Ok(())
-                } else {
-                    let cell = object
-                        .bind_dynamic_public_property_reference_cell(property)
-                        .map_err(|_| runtime_error(span, error))?;
-                    scope.bind_static_to_cell(target_name, cell);
-                    Ok(())
-                }
-            }
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => self
+                .bind_static_to_magic_get_root_or_dynamic_property(
+                    target_name,
+                    object,
+                    property,
+                    error,
+                    span,
+                    scope,
+                ),
             Err(error) => Err(runtime_error(span, error)),
         }
     }
@@ -14797,20 +14797,15 @@ impl Interpreter {
                 scope.bind_static_to_cell(target_name, cell);
                 Ok(())
             }
-            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
-                if let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object.clone(), property, span)?
-                {
-                    scope.bind_static_to_cell(target_name, cell);
-                    Ok(())
-                } else {
-                    let cell = object
-                        .bind_dynamic_public_property_reference_cell(property)
-                        .map_err(|_| runtime_error(span, error))?;
-                    scope.bind_static_to_cell(target_name, cell);
-                    Ok(())
-                }
-            }
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => self
+                .bind_static_to_magic_get_root_or_dynamic_property(
+                    target_name,
+                    object,
+                    property,
+                    error,
+                    span,
+                    scope,
+                ),
             Err(error) => Err(runtime_error(span, error)),
         }
     }
@@ -14849,22 +14844,114 @@ impl Interpreter {
                 scope.bind_static_to_cell(target_name, cell);
                 Ok(())
             }
-            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
-                if let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object.clone(), property, span)?
-                {
-                    scope.bind_static_to_cell(target_name, cell);
-                    Ok(())
-                } else {
-                    let cell = object
-                        .bind_dynamic_public_property_reference_cell(property)
-                        .map_err(|_| runtime_error(span, error))?;
-                    scope.bind_static_to_cell(target_name, cell);
-                    Ok(())
-                }
-            }
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => self
+                .bind_static_to_magic_get_root_or_dynamic_property(
+                    target_name,
+                    object,
+                    property,
+                    error,
+                    span,
+                    scope,
+                ),
             Err(error) => Err(runtime_error(span, error)),
         }
+    }
+
+    fn bind_static_to_magic_get_root_or_dynamic_property(
+        &mut self,
+        target_name: &str,
+        object: PhpObject,
+        property: &str,
+        fallback_error: RuntimeError,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        match self.call_magic_get_reference_root_binding(object.clone(), property, span)? {
+            Some(MagicGetReferenceRootBinding::Cell(cell)) => {
+                scope.bind_static_to_cell(target_name, cell);
+                Ok(())
+            }
+            Some(MagicGetReferenceRootBinding::DetachedValue(value)) => {
+                scope.write_detached_static(target_name, value);
+                Ok(())
+            }
+            None => {
+                let cell = object
+                    .bind_dynamic_public_property_reference_cell(property)
+                    .map_err(|_| runtime_error(span, fallback_error))?;
+                scope.bind_static_to_cell(target_name, cell);
+                Ok(())
+            }
+        }
+    }
+
+    fn call_magic_get_reference_root_binding(
+        &mut self,
+        object: PhpObject,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<MagicGetReferenceRootBinding>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__get")
+        else {
+            return Ok(None);
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__get()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, "__get", visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        let called_class_id = object.class_id();
+        let args = vec![Value::String(property.to_string())];
+
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            let hidden_name = self.hidden_reference_return_object_name(&object);
+            let mut temp_scope = SymbolTable::new_child(self.global_symbols.clone());
+            temp_scope.write_static(&hidden_name, Value::Object(object.clone()));
+            let binding = self
+                .call_reference_return_function_with_checked_values_for_reference_assignment(
+                    function,
+                    args,
+                    Some(object),
+                    Some(class_id),
+                    Some(called_class_id),
+                    Vec::new(),
+                    &mut temp_scope,
+                )?;
+            let cell =
+                self.reference_return_binding_cell(function, binding, span, &mut temp_scope)?;
+            return Ok(Some(MagicGetReferenceRootBinding::Cell(cell)));
+        }
+
+        ensure_supported_function_signature(function, 1, span)?;
+        let value = self.call_user_function_with_this(
+            function,
+            object,
+            args,
+            Some(class_id),
+            Some(called_class_id),
+        )?;
+        self.emit_notice(
+            "__get()",
+            format!(
+                "Indirect modification of overloaded property {class_name}::${property} has no effect"
+            ),
+            span,
+        )?;
+        Ok(Some(MagicGetReferenceRootBinding::DetachedValue(value)))
     }
 
     fn evaluate_reference_return_call_binding(
@@ -39024,13 +39111,15 @@ impl Interpreter {
         match object.read_property_from_context(&property, current_class_id, &protected_class_ids) {
             Ok(_) => Ok(None),
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
-                if let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object, &property, arg.span())?
-                {
-                    let value = cell.value_cloned();
-                    Ok(Some((cell, value)))
-                } else {
-                    Ok(None)
+                match self.call_magic_get_reference_root_binding(object, &property, arg.span())? {
+                    Some(MagicGetReferenceRootBinding::Cell(cell)) => {
+                        let value = cell.value_cloned();
+                        Ok(Some((cell, value)))
+                    }
+                    Some(MagicGetReferenceRootBinding::DetachedValue(value)) => {
+                        Ok(Some((value_cell(value.clone()), value)))
+                    }
+                    None => Ok(None),
                 }
             }
             Err(error) => Err(runtime_error(arg.span(), error)),

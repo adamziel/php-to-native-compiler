@@ -20223,6 +20223,17 @@ handled.
   subset, exact diagnostic-stream parity, and native reference lowering named
   as unsupported.
 
+## Lane 1830-C through Lane 1833-C: By-Value Magic Get Root References
+
+- [x] Runtime/tests/docs bundle: execute public by-value `__get()` bodies for
+  whole direct, dynamic, and non-direct holder magic-property reference roots,
+  binding `=&` targets to detached PHP values instead of creating dynamic
+  properties. Apply the same detached temporary behavior to by-reference
+  parameter calls, and cover returned arrays, scalars, and object handles.
+  Keep arbitrary magic/`ArrayAccess` method bodies outside the interpreter
+  subset, arbitrary mixed chains, exact diagnostic-stream parity, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

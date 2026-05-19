@@ -7675,26 +7675,31 @@ echo $alias;
 }
 
 #[test]
-fn reference_assignment_magic_get_source_without_reference_return_remains_boundary() {
-    let error = runtime_error(
+fn reference_assignment_magic_get_source_without_reference_return_detaches() {
+    let execution = run_source(
         r#"<?php
 class MagicBox {
+    public $hits = 0;
+
     public function __get($name) {
+        $this->hits++;
         return "value";
     }
 }
 
 $box = new MagicBox();
 $alias =& $box->missing;
+$alias = "changed";
+echo $alias, "|", $box->missing, "|", $box->hits;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 9);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call MagicBox::__get(): magic __get reference sources require __get() to return by reference in the current subset"
-    );
+    assert_eq!(execution.stdout, "changed|value|2");
+    assert!(execution
+        .stderr
+        .contains("Indirect modification of overloaded property MagicBox::$missing has no effect"));
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

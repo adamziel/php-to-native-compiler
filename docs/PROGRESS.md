@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 1830-C through Lane 1833-C for whole by-value magic `__get()`
+  root COW parity. Covered direct, dynamic, and non-direct holder
+  magic-property reference roots now execute public by-value `__get()` bodies,
+  emit the bounded indirect-modification notice, and bind the assigned
+  variable to a detached PHP value instead of creating or mutating a dynamic
+  property. By-reference parameter invocation now uses the same detached
+  temporary for by-value magic-property roots. Object values stay object
+  handles, matching PHP's handle mutation behavior. This does not claim
+  arbitrary magic/`ArrayAccess` method bodies outside the interpreter subset,
+  arbitrary mixed chains, exact diagnostic-stream parity, or native reference
+  lowering. Focused verification: raw system PHP output matched the new
+  `milestone1830`, `milestone1831`, `milestone1832`, and `milestone1833`
+  fixtures; `cargo run -q -p phpc -- test --compare-php` passed each new
+  directory plus adjacent magic-reference milestones `1552`, `1564`,
+  `1582`, `1701`, `1702`, `1708`, `1709`, `1790`, and `1827` through
+  `1833`; focused `functions_and_scopes` reference-assignment tests passed.
+
 - Added Lane 1827-C through Lane 1829-C for by-value magic `__get()` COW
   reference-source parity. Covered direct and non-direct holder
   magic-property array-offset reference sources now execute public by-value
