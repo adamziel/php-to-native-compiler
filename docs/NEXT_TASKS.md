@@ -20285,6 +20285,19 @@ handled.
   interpreter subset, exact diagnostic streams, and native reference lowering
   named as unsupported.
 
+## Lane 1850-C through Lane 1854-C: Non-Static Static-Syntax Reference Helpers
+
+- [x] Runtime/tests/docs bundle: allow executed magic/`ArrayAccess`
+  reference-return bodies to delegate to non-static helpers through
+  `self::helper(...)`, `parent::helper(...)`, `static::helper(...)`,
+  compatible `ClassName::helper(...)`, and compatible dynamic static receiver
+  calls such as `$this::helper(...)` when the current `$this` object context
+  can legally serve as the helper receiver. Cover both `__get()` and
+  `ArrayAccess::offsetGet()` COW write-through with system-PHP comparisons.
+  Keep arbitrary PHP outside the interpreter subset, incompatible typed
+  signatures, full exception unwinding, exact diagnostics, and native
+  reference lowering named as unsupported.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

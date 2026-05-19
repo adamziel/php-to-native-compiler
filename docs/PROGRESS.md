@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 1850-C through Lane 1854-C for non-static helper delegation from
+  executed magic/`ArrayAccess` reference-return bodies. Public by-reference
+  `ArrayAccess::offsetGet()` and covered by-reference `__get()` bodies can now
+  return supported lvalues through non-static helpers reached with
+  `self::helper(...)`, `parent::helper(...)`, `static::helper(...)`,
+  compatible `ClassName::helper(...)`, and compatible dynamic static receiver
+  calls such as `$this::helper(...)` when a current `$this` object context is
+  available. This does not claim arbitrary PHP outside the interpreter subset,
+  incompatible typed signatures, full exception unwinding, exact diagnostics,
+  or native reference lowering. Focused verification: `cargo run -q -p phpc
+  -- test --compare-php` passed the new `milestone1850`, `milestone1851`,
+  `milestone1852`, `milestone1853`, and `milestone1854` fixtures.
+
 - Added Lane 1846-C through Lane 1849-C for append suffixes below
   expression-root `ArrayAccess` selections. Direct variable targets can now
   append below arrays returned from an expression-root `offsetGet()` and can

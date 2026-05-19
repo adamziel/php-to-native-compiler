@@ -336,6 +336,12 @@
   objects caught by a parent class catch clause in this bounded path.
   Public by-reference `__get()` uses the same assignment-capable return path
   for covered array-offset returns such as `return $this->store[$name];`.
+  Supported reference-return bodies may also delegate to non-static helpers
+  through PHP's static call syntaxes when a compatible current `$this` object
+  exists. Covered forms include `self::helper(...)`, `parent::helper(...)`,
+  `static::helper(...)`, compatible `ClassName::helper(...)`, and compatible
+  dynamic static receivers such as `$this::helper(...)`; the helper must still
+  return one of the supported lvalue shapes by reference.
   In this reference-return body path, `offsetGet()` may declare
   `mixed $offset` and `: mixed`, and `__get()` may declare `string $name` or
   `mixed $name` plus `: mixed`; these are accepted as syntax-only compatible

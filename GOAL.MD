@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 1849:
+The current in-progress implementation frontier is Lane 1854:
+
+- Lanes 1850 through 1854 broaden executed magic/`ArrayAccess`
+  reference-return method-body delegation for non-static helpers reached
+  through PHP's static call syntaxes inside an object context. Covered
+  by-reference `ArrayAccess::offsetGet()` and `__get()` bodies can now return
+  `self::helper(...)`, `parent::helper(...)`, `static::helper(...)`,
+  compatible `ClassName::helper(...)`, or compatible dynamic static receiver
+  calls such as `$this::helper(...)` when the resolved helper returns a
+  supported lvalue by reference. The current `$this` object is used for the
+  non-static helper call, matching the covered PHP object-context behavior.
+  This still does not claim arbitrary PHP outside the interpreter subset,
+  incompatible typed signatures, full exception unwinding, exact diagnostics,
+  or native reference lowering.
 
 - Lanes 1846 through 1849 extend append-offset expression-root reference
   sources below selected `ArrayAccess` buckets. Direct variable targets can

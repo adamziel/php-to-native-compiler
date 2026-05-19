@@ -36860,6 +36860,46 @@ impl Interpreter {
         )
     }
 
+    fn current_this_for_non_static_reference_static_dispatch(
+        &self,
+        receiver_class_id: ClassId,
+        class_name: &str,
+        method_name: &str,
+        syntax: &str,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<PhpObject> {
+        let Some(Value::Object(object)) = caller_scope.read_named("this") else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    format!(
+                        "non-static reference-return method dispatch through {syntax} requires current $this object context"
+                    ),
+                ),
+            ));
+        };
+
+        if object.class_id() == receiver_class_id
+            || self
+                .classes
+                .is_subclass_of(object.class_id(), receiver_class_id)
+        {
+            return Ok(object);
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{class_name}::{method_name}()"),
+                format!(
+                    "non-static reference-return method dispatch through {syntax} requires current $this to be an instance of the receiver class"
+                ),
+            ),
+        ))
+    }
+
     fn call_reference_return_named_static_method(
         &mut self,
         class_name: &str,
@@ -36910,16 +36950,6 @@ impl Interpreter {
             span,
         )?;
 
-        if !is_static {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{declaring_class_name}::{method_name}()"),
-                    "non-static method dispatch through named static receivers is not implemented",
-                ),
-            ));
-        }
-
         let function = self.method_function(
             declaring_class_id,
             &declaring_class_name,
@@ -36949,10 +36979,23 @@ impl Interpreter {
                 true,
             )?;
 
+        let this_object = if is_static {
+            None
+        } else {
+            Some(self.current_this_for_non_static_reference_static_dispatch(
+                class_id,
+                &declaring_class_name,
+                method_name,
+                "named static receivers",
+                span,
+                caller_scope,
+            )?)
+        };
+
         self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
-            None,
+            this_object,
             Some(declaring_class_id),
             Some(class_id),
             reference_bindings,
@@ -37004,16 +37047,6 @@ impl Interpreter {
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
-        if !is_static {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{class_name}::{method_name}()"),
-                    "non-static self:: reference-return method sources are not implemented",
-                ),
-            ));
-        }
-
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         if !function.returns_by_reference {
@@ -37043,10 +37076,22 @@ impl Interpreter {
             .last()
             .copied()
             .unwrap_or(current_class_id);
+        let this_object = if is_static {
+            None
+        } else {
+            Some(self.current_this_for_non_static_reference_static_dispatch(
+                current_class_id,
+                &class_name,
+                method_name,
+                "self::",
+                span,
+                caller_scope,
+            )?)
+        };
         self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
-            None,
+            this_object,
             Some(class_id),
             Some(called_class_id),
             reference_bindings,
@@ -37101,16 +37146,6 @@ impl Interpreter {
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
-        if !is_static {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{class_name}::{method_name}()"),
-                    "non-static parent:: reference-return method sources are not implemented",
-                ),
-            ));
-        }
-
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         if !function.returns_by_reference {
@@ -37140,10 +37175,22 @@ impl Interpreter {
             .last()
             .copied()
             .unwrap_or(current_class_id);
+        let this_object = if is_static {
+            None
+        } else {
+            Some(self.current_this_for_non_static_reference_static_dispatch(
+                parent_class_id,
+                &class_name,
+                method_name,
+                "parent::",
+                span,
+                caller_scope,
+            )?)
+        };
         self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
-            None,
+            this_object,
             Some(class_id),
             Some(called_class_id),
             reference_bindings,
@@ -37195,16 +37242,6 @@ impl Interpreter {
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
-        if !is_static {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{class_name}::{method_name}()"),
-                    "non-static static:: reference-return method sources are not implemented",
-                ),
-            ));
-        }
-
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         if !function.returns_by_reference {
@@ -37229,10 +37266,23 @@ impl Interpreter {
                 true,
             )?;
 
+        let this_object = if is_static {
+            None
+        } else {
+            Some(self.current_this_for_non_static_reference_static_dispatch(
+                called_class_id,
+                &class_name,
+                method_name,
+                "static::",
+                span,
+                caller_scope,
+            )?)
+        };
+
         self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
-            None,
+            this_object,
             Some(class_id),
             Some(called_class_id),
             reference_bindings,
@@ -37307,16 +37357,6 @@ impl Interpreter {
             span,
         )?;
 
-        if !is_static {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{declaring_class_name}::{method_name}()"),
-                    "non-static dynamic static receiver reference-return method sources are not implemented",
-                ),
-            ));
-        }
-
         let function = self.method_function(
             declaring_class_id,
             &declaring_class_name,
@@ -37346,10 +37386,23 @@ impl Interpreter {
                 true,
             )?;
 
+        let this_object = if is_static {
+            None
+        } else {
+            Some(self.current_this_for_non_static_reference_static_dispatch(
+                receiver_class_id,
+                &declaring_class_name,
+                method_name,
+                "dynamic static receivers",
+                span,
+                caller_scope,
+            )?)
+        };
+
         self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
-            None,
+            this_object,
             Some(declaring_class_id),
             Some(receiver_class_id),
             reference_bindings,
