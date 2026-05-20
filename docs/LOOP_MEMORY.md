@@ -23,6 +23,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T02:25:00+02:00
+
+- Checkpoint before this task: `7e996a31 runtime: recover arrayaccess holder
+  arg roots`, pushed to `origin/master`.
+- Task attempted: Lane 2271-C through Lane 2275-C bundle, accepting
+  syntax-only PHP 8 magic/`ArrayAccess` signatures on supported COW dispatch
+  paths while preserving reference leaves and copied-source payloads.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2271/*` through
+  `tests/fixtures/milestone2275/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo build -q -p phpc` passed; system-PHP fixture
+  comparisons passed for `milestone2271` through `milestone2275`; adjacent
+  comparisons passed for `milestone2267` through `milestone2270`; Rust
+  regressions passed for `object_model magic`, `object_model arrayaccess`,
+  `functions_and_scopes function`, `fixture_manifest`, and broad milestone1
+  fixtures.
+- Remaining COW gaps: arbitrary unsupported method-body syntax, untracked
+  dynamic containers that expose neither materialized reference cells nor
+  portable copied-source roots, broader whole-array reference identity outside
+  covered roots, exact diagnostics/Throwable objects, and native
+  reference/string COW lowering.
+- Next concrete task: run remaining focused Rust tests, formatting/check/diff
+  gates, then one full `tools/checkpoint.sh` bundle gate and push if it
+  passes.
+
 ## Loop Event 2026-05-20T01:54:47+02:00
 
 - Checkpoint before this task: `55bbeae8 runtime: fall through magic reference

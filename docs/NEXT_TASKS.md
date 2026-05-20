@@ -165,6 +165,12 @@ handled.
   paths, whole-array assignment propagation, reference-return mirror
   promotion, visible `__get()`, public `ArrayAccess::offsetGet()`, and a
   whole-copy guard.
+- [x] Lane 2271-C through 2275-C: accept syntax-only `mixed` metadata for
+  general supported functions and common PHP 8 magic/`ArrayAccess` method
+  signatures on the supported dispatch paths, proving typed side-effecting
+  `offsetGet()` / `__get()` / `__call()` COW reads and typed `offsetSet()` /
+  `__set()` copied-source stores against system PHP without claiming general
+  type enforcement.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic

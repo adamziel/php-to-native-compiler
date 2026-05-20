@@ -185,6 +185,15 @@ holders, visible `__get()` bodies, and public `ArrayAccess::offsetGet()`
 bodies in the same COW model without claiming arbitrary `ArrayAccess` method
 side effects.
 
+The method signature gate has a separate syntax-only path for COW-relevant
+magic and `ArrayAccess` dispatch. Ordinary functions accept untyped metadata
+or `mixed` metadata, because `mixed` needs no runtime value check. Dispatch
+through covered magic/`ArrayAccess` helpers additionally accepts the standard
+PHP signatures for `__get`, `__set`, `__isset`, `__unset`, `__call`,
+`__callStatic`, `offsetGet`, `offsetSet`, `offsetExists`, and `offsetUnset`.
+Those annotations let the already-supported body executor run; they do not
+turn on general PHP parameter/return type enforcement.
+
 Non-direct holder expressions use the same identity model after evaluating the
 holder once into a temporary object root. The interpreter snapshots public
 array copy-source metadata before the helper evaluation and restores only

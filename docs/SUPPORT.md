@@ -171,11 +171,21 @@
   Recovered stored argument roots also carry the already-read argument-array
   value, so supported helper calls, dynamic property names, and key
   expressions used to recover those roots are not evaluated a second time.
+  Supported magic and `ArrayAccess` dispatch also accepts common PHP 8
+  syntax-only signatures for the covered body-execution paths:
+  `__get(string): mixed`, `__set(string, mixed): void`,
+  `__isset(string): bool`, `__unset(string): void`,
+  `__call(string, array): mixed`, `__callStatic(string, array): mixed`,
+  `offsetGet(mixed): mixed`, `offsetSet(mixed, mixed): void`,
+  `offsetExists(mixed): bool`, and `offsetUnset(mixed): void`. This lets those
+  typed supported bodies participate in the same copied-source and reference
+  leaf COW model; general user functions also accept `mixed` metadata because
+  it requires no runtime type check.
   This does
   not provide general PHP reference containers,
   `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
   dynamic callables or arbitrary reflection targets, unsupported method-body syntax
-  beyond the documented dynamic instance-call slice,
+  beyond the documented dynamic instance-call slice, general type enforcement,
   arbitrary side effects beyond covered writeback paths, broader dynamic
   callback mutation of containers whose copied-source roots cannot be synced
   through a concrete shared object property or global root, full whole-array

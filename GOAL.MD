@@ -32,7 +32,25 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2270:
+The current in-progress implementation frontier is Lane 2275:
+
+- Lanes 2271 through 2275 let supported magic and `ArrayAccess` bodies run
+  with common PHP 8 syntax-only signatures instead of rejecting before the
+  body executes. General user functions and helpers may now use `mixed`
+  parameter/return metadata because it requires no runtime enforcement; magic
+  and `ArrayAccess` dispatch additionally accepts the standard `string`,
+  `array`, `bool`, and `void` annotations for `__get()`, `__set()`,
+  `__isset()`, `__unset()`, `__call()`, `__callStatic()`, `offsetGet()`,
+  `offsetSet()`, `offsetExists()`, and `offsetUnset()` when used through those
+  dispatch paths. Focused system-PHP coverage proves typed side-effecting
+  `offsetGet()`, `__get()`, and `__call()` bodies still preserve selected
+  reference leaves while plain leaves detach, and typed `offsetSet()` /
+  `__set()` bodies still carry copied-source payloads into stored
+  `call_user_func_array()` argument containers. This is syntax acceptance for
+  already-supported body execution, not general PHP type enforcement; typed
+  signatures outside the safe `mixed` subset, arbitrary unsupported method
+  syntax, untracked dynamic containers, exact diagnostics, and native
+  reference/string COW lowering remain unsupported.
 
 - Lanes 2267 through 2270 carry copied-source COW metadata through
   `ArrayAccess` holder argument arrays whose backing bucket is statically

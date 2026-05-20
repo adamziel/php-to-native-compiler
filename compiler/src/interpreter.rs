@@ -12332,7 +12332,7 @@ impl Interpreter {
                 _ => Ok(()),
             }
         } else {
-            ensure_supported_function_signature(function, 1, span)?;
+            ensure_supported_magic_array_access_function_signature(function, 1, span)?;
             let called_class_id = object.class_id();
             let (value, _) = self.call_user_function_with_this_and_array_copy_source(
                 function,
@@ -17265,7 +17265,7 @@ impl Interpreter {
                     return Ok(Some(NonDirectReferenceSourceBinding::ArrayOffset(alias)));
                 }
 
-                ensure_supported_function_signature(function, 1, span)?;
+                ensure_supported_magic_array_access_function_signature(function, 1, span)?;
                 let (value, source) = self.call_user_function_with_this_and_array_copy_source(
                     function,
                     holder,
@@ -18263,7 +18263,7 @@ impl Interpreter {
             return Ok(None);
         }
         ensure_user_function_arity(function, 1, span)?;
-        ensure_supported_function_signature(function, 1, span)?;
+        ensure_supported_magic_array_access_function_signature(function, 1, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let Some((first_key, rest_keys)) = keys.split_first() else {
@@ -18367,7 +18367,7 @@ impl Interpreter {
             return Ok(false);
         }
         ensure_user_function_arity(function, 1, span)?;
-        ensure_supported_function_signature(function, 1, span)?;
+        ensure_supported_magic_array_access_function_signature(function, 1, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let Some((first_key, rest_keys)) = keys.split_first() else {
@@ -18743,7 +18743,7 @@ impl Interpreter {
         }
 
         ensure_user_function_arity(function, 1, span)?;
-        ensure_supported_function_signature(function, 1, span)?;
+        ensure_supported_magic_array_access_function_signature(function, 1, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let Some((first_key, rest_keys)) = keys.split_first() else {
@@ -20010,7 +20010,7 @@ impl Interpreter {
             return Ok(Some(MagicGetReferenceRootBinding::Cell(cell)));
         }
 
-        ensure_supported_function_signature(function, 1, span)?;
+        ensure_supported_magic_array_access_function_signature(function, 1, span)?;
         let (value, source) = self.call_user_function_with_this_and_array_copy_source(
             function,
             object,
@@ -32862,7 +32862,7 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, 1, span)?;
-        ensure_supported_function_signature(function, 1, span)?;
+        ensure_supported_magic_array_access_function_signature(function, 1, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let called_class_id = object.class_id();
@@ -32931,7 +32931,7 @@ impl Interpreter {
             return Ok(Some((value, source)));
         }
 
-        ensure_supported_function_signature(function, 1, span)?;
+        ensure_supported_magic_array_access_function_signature(function, 1, span)?;
         self.call_user_function_with_this_and_array_copy_source(
             function,
             object,
@@ -33028,7 +33028,7 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, args.len(), span)?;
+        ensure_supported_magic_array_access_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let called_class_id = object.class_id();
@@ -33090,7 +33090,7 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, args.len(), span)?;
+        ensure_supported_magic_array_access_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let called_class_id = object.class_id();
@@ -36137,7 +36137,7 @@ impl Interpreter {
         if !Self::function_accepts_source_aware_by_value_arguments(function) {
             return Ok(None);
         }
-        ensure_supported_function_metadata(function, span)?;
+        ensure_supported_magic_array_access_function_signature(function, 2, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut argument_array = PhpArray::new();
@@ -36658,7 +36658,7 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, 2, span)?;
-        ensure_supported_function_signature(function, 2, span)?;
+        ensure_supported_magic_array_access_function_signature(function, 2, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut argument_array = PhpArray::new();
@@ -50364,7 +50364,7 @@ impl Interpreter {
             return Ok(None);
         }
         ensure_user_function_arity(function, 1, span)?;
-        ensure_supported_function_signature(function, 1, span)?;
+        ensure_supported_magic_array_access_function_signature(function, 1, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let called_class_id = object.class_id();
@@ -50733,7 +50733,7 @@ impl Interpreter {
             return Ok(Some((value, ReferenceBindingTarget::ArrayOffset(alias))));
         }
         ensure_user_function_arity(function, 1, span)?;
-        ensure_supported_function_signature(function, 1, span)?;
+        ensure_supported_magic_array_access_function_signature(function, 1, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let Some((first_key, rest_keys)) = keys.split_first() else {
@@ -60603,7 +60603,7 @@ impl Interpreter {
                 span,
             )?;
             ensure_user_function_arity(function, 1, span)?;
-            ensure_supported_function_signature(function, 1, span)?;
+            ensure_supported_magic_array_access_function_signature(function, 1, span)?;
             self.ensure_user_function_call_depth(function, span)?;
 
             let called_class_id = object.class_id();
@@ -73811,7 +73811,23 @@ fn ensure_supported_function_signature(
     span: Span,
 ) -> CompileResult<()> {
     ensure_supported_function_metadata(function, span)?;
+    ensure_supported_function_reference_params(function, actual, span)
+}
 
+fn ensure_supported_magic_array_access_function_signature(
+    function: &FunctionDecl,
+    actual: usize,
+    span: Span,
+) -> CompileResult<()> {
+    ensure_supported_magic_array_access_function_metadata(function, span)?;
+    ensure_supported_function_reference_params(function, actual, span)
+}
+
+fn ensure_supported_function_reference_params(
+    function: &FunctionDecl,
+    actual: usize,
+    span: Span,
+) -> CompileResult<()> {
     if function
         .params
         .iter()
@@ -73841,12 +73857,7 @@ fn ensure_supported_function_metadata(function: &FunctionDecl, span: Span) -> Co
         ));
     }
 
-    if function.return_type.is_some()
-        || function
-            .params
-            .iter()
-            .any(|param| param.type_decl.is_some())
-    {
+    if !function_type_metadata_is_untyped_or_mixed_only(function) {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -73857,6 +73868,131 @@ fn ensure_supported_function_metadata(function: &FunctionDecl, span: Span) -> Co
     }
 
     Ok(())
+}
+
+fn ensure_supported_magic_array_access_function_metadata(
+    function: &FunctionDecl,
+    span: Span,
+) -> CompileResult<()> {
+    if function.returns_by_reference {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable_name(&function.name),
+                "reference returns are not implemented",
+            ),
+        ));
+    }
+
+    if function_type_metadata_is_untyped_or_mixed_only(function)
+        || syntax_only_magic_array_access_type_metadata_is_supported(function)
+    {
+        return Ok(());
+    }
+
+    Err(runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            callable_name(&function.name),
+            "parameter and return type enforcement is not implemented for this magic or ArrayAccess signature",
+        ),
+    ))
+}
+
+fn function_type_metadata_is_untyped_or_mixed_only(function: &FunctionDecl) -> bool {
+    function
+        .return_type
+        .as_ref()
+        .map_or(true, |decl| type_decl_is_exact(decl, "mixed"))
+        && function.params.iter().all(|param| {
+            param
+                .type_decl
+                .as_ref()
+                .map_or(true, |decl| type_decl_is_exact(decl, "mixed"))
+        })
+}
+
+fn syntax_only_magic_array_access_type_metadata_is_supported(function: &FunctionDecl) -> bool {
+    let name = function.name.to_ascii_lowercase();
+    let return_type = function.return_type.as_ref().map(|decl| decl.text.as_str());
+    let param_type = |index: usize| {
+        function
+            .params
+            .get(index)
+            .and_then(|param| param.type_decl.as_ref())
+            .map(|decl| decl.text.as_str())
+    };
+    let all_remaining_untyped_or_mixed = |start: usize| {
+        function.params.iter().skip(start).all(|param| {
+            param
+                .type_decl
+                .as_ref()
+                .map_or(true, |decl| type_decl_is_exact(decl, "mixed"))
+        })
+    };
+
+    match name.as_str() {
+        "__get" => {
+            optional_type_is(return_type, "mixed")
+                && optional_type_is(param_type(0), "string")
+                && all_remaining_untyped_or_mixed(1)
+        }
+        "__set" => {
+            optional_type_is(return_type, "void")
+                && optional_type_is(param_type(0), "string")
+                && optional_type_is(param_type(1), "mixed")
+                && all_remaining_untyped_or_mixed(2)
+        }
+        "__isset" => {
+            optional_type_is(return_type, "bool")
+                && optional_type_is(param_type(0), "string")
+                && all_remaining_untyped_or_mixed(1)
+        }
+        "__unset" => {
+            optional_type_is(return_type, "void")
+                && optional_type_is(param_type(0), "string")
+                && all_remaining_untyped_or_mixed(1)
+        }
+        "__call" | "__callstatic" => {
+            optional_type_is(return_type, "mixed")
+                && optional_type_is(param_type(0), "string")
+                && optional_type_is(param_type(1), "array")
+                && all_remaining_untyped_or_mixed(2)
+        }
+        "__tostring" => {
+            optional_type_is(return_type, "string") && all_remaining_untyped_or_mixed(0)
+        }
+        "offsetexists" => {
+            optional_type_is(return_type, "bool")
+                && optional_type_is(param_type(0), "mixed")
+                && all_remaining_untyped_or_mixed(1)
+        }
+        "offsetget" => {
+            optional_type_is(return_type, "mixed")
+                && optional_type_is(param_type(0), "mixed")
+                && all_remaining_untyped_or_mixed(1)
+        }
+        "offsetset" => {
+            optional_type_is(return_type, "void")
+                && optional_type_is(param_type(0), "mixed")
+                && optional_type_is(param_type(1), "mixed")
+                && all_remaining_untyped_or_mixed(2)
+        }
+        "offsetunset" => {
+            optional_type_is(return_type, "void")
+                && optional_type_is(param_type(0), "mixed")
+                && all_remaining_untyped_or_mixed(1)
+        }
+        _ => false,
+    }
+}
+
+fn optional_type_is(type_text: Option<&str>, expected: &str) -> bool {
+    type_text.map_or(true, |actual| actual.eq_ignore_ascii_case(expected))
+}
+
+fn type_decl_is_exact(decl: &TypeDecl, expected: &str) -> bool {
+    decl.text.eq_ignore_ascii_case(expected)
 }
 
 fn ensure_supported_reference_return_function_metadata(

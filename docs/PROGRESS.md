@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2271-C through Lane 2275-C for syntax-only type metadata on
+  supported magic and `ArrayAccess` COW bodies. General user functions now
+  accept `mixed` parameter/return metadata, and magic/`ArrayAccess` dispatch
+  accepts the standard syntax-only signatures for `__get()`, `__set()`,
+  `__isset()`, `__unset()`, `__call()`, `__callStatic()`, `offsetGet()`,
+  `offsetSet()`, `offsetExists()`, and `offsetUnset()` while still rejecting
+  unsupported type enforcement elsewhere. Focused system-PHP coverage proves
+  typed side-effecting by-value `offsetGet()`, `__get()`, and direct
+  missing-method `__call()` bodies preserve reference leaves and detach plain
+  leaves, and typed `offsetSet()` / `__set()` bodies preserve copied-source
+  payloads stored into callback argument containers. This does not implement
+  general PHP type checking, arbitrary unsupported body syntax, untracked
+  container recovery, exact diagnostics, or native reference/string COW
+  lowering.
+
 - Added Lane 2267-C through Lane 2270-C for `ArrayAccess` holder-backed
   `call_user_func_array()` argument arrays. Stored argument-root recovery now
   recognizes direct variables and object properties whose value is a concrete

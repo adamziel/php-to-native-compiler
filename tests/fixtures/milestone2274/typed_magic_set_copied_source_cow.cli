@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2274/typed_magic_set_copied_source_cow.php

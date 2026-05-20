@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2272/typed_magic_get_side_effect_cow.php
