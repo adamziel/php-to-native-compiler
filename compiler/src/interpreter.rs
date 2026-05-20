@@ -47565,16 +47565,30 @@ impl Interpreter {
                 }
             };
 
+            let boundary =
+                caller_scope.holder_storage_mutation_boundary_for_object_property(
+                    &object,
+                    property,
+                    &[],
+                );
+            caller_scope.pre_replace_holder_storage(&boundary);
             match object.write_property_from_context(
                 property,
                 value.clone(),
                 current_class_id,
                 &protected_class_ids,
             ) {
-                Ok(()) => Ok(()),
-                Err(error) if Self::is_undefined_property_error(&error) => object
-                    .write_dynamic_public_property(property, value)
-                    .map_err(|error| runtime_error(span, error)),
+                Ok(()) => {
+                    caller_scope.post_replace_holder_storage(&boundary);
+                    Ok(())
+                }
+                Err(error) if Self::is_undefined_property_error(&error) => {
+                    object
+                        .write_dynamic_public_property(property, value)
+                        .map_err(|error| runtime_error(span, error))?;
+                    caller_scope.post_replace_holder_storage(&boundary);
+                    Ok(())
+                }
                 Err(error) => Err(runtime_error(span, error)),
             }
         } else {
@@ -47729,6 +47743,13 @@ impl Interpreter {
                 array
                     .sort_keys_numeric()
                     .map_err(|error| runtime_error(span, error))?;
+                let boundary =
+                    caller_scope.holder_storage_mutation_boundary_for_object_property(
+                        &object,
+                        property,
+                        &[],
+                    );
+                caller_scope.pre_replace_holder_storage(&boundary);
                 object
                     .write_property_from_context(
                         property,
@@ -47737,6 +47758,7 @@ impl Interpreter {
                         &protected_class_ids,
                     )
                     .map_err(|error| runtime_error(*property_span, error))?;
+                caller_scope.post_replace_holder_storage(&boundary);
                 Ok(Value::Bool(true))
             }
             other => Err(runtime_error(
@@ -47972,6 +47994,13 @@ impl Interpreter {
         };
         let value = array.next_value();
         property_array.insert(key, slot);
+        let boundary =
+            caller_scope.holder_storage_mutation_boundary_for_object_property(
+                &object,
+                property,
+                &[],
+            );
+        caller_scope.pre_replace_holder_storage(&boundary);
         object
             .write_property_from_context(
                 property,
@@ -47980,6 +48009,7 @@ impl Interpreter {
                 &protected_class_ids,
             )
             .map_err(|error| runtime_error(*property_span, error))?;
+        caller_scope.post_replace_holder_storage(&boundary);
         Ok(value)
     }
 
@@ -57594,6 +57624,13 @@ impl Interpreter {
             Value::Object(object_value) => {
                 let alias_fallbacks =
                     caller_scope.public_object_property_root_alias_fallbacks(object_name, property);
+                let boundary =
+                    caller_scope.holder_storage_mutation_boundary_for_object_property(
+                        &object_value,
+                        property,
+                        &[],
+                    );
+                caller_scope.pre_replace_holder_storage(&boundary);
                 match object_value.write_property_from_context_with_object_type_resolver(
                     property,
                     value.clone(),
@@ -57602,6 +57639,7 @@ impl Interpreter {
                     |object, type_name| self.object_satisfies_live_property_type(object, type_name),
                 ) {
                     Ok(()) => {
+                        caller_scope.post_replace_holder_storage(&boundary);
                         caller_scope.remove_public_object_property_root_from_array_offset_aliases(
                             object_name,
                             property,

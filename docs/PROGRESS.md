@@ -34,6 +34,12 @@ Implemented:
   array-literal copied-source records through one API instead of owning
   per-location retention logic at the mutation boundary.
 
+- Extended captured holder-storage boundaries to direct object-property
+  writebacks performed by `mysqli_stmt_fetch()`, `ksort()`, `next()`, and
+  `headers_sent()`. These replacement paths now rehydrate through the same
+  boundary before writing and invalidate through the captured old storage
+  identity only after a successful replacement.
+
 - Continued the post-2289 COW frontier by moving copied-source reference-cell
   scanning and copied-source value reads onto `RuntimeAliasLvalueHandle`
   resolution first. Object-property writes that detach copied-source aliases,
