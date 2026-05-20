@@ -103,6 +103,12 @@ The first scalar output helper symbols are:
 - `phpc_native_diagnostic_free(NativeDiagnosticHandle)`
 - `phpc_native_array_null() -> NativeArrayHandle`
 - `phpc_native_array_is_null(NativeArrayHandle) -> bool`
+- `phpc_native_array_empty() -> NativeArrayHandle`
+- `phpc_native_array_len(NativeArrayHandle) -> usize`
+- `phpc_native_array_append_scalar(NativeArrayHandle, NativeScalarValue) -> bool`
+- `phpc_native_array_append_value(NativeArrayHandle, NativeValueHandle) -> bool`
+- `phpc_native_array_read_int(NativeArrayHandle, i64) -> NativeValueHandle`
+- `phpc_native_array_free(NativeArrayHandle)`
 - `phpc_native_object_null() -> NativeObjectHandle`
 - `phpc_native_object_is_null(NativeObjectHandle) -> bool`
 - `phpc_native_resource_null() -> NativeResourceHandle`
@@ -163,11 +169,20 @@ written. Null handles and host write failures return zero until stdout
 diagnostics have ABI coverage.
 `phpc_native_value_free` releases the value handle.
 
-`NativeArrayHandle`, `NativeObjectHandle`, `NativeResourceHandle`, and
-`NativeReferenceHandle` are null-only opaque handle shapes in this slice. The
-exported null constructors and predicates pin the pointer-sized C ABI forms for
-future generated code and probes, but they do not allocate storage, expose PHP
-array/object/resource/reference values, or change native lowering support.
+`NativeArrayHandle` now owns a bounded runtime `PhpArray`. The current array
+ABI can allocate an empty array, report length, append a scalar value, append a
+clone of an existing runtime value handle, read an integer-keyed slot as a new
+runtime-owned value handle, and free the array. Null array handles make length
+return `0`, append return `false`, and reads return null value handles. Missing
+integer keys also return null value handles until native diagnostics have array
+read coverage. `phpc_native_array_append_value` clones the input value, so the
+caller still owns and must free the original value handle.
+
+`NativeObjectHandle`, `NativeResourceHandle`, and `NativeReferenceHandle` are
+still null-only opaque handle shapes in this slice. Their exported null
+constructors and predicates pin the pointer-sized C ABI forms for future
+generated code and probes, but they do not allocate storage, expose PHP
+object/resource/reference values, or change native lowering support.
 
 `NativeRequestStateHandle` is also a null-only opaque handle shape in this
 slice. Its constructor and predicate pin a pointer-sized request-state ABI form
@@ -238,6 +253,15 @@ the runtime string/value stdout helpers. This is a bounded executable proof
 only: dynamic string-pointer helper lowering remains LLVM-IR-only, and arrays,
 objects, functions, references, request state, exceptions, includes, and broad
 PHP coercions still do not have linked native semantics.
+
+Milestone 2301 turns the native array handle from an empty/len/free seed into
+the first useful PHP array ABI slice. The probe now declares
+`phpc_native_array_append_scalar`, `phpc_native_array_append_value`, and
+`phpc_native_array_read_int`, and includes a function that appends a scalar,
+appends a cloned runtime value handle, reads the second slot, echoes it through
+the existing value helper, and frees all owned handles. Normal generated PHP
+array literals still reject in `phpc compile --emit-ir` and `--emit-asm`; this
+is runtime ABI groundwork, not generated array lowering.
 
 Milestone 1579 adds the opaque runtime value handle declaration
 `%phpc.NativeValueHandle = type { ptr }`, a bounded

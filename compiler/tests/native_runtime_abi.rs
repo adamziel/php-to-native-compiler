@@ -170,6 +170,24 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains(
+            "declare i1 @phpc_native_array_append_scalar(%phpc.NativeArrayHandle, %phpc.NativeScalarValue)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare i1 @phpc_native_array_append_value(%phpc.NativeArrayHandle, %phpc.NativeValueHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_array_read_int(%phpc.NativeArrayHandle, i64)"
+        ),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare void @phpc_native_array_free(%phpc.NativeArrayHandle)"),
         "{ir}"
     );
@@ -237,6 +255,10 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     );
     assert!(
         ir.contains("define i64 @phpc_probe_array_handle_empty_len()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_array_handle_append_read()"),
         "{ir}"
     );
     assert!(
@@ -334,6 +356,10 @@ fn scalar_echo_probe_ir_renders_32_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i32 @phpc_probe_array_handle_empty_len()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i32 @phpc_probe_array_handle_append_read()"),
         "{ir}"
     );
     assert!(
@@ -437,11 +463,27 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
         "{ir}"
     );
     assert!(
+        ir.contains(
+            "declare i1 @phpc_native_array_append_scalar(%phpc.NativeArrayHandle, %phpc.NativeScalarValue)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_array_read_int(%phpc.NativeArrayHandle, i64)"
+        ),
+        "{ir}"
+    );
+    assert!(
         ir.contains("define i1 @phpc_probe_container_handle_null_shapes()"),
         "{ir}"
     );
     assert!(
         ir.contains("define i64 @phpc_probe_array_handle_empty_len()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_array_handle_append_read()"),
         "{ir}"
     );
     assert!(

@@ -229,6 +229,10 @@ impl NativeArrayHandle {
     unsafe fn as_ref(&self) -> Option<&NativeArray> {
         unsafe { self.ptr.as_ref() }
     }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut NativeArray> {
+        unsafe { self.ptr.as_mut() }
+    }
 }
 
 impl NativeObjectHandle {
@@ -378,6 +382,56 @@ pub unsafe extern "C" fn phpc_native_array_len(handle: NativeArrayHandle) -> usi
     unsafe { handle.as_ref() }
         .map(|array| array.value.len())
         .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_append_scalar(
+    mut handle: NativeArrayHandle,
+    value: NativeScalarValue,
+) -> bool {
+    let Some(array) = (unsafe { handle.as_mut() }) else {
+        return false;
+    };
+
+    array.value.append(value.to_value()).is_ok()
+}
+
+/// # Safety
+///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. `value` must be null or a value handle previously
+/// returned by the runtime ABI and not yet freed. The appended array slot owns a
+/// clone of the value; ownership of `value` remains with the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_append_value(
+    mut handle: NativeArrayHandle,
+    value: NativeValueHandle,
+) -> bool {
+    let (Some(array), Some(value)) = (unsafe { handle.as_mut() }, unsafe { value.as_ref() }) else {
+        return false;
+    };
+
+    array.value.append(value.clone()).is_ok()
+}
+
+/// # Safety
+///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. The returned value handle owns a clone of the indexed
+/// array slot, or is null when the array handle is null or the key is missing.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_read_int(
+    handle: NativeArrayHandle,
+    key: i64,
+) -> NativeValueHandle {
+    unsafe { handle.as_ref() }
+        .and_then(|array| array.value.get_cloned(ArrayKey::Int(key)))
+        .map(NativeValueHandle::from_value)
+        .unwrap_or_else(NativeValueHandle::null)
 }
 
 /// # Safety
@@ -5871,6 +5925,17 @@ fn format_php_float(value: f64) -> String {
 mod tests {
     use super::*;
 
+    fn native_value_echo_bytes_for_test(handle: NativeValueHandle) -> Vec<u8> {
+        let buffer = unsafe { phpc_native_value_echo_bytes(handle) };
+        let bytes = if buffer.ptr().is_null() {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(buffer.ptr(), buffer.len()) }.to_vec()
+        };
+        unsafe { phpc_native_byte_buffer_free(buffer) };
+        bytes
+    }
+
     #[test]
     fn echo_conversions_match_php_scalars_for_supported_values() {
         assert_eq!(Value::Null.echo_string(), "");
@@ -5958,6 +6023,57 @@ mod tests {
             0
         );
         unsafe { phpc_native_array_free(NativeArrayHandle::null()) };
+    }
+
+    #[test]
+    fn native_array_appends_scalars_and_reads_integer_slots() {
+        let array = phpc_native_array_empty();
+
+        assert!(unsafe { phpc_native_array_append_scalar(array, phpc_native_int(41)) });
+        assert!(unsafe { phpc_native_array_append_scalar(array, phpc_native_bool(true)) });
+        assert_eq!(unsafe { phpc_native_array_len(array) }, 2);
+
+        let first = unsafe { phpc_native_array_read_int(array, 0) };
+        let second = unsafe { phpc_native_array_read_int(array, 1) };
+        let missing = unsafe { phpc_native_array_read_int(array, 2) };
+
+        assert_eq!(native_value_echo_bytes_for_test(first), b"41");
+        assert_eq!(native_value_echo_bytes_for_test(second), b"1");
+        assert!(missing.is_null());
+
+        unsafe { phpc_native_value_free(first) };
+        unsafe { phpc_native_value_free(second) };
+        unsafe { phpc_native_value_free(missing) };
+        unsafe { phpc_native_array_free(array) };
+    }
+
+    #[test]
+    fn native_array_appends_value_handle_by_clone() {
+        let array = phpc_native_array_empty();
+        let input = b"slot";
+        let string = unsafe { phpc_native_string_from_bytes(input.as_ptr(), input.len()) };
+        let value = unsafe { phpc_native_value_from_string(string) };
+
+        assert!(unsafe { phpc_native_array_append_value(array, value) });
+        unsafe { phpc_native_value_free(value) };
+
+        let read = unsafe { phpc_native_array_read_int(array, 0) };
+        assert_eq!(native_value_echo_bytes_for_test(read), b"slot");
+
+        unsafe { phpc_native_value_free(read) };
+        unsafe { phpc_native_string_free(string) };
+        unsafe { phpc_native_array_free(array) };
+    }
+
+    #[test]
+    fn native_array_append_and_read_null_handles_are_bounded() {
+        assert!(!unsafe {
+            phpc_native_array_append_scalar(NativeArrayHandle::null(), phpc_native_int(1))
+        });
+        assert!(!unsafe {
+            phpc_native_array_append_value(NativeArrayHandle::null(), NativeValueHandle::null())
+        });
+        assert!(unsafe { phpc_native_array_read_int(NativeArrayHandle::null(), 0) }.is_null());
     }
 
     #[test]

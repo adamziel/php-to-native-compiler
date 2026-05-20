@@ -20,6 +20,16 @@ Implemented:
   request/session/stream/header state, exceptions, includes, and broad PHP
   coercions remain unsupported or bounded by existing native diagnostics.
 
+- Extended the native array runtime ABI beyond empty/len/free. Native array
+  handles can now append scalar values, append clones of existing
+  `NativeValueHandle` values, and read integer-keyed slots as new
+  runtime-owned value handles. The deterministic native runtime IR probe
+  declares `phpc_native_array_append_scalar`,
+  `phpc_native_array_append_value`, and `phpc_native_array_read_int`, with a
+  probe function that appends, reads, echoes, and frees the handles. Generated
+  PHP array literals still reject in native lowering; this is ABI groundwork
+  for future array lowering, not broad native array support.
+
 ## 2026-05-20
 
 Implemented:
