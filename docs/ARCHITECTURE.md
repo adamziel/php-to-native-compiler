@@ -204,6 +204,16 @@ temporary roots for the same holder object to share alias metadata. This is
 concrete holder identity preservation, not arbitrary graph or side-effect
 reconstruction.
 
+Internal alias writeback uses a similarly narrow preservation rule for copied
+static locals. When supported magic/`ArrayAccess` bodies copy a whole
+object-property array into `$bucket`, pass that local through a supported
+helper, and later return `$bucket[$name]`, nested alias writeback and alias-root
+sync can materialize reference cells below `$bucket` without erasing the
+local's copied-source root. The retention runs only for nested paths whose
+copied parent remains valid, and it reattaches the copied-source metadata
+after the internal sync completes; ordinary root overwrites still clear the
+metadata.
+
 Stored-root recovery returns both the recovered concrete root and, when root
 recovery already evaluated part of the expression, the argument-array value
 read from that root. `call_user_func_array()` then consumes that carried value

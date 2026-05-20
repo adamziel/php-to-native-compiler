@@ -2,6 +2,11 @@
 
 This repository is a real PHP-to-native compiler effort, not a demo scaffold.
 
+Never expose the local network by starting or using a remote tunneling service
+such as ngrok, cloudflared tunnels, localtunnel, serveo, localhost.run,
+lhr.life, Tailscale Funnel, or similar tools. Use only the sandbox-provided
+`8080` ingress and local-only proxies inside the sandbox.
+
 At the beginning of each session, read:
 
 - `AGENTS.md`

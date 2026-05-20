@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Lane 2276-C through Lane 2280-C for copied object-property buckets
+  that cross supported no-op helper calls before by-value magic/`ArrayAccess`
+  returns. Internal alias writeback and alias-root synchronization now retain
+  copied-source metadata for unchanged static copied locals after nested
+  reference-cell propagation, instead of treating those internal writes as
+  user root overwrites. Direct caller-cell by-reference parameter binding also
+  imports copied-source metadata for static locals that already carry a public
+  object-property source. Focused system-PHP coverage proves visible
+  `__get()` and public `ArrayAccess::offsetGet()` bodies for by-reference and
+  by-value helper calls between `$bucket = $this->store` and
+  `return $bucket[$name]`, plus a plain-leaf guard. This remains bounded to
+  supported helper bodies, concrete copied static locals, nested writeback
+  paths that preserve the copied parent, selected reference leaves, and
+  public/proven object-property sources; arbitrary side effects, unsupported
+  method-body syntax, untracked containers, exact diagnostics, and native
+  reference/string COW lowering remain unsupported.
+
 - Added Lane 2271-C through Lane 2275-C for syntax-only type metadata on
   supported magic and `ArrayAccess` COW bodies. General user functions now
   accept `mixed` parameter/return metadata, and magic/`ArrayAccess` dispatch

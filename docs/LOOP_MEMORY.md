@@ -23,6 +23,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T03:20:00+02:00
+
+- Checkpoint before this task: `6a1311e0 runtime: accept typed cow magic
+  bodies`, pushed to `origin/master`.
+- Task attempted: Lane 2276-C through Lane 2280-C bundle, preserving
+  copied-source metadata for whole object-property array locals that cross
+  supported helper calls before visible `__get()` or public
+  `ArrayAccess::offsetGet()` returns.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2276/*` through
+  `tests/fixtures/milestone2280/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; `cargo build -q -p phpc`
+  passed; raw system-PHP probes passed for magic/`ArrayAccess` by-reference
+  and by-value no-op helper returns; focused fixture comparisons passed for
+  `milestone2276` through `milestone2280`; adjacent comparisons passed for
+  `milestone2271` through `milestone2275`; `cargo fmt`, `cargo fmt --check`,
+  `git diff --check`, and focused Rust regressions passed for
+  `object_model magic`, `object_model arrayaccess`,
+  `functions_and_scopes function`, `fixture_manifest`, and `milestone1`.
+- Remaining COW gaps: arbitrary unsupported magic/`ArrayAccess` method syntax
+  and side effects outside supported execution paths, untracked dynamic
+  containers that expose neither materialized reference cells nor portable
+  copied-source roots, broader whole-array reference identity outside covered
+  roots, exact diagnostics/Throwable objects, and native reference/string COW
+  lowering.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate and push
+  if it passes.
+
 ## Loop Event 2026-05-20T02:25:00+02:00
 
 - Checkpoint before this task: `7e996a31 runtime: recover arrayaccess holder

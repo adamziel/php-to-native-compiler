@@ -171,6 +171,10 @@ handled.
   `offsetGet()` / `__get()` / `__call()` COW reads and typed `offsetSet()` /
   `__set()` copied-source stores against system PHP without claiming general
   type enforcement.
+- [x] Lane 2276-C through 2280-C: preserve copied-source metadata for whole
+  object-property array locals that cross supported helper calls before
+  visible `__get()` or public `ArrayAccess::offsetGet()` returns, covering
+  by-reference and by-value helpers plus a plain-leaf no-over-promotion guard.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic

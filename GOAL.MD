@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2275:
+The current in-progress implementation frontier is Lane 2280:
+
+- Lanes 2276 through 2280 preserve copied-source metadata for whole
+  object-property array locals that cross supported helper calls before a
+  by-value magic/`ArrayAccess` return. Internal alias writeback and alias-root
+  synchronization now reattach copied-source roots for nested writes that
+  leave the copied parent valid, so visible `__get()` and public
+  `ArrayAccess::offsetGet()` bodies can run by-reference or by-value no-op
+  helpers between `$bucket = $this->store` and `return $bucket[$name]` without
+  dropping reference-backed leaves. A plain-leaf guard proves the copied
+  bucket is not promoted wholesale. This remains bounded to supported helper
+  bodies, concrete copied static locals, nested writeback paths that preserve
+  the copied parent, public/proven object-property sources, and selected
+  reference leaves; arbitrary side effects, unsupported method-body syntax,
+  untracked containers, exact diagnostics, and native reference/string COW
+  lowering remain unsupported.
 
 - Lanes 2271 through 2275 let supported magic and `ArrayAccess` bodies run
   with common PHP 8 syntax-only signatures instead of rejecting before the

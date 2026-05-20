@@ -4110,7 +4110,8 @@ impl SymbolTable {
 
         for (alias_name, value) in syncs {
             if let Some(aliases) = self.array_offset_aliases.get(&alias_name).cloned() {
-                if !self.write_array_offset_aliases(&aliases, value) {
+                if !self.write_array_offset_aliases_preserving_static_copy_sources(&aliases, value)
+                {
                     self.array_offset_aliases.remove(&alias_name);
                 }
             }
@@ -4248,7 +4249,8 @@ impl SymbolTable {
 
         for (alias_name, value) in syncs {
             if let Some(aliases) = self.array_offset_aliases.get(&alias_name).cloned() {
-                if !self.write_array_offset_aliases(&aliases, value) {
+                if !self.write_array_offset_aliases_preserving_static_copy_sources(&aliases, value)
+                {
                     self.array_offset_aliases.remove(&alias_name);
                 }
             }
@@ -5346,8 +5348,47 @@ impl SymbolTable {
             return false;
         }
 
-        self.write_alias_root_value(alias, Value::Array(array), Span::new(0, 0))
+        self.write_alias_root_value_for_reference_promotion(alias, Value::Array(array))
             .is_ok()
+    }
+
+    fn write_alias_root_value_for_reference_promotion(
+        &mut self,
+        alias: &ArrayOffsetAlias,
+        value: Value,
+    ) -> CompileResult<()> {
+        let preserved_static_copy_source = match &alias.root {
+            ArrayOffsetAliasRoot::StaticArray { name } if matches!(value, Value::Array(_)) => {
+                Some((
+                    name.clone(),
+                    self.public_object_property_array_copy_source_for_static(name),
+                    self.dirty_public_object_property_array_copy_sources
+                        .contains(name),
+                    self.array_literal_copy_source_paths.get(name).cloned(),
+                ))
+            }
+            _ => None,
+        };
+
+        self.write_alias_root_value(alias, value, Span::new(0, 0))?;
+
+        if let Some((name, source, source_was_dirty, literal_paths)) = preserved_static_copy_source
+        {
+            if matches!(self.read_storage_named(&name), Some(Value::Array(_))) {
+                if let Some(source) = source {
+                    self.record_public_object_property_array_copy_source(&name, source);
+                    if source_was_dirty {
+                        self.mark_public_object_property_array_copy_source_dirty(&name);
+                    }
+                }
+                if let Some(literal_paths) = literal_paths {
+                    self.array_literal_copy_source_paths
+                        .insert(name, literal_paths);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn write_array_offset_alias(&mut self, alias: &ArrayOffsetAlias, value: Value) -> bool {
@@ -5361,12 +5402,18 @@ impl SymbolTable {
         else {
             return false;
         };
+        let retained = self.retained_static_copy_sources_for_aliases(std::slice::from_ref(alias));
 
         if !Self::write_nested_array_offset_alias(&mut array, &alias.keys, value) {
             return false;
         }
-        self.write_alias_root_value(alias, Value::Array(array), Span::new(0, 0))
-            .is_ok()
+        let wrote = self
+            .write_alias_root_value(alias, Value::Array(array), Span::new(0, 0))
+            .is_ok();
+        if wrote {
+            self.restore_retained_static_copy_sources(retained);
+        }
+        wrote
     }
 
     fn write_array_offset_alias_checked_with_object_type_resolver(
@@ -5389,6 +5436,7 @@ impl SymbolTable {
         let Some(Value::Array(mut array)) = self.read_alias_root_value(alias, span)? else {
             return Ok(false);
         };
+        let retained = self.retained_static_copy_sources_for_aliases(std::slice::from_ref(alias));
 
         if !Self::write_nested_array_offset_alias_checked_with_object_type_resolver(
             &mut array,
@@ -5406,6 +5454,7 @@ impl SymbolTable {
             span,
             object_type_resolver,
         )?;
+        self.restore_retained_static_copy_sources(retained);
         Ok(true)
     }
 
@@ -5426,7 +5475,7 @@ impl SymbolTable {
         if !Self::write_nested_array_offset_alias_reference(&mut array, &alias.keys, reference) {
             return false;
         }
-        self.write_alias_root_value(alias, Value::Array(array), Span::new(0, 0))
+        self.write_alias_root_value_for_reference_promotion(alias, Value::Array(array))
             .is_ok()
     }
 
@@ -5438,6 +5487,51 @@ impl SymbolTable {
         aliases
             .iter()
             .all(|alias| self.write_array_offset_alias(alias, value.clone()))
+    }
+
+    fn retained_static_copy_sources_for_aliases(
+        &self,
+        aliases: &[ArrayOffsetAlias],
+    ) -> Vec<(String, ArrayCopySource)> {
+        aliases
+            .iter()
+            .filter_map(|alias| {
+                if alias.keys.is_empty() {
+                    return None;
+                }
+                let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root else {
+                    return None;
+                };
+                let source = Interpreter::array_copy_source_preserved_after_nested_write(
+                    self,
+                    name,
+                    &alias.keys,
+                )?;
+                Some((name.clone(), source))
+            })
+            .collect()
+    }
+
+    fn restore_retained_static_copy_sources(&mut self, retained: Vec<(String, ArrayCopySource)>) {
+        for (name, source) in retained {
+            if matches!(self.read_named(&name), Some(Value::Array(_))) {
+                self.record_public_object_property_array_copy_source(&name, source);
+                self.mark_public_object_property_array_copy_source_dirty(&name);
+            }
+        }
+    }
+
+    fn write_array_offset_aliases_preserving_static_copy_sources(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+        value: Value,
+    ) -> bool {
+        let retained = self.retained_static_copy_sources_for_aliases(aliases);
+        let wrote = self.write_array_offset_aliases(aliases, value);
+        if wrote {
+            self.restore_retained_static_copy_sources(retained);
+        }
+        wrote
     }
 
     fn write_array_offset_aliases_reference_cell(
@@ -5452,6 +5546,19 @@ impl SymbolTable {
         aliases.iter().all(|alias| {
             self.promote_array_offset_alias_to_reference_cell(alias, reference.clone())
         })
+    }
+
+    fn write_array_offset_aliases_reference_cell_preserving_static_copy_sources(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+        reference: VariableCell,
+    ) -> bool {
+        let retained = self.retained_static_copy_sources_for_aliases(aliases);
+        let wrote = self.write_array_offset_aliases_reference_cell(aliases, reference);
+        if wrote {
+            self.restore_retained_static_copy_sources(retained);
+        }
+        wrote
     }
 
     fn write_array_offset_aliases_checked_with_object_type_resolver(
@@ -5477,6 +5584,26 @@ impl SymbolTable {
             }
         }
         Ok(wrote_all)
+    }
+
+    fn write_array_offset_aliases_checked_preserving_static_copy_sources(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+        value: Value,
+        span: Span,
+        object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
+    ) -> CompileResult<bool> {
+        let retained = self.retained_static_copy_sources_for_aliases(aliases);
+        let wrote = self.write_array_offset_aliases_checked_with_object_type_resolver(
+            aliases,
+            value,
+            span,
+            object_type_resolver,
+        )?;
+        if wrote {
+            self.restore_retained_static_copy_sources(retained);
+        }
+        Ok(wrote)
     }
 
     fn write_alias_backed_array_offset_checked_with_object_type_resolver(
@@ -5617,9 +5744,11 @@ impl SymbolTable {
 
         for (alias_name, aliases, value, reference) in syncs {
             let wrote = if let Some(reference) = reference {
-                self.write_array_offset_aliases_reference_cell(&aliases, reference)
+                self.write_array_offset_aliases_reference_cell_preserving_static_copy_sources(
+                    &aliases, reference,
+                )
             } else {
-                self.write_array_offset_aliases(&aliases, value)
+                self.write_array_offset_aliases_preserving_static_copy_sources(&aliases, value)
             };
             if !wrote {
                 self.array_offset_aliases.remove(&alias_name);
@@ -5652,9 +5781,11 @@ impl SymbolTable {
 
         for (alias_name, aliases, value, reference) in syncs {
             let wrote = if let Some(reference) = reference {
-                self.write_array_offset_aliases_reference_cell(&aliases, reference)
+                self.write_array_offset_aliases_reference_cell_preserving_static_copy_sources(
+                    &aliases, reference,
+                )
             } else {
-                self.write_array_offset_aliases_checked_with_object_type_resolver(
+                self.write_array_offset_aliases_checked_preserving_static_copy_sources(
                     &aliases,
                     value,
                     span,
@@ -6379,6 +6510,11 @@ enum ReferenceBindingTarget {
     CallerCell {
         name: String,
         cell: VariableCell,
+    },
+    CallerCellWithStaticArrayCopySource {
+        name: String,
+        cell: VariableCell,
+        source: ArrayCopySource,
     },
     CallerCellWithArrayCopySource {
         cell: VariableCell,
@@ -40953,7 +41089,8 @@ impl Interpreter {
                     Vec::new(),
                     caller_scope.public_object_property_array_copy_source_for_static(name),
                 ),
-                ReferenceBindingTarget::CallerCellWithArrayCopySource { source, .. } => {
+                ReferenceBindingTarget::CallerCellWithStaticArrayCopySource { source, .. }
+                | ReferenceBindingTarget::CallerCellWithArrayCopySource { source, .. } => {
                     (Vec::new(), Some(source.clone()))
                 }
                 ReferenceBindingTarget::ValueWithArrayCopySource { source } => {
@@ -47604,7 +47741,12 @@ impl Interpreter {
                             cell.clone(),
                         ));
                     }
-                    ReferenceBindingTarget::CallerCellWithArrayCopySource {
+                    ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
+                        cell,
+                        source,
+                        ..
+                    }
+                    | ReferenceBindingTarget::CallerCellWithArrayCopySource {
                         cell, source, ..
                     } => {
                         local_scope.bind_static_to_cell(&param.name, cell.clone());
@@ -48209,7 +48351,12 @@ impl Interpreter {
                     ReferenceBindingTarget::CallerCell { cell, .. } => {
                         local_scope.bind_static_to_cell(&param.name, cell.clone());
                     }
-                    ReferenceBindingTarget::CallerCellWithArrayCopySource {
+                    ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
+                        cell,
+                        source,
+                        ..
+                    }
+                    | ReferenceBindingTarget::CallerCellWithArrayCopySource {
                         cell, source, ..
                     } => {
                         local_scope.bind_static_to_cell(&param.name, cell.clone());
@@ -49895,13 +50042,29 @@ impl Interpreter {
                     let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
                         runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
                     })?;
-                    values.push(caller_cell.value_cloned());
-                    reference_bindings.push(ReferenceBinding {
-                        param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::CallerCell {
+                    let value = caller_cell.value_cloned();
+                    let source = matches!(value, Value::Array(_))
+                        .then(|| {
+                            caller_scope
+                                .public_object_property_array_copy_source_for_static(caller_name)
+                        })
+                        .flatten();
+                    values.push(value);
+                    let target = if let Some(source) = source {
+                        ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
                             name: caller_name.clone(),
                             cell: caller_cell,
-                        },
+                            source,
+                        }
+                    } else {
+                        ReferenceBindingTarget::CallerCell {
+                            name: caller_name.clone(),
+                            cell: caller_cell,
+                        }
+                    };
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target,
                     });
                 } else {
                     let allow_by_value_overloaded_reference_argument =
@@ -51468,7 +51631,8 @@ impl Interpreter {
                 .any(|(param_name, _, _)| param_name == &binding.param_name)
                 || matches!(
                     binding.target,
-                    ReferenceBindingTarget::CallerCellWithArrayCopySource { .. }
+                    ReferenceBindingTarget::CallerCellWithStaticArrayCopySource { .. }
+                        | ReferenceBindingTarget::CallerCellWithArrayCopySource { .. }
                 );
             if !has_imported_source
                 || local_scope
@@ -51480,6 +51644,9 @@ impl Interpreter {
 
             match &binding.target {
                 ReferenceBindingTarget::CallerCell { name, .. } => {
+                    caller_scope.remove_public_object_property_array_copy_source(name);
+                }
+                ReferenceBindingTarget::CallerCellWithStaticArrayCopySource { name, .. } => {
                     caller_scope.remove_public_object_property_array_copy_source(name);
                 }
                 ReferenceBindingTarget::CallerCellWithArrayCopySource {
@@ -51529,6 +51696,9 @@ impl Interpreter {
                 ReferenceBindingTarget::CallerCell { name, .. } => {
                     caller_scope.record_array_literal_copy_source_paths(name, portable_paths);
                 }
+                ReferenceBindingTarget::CallerCellWithStaticArrayCopySource { name, .. } => {
+                    caller_scope.record_array_literal_copy_source_paths(name, portable_paths);
+                }
                 ReferenceBindingTarget::CallerCellWithArrayCopySource {
                     object, property, ..
                 } => {
@@ -51560,7 +51730,8 @@ impl Interpreter {
                 .any(|(param_name, _, _)| param_name == &binding.param_name)
                 || matches!(
                     binding.target,
-                    ReferenceBindingTarget::CallerCellWithArrayCopySource { .. }
+                    ReferenceBindingTarget::CallerCellWithStaticArrayCopySource { .. }
+                        | ReferenceBindingTarget::CallerCellWithArrayCopySource { .. }
                 );
             if !has_imported_source {
                 continue;
@@ -51574,6 +51745,9 @@ impl Interpreter {
 
             match &binding.target {
                 ReferenceBindingTarget::CallerCell { name, .. } => {
+                    caller_scope.detach_static_array_offset_alias_paths(name, &detached_paths);
+                }
+                ReferenceBindingTarget::CallerCellWithStaticArrayCopySource { name, .. } => {
                     caller_scope.detach_static_array_offset_alias_paths(name, &detached_paths);
                 }
                 ReferenceBindingTarget::CallerCellWithArrayCopySource {
@@ -51630,11 +51804,10 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<()> {
         for binding in reference_bindings {
-            let ReferenceBindingTarget::CallerCell {
-                name: caller_name, ..
-            } = &binding.target
-            else {
-                continue;
+            let caller_name = match &binding.target {
+                ReferenceBindingTarget::CallerCell { name, .. }
+                | ReferenceBindingTarget::CallerCellWithStaticArrayCopySource { name, .. } => name,
+                _ => continue,
             };
             let Some(aliases) = local_scope.array_offset_aliases_for_name(&binding.param_name)
             else {
@@ -51733,6 +51906,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
         span: Span,
     ) -> CompileResult<()> {
+        let retained_static_copy_sources = scope.retained_static_copy_sources_for_aliases(aliases);
         if !scope.write_array_offset_aliases_checked_with_object_type_resolver(
             aliases,
             value,
@@ -51762,6 +51936,7 @@ impl Interpreter {
                 }
             }
         }
+        scope.restore_retained_static_copy_sources(retained_static_copy_sources);
         Ok(())
     }
 
@@ -52050,7 +52225,12 @@ impl Interpreter {
                             }
                         }
                     }
-                    ReferenceBindingTarget::CallerCellWithArrayCopySource {
+                    ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
+                        cell,
+                        source,
+                        ..
+                    }
+                    | ReferenceBindingTarget::CallerCellWithArrayCopySource {
                         cell, source, ..
                     } => {
                         local_scope.bind_static_to_cell(&param.name, cell.clone());

@@ -129,6 +129,13 @@
   `$this->store[$name]` into helpers that return `array(&$bucket)` and keep
   the original backing bucket connected until a later by-value write detaches
   the returned copy.
+  Supported visible `__get()` and public `ArrayAccess::offsetGet()` bodies can
+  also copy a whole object-property array into a method-local static variable,
+  pass that local through a supported by-reference or by-value helper call,
+  and then return a selected bucket such as `$bucket[$name]` without losing
+  copied-source provenance for reference-backed leaves. Internal alias
+  writeback preserves that metadata only for nested writes that leave the
+  copied parent source valid; plain leaves in the returned copy still detach.
   By-value method returns of copied object-property buckets also promote
   proven copied-source reference leaves before the value leaves the callee
   frame. This covers supported normal methods, visible `__get()`, and public

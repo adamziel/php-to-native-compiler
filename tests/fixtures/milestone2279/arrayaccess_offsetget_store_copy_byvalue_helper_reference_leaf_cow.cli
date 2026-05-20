@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2279/arrayaccess_offsetget_store_copy_byvalue_helper_reference_leaf_cow.php
