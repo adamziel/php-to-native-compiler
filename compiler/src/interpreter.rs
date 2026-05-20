@@ -26180,10 +26180,7 @@ impl Interpreter {
             }
             AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
-            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
-            | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
-            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. } => Err(runtime_error(
@@ -26266,6 +26263,68 @@ impl Interpreter {
                     )),
                 }
             }
+            AssignTarget::DynamicObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                let target = AssignTarget::ObjectPropertyArrayIndex {
+                    object: object.clone(),
+                    property,
+                    indices: indices.clone(),
+                    span,
+                };
+                self.read_compound_assignment_left(&target, span, scope)
+            }
+            AssignTarget::NonDirectObjectPropertyArrayIndex {
+                holder,
+                property,
+                indices,
+                ..
+            } => {
+                let temp_name = self.non_direct_object_holder_temp(holder, property, scope, span)?;
+                let target = AssignTarget::ObjectPropertyArrayIndex {
+                    object: temp_name,
+                    property: property.clone(),
+                    indices: indices.clone(),
+                    span,
+                };
+                self.read_compound_assignment_left(&target, span, scope)
+            }
+            AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+                holder,
+                property,
+                indices,
+                ..
+            } => {
+                let source_snapshot = scope.public_array_copy_source_snapshot();
+                let holder_value = self.evaluate(holder, scope)?;
+                scope.restore_unchanged_public_array_copy_sources(source_snapshot);
+                let holder_object = match holder_value {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot read dynamic property from {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Object(holder_object));
+                let target = AssignTarget::ObjectPropertyArrayIndex {
+                    object: temp_name,
+                    property,
+                    indices: indices.clone(),
+                    span,
+                };
+                self.read_compound_assignment_left(&target, span, scope)
+            }
             AssignTarget::ArrayIndex { index: None, .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -26306,15 +26365,56 @@ impl Interpreter {
                     RuntimeError::undefined_variable(object),
                 )),
             },
-            AssignTarget::DynamicProperty { .. }
-            | AssignTarget::NonDirectProperty { .. }
-            | AssignTarget::NonDirectDynamicProperty { .. } => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "compound assignment",
-                    "dynamic property targets are not implemented",
-                ),
-            )),
+            AssignTarget::DynamicProperty {
+                object, property, ..
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                let target = AssignTarget::Property {
+                    object: object.clone(),
+                    property,
+                    span,
+                };
+                self.read_compound_assignment_left(&target, span, scope)
+            }
+            AssignTarget::NonDirectProperty {
+                holder, property, ..
+            } => {
+                let temp_name = self.non_direct_object_holder_temp(holder, property, scope, span)?;
+                let target = AssignTarget::Property {
+                    object: temp_name,
+                    property: property.clone(),
+                    span,
+                };
+                self.read_compound_assignment_left(&target, span, scope)
+            }
+            AssignTarget::NonDirectDynamicProperty {
+                holder, property, ..
+            } => {
+                let source_snapshot = scope.public_array_copy_source_snapshot();
+                let holder_value = self.evaluate(holder, scope)?;
+                scope.restore_unchanged_public_array_copy_sources(source_snapshot);
+                let holder_object = match holder_value {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot read dynamic property from {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Object(holder_object));
+                let target = AssignTarget::Property {
+                    object: temp_name,
+                    property,
+                    span,
+                };
+                self.read_compound_assignment_left(&target, span, scope)
+            }
             AssignTarget::ObjectStaticProperty { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -78312,6 +78412,152 @@ mod tests {
                     items: Vec::new(),
                     span: Span::new(1, 1),
                 },
+                &mut scope,
+            )
+            .unwrap();
+
+        let Value::Array(copy) = scope.read_static("copy", Span::new(1, 1)).unwrap() else {
+            panic!("expected copied array");
+        };
+        let copied_leaf_cell = copy
+            .get_slot(leaf_key)
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected copied leaf reference cell");
+
+        assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
+        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+    }
+
+    #[test]
+    fn dynamic_compound_object_property_rehydrates_runtime_cell_copy_source() {
+        let leaf_key = ArrayKey::String("leaf".to_string());
+        let leaf_cell = PhpReferenceCell::new(Value::String("old".to_string()));
+        let mut source_items = PhpArray::new();
+        source_items.insert_reference(leaf_key.clone(), leaf_cell.clone());
+        let source_cell = PhpReferenceCell::new(Value::Array(source_items.clone()));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        let mut copied_items = PhpArray::new();
+        copied_items.insert(leaf_key.clone(), Value::String("copy".to_string()));
+
+        let mut scope = SymbolTable::new();
+        scope.write_static("box", Value::Object(object));
+        scope.write_static("copy", Value::Array(copied_items));
+        scope.write_static("prop", Value::String("items".to_string()));
+        scope.record_public_object_property_array_copy_source(
+            "copy",
+            ArrayCopySource::runtime_cell(source_cell, Vec::new(), true),
+        );
+
+        let mut interpreter = Interpreter::from_program(
+            &Program {
+                statements: Vec::new(),
+            },
+            None,
+            RunOptions::default(),
+        )
+        .unwrap();
+        let (place, _) = interpreter
+            .read_compound_assignment_left(
+                &AssignTarget::DynamicProperty {
+                    object: "box".to_string(),
+                    property: Expr::Variable("prop".to_string(), Span::new(1, 1)),
+                    span: Span::new(1, 1),
+                },
+                Span::new(1, 1),
+                &mut scope,
+            )
+            .unwrap();
+        interpreter
+            .write_compound_assignment_place(
+                place,
+                Value::Array(PhpArray::new()),
+                Span::new(1, 1),
+                &mut scope,
+            )
+            .unwrap();
+
+        let Value::Array(copy) = scope.read_static("copy", Span::new(1, 1)).unwrap() else {
+            panic!("expected copied array");
+        };
+        let copied_leaf_cell = copy
+            .get_slot(leaf_key)
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected copied leaf reference cell");
+
+        assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
+        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+    }
+
+    #[test]
+    fn dynamic_compound_object_property_nested_write_rehydrates_runtime_cell_copy_source() {
+        let branch_key = ArrayKey::String("branch".to_string());
+        let leaf_key = ArrayKey::String("leaf".to_string());
+        let leaf_cell = PhpReferenceCell::new(Value::String("old".to_string()));
+        let mut source_branch = PhpArray::new();
+        source_branch.insert_reference(leaf_key.clone(), leaf_cell.clone());
+        let mut source_items = PhpArray::new();
+        source_items.insert(branch_key.clone(), Value::Array(source_branch));
+        let source_cell = PhpReferenceCell::new(Value::Array(source_items));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        let mut copied_branch = PhpArray::new();
+        copied_branch.insert(leaf_key.clone(), Value::String("copy".to_string()));
+
+        let mut scope = SymbolTable::new();
+        scope.write_static("box", Value::Object(object));
+        scope.write_static("copy", Value::Array(copied_branch));
+        scope.write_static("prop", Value::String("items".to_string()));
+        scope.record_public_object_property_array_copy_source(
+            "copy",
+            ArrayCopySource::runtime_cell(source_cell, vec![branch_key], true),
+        );
+
+        let mut interpreter = Interpreter::from_program(
+            &Program {
+                statements: Vec::new(),
+            },
+            None,
+            RunOptions::default(),
+        )
+        .unwrap();
+        let (place, _) = interpreter
+            .read_compound_assignment_left(
+                &AssignTarget::DynamicObjectPropertyArrayIndex {
+                    object: "box".to_string(),
+                    property: Expr::Variable("prop".to_string(), Span::new(1, 1)),
+                    indices: vec![Expr::String("branch".to_string(), Span::new(1, 1))],
+                    span: Span::new(1, 1),
+                },
+                Span::new(1, 1),
+                &mut scope,
+            )
+            .unwrap();
+        interpreter
+            .write_compound_assignment_place(
+                place,
+                Value::Array(PhpArray::new()),
+                Span::new(1, 1),
                 &mut scope,
             )
             .unwrap();

@@ -91,6 +91,54 @@ a one-off is genuinely the only viable route.
   with the constrained environment. Follow-up validation passed:
   `git diff --check` and `cargo check -q -p phpc` with the same constrained
   environment.
+## Loop Event 2026-05-20T15:44:00+02:00
+
+- Continued the dirty dynamic-holder worktree after the runtime-cell
+  object-property overwrite, dirty-source, detached-path, compound-assignment,
+  non-public identity, direct dynamic-property overwrite, object-property
+  unset, and object-property reference-assignment patches; did not redo those
+  slices.
+- Adjacent reachable gap closed: dynamic and non-direct object-property
+  compound assignment targets now resolve the holder/property once and lower
+  whole-property plus nested property-array writes onto the existing
+  object-property compound writeback places. Those places already run the
+  runtime-cell/object-property rehydrate and invalidate boundary.
+- Files changed in this continuation: `compiler/src/interpreter.rs`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, this memory file, and coordination notes/status.
+- Check passed with `umask 0007`,
+  `CARGO_TARGET_DIR=/tmp/phpc-lane-dynamic-target`, `CARGO_BUILD_JOBS=1`,
+  `CARGO_INCREMENTAL=0`, and `RUST_TEST_THREADS=1`: focused unit filters
+  `dynamic_compound_object_property` and `runtime_cell_copy_source`,
+  `git diff --check`, and `cargo check -q -p phpc`.
+- Remaining COW gaps: untracked containers without reachable cells, arbitrary
+  dynamic holder graph writeback, arbitrary array transforms, exact
+  diagnostics/Throwable parity, string COW, and native reference/COW lowering.
+
+## Loop Event 2026-05-20T15:33:00+02:00
+
+- Continued the dirty dynamic-holder worktree after the runtime-cell
+  object-property overwrite, dirty-source, detached-path, compound-assignment,
+  non-public identity, direct dynamic-property overwrite, and object-property
+  unset patches; did not redo those slices.
+- Adjacent reachable gap closed: object-property array-offset reference
+  assignment now routes alias target writes through the same
+  runtime-cell/object-property rehydrate and invalidate boundary. This covers
+  dynamic-property spellings after the property expression resolves to the
+  tracked holder property.
+- Files changed in this continuation: `compiler/src/interpreter.rs`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, this memory file, and coordination notes/status.
+- Checks passed with `umask 0007`,
+  `CARGO_TARGET_DIR=/tmp/phpc-lane-dynamic-target`, `CARGO_BUILD_JOBS=1`,
+  `CARGO_INCREMENTAL=0`, and `RUST_TEST_THREADS=1`: focused unit
+  `dynamic_object_property_reference_assignment_rehydrates_runtime_cell_copy_source`,
+  filtered unit set `runtime_cell_copy_source`, `git diff --check`, and
+  `cargo check -q -p phpc`.
+- Remaining COW gaps: untracked dynamic containers without reachable cells,
+  arbitrary dynamic holder graph writeback, arbitrary array transforms, exact
+  diagnostics/Throwable parity, string COW, and native reference/COW lowering.
+
 ## Loop Event 2026-05-20T15:08:00+02:00
 
 - Continued the dirty dynamic-holder worktree after the runtime-cell

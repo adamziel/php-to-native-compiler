@@ -325,6 +325,14 @@ use it after the property expression resolves to the tracked holder property.
 Object-property array-offset reference assignment now routes alias writes
 through that same keyed boundary, including dynamic-property spellings once
 the property expression resolves to the tracked holder property.
+read-modify-write stores through that same rehydrate/invalidate boundary.
+Dynamic and non-direct object-property compound targets resolve the
+holder/property once and then reuse those same writeback places. Direct
+dynamic-property whole assignment and nested object-property array unset use
+the boundary after the property expression resolves to the tracked holder
+property. Object-property array-offset reference assignment now routes alias
+writes through that same keyed boundary, including dynamic-property spellings
+once the property expression resolves to the tracked holder property.
 Dirty copied-source comparisons use that same reachable-cell bridge
 when one side is a runtime cell and the other side is the equivalent visible
 object-property or alias root, so return/promotion decisions do not depend on
@@ -806,9 +814,11 @@ paths, direct-variable append-at-depth paths, and direct-object-property
 nested/append-at-depth array paths have explicit AST targets. The nested array
 targets keep a variable or object-property root plus evaluated index
 expressions so the interpreter can materialize missing array containers under
-the current no-reference/no-copy-on-write model. Direct object-property
-array-offset compound assignment reuses the object-property root plus evaluated
-index path for the current read-modify-write slice. Direct object-property
+the current no-reference/no-copy-on-write model. Direct, dynamic, and
+non-direct object-property array-offset compound assignment reuse the
+object-property root plus evaluated index path for the current
+read-modify-write slice after dynamic holders/properties are evaluated once.
+Direct object-property
 array-offset `isset(...)` reuses the same visible property plus evaluated index
 path for the current presence-check slice. A visible direct object property
 whose value is an `ArrayAccess` object can dispatch single-key read/write,

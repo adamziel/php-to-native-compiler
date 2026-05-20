@@ -103,6 +103,15 @@ Implemented:
   overwrite, dynamic-property nested unset, dynamic-property nested reference
   assignment, and both compound property write paths for the runtime-cell
   source.
+  tracked holder property. Dynamic and non-direct object-property compound
+  assignment target resolution now lowers whole-property and nested
+  property-array writes onto the same compound writeback places after
+  evaluating the holder/property once. Focused unit coverage proves
+  copied leaf rehydration before overwrite, private-property identity matching,
+  dirty-source equivalence, detached-path matching, direct dynamic-property
+  overwrite, dynamic-property nested unset, dynamic-property nested reference
+  assignment, direct dynamic compound whole-property and nested write paths,
+  and both static compound property write paths for the runtime-cell source.
   Broader untracked containers without reachable cells, arbitrary dynamic
   holder graph writeback, exact diagnostics, string COW, and native
   reference/COW lowering remain incomplete.

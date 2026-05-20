@@ -308,6 +308,12 @@ handled.
   Runtime-cell handle discovery now includes initialized public object
   properties sharing the same reference cell without requiring pre-seeded
   array-offset alias metadata. Descendant
+  property, whole-property unsets, nested object-property array unsets, and
+  object-property array-offset reference assignments. Dynamic and non-direct
+  object-property compound targets also resolve onto those same whole-property
+  and nested property-array writeback places after evaluating the
+  holder/property once.
+  Descendant
   writes to a source container no longer erase whole-copy provenance for
   supported magic/`ArrayAccess` method-local copies, and reference-return
   calls plus mixed by-reference/by-value helpers now keep executed by-value

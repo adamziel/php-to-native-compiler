@@ -116,6 +116,9 @@
   assignments use them when the evaluated property name selects the same tracked
   holder property.
   property-array read-modify-write stores, direct dynamic-property whole
+  property-array read-modify-write stores; dynamic and non-direct
+  object-property compound targets lower to those same writeback places after
+  resolving the holder/property once. Direct dynamic-property whole
   assignments, nested object-property array unsets, and object-property
   array-offset reference assignments use them when the evaluated property name
   selects the same tracked holder property.
@@ -297,6 +300,12 @@
   name selects that tracked property, nested object-property array unsets, and
   object-property array-offset reference assignments participate in that same
   bounded detach/rehydrate model.
+  replacement bucket remains independent. Direct, dynamic, and non-direct
+  object-property compound assignments over the same tracked public property
+  and nested property-array paths, direct dynamic-property whole assignments
+  whose evaluated property name selects that tracked property, nested
+  object-property array unsets, and object-property array-offset reference
+  assignments participate in that same bounded detach/rehydrate model.
   By-value method returns of copied object-property buckets also promote
   proven copied-source reference leaves before the value leaves the callee
   frame. This covers supported normal methods, visible `__get()`, and public
