@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2293/magic_array_values_literal_assignment_cow.php

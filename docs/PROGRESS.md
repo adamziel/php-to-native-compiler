@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 2293-C for expression-position array literals and the supported
+  `array_values(array(...))` reindexing path when they contain copied arrays
+  from supported magic `__get()` or public `ArrayAccess::offsetGet()` bodies.
+  Array literal element evaluation now uses the executed `Value +
+  ArrayCopySource` path instead of plain value evaluation, indexed reads from
+  expression literals can return the selected element's original copy source
+  to the caller, and variable assignment from `array_values(array($copy))`
+  remaps per-entry copied-source paths onto the reindexed result. Focused
+  system-PHP fixtures prove direct literal indexing plus assigned reindexed
+  wrapper arrays for visible `__get()` and public `ArrayAccess::offsetGet()`.
+  Unsupported method syntax, untracked containers without reachable cells,
+  exact diagnostics, string COW, and native reference/COW lowering remain
+  incomplete.
+
 - Added Lane 2292-C for stored `call_user_func_array()` argument arrays that
   mix by-reference visible object-property slots with by-value copied arrays
   from supported magic `__get()` or public `ArrayAccess::offsetGet()` bodies.

@@ -74,7 +74,11 @@
   object-property slots with by-value copied arrays from supported magic
   `__get()` or public `ArrayAccess::offsetGet()` bodies; copied-source
   metadata is recovered from the stored argument slot and rehydrated in the
-  callee before return-source propagation.
+  callee before return-source propagation. Expression-position array literals
+  also use the source-aware value path for copied-array elements, so indexed
+  reads such as `array($copy)[0]` and assigned
+  `array_values(array($copy))` wrapper arrays can preserve selected
+  reference-backed leaves from supported magic/`ArrayAccess` copied arrays.
   Broader dynamic holder writeback and untracked containers still use the
   legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,

@@ -214,6 +214,10 @@ handled.
   that mix by-reference visible object-property slots with by-value copied
   arrays from supported magic `__get()` or public
   `ArrayAccess::offsetGet()` bodies.
+- [x] Lane 2293-C: preserve copied-source metadata through
+  expression-position array literals and assigned `array_values(array(...))`
+  wrapper arrays for supported visible `__get()` and public
+  `ArrayAccess::offsetGet()` copied-array returns.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model by extracting root resolution into a
   runtime-backed alias/lvalue handle under `SymbolTable`, then migrating
@@ -235,9 +239,10 @@ handled.
   supported magic/`ArrayAccess` method-local copies, and reference-return
   calls plus mixed by-reference/by-value helpers now keep executed by-value
   argument copy-source metadata, including stored callback argument arrays
-  with by-reference visible object-property slots. This task stays open until
-  broader dynamic holder writeback and untracked container propagation consume
-  handles directly.
+  with by-reference visible object-property slots and expression literal /
+  supported `array_values()` wrappers. This task stays open until broader
+  dynamic holder writeback and untracked container propagation consume handles
+  directly.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

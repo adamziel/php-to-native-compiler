@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2293/magic_expression_array_literal_index_cow.php
