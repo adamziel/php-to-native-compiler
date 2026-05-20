@@ -23,6 +23,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T06:10:00+02:00
+
+- Checkpoint before this task: `9a434402 runtime: centralize array lvalue
+  paths`, pushed to `origin/master`.
+- Task attempted: Lane 2287-C, preserving whole-array reference identity for
+  proven array-valued aliases crossing by-value helper passthrough,
+  helper-returned wrapper literals, and supported reference-return magic
+  `__get()` / `ArrayAccess::offsetGet()` helper bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2287/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc`, `cargo fmt --check`, and
+  `git diff --check` passed; focused raw probes matched system PHP for
+  function passthrough, wrapper literal, magic reference-return helper,
+  ArrayAccess reference-return helper, and plain-copy guard; focused
+  system-PHP fixture comparisons passed for `tests/fixtures/milestone2287`
+  and the previous over-share guard in `tests/fixtures/milestone1673c`; focused
+  Rust regressions passed for `fixture_manifest`, `milestone1_fixtures_pass`,
+  and `php_runtime` array-slot tests.
+- Remaining COW gaps: root resolution is still in `SymbolTable`, broad
+  `ArrayCopySource` provenance ledgers remain, arbitrary unsupported
+  magic/`ArrayAccess` method-body side effects, untracked dynamic containers,
+  exact diagnostics/Throwable objects, string COW, and native reference/COW
+  lowering remain unsupported.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate, then
+  push if it passes.
+
 ## Loop Event 2026-05-20T05:05:00+02:00
 
 - Checkpoint before this task: `783efcfb runtime: share array cow value

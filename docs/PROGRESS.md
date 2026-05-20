@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2287-C for whole-array reference identity across by-value helper
+  boundaries. Proven array-valued alias groups can now be promoted to real
+  `PhpReferenceCell`s from their current value, and by-value alias writeback
+  preserves a local reference cell instead of flattening it to a plain array
+  value. Reference-return magic `__get()` now executes against the caller
+  alias scope instead of a temporary alias-empty scope, so supported
+  helper-returning magic bodies can preserve whole-array reference identity
+  like public `ArrayAccess::offsetGet()`. Focused system-PHP fixtures prove
+  by-value function passthrough, helper-returned wrapper literals,
+  reference-return `__get()`, reference-return `ArrayAccess::offsetGet()`, and
+  a plain nested by-value detach guard. This is still bounded to proven alias
+  groups and supported bodies; arbitrary method-body side effects, untracked
+  containers, exact diagnostics, string COW, and native reference/COW lowering
+  remain incomplete.
+
 - Added Lane 2286-C for runtime-owned array path lvalue operations. `PhpArray`
   now owns nested path materialization, cloned reads, reference-cell reads,
   existing-slot value writes, checked writes, reference writes, value appends,

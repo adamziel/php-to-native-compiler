@@ -4202,6 +4202,20 @@ impl SymbolTable {
                                     })
                                     .flatten()
                             })
+                            .or_else(|| {
+                                self.reference_cell_for_array_offset_alias_group_with_value_promotion(
+                                    &alias_group,
+                                )
+                            })
+                            .or_else(|| {
+                                matches!(source.root, ArrayCopySourceRoot::ObjectProperty { .. })
+                                    .then(|| {
+                                        self.reference_cell_for_array_literal_alias_group_with_value_promotion(
+                                            &alias_group,
+                                        )
+                                    })
+                                    .flatten()
+                            })
                     })
                     .flatten();
                 let Some(reference) = existing_reference.or(promoted_reference) else {
@@ -4339,6 +4353,11 @@ impl SymbolTable {
                 .then(|| {
                     self.reference_cell_for_array_offset_alias_group(&alias_group)
                         .or_else(|| self.reference_cell_for_array_copy_alias_group(&alias_group))
+                        .or_else(|| {
+                            self.reference_cell_for_array_offset_alias_group_with_value_promotion(
+                                &alias_group,
+                            )
+                        })
                 })
                 .flatten();
             let Some(reference) = existing_reference.or(promoted_reference) else {
@@ -5306,6 +5325,26 @@ impl SymbolTable {
         )
     }
 
+    fn reference_cell_for_array_offset_alias_group_with_value_promotion(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+    ) -> Option<VariableCell> {
+        self.reference_cell_for_array_offset_alias_group_with_value_promotion_using(
+            aliases,
+            Self::array_offset_alias_allows_reference_cell_promotion,
+        )
+    }
+
+    fn reference_cell_for_array_literal_alias_group_with_value_promotion(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+    ) -> Option<VariableCell> {
+        self.reference_cell_for_array_offset_alias_group_with_value_promotion_using(
+            aliases,
+            Self::array_offset_alias_allows_array_literal_reference_cell_promotion,
+        )
+    }
+
     fn reference_cell_for_array_offset_alias_group_with_promotion(
         &mut self,
         aliases: &[ArrayOffsetAlias],
@@ -5326,6 +5365,49 @@ impl SymbolTable {
                 aliases
                     .iter()
                     .find_map(|alias| self.detached_array_offset_alias_fallback_cell(alias))
+            })?;
+
+        for alias in aliases {
+            if self
+                .read_array_offset_alias_reference_cell(alias)
+                .is_some_and(|cell| cell.shares_reference_with(&reference))
+            {
+                continue;
+            }
+            if !self.promote_array_offset_alias_to_reference_cell(alias, reference.clone()) {
+                return None;
+            }
+        }
+
+        Some(reference)
+    }
+
+    fn reference_cell_for_array_offset_alias_group_with_value_promotion_using(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+        allows_promotion: fn(&SymbolTable, &ArrayOffsetAlias) -> bool,
+    ) -> Option<VariableCell> {
+        if aliases.is_empty() {
+            return None;
+        }
+
+        if !aliases.iter().all(|alias| allows_promotion(self, alias)) {
+            return None;
+        }
+
+        let reference = aliases
+            .iter()
+            .find_map(|alias| self.read_array_offset_alias_reference_cell(alias))
+            .or_else(|| {
+                aliases
+                    .iter()
+                    .find_map(|alias| self.detached_array_offset_alias_fallback_cell(alias))
+            })
+            .or_else(|| {
+                aliases
+                    .iter()
+                    .find_map(|alias| self.read_array_offset_alias(alias))
+                    .map(PhpReferenceCell::new)
             })?;
 
         for alias in aliases {
@@ -12708,7 +12790,8 @@ impl Interpreter {
 
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
-            let Some(cell) = self.call_magic_get_reference_return_cell(object, property, span)?
+            let Some(cell) =
+                self.call_magic_get_reference_return_cell(object, property, span, scope)?
             else {
                 return Ok(());
             };
@@ -18019,8 +18102,12 @@ impl Interpreter {
         match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => Ok(None),
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
-                let Some(cell) =
-                    self.call_magic_get_reference_return_cell(object.clone(), property, span)?
+                let Some(cell) = self.call_magic_get_reference_return_cell(
+                    object.clone(),
+                    property,
+                    span,
+                    scope,
+                )?
                 else {
                     return Ok(None);
                 };
@@ -23744,9 +23831,12 @@ impl Interpreter {
                 self.reference_return_this_property_name(function, property, span)?
             {
                 if array_literal_references.is_empty() && !return_target.prefix_keys.is_empty() {
-                    if let Some(cell) =
-                        self.call_magic_get_reference_return_cell(holder.clone(), property, span)?
-                    {
+                    if let Some(cell) = self.call_magic_get_reference_return_cell(
+                        holder.clone(),
+                        property,
+                        span,
+                        scope,
+                    )? {
                         match cell.value_cloned() {
                             Value::Array(_) | Value::Null | Value::Bool(false) => {
                                 let temp_name = self.next_foreach_temporary_array_name();
@@ -23886,7 +23976,8 @@ impl Interpreter {
                     _ => {}
                 }
             }
-            let Some(cell) = self.call_magic_get_reference_return_cell(holder, property, span)?
+            let Some(cell) =
+                self.call_magic_get_reference_return_cell(holder, property, span, scope)?
             else {
                 return Ok(false);
             };
@@ -24213,7 +24304,7 @@ impl Interpreter {
                 }
             } else {
                 let Some(cell) =
-                    self.call_magic_get_reference_return_cell(holder, property, span)?
+                    self.call_magic_get_reference_return_cell(holder, property, span, scope)?
                 else {
                     return Ok(false);
                 };
@@ -33382,6 +33473,7 @@ impl Interpreter {
         object: PhpObject,
         property: &str,
         span: Span,
+        caller_scope: &mut SymbolTable,
     ) -> CompileResult<Option<VariableCell>> {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), "__get")
@@ -33417,9 +33509,6 @@ impl Interpreter {
         self.ensure_user_function_call_depth(function, span)?;
 
         let called_class_id = object.class_id();
-        let hidden_name = self.hidden_reference_return_object_name(&object);
-        let mut temp_scope = SymbolTable::new_child(self.global_symbols.clone());
-        temp_scope.write_static(&hidden_name, Value::Object(object.clone()));
         let binding = self
             .call_reference_return_function_with_checked_values_for_reference_assignment(
                 function,
@@ -33428,9 +33517,9 @@ impl Interpreter {
                 Some(class_id),
                 Some(called_class_id),
                 Vec::new(),
-                &mut temp_scope,
+                caller_scope,
             )?;
-        self.reference_return_binding_cell(function, binding, span, &mut temp_scope)
+        self.reference_return_binding_cell(function, binding, span, caller_scope)
             .map(Some)
     }
 
@@ -48243,6 +48332,18 @@ impl Interpreter {
             }
             _ => None,
         };
+        let returned_local_array_offset_cell = match result.as_ref() {
+            Ok(ReferenceReturnLocalBinding::ArrayOffset { root_name, keys }) => {
+                let alias = ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::StaticArray {
+                        name: root_name.clone(),
+                    },
+                    keys: keys.clone(),
+                };
+                local_scope.read_array_offset_alias_reference_cell(&alias)
+            }
+            _ => None,
+        };
         let returned_array_offset = result.as_ref().ok().and_then(|returned| match returned {
             ReferenceReturnLocalBinding::Cell(returned_cell) => array_offset_binding_cells
                 .iter()
@@ -48417,6 +48518,8 @@ impl Interpreter {
             }
         }
         if let Some(cell) = returned_value_copy_param_cell {
+            Ok(ReferenceReturnBinding::Cell(cell))
+        } else if let Some(cell) = returned_local_array_offset_cell {
             Ok(ReferenceReturnBinding::Cell(cell))
         } else if let Some(aliases) = returned_array_offset {
             if let Some(source) =
@@ -51824,6 +51927,16 @@ impl Interpreter {
                 let Some(value) = value else {
                     continue;
                 };
+                let local_reference = match local_scope
+                    .array_offset_alias_group_for_stored_array_path(local_name, &local_alias.keys)
+                {
+                    Some(active_local_aliases) if active_local_aliases.contains(local_alias) => {
+                        active_local_aliases.iter().find_map(|alias| {
+                            local_scope.read_array_offset_alias_reference_cell(alias)
+                        })
+                    }
+                    _ => None,
+                };
                 let mut caller_keys = source_keys.clone();
                 caller_keys.extend(local_alias.keys.iter().cloned());
                 let Some(caller_aliases) = caller_scope
@@ -51831,7 +51944,21 @@ impl Interpreter {
                 else {
                     continue;
                 };
-                self.write_back_array_offset_aliases(&caller_aliases, value, caller_scope, span)?;
+                if let Some(reference) = local_reference {
+                    self.write_back_array_offset_aliases_reference_cell(
+                        &caller_aliases,
+                        reference,
+                        caller_scope,
+                        span,
+                    )?;
+                } else {
+                    self.write_back_array_offset_aliases(
+                        &caller_aliases,
+                        value,
+                        caller_scope,
+                        span,
+                    )?;
+                }
             }
         }
         Ok(())
@@ -51856,10 +51983,10 @@ impl Interpreter {
                 {
                     continue;
                 }
-                let value = if let Some(value) =
+                let (value, local_reference) = if let Some(value) =
                     local_scope.detached_static_array_offset_value(local_name, &local_alias.keys)
                 {
-                    Some(value)
+                    (Some(value), None)
                 } else {
                     let Some(active_local_aliases) = local_scope
                         .array_offset_alias_group_for_stored_array_path(
@@ -51872,9 +51999,13 @@ impl Interpreter {
                     if !active_local_aliases.contains(local_alias) {
                         continue;
                     }
-                    local_scope
+                    let local_reference = active_local_aliases.iter().find_map(|alias| {
+                        local_scope.read_array_offset_alias_reference_cell(alias)
+                    });
+                    let value = local_scope
                         .read_storage_named(local_name)
-                        .and_then(|value| Self::array_path_value(&value, &local_alias.keys))
+                        .and_then(|value| Self::array_path_value(&value, &local_alias.keys));
+                    (value, local_reference)
                 };
                 let Some(value) = value else { continue };
 
@@ -51907,12 +52038,21 @@ impl Interpreter {
                     if caller_aliases.is_empty() {
                         continue;
                     }
-                    self.write_back_array_offset_aliases(
-                        &caller_aliases,
-                        value.clone(),
-                        caller_scope,
-                        span,
-                    )?;
+                    if let Some(reference) = local_reference.clone() {
+                        self.write_back_array_offset_aliases_reference_cell(
+                            &caller_aliases,
+                            reference,
+                            caller_scope,
+                            span,
+                        )?;
+                    } else {
+                        self.write_back_array_offset_aliases(
+                            &caller_aliases,
+                            value.clone(),
+                            caller_scope,
+                            span,
+                        )?;
+                    }
                 }
             }
         }
@@ -52238,6 +52378,27 @@ impl Interpreter {
             }
         }
         scope.restore_retained_static_copy_sources(retained_static_copy_sources);
+        Ok(())
+    }
+
+    fn write_back_array_offset_aliases_reference_cell(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+        reference: VariableCell,
+        scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<()> {
+        if !scope.write_array_offset_aliases_reference_cell_preserving_static_copy_sources(
+            aliases, reference,
+        ) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot write array reference argument".to_string(),
+                ),
+            ));
+        }
+        scope.sync_alias_roots(aliases);
         Ok(())
     }
 

@@ -187,15 +187,21 @@ handled.
   `PhpArray` runtime methods and make `SymbolTable` alias helpers delegate
   materialization, reads, checked/value/reference writes, and appends through
   those slot-level COW operations.
+- [x] Lane 2287-C: preserve whole-array reference identity across by-value
+  helper passthrough, helper-returned wrapper literals, and supported
+  reference-return magic `__get()` / `ArrayAccess::offsetGet()` bodies by
+  promoting proven array-valued alias groups to real reference cells and
+  writing those cells back to caller aliases, while keeping plain nested
+  by-value copies detached.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model by extracting root resolution into a
   runtime-backed alias/lvalue handle under `SymbolTable`, then migrating
   `Value + ArrayCopySource` propagation, helper/callback containers, and
   dynamic holder writeback away from stale path provenance. Known next probes
-  should target whole-array reference identity outside covered non-empty
-  array-offset roots, side-effecting helper/callback containers, and dynamic
-  holders that still cannot expose either a materialized reference cell or a
-  concrete writeback root.
+  should target whole-array identity through untracked containers,
+  side-effecting helper/callback containers, dynamic holders that still cannot
+  expose either a materialized reference cell or a concrete writeback root, and
+  the remaining direct magic reference-return copied-local shapes.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

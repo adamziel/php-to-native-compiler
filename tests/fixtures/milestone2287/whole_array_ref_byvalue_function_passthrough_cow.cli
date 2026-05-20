@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2287/whole_array_ref_byvalue_function_passthrough_cow.php

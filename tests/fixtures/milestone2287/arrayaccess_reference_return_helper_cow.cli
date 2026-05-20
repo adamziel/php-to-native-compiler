@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2287/arrayaccess_reference_return_helper_cow.php

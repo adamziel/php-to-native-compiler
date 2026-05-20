@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2287/plain_nested_array_byvalue_passthrough_detaches_guard.php

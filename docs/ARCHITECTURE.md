@@ -214,6 +214,15 @@ copied parent remains valid, and it reattaches the copied-source metadata
 after the internal sync completes; ordinary root overwrites still clear the
 metadata.
 
+Array-valued alias groups are promoted only when alias metadata proves a PHP
+reference already exists. During by-value helper setup and copied-array
+assignment, the interpreter may turn a proven array-valued path alias into a
+real `PhpReferenceCell`, overlay that cell into the copied array, and write the
+same cell back to the caller alias group. This keeps whole-array referenced
+slots connected across helper passthrough and supported reference-return
+magic/`ArrayAccess` bodies without making ordinary plain nested array copies
+share.
+
 Parent-bucket replacement is a copied-source invalidation boundary for tracked
 object-property provenance. Before a supported magic/`ArrayAccess` method body
 overwrites a copied source parent such as `$this->store[$name]`, the

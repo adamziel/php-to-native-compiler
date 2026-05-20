@@ -32,7 +32,21 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2286:
+The current in-progress implementation frontier is Lane 2287:
+
+- Lane 2287 preserves whole-array reference identity across by-value helper
+  and supported magic/`ArrayAccess` reference-return boundaries. Proven
+  array-valued alias groups can now materialize real `PhpReferenceCell`s,
+  by-value alias writeback carries reference cells back to the caller, and
+  reference-return `__get()` uses caller alias context. Focused system-PHP
+  coverage proves by-value function passthrough, helper-returned wrapper
+  literals, reference-return `__get()`, reference-return
+  `ArrayAccess::offsetGet()`, and a plain nested by-value detach guard. This
+  remains bounded to proven alias groups and supported body execution; root
+  resolution is still in `SymbolTable`, `ArrayCopySource` provenance ledgers
+  still exist, arbitrary magic/`ArrayAccess` side effects, untracked
+  containers, exact diagnostics, string COW, and native reference/COW lowering
+  remain unsupported.
 
 - Lane 2286 moves nested array-offset lvalue path operations into `PhpArray`.
   Runtime arrays now own path materialization, cloned reads, reference-cell

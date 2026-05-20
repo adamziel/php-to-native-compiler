@@ -144,6 +144,13 @@
   copied-source provenance for reference-backed leaves. Internal alias
   writeback preserves that metadata only for nested writes that leave the
   copied parent source valid; plain leaves in the returned copy still detach.
+  Whole-array reference identity is also preserved for proven array-valued
+  alias groups that cross by-value helper calls or helper-returned wrapper
+  literals. When a copied containing array has a referenced array-valued slot,
+  supported by-value helpers and supported reference-return `__get()` /
+  `ArrayAccess::offsetGet()` helper bodies can materialize that slot as a real
+  reference cell and write the same cell back to the caller, while ordinary
+  plain nested slots continue to detach.
   If a supported visible `__get()`, public `ArrayAccess::offsetGet()`, direct
   missing-method `__call()`, or public `ArrayAccess::offsetSet()` body later
   replaces that tracked object-property parent bucket, stale copied-source
