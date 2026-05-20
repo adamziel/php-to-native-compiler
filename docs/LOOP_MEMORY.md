@@ -23,6 +23,80 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T12:00:00+02:00
+
+- Stability finding: the old `019e3b39-8c72-7101-a6c7-fe216ada9a43`
+  Codex thread is unsafe to resume because it carries multi-million-token
+  turns. Continue from current files with fresh `codex exec` prompts instead.
+- Resource finding: `rustfmt --edition 2021 --check compiler/src/interpreter.rs`
+  was OOM-killed on this 9 GiB/no-swap VM after reaching about 7.7 GiB RSS.
+  Do not run rustfmt/cargo fmt on that file here; use `git diff --check`,
+  `cargo check -q -p phpc`, focused fixture comparisons, and focused tests.
+- Active stable runner: `tools/codex-lane2289-stable.sh` starts fresh Lane
+  2289 workers, logs under `.codex-stable/lane2289/`, and explicitly avoids
+  resuming the old thread and avoids the rustfmt OOM path.
+
+## Loop Event 2026-05-20T08:05:00+02:00
+
+- Checkpoint before this task: `52503d2c runtime: preserve direct copied-local
+  cow references`, pushed to `origin/master`.
+- Task attempted: Lane 2289-C, runtime-cell copy sources for by-value reads
+  from supported reference-return user functions and methods.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2289/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; focused raw probes match
+  system PHP for direct method, method-local alias, global function,
+  `call_user_func()` array method callback, and zero-argument
+  `call_user_func_array()` function callback returns; focused system-PHP
+  comparisons passed for `tests/fixtures/milestone2289`, `milestone2288`,
+  `milestone2287`, and `milestone2286`.
+- Remaining COW gaps: root resolution still needs a broader reusable lvalue
+  handle, untracked containers without reachable cells/roots, arbitrary
+  unsupported magic/`ArrayAccess` method syntax and side effects, exact
+  diagnostics/Throwable objects, string COW, and native reference/COW
+  lowering remain unsupported.
+- Next concrete task: run formatting/diff checks, adjacent focused Rust tests,
+  then one full `tools/checkpoint.sh` bundle gate and push if it passes.
+
+## Loop Event 2026-05-20T12:25:00+02:00
+
+- Checkpoint before this task: `52503d2c runtime: preserve direct copied-local
+  cow references`.
+- Continued Lane 2289-C from the dirty worktree only, without resuming the old
+  crash-prone Codex session. No code repairs were needed after reconstruction.
+- Focused checks run in this worker: `git diff --check` passed;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo check -q -p phpc` passed;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone2289` passed with 5
+  fixtures; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone2289` passed with 5 system-PHP comparisons;
+  adjacent `milestone2288`, `milestone2287`, and `milestone2286`
+  `--compare-php` fixture checks passed; focused Rust tests
+  `cargo test -q -p phpc --test functions_and_scopes normal_reference_return`
+  passed with 4 tests and
+  `cargo test -q -p phpc --test call_user_func_builtin reference_return`
+  passed with 5 tests.
+- Validation logs are under `.codex-stable/lane2289/`.
+- Remaining COW gaps are unchanged: root resolution still needs a broader
+  runtime-backed alias/lvalue handle, untracked containers without reachable
+  cells/roots, arbitrary unsupported magic/`ArrayAccess` method syntax and
+  side effects, exact diagnostics/Throwable objects, string COW, and native
+  reference/COW lowering remain unsupported.
+- Next concrete task: run
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 timeout ...
+  tools/checkpoint.sh "runtime: preserve runtime-cell cow sources"` as the
+  full bundle gate. `tools/checkpoint.sh` currently runs `tools/run-tests.sh`
+  and does not invoke `cargo fmt`, so it avoids the known rustfmt OOM path.
+- Full checkpoint attempt caught a real regression before commit:
+  `milestone1673c/arrayaccess_bucket_reuse_controls.php` over-shared the
+  callback-name reuse guard. The fix narrowed eager copied-array reference-cell
+  promotion to direct object-property copies and new Lane 2289
+  `RuntimeCell` sources, leaving ordinary `ArrayAccess::offsetGet()`
+  copied-source metadata lazy. After the fix, `milestone1673c --compare-php`,
+  `git diff --check`, `cargo check -q -p phpc`, and
+  `milestone2289 --compare-php` passed again.
+
 ## Loop Event 2026-05-20T07:20:00+02:00
 
 - Checkpoint before this task: `2a8d7a6e runtime: preserve whole array helper

@@ -223,6 +223,15 @@ slots connected across helper passthrough and supported reference-return
 magic/`ArrayAccess` bodies without making ordinary plain nested array copies
 share.
 
+By-value reads from covered reference-return user functions and methods now
+carry returned runtime cells as temporary copy-source roots. Before cloning the
+returned array value, the caller resolves that cell back to any visible
+static/global/object-property alias roots and materializes descendant reference
+aliases into real runtime reference cells. This advances the value model away
+from pure path provenance for direct method/global-function returns and
+supported callback dispatch, but it is still bounded to cells and roots the
+interpreter can observe.
+
 Parent-bucket replacement is a copied-source invalidation boundary for tracked
 object-property provenance. Before a supported magic/`ArrayAccess` method body
 overwrites a copied source parent such as `$this->store[$name]`, the

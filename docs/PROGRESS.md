@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 2289-C for by-value reads from supported reference-return
+  user functions and methods. Reference-return values now carry a
+  runtime-cell array copy source when the returned binding is a concrete
+  `PhpReferenceCell`, and the central copied-array rehydration path resolves
+  that cell back to visible alias roots before cloning. This preserves
+  selected reference-backed descendants while keeping plain descendants
+  detached for direct method returns, method-local aliases to returned
+  object properties, global function returns, `call_user_func()` array
+  method callbacks, and zero-argument `call_user_func_array()` function
+  callbacks. This is a runtime-cell source bridge for covered
+  reference-return execution; arbitrary unsupported callback/method syntax,
+  untracked containers without a reachable cell/root, exact diagnostics,
+  string COW, and native reference/COW lowering remain incomplete.
+
 - Added Lane 2288-C for direct copied-local reference returns in supported
   magic `__get()` and public `ArrayAccess::offsetGet()` bodies. Reference
   returns like `$copy = $this->store; return $copy[$name];` now preserve

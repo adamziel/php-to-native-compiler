@@ -42,7 +42,12 @@
   also preserve direct copied-local returns when the body copies a tracked
   object-property array into a local and returns either a selected local offset
   or the copied local array itself; proven source-backed descendant references
-  remain shared, while no-alias copied buckets stay detached.
+  remain shared, while no-alias copied buckets stay detached. By-value reads
+  from covered reference-return user functions and methods also preserve
+  runtime-cell array copy sources for selected reference-backed descendants,
+  including direct method/global-function returns and supported
+  `call_user_func()` / zero-argument `call_user_func_array()` callback
+  dispatch, while plain descendants remain detached.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,
   visible `__isset()`, direct `ArrayAccess::offsetSet()`,
   `ArrayAccess::offsetUnset()`, and `ArrayAccess::offsetExists()` execute

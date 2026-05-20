@@ -32,7 +32,30 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2287:
+The current in-progress implementation frontier is Lane 2289:
+
+- Lane 2289 carries runtime-cell copy sources through by-value reads from
+  supported reference-return user functions and methods. Returned
+  `PhpReferenceCell`s can now be treated as temporary copy-source roots, so
+  descendant aliases under visible static/global/object-property roots are
+  materialized into real runtime reference cells before the returned array is
+  cloned. Focused system-PHP coverage proves direct method returns,
+  method-local aliases to returned object properties, global function returns,
+  `call_user_func()` array method callbacks, and zero-argument
+  `call_user_func_array()` function callbacks. This is still bounded to
+  covered reference-return execution and observable cells/roots; arbitrary
+  magic/`ArrayAccess` side effects, untracked containers, exact diagnostics,
+  string COW, and native reference/COW lowering remain unsupported.
+
+- Lane 2288 preserves direct copied-local reference returns in supported
+  magic `__get()` and public `ArrayAccess::offsetGet()` bodies. It covers
+  copied-parent returns such as `$copy = $this->store; return $copy[$name];`
+  and copied-child returns such as `$copy = $this->store[$name]; return
+  $copy;`, rehydrating source-backed descendant references while keeping
+  no-alias copied buckets detached. This remains bounded to supported
+  method-body syntax and statically proven copy sources; arbitrary side
+  effects, untracked containers, exact diagnostics, string COW, and native
+  reference/COW lowering remain unsupported.
 
 - Lane 2287 preserves whole-array reference identity across by-value helper
   and supported magic/`ArrayAccess` reference-return boundaries. Proven

@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2289/reference_return_method_local_alias_byvalue_runtime_cell_cow.php

@@ -2201,6 +2201,7 @@ impl SymbolTable {
                 )
                 .ok()
                 .flatten(),
+            ArrayCopySourceRoot::RuntimeCell(cell) => Some(cell.value_cloned()),
         };
         let Some(Value::Array(array)) = root_value else {
             return Vec::new();
@@ -2279,6 +2280,9 @@ impl SymbolTable {
             ) => left_object.id() == right_object.id() && left_property == right_property,
             (ArrayCopySourceRoot::AliasPath(left), ArrayCopySourceRoot::AliasPath(right)) => {
                 left == right
+            }
+            (ArrayCopySourceRoot::RuntimeCell(left), ArrayCopySourceRoot::RuntimeCell(right)) => {
+                left.shares_reference_with(right)
             }
             _ => false,
         }
@@ -2589,6 +2593,7 @@ impl SymbolTable {
     ) -> Option<ArrayCopySource> {
         match &source.root {
             ArrayCopySourceRoot::ObjectProperty { .. } => Some(source.clone()),
+            ArrayCopySourceRoot::RuntimeCell(_) => Some(source.clone()),
             ArrayCopySourceRoot::AliasPath(ArrayOffsetAliasRoot::GlobalArray { .. }) => {
                 Some(source.clone())
             }
@@ -4161,7 +4166,8 @@ impl SymbolTable {
         };
 
         if promote_missing_reference_cells {
-            self.overlay_object_property_copy_reference_cells(&mut array, &source);
+            self.rehydrate_runtime_cell_copy_source_aliases(&source);
+            self.overlay_array_copy_source_reference_cells(&mut array, &source);
         }
 
         for source_root in self.array_copy_source_roots(&source) {
@@ -4194,7 +4200,11 @@ impl SymbolTable {
                                 self.reference_cell_for_array_copy_alias_group(&alias_group)
                             })
                             .or_else(|| {
-                                matches!(source.root, ArrayCopySourceRoot::ObjectProperty { .. })
+                                matches!(
+                                    &source.root,
+                                    ArrayCopySourceRoot::ObjectProperty { .. }
+                                        | ArrayCopySourceRoot::RuntimeCell(_)
+                                )
                                     .then(|| {
                                         self.reference_cell_for_array_literal_alias_group(
                                             &alias_group,
@@ -4208,7 +4218,11 @@ impl SymbolTable {
                                 )
                             })
                             .or_else(|| {
-                                matches!(source.root, ArrayCopySourceRoot::ObjectProperty { .. })
+                                matches!(
+                                    &source.root,
+                                    ArrayCopySourceRoot::ObjectProperty { .. }
+                                        | ArrayCopySourceRoot::RuntimeCell(_)
+                                )
                                     .then(|| {
                                         self.reference_cell_for_array_literal_alias_group_with_value_promotion(
                                             &alias_group,
@@ -4232,30 +4246,89 @@ impl SymbolTable {
         Value::Array(array)
     }
 
-    fn overlay_object_property_copy_reference_cells(
+    fn overlay_array_copy_source_reference_cells(
         &self,
         target: &mut PhpArray,
         source: &ArrayCopySource,
     ) {
-        let ArrayCopySourceRoot::ObjectProperty { object, property } = &source.root else {
+        let Some(source_value) = self.array_copy_source_value(source) else {
             return;
-        };
-        let Ok(Value::Array(source_array)) = object.read_public_property(property) else {
-            return;
-        };
-        let source_value = if source.keys.is_empty() {
-            Value::Array(source_array)
-        } else {
-            let Some(value) = Self::read_nested_array_offset_alias(&source_array, &source.keys)
-            else {
-                return;
-            };
-            value
         };
         let Value::Array(source_array) = source_value else {
             return;
         };
         Self::overlay_reference_cells_from_source_array(target, &source_array);
+    }
+
+    fn array_copy_source_value(&self, source: &ArrayCopySource) -> Option<Value> {
+        let root_value = match &source.root {
+            ArrayCopySourceRoot::ObjectProperty { object, property } => {
+                object.read_public_property(property).ok()?
+            }
+            ArrayCopySourceRoot::AliasPath(root) => self
+                .read_alias_root_value(
+                    &ArrayOffsetAlias {
+                        root: root.clone(),
+                        keys: Vec::new(),
+                    },
+                    Span::new(0, 0),
+                )
+                .ok()??,
+            ArrayCopySourceRoot::RuntimeCell(cell) => cell.value_cloned(),
+        };
+        if source.keys.is_empty() {
+            return Some(root_value);
+        }
+        let Value::Array(array) = root_value else {
+            return None;
+        };
+        Self::read_nested_array_offset_alias(&array, &source.keys)
+    }
+
+    fn rehydrate_runtime_cell_copy_source_aliases(&mut self, source: &ArrayCopySource) {
+        let ArrayCopySourceRoot::RuntimeCell(cell) = &source.root else {
+            return;
+        };
+        self.rehydrate_reference_cell_array_aliases(cell);
+    }
+
+    fn rehydrate_reference_cell_array_aliases(&mut self, cell: &VariableCell) {
+        let Value::Array(mut array) = cell.value_cloned() else {
+            return;
+        };
+        let roots = self.array_copy_source_roots_for_reference_cell(cell);
+        for root in roots {
+            let aliases = self
+                .array_offset_aliases
+                .values()
+                .flat_map(|aliases| aliases.iter())
+                .filter(|alias| alias.root == root && !alias.keys.is_empty())
+                .cloned()
+                .collect::<Vec<_>>();
+            for alias in aliases {
+                let alias_group = self
+                    .array_offset_alias_group_for_stored_root_path(alias.clone(), None)
+                    .unwrap_or_else(|| vec![alias.clone()]);
+                let reference = alias_group
+                    .iter()
+                    .find_map(|alias| self.read_array_offset_alias_reference_cell(alias))
+                    .or_else(|| self.reference_cell_for_array_offset_alias_group(&alias_group))
+                    .or_else(|| {
+                        self.reference_cell_for_array_offset_alias_group_with_value_promotion(
+                            &alias_group,
+                        )
+                    });
+                let Some(reference) = reference else {
+                    continue;
+                };
+                Self::write_nested_array_offset_alias_reference(
+                    &mut array,
+                    &alias.keys,
+                    reference,
+                );
+            }
+        }
+        cell.set_value(Value::Array(array));
     }
 
     fn overlay_reference_cells_from_source_array(target: &mut PhpArray, source: &PhpArray) {
@@ -4381,7 +4454,50 @@ impl SymbolTable {
                 ]
             }
             ArrayCopySourceRoot::AliasPath(root) => vec![root.clone()],
+            ArrayCopySourceRoot::RuntimeCell(cell) => {
+                self.array_copy_source_roots_for_reference_cell(cell)
+            }
         }
+    }
+
+    fn array_copy_source_roots_for_reference_cell(
+        &self,
+        cell: &VariableCell,
+    ) -> Vec<ArrayOffsetAliasRoot> {
+        let mut roots = Vec::new();
+        for (name, candidate) in self.symbols.borrow().iter() {
+            if !name.starts_with('\0') && candidate.shares_reference_with(cell) {
+                roots.push(ArrayOffsetAliasRoot::StaticArray { name: name.clone() });
+            }
+        }
+        if let Some(global_symbols) = &self.global_symbols {
+            for (name, candidate) in global_symbols.borrow().iter() {
+                if !name.starts_with('\0') && candidate.shares_reference_with(cell) {
+                    roots.push(ArrayOffsetAliasRoot::GlobalArray { name: name.clone() });
+                }
+            }
+        }
+
+        for alias in self
+            .array_offset_aliases
+            .values()
+            .flat_map(|aliases| aliases.iter())
+        {
+            if roots.contains(&alias.root) {
+                continue;
+            }
+            let root_alias = ArrayOffsetAlias {
+                root: alias.root.clone(),
+                keys: Vec::new(),
+            };
+            if self
+                .read_array_offset_alias_reference_cell(&root_alias)
+                .is_some_and(|candidate| candidate.shares_reference_with(cell))
+            {
+                roots.push(alias.root.clone());
+            }
+        }
+        roots
     }
 
     fn public_object_property_alias_roots_for_object(
@@ -6964,6 +7080,7 @@ type ArrayCopySourceAliasWriteback = (
 enum ArrayCopySourceRoot {
     ObjectProperty { object: PhpObject, property: String },
     AliasPath(ArrayOffsetAliasRoot),
+    RuntimeCell(VariableCell),
 }
 
 impl ArrayCopySource {
@@ -6987,6 +7104,14 @@ impl ArrayCopySource {
     ) -> Self {
         Self {
             root: ArrayCopySourceRoot::AliasPath(root),
+            keys,
+            include_exact_path,
+        }
+    }
+
+    fn runtime_cell(cell: VariableCell, keys: Vec<ArrayKey>, include_exact_path: bool) -> Self {
+        Self {
+            root: ArrayCopySourceRoot::RuntimeCell(cell),
             keys,
             include_exact_path,
         }
@@ -9924,7 +10049,10 @@ impl Interpreter {
         let alias = match binding {
             ReferenceReturnBinding::ArrayOffset(alias) => alias,
             ReferenceReturnBinding::ArrayOffsets(aliases) => aliases.first()?,
-            ReferenceReturnBinding::Cell(_) => return None,
+            ReferenceReturnBinding::Cell(cell) => {
+                return matches!(cell.value_cloned(), Value::Array(_))
+                    .then(|| ArrayCopySource::runtime_cell(cell.clone(), Vec::new(), true));
+            }
         };
         match &alias.root {
             ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
@@ -18565,6 +18693,22 @@ impl Interpreter {
                     .unwrap_or_else(|| vec![alias]);
                 scope.reference_cell_for_array_offset_alias_group(&aliases)
             }
+            ArrayCopySourceRoot::RuntimeCell(cell) => {
+                if keys.is_empty() {
+                    return Some(cell.clone());
+                }
+                let Value::Array(mut array) = cell.value_cloned() else {
+                    return None;
+                };
+                if let Some(reference) =
+                    SymbolTable::read_nested_array_offset_alias_reference_cell(&array, &keys)
+                {
+                    return Some(reference);
+                }
+                let reference = array.promote_path_to_reference_cell(&keys)?;
+                cell.set_value(Value::Array(array));
+                Some(reference)
+            }
         }
     }
 
@@ -18627,6 +18771,15 @@ impl Interpreter {
                     keys,
                 };
                 scope.read_array_offset_alias_reference_cell(&alias)
+            }
+            ArrayCopySourceRoot::RuntimeCell(cell) => {
+                if keys.is_empty() {
+                    return Some(cell.clone());
+                }
+                let Value::Array(array) = cell.value_cloned() else {
+                    return None;
+                };
+                SymbolTable::read_nested_array_offset_alias_reference_cell(&array, &keys)
             }
         }
     }
@@ -18736,6 +18889,9 @@ impl Interpreter {
             ) => left_object == right_object && left_property == right_property,
             (ArrayCopySourceRoot::AliasPath(left), ArrayCopySourceRoot::AliasPath(right)) => {
                 left == right
+            }
+            (ArrayCopySourceRoot::RuntimeCell(left), ArrayCopySourceRoot::RuntimeCell(right)) => {
+                left.shares_reference_with(right)
             }
             _ => false,
         }
@@ -20937,7 +21093,13 @@ impl Interpreter {
                     }
                     _ => false,
                 };
-                let value = if direct_object_property_copy && matches!(value, Value::Array(_)) {
+                let value = if matches!(value, Value::Array(_))
+                    && (direct_object_property_copy
+                        || matches!(
+                            array_copy_source.as_ref().map(|source| &source.root),
+                            Some(ArrayCopySourceRoot::RuntimeCell(_))
+                        ))
+                {
                     scope.value_with_object_property_aliases_from_array_copy(
                         value,
                         array_copy_source.clone(),
@@ -34099,8 +34261,8 @@ impl Interpreter {
             let by_value_array_copy_source_bindings =
                 self.array_copy_source_bindings_for_call_arguments(function, args, caller_scope);
             let called_class_id = object.class_id();
-            let returned_value = self
-                .call_reference_return_function_value_with_checked_values_with_array_copy_sources(
+            return self
+                .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
                     function,
                     values,
                     Some(object),
@@ -34109,8 +34271,7 @@ impl Interpreter {
                     reference_bindings,
                     caller_scope,
                     by_value_array_copy_source_bindings,
-                )?;
-            return Ok((returned_value, None));
+                );
         }
         ensure_supported_function_metadata(function, span)?;
 
@@ -39526,9 +39687,16 @@ impl Interpreter {
         let function = function_rc.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
         if function.returns_by_reference {
-            return self
-                .call_user_function(function_rc, args, span, caller_scope)
-                .map(|value| (value, None));
+            return self.call_reference_return_user_function_with_expr_args_and_array_copy_source(
+                function,
+                args,
+                span,
+                caller_scope,
+                None,
+                None,
+                None,
+                Vec::new(),
+            );
         }
         self.call_source_aware_user_function_with_expr_args(
             function,
@@ -39657,8 +39825,16 @@ impl Interpreter {
                 let function = function_rc.as_ref();
                 if function.returns_by_reference {
                     return self
-                        .call_named_function(name, args, span, caller_scope)
-                        .map(|value| (value, None));
+                        .call_reference_return_user_function_with_expr_args_and_array_copy_source(
+                            function,
+                            args,
+                            span,
+                            caller_scope,
+                            None,
+                            None,
+                            None,
+                            Vec::new(),
+                        );
                 }
                 self.call_source_aware_user_function_with_expr_args(
                     function,
@@ -40039,9 +40215,31 @@ impl Interpreter {
         let function = function_rc.as_ref();
         ensure_user_function_arity(function, args.len() - 1, span)?;
         if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            let (values, reference_bindings) = self
+                .evaluate_call_user_func_reference_return_value_arguments(
+                    function,
+                    &args[1..],
+                    span,
+                    caller_scope,
+                )?;
+            let by_value_array_copy_source_bindings =
+                Self::array_copy_source_bindings_for_reference_bindings(
+                    &reference_bindings,
+                    caller_scope,
+                );
             return self
-                .call_user_func_user_function(function_rc, &args[1..], span, caller_scope)
-                .map(|value| (value, None));
+                .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
+                    function,
+                    values,
+                    None,
+                    None,
+                    None,
+                    reference_bindings,
+                    caller_scope,
+                    by_value_array_copy_source_bindings,
+                );
         }
 
         self.call_user_func_value_warning_function_with_array_copy_source(
@@ -40309,9 +40507,31 @@ impl Interpreter {
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
                 if function.returns_by_reference {
+                    ensure_supported_reference_return_function_metadata(function, span)?;
+                    self.ensure_user_function_call_depth(function, span)?;
+                    let (values, reference_bindings) = self
+                        .evaluate_call_user_func_reference_return_value_arguments(
+                            function,
+                            args,
+                            span,
+                            caller_scope,
+                        )?;
+                    let by_value_array_copy_source_bindings =
+                        Self::array_copy_source_bindings_for_reference_bindings(
+                            &reference_bindings,
+                            caller_scope,
+                        );
                     return self
-                        .call_user_func_array_callable_direct(callback, args, span, caller_scope)
-                        .map(|value| (value, None));
+                        .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
+                            function,
+                            values,
+                            Some(object.clone()),
+                            Some(class_id),
+                            Some(object.class_id()),
+                            reference_bindings,
+                            caller_scope,
+                            by_value_array_copy_source_bindings,
+                        );
                 }
                 self.call_user_func_value_warning_function_with_array_copy_source(
                     function,
@@ -40375,9 +40595,31 @@ impl Interpreter {
                 )?;
                 let function = function.as_ref();
                 if function.returns_by_reference {
+                    ensure_supported_reference_return_function_metadata(function, span)?;
+                    self.ensure_user_function_call_depth(function, span)?;
+                    let (values, reference_bindings) = self
+                        .evaluate_call_user_func_reference_return_value_arguments(
+                            function,
+                            args,
+                            span,
+                            caller_scope,
+                        )?;
+                    let by_value_array_copy_source_bindings =
+                        Self::array_copy_source_bindings_for_reference_bindings(
+                            &reference_bindings,
+                            caller_scope,
+                        );
                     return self
-                        .call_user_func_array_callable_direct(callback, args, span, caller_scope)
-                        .map(|value| (value, None));
+                        .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
+                            function,
+                            values,
+                            None,
+                            Some(declaring_class_id),
+                            Some(class_id),
+                            reference_bindings,
+                            caller_scope,
+                            by_value_array_copy_source_bindings,
+                        );
                 }
                 self.call_user_func_value_warning_function_with_array_copy_source(
                     function,
@@ -41277,6 +41519,20 @@ impl Interpreter {
                 &reference_bindings,
                 caller_scope,
             );
+        if function.returns_by_reference {
+            self.ensure_user_function_call_depth(function, span)?;
+            return self
+                .call_reference_return_function_value_with_checked_values_with_array_copy_sources(
+                    function,
+                    values,
+                    None,
+                    None,
+                    None,
+                    reference_bindings,
+                    caller_scope,
+                    by_value_array_copy_source_bindings,
+                );
+        }
         let by_value_array_copy_bindings =
             Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
                 function,
@@ -41604,9 +41860,30 @@ impl Interpreter {
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let function_ref = function.as_ref();
         if function_ref.returns_by_reference {
+            let (values, reference_bindings) = self
+                .evaluate_call_user_func_array_checked_arguments(
+                    function_ref,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                )?;
+            let by_value_array_copy_source_bindings =
+                Self::array_copy_source_bindings_for_reference_bindings(
+                    &reference_bindings,
+                    caller_scope,
+                );
+            self.ensure_user_function_call_depth(function_ref, span)?;
             return self
-                .call_user_func_array_user_function(function, argument_expr, span, caller_scope)
-                .map(|value| (value, None));
+                .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
+                    function_ref,
+                    values,
+                    None,
+                    None,
+                    None,
+                    reference_bindings,
+                    caller_scope,
+                    by_value_array_copy_source_bindings,
+                );
         }
         if !Self::function_accepts_source_aware_by_value_arguments(function_ref) {
             let (values, reference_bindings) = self
@@ -42766,7 +43043,11 @@ impl Interpreter {
                 .enumerate()
                 .any(|(index, param)| param.by_reference && index < argument_array.len());
             if !has_reached_reference_param {
-                ensure_supported_function_metadata(function, span)?;
+                if function.returns_by_reference {
+                    ensure_supported_reference_return_function_metadata(function, span)?;
+                } else {
+                    ensure_supported_function_metadata(function, span)?;
+                }
                 if Self::call_user_func_array_value_has_string_keys(argument_array) {
                     let values = self.evaluate_call_user_func_array_named_value_arguments(
                         function,
@@ -42824,7 +43105,11 @@ impl Interpreter {
             .enumerate()
             .any(|(index, param)| param.by_reference && index < items.len())
         {
-            ensure_supported_function_metadata(function, span)?;
+            if function.returns_by_reference {
+                ensure_supported_reference_return_function_metadata(function, span)?;
+            } else {
+                ensure_supported_function_metadata(function, span)?;
+            }
             let argument_array =
                 self.evaluate_literal_call_user_func_array_value_array(items, span, caller_scope)?;
             let positional_args =
@@ -46708,6 +46993,44 @@ impl Interpreter {
         )
     }
 
+    fn call_reference_return_user_function_with_expr_args_and_array_copy_source(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let (values, reference_bindings) = self.evaluate_user_function_call_arguments_with_options(
+            function,
+            args,
+            span,
+            caller_scope,
+            true,
+        )?;
+        let by_value_array_copy_source_bindings =
+            self.array_copy_source_bindings_for_call_arguments(function, args, caller_scope);
+
+        self.call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
+            function,
+            values,
+            this_object,
+            class_context,
+            called_class_context,
+            reference_bindings,
+            caller_scope,
+            prebound_locals,
+            by_value_array_copy_source_bindings,
+        )
+    }
+
     fn call_source_aware_user_function_with_call_user_func_array_argument(
         &mut self,
         function: &FunctionDecl,
@@ -48726,7 +49049,31 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         by_value_array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
     ) -> CompileResult<Value> {
-        self.call_reference_return_function_value_with_checked_values_and_locals(
+        self.call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
+            function,
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            reference_bindings,
+            caller_scope,
+            by_value_array_copy_source_bindings,
+        )
+        .map(|(value, _)| value)
+    }
+
+    fn call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        reference_bindings: Vec<ReferenceBinding>,
+        caller_scope: &mut SymbolTable,
+        by_value_array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        self.call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
             function,
             args,
             this_object,
@@ -48751,6 +49098,32 @@ impl Interpreter {
         prebound_locals: Vec<PreboundLocal>,
         by_value_array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
     ) -> CompileResult<Value> {
+        self.call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
+            function,
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            reference_bindings,
+            caller_scope,
+            prebound_locals,
+            by_value_array_copy_source_bindings,
+        )
+        .map(|(value, _)| value)
+    }
+
+    fn call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        reference_bindings: Vec<ReferenceBinding>,
+        caller_scope: &mut SymbolTable,
+        prebound_locals: Vec<PreboundLocal>,
+        by_value_array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let binding = self
             .call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
                 function,
@@ -48764,17 +49137,36 @@ impl Interpreter {
                 by_value_array_copy_source_bindings,
             )?;
 
+        self.read_reference_return_binding_value_with_array_copy_source(
+            function,
+            &binding,
+            caller_scope,
+        )
+    }
+
+    fn read_reference_return_binding_value_with_array_copy_source(
+        &self,
+        function: &FunctionDecl,
+        binding: &ReferenceReturnBinding,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let source =
+            Self::public_object_property_array_copy_source_from_reference_binding(binding, caller_scope);
         match binding {
-            ReferenceReturnBinding::Cell(cell) => Ok(cell.value_cloned()),
+            ReferenceReturnBinding::Cell(cell) => {
+                caller_scope.rehydrate_reference_cell_array_aliases(cell);
+                Ok((cell.value_cloned(), source))
+            }
             ReferenceReturnBinding::ArrayOffset(alias) => {
-                caller_scope.read_array_offset_alias(&alias).ok_or_else(|| {
+                let value = caller_scope.read_array_offset_alias(alias).ok_or_else(|| {
                     runtime_error(
                         function.span,
                         RuntimeError::invalid_array_access(
                             "cannot read reference-return array-offset result".to_string(),
                         ),
                     )
-                })
+                })?;
+                Ok((value, source))
             }
             ReferenceReturnBinding::ArrayOffsets(aliases) => {
                 let alias = aliases.first().ok_or_else(|| {
@@ -48785,14 +49177,15 @@ impl Interpreter {
                         ),
                     )
                 })?;
-                caller_scope.read_array_offset_alias(alias).ok_or_else(|| {
+                let value = caller_scope.read_array_offset_alias(alias).ok_or_else(|| {
                     runtime_error(
                         function.span,
                         RuntimeError::invalid_array_access(
                             "cannot read reference-return array-offset result".to_string(),
                         ),
                     )
-                })
+                })?;
+                Ok((value, source))
             }
         }
     }

@@ -198,6 +198,11 @@ handled.
   `$copy = $this->store; return $copy[$name];` and
   `$copy = $this->store[$name]; return $copy;` with source-backed descendant
   references plus no-alias detached-copy guards.
+- [x] Lane 2289-C: preserve runtime-cell copy sources for by-value reads from
+  covered reference-return user functions and methods, including direct method
+  returns, method-local aliases, global function returns, `call_user_func()`
+  array method callbacks, and zero-argument `call_user_func_array()` function
+  callbacks, while leaving plain descendants detached.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model by extracting root resolution into a
   runtime-backed alias/lvalue handle under `SymbolTable`, then migrating
