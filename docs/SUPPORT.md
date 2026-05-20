@@ -50,9 +50,10 @@
   dispatch, while plain descendants remain detached. The visible root
   resolution used by this bridge now begins through a runtime lvalue handle
   for static, global, and visible/context object-property roots, and
-  runtime-cell copied-source alias rehydration/overlay consumes those handles
-  directly. Broader copied-source transfer, helper/callback containers, and
-  holder writeback still use the legacy bounded alias-root model.
+  runtime-cell copied-source alias rehydration/overlay plus helper/callback
+  copied-source alias mirror/import setup consume those handles directly.
+  Broader copied-source transfer and holder writeback still use the legacy
+  bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,
   visible `__isset()`, direct `ArrayAccess::offsetSet()`,
   `ArrayAccess::offsetUnset()`, and `ArrayAccess::offsetExists()` execute

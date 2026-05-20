@@ -235,10 +235,12 @@ That visible-root resolution now starts through a small
 `SymbolTable` runtime lvalue handle for static, global, and
 visible/context object-property roots. Runtime-cell copied-source alias
 rehydration and reference-cell overlay now consume those handles directly when
-matching descendant aliases. Other copied-source transfer and holder writeback
-callers still project handles back to legacy `ArrayOffsetAliasRoot` paths;
-moving the rest of `Value + ArrayCopySource` propagation onto handles remains
-a later step.
+matching descendant aliases, and helper/callback copied-source alias
+mirror/import setup now resolves `ArrayCopySource` values to those handles
+before populating copied locals or callee scopes. Other copied-source transfer
+and holder writeback callers still project handles back to legacy
+`ArrayOffsetAliasRoot` paths; moving the rest of `Value + ArrayCopySource`
+propagation onto handles remains a later step.
 
 Parent-bucket replacement is a copied-source invalidation boundary for tracked
 object-property provenance. Before a supported magic/`ArrayAccess` method body

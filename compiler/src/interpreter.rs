@@ -4116,10 +4116,10 @@ impl SymbolTable {
         target_name: &str,
         source: &ArrayCopySource,
     ) {
-        for source_root in self.array_copy_source_roots(source) {
+        for source_handle in self.runtime_alias_lvalue_handles_for_array_copy_source(source) {
             self.mirror_array_offset_aliases_from_path_copy(
                 target_name,
-                &source_root,
+                &source_handle.root,
                 &source.keys,
                 source.include_exact_path,
             );
@@ -4148,12 +4148,13 @@ impl SymbolTable {
         source_scope: &SymbolTable,
     ) -> Vec<ArrayOffsetAlias> {
         let mut imported = Vec::new();
-        for source_root in source_scope.array_copy_source_roots(source) {
+        for source_handle in source_scope.runtime_alias_lvalue_handles_for_array_copy_source(source)
+        {
             imported.extend(self.import_array_offset_aliases_from_path_copy_to_path(
                 target_name,
                 target_keys,
                 source_scope,
-                &source_root,
+                &source_handle.root,
                 &source.keys,
                 source.include_exact_path,
             ));
@@ -76131,6 +76132,55 @@ mod tests {
             .expect("expected copied slot reference cell");
 
         assert_eq!(copied_slot_cell.id(), source_slot_cell.id());
+    }
+
+    #[test]
+    fn symbol_table_runtime_cell_copy_sources_import_aliases_through_lvalue_handles() {
+        let mut source_scope = SymbolTable::new();
+
+        let mut items = PhpArray::new();
+        items.insert("slot", Value::String("value".to_string()));
+        source_scope.write_static("items", Value::Array(items));
+        let source_cell = source_scope.read_cell("items").unwrap();
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+        source_scope.write_static("box", Value::Object(object));
+        source_scope.array_offset_aliases.insert(
+            "property_alias".to_string(),
+            vec![ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: "box".to_string(),
+                    property: "items".to_string(),
+                },
+                keys: vec![ArrayKey::String("slot".to_string())],
+            }],
+        );
+
+        let source = ArrayCopySource::runtime_cell(source_cell, Vec::new(), true);
+        let mut local_scope = SymbolTable::new();
+        let imported =
+            local_scope.import_array_copy_source_aliases_from_copy("param", &source, &source_scope);
+        let expected = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: "param".to_string(),
+            },
+            keys: vec![ArrayKey::String("slot".to_string())],
+        };
+
+        assert!(imported.contains(&expected));
+        assert!(local_scope
+            .array_offset_aliases
+            .get("property_alias")
+            .is_some_and(|aliases| aliases.contains(&expected)));
     }
 
     #[test]

@@ -213,9 +213,9 @@ handled.
   expose either a materialized reference cell or a concrete writeback root.
   Initial static/global/object-property root resolution now has a
   `RuntimeAliasLvalueHandle`, and runtime-cell copied-source alias
-  rehydration/overlay now consumes those handles directly; this task stays
-  open until broader copied-source propagation and holder writeback consume
-  handles directly.
+  rehydration/overlay plus helper/callback copied-source alias mirror/import
+  setup now consume those handles directly; this task stays open until broader
+  copied-source propagation and holder writeback consume handles directly.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

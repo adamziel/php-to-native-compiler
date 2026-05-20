@@ -36,6 +36,32 @@ injects this file into every prompt. Each Codex pass should update it with:
   2289 workers, logs under `.codex-stable/lane2289/`, and explicitly avoids
   resuming the old thread and avoids the rustfmt OOM path.
 
+## Loop Event 2026-05-20T10:27:47Z
+
+- Checkpoint before this task: `b72104fb runtime: route runtime-cell cow
+  through lvalue handles`.
+- Task attempted: immediate post-2289 COW frontier, migrating helper/callback
+  copied-source alias mirror/import setup to resolve `ArrayCopySource` values
+  through `RuntimeAliasLvalueHandle`s before populating copied locals or
+  callee/helper scopes.
+- Files changed so far: `compiler/src/interpreter.rs`, `docs/PROGRESS.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `git diff --check` passed; bounded
+  `cargo check -q -p phpc` passed; focused `phpc --lib` units
+  `symbol_table_runtime_cell_copy_sources_import_aliases_through_lvalue_handles`
+  and `symbol_table_runtime_cell_copy_sources_rehydrate_through_lvalue_handles`
+  passed; system-PHP comparisons passed for `tests/fixtures/milestone2289`,
+  `tests/fixtures/milestone2288`, and `tests/fixtures/milestone1673c`. Logs
+  are under `.codex-stable/lane2289/`.
+- Remaining COW gaps: broader `Value + ArrayCopySource` transfer, dynamic
+  holder writeback, and untracked containers still rely on legacy path
+  provenance or concrete roots; exact diagnostics, string COW, and native
+  reference/COW lowering remain unsupported.
+- Next concrete task: if the full checkpoint gate passes, continue by
+  migrating dynamic holder writeback or another remaining copied-source
+  propagation consumer to consume runtime lvalue handles directly.
+
 ## Loop Event 2026-05-20T10:18:45Z
 
 - Checkpoint before this task: `5091458c runtime: extract runtime alias lvalue

@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Continued the post-2289 COW frontier by moving helper/callback
+  copied-source alias mirror/import setup onto `RuntimeAliasLvalueHandle`
+  resolution. `SymbolTable` now resolves an `ArrayCopySource` to runtime
+  lvalue handles before mirroring aliases into copied locals or importing
+  aliases into callee/helper scopes, instead of consuming the legacy
+  root-list API at those call sites. Focused unit coverage proves a
+  runtime-cell copy source shared with a visible object-property root imports
+  the descendant alias through the handle path. This is still an internal
+  propagation migration; dynamic holder writeback, broader `Value +
+  ArrayCopySource` transfer, untracked containers, exact diagnostics, string
+  COW, and native reference/COW lowering remain incomplete.
+
 - Continued the post-2289 COW frontier by moving the runtime-cell
   copied-source alias rehydration/overlay path onto
   `RuntimeAliasLvalueHandle`s. `SymbolTable` now resolves
