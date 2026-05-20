@@ -5663,17 +5663,66 @@ impl SymbolTable {
         property: &str,
         keys: &[ArrayKey],
     ) -> HolderStorageMutationBoundary {
-        HolderStorageMutationBoundary {
-            object: object.clone(),
-            property: property.to_string(),
-            keys: keys.to_vec(),
-            identity: RuntimeAliasLvalueHandle {
+        let mut roots = self.public_object_property_alias_roots_for_object(object, property);
+        for object_name in self.object_names_for_id(object.id()) {
+            let root = ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name,
+                property: property.to_string(),
+            };
+            if !roots.contains(&root) {
+                roots.push(root);
+            }
+        }
+        let identity = roots
+            .into_iter()
+            .map(|root| self.runtime_alias_lvalue_handle(root))
+            .find(|handle| handle.cell.is_some())
+            .unwrap_or_else(|| RuntimeAliasLvalueHandle {
                 root: ArrayOffsetAliasRoot::PublicObjectProperty {
                     object: String::new(),
                     property: property.to_string(),
                 },
-                cell: object.existing_initialized_property_reference_cell_named(property),
+                cell: None,
+            });
+
+        HolderStorageMutationBoundary {
+            object: object.clone(),
+            property: property.to_string(),
+            keys: keys.to_vec(),
+            identity,
+        }
+    }
+
+    fn object_property_holder_storage_boundary(
+        &self,
+        object_name: &str,
+        object: &PhpObject,
+        property: &str,
+        keys: &[ArrayKey],
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> HolderStorageMutationBoundary {
+        let root = match object.property_visibility_from_context(
+            property,
+            current_class_id,
+            protected_class_ids,
+        ) {
+            Ok(Visibility::Public) | Err(_) => ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
             },
+            Ok(_) => ArrayOffsetAliasRoot::ContextObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+                current_class_id,
+                protected_class_ids: protected_class_ids.to_vec(),
+            },
+        };
+        HolderStorageMutationBoundary {
+            object: object.clone(),
+            property: property.to_string(),
+            keys: keys.to_vec(),
+            identity: self.runtime_alias_lvalue_handle(root),
         }
     }
 
@@ -6588,8 +6637,9 @@ impl SymbolTable {
                     return RuntimeAliasLvalueHandle { root, cell: None };
                 };
                 object
-                    .bind_property_reference_cell_from_context(property, None, &[])
+                    .existing_property_reference_cell_from_context(property, None, &[])
                     .ok()
+                    .flatten()
             }
             ArrayOffsetAliasRoot::ContextObjectProperty {
                 object,
@@ -6601,12 +6651,13 @@ impl SymbolTable {
                     return RuntimeAliasLvalueHandle { root, cell: None };
                 };
                 object
-                    .bind_property_reference_cell_from_context(
+                    .existing_property_reference_cell_from_context(
                         property,
                         *current_class_id,
                         protected_class_ids,
                     )
                     .ok()
+                    .flatten()
             }
         };
         RuntimeAliasLvalueHandle { root, cell }
@@ -47741,10 +47792,13 @@ impl Interpreter {
             };
 
             let boundary =
-                caller_scope.holder_storage_mutation_boundary_for_object_property(
+                caller_scope.object_property_holder_storage_boundary(
+                    object_name,
                     &object,
                     property,
                     &[],
+                    current_class_id,
+                    &protected_class_ids,
                 );
             caller_scope.pre_replace_holder_storage(&boundary);
             match object.write_property_from_context(
@@ -47919,10 +47973,13 @@ impl Interpreter {
                     .sort_keys_numeric()
                     .map_err(|error| runtime_error(span, error))?;
                 let boundary =
-                    caller_scope.holder_storage_mutation_boundary_for_object_property(
+                    caller_scope.object_property_holder_storage_boundary(
+                        object_name,
                         &object,
                         property,
                         &[],
+                        current_class_id,
+                        &protected_class_ids,
                     );
                 caller_scope.pre_replace_holder_storage(&boundary);
                 object
@@ -48168,12 +48225,15 @@ impl Interpreter {
             ));
         };
         let value = array.next_value();
-        property_array.insert(key, slot);
+        property_array.insert(key.clone(), slot);
         let boundary =
-            caller_scope.holder_storage_mutation_boundary_for_object_property(
+            caller_scope.object_property_holder_storage_boundary(
+                object_name,
                 &object,
                 property,
-                &[],
+                std::slice::from_ref(&key),
+                current_class_id,
+                &protected_class_ids,
             );
         caller_scope.pre_replace_holder_storage(&boundary);
         object
@@ -57801,10 +57861,13 @@ impl Interpreter {
                 let alias_fallbacks =
                     caller_scope.public_object_property_root_alias_fallbacks(object_name, property);
                 let boundary =
-                    caller_scope.holder_storage_mutation_boundary_for_object_property(
+                    caller_scope.object_property_holder_storage_boundary(
+                        object_name,
                         &object_value,
                         property,
                         &[],
+                        current_class_id,
+                        &protected_class_ids,
                     );
                 caller_scope.pre_replace_holder_storage(&boundary);
                 match object_value.write_property_from_context_with_object_type_resolver(
