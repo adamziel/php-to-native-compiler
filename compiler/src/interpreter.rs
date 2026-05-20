@@ -2249,6 +2249,10 @@ impl SymbolTable {
         boundary: &HolderStorageMutationBoundary,
     ) {
         let records = self.array_copy_source_records_replaced_by_holder_storage_boundary(boundary);
+        self.remove_array_copy_source_records(&records);
+    }
+
+    fn remove_array_copy_source_records(&mut self, records: &[ArrayCopySourceRecord]) {
         let stale_static_sources = records
             .iter()
             .filter_map(|record| {

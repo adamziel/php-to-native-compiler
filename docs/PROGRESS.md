@@ -28,6 +28,12 @@ Implemented:
   and runtime cells through one comparison model, so direct object-property,
   alias-root, and runtime-cell sources share a single storage matching path.
 
+- Moved copied-source record removal behind `remove_array_copy_source_records()`.
+  Holder-storage invalidation now asks the resolver for replaced records, then
+  removes clean static, dirty static, source-level dirty, object-property, and
+  array-literal copied-source records through one API instead of owning
+  per-location retention logic at the mutation boundary.
+
 - Continued the post-2289 COW frontier by moving copied-source reference-cell
   scanning and copied-source value reads onto `RuntimeAliasLvalueHandle`
   resolution first. Object-property writes that detach copied-source aliases,
