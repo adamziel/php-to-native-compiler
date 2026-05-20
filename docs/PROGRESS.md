@@ -11,6 +11,13 @@ Implemented:
   clean static, dirty static, object-property, and array-literal records
   instead of rebuilding parallel source lists.
 
+- Tightened dynamic holder mutation boundaries so object-property and alias
+  writes capture the holder property's reference identity before replacement
+  and reuse that same boundary for post-write invalidation. Runtime-cell COW
+  sources that were visible through the old holder storage are now matched
+  through the captured boundary instead of depending on a fresh lookup after
+  the storage has already changed.
+
 - Continued the post-2289 COW frontier by moving copied-source reference-cell
   scanning and copied-source value reads onto `RuntimeAliasLvalueHandle`
   resolution first. Object-property writes that detach copied-source aliases,

@@ -4456,6 +4456,17 @@ impl PhpObject {
         property.existing_reference_cell()
     }
 
+    pub fn existing_initialized_property_reference_cell_named(
+        &self,
+        name: &str,
+    ) -> Option<PhpReferenceCell> {
+        self.properties.borrow().iter().find_map(|property| {
+            (property.name == name && property.initialized)
+                .then(|| property.existing_reference_cell().ok().flatten())
+                .flatten()
+        })
+    }
+
     pub fn bind_property_reference_cell_to_context(
         &self,
         name: &str,

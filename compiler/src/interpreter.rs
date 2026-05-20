@@ -1184,6 +1184,7 @@ struct HolderStorageMutationBoundary {
     object: PhpObject,
     property: String,
     keys: Vec<ArrayKey>,
+    identity: RuntimeAliasLvalueHandle,
 }
 
 impl RuntimeAliasLvalueHandle {
@@ -2211,40 +2212,22 @@ impl SymbolTable {
                 .any(|candidate| self.array_copy_sources_match(candidate, source))
     }
 
-    fn array_copy_source_records_impacted_by_object_property_write(
+    fn array_copy_source_records_replaced_by_holder_storage_boundary(
         &self,
-        object: &PhpObject,
-        property: &str,
-        write_keys: &[ArrayKey],
-    ) -> Vec<(ArrayCopySourceRecord, ArrayCopySourceMutationImpact)> {
+        boundary: &HolderStorageMutationBoundary,
+    ) -> Vec<ArrayCopySourceRecord> {
         self.array_copy_source_records()
             .into_iter()
             .filter_map(|record| {
-                let impact = self.array_copy_source_mutation_impact_for_object_property_write(
-                    &record.source,
-                    object,
-                    property,
-                    write_keys,
-                )?;
-                Some((record, impact))
+                let impact =
+                    self.array_copy_source_mutation_impact_for_holder_storage_boundary(
+                        &record.source,
+                        boundary,
+                    )?;
+                (impact == ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor)
+                    .then_some(record)
             })
             .collect()
-    }
-
-    fn array_copy_source_records_replaced_by_object_property_write(
-        &self,
-        object: &PhpObject,
-        property: &str,
-        write_keys: &[ArrayKey],
-    ) -> Vec<ArrayCopySourceRecord> {
-        self.array_copy_source_records_impacted_by_object_property_write(
-            object, property, write_keys,
-        )
-        .into_iter()
-        .filter_map(|(record, impact)| {
-            (impact == ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor).then_some(record)
-        })
-        .collect()
     }
 
     fn invalidate_array_copy_sources_for_object_property_write(
@@ -2262,13 +2245,7 @@ impl SymbolTable {
         &mut self,
         boundary: &HolderStorageMutationBoundary,
     ) {
-        let object = &boundary.object;
-        let property = &boundary.property;
-        let write_keys = &boundary.keys;
-        let records =
-            self.array_copy_source_records_replaced_by_object_property_write(
-                object, property, write_keys,
-            );
+        let records = self.array_copy_source_records_replaced_by_holder_storage_boundary(boundary);
         let stale_static_sources = records
             .iter()
             .filter_map(|record| {
@@ -2410,13 +2387,8 @@ impl SymbolTable {
         &mut self,
         boundary: &HolderStorageMutationBoundary,
     ) {
-        let object = &boundary.object;
-        let property = &boundary.property;
-        let write_keys = &boundary.keys;
         let mut detached_paths = Vec::new();
-        for record in self.array_copy_source_records_replaced_by_object_property_write(
-            object, property, write_keys,
-        ) {
+        for record in self.array_copy_source_records_replaced_by_holder_storage_boundary(boundary) {
             let source = record.source;
             for (keys, cell) in self.reference_cells_for_array_copy_source(&source) {
                 if !detached_paths.iter().any(
@@ -2432,15 +2404,15 @@ impl SymbolTable {
         if !detached_paths.is_empty() {
             for (keys, cell) in &detached_paths {
                 self.record_detached_object_property_array_offset_cell(
-                    object,
-                    property,
+                    &boundary.object,
+                    &boundary.property,
                     keys,
                     cell.clone(),
                 );
             }
             self.rehydrate_detached_object_property_array_copy_sources(
-                object,
-                property,
+                &boundary.object,
+                &boundary.property,
                 &detached_paths,
             );
         }
@@ -2705,6 +2677,32 @@ impl SymbolTable {
             return Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor);
         }
         if write_keys.starts_with(&source.keys) && write_keys.len() > source.keys.len() {
+            return Some(ArrayCopySourceMutationImpact::ReplacesSelectedChildPath);
+        }
+        None
+    }
+
+    fn array_copy_source_mutation_impact_for_holder_storage_boundary(
+        &self,
+        source: &ArrayCopySource,
+        boundary: &HolderStorageMutationBoundary,
+    ) -> Option<ArrayCopySourceMutationImpact> {
+        let resolved = self.resolved_array_copy_source(source);
+        let matches_boundary = resolved.matches_object_property(
+            self,
+            &boundary.object,
+            &boundary.property,
+        ) || match &source.root {
+            ArrayCopySourceRoot::RuntimeCell(cell) => boundary.identity.shares_reference_with(cell),
+            _ => false,
+        };
+        if !matches_boundary {
+            return None;
+        }
+        if source.keys.starts_with(&boundary.keys) {
+            return Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor);
+        }
+        if boundary.keys.starts_with(&source.keys) && boundary.keys.len() > source.keys.len() {
             return Some(ArrayCopySourceMutationImpact::ReplacesSelectedChildPath);
         }
         None
@@ -5341,7 +5339,7 @@ impl SymbolTable {
             self.reference_cell_for_static_source_with_target_root(source_name, &alias.root)
         };
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
-        self.rehydrate_array_copy_sources_for_object_property_alias_write(&alias.root, &alias.keys);
+        let boundary = self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
         self.materialize_array_offset_alias(&alias, span)?;
         let wrote_alias = if let Some(source_cell) = source_cell {
             self.write_array_offset_alias_reference(&alias, source_cell)
@@ -5354,7 +5352,7 @@ impl SymbolTable {
                 RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
             ));
         }
-        self.invalidate_array_copy_sources_for_object_property_alias_write(&alias.root, &alias.keys);
+        self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
         self.bind_direct_alias_group_to_array_offset_alias(source_name, alias);
         Ok(())
     }
@@ -5385,6 +5383,13 @@ impl SymbolTable {
             object: object.clone(),
             property: property.to_string(),
             keys: keys.to_vec(),
+            identity: RuntimeAliasLvalueHandle {
+                root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: String::new(),
+                    property: property.to_string(),
+                },
+                cell: object.existing_initialized_property_reference_cell_named(property),
+            },
         }
     }
 
@@ -5398,6 +5403,7 @@ impl SymbolTable {
             object,
             property,
             keys: keys.to_vec(),
+            identity: self.runtime_alias_lvalue_handle(root.clone()),
         })
     }
 
@@ -5409,26 +5415,25 @@ impl SymbolTable {
         self.invalidate_array_copy_sources_for_holder_storage_boundary(boundary);
     }
 
-    fn rehydrate_array_copy_sources_for_object_property_alias_write(
+    fn pre_replace_holder_storage_for_alias_write(
         &mut self,
         root: &ArrayOffsetAliasRoot,
         keys: &[ArrayKey],
-    ) {
+    ) -> Option<HolderStorageMutationBoundary> {
         let Some(boundary) = self.holder_storage_mutation_boundary_for_alias(root, keys) else {
-            return;
+            return None;
         };
         self.pre_replace_holder_storage(&boundary);
+        Some(boundary)
     }
 
-    fn invalidate_array_copy_sources_for_object_property_alias_write(
+    fn post_replace_holder_storage_for_alias_write(
         &mut self,
-        root: &ArrayOffsetAliasRoot,
-        keys: &[ArrayKey],
+        boundary: Option<&HolderStorageMutationBoundary>,
     ) {
-        let Some(boundary) = self.holder_storage_mutation_boundary_for_alias(root, keys) else {
-            return;
-        };
-        self.post_replace_holder_storage(&boundary);
+        if let Some(boundary) = boundary {
+            self.post_replace_holder_storage(boundary);
+        }
     }
 
     fn canonical_equivalent_object_property_alias_root(
@@ -5546,7 +5551,7 @@ impl SymbolTable {
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
-        self.rehydrate_array_copy_sources_for_object_property_alias_write(&alias.root, &alias.keys);
+        let boundary = self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
         self.materialize_array_offset_alias(&alias, span)?;
         if !self.write_array_offset_alias(&alias, source_value) {
             return Err(runtime_error(
@@ -5554,7 +5559,7 @@ impl SymbolTable {
                 RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
             ));
         }
-        self.invalidate_array_copy_sources_for_object_property_alias_write(&alias.root, &alias.keys);
+        self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
         self.bind_direct_alias_group_to_array_offset_alias(source_name, alias);
         Ok(())
     }
@@ -6095,7 +6100,7 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&target_alias));
         self.materialize_array_offset_alias(&source_alias, span)?;
-        self.rehydrate_array_copy_sources_for_object_property_alias_write(
+        let boundary = self.pre_replace_holder_storage_for_alias_write(
             &target_alias.root,
             &target_alias.keys,
         );
@@ -6109,12 +6114,7 @@ impl SymbolTable {
                 ),
             ));
         }
-        if let Some(target_alias) = aliases.last() {
-            self.invalidate_array_copy_sources_for_object_property_alias_write(
-                &target_alias.root,
-                &target_alias.keys,
-            );
-        }
+        self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
         self.bind_anonymous_array_offset_alias_group(aliases.clone());
         self.sync_alias_roots(&aliases);
         Ok(())
