@@ -36,6 +36,32 @@ injects this file into every prompt. Each Codex pass should update it with:
   2289 workers, logs under `.codex-stable/lane2289/`, and explicitly avoids
   resuming the old thread and avoids the rustfmt OOM path.
 
+## Loop Event 2026-05-20T12:09:56Z
+
+- Checkpoint before this task: `2de25cd6 runtime: preserve runtime-cell cow
+  sources`.
+- Task attempted: immediate post-2289 COW frontier, initial extraction of
+  visible root resolution into a `SymbolTable` runtime lvalue handle.
+- Files changed so far: `compiler/src/interpreter.rs`, `docs/PROGRESS.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `git diff --check` passed;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 timeout 240 cargo check -q -p phpc`
+  passed; `cargo test -q -p phpc --lib
+  symbol_table_runtime_lvalue_handles_resolve_visible_shared_roots` passed;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2289`
+  passed; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1673c` passed. Logs are under
+  `.codex-stable/lane2289/`.
+- Remaining COW gaps: `Value + ArrayCopySource` propagation still projects
+  handles back to legacy alias roots, helper/callback containers and dynamic
+  holder writeback still rely on path provenance, untracked containers without
+  reachable cells/roots remain unsupported, and exact diagnostics, string COW,
+  and native reference/COW lowering remain unsupported.
+- Next concrete task: migrate one copied-source consumer, preferably
+  runtime-cell source alias import/overlay, to consume the new lvalue handles
+  directly while preserving `milestone2289` and `milestone1673c`.
+
 ## Loop Event 2026-05-20T08:05:00+02:00
 
 - Checkpoint before this task: `52503d2c runtime: preserve direct copied-local

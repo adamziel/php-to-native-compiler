@@ -1173,6 +1173,20 @@ enum ArrayOffsetAliasRoot {
 }
 
 #[derive(Debug, Clone)]
+struct RuntimeAliasLvalueHandle {
+    root: ArrayOffsetAliasRoot,
+    cell: Option<VariableCell>,
+}
+
+impl RuntimeAliasLvalueHandle {
+    fn shares_reference_with(&self, cell: &VariableCell) -> bool {
+        self.cell
+            .as_ref()
+            .is_some_and(|candidate| candidate.shares_reference_with(cell))
+    }
+}
+
+#[derive(Debug, Clone)]
 enum StoredArgumentArrayRoot {
     DirectVariable(String),
     ArrayOffset(ArrayOffsetAlias),
@@ -4464,40 +4478,53 @@ impl SymbolTable {
         &self,
         cell: &VariableCell,
     ) -> Vec<ArrayOffsetAliasRoot> {
-        let mut roots = Vec::new();
+        self.runtime_alias_lvalue_handles_for_reference_cell(cell)
+            .into_iter()
+            .map(|handle| handle.root)
+            .collect()
+    }
+
+    fn runtime_alias_lvalue_handles_for_reference_cell(
+        &self,
+        cell: &VariableCell,
+    ) -> Vec<RuntimeAliasLvalueHandle> {
+        let mut handles = Vec::new();
         for (name, candidate) in self.symbols.borrow().iter() {
             if !name.starts_with('\0') && candidate.shares_reference_with(cell) {
-                roots.push(ArrayOffsetAliasRoot::StaticArray { name: name.clone() });
+                handles.push(RuntimeAliasLvalueHandle {
+                    root: ArrayOffsetAliasRoot::StaticArray { name: name.clone() },
+                    cell: Some(candidate.clone()),
+                });
             }
         }
         if let Some(global_symbols) = &self.global_symbols {
             for (name, candidate) in global_symbols.borrow().iter() {
                 if !name.starts_with('\0') && candidate.shares_reference_with(cell) {
-                    roots.push(ArrayOffsetAliasRoot::GlobalArray { name: name.clone() });
+                    handles.push(RuntimeAliasLvalueHandle {
+                        root: ArrayOffsetAliasRoot::GlobalArray { name: name.clone() },
+                        cell: Some(candidate.clone()),
+                    });
                 }
             }
         }
 
-        for alias in self
+        let alias_roots = self
             .array_offset_aliases
             .values()
             .flat_map(|aliases| aliases.iter())
+            .map(|alias| alias.root.clone())
+            .collect::<Vec<_>>();
+        for root in alias_roots
         {
-            if roots.contains(&alias.root) {
+            if handles.iter().any(|handle| handle.root == root) {
                 continue;
             }
-            let root_alias = ArrayOffsetAlias {
-                root: alias.root.clone(),
-                keys: Vec::new(),
-            };
-            if self
-                .read_array_offset_alias_reference_cell(&root_alias)
-                .is_some_and(|candidate| candidate.shares_reference_with(cell))
-            {
-                roots.push(alias.root.clone());
+            let handle = self.runtime_alias_lvalue_handle(root);
+            if handle.shares_reference_with(cell) {
+                handles.push(handle);
             }
         }
-        roots
+        handles
     }
 
     fn public_object_property_alias_roots_for_object(
@@ -5865,42 +5892,47 @@ impl SymbolTable {
         }
     }
 
+    fn runtime_alias_lvalue_handle(&self, root: ArrayOffsetAliasRoot) -> RuntimeAliasLvalueHandle {
+        let cell = match &root {
+            ArrayOffsetAliasRoot::StaticArray { name } => self.read_cell(name),
+            ArrayOffsetAliasRoot::GlobalArray { name } => {
+                self.global_storage().borrow().get(name).cloned()
+            }
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
+                let Some(Value::Object(object)) = self.read_storage_named(object) else {
+                    return RuntimeAliasLvalueHandle { root, cell: None };
+                };
+                object
+                    .bind_property_reference_cell_from_context(property, None, &[])
+                    .ok()
+            }
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object,
+                property,
+                current_class_id,
+                protected_class_ids,
+            } => {
+                let Some(Value::Object(object)) = self.read_storage_named(object) else {
+                    return RuntimeAliasLvalueHandle { root, cell: None };
+                };
+                object
+                    .bind_property_reference_cell_from_context(
+                        property,
+                        *current_class_id,
+                        protected_class_ids,
+                    )
+                    .ok()
+            }
+        };
+        RuntimeAliasLvalueHandle { root, cell }
+    }
+
     fn read_array_offset_alias_reference_cell(
         &self,
         alias: &ArrayOffsetAlias,
     ) -> Option<VariableCell> {
         if alias.keys.is_empty() {
-            return match &alias.root {
-                ArrayOffsetAliasRoot::StaticArray { name } => self.read_cell(name),
-                ArrayOffsetAliasRoot::GlobalArray { name } => {
-                    self.global_storage().borrow().get(name).cloned()
-                }
-                ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
-                    let Some(Value::Object(object)) = self.read_storage_named(object) else {
-                        return None;
-                    };
-                    object
-                        .bind_property_reference_cell_from_context(property, None, &[])
-                        .ok()
-                }
-                ArrayOffsetAliasRoot::ContextObjectProperty {
-                    object,
-                    property,
-                    current_class_id,
-                    protected_class_ids,
-                } => {
-                    let Some(Value::Object(object)) = self.read_storage_named(object) else {
-                        return None;
-                    };
-                    object
-                        .bind_property_reference_cell_from_context(
-                            property,
-                            *current_class_id,
-                            protected_class_ids,
-                        )
-                        .ok()
-                }
-            };
+            return self.runtime_alias_lvalue_handle(alias.root.clone()).cell;
         }
 
         match self.read_alias_root_value(alias, Span::new(0, 0)).ok()? {
@@ -75953,6 +75985,61 @@ mod tests {
         assert_eq!(
             target.get_slot("property").unwrap().reference_cell_id(),
             Some(property_slot_cell.id())
+        );
+    }
+
+    #[test]
+    fn symbol_table_runtime_lvalue_handles_resolve_visible_shared_roots() {
+        let mut symbols = SymbolTable::new();
+        let span = Span::new(7, 3);
+
+        let mut items = PhpArray::new();
+        items.insert("slot", Value::String("value".to_string()));
+        symbols.write_static("items", Value::Array(items));
+        let source_cell = symbols.read_cell("items").unwrap();
+        symbols.bind_static_to_cell("alias", source_cell.clone());
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+        symbols.write_static("box", Value::Object(object));
+        symbols.array_offset_aliases.insert(
+            "property_alias".to_string(),
+            vec![ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: "box".to_string(),
+                    property: "items".to_string(),
+                },
+                keys: vec![ArrayKey::String("slot".to_string())],
+            }],
+        );
+
+        let roots = symbols
+            .runtime_alias_lvalue_handles_for_reference_cell(&source_cell)
+            .into_iter()
+            .map(|handle| handle.root)
+            .collect::<Vec<_>>();
+
+        assert!(roots.contains(&ArrayOffsetAliasRoot::StaticArray {
+            name: "items".to_string()
+        }));
+        assert!(roots.contains(&ArrayOffsetAliasRoot::StaticArray {
+            name: "alias".to_string()
+        }));
+        assert!(roots.contains(&ArrayOffsetAliasRoot::PublicObjectProperty {
+            object: "box".to_string(),
+            property: "items".to_string()
+        }));
+        assert_eq!(
+            symbols.read_static("alias", span).unwrap(),
+            symbols.read_static("items", span).unwrap()
         );
     }
 

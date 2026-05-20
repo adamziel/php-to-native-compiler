@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Started the next post-2289 COW frontier by extracting visible alias-root
+  resolution into a `SymbolTable` runtime lvalue handle. Static roots, global
+  roots, and visible/context object-property roots now resolve through one
+  `RuntimeAliasLvalueHandle` path before the legacy array-copy-source code
+  projects them back to `ArrayOffsetAliasRoot`s. Focused unit coverage proves
+  the handle discovers multiple visible roots sharing the same runtime
+  `PhpReferenceCell`, and Lane 2289 plus the previous callback-name reuse
+  regression fixture still match system PHP. This is an internal root
+  resolution step only; `Value + ArrayCopySource` propagation, helper/callback
+  containers, dynamic holder writeback, untracked containers, exact
+  diagnostics, string COW, and native reference/COW lowering remain
+  incomplete.
+
 - Added Lane 2289-C for by-value reads from supported reference-return
   user functions and methods. Reference-return values now carry a
   runtime-cell array copy source when the returned binding is a concrete

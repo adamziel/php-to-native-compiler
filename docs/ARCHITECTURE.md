@@ -231,6 +231,12 @@ aliases into real runtime reference cells. This advances the value model away
 from pure path provenance for direct method/global-function returns and
 supported callback dispatch, but it is still bounded to cells and roots the
 interpreter can observe.
+That visible-root resolution now starts through a small
+`SymbolTable` runtime lvalue handle for static, global, and
+visible/context object-property roots. The current callers still project those
+handles back to legacy `ArrayOffsetAliasRoot` paths for copied-source
+propagation; moving `Value + ArrayCopySource` transfer and holder writeback
+onto handles remains a later step.
 
 Parent-bucket replacement is a copied-source invalidation boundary for tracked
 object-property provenance. Before a supported magic/`ArrayAccess` method body

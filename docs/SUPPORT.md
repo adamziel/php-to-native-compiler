@@ -47,7 +47,10 @@
   runtime-cell array copy sources for selected reference-backed descendants,
   including direct method/global-function returns and supported
   `call_user_func()` / zero-argument `call_user_func_array()` callback
-  dispatch, while plain descendants remain detached.
+  dispatch, while plain descendants remain detached. The visible root
+  resolution used by this bridge now begins through a runtime lvalue handle
+  for static, global, and visible/context object-property roots, but copied
+  source propagation still uses the legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,
   visible `__isset()`, direct `ArrayAccess::offsetSet()`,
   `ArrayAccess::offsetUnset()`, and `ArrayAccess::offsetExists()` execute
