@@ -13,6 +13,577 @@ high-impact COW/runtime architecture before easier case-by-case patches. Use
 narrow fixtures to prove the architecture, not as a substitute for it, unless
 a one-off is genuinely the only viable route.
 
+## Loop Event 2026-05-20T14:22:00Z
+
+- Checkpoint before this task: `d2f015c9 runtime: carry copy sources through
+  array merge`.
+- Task attempted: runtime lane handle migration for the next copied-source
+  consumer, moving copied-source reference-cell scanning and copied-source
+  value reads to prefer `RuntimeAliasLvalueHandle` values before bounded
+  fallback source reads.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Focused checks so far: `cargo test -q -p phpc --lib
+  array_copy_source_reference_scan_uses_runtime_lvalue_handles` passed;
+  `cargo check -q -p phpc` passed; `cargo test -q -p phpc --lib
+  runtime_lvalue_handles` passed; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone2294` passed. Commands were run with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`; this host's
+  default umask created non-traversable `target` directories, so the run used
+  `umask 0002` and repaired local target directory execute bits.
+- Remaining COW gaps: broader dynamic holder writeback, untracked containers
+  without reachable handles, unsupported magic/`ArrayAccess` syntax outside
+  the interpreter subset, exact diagnostics/Throwable parity, string COW, and
+  native reference/COW lowering.
+- Follow-up in the same dirty worktree: object-property invalidation and
+  detached-path matching now use resolved `RuntimeAliasLvalueHandle` identity
+  as well, so runtime-cell copied sources visible through a public property
+  are recognized when that property is overwritten. Additional focused checks:
+  `cargo test -q -p phpc --lib
+  array_copy_source_property_detach_checks_use_runtime_lvalue_handles` passed;
+  `cargo check -q -p phpc` passed, with the same constrained environment.
+- Additional continuation in the same dirty worktree: dirty copied-source
+  detection now also matches structurally different roots through runtime
+  lvalue handles, so return-value reference-cell promotion recognizes a
+  runtime-cell source that is the same live public object property as a dirty
+  object-property source. Focused check passed: `cargo test -q -p phpc --lib
+  dirty_array_copy_source_matching_uses_runtime_lvalue_handles`; `cargo check
+  -q -p phpc` also passed with the constrained environment.
+- Additional continuation in the same dirty worktree: static copied-source
+  portability now falls back to dirty copied-source metadata when the clean
+  public-property source map no longer has the local. Focused check passed:
+  `cargo test -q -p phpc --lib
+  portable_static_array_copy_source_uses_dirty_source_metadata`; `cargo check
+  -q -p phpc` also passed with the constrained environment.
+- Additional continuation in the same dirty worktree: alias-group copied-source
+  recovery now uses the same clean-or-dirty static source lookup, so helper and
+  reference-binding paths that recover sources from alias groups do not drop a
+  dirty static source after the clean map is cleared. Focused check passed:
+  `cargo test -q -p phpc --lib
+  alias_group_copy_source_recovery_uses_dirty_source_metadata` with the
+  constrained environment. `git diff --check` and `cargo check -q -p phpc`
+  also passed with the constrained environment.
+- Additional continuation in the same dirty worktree: reference-promotion
+  writes to static copied arrays now preserve dirty-only copied-source metadata
+  via the clean-or-dirty static lookup before rewriting the root. Focused check
+  passed after repairing local `target` permissions with the known umask
+  workaround: `cargo test -q -p phpc --lib
+  reference_promotion_write_preserves_dirty_static_copy_source_metadata` with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`. Follow-up
+  validation passed: `git diff --check` and `cargo check -q -p phpc` with the
+  same constrained environment.
+- Additional continuation in the same dirty worktree: object-property alias
+  sync now snapshots clean-or-dirty static copied-source metadata before
+  rewriting a static alias group and restores the dirty marker afterward, so
+  dirty-only source records survive visible property-root sync. Focused check
+  passed: `cargo test -q -p phpc --lib
+  object_property_alias_sync_preserves_dirty_static_copy_source_metadata` with
+  the constrained environment. Follow-up validation passed: `git diff --check`
+  and `cargo check -q -p phpc` with the same constrained environment.
+- Additional continuation in the same dirty worktree: reference-binding
+  copied-source metadata sync now treats dirty-only local source metadata as
+  present before removing caller metadata, so helper/reference synchronization
+  does not drop a caller source after the callee dirties the imported static
+  record. Focused check passed after one test harness mutability fix:
+  `cargo test -q -p phpc --lib
+  reference_binding_metadata_sync_keeps_dirty_static_copy_source_metadata`
+  with the constrained environment. Follow-up validation passed:
+  `git diff --check` and `cargo check -q -p phpc` with the same constrained
+  environment.
+## Loop Event 2026-05-20T14:52:00+02:00
+
+- Continued the dirty dynamic-holder worktree after the runtime-cell
+  object-property identity, dirty-source equivalence, detached-path guard,
+  compound-assignment, and non-public property identity patches; did not redo
+  those slices.
+- Small adjacent change: direct dynamic-property whole assignment now calls the
+  same runtime-cell/object-property rehydrate and invalidate boundary after the
+  property expression resolves to a tracked holder property. `$box->{$prop} =
+  ...` therefore materializes selected copied leaves before replacing the
+  holder property when the copied source is the matching runtime cell.
+- Files changed in this continuation: `compiler/src/interpreter.rs`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, this memory file, and coordination notes/status.
+- Checks passed with `umask 0007`,
+  `CARGO_TARGET_DIR=/tmp/phpc-lane-dynamic-target`, `CARGO_BUILD_JOBS=1`,
+  `CARGO_INCREMENTAL=0`, and `RUST_TEST_THREADS=1`: focused unit
+  `dynamic_object_property_overwrite_rehydrates_runtime_cell_copy_source`,
+  filtered unit set `runtime_cell_copy_source`, `git diff --check`, and
+  `cargo check -q -p phpc`.
+- Remaining COW gaps: untracked dynamic containers without reachable cells,
+  arbitrary dynamic holder graph writeback, arbitrary array transforms, exact
+  diagnostics/Throwable parity, string COW, and native reference/COW lowering.
+
+## Loop Event 2026-05-20T14:55:00+02:00
+
+- Continued the dirty dynamic-holder worktree after the runtime-cell
+  object-property identity, dirty-source equivalence, detached-path guard, and
+  compound-assignment patches; did not redo those slices.
+- Small adjacent change: runtime-cell/object-property identity matching now
+  compares initialized property reference-cell ids directly instead of asking
+  only for a public-context property cell. Non-public holder properties can
+  therefore use the same bounded overwrite rehydration/invalidation path when
+  the runtime cell is already reachable.
+- Files changed in this continuation: `compiler/src/interpreter.rs`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, this memory file, and coordination notes/status.
+- Checks passed with `umask 0007`,
+  `CARGO_TARGET_DIR=/tmp/phpc-lane-dynamic-target`, `CARGO_BUILD_JOBS=1`,
+  `CARGO_INCREMENTAL=0`, and `RUST_TEST_THREADS=1`: filtered unit
+  `private_runtime_cell_copy_source_matches_holder_property_identity` and
+  filtered unit set `runtime_cell_copy_source`, `git diff --check`, and
+  `cargo check -q -p phpc`.
+- Remaining COW gaps: untracked dynamic containers without reachable cells,
+  arbitrary dynamic holder graph writeback, arbitrary array transforms, exact
+  diagnostics/Throwable parity, string COW, and native reference/COW lowering.
+
+## Loop Event 2026-05-20T14:39:55+02:00
+
+- Continued the dirty dynamic-holder worktree after the runtime-cell
+  object-property identity, dirty-source equivalence, and detached-path guard
+  patches; did not redo those slices.
+- Small adjacent change: direct object-property compound assignment writeback
+  now uses the same object-property copied-source rehydrate/invalidate hooks
+  for whole-property and nested property-array read-modify-write stores. This
+  lets runtime-cell copied sources materialize selected reference leaves before
+  a compound assignment replaces the tracked holder property or selected
+  parent bucket.
+- Files changed in this continuation: `compiler/src/interpreter.rs`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, this memory file, and coordination notes/status.
+- Checks passed with `umask 0007`,
+  `CARGO_TARGET_DIR=/tmp/phpc-lane-dynamic-target`, `CARGO_BUILD_JOBS=1`,
+  `CARGO_INCREMENTAL=0`, and `RUST_TEST_THREADS=1`: filtered unit set
+  `compound_object_property`, filtered unit set `runtime_cell_copy_source`,
+  filtered units `dirtied_runtime_cell_copy_source` and
+  `detached_runtime_cell_copy_source`, `git diff --check`, and
+  `cargo check -q -p phpc`.
+- Remaining COW gaps: untracked dynamic containers without reachable cells,
+  arbitrary dynamic holder graph writeback, arbitrary array transforms, exact
+  diagnostics/Throwable parity, string COW, and native reference/COW lowering.
+
+## Loop Event 2026-05-20T14:34:00+02:00
+
+- Continued the dirty dynamic-holder worktree after the runtime-cell
+  object-property identity and dirty-source equivalence patches; did not redo
+  those slices.
+- Small adjacent change: `array_copy_source_path_was_detached()` now recognizes
+  a `RuntimeCell` copied source when the source path's reference cell matches a
+  recorded detached object-property leaf. This suppresses stale copied-source
+  writeback after the visible property has been rebound away from the old root
+  cell.
+- Files changed in this continuation: `compiler/src/interpreter.rs`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, this memory file, and coordination notes/status.
+- Checks passed with `umask 0007`,
+  `CARGO_TARGET_DIR=/tmp/phpc-lane-dynamic-target`, `CARGO_BUILD_JOBS=1`,
+  `CARGO_INCREMENTAL=0`, and `RUST_TEST_THREADS=1`: filtered unit
+  `detached_runtime_cell_copy_source_path_matches_recorded_detached_leaf`,
+  the prior two focused units
+  `runtime_cell_copy_source_rehydrates_before_shared_object_property_overwrite`
+  and `dirtied_runtime_cell_copy_source_matches_visible_object_property_source`,
+  `git diff --check`, and `cargo check -q -p phpc`.
+- Remaining COW gaps: untracked dynamic containers without reachable cells,
+  arbitrary dynamic holder graph writeback, arbitrary array transforms, exact
+  diagnostics/Throwable parity, string COW, and native reference/COW lowering.
+
+## Loop Event 2026-05-20T14:23:00+02:00
+
+- Checkpoint before this task: `d2f015c9 runtime: carry copy sources through
+  array merge`.
+- Task attempted: dynamic-holder lane after Lane 2294, making
+  object-property overwrite invalidation and detached-copy rehydration
+  recognize `RuntimeCell` copied-source roots that share the overwritten
+  property's runtime cell.
+- Files changed so far: `compiler/src/interpreter.rs`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Focused checks so far, run with `umask 0007`, `CARGO_TARGET_DIR` set to a
+  fresh `/tmp/phpc-lane-dynamic-target`, `CARGO_BUILD_JOBS=1`,
+  `CARGO_INCREMENTAL=0`, and `RUST_TEST_THREADS=1`: filtered unit
+  `runtime_cell_copy_source_rehydrates_before_shared_object_property_overwrite`
+  passed; `cargo check -q -p phpc` passed.
+- Environment note: this session's default `umask` was `0117`, which created
+  non-traversable Cargo target directories. Use `umask 0007` for future Cargo
+  commands in this lane.
+- Remaining COW gaps: untracked dynamic containers without reachable cells,
+  arbitrary dynamic holder graph writeback, arbitrary array transforms, exact
+  diagnostics/Throwable parity, string COW, and native reference/COW lowering.
+
+## Loop Event 2026-05-20T16:30:00+02:00
+
+- Continued dirty worktree task in dynamic-holder lane after the runtime-cell
+  object-property overwrite invalidation/rehydration patch; did not redo that
+  slice.
+- Small adjacent change: dirty copied-source comparison now recognizes an
+  equivalent runtime-cell root and visible object-property/alias root when the
+  runtime cells share identity. This keeps return/promotion decisions aligned
+  with the overwrite rehydration identity bridge.
+- Files changed in this continuation: `compiler/src/interpreter.rs`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, this memory file, and coordination notes/status.
+- Focused checks passed with `umask 0007`,
+  `CARGO_TARGET_DIR=/tmp/phpc-lane-dynamic-target`, `CARGO_BUILD_JOBS=1`,
+  `CARGO_INCREMENTAL=0`, and `RUST_TEST_THREADS=1`: filtered unit
+  `dirtied_runtime_cell_copy_source_matches_visible_object_property_source`;
+  filtered unit
+  `runtime_cell_copy_source_rehydrates_before_shared_object_property_overwrite`;
+  and `cargo check -q -p phpc`.
+- Remaining COW gaps: untracked dynamic containers without reachable cells,
+  arbitrary dynamic holder graph writeback, arbitrary array transforms, exact
+  diagnostics/Throwable parity, string COW, and native reference/COW lowering.
+## Loop Event 2026-05-20T14:49:27+02:00
+
+- Checkpoint before this task: `d2f015c9 runtime: carry copy sources through
+  array merge`.
+- Task attempted: sharpened Lane 2296-C with one adjacent regression proving a
+  reference-return string callback fed by a string-keyed named
+  `array_merge(array("arr" => $copy))` argument container imports
+  literal-transform `call_user_func_array()` copied-source bindings. No
+  compiler code change was needed beyond the existing Lane 2296-C helper
+  threading.
+- Files changed so far: `tests/fixtures/milestone2296/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, coordination
+  notes/status, and this memory file. Existing Lane 2295-C/Lane 2296-C
+  compiler changes remain dirty in this worktree.
+- Focused check so far: `CARGO_TARGET_DIR=/home/claude/tmp-cargo-target-callbacks
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone2296` passed with 4
+  compared fixtures.
+- Remaining COW gaps: unsupported method syntax, untracked containers without
+  reachable cells, broader dynamic holder writeback, arbitrary non-literal
+  array-transform propagation, exact diagnostics/Throwable parity, string COW,
+  and native reference/COW lowering.
+
+## Loop Event 2026-05-20T14:50:00+02:00
+
+- Checkpoint before this task: `d2f015c9 runtime: carry copy sources through
+  array merge`.
+- Task attempted: sharpened Lane 2296-C with one adjacent regression proving a
+  reference-return public object array-callable fed by
+  `array_merge(array($copy))` imports literal-transform
+  `call_user_func_array()` copied-source bindings. No compiler code change was
+  needed beyond the existing Lane 2296-C helper threading.
+- Files changed so far: `tests/fixtures/milestone2296/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, and this memory file. Existing Lane 2295-C/Lane 2296-C
+  compiler changes remain dirty in this worktree.
+- Focused check so far: `CARGO_TARGET_DIR=/home/claude/tmp-cargo-target-callbacks
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone2296` passed with 3
+  compared fixtures.
+- Remaining COW gaps: unsupported method syntax, untracked containers without
+  reachable cells, broader dynamic holder writeback, arbitrary non-literal
+  array-transform propagation, exact diagnostics/Throwable parity, string COW,
+  and native reference/COW lowering.
+
+## Loop Event 2026-05-20T14:44:27+02:00
+
+- Checkpoint before this task: `d2f015c9 runtime: carry copy sources through
+  array merge`.
+- Task attempted: sharpened Lane 2296-C with one adjacent regression proving a
+  reference-return closure callback fed by `array_values(array($copy))` imports
+  the same literal-transform `call_user_func_array()` copied-source bindings.
+  No compiler code change was needed beyond the existing Lane 2296-C helper
+  threading.
+- Files changed so far: `tests/fixtures/milestone2296/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, and this memory file. Existing Lane 2295-C/Lane 2296-C
+  compiler changes remain dirty in this worktree.
+- Focused check so far: `CARGO_TARGET_DIR=/home/claude/tmp-cargo-target-callbacks
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone2296` passed with 2
+  compared fixtures.
+- Remaining COW gaps: unsupported method syntax, untracked containers without
+  reachable cells, broader dynamic holder writeback, arbitrary non-literal
+  array-transform propagation, exact diagnostics/Throwable parity, string COW,
+  and native reference/COW lowering.
+
+## Loop Event 2026-05-20T14:45:00+02:00
+
+- Checkpoint before this task: `d2f015c9 runtime: carry copy sources through
+  array merge`.
+- Task attempted: Lane 2296-C, carrying literal-transform
+  `call_user_func_array()` argument-container copied-source bindings into
+  covered reference-return string callbacks.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2296/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file. Existing Lane 2295-C files remain dirty in this worktree.
+- Focused checks so far: `cargo check -q -p phpc`,
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2295`,
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2296`,
+  and `git diff --check` passed with
+  `CARGO_TARGET_DIR=/home/claude/tmp-cargo-target-callbacks
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1` after creating a
+  fresh alternate target dir and forcing executable directory bits because the
+  shell umask produced non-traversable build-cache directories.
+- Remaining COW gaps: unsupported method syntax, untracked dynamic containers
+  without reachable cells, broader dynamic holder writeback, arbitrary
+  non-literal array-transform propagation, exact diagnostics/Throwable parity,
+  string COW, and native reference/COW lowering.
+
+## Loop Event 2026-05-20T14:27:00+02:00
+
+- Checkpoint before this task: `d2f015c9 runtime: carry copy sources through
+  array merge`.
+- Task attempted: Lane 2295-C, preserving copied-source metadata when
+  supported `array_merge(array($copy), ...)` and `array_values(array($copy))`
+  literal-transform arrays are used directly as `call_user_func_array()`
+  argument containers.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2295/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Focused checks so far: `CARGO_TARGET_DIR=/home/claude/tmp-cargo-target
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo check -q
+  -p phpc` passed; system-PHP comparison for
+  `tests/fixtures/milestone2295` passed, then passed again after adding the
+  direct `array_values(array($copy))` callback-container regression, then
+  passed with a public object array-callable
+  `array_merge(array($copy))` regression. The alternate target dir was used
+  because this lane's repo-local `target/` directories lacked execute
+  permissions.
+- Remaining COW gaps: unsupported method syntax, untracked dynamic containers
+  without reachable cells, broader dynamic holder writeback, arbitrary
+  non-literal array-transform propagation, exact diagnostics/Throwable parity,
+  string COW, and native reference/COW lowering.
+## Loop Event 2026-05-20T14:50:13+02:00
+
+- Task continued: regression/docs lane for the existing four-window COW run.
+  Re-read the required project docs, current dirty worktree, and shared lane
+  notes/status.
+- No new regression fixture was added. The latest adjacent executable surface
+  is callback-owned: Lane 2296-C now includes the string-keyed named
+  `array_merge(array("arr" => $copy))` argument-container regression for
+  reference-return `call_user_func_array()`, and its focused milestone2296
+  compare passed with 4 fixtures in that lane.
+- Refreshed `/home/claude/phpc-4lane-coordination/notes/regress.md` and
+  `/home/claude/phpc-4lane-coordination/status.md` with the updated
+  integration map. Merge order remains runtime, dynamic, callbacks, then
+  regress docs/fixtures; keep milestone2294/2295/2296 compares in the
+  post-merge gate.
+- No tests were run in this lane because this pass changed only coordination
+  notes/memory and did not change executable behavior or fixture content.
+
+## Loop Event 2026-05-20T14:48:20+02:00
+
+- Task continued: regression/docs lane for the existing four-window COW run.
+  Re-read the required project docs, current dirty worktree, and shared lane
+  notes/status before touching coordination files.
+- No new regression fixture was added. The remaining adjacent executable
+  surfaces are still owned by runtime/dynamic helper units or callback
+  milestone2295/2296 fixtures, and another regress fixture would duplicate
+  milestone2294 literal-transform `array_merge` coverage or overlap callback
+  `call_user_func_array()` ownership.
+- Refreshed `/home/claude/phpc-4lane-coordination/notes/regress.md` with the
+  current integration map: runtime now also has
+  `object_property_alias_sync_preserves_dirty_static_copy_source_metadata`;
+  dynamic still owns private/protected RuntimeCell/property identity and
+  compound object-property writes; callbacks owns value/reference-return
+  literal-transform callback imports.
+- Updated `/home/claude/phpc-4lane-coordination/status.md` to keep regress at
+  the stop point. Recommended merge order remains runtime, dynamic, callbacks,
+  then regress docs/fixtures, with milestone2294/2295/2296 compares after
+  integration.
+- No tests were run because this pass changed only coordination notes/memory
+  and no executable behavior or fixture content.
+
+## Loop Event 2026-05-20T14:47:07+02:00
+
+- Task continued: regression/docs lane for the existing four-window COW run.
+  Re-read the current dirty worktree and lane coordination notes.
+- No new regression fixture was added. The remaining adjacent executable
+  surfaces are already covered by runtime's reference-promotion dirty-source
+  preservation unit, dynamic's non-public RuntimeCell/property identity unit,
+  callback milestone2295/2296 literal-transform callback fixtures, or the
+  existing regress milestone2294 integer/string `array_merge` fixtures.
+- Refreshed `/home/claude/phpc-4lane-coordination/notes/regress.md` with the
+  latest integration map: runtime first, dynamic second, callbacks third,
+  regress docs/fixtures last. Preserve runtime's clean-or-dirty static
+  copied-source snapshots and handle-first helpers, dynamic's stricter
+  RuntimeCell/property identity and compound write hooks, and callback's
+  value/reference-return literal-transform source bindings.
+- Updated `/home/claude/phpc-4lane-coordination/status.md` to point at that
+  refreshed stop point.
+- No tests were run because this pass changed only coordination notes/memory
+  and no executable behavior or fixture content.
+
+## Loop Event 2026-05-20T14:45:05+02:00
+
+- Task continued: regression/docs lane for the existing four-window COW run.
+  Re-read the required project docs, dirty worktree, and coordination notes.
+- No new fixture was added. Runtime, dynamic, and callbacks now all report
+  their focused checks passed, and the remaining adjacent executable surfaces
+  are already owned by those lanes or by the existing regress milestone2294
+  fixture.
+- Updated `/home/claude/phpc-4lane-coordination/notes/regress.md` with a
+  stop-point integration map: runtime first, dynamic second, callbacks third,
+  regress docs/fixtures last. Preserve runtime's handle lookup primitive,
+  dynamic's stricter RuntimeCell/object-property identity predicates and
+  compound write hooks, and callback literal-transform source bindings.
+- Updated `/home/claude/phpc-4lane-coordination/status.md` to mark no further
+  safe regression fixture available in this lane without overlapping
+  milestone2294 or callback milestones 2295/2296.
+- No tests were run because this pass changed only coordination notes/memory
+  and no executable behavior or fixture content.
+
+## Loop Event 2026-05-20T14:43:00+02:00
+
+- Task continued: regression/docs lane for the existing four-window COW run.
+  No new fixture was added because the remaining adjacent executable surfaces
+  are already owned by regress milestone2294, callback milestones 2295/2296,
+  or runtime/dynamic focused helper units.
+- Refreshed `/home/claude/phpc-4lane-coordination/notes/regress.md` with the
+  current dirty diff comparison: runtime owns handle-first copied-source
+  matching/read helpers plus dirty static source recovery; dynamic owns
+  stricter RuntimeCell/object-property identity predicates plus compound
+  object-property write hooks; callbacks owns `call_user_func_array()`
+  literal-transform source binding for value-return and reference-return
+  paths.
+- Updated `/home/claude/phpc-4lane-coordination/status.md` to keep regress
+  marked as integration-map/docs/fixture ownership, with no additional safe
+  fixture in this pass.
+- Recommended integration remains runtime first, dynamic second, callbacks
+  third, then regress docs/fixtures. Preserve all focused units and run
+  milestone2294/2295/2296 compares with `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`. Do not run rustfmt/cargo fmt on
+  `compiler/src/interpreter.rs`.
+- No tests were run in this pass because this was coordination-only with no
+  executable behavior or fixture change.
+
+## Loop Event 2026-05-20T14:40:50+02:00
+
+- Task continued: regression/docs lane for the existing four-window COW run.
+  No new fixture was added because the remaining adjacent executable surfaces
+  are already owned by runtime/dynamic focused unit tests or callback lane
+  milestones 2295/2296.
+- Re-inspected the dirty runtime, dynamic, and callback lanes and refreshed
+  `/home/claude/phpc-4lane-coordination/notes/regress.md` with a sharper
+  integration map. Runtime now owns handle-preference copied-source matching
+  plus portable dirty static copied-source metadata; dynamic layers stricter
+  RuntimeCell/object-property identity and compound object-property writeback
+  tests; callbacks owns `call_user_func_array()` literal-transform source
+  binding for value-return and reference-return paths.
+- Recommended merge recipe remains runtime first, dynamic second, callbacks
+  third, then regress docs/fixtures. Keep runtime's handle-backed lookup as
+  the shared primitive, preserve dynamic's stricter identity predicates, adapt
+  callback source-binding call sites after helper names settle, keep all
+  focused units, and do not rustfmt `compiler/src/interpreter.rs`.
+- No tests were run in this pass because this was a coordination-only update
+  with no executable behavior or fixture changes.
+
+## Loop Event 2026-05-20T14:38:57+02:00
+
+- Task continued: regression/docs lane for the existing four-window COW run.
+  No new fixture was added. The callback lane now owns the next adjacent
+  callback regression surface with
+  `tests/fixtures/milestone2296/reference_return_call_user_func_array_merge_args_cow.php`,
+  covering reference-return `call_user_func_array()` over a supported
+  `array_merge(array($copy))` literal-transform argument container.
+- Coordination updated in
+  `/home/claude/phpc-4lane-coordination/notes/regress.md` and
+  `/home/claude/phpc-4lane-coordination/status.md` to include the new
+  milestone2296 callback surface. Runtime/dynamic helper conflicts should
+  still merge first; callback should merge after those helpers settle so its
+  reference-return fast path can adapt to the final source-aware argument
+  evaluator names.
+- Updated post-merge gate: keep the prior cargo check and focused
+  runtime/dynamic unit filters, then run system-PHP comparisons for
+  `tests/fixtures/milestone2294`, `tests/fixtures/milestone2295`, and
+  `tests/fixtures/milestone2296` with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`.
+- No tests were run in this pass because this was a coordination-only update
+  with no executable behavior or fixture changes.
+
+## Loop Event 2026-05-20T14:36:46+02:00
+
+- Task continued: regression/docs lane for the existing four-window COW run.
+  No new fixture was added. The adjacent safe regression space is already
+  covered by Lane 2294 integer/string `array_merge` remap fixtures or by the
+  callback lane's Lane 2295 `call_user_func_array()` literal-transform
+  argument fixtures.
+- Coordination updated in
+  `/home/claude/phpc-4lane-coordination/notes/regress.md` with a more
+  concrete integration map comparing runtime, dynamic, and callback patch
+  surfaces. Runtime owns handle-preference copied-source scans/value reads and
+  dirty/detached predicates; dynamic owns RuntimeCell/object-property identity
+  checks for overwrite invalidation, rehydration, dirty-source matching, and
+  detached-leaf guards; callbacks owns literal-transform argument-container
+  import in `Interpreter::call_user_func_array`.
+- Current merge recommendation remains runtime first, dynamic second,
+  callbacks third, then this regress docs/fixture lane. Preserve dynamic's
+  stricter identity checks while using runtime's handle resolution as the
+  common lookup path, keep both lanes' focused unit tests, and do not run
+  rustfmt/cargo fmt on `compiler/src/interpreter.rs`.
+- No tests were run in this pass because this was a coordination-only update
+  with no executable behavior or fixture changes.
+
+## Loop Event 2026-05-20T14:22:08+02:00
+
+- Checkpoint before this task: `d2f015c9 runtime: carry copy sources through
+  array merge`.
+- Task attempted: regression/docs lane for the four-window COW frontier,
+  adding a narrow integration fixture for multi-operand
+  `array_merge(array($left), array($right))` integer reindexing after
+  expression-literal copied-source remapping.
+- Files changed so far: `tests/fixtures/milestone2294/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, this memory
+  file, and coordination notes/status outside the worktree.
+- Focused checks so far: after fixing the local worktree `target/` directory
+  mode and running under `umask 007`, `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0
+  RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone2294` passed with 4 fixtures compared.
+- Remaining integration risk: runtime-handle, dynamic-holder, and callback
+  container lanes should keep this fixture in their focused gate when they
+  migrate copy-source remapping away from legacy path provenance.
+
+## Loop Event 2026-05-20T14:29:21+02:00
+
+- Task continued: regression/docs lane for the existing four-window COW run.
+  No additional runtime fixture was added because the adjacent safe surface
+  would duplicate the existing Lane 2294 integer-reindex coverage or overlap
+  with the callback lane's Lane 2295-C patch.
+- Integration map recorded in
+  `/home/claude/phpc-4lane-coordination/notes/regress.md`: runtime lane owns
+  copied-source read/reference scans through runtime lvalue handles, dynamic
+  lane owns RuntimeCell object-property overwrite matching/rehydration,
+  callbacks lane owns `call_user_func_array()` literal-transform argument
+  imports.
+- Likely conflicts: shared current-frontier docs across all lanes, plus nearby
+  focused unit-test insertions in `compiler/src/interpreter.rs`; main runtime,
+  dynamic, and callback code helper hunks are otherwise mostly disjoint.
+- Suggested integration gate remains bounded: `cargo check -q -p phpc`,
+  focused runtime/dynamic unit filters, and system-PHP comparisons for
+  `tests/fixtures/milestone2294` plus `tests/fixtures/milestone2295`, all with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`.
+
+## Loop Event 2026-05-20T14:33:25+02:00
+
+- Task continued: regression/docs lane for the existing four-window COW run.
+  Inspected the dirty runtime, dynamic, and callback worktrees directly and
+  refreshed `/home/claude/phpc-4lane-coordination/notes/regress.md` with a
+  concrete integration order: runtime first, dynamic second, callbacks third,
+  then regress docs/fixtures.
+- No additional regression fixture was added. The safe adjacent runtime
+  surfaces are already covered by Lane 2294's integer-reindex and string-key
+  overwrite fixtures or by callback lane Lane 2295's
+  `call_user_func_array()` literal-transform argument fixtures.
+- Current likely conflicts: `compiler/src/interpreter.rs` copied-source
+  object-property matching/rehydration helpers between runtime and dynamic,
+  nearby unit-test insertions at the interpreter test tail, and shared
+  top-of-file/current-frontier docs across all lanes. Callback code remains a
+  distant `Interpreter::call_user_func_array` setup hunk.
+- Suggested gate after integration: `cargo check -q -p phpc`; focused unit
+  filters `array_copy_source_reference_scan_uses_runtime_lvalue_handles`,
+  `array_copy_source_property_detach_checks_use_runtime_lvalue_handles`,
+  `runtime_cell_copy_source_rehydrates_before_shared_object_property_overwrite`,
+  and `dirtied_runtime_cell_copy_source_matches_visible_object_property_source`;
+  then system-PHP comparisons for `tests/fixtures/milestone2294` and
+  `tests/fixtures/milestone2295`, all with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`.
+
 ## Loop Event 2026-05-20T16:00:00+02:00
 
 - Checkpoint before this task: `a3163fa2 runtime: preserve expression literal

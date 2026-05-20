@@ -55,10 +55,47 @@
   Reference-return path promotion, existing-cell lookup, return-cell
   rehydration, copied-array alias mirroring, and helper/callee alias writeback
   plus copied-source mirror-path promotion also resolve through those handles
+  before building bounded alias paths. Copied-source reference-cell scanning
+  for detach rehydration and copied-source value reads for reference-cell
+  overlays also try those live handles first, falling back only for roots that
+  still have no reachable handle. Object-property invalidation and
+  detached-path matching also resolve copied-source handles before deciding
+  whether a runtime-cell source is the public property being overwritten.
+  Dirty copied-source detection for return-value reference-cell promotion also
+  matches runtime-cell and object-property sources through those handles.
+  Static copied-source metadata exported across call scopes also consults
+  dirty copied-source records before giving up on a portable object-property
+  source, and alias-group copied-source recovery uses the same dirty static
+  metadata after the clean source map has been cleared. Reference-promotion
+  writes to static copied arrays preserve that dirty-only source metadata while
+  rewriting the static root, and object-property alias syncs preserve the same
+  dirty-only metadata while rewriting a static alias group. Reference-binding
+  metadata sync also treats dirty-only local copied-source metadata as a live
+  imported source before deciding whether to remove caller metadata.
+  Runtime-cell handle discovery also includes initialized public object
+  properties that already share the same reference cell, even when no
+  array-offset alias has been recorded below that property.
+  For supported visible `__get()` and public
   before building bounded alias paths. Runtime-cell handle discovery also
   includes initialized public object properties that already share the same
   reference cell, even when no array-offset alias has been recorded below that
-  property. For supported visible `__get()` and public
+  property. Object-property overwrite invalidation and detached-copy
+  rehydration also recognize runtime-cell copied sources that share the same
+  initialized property reference cell, including non-public properties when the
+  runtime cell is already reachable, so selected reference-backed leaves can be
+  materialized in copied arrays before that holder property is replaced. Dirty
+  copied-source
+  comparison also treats the equivalent runtime-cell and visible
+  object-property roots as the same source for covered return/promotion paths,
+  and detached-source writeback guards recognize runtime-cell sources whose
+  selected recorded detached leaf still shares the same reference cell after
+  the visible property has been rebound. Direct object-property compound
+  assignments use the same bounded hooks for whole-property and nested
+  property-array read-modify-write stores, and direct dynamic-property whole
+  assignments use them when the evaluated property name selects the same tracked
+  holder property.
+  For supported visible
+  `__get()` and public
   `ArrayAccess::offsetGet()` bodies, method-local copies of tracked
   object-property arrays also keep their copy-source provenance across later
   nested writes to the source container; those descendant writes detach the
@@ -83,6 +120,22 @@
   `array_merge(array(...), ...)` wrappers, including integer-key reindexing
   and string-key overwrite cases, for copied arrays from supported magic
   `__get()` and public `ArrayAccess::offsetGet()` bodies.
+  Broader dynamic holder writeback and untracked containers without reachable
+  cells still use the legacy bounded alias-root model.
+  `__get()` and public `ArrayAccess::offsetGet()` bodies. When supported
+  `array_merge(array($copy), ...)` or `array_values(array($copy))`
+  literal-transform arrays are used directly as the `call_user_func_array()`
+  argument container, the interpreter also imports the per-entry copied-source
+  metadata into non-reference string user-function and public object
+  array-callable user-method parameters so returned copied buckets keep
+  selected reference-backed leaves shared. Reference-return string, closure,
+  and public object array-callable callbacks also carry those by-value
+  copied-source bindings into the callee frame for covered visible magic
+  `__get()` paths, including string-keyed named argument containers for
+  covered string callbacks, so returning a selected copied leaf can promote
+  the original reference-backed source.
+  across multiple operands and string-key overwrite cases, for copied arrays
+  from supported magic `__get()` and public `ArrayAccess::offsetGet()` bodies.
   Broader dynamic holder writeback and untracked containers still use the
   legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,
@@ -203,7 +256,11 @@
   replaces that tracked object-property parent bucket, stale copied-source
   aliases detach to the pre-replacement reference cell. The returned or stored
   copy keeps selected reference leaves attached to that old cell, while the
-  replacement bucket remains independent.
+  replacement bucket remains independent. Direct object-property compound
+  assignments over the same tracked public property and nested property-array
+  paths, plus direct dynamic-property whole assignments whose evaluated
+  property name selects that tracked property, participate in that same bounded
+  detach/rehydrate model.
   By-value method returns of copied object-property buckets also promote
   proven copied-source reference leaves before the value leaves the callee
   frame. This covers supported normal methods, visible `__get()`, and public

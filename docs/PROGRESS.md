@@ -4,6 +4,104 @@
 
 Implemented:
 
+- Continued the post-2289 COW frontier by moving copied-source reference-cell
+  scanning and copied-source value reads onto `RuntimeAliasLvalueHandle`
+  resolution first. Object-property writes that detach copied-source aliases,
+  plus reference-cell overlays used while cloning copied arrays, now ask
+  `SymbolTable` for live runtime lvalue handles before falling back to the
+  legacy direct source read for still-untracked roots. The related
+  object-property invalidation and detached-path checks also match
+  copied-source roots through resolved handles, so a runtime-cell copy source
+  visible through a public property is treated as the property being
+  overwritten. Dirty copied-source detection for return-value reference-cell
+  promotion now uses the same handle identity match instead of requiring
+  structurally identical roots. Portable copied-source export from a static
+  local also consults dirty copied-source metadata, so call-scope transfer does
+  not drop a source after the clean public-property map has been cleared.
+  Alias-group copied-source recovery also consults that dirty static metadata,
+  so helper/reference binding paths that recover a source through an alias
+  group do not lose it after the clean map is cleared. Reference-promotion
+  writes to static copied arrays preserve the same dirty-only source metadata,
+  so promoting a local root through the runtime lvalue write path does not
+  erase the copied-source record. Object-property alias syncs now use the same
+  clean-or-dirty snapshot before rewriting an alias group, so syncing a visible
+  property root back through a static alias does not erase dirty-only
+  copied-source metadata. Reference-binding metadata sync now treats dirty-only
+  local copied-source metadata as still present, so by-reference helper
+  synchronization does not remove the caller's source record after the callee
+  has already moved the imported source into the dirty set.
+  Focused unit coverage proves a runtime-cell copy source visible through a
+  public object-property handle exposes nested reference cells through the
+  handle path, participates in detach matching, matches dirty object-property
+  source state, keeps dirty static source metadata portable, and recovers dirty
+  static source metadata through an alias group, a reference-promotion write,
+  an object-property alias sync, and reference-binding metadata sync. This
+  remains an internal propagation migration; broader dynamic holder writeback,
+  untracked
+  containers, exact diagnostics, string COW, and native reference/COW lowering
+  remain incomplete.
+- Continued the post-2294 dynamic-holder frontier by recognizing
+  `RuntimeCell` copied-source roots as matching an object property when the
+  runtime property cell is the same reference cell. Object-property overwrite
+  invalidation and detached-copy rehydration now share that identity check, so
+  copied arrays sourced from a runtime cell can materialize selected
+  reference-backed leaves before a shared holder property is replaced. Dirty
+  copied-source comparison now uses the same runtime-cell/object-property
+  identity bridge, so a source dirtied under one root form is recognized when a
+  later return or promotion sees the equivalent visible property root. Detached
+  source-path checks also recognize a runtime-cell source when the recorded
+  detached leaf still shares the same reference cell, preventing stale
+  copied-source writeback after the visible property has been rebound. Direct
+  object-property compound assignments now use the same rehydrate/invalidate
+  hooks for whole-property and nested property-array writes, so runtime-cell
+  copied sources materialize selected leaves before those read-modify-write
+  stores replace the source container. The runtime-cell/property identity
+  bridge now checks initialized property reference-cell identity directly, so
+  non-public holder properties with a reachable runtime cell can use the same
+  bounded overwrite rehydration/invalidation path. Direct dynamic-property
+  whole assignments now route through that same boundary when the evaluated
+  property name selects the tracked holder property. Focused unit coverage proves
+  copied leaf rehydration before overwrite, private-property identity matching,
+  dirty-source equivalence, detached-path matching, direct dynamic-property
+  overwrite, and both compound property write paths for the runtime-cell source.
+  Broader untracked containers without reachable cells, arbitrary dynamic
+  holder graph writeback, exact diagnostics, string COW, and native
+  reference/COW lowering remain incomplete.
+
+- Added Lane 2296-C for reference-return `call_user_func_array()` callbacks
+  that receive expression-position literal-transform argument containers.
+  Reference-return callback setup now carries the by-value copied-source
+  bindings produced from supported `array_merge(array($copy), ...)` and
+  sibling literal-transform argument arrays into the reference-return callee
+  frame, so returning a selected copied leaf can promote the original
+  reference-backed source instead of falling back to a detached local offset.
+  Focused system-PHP fixtures prove the visible magic `__get()` path through
+  string, closure, and public object array-callable callbacks, plus a
+  string-keyed named argument container for a string callback. Unsupported
+  method syntax, untracked containers without reachable cells, arbitrary
+  non-literal array transforms, exact diagnostics, string COW, and native
+  reference/COW lowering remain incomplete.
+
+- Added Lane 2295-C for expression-position literal-transform argument
+  containers passed to `call_user_func_array()`. Supported
+  `array_merge(array($copy), ...)` and `array_values(array($copy))` argument
+  arrays now preserve per-entry copied-source metadata instead of falling
+  through to value-only callback setup, so non-reference user callbacks can
+  return copied magic `__get()` or public `ArrayAccess::offsetGet()` buckets
+  while keeping selected reference-backed leaves shared. Focused system-PHP
+  fixtures prove string user callbacks and public object array-callable
+  callbacks across the magic and ArrayAccess paths. Unsupported method syntax,
+  untracked containers without reachable cells, arbitrary non-literal array
+  transforms, exact diagnostics, string COW, and native reference/COW lowering
+  remain incomplete.
+- Sharpened the Lane 2294-C regression set with a multi-operand
+  `array_merge(array($left), array($right))` wrapper whose selected returned
+  slot is reached after integer-key reindexing. The fixture proves the
+  right-hand copied source keeps its selected reference-backed leaf while the
+  left-hand source remains unchanged, giving the other COW lanes a narrow
+  integration target for handle-based copy-source remapping. Focused
+  system-PHP comparison for `tests/fixtures/milestone2294` passed.
+
 - Added Lane 2294-C for copied-source metadata through supported
   array-transform wrappers that rebuild arrays from expression-position array
   literals. The `array_values(array(...))` path is now implemented through a

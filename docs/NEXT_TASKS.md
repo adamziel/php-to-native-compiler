@@ -221,6 +221,18 @@ handled.
 - [x] Lane 2294-C: generalize literal-array transform copied-source remapping
   to assigned `array_merge(array(...), ...)` wrappers, including integer-key
   reindexing and string-key overwrite guards.
+- [x] Lane 2295-C: carry expression-position
+  `array_merge(array($copy), ...)` and `array_values(array($copy))`
+  literal-transform argument-container copied-source metadata into
+  `call_user_func_array()` string user-function and public object
+  array-callable user-method setup, preserving selected reference-backed
+  leaves for supported magic `__get()` and public `ArrayAccess::offsetGet()`
+  copied buckets.
+- [x] Lane 2296-C: carry those literal-transform argument-container
+  copied-source bindings into covered reference-return
+  `call_user_func_array()` string, closure, and public object array-callable
+  callbacks, so selected returned leaves can promote the original
+  reference-backed source.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model by extracting root resolution into a
   runtime-backed alias/lvalue handle under `SymbolTable`, then migrating
@@ -235,9 +247,36 @@ handled.
   setup now consume those handles directly. Reference-return path promotion,
   existing-cell lookup, return-cell rehydration, alias mirroring, and
   helper/callee array-copy-source alias writeback plus copied-source
+  mirror-path promotion now consume handles too. Copied-source reference-cell
+  scanning and copied-source value reads now also prefer runtime lvalue handles
+  before bounded fallback reads, and object-property invalidation/detached-path
+  checks plus dirty copied-source detection now match runtime-cell copied
+  sources through those handles. Static copied-source portability across call
+  scopes and alias-group copied-source recovery also consult dirty copied-source
+  metadata before dropping a source, and reference-promotion writes now
+  preserve dirty-only static copied-source metadata while rewriting the static
+  root. Object-property alias syncs preserve the same dirty-only metadata while
+  rewriting static alias groups, and reference-binding metadata sync treats
+  dirty-only local metadata as a still-present imported source before removing
+  caller metadata.
+  Runtime-cell handle discovery now includes initialized public object
+  properties sharing the same reference cell without requiring pre-seeded
+  array-offset alias metadata. Descendant
   mirror-path promotion now consume handles too. Runtime-cell handle discovery
   now includes initialized public object properties sharing the same reference
-  cell without requiring pre-seeded array-offset alias metadata. Descendant
+  cell without requiring pre-seeded array-offset alias metadata, and
+  object-property overwrite invalidation/rehydration now recognizes
+  runtime-cell sources that share an initialized property reference cell,
+  including non-public holder properties when the runtime cell is already
+  reachable; dirty copied-source matching also recognizes equivalent
+  runtime-cell and visible
+  object-property roots for covered return/promotion decisions; detached-path
+  writeback guards recognize runtime-cell sources when the recorded detached
+  leaf still shares the same reference cell. Direct object-property compound
+  assignment whole-property and nested property-array writes now use the same
+  bounded rehydrate/invalidate boundary, as do direct dynamic-property whole
+  assignments once the property expression resolves to the tracked holder
+  property. Descendant
   writes to a source container no longer erase whole-copy provenance for
   supported magic/`ArrayAccess` method-local copies, and reference-return
   calls plus mixed by-reference/by-value helpers now keep executed by-value
@@ -245,7 +284,16 @@ handled.
   with by-reference visible object-property slots and expression literal /
   supported `array_values()`/`array_merge()` wrappers. This task stays open
   until broader dynamic holder writeback and untracked container propagation
-  consume handles directly.
+  consume handles directly. Integration checks should include the
+  `milestone2294/magic_array_merge_integer_reindex_cow.php` fixture so
+  handle-backed remapping preserves the selected right-hand copied source
+  after integer-key reindexing while leaving the left-hand source detached.
+  Current four-lane integration risk is concentrated in shared docs and nearby
+  focused unit-test insertions: runtime handle reads/scans, dynamic
+  RuntimeCell object-property overwrite matching, and callback
+  `call_user_func_array()` literal-transform imports touch mostly disjoint
+  interpreter helper blocks, but their progress/support/next-task bullets
+  must be reconciled without dropping unsupported-gap wording.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

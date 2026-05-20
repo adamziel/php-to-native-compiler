@@ -184,6 +184,19 @@ to the same copied source onto the source reference cell. This keeps direct
 holders, visible `__get()` bodies, and public `ArrayAccess::offsetGet()`
 bodies in the same COW model without claiming arbitrary `ArrayAccess` method
 side effects.
+Expression-position argument containers produced by the supported
+literal-transform evaluator, currently including
+`array_values(array($copy))` and `array_merge(array($copy), ...)`, can also
+feed per-entry copied-source metadata into `call_user_func_array()` user
+callback setup, including public object array-callable user methods. The same
+entry-source mapping is also preserved for covered reference-return string and
+closure callbacks and public object array-callable callbacks, where by-value
+copied-source bindings are imported into the callee frame before selected
+returned leaves are promoted. Covered string-keyed named argument containers
+use the same parameter-name mapping before importing those bindings. This path
+is still bounded to literal array-transform inputs whose entries can be mapped
+to callback positions or parameter names; arbitrary transformed arrays and
+untracked dynamic containers remain outside the model.
 
 The method signature gate has a separate syntax-only path for COW-relevant
 magic and `ArrayAccess` dispatch. Ordinary functions accept untyped metadata
@@ -241,11 +254,44 @@ before populating copied locals or callee scopes. Reference-return path
 promotion, existing-cell lookup, return-cell rehydration, copied-array alias
 mirroring, helper/callee alias writeback, and copied-source mirror-path
 promotion also resolve through handles before building the concrete alias path
-needed for a specific operation. Runtime-cell handle discovery includes
+needed for a specific operation. Copied-source reference-cell scans and
+copied-source value reads also prefer live handle values before using the
+bounded fallback for roots that still cannot expose a handle. Object-property
+invalidation and detached-path rehydration checks use the same handle-based
+property identity match for runtime-cell copied sources, and dirty
+copied-source detection uses that same runtime lvalue identity when deciding
+whether a returned copied array needs reference-cell promotion. Exporting a
+static copied source across scopes consults dirty copied-source metadata as
+well as the clean public-property source map before deciding that no portable
+object-property source remains, and alias-group copied-source recovery uses
+the same clean-or-dirty static lookup. Reference-promotion writes to static
+copied arrays also preserve dirty-only copied-source metadata while rewriting
+the root array, and object-property alias syncs preserve the same dirty-only
+metadata while rewriting static alias groups. Reference-binding metadata sync
+uses the same clean-or-dirty lookup before removing caller-side copied-source
+metadata. Runtime-cell handle discovery includes
 initialized public object-property cells that share the same reference, so a
 visible property root does not need pre-existing array-offset alias metadata
 before it can participate in these handle-based copied-source operations.
-Broader dynamic holder writeback and untracked containers remain later steps.
+The object-property overwrite path uses the same runtime-cell/property-cell
+identity match before invalidating copied-source metadata or rehydrating
+detached copied arrays, so runtime-cell sources reachable through a shared
+holder property can preserve selected reference leaves before that property is
+replaced. That match is based on initialized property reference-cell identity
+rather than public-context lookup, so non-public holder properties can
+participate when the runtime cell is already known. Direct object-property
+compound assignment routes whole-property and nested property-array
+read-modify-write stores through that same rehydrate/invalidate boundary, and
+direct dynamic-property whole assignment uses it after the property expression
+resolves to the tracked holder property. Dirty copied-source comparisons use
+that same reachable-cell bridge
+when one side is a runtime cell and the other side is the equivalent visible
+object-property or alias root, so return/promotion decisions do not depend on
+which root spelling recorded the dirty source. Detached copied-source writeback
+guards also compare a runtime-cell source's selected leaf with recorded
+detached leaf cells, so stale writeback is suppressed even after the visible
+property has been rebound away from the old root cell. Broader dynamic holder
+writeback and untracked containers without reachable cells remain later steps.
 
 Parent-bucket replacement is a copied-source invalidation boundary for tracked
 object-property provenance. Before a supported magic/`ArrayAccess` method body
