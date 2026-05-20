@@ -91,6 +91,8 @@
   initialized property reference cell, including non-public properties when the
   runtime cell is already reachable, so selected reference-backed leaves can be
   materialized in copied arrays before that holder property is replaced. Dirty
+  materialized in copied arrays before that holder property is replaced or
+  unset. Dirty
   copied-source
   comparison also treats the equivalent runtime-cell and visible
   object-property roots as the same source for covered return/promotion paths,
@@ -101,6 +103,10 @@
   property-array read-modify-write stores, and direct dynamic-property whole
   assignments use them when the evaluated property name selects the same tracked
   holder property.
+  property-array read-modify-write stores, direct dynamic-property whole
+  assignments, nested object-property array unsets, and object-property
+  array-offset reference assignments use them when the evaluated property name
+  selects the same tracked holder property.
   For supported visible
   `__get()` and public
   `ArrayAccess::offsetGet()` bodies, method-local copies of tracked
@@ -268,6 +274,10 @@
   paths, plus direct dynamic-property whole assignments whose evaluated
   property name selects that tracked property, participate in that same bounded
   detach/rehydrate model.
+  paths, direct dynamic-property whole assignments whose evaluated property
+  name selects that tracked property, nested object-property array unsets, and
+  object-property array-offset reference assignments participate in that same
+  bounded detach/rehydrate model.
   By-value method returns of copied object-property buckets also promote
   proven copied-source reference leaves before the value leaves the callee
   frame. This covers supported normal methods, visible `__get()`, and public

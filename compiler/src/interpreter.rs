@@ -5199,6 +5199,7 @@ impl SymbolTable {
             self.reference_cell_for_static_source_with_target_root(source_name, &alias.root)
         };
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
+        self.rehydrate_array_copy_sources_for_object_property_alias_write(&alias.root, &alias.keys);
         self.materialize_array_offset_alias(&alias, span)?;
         let wrote_alias = if let Some(source_cell) = source_cell {
             self.write_array_offset_alias_reference(&alias, source_cell)
@@ -5211,8 +5212,47 @@ impl SymbolTable {
                 RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
             ));
         }
+        self.invalidate_array_copy_sources_for_object_property_alias_write(&alias.root, &alias.keys);
         self.bind_direct_alias_group_to_array_offset_alias(source_name, alias);
         Ok(())
+    }
+
+    fn object_property_alias_target(
+        &self,
+        root: &ArrayOffsetAliasRoot,
+    ) -> Option<(PhpObject, String)> {
+        match root {
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+            | ArrayOffsetAliasRoot::ContextObjectProperty {
+                object, property, ..
+            } => match self.read_storage_named(object) {
+                Some(Value::Object(object)) => Some((object, property.clone())),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn rehydrate_array_copy_sources_for_object_property_alias_write(
+        &mut self,
+        root: &ArrayOffsetAliasRoot,
+        keys: &[ArrayKey],
+    ) {
+        let Some((object, property)) = self.object_property_alias_target(root) else {
+            return;
+        };
+        self.rehydrate_array_copy_sources_for_object_property_write(&object, &property, keys);
+    }
+
+    fn invalidate_array_copy_sources_for_object_property_alias_write(
+        &mut self,
+        root: &ArrayOffsetAliasRoot,
+        keys: &[ArrayKey],
+    ) {
+        let Some((object, property)) = self.object_property_alias_target(root) else {
+            return;
+        };
+        self.invalidate_array_copy_sources_for_object_property_write(&object, &property, keys);
     }
 
     fn canonical_equivalent_object_property_alias_root(
@@ -5330,6 +5370,7 @@ impl SymbolTable {
 
         let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&alias));
+        self.rehydrate_array_copy_sources_for_object_property_alias_write(&alias.root, &alias.keys);
         self.materialize_array_offset_alias(&alias, span)?;
         if !self.write_array_offset_alias(&alias, source_value) {
             return Err(runtime_error(
@@ -5337,6 +5378,7 @@ impl SymbolTable {
                 RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
             ));
         }
+        self.invalidate_array_copy_sources_for_object_property_alias_write(&alias.root, &alias.keys);
         self.bind_direct_alias_group_to_array_offset_alias(source_name, alias);
         Ok(())
     }
@@ -5877,6 +5919,10 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&target_alias));
         self.materialize_array_offset_alias(&source_alias, span)?;
+        self.rehydrate_array_copy_sources_for_object_property_alias_write(
+            &target_alias.root,
+            &target_alias.keys,
+        );
         self.materialize_array_offset_alias(&target_alias, span)?;
         let aliases = vec![source_alias, target_alias];
         if !self.write_array_offset_aliases(&aliases, value) {
@@ -5886,6 +5932,12 @@ impl SymbolTable {
                     "cannot bind array-offset reference source".to_string(),
                 ),
             ));
+        }
+        if let Some(target_alias) = aliases.last() {
+            self.invalidate_array_copy_sources_for_object_property_alias_write(
+                &target_alias.root,
+                &target_alias.keys,
+            );
         }
         self.bind_anonymous_array_offset_alias_group(aliases.clone());
         self.sync_alias_roots(&aliases);
@@ -12763,10 +12815,12 @@ impl Interpreter {
 
         let alias_fallbacks =
             scope.public_object_property_root_alias_fallbacks(object_name, property);
+        scope.rehydrate_array_copy_sources_for_object_property_write(&object, property, &[]);
         let found = object
             .unset_property_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(span, error))?;
         if found {
+            scope.invalidate_array_copy_sources_for_object_property_write(&object, property, &[]);
             scope.remove_public_object_property_root_from_array_offset_aliases(
                 object_name,
                 property,
@@ -13055,6 +13109,9 @@ impl Interpreter {
                         keys: keys.clone(),
                     },
                 ];
+                scope.rehydrate_array_copy_sources_for_object_property_write(
+                    &object, property, &keys,
+                );
                 scope.detach_array_offset_aliases_for_unset_paths(&unset_paths);
                 Self::unset_nested_array_value(array, &keys, span)?;
                 object
@@ -13064,7 +13121,12 @@ impl Interpreter {
                         current_class_id,
                         &protected_class_ids,
                     )
-                    .map_err(|error| runtime_error(span, error))
+                    .map_err(|error| runtime_error(span, error))?;
+                scope.invalidate_array_copy_sources_for_object_property_write(
+                    &object, property, &keys,
+                );
+                scope.sync_array_offset_aliases_for_object_property_root(object_name, property);
+                Ok(())
             }
             Value::Object(object)
                 if self
@@ -78089,6 +78151,142 @@ mod tests {
                     items: Vec::new(),
                     span: Span::new(1, 1),
                 },
+                &mut scope,
+            )
+            .unwrap();
+
+        let Value::Array(copy) = scope.read_static("copy", Span::new(1, 1)).unwrap() else {
+            panic!("expected copied array");
+        };
+        let copied_leaf_cell = copy
+            .get_slot(leaf_key)
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected copied leaf reference cell");
+
+        assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
+        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+    }
+
+    #[test]
+    fn dynamic_object_property_nested_unset_rehydrates_runtime_cell_copy_source() {
+        let branch_key = ArrayKey::String("branch".to_string());
+        let leaf_key = ArrayKey::String("leaf".to_string());
+        let leaf_cell = PhpReferenceCell::new(Value::String("old".to_string()));
+        let mut source_branch = PhpArray::new();
+        source_branch.insert_reference(leaf_key.clone(), leaf_cell.clone());
+        let mut source_items = PhpArray::new();
+        source_items.insert(branch_key.clone(), Value::Array(source_branch));
+        let source_cell = PhpReferenceCell::new(Value::Array(source_items));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        let mut copied_branch = PhpArray::new();
+        copied_branch.insert(leaf_key.clone(), Value::String("copy".to_string()));
+
+        let mut scope = SymbolTable::new();
+        scope.write_static("box", Value::Object(object));
+        scope.write_static("copy", Value::Array(copied_branch));
+        scope.write_static("prop", Value::String("items".to_string()));
+        scope.record_public_object_property_array_copy_source(
+            "copy",
+            ArrayCopySource::runtime_cell(source_cell, vec![branch_key], true),
+        );
+
+        let mut interpreter = Interpreter::from_program(
+            &Program {
+                statements: Vec::new(),
+            },
+            None,
+            RunOptions::default(),
+        )
+        .unwrap();
+        interpreter
+            .execute_unset_dynamic_object_property_nested_array_index(
+                "box",
+                &Expr::Variable("prop".to_string(), Span::new(1, 1)),
+                &[Expr::String("branch".to_string(), Span::new(1, 1))],
+                Span::new(1, 1),
+                &mut scope,
+            )
+            .unwrap();
+
+        let Value::Array(copy) = scope.read_static("copy", Span::new(1, 1)).unwrap() else {
+            panic!("expected copied array");
+        };
+        let copied_leaf_cell = copy
+            .get_slot(leaf_key)
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected copied leaf reference cell");
+
+        assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
+        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+    }
+
+    #[test]
+    fn dynamic_object_property_reference_assignment_rehydrates_runtime_cell_copy_source() {
+        let branch_key = ArrayKey::String("branch".to_string());
+        let leaf_key = ArrayKey::String("leaf".to_string());
+        let leaf_cell = PhpReferenceCell::new(Value::String("old".to_string()));
+        let mut source_branch = PhpArray::new();
+        source_branch.insert_reference(leaf_key.clone(), leaf_cell.clone());
+        let mut source_items = PhpArray::new();
+        source_items.insert(branch_key.clone(), Value::Array(source_branch));
+        let source_cell = PhpReferenceCell::new(Value::Array(source_items));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        let mut copied_branch = PhpArray::new();
+        copied_branch.insert(leaf_key.clone(), Value::String("copy".to_string()));
+
+        let mut scope = SymbolTable::new();
+        scope.write_static("box", Value::Object(object));
+        scope.write_static("copy", Value::Array(copied_branch));
+        scope.write_static("prop", Value::String("items".to_string()));
+        scope.write_static("replacement", Value::String("new".to_string()));
+        scope.record_public_object_property_array_copy_source(
+            "copy",
+            ArrayCopySource::runtime_cell(source_cell, vec![branch_key.clone()], true),
+        );
+
+        let mut interpreter = Interpreter::from_program(
+            &Program {
+                statements: Vec::new(),
+            },
+            None,
+            RunOptions::default(),
+        )
+        .unwrap();
+        interpreter
+            .execute_reference_assignment(
+                &AssignTarget::DynamicObjectPropertyArrayIndex {
+                    object: "box".to_string(),
+                    property: Expr::Variable("prop".to_string(), Span::new(1, 1)),
+                    indices: vec![Expr::String("branch".to_string(), Span::new(1, 1))],
+                    span: Span::new(1, 1),
+                },
+                &ReferenceSource::Variable {
+                    name: "replacement".to_string(),
+                    span: Span::new(1, 1),
+                },
+                Span::new(1, 1),
                 &mut scope,
             )
             .unwrap();

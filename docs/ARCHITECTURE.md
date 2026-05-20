@@ -291,6 +291,17 @@ read-modify-write stores through that same rehydrate/invalidate boundary, and
 direct dynamic-property whole assignment uses it after the property expression
 resolves to the tracked holder property. Dirty copied-source comparisons use
 that same reachable-cell bridge
+replaced or unset. That match is based on initialized property reference-cell
+identity rather than public-context lookup, so non-public holder properties can
+participate when the runtime cell is already known. Direct object-property
+compound assignment routes whole-property and nested property-array
+read-modify-write stores through that same rehydrate/invalidate boundary, and
+direct dynamic-property whole assignment and nested object-property array unset
+use it after the property expression resolves to the tracked holder property.
+Object-property array-offset reference assignment now routes alias writes
+through that same keyed boundary, including dynamic-property spellings once
+the property expression resolves to the tracked holder property.
+Dirty copied-source comparisons use that same reachable-cell bridge
 when one side is a runtime cell and the other side is the equivalent visible
 object-property or alias root, so return/promotion decisions do not depend on
 which root spelling recorded the dirty source. Detached copied-source writeback

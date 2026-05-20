@@ -76,6 +76,18 @@ Implemented:
   copied leaf rehydration before overwrite, private-property identity matching,
   dirty-source equivalence, detached-path matching, direct dynamic-property
   overwrite, and both compound property write paths for the runtime-cell source.
+  whole assignments and whole-property unsets now route through that same
+  boundary when the evaluated property name selects the tracked holder
+  property, and nested object-property array unsets use the keyed boundary
+  after resolving static or dynamic property names. Object-property
+  array-offset reference assignment now runs alias writes through the same
+  keyed boundary, including dynamic-property spellings that resolve to the
+  tracked holder property. Focused unit coverage proves
+  copied leaf rehydration before overwrite, private-property identity matching,
+  dirty-source equivalence, detached-path matching, direct dynamic-property
+  overwrite, dynamic-property nested unset, dynamic-property nested reference
+  assignment, and both compound property write paths for the runtime-cell
+  source.
   Broader untracked containers without reachable cells, arbitrary dynamic
   holder graph writeback, exact diagnostics, string COW, and native
   reference/COW lowering remain incomplete.
