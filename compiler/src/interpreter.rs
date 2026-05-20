@@ -1758,9 +1758,9 @@ impl SymbolTable {
             };
             let mut source_keys = source.keys.clone();
             source_keys.extend(alias.keys.iter().cloned());
-            for source_root in self.array_copy_source_roots(&source) {
+            for source_handle in self.runtime_alias_lvalue_handles_for_array_copy_source(&source) {
                 let source_alias = ArrayOffsetAlias {
-                    root: source_root,
+                    root: source_handle.root,
                     keys: source_keys.clone(),
                 };
                 if matches!(
@@ -4462,34 +4462,6 @@ impl SymbolTable {
         }
 
         Value::Array(array)
-    }
-
-    fn array_copy_source_roots(&self, source: &ArrayCopySource) -> Vec<ArrayOffsetAliasRoot> {
-        match &source.root {
-            ArrayCopySourceRoot::ObjectProperty { object, property } => {
-                self.public_object_property_alias_roots_for_object(object, property)
-            }
-            ArrayCopySourceRoot::AliasPath(root @ ArrayOffsetAliasRoot::GlobalArray { name }) => {
-                vec![
-                    root.clone(),
-                    ArrayOffsetAliasRoot::StaticArray { name: name.clone() },
-                ]
-            }
-            ArrayCopySourceRoot::AliasPath(root) => vec![root.clone()],
-            ArrayCopySourceRoot::RuntimeCell(cell) => {
-                self.array_copy_source_roots_for_reference_cell(cell)
-            }
-        }
-    }
-
-    fn array_copy_source_roots_for_reference_cell(
-        &self,
-        cell: &VariableCell,
-    ) -> Vec<ArrayOffsetAliasRoot> {
-        self.runtime_alias_lvalue_handles_for_reference_cell(cell)
-            .into_iter()
-            .map(|handle| handle.root)
-            .collect()
     }
 
     fn runtime_alias_lvalue_handles_for_array_copy_source(
@@ -18701,9 +18673,9 @@ impl Interpreter {
         let mut keys = source.keys.clone();
         keys.extend(suffix_keys.iter().cloned());
 
-        for root in scope.array_copy_source_roots(source) {
+        for handle in scope.runtime_alias_lvalue_handles_for_array_copy_source(source) {
             let alias = ArrayOffsetAlias {
-                root,
+                root: handle.root,
                 keys: keys.clone(),
             };
             let aliases = scope
@@ -18787,9 +18759,9 @@ impl Interpreter {
         let mut keys = source.keys.clone();
         keys.extend(suffix_keys.iter().cloned());
 
-        for root in scope.array_copy_source_roots(source) {
+        for handle in scope.runtime_alias_lvalue_handles_for_array_copy_source(source) {
             let alias = ArrayOffsetAlias {
-                root,
+                root: handle.root,
                 keys: keys.clone(),
             };
             if let Some(cell) = scope.read_array_offset_alias_reference_cell(&alias) {
@@ -18861,13 +18833,13 @@ impl Interpreter {
         };
 
         let mut relative_paths = Vec::new();
-        for source_root in scope.array_copy_source_roots(source) {
+        for source_handle in scope.runtime_alias_lvalue_handles_for_array_copy_source(source) {
             for alias in scope
                 .array_offset_aliases
                 .values()
                 .flat_map(|aliases| aliases.iter())
             {
-                if alias.root != source_root
+                if alias.root != source_handle.root
                     || !alias.keys.starts_with(source.keys.as_slice())
                     || alias.keys.len() <= source.keys.len()
                 {
@@ -23416,11 +23388,11 @@ impl Interpreter {
         source: &ArrayCopySource,
         scope: &mut SymbolTable,
     ) {
-        for source_root in scope.array_copy_source_roots(source) {
+        for source_handle in scope.runtime_alias_lvalue_handles_for_array_copy_source(source) {
             scope.mirror_array_offset_aliases_from_path_copy_to_alias_root(
                 target_root.clone(),
                 target_keys,
-                &source_root,
+                &source_handle.root,
                 &source.keys,
                 source.include_exact_path,
             );
@@ -52604,14 +52576,16 @@ impl Interpreter {
                 };
                 let Some(value) = value else { continue };
 
-                for source_root in caller_scope.array_copy_source_roots(source) {
+                for source_handle in
+                    caller_scope.runtime_alias_lvalue_handles_for_array_copy_source(source)
+                {
                     let mut source_keys = source.keys.clone();
                     source_keys.extend(local_alias.keys[local_prefix_keys.len()..].iter().cloned());
                     if local_scope.array_copy_source_path_was_detached(source, &source_keys) {
                         continue;
                     }
                     let source_alias = ArrayOffsetAlias {
-                        root: source_root,
+                        root: source_handle.root,
                         keys: source_keys,
                     };
                     let Some(caller_aliases) = caller_scope
@@ -76181,6 +76155,80 @@ mod tests {
             .array_offset_aliases
             .get("property_alias")
             .is_some_and(|aliases| aliases.contains(&expected)));
+    }
+
+    #[test]
+    fn array_copy_source_writeback_uses_runtime_lvalue_handles() {
+        let mut interpreter = Interpreter::from_program(
+            &Program {
+                statements: Vec::new(),
+            },
+            None,
+            RunOptions::default(),
+        )
+        .unwrap();
+        let span = Span::new(7, 3);
+        let slot_key = ArrayKey::String("slot".to_string());
+
+        let mut source_items = PhpArray::new();
+        source_items.insert(slot_key.clone(), Value::String("old".to_string()));
+        let source_cell = PhpReferenceCell::new(Value::Array(source_items));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        let mut caller_scope = SymbolTable::new();
+        caller_scope.write_static("box", Value::Object(object.clone()));
+        let source_alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: "box".to_string(),
+                property: "items".to_string(),
+            },
+            keys: vec![slot_key.clone()],
+        };
+        caller_scope
+            .array_offset_aliases
+            .insert("source_slot".to_string(), vec![source_alias]);
+
+        let mut local_items = PhpArray::new();
+        local_items.insert(slot_key.clone(), Value::String("new".to_string()));
+        let mut local_scope = SymbolTable::new();
+        local_scope.write_static("param", Value::Array(local_items));
+        let local_alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: "param".to_string(),
+            },
+            keys: vec![slot_key.clone()],
+        };
+        local_scope
+            .array_offset_aliases
+            .insert("param_slot".to_string(), vec![local_alias.clone()]);
+
+        let source = ArrayCopySource::runtime_cell(source_cell, Vec::new(), true);
+        interpreter
+            .write_back_array_copy_source_aliases(
+                &[("param".to_string(), Vec::new(), source, vec![local_alias])],
+                &local_scope,
+                &mut caller_scope,
+                span,
+            )
+            .unwrap();
+
+        let Value::Array(property_items) = object.read_public_property("items").unwrap() else {
+            panic!("expected property array");
+        };
+        assert_eq!(
+            property_items.get_cloned(slot_key),
+            Some(Value::String("new".to_string()))
+        );
     }
 
     #[test]

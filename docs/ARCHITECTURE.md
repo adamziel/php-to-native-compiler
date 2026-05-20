@@ -237,10 +237,11 @@ visible/context object-property roots. Runtime-cell copied-source alias
 rehydration and reference-cell overlay now consume those handles directly when
 matching descendant aliases, and helper/callback copied-source alias
 mirror/import setup now resolves `ArrayCopySource` values to those handles
-before populating copied locals or callee scopes. Other copied-source transfer
-and holder writeback callers still project handles back to legacy
-`ArrayOffsetAliasRoot` paths; moving the rest of `Value + ArrayCopySource`
-propagation onto handles remains a later step.
+before populating copied locals or callee scopes. Reference-return path
+promotion, existing-cell lookup, return-cell rehydration, copied-array alias
+mirroring, and helper/callee alias writeback also resolve through handles
+before building the concrete alias path needed for a specific operation.
+Broader dynamic holder writeback and untracked containers remain later steps.
 
 Parent-bucket replacement is a copied-source invalidation boundary for tracked
 object-property provenance. Before a supported magic/`ArrayAccess` method body

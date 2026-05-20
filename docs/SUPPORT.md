@@ -52,8 +52,11 @@
   for static, global, and visible/context object-property roots, and
   runtime-cell copied-source alias rehydration/overlay plus helper/callback
   copied-source alias mirror/import setup consume those handles directly.
-  Broader copied-source transfer and holder writeback still use the legacy
-  bounded alias-root model.
+  Reference-return path promotion, existing-cell lookup, return-cell
+  rehydration, copied-array alias mirroring, and helper/callee alias writeback
+  also resolve through those handles before building bounded alias paths.
+  Broader dynamic holder writeback and untracked containers still use the
+  legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,
   visible `__isset()`, direct `ArrayAccess::offsetSet()`,
   `ArrayAccess::offsetUnset()`, and `ArrayAccess::offsetExists()` execute

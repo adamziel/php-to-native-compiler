@@ -36,6 +36,102 @@ injects this file into every prompt. Each Codex pass should update it with:
   2289 workers, logs under `.codex-stable/lane2289/`, and explicitly avoids
   resuming the old thread and avoids the rustfmt OOM path.
 
+## Loop Event 2026-05-20T10:43:20Z
+
+- Checkpoint before this task: `e34cff8f runtime: import copied-source aliases
+  through handles`.
+- Task continued: Lane 2289 runtime-cell copy-source handle migration and
+  checkpoint readiness. The separate dirty operational prompt-script edit in
+  `tools/codex-lane2289-stable.sh` was isolated with
+  `git stash push -m lane2289-stable-runner-operational-edit --
+  tools/codex-lane2289-stable.sh` so `tools/checkpoint.sh` can stage only the
+  compiler/docs Lane 2289 patch.
+- Focused checks rerun under the bounded stable-lane discipline:
+  `git diff --check`; `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo check -q
+  -p phpc`; `cargo test -q -p phpc --lib
+  array_copy_source_writeback_uses_runtime_lvalue_handles`;
+  `cargo test -q -p phpc --lib runtime_lvalue_handles`; and
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone2289`. All passed, with logs under
+  `.codex-stable/lane2289/`.
+- Remaining COW gaps are unchanged: broader dynamic holder writeback,
+  untracked containers, exact diagnostics, string COW, and native
+  reference/COW lowering remain unsupported.
+- Next concrete task for this worker: run
+  `tools/checkpoint.sh "runtime: resolve copied-source handles for writeback"`
+  after this note is recorded; after checkpoint, restore or separately handle
+  the stashed operational runner edit if it is still wanted.
+
+## Loop Event 2026-05-20T12:38:00+02:00
+
+- Operator instruction: use four coordinated work lanes in each fresh worker
+  prompt while keeping heavyweight commands serialized under the no-OOM
+  discipline.
+- The four lanes are runtime behavior slice, regression tests/fixtures,
+  docs/support/next-task updates, and focused/full gate validation.
+- This does not mean `CARGO_BUILD_JOBS=4`; keep `CARGO_BUILD_JOBS=1` for
+  heavyweight Rust checks on this 9 GiB/no-swap VM.
+
+## Loop Event 2026-05-20T10:38:36Z
+
+- Checkpoint before this task: `e34cff8f runtime: import copied-source aliases
+  through handles`.
+- Task continued: Lane 2289 runtime-cell copy-source handle migration and
+  checkpoint readiness verification. The code/docs patch from the previous
+  worker was left intact; `tools/codex-lane2289-stable.sh` is a separate dirty
+  operational-prompt edit and not part of the compiler behavior patch.
+- Focused checks rerun under the stable lane discipline:
+  `git diff --check`; bounded `cargo check -q -p phpc`; focused `phpc --lib`
+  unit filters `array_copy_source_writeback_uses_runtime_lvalue_handles` and
+  `runtime_lvalue_handles`; and system-PHP comparisons for
+  `tests/fixtures/milestone2289`, `tests/fixtures/milestone2288`, and
+  `tests/fixtures/milestone1673c`. All passed, with logs under
+  `.codex-stable/lane2289/worker-20260520T103836Z-*`.
+- Full gate run manually, not through checkpoint, with
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1
+  tools/run-tests.sh`; it passed. Summary: `cargo test` passed, `phpc test`
+  reported 2383 passed/0 failed, and `phpc test --compare-php` reported 2383
+  passed/0 failed with 1671 system-PHP comparisons and 712 phpc-only skips.
+- `tools/checkpoint.sh` was not run because it unconditionally performs
+  `git add -A`, which would include the unrelated dirty
+  `tools/codex-lane2289-stable.sh` prompt-script edit. The compiler/docs Lane
+  2289 patch is full-gate clean, but checkpointing needs that operational file
+  either accepted as in-scope or isolated outside the commit first.
+- Next concrete task: decide whether to include or separately handle the
+  stable-runner prompt edit, then run
+  `tools/checkpoint.sh "runtime: resolve copied-source handles for writeback"`
+  or equivalent. After checkpoint, continue the open COW frontier with broader
+  dynamic holder writeback or untracked-container propagation through runtime
+  lvalue handles.
+
+## Loop Event 2026-05-20T10:33:54Z
+
+- Checkpoint before this task: `e34cff8f runtime: import copied-source aliases
+  through handles`.
+- Task attempted: immediate post-2289 COW frontier, migrating the remaining
+  `array_copy_source_roots` consumers for reference-return path promotion,
+  existing-cell lookup, return-cell rehydration, alias mirroring, and
+  helper/callee array-copy-source alias writeback to consume
+  `RuntimeAliasLvalueHandle` resolution directly.
+- Files changed so far: `compiler/src/interpreter.rs`, `GOAL.MD`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and this memory file.
+- Tests run so far: `git diff --check` passed; bounded
+  `cargo check -q -p phpc` passed; focused `phpc --lib` units
+  `array_copy_source_writeback_uses_runtime_lvalue_handles` and
+  `runtime_lvalue_handles` passed; system-PHP comparisons passed for
+  `tests/fixtures/milestone2289`, `tests/fixtures/milestone2288`, and
+  `tests/fixtures/milestone1673c`. Logs are under
+  `.codex-stable/lane2289/`.
+- Remaining COW gaps: broader dynamic holder writeback and untracked
+  containers still rely on legacy path provenance or concrete roots; exact
+  diagnostics, string COW, and native reference/COW lowering remain
+  unsupported.
+- Next concrete task: run the full checkpoint gate if desired; otherwise
+  continue by migrating dynamic holder writeback or another remaining
+  copied-source propagation consumer to consume runtime lvalue handles
+  directly.
+
 ## Loop Event 2026-05-20T10:27:47Z
 
 - Checkpoint before this task: `b72104fb runtime: route runtime-cell cow

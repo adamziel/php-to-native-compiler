@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Continued the post-2289 COW frontier by moving the remaining
+  array-copy-source root iteration sites for reference-return path promotion,
+  existing-cell lookup, return-cell rehydration, alias mirroring, and
+  helper/callee array-copy-source alias writeback onto
+  `RuntimeAliasLvalueHandle` resolution. The legacy root-list projection helper
+  is gone; these consumers now ask `SymbolTable` for runtime lvalue handles and
+  then build the concrete alias path they need at the point of use. Focused
+  unit coverage proves array-copy-source writeback reaches a runtime-cell
+  source through a visible object-property handle, and the Lane 2289
+  system-PHP comparison remains stable. This is still an internal propagation
+  migration; broader dynamic holder writeback, untracked containers, exact
+  diagnostics, string COW, and native reference/COW lowering remain
+  incomplete.
+
 - Continued the post-2289 COW frontier by moving helper/callback
   copied-source alias mirror/import setup onto `RuntimeAliasLvalueHandle`
   resolution. `SymbolTable` now resolves an `ArrayCopySource` to runtime

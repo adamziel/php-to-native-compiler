@@ -43,9 +43,15 @@ The current in-progress implementation frontier is Lane 2289:
   method-local aliases to returned object properties, global function returns,
   `call_user_func()` array method callbacks, and zero-argument
   `call_user_func_array()` function callbacks. This is still bounded to
-  covered reference-return execution and observable cells/roots; arbitrary
-  magic/`ArrayAccess` side effects, untracked containers, exact diagnostics,
-  string COW, and native reference/COW lowering remain unsupported.
+  covered reference-return execution and observable cells/roots. The
+  post-2289 migration is moving copied-source propagation from root-only
+  provenance toward `RuntimeAliasLvalueHandle` resolution; runtime-cell
+  rehydration/overlay, helper/callback mirror/import setup, reference-return
+  path promotion, return-cell rehydration, alias mirroring, and helper/callee
+  alias writeback now consume handles directly. Broader dynamic holder
+  writeback, arbitrary magic/`ArrayAccess` side effects, untracked containers,
+  exact diagnostics, string COW, and native reference/COW lowering remain
+  unsupported.
 
 - Lane 2288 preserves direct copied-local reference returns in supported
   magic `__get()` and public `ArrayAccess::offsetGet()` bodies. It covers
