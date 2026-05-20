@@ -42966,6 +42966,103 @@ impl Interpreter {
         bindings
     }
 
+    fn evaluate_call_user_func_array_call_frame_bindings(
+        &mut self,
+        function: &FunctionDecl,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        include_reference_params: bool,
+    ) -> CompileResult<CallFrameArgumentBindings> {
+        if let Some((values, array_copy_source_bindings, by_value_array_copy_bindings)) =
+            self.evaluate_call_user_func_array_argument_with_array_copy_sources(
+                function,
+                argument_expr,
+                span,
+                caller_scope,
+            )?
+        {
+            let reference_bindings = if include_reference_params {
+                Self::reference_bindings_for_call_frame_array_copy_sources(
+                    function,
+                    &values,
+                    &array_copy_source_bindings,
+                )
+            } else {
+                Vec::new()
+            };
+            let frame = CallFrameArgumentBindings {
+                values,
+                reference_bindings,
+                array_copy_source_bindings,
+                by_value_array_copy_bindings,
+            };
+            self.emit_call_frame_value_reference_parameter_warnings(function, &frame, span)?;
+            return Ok(frame);
+        }
+
+        let (values, reference_bindings) = self.evaluate_call_user_func_array_checked_arguments(
+            function,
+            argument_expr,
+            span,
+            caller_scope,
+        )?;
+        let array_copy_source_bindings =
+            Self::array_copy_source_bindings_for_reference_bindings(
+                &reference_bindings,
+                caller_scope,
+            )
+            .into_iter()
+            .chain(
+                self.call_user_func_array_by_value_copy_source_bindings_for_argument(
+                    function,
+                    argument_expr,
+                    caller_scope,
+                )?,
+            )
+            .collect();
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
+                function,
+                argument_expr,
+            )
+            .into_iter()
+            .chain(
+                Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
+                    function,
+                    argument_expr,
+                ),
+            )
+            .collect();
+
+        Ok(CallFrameArgumentBindings {
+            values,
+            reference_bindings,
+            array_copy_source_bindings,
+            by_value_array_copy_bindings,
+        })
+    }
+
+    fn emit_call_frame_value_reference_parameter_warnings(
+        &mut self,
+        function: &FunctionDecl,
+        frame: &CallFrameArgumentBindings,
+        span: Span,
+    ) -> CompileResult<()> {
+        if !frame.reference_bindings.iter().any(|binding| {
+            matches!(
+                binding.target,
+                ReferenceBindingTarget::ValueCopy
+                    | ReferenceBindingTarget::ValueWithArrayCopySource { .. }
+                    | ReferenceBindingTarget::ValueWithArrayCopySourceAtPath { .. }
+            )
+        }) {
+            return Ok(());
+        }
+
+        self.emit_call_user_func_reference_parameter_warnings(function, frame.values.len(), span)
+    }
+
     fn call_user_func_array_user_function_with_array_copy_source(
         &mut self,
         function: Rc<FunctionDecl>,
@@ -42975,238 +43072,70 @@ impl Interpreter {
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let function_ref = function.as_ref();
         if function_ref.returns_by_reference {
-            if let Some((values, reference_bindings, source_bindings)) = self
-                .evaluate_call_user_func_array_reference_return_value_arguments(
-                    function_ref,
-                    argument_expr,
-                    span,
-                    caller_scope,
-                )?
-            {
-                ensure_supported_reference_return_function_metadata(function_ref, span)?;
-                self.ensure_user_function_call_depth(function_ref, span)?;
-                return self
-                    .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
-                        function_ref,
-                        values,
-                        None,
-                        None,
-                        None,
-                        reference_bindings,
-                        caller_scope,
-                        source_bindings,
-                    );
-            }
-
-            if Self::function_accepts_source_aware_by_value_arguments(function_ref) {
-                let maybe_source_aware_values = if let Expr::Array { items, .. } = argument_expr {
-                    if Self::literal_call_user_func_array_can_preserve_copy_sources(items) {
-                        ensure_user_function_arity(function_ref, items.len(), span)?;
-                        Some(
-                            self.evaluate_literal_call_user_func_array_value_arguments_with_array_copy_sources(
-                                function_ref,
-                                items,
-                                span,
-                                caller_scope,
-                                false,
-                            )?,
-                        )
-                    } else {
-                        None
-                    }
-                } else if let Some(values) = self
-                    .evaluate_stored_call_user_func_array_value_arguments_with_array_copy_sources(
-                        function_ref,
-                        argument_expr,
-                        span,
-                        caller_scope,
-                        false,
-                    )?
-                {
-                    Some(values)
-                } else {
-                    self.evaluate_general_call_user_func_array_value_arguments_with_array_copy_sources(
-                        function_ref,
-                        argument_expr,
-                        span,
-                        caller_scope,
-                        false,
-                    )?
-                };
-
-                if let Some((values, by_value_array_copy_source_bindings)) =
-                    maybe_source_aware_values
-                {
-                    ensure_supported_reference_return_function_metadata(function_ref, span)?;
-                    self.ensure_user_function_call_depth(function_ref, span)?;
-                    return self
-                        .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
-                            function_ref,
-                            values,
-                            None,
-                            None,
-                            None,
-                            Vec::new(),
-                            caller_scope,
-                            by_value_array_copy_source_bindings,
-                        );
-                }
-            }
-
-            let (values, reference_bindings) = self
-                .evaluate_call_user_func_array_checked_arguments(
-                    function_ref,
-                    argument_expr,
-                    span,
-                    caller_scope,
-                )?;
-            let by_value_array_copy_source_bindings =
-                Self::array_copy_source_bindings_for_reference_bindings(
-                    &reference_bindings,
-                    caller_scope,
-                )
-                .into_iter()
-                .chain(
-                    self.call_user_func_array_by_value_copy_source_bindings_for_argument(
-                        function_ref,
-                        argument_expr,
-                        caller_scope,
-                    )?,
-                )
-                .collect();
+            let frame = self.evaluate_call_user_func_array_call_frame_bindings(
+                function_ref,
+                argument_expr,
+                span,
+                caller_scope,
+                true,
+            )?;
             self.ensure_user_function_call_depth(function_ref, span)?;
             return self
                 .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
                     function_ref,
-                    values,
+                    frame.values,
                     None,
                     None,
                     None,
-                    reference_bindings,
+                    frame.reference_bindings,
                     caller_scope,
-                    by_value_array_copy_source_bindings,
+                    frame.array_copy_source_bindings,
                 );
         }
         if !Self::function_accepts_source_aware_by_value_arguments(function_ref) {
-            let (values, reference_bindings) = self
-                .evaluate_call_user_func_array_checked_arguments(
-                    function_ref,
-                    argument_expr,
-                    span,
-                    caller_scope,
-                )?;
-            let by_value_array_copy_source_bindings =
-                Self::array_copy_source_bindings_for_reference_bindings(
-                    &reference_bindings,
-                    caller_scope,
-                )
-                .into_iter()
-                .chain(
-                    self.call_user_func_array_by_value_copy_source_bindings_for_argument(
-                        function_ref,
-                        argument_expr,
-                        caller_scope,
-                    )?,
-                )
-                .collect();
-            let by_value_array_copy_bindings =
-                Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
-                    function_ref,
-                    argument_expr,
-                )
-                .into_iter()
-                .chain(
-                    Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
-                        function_ref,
-                        argument_expr,
-                    ),
-                )
-                .collect();
+            let frame = self.evaluate_call_user_func_array_call_frame_bindings(
+                function_ref,
+                argument_expr,
+                span,
+                caller_scope,
+                true,
+            )?;
             self.ensure_user_function_call_depth(function_ref, span)?;
             return self
                 .call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
                     function_ref,
-                    values,
+                    frame.values,
                     None,
                     None,
                     None,
-                    reference_bindings,
+                    frame.reference_bindings,
                     Some(caller_scope),
                     Vec::new(),
-                    by_value_array_copy_bindings,
-                    by_value_array_copy_source_bindings,
+                    frame.by_value_array_copy_bindings,
+                    frame.array_copy_source_bindings,
                 );
         }
-        let Expr::Array { items, .. } = argument_expr else {
-            if let Some((values, by_value_array_copy_source_bindings)) = self
-                .evaluate_stored_call_user_func_array_value_arguments_with_array_copy_sources(
-                    function_ref,
-                    argument_expr,
-                    span,
-                    caller_scope,
-                    false,
-                )?
-            {
-                ensure_supported_function_metadata(function_ref, span)?;
-                self.ensure_user_function_call_depth(function_ref, span)?;
-                let by_value_array_copy_bindings =
-                    Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
-                        function_ref,
-                        argument_expr,
-                    );
-                return self
-                    .call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
-                        function_ref,
-                        values,
-                        None,
-                        None,
-                        None,
-                        Vec::new(),
-                        Some(caller_scope),
-                        Vec::new(),
-                        by_value_array_copy_bindings,
-                        by_value_array_copy_source_bindings,
-                    );
-            }
-            return self
-                .call_user_func_array_user_function(function, argument_expr, span, caller_scope)
-                .map(|value| (value, None));
-        };
-        if !Self::literal_call_user_func_array_can_preserve_copy_sources(items) {
-            return self
-                .call_user_func_array_user_function(function, argument_expr, span, caller_scope)
-                .map(|value| (value, None));
-        }
-
-        ensure_user_function_arity(function_ref, items.len(), span)?;
         ensure_supported_function_metadata(function_ref, span)?;
+        let frame = self.evaluate_call_user_func_array_call_frame_bindings(
+            function_ref,
+            argument_expr,
+            span,
+            caller_scope,
+            false,
+        )?;
         self.ensure_user_function_call_depth(function_ref, span)?;
-
-        let (values, by_value_array_copy_source_bindings) = self
-            .evaluate_literal_call_user_func_array_value_arguments_with_array_copy_sources(
-                function_ref,
-                items,
-                span,
-                caller_scope,
-                false,
-            )?;
-        let by_value_array_copy_bindings =
-            Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
-                function_ref,
-                argument_expr,
-            );
 
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function_ref,
-            values,
+            frame.values,
             None,
             None,
             None,
-            Vec::new(),
+            frame.reference_bindings,
             Some(caller_scope),
             Vec::new(),
-            by_value_array_copy_bindings,
-            by_value_array_copy_source_bindings,
+            frame.by_value_array_copy_bindings,
+            frame.array_copy_source_bindings,
         )
     }
 
