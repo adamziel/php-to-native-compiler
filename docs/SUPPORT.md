@@ -82,6 +82,15 @@
   dirty-aware metadata path, and reference-binding source-list recovery also
   consults dirty-only static copied-source metadata for plain caller-cell
   bindings.
+  bindings. Assignment-expression result source recovery and direct
+  value-expression source recovery also use that clean-or-dirty metadata path,
+  and nested-write parent-replacement checks treat dirty-only copied-source
+  metadata as live before retaining or invalidating the source record.
+  Unchanged-source snapshots around holder evaluation and detached
+  object-property source rehydration also use the clean-or-dirty copied-source
+  entry view, so dirty-only static metadata can be restored after unchanged
+  helper evaluation and can still receive detached reference leaves after a
+  backing property replacement.
   Runtime-cell handle discovery also includes initialized public object
   properties that already share the same reference cell, even when no
   array-offset alias has been recorded below that property.

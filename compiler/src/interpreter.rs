@@ -2019,6 +2019,26 @@ impl SymbolTable {
             .or_else(|| self.dirty_public_object_property_array_copy_source_for_static(name))
     }
 
+    fn public_or_dirty_object_property_array_copy_source_entries(
+        &self,
+    ) -> Vec<(String, ArrayCopySource)> {
+        let mut entries = self
+            .public_object_property_array_copy_sources
+            .iter()
+            .map(|(name, source)| (name.clone(), source.clone()))
+            .collect::<Vec<_>>();
+        entries.extend(
+            self.dirty_public_object_property_array_copy_source_values
+                .iter()
+                .filter(|(name, _)| {
+                    !self.public_object_property_array_copy_sources
+                        .contains_key(*name)
+                })
+                .map(|(name, source)| (name.clone(), source.clone())),
+        );
+        entries
+    }
+
     fn array_copy_source_was_dirtied(&self, source: &ArrayCopySource) -> bool {
         self.dirty_public_object_property_array_copy_source_values
             .values()
@@ -2395,22 +2415,15 @@ impl SymbolTable {
     }
 
     fn public_array_copy_source_snapshot(&self) -> PublicArrayCopySourceSnapshot {
-        self.public_object_property_array_copy_sources
-            .iter()
+        self.public_or_dirty_object_property_array_copy_source_entries()
+            .into_iter()
             .filter_map(|(name, source)| {
-                let value = self.read_named(name)?;
+                let value = self.read_named(&name)?;
                 let dirty = self
                     .dirty_public_object_property_array_copy_sources
-                    .contains(name);
-                matches!(value, Value::Array(_)).then(|| {
-                    (
-                        name.clone(),
-                        source.clone(),
-                        dirty,
-                        self.read_cell(name),
-                        value,
-                    )
-                })
+                    .contains(&name);
+                let cell = self.read_cell(&name);
+                matches!(value, Value::Array(_)).then(|| (name, source, dirty, cell, value))
             })
             .collect()
     }
@@ -3266,11 +3279,7 @@ impl SymbolTable {
         property: &str,
         detached_paths: &[(Vec<ArrayKey>, VariableCell)],
     ) {
-        let root_sources = self
-            .public_object_property_array_copy_sources
-            .iter()
-            .map(|(name, source)| (name.clone(), source.clone()))
-            .collect::<Vec<_>>();
+        let root_sources = self.public_or_dirty_object_property_array_copy_source_entries();
         for (name, source) in root_sources {
             let Some(paths) = self.detached_paths_for_array_copy_source(
                 &source,
@@ -77491,6 +77500,87 @@ mod tests {
         assert!(scope
             .dirty_public_object_property_array_copy_sources
             .contains("copy"));
+    }
+
+    #[test]
+    fn public_copy_source_snapshot_restores_dirty_static_copy_source_metadata() {
+        let mut scope = SymbolTable::new();
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+
+        let source =
+            ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
+        scope.write_static("copy", Value::Array(PhpArray::new()));
+        scope.record_public_object_property_array_copy_source("copy", source.clone());
+        scope.mark_public_object_property_array_copy_source_dirty("copy");
+        scope.public_object_property_array_copy_sources.remove("copy");
+
+        let snapshot = scope.public_array_copy_source_snapshot();
+        scope.clear_public_object_property_array_copy_source("copy");
+        scope.restore_unchanged_public_array_copy_sources(snapshot);
+
+        let recovered = scope
+            .public_or_dirty_object_property_array_copy_source_for_static("copy")
+            .expect("expected dirty-only static copy source to be restored");
+        assert!(scope.array_copy_sources_match(&recovered, &source));
+        assert!(scope
+            .dirty_public_object_property_array_copy_sources
+            .contains("copy"));
+    }
+
+    #[test]
+    fn detached_rehydration_uses_dirty_static_copy_source_metadata() {
+        let mut scope = SymbolTable::new();
+        let leaf_key = ArrayKey::String("leaf".to_string());
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+
+        let mut copy = PhpArray::new();
+        copy.insert(leaf_key.clone(), Value::String("plain".to_string()));
+        scope.write_static("copy", Value::Array(copy));
+        let source = ArrayCopySource::object_property(
+            object.clone(),
+            "items".to_string(),
+            Vec::new(),
+            true,
+        );
+        scope.record_public_object_property_array_copy_source("copy", source.clone());
+        scope.mark_public_object_property_array_copy_source_dirty("copy");
+        scope.public_object_property_array_copy_sources.remove("copy");
+
+        let leaf_cell = PhpReferenceCell::new(Value::String("shared".to_string()));
+        scope.rehydrate_detached_object_property_array_copy_sources(
+            &object,
+            "items",
+            &[(vec![leaf_key.clone()], leaf_cell.clone())],
+        );
+
+        let Value::Array(array) = scope
+            .read_storage_named("copy")
+            .expect("expected copied array to remain present")
+        else {
+            panic!("expected copied array");
+        };
+        let recovered_cell =
+            SymbolTable::read_nested_array_offset_alias_reference_cell(&array, &[leaf_key])
+                .expect("expected detached source leaf to rehydrate dirty-only copy");
+        assert!(recovered_cell.shares_reference_with(&leaf_cell));
+        let recovered = scope
+            .public_or_dirty_object_property_array_copy_source_for_static("copy")
+            .expect("expected dirty-only metadata to survive rehydration");
+        assert!(scope.array_copy_sources_match(&recovered, &source));
     }
 
     #[test]

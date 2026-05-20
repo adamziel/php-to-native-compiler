@@ -290,6 +290,16 @@ recovery and prebound closure locals also preserve that dirty marker through
 supported closure call frames. The fallback that rebuilds by-value
 array-copy-source bindings from reference bindings also consults dirty static
 metadata for plain caller-cell bindings. Runtime-cell handle discovery includes
+metadata for plain caller-cell bindings. Assignment-expression result source
+recovery and direct value-expression source recovery use the same
+clean-or-dirty metadata lookup, and nested-write parent-replacement checks
+treat dirty-only copied-source metadata as live when deciding whether the
+copied-source record survives. The same clean-or-dirty copied-source entry
+view is used by unchanged-source snapshots around holder evaluation and by
+detached object-property source rehydration, so dirty-only static metadata can
+restore after an unchanged helper evaluation and can still receive detached
+reference leaves from a backing property replacement. Runtime-cell handle
+discovery includes
 initialized public object-property cells that share the same reference, so a
 visible property root does not need pre-existing array-offset alias metadata
 before it can participate in these handle-based copied-source operations.

@@ -299,6 +299,15 @@ handled.
   property, whole-property unsets, nested object-property array unsets, and
   object-property array-offset reference assignments.
   Descendant
+  Assignment-expression result source recovery and direct value-expression
+  source recovery now use the same clean-or-dirty lookup, and nested-write
+  parent-replacement checks treat dirty-only copied-source metadata as live
+  before deciding whether to retain the source record. Unchanged-source
+  snapshots around holder evaluation and detached object-property source
+  rehydration now also enumerate clean-or-dirty copied-source entries.
+  Runtime-cell handle discovery now includes initialized public object
+  properties sharing the same reference cell without requiring pre-seeded
+  array-offset alias metadata. Descendant
   writes to a source container no longer erase whole-copy provenance for
   supported magic/`ArrayAccess` method-local copies, and reference-return
   calls plus mixed by-reference/by-value helpers now keep executed by-value

@@ -681,6 +681,25 @@ a one-off is genuinely the only viable route.
   the constrained environment. Follow-up validation passed:
   `git diff --check` and `cargo check -q -p phpc` with the same constrained
   environment.
+- Additional continuation in the same dirty worktree: assignment-expression
+  result recovery and direct value-expression recovery now use the
+  clean-or-dirty static copied-source lookup, and nested-write
+  parent-replacement checks treat dirty-only copied-source metadata as live
+  before retaining or invalidating the source record. Focused checks passed:
+  `cargo test -q -p phpc --lib
+  assignment_value_source_recovery_uses_dirty_static_copy_source_metadata` and
+  `cargo test -q -p phpc --lib dirty_static_copy_source_metadata`; `cargo
+  check -q -p phpc` also passed with the constrained environment.
+- Additional continuation in the same dirty worktree: unchanged-source
+  snapshots and detached object-property source rehydration now enumerate a
+  clean-or-dirty copied-source entry view, so dirty-only static copied-source
+  metadata is not skipped around holder evaluation or backing-property
+  replacement rehydration. Focused checks passed: `cargo test -q -p phpc
+  --lib public_copy_source_snapshot_restores_dirty_static_copy_source_metadata`,
+  `cargo test -q -p phpc --lib
+  detached_rehydration_uses_dirty_static_copy_source_metadata`, `cargo test -q
+  -p phpc --lib dirty_static_copy_source_metadata`, and `git diff --check`
+  with the constrained environment.
 
 ## Loop Event 2026-05-20T16:00:00+02:00
 

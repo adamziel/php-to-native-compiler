@@ -39,6 +39,16 @@ Implemented:
   source metadata when invoked through supported closure call paths. The
   reference-binding source-list fallback also consults dirty-only static
   metadata for plain caller-cell bindings.
+  metadata for plain caller-cell bindings. Assignment-expression result source
+  recovery and direct value-expression source recovery now use the same
+  clean-or-dirty lookup, and nested-write parent-replacement checks treat
+  dirty-only copied-source metadata as live before deciding whether to retain
+  or invalidate the copied-source record. Unchanged-source snapshots around
+  evaluated holder expressions and detached object-property source
+  rehydration also enumerate the same clean-or-dirty copied-source entries, so
+  dirty-only metadata is not skipped when a holder evaluation leaves a copy
+  unchanged or when a backing property replacement needs to rehydrate copied
+  reference leaves.
   Focused unit coverage proves a runtime-cell copy source visible through a
   public object-property handle exposes nested reference cells through the
   handle path, participates in detach matching, matches dirty object-property
@@ -48,6 +58,11 @@ Implemented:
   an object-property alias sync, reference-binding metadata sync, and direct
   by-reference argument binding, closure capture recovery, and reference-binding
   source-list recovery. This
+  an object-property alias sync, reference-binding metadata sync, and direct
+  by-reference argument binding, closure capture recovery, and reference-binding
+  source-list recovery, assignment/value-expression source recovery, and
+  nested-write parent replacement, unchanged-source snapshot restore, and
+  detached-source rehydration. This
   remains an internal propagation migration; broader dynamic holder writeback,
   untracked
   containers, exact diagnostics, string COW, and native reference/COW lowering
