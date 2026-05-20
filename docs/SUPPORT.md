@@ -136,6 +136,12 @@
   copied-source provenance for reference-backed leaves. Internal alias
   writeback preserves that metadata only for nested writes that leave the
   copied parent source valid; plain leaves in the returned copy still detach.
+  If a supported visible `__get()`, public `ArrayAccess::offsetGet()`, direct
+  missing-method `__call()`, or public `ArrayAccess::offsetSet()` body later
+  replaces that tracked object-property parent bucket, stale copied-source
+  aliases detach to the pre-replacement reference cell. The returned or stored
+  copy keeps selected reference leaves attached to that old cell, while the
+  replacement bucket remains independent.
   By-value method returns of copied object-property buckets also promote
   proven copied-source reference leaves before the value leaves the callee
   frame. This covers supported normal methods, visible `__get()`, and public

@@ -23,6 +23,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T03:55:00+02:00
+
+- Checkpoint before this task: `1d1f9e5d runtime: preserve cow helper return
+  sources`, pushed to `origin/master`.
+- Task attempted: Lane 2281-C through Lane 2284-C bundle, detaching stale
+  copied-source aliases when supported magic/`ArrayAccess` bodies replace
+  tracked object-property parent buckets after copying or storing copied
+  buckets.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2281/*` through
+  `tests/fixtures/milestone2284/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc`, `cargo fmt`, `cargo fmt
+  --check`, and `git diff --check` passed; raw system-PHP probes matched for
+  visible `__get()`, public `ArrayAccess::offsetGet()`, public
+  `ArrayAccess::offsetSet()`, and direct `__call()` parent-bucket replacement
+  shapes; focused fixture comparisons passed for `milestone2281` through
+  `milestone2284`; adjacent comparisons passed for `milestone2276` through
+  `milestone2280`; focused Rust regressions passed for `object_model` magic
+  and arrayaccess, `functions_and_scopes` function tests,
+  `fixture_manifest`, and `milestone1_fixtures_pass`.
+- Remaining COW gaps: arbitrary unsupported magic/`ArrayAccess` method syntax
+  and side effects outside supported execution paths, untracked dynamic
+  containers that expose neither materialized reference cells nor portable
+  copied-source roots, broader whole-array reference identity outside covered
+  roots, exact diagnostics/Throwable objects, and native reference/string COW
+  lowering.
+- Next concrete task: run adjacent regressions, formatting/check/diff gates,
+  one full `tools/checkpoint.sh` bundle gate, then push if it passes.
+
 ## Loop Event 2026-05-20T03:20:00+02:00
 
 - Checkpoint before this task: `6a1311e0 runtime: accept typed cow magic

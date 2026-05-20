@@ -175,6 +175,10 @@ handled.
   object-property array locals that cross supported helper calls before
   visible `__get()` or public `ArrayAccess::offsetGet()` returns, covering
   by-reference and by-value helpers plus a plain-leaf no-over-promotion guard.
+- [x] Lane 2281-C through 2284-C: detach stale copied-source caller aliases
+  when supported visible `__get()`, public `ArrayAccess::offsetGet()`, direct
+  `__call()`, and public `ArrayAccess::offsetSet()` bodies replace tracked
+  object-property parent buckets after copying or storing copied buckets.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model behind magic/`ArrayAccess` method-body
   side-effect/writeback so supported helper/callback containers and dynamic

@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Lane 2281-C through Lane 2284-C for stale copied-source alias
+  detachment when supported magic/`ArrayAccess` bodies replace tracked
+  object-property parent buckets after first copying or storing them.
+  Parent-bucket overwrites now rehydrate copied destinations and caller
+  aliases onto the pre-replacement reference cell, invalidate stale provenance
+  for the replacement bucket, and suppress stale by-value alias writeback into
+  the overwritten source. Focused system-PHP coverage proves visible
+  `__get()`, public `ArrayAccess::offsetGet()`, direct missing-method
+  `__call()`, and public `ArrayAccess::offsetSet()` payload storage shapes.
+  This remains bounded to supported method-body syntax, concrete tracked
+  object-property parent buckets, public/proven copy-source roots, and
+  selected reference leaves; arbitrary side effects, untracked containers,
+  broader whole-array identity, exact diagnostics, and native reference/string
+  COW lowering remain unsupported.
+
 - Added Lane 2276-C through Lane 2280-C for copied object-property buckets
   that cross supported no-op helper calls before by-value magic/`ArrayAccess`
   returns. Internal alias writeback and alias-root synchronization now retain

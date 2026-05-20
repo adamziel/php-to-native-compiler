@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2280:
+The current in-progress implementation frontier is Lane 2284:
+
+- Lanes 2281 through 2284 detach stale copied-source aliases when supported
+  magic/`ArrayAccess` bodies replace tracked object-property parent buckets
+  after first copying or storing them. Parent-bucket overwrites now invalidate
+  the copied-source root against the replacement container while preserving
+  selected reference-backed leaves on the pre-replacement cell, so later
+  writes through the returned or stored copy update the original referenced
+  leaf and do not mutate the replacement bucket. Focused system-PHP coverage
+  proves visible `__get()`, public `ArrayAccess::offsetGet()`, direct
+  missing-method `__call()`, and public `ArrayAccess::offsetSet()` payload
+  storage shapes. This remains bounded to supported method-body syntax,
+  concrete tracked object-property parent buckets, public/proven copy-source
+  roots, and selected reference leaves; arbitrary side effects, untracked
+  containers, broader whole-array identity, exact diagnostics, and native
+  reference/string COW lowering remain unsupported.
 
 - Lanes 2276 through 2280 preserve copied-source metadata for whole
   object-property array locals that cross supported helper calls before a

@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2282/arrayaccess_offsetget_parent_replace_detaches_copied_reference_leaf.php

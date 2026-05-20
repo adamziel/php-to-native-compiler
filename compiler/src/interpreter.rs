@@ -1997,6 +1997,270 @@ impl SymbolTable {
             .any(|candidate| Self::array_copy_sources_match(candidate, source))
     }
 
+    fn array_copy_source_invalidated_by_object_property_write(
+        &self,
+        source: &ArrayCopySource,
+        object: &PhpObject,
+        property: &str,
+        write_keys: &[ArrayKey],
+    ) -> bool {
+        let source_property_matches = match &source.root {
+            ArrayCopySourceRoot::ObjectProperty {
+                object: source_object,
+                property: source_property,
+            } => source_object == object && source_property == property,
+            ArrayCopySourceRoot::AliasPath(
+                ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: source_object,
+                    property: source_property,
+                }
+                | ArrayOffsetAliasRoot::ContextObjectProperty {
+                    object: source_object,
+                    property: source_property,
+                    ..
+                },
+            ) => {
+                source_property == property
+                    && matches!(
+                        self.read_storage_named(source_object),
+                        Some(Value::Object(candidate)) if candidate == *object
+                    )
+            }
+            _ => false,
+        };
+        source_property_matches
+            && (write_keys.starts_with(source.keys.as_slice())
+                || source.keys.starts_with(write_keys))
+    }
+
+    fn invalidate_array_copy_sources_for_object_property_write(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        write_keys: &[ArrayKey],
+    ) {
+        let stale_static_sources = self
+            .public_object_property_array_copy_sources
+            .iter()
+            .filter_map(|(name, source)| {
+                self.array_copy_source_invalidated_by_object_property_write(
+                    source, object, property, write_keys,
+                )
+                .then(|| name.clone())
+            })
+            .collect::<Vec<_>>();
+        for name in stale_static_sources {
+            self.clear_public_object_property_array_copy_source(&name);
+        }
+
+        let stale_dirty_sources = self
+            .dirty_public_object_property_array_copy_source_values
+            .iter()
+            .filter_map(|(name, source)| {
+                self.array_copy_source_invalidated_by_object_property_write(
+                    source, object, property, write_keys,
+                )
+                .then(|| name.clone())
+            })
+            .collect::<Vec<_>>();
+        for name in stale_dirty_sources {
+            self.clear_public_object_property_array_copy_source(&name);
+        }
+
+        let object_copy_source_keys = self
+            .object_property_array_copy_sources
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in object_copy_source_keys {
+            let Some(paths) = self.object_property_array_copy_sources.get(&key).cloned() else {
+                continue;
+            };
+            let retained = paths
+                .into_iter()
+                .filter(|(_, source)| {
+                    !self.array_copy_source_invalidated_by_object_property_write(
+                        source, object, property, write_keys,
+                    )
+                })
+                .collect::<Vec<_>>();
+            if retained.is_empty() {
+                self.object_property_array_copy_sources.remove(&key);
+            } else {
+                self.object_property_array_copy_sources
+                    .insert(key.clone(), retained);
+            }
+            self.dirty_object_property_array_copy_sources.insert(key);
+        }
+
+        let literal_roots = self
+            .array_literal_copy_source_paths
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for name in literal_roots {
+            let Some(paths) = self.array_literal_copy_source_paths.get(&name).cloned() else {
+                continue;
+            };
+            let retained = paths
+                .into_iter()
+                .filter(|(_, source)| {
+                    !self.array_copy_source_invalidated_by_object_property_write(
+                        source, object, property, write_keys,
+                    )
+                })
+                .collect::<Vec<_>>();
+            if retained.is_empty() {
+                self.array_literal_copy_source_paths.remove(&name);
+            } else {
+                self.array_literal_copy_source_paths
+                    .insert(name.clone(), retained);
+            }
+            self.dirty_array_literal_copy_source_roots.insert(name);
+        }
+    }
+
+    fn rehydrate_array_copy_sources_for_object_property_write(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        write_keys: &[ArrayKey],
+    ) {
+        let mut sources = Vec::new();
+        sources.extend(
+            self.public_object_property_array_copy_sources
+                .values()
+                .cloned(),
+        );
+        sources.extend(
+            self.dirty_public_object_property_array_copy_source_values
+                .values()
+                .cloned(),
+        );
+        sources.extend(
+            self.object_property_array_copy_sources
+                .values()
+                .flat_map(|paths| paths.iter().map(|(_, source)| source.clone())),
+        );
+        sources.extend(
+            self.array_literal_copy_source_paths
+                .values()
+                .flat_map(|paths| paths.iter().map(|(_, source)| source.clone())),
+        );
+
+        let mut detached_paths = Vec::new();
+        for source in sources {
+            if !self.array_copy_source_invalidated_by_object_property_write(
+                &source, object, property, write_keys,
+            ) {
+                continue;
+            }
+            for (keys, cell) in self.reference_cells_for_array_copy_source(&source) {
+                if !detached_paths.iter().any(
+                    |(candidate_keys, _): &(Vec<ArrayKey>, VariableCell)| {
+                        candidate_keys.as_slice() == keys.as_slice()
+                    },
+                ) {
+                    detached_paths.push((keys, cell));
+                }
+            }
+        }
+
+        if !detached_paths.is_empty() {
+            for (keys, cell) in &detached_paths {
+                self.record_detached_object_property_array_offset_cell(
+                    object,
+                    property,
+                    keys,
+                    cell.clone(),
+                );
+            }
+            self.rehydrate_detached_object_property_array_copy_sources(
+                object,
+                property,
+                &detached_paths,
+            );
+        }
+    }
+
+    fn reference_cells_for_array_copy_source(
+        &self,
+        source: &ArrayCopySource,
+    ) -> Vec<(Vec<ArrayKey>, VariableCell)> {
+        let root_value = match &source.root {
+            ArrayCopySourceRoot::ObjectProperty { object, property } => {
+                object.read_property_from_context(property, None, &[]).ok()
+            }
+            ArrayCopySourceRoot::AliasPath(root) => self
+                .read_alias_root_value(
+                    &ArrayOffsetAlias {
+                        root: root.clone(),
+                        keys: Vec::new(),
+                    },
+                    Span::new(0, 0),
+                )
+                .ok()
+                .flatten(),
+        };
+        let Some(Value::Array(array)) = root_value else {
+            return Vec::new();
+        };
+
+        let mut relative_paths = Vec::new();
+        Self::collect_reference_cells_below_array_path(&array, &source.keys, &mut relative_paths);
+        relative_paths
+            .into_iter()
+            .map(|(mut relative_keys, cell)| {
+                let mut keys = source.keys.clone();
+                keys.append(&mut relative_keys);
+                (keys, cell)
+            })
+            .collect()
+    }
+
+    fn collect_reference_cells_below_array_path(
+        array: &PhpArray,
+        keys: &[ArrayKey],
+        out: &mut Vec<(Vec<ArrayKey>, VariableCell)>,
+    ) {
+        let Some((key, rest)) = keys.split_first() else {
+            Self::collect_reference_cells_in_array(array, &[], out);
+            return;
+        };
+        let Some(slot) = array.get_slot(key.clone()) else {
+            return;
+        };
+        if rest.is_empty() {
+            if let Some(cell) = slot.reference_cell() {
+                out.push((Vec::new(), cell));
+            }
+            if let Value::Array(child) = slot.value_cloned() {
+                Self::collect_reference_cells_in_array(&child, &[], out);
+            }
+            return;
+        }
+        if let Value::Array(child) = slot.value_cloned() {
+            Self::collect_reference_cells_below_array_path(&child, rest, out);
+        }
+    }
+
+    fn collect_reference_cells_in_array(
+        array: &PhpArray,
+        prefix: &[ArrayKey],
+        out: &mut Vec<(Vec<ArrayKey>, VariableCell)>,
+    ) {
+        for entry in array.entries() {
+            let mut keys = prefix.to_vec();
+            keys.push(entry.key.clone());
+            if let Some(cell) = entry.slot().reference_cell() {
+                out.push((keys.clone(), cell));
+            }
+            if let Value::Array(child) = entry.value_cloned() {
+                Self::collect_reference_cells_in_array(&child, &keys, out);
+            }
+        }
+    }
+
     fn array_copy_sources_match(left: &ArrayCopySource, right: &ArrayCopySource) -> bool {
         if left.keys != right.keys || left.include_exact_path != right.include_exact_path {
             return false;
@@ -2240,6 +2504,12 @@ impl SymbolTable {
         prefix: &[ArrayKey],
         paths: Vec<(Vec<ArrayKey>, ArrayCopySource)>,
     ) {
+        if paths.is_empty() {
+            self.remove_object_property_array_copy_source_paths_for_prefix(
+                object, property, prefix,
+            );
+            return;
+        }
         for (mut keys, source) in paths {
             let mut path = prefix.to_vec();
             path.append(&mut keys);
@@ -2675,6 +2945,37 @@ impl SymbolTable {
         self.detached_object_property_array_offset_values.clone()
     }
 
+    fn array_copy_source_path_was_detached(
+        &self,
+        source: &ArrayCopySource,
+        keys: &[ArrayKey],
+    ) -> bool {
+        let (object, property) = match &source.root {
+            ArrayCopySourceRoot::ObjectProperty { object, property } => (object.clone(), property),
+            ArrayCopySourceRoot::AliasPath(
+                ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                | ArrayOffsetAliasRoot::ContextObjectProperty {
+                    object, property, ..
+                },
+            ) => {
+                let Some(Value::Object(object)) = self.read_storage_named(object) else {
+                    return false;
+                };
+                (object, property)
+            }
+            _ => return false,
+        };
+        self.detached_object_property_array_offset_values
+            .iter()
+            .any(
+                |(candidate_object, candidate_property, candidate_keys, _)| {
+                    candidate_object == &object
+                        && candidate_property == property
+                        && candidate_keys.as_slice() == keys
+                },
+            )
+    }
+
     fn detach_static_array_offset_alias_paths(
         &mut self,
         root_name: &str,
@@ -2855,7 +3156,7 @@ impl SymbolTable {
             .map(|(name, source)| (name.clone(), source.clone()))
             .collect::<Vec<_>>();
         for (name, source) in root_sources {
-            let Some(paths) = Self::detached_paths_for_array_copy_source(
+            let Some(paths) = self.detached_paths_for_array_copy_source(
                 &source,
                 object,
                 property,
@@ -2873,7 +3174,7 @@ impl SymbolTable {
             .collect::<Vec<_>>();
         for (name, sources) in nested_sources {
             for (prefix, source) in sources {
-                let Some(paths) = Self::detached_paths_for_array_copy_source(
+                let Some(paths) = self.detached_paths_for_array_copy_source(
                     &source,
                     object,
                     property,
@@ -2884,22 +3185,72 @@ impl SymbolTable {
                 self.rehydrate_static_array_copy_source_paths(&name, &prefix, &paths);
             }
         }
+
+        let object_property_sources = self
+            .object_property_array_copy_sources
+            .iter()
+            .map(|((object_id, property), sources)| (*object_id, property.clone(), sources.clone()))
+            .collect::<Vec<_>>();
+        for (target_object_id, target_property, sources) in object_property_sources {
+            if target_object_id == object.id() && target_property == property {
+                continue;
+            }
+            let mut target_paths = Vec::new();
+            for (prefix, source) in sources {
+                let Some(paths) = self.detached_paths_for_array_copy_source(
+                    &source,
+                    object,
+                    property,
+                    detached_paths,
+                ) else {
+                    continue;
+                };
+                for (mut relative_keys, cell) in paths {
+                    let mut target_keys = prefix.clone();
+                    target_keys.append(&mut relative_keys);
+                    target_paths.push((target_keys, cell));
+                }
+            }
+            self.rehydrate_object_property_array_copy_source_paths(
+                target_object_id,
+                &target_property,
+                &target_paths,
+            );
+        }
     }
 
     fn detached_paths_for_array_copy_source(
+        &self,
         source: &ArrayCopySource,
         object: &PhpObject,
         property: &str,
         detached_paths: &[(Vec<ArrayKey>, VariableCell)],
     ) -> Option<Vec<(Vec<ArrayKey>, VariableCell)>> {
-        let ArrayCopySourceRoot::ObjectProperty {
-            object: source_object,
-            property: source_property,
-        } = &source.root
-        else {
-            return None;
+        let source_property_matches = match &source.root {
+            ArrayCopySourceRoot::ObjectProperty {
+                object: source_object,
+                property: source_property,
+            } => source_object == object && source_property == property,
+            ArrayCopySourceRoot::AliasPath(
+                ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: source_object,
+                    property: source_property,
+                }
+                | ArrayOffsetAliasRoot::ContextObjectProperty {
+                    object: source_object,
+                    property: source_property,
+                    ..
+                },
+            ) => {
+                source_property == property
+                    && matches!(
+                        self.read_storage_named(source_object),
+                        Some(Value::Object(candidate)) if candidate == *object
+                    )
+            }
+            _ => false,
         };
-        if source_object != object || source_property != property {
+        if !source_property_matches {
             return None;
         }
 
@@ -2947,6 +3298,49 @@ impl SymbolTable {
             cell.set_value(Value::Array(array));
         } else {
             self.write_storage_named(name, Value::Array(array));
+        }
+    }
+
+    fn rehydrate_object_property_array_copy_source_paths(
+        &mut self,
+        object_id: i64,
+        property: &str,
+        paths: &[(Vec<ArrayKey>, VariableCell)],
+    ) {
+        if paths.is_empty() {
+            return;
+        }
+
+        let Some(object) = self
+            .object_names_for_id(object_id)
+            .into_iter()
+            .find_map(|name| match self.read_storage_named(&name) {
+                Some(Value::Object(object)) if object.id() == object_id => Some(object),
+                _ => None,
+            })
+        else {
+            return;
+        };
+        let Ok(Value::Array(mut array)) = object.read_property_from_context(property, None, &[])
+        else {
+            return;
+        };
+
+        let mut changed = false;
+        for (keys, cell) in paths {
+            changed |=
+                Self::write_nested_array_offset_alias_reference(&mut array, keys, cell.clone());
+        }
+        if !changed {
+            return;
+        }
+
+        if object
+            .write_property_from_context(property, Value::Array(array), None, &[])
+            .is_ok()
+        {
+            self.dirty_object_property_array_copy_sources
+                .insert((object_id, property.to_string()));
         }
     }
 
@@ -3261,11 +3655,13 @@ impl SymbolTable {
         }
 
         let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+        let mut detached_groups = Vec::new();
         for alias_name in alias_names {
             let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
                 continue;
             };
-            let mut fallback_value = None;
+            let previous_aliases = existing_aliases.clone();
+            let mut fallback_cell = None;
             let mut aliases = Vec::new();
 
             for alias in existing_aliases {
@@ -3275,17 +3671,43 @@ impl SymbolTable {
                         && alias.keys.len() > assigned_path.keys.len()
                 });
                 if should_detach {
-                    if let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root {
-                        if let Some(value) = self.read_array_offset_alias(&alias) {
-                            self.record_detached_static_array_offset_value(
-                                name,
-                                &alias.keys,
-                                value,
-                            );
+                    let detached_cell = self.detached_array_offset_alias_fallback_cell(&alias);
+                    if let Some(cell) = detached_cell.clone() {
+                        match &alias.root {
+                            ArrayOffsetAliasRoot::StaticArray { name } => {
+                                self.record_detached_static_array_offset_value(
+                                    name,
+                                    &alias.keys,
+                                    cell.value_cloned(),
+                                );
+                            }
+                            ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                            | ArrayOffsetAliasRoot::ContextObjectProperty {
+                                object,
+                                property,
+                                ..
+                            } => {
+                                if let Some(Value::Object(object_value)) =
+                                    self.read_storage_named(object)
+                                {
+                                    self.rehydrate_detached_object_property_array_copy_sources(
+                                        &object_value,
+                                        property,
+                                        &[(alias.keys.clone(), cell.clone())],
+                                    );
+                                    self.record_detached_object_property_array_offset_cell(
+                                        &object_value,
+                                        property,
+                                        &alias.keys,
+                                        cell.clone(),
+                                    );
+                                }
+                            }
+                            ArrayOffsetAliasRoot::GlobalArray { .. } => {}
                         }
                     }
-                    if fallback_value.is_none() {
-                        fallback_value = self.read_array_offset_alias(&alias);
+                    if fallback_cell.is_none() {
+                        fallback_cell = detached_cell;
                     }
                 } else {
                     aliases.push(alias);
@@ -3294,9 +3716,12 @@ impl SymbolTable {
 
             if aliases.is_empty() {
                 self.array_offset_aliases.remove(&alias_name);
-                if let Some(value) = fallback_value {
-                    self.write_storage_named(&alias_name, value);
-                }
+                self.bind_detached_array_offset_alias_fallback(
+                    &alias_name,
+                    &previous_aliases,
+                    fallback_cell,
+                    &mut detached_groups,
+                );
             } else {
                 self.array_offset_aliases.insert(alias_name, aliases);
             }
@@ -21516,6 +21941,11 @@ impl Interpreter {
                     self.current_property_access_context();
                 match scope.read_static(object, *span)? {
                     Value::Object(object_value) => {
+                        scope.rehydrate_array_copy_sources_for_object_property_write(
+                            &object_value,
+                            property,
+                            &[],
+                        );
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(object, property);
                         match object_value.write_property_from_context_with_object_type_resolver(
@@ -21528,6 +21958,11 @@ impl Interpreter {
                             },
                         ) {
                             Ok(()) => {
+                                scope.invalidate_array_copy_sources_for_object_property_write(
+                                    &object_value,
+                                    property,
+                                    &[],
+                                );
                                 scope.remove_public_object_property_root_from_array_offset_aliases(
                                     object,
                                     property,
@@ -24720,6 +25155,9 @@ impl Interpreter {
 
         match &mut slot {
             Value::String(string) if keys.len() == 1 => {
+                scope.rehydrate_array_copy_sources_for_object_property_write(
+                    &object, property, keys,
+                );
                 self.write_ascii_string_offset(string, &keys[0], value, span)?;
                 object
                     .write_property_from_context_with_object_type_resolver(
@@ -24731,9 +25169,16 @@ impl Interpreter {
                             self.object_satisfies_live_property_type(object, type_name)
                         },
                     )
-                    .map_err(|error| runtime_error(span, error))
+                    .map_err(|error| runtime_error(span, error))?;
+                scope.invalidate_array_copy_sources_for_object_property_write(
+                    &object, property, keys,
+                );
+                Ok(())
             }
             Value::Array(array) => {
+                scope.rehydrate_array_copy_sources_for_object_property_write(
+                    &object, property, keys,
+                );
                 self.write_nested_array_value(array, keys, value, span)?;
                 object
                     .write_property_from_context(
@@ -24742,7 +25187,11 @@ impl Interpreter {
                         current_class_id,
                         &protected_class_ids,
                     )
-                    .map_err(|error| runtime_error(span, error))
+                    .map_err(|error| runtime_error(span, error))?;
+                scope.invalidate_array_copy_sources_for_object_property_write(
+                    &object, property, keys,
+                );
+                Ok(())
             }
             other => Err(runtime_error(
                 span,
@@ -24812,6 +25261,9 @@ impl Interpreter {
 
         match &mut slot {
             Value::Array(array) => {
+                scope.rehydrate_array_copy_sources_for_object_property_write(
+                    &object, property, keys,
+                );
                 Self::append_nested_array_value(array, keys, value, span)?;
                 object
                     .write_property_from_context(
@@ -24820,7 +25272,11 @@ impl Interpreter {
                         current_class_id,
                         &protected_class_ids,
                     )
-                    .map_err(|error| runtime_error(span, error))
+                    .map_err(|error| runtime_error(span, error))?;
+                scope.invalidate_array_copy_sources_for_object_property_write(
+                    &object, property, keys,
+                );
+                Ok(())
             }
             other => Err(runtime_error(
                 span,
@@ -24856,6 +25312,13 @@ impl Interpreter {
             stored_value,
             span,
         )?;
+        if let Some(Value::Object(object_value)) = scope.read_named(object_name) {
+            scope.invalidate_array_copy_sources_for_object_property_write(
+                &object_value,
+                property,
+                &appended_alias.keys,
+            );
+        }
         scope.sync_array_offset_aliases_for_root_path(&appended_alias.root, &appended_alias.keys);
         Ok(())
     }
@@ -48026,7 +48489,7 @@ impl Interpreter {
                     continue;
                 };
                 let wrote_aliases = caller_scope
-                    .write_array_offset_aliases_checked_with_object_type_resolver(
+                    .write_array_offset_aliases_checked_preserving_static_copy_sources(
                         aliases,
                         value,
                         function.span,
@@ -48519,7 +48982,7 @@ impl Interpreter {
                         continue;
                     };
                     let wrote_aliases = target_scope
-                        .write_array_offset_aliases_checked_with_object_type_resolver(
+                        .write_array_offset_aliases_checked_preserving_static_copy_sources(
                             aliases,
                             value,
                             function.span,
@@ -48569,7 +49032,7 @@ impl Interpreter {
                         continue;
                     };
                     let wrote_aliases = local_scope
-                        .write_array_offset_aliases_checked_with_object_type_resolver(
+                        .write_array_offset_aliases_checked_preserving_static_copy_sources(
                             aliases,
                             value,
                             function.span,
@@ -51583,6 +52046,9 @@ impl Interpreter {
                 for source_root in caller_scope.array_copy_source_roots(source) {
                     let mut source_keys = source.keys.clone();
                     source_keys.extend(local_alias.keys[local_prefix_keys.len()..].iter().cloned());
+                    if local_scope.array_copy_source_path_was_detached(source, &source_keys) {
+                        continue;
+                    }
                     let source_alias = ArrayOffsetAlias {
                         root: source_root,
                         keys: source_keys,

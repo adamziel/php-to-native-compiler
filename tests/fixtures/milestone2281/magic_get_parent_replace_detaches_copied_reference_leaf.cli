@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2281/magic_get_parent_replace_detaches_copied_reference_leaf.php

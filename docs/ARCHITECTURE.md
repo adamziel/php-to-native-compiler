@@ -214,6 +214,14 @@ copied parent remains valid, and it reattaches the copied-source metadata
 after the internal sync completes; ordinary root overwrites still clear the
 metadata.
 
+Parent-bucket replacement is a copied-source invalidation boundary for tracked
+object-property provenance. Before a supported magic/`ArrayAccess` method body
+overwrites a copied source parent such as `$this->store[$name]`, the
+interpreter materializes selected reference leaves from the old bucket into
+tracked copied locals, stored object-property payloads, and caller aliases.
+The replacement bucket then gets fresh identity, and by-value alias writeback
+skips source paths that were detached by that overwrite.
+
 Stored-root recovery returns both the recovered concrete root and, when root
 recovery already evaluated part of the expression, the argument-array value
 read from that root. `call_user_func_array()` then consumes that carried value

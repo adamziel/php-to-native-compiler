@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2283/arrayaccess_offsetset_payload_replace_detaches_stored_reference_leaf.php
