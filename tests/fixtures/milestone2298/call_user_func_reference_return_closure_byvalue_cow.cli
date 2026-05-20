@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2298/call_user_func_reference_return_closure_byvalue_cow.php

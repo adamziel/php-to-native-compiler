@@ -1,0 +1,22 @@
+<?php
+class Box {
+    public $left;
+    public $right;
+
+    public function __get($name) {
+        $left = $this->left;
+        $right = $this->right;
+        $replaced = array_replace(array(0 => $left), array(5 => $right));
+        return $replaced[5];
+    }
+}
+
+$box = new Box();
+$box->left = array("ref" => array("v" => "left"));
+$leftAlias =& $box->left["ref"]["v"];
+$box->right = array("ref" => array("v" => "right"));
+$rightAlias =& $box->right["ref"]["v"];
+$tmp = $box->missing;
+$tmp["ref"]["v"] = "updated";
+echo $box->left["ref"]["v"], "\n";
+echo $box->right["ref"]["v"];

@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2296/reference_return_array_callable_call_user_func_array_merge_args_cow.php
