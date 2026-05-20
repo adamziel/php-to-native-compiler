@@ -2716,6 +2716,23 @@ impl SymbolTable {
             .shares_storage_with(&self.resolved_array_copy_source(right))
     }
 
+    fn array_copy_source_relative_path_from_ancestor(
+        &self,
+        ancestor: &ArrayCopySource,
+        descendant: &ArrayCopySource,
+    ) -> Option<Vec<ArrayKey>> {
+        if !descendant.keys.starts_with(ancestor.keys.as_slice()) {
+            return None;
+        }
+        if !self
+            .resolved_array_copy_source(ancestor)
+            .shares_storage_with(&self.resolved_array_copy_source(descendant))
+        {
+            return None;
+        }
+        Some(descendant.keys[ancestor.keys.len()..].to_vec())
+    }
+
     fn resolved_array_copy_source(&self, source: &ArrayCopySource) -> ResolvedArrayCopySource {
         ResolvedArrayCopySource {
             storage_identities: self.array_copy_source_live_storage_identities(source),
@@ -19552,11 +19569,6 @@ impl Interpreter {
         scope: &mut SymbolTable,
         span: Span,
     ) -> CompileResult<()> {
-        let source_handle_roots = scope
-            .runtime_alias_lvalue_handles_for_array_copy_source(source)
-            .into_iter()
-            .map(|handle| handle.root)
-            .collect::<Vec<_>>();
         let copy_source_paths = scope.object_property_array_copy_sources.clone();
         for ((object_id, property), paths) in copy_source_paths {
             let object_names = scope.object_names_for_id(object_id);
@@ -19564,19 +19576,14 @@ impl Interpreter {
                 continue;
             }
             for (copy_keys, copy_source) in paths {
-                if !source.keys.starts_with(copy_source.keys.as_slice()) {
+                let Some(relative_source_keys) =
+                    scope.array_copy_source_relative_path_from_ancestor(&copy_source, source)
+                else {
                     continue;
-                }
-                let copy_source_matches_handle = scope
-                    .runtime_alias_lvalue_handles_for_array_copy_source(&copy_source)
-                    .into_iter()
-                    .any(|handle| source_handle_roots.contains(&handle.root));
-                if !copy_source_matches_handle {
-                    continue;
-                }
+                };
 
                 let mut target_keys = copy_keys.clone();
-                target_keys.extend(source.keys[copy_source.keys.len()..].iter().cloned());
+                target_keys.extend(relative_source_keys);
                 target_keys.extend(suffix_keys.iter().cloned());
                 for object_name in &object_names {
                     let alias = ArrayOffsetAlias {
@@ -77942,6 +77949,57 @@ mod tests {
                 "items",
                 &[ArrayKey::String("other".to_string())]
             ),
+            None
+        );
+    }
+
+    #[test]
+    fn array_copy_source_relative_path_uses_visible_storage_identity() {
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("other", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+
+        let mut scope = SymbolTable::new();
+        scope.write_static("box", Value::Object(object.clone()));
+
+        let outer_key = ArrayKey::String("outer".to_string());
+        let leaf_key = ArrayKey::String("leaf".to_string());
+        let ancestor = ArrayCopySource::object_property(
+            object,
+            "items".to_string(),
+            vec![outer_key.clone()],
+            true,
+        );
+        let descendant = ArrayCopySource::alias_path(
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: "box".to_string(),
+                property: "items".to_string(),
+            },
+            vec![outer_key, leaf_key.clone()],
+            true,
+        );
+        let unrelated = ArrayCopySource::alias_path(
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: "box".to_string(),
+                property: "other".to_string(),
+            },
+            vec![leaf_key.clone()],
+            true,
+        );
+
+        assert_eq!(
+            scope.array_copy_source_relative_path_from_ancestor(&ancestor, &descendant),
+            Some(vec![leaf_key])
+        );
+        assert_eq!(
+            scope.array_copy_source_relative_path_from_ancestor(&ancestor, &unrelated),
             None
         );
     }
