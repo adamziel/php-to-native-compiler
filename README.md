@@ -872,8 +872,8 @@ offset-array roots through the exact `offsetGet()` bridge, with loop-body
 mutation, appended tail visitation, and post-loop lingering aliases to
 selected array slots. It is not exact PHP aliasing: broad mutation ordering,
 object/Traversable iteration, ArrayAccess roots outside the documented bridge,
-array slot cells, full reference containers, and copy-on-write remain
-unsupported.
+runtime-backed lvalue-slot handles across all roots, full reference
+containers, and broad copy-on-write remain unsupported.
 
 ### Native Path
 

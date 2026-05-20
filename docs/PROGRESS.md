@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 2285-C as a real runtime value-model COW step for PHP arrays.
+  Plain `ArraySlot` value clones now share the underlying value cell until a
+  public write detaches that slot, while reference-backed slots continue to
+  share their `PhpReferenceCell`. This moves ordinary array by-value copies
+  from eager deep slot cloning toward PHP-shaped copy-on-write storage instead
+  of another path-specific magic/`ArrayAccess` recognizer. Runtime tests prove
+  shared value-cell identity and detach-on-write for nested writes, and
+  focused system-PHP fixture coverage proves plain nested array copies detach
+  while selected reference leaves remain shared, including through a visible
+  `__get()` copied-bucket return. This does not yet replace the interpreter's
+  `ArrayCopySource` provenance ledgers with runtime lvalue handles, and it
+  does not complete arbitrary magic/`ArrayAccess` side effects, untracked
+  containers, exact diagnostics, string COW, or native reference/COW lowering.
+
 - Added Lane 2281-C through Lane 2284-C for stale copied-source alias
   detachment when supported magic/`ArrayAccess` bodies replace tracked
   object-property parent buckets after first copying or storing them.

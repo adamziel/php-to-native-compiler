@@ -910,16 +910,14 @@ Implemented now:
 - key normalization for array strings that are valid decimal integers
 - private `ArrayEntry` slot storage with value accessors (`value()`,
   `value_cloned()`, `value_mut()`, `set_value()`, and `into_value()`) that
-  delegate through an explicit clone-by-value `ArraySlot`. `ArraySlot` owns a
-  private `ArraySlotCell` through a shared handle, and normal slot cloning
-  still allocates a fresh cell with a cloned value. Each cell has a stable
-  internal `ArraySlotCellId`, but slot/cell equality remains value-based so
-  current PHP array equality and clone behavior do not depend on storage
-  identity. A private internal primitive can intentionally share a slot cell
-  for future reference work, while current public by-value writes detach before
-  mutation instead of exposing PHP-visible aliasing. This preserves the
-  current eager array value semantics while isolating the storage object that
-  future slot/reference-cell work must replace;
+  delegate through an explicit copy-on-write `ArraySlot`. Plain value-backed
+  `ArraySlot` clones share their private `ArraySlotCell` handle until
+  `value_mut()` or `set_value()` detaches the written slot; reference-backed
+  slots keep sharing their `PhpReferenceCell`. Each cell has a stable internal
+  `ArraySlotCellId`, but slot/cell equality remains value-based so PHP array
+  equality does not depend on storage identity. This gives ordinary
+  interpreter array copies real slot-level COW storage while the higher-level
+  magic/`ArrayAccess` paths still use provenance ledgers for source recovery;
   `PhpArray::get_slot()` and `get_slot_mut()` expose normalized-key slot
   lookup without introducing aliasing
 

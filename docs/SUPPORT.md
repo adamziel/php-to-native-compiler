@@ -30,6 +30,12 @@
   aliases detach with their last observed value instead of routing through the
   removed root; `unset(...)` may include multiple supported operands and
   executes them left to right
+- PHP array by-value copies use shared runtime value cells for plain array
+  slots and detach the written slot before mutation; reference-backed array
+  slots continue to share their `PhpReferenceCell`. The covered interpreter
+  paths therefore preserve ordinary array COW parity for nested plain writes
+  and selected reference leaves, including copied buckets returned through a
+  supported visible `__get()` body.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,
   visible `__isset()`, direct `ArrayAccess::offsetSet()`,
   `ArrayAccess::offsetUnset()`, and `ArrayAccess::offsetExists()` execute

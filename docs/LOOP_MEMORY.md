@@ -23,6 +23,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T04:25:00+02:00
+
+- Checkpoint before this task: `56dde9a0 runtime: detach stale cow parent
+  replacements`, pushed to `origin/master`.
+- Task attempted: Lane 2285-C, moving plain PHP array slot cloning from eager
+  value-cell cloning to shared runtime value cells with detach-on-write while
+  keeping reference-backed slots shared through `PhpReferenceCell`.
+- Files changed so far: `runtime/src/lib.rs`,
+  `tests/fixtures/milestone2285/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: focused `php_runtime` array-slot and nested-clone tests
+  passed; `cargo test -q -p php_runtime` passed; `cargo check -q -p phpc`
+  passed; focused system-PHP fixture comparisons passed for
+  `tests/fixtures/milestone2285`; adjacent COW fixture comparisons passed for
+  `milestone2241` through `milestone2285`; focused Rust regressions passed
+  for `object_model` magic and arrayaccess, `functions_and_scopes` function
+  tests, `fixture_manifest`, and `milestone1_fixtures_pass`; `cargo fmt
+  --check` and `git diff --check` passed.
+- Remaining COW gaps: the interpreter still uses `Value + ArrayCopySource`
+  provenance ledgers instead of runtime-backed lvalue/slot handles for broad
+  magic/`ArrayAccess` source recovery; arbitrary unsupported method syntax and
+  side effects, untracked dynamic containers, broader whole-array reference
+  identity, exact diagnostics/Throwable objects, string COW, and native
+  reference/COW lowering remain unsupported.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate, then
+  push if it passes.
+
 ## Loop Event 2026-05-20T03:55:00+02:00
 
 - Checkpoint before this task: `1d1f9e5d runtime: preserve cow helper return

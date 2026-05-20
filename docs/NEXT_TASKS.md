@@ -179,13 +179,19 @@ handled.
   when supported visible `__get()`, public `ArrayAccess::offsetGet()`, direct
   `__call()`, and public `ArrayAccess::offsetSet()` bodies replace tracked
   object-property parent buckets after copying or storing copied buckets.
+- [x] Lane 2285-C: move plain PHP array slot cloning to shared runtime value
+  cells with detach-on-write, while preserving shared `PhpReferenceCell`
+  behavior for reference-backed slots and proving plain/reference COW parity
+  through ordinary arrays and visible `__get()` copied-bucket returns.
 - [ ] Next COW gap, hard-first: keep extending the general
-  value/container identity model behind magic/`ArrayAccess` method-body
-  side-effect/writeback so supported helper/callback containers and dynamic
-  holders expose real cells or concrete writeback roots instead of stale paths.
-  Known next probes should target remaining whole-array reference identity
-  outside covered non-empty array-offset roots and containers that still cannot
-  expose either materialized reference cells or portable copied-source roots.
+  value/container identity model by introducing runtime-backed lvalue/slot
+  handles under `SymbolTable` for root+key paths, then migrating
+  `Value + ArrayCopySource` propagation, helper/callback containers, and
+  dynamic holder writeback away from stale path provenance. Known next probes
+  should target whole-array reference identity outside covered non-empty
+  array-offset roots, side-effecting helper/callback containers, and dynamic
+  holders that still cannot expose either a materialized reference cell or a
+  concrete writeback root.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

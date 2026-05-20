@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2285/array_clone_shared_cells_detach_nested_plain.php

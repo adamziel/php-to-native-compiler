@@ -2340,14 +2340,7 @@ pub struct ArraySlot {
 
 impl Clone for ArraySlot {
     fn clone(&self) -> Self {
-        match &self.storage {
-            ArraySlotStorage::Value(cell) => Self {
-                storage: ArraySlotStorage::Value(Rc::new(cell.clone_by_value())),
-            },
-            ArraySlotStorage::Reference(reference) => Self {
-                storage: ArraySlotStorage::Reference(reference.clone()),
-            },
-        }
+        Self::share_cell_from(self)
     }
 }
 
@@ -2496,7 +2489,6 @@ impl ArraySlot {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn share_cell_from(source: &Self) -> Self {
         match &source.storage {
             ArraySlotStorage::Value(cell) => Self {
@@ -6616,22 +6608,17 @@ mod tests {
     }
 
     #[test]
-    fn array_slot_cells_clone_by_value_until_reference_cells_exist() {
+    fn array_slot_value_cells_share_until_write() {
         let slot = ArraySlot::new(Value::String("original".to_string()));
         let mut cloned = slot.clone();
 
-        assert_ne!(
-            slot.cell_id(),
-            cloned.cell_id(),
-            "slot cloning must allocate a distinct cell id until PHP reference cells exist"
-        );
-        assert!(
-            !slot.shares_cell_with(&cloned),
-            "slot cloning must allocate an independent cell until PHP reference cells exist"
-        );
+        assert_eq!(slot.cell_id(), cloned.cell_id());
+        assert!(slot.shares_cell_with(&cloned));
 
         cloned.set_value(Value::String("clone".to_string()));
 
+        assert_ne!(slot.cell_id(), cloned.cell_id());
+        assert!(!slot.shares_cell_with(&cloned));
         assert_eq!(slot.value(), &Value::String("original".to_string()));
         assert_eq!(cloned.value(), &Value::String("clone".to_string()));
     }
@@ -6675,6 +6662,47 @@ mod tests {
             Value::String("original".to_string())
         );
         assert_eq!(original.value(), &Value::String("original".to_string()));
+    }
+
+    #[test]
+    fn php_array_clone_shares_value_cells_and_detaches_nested_writes() {
+        let mut nested = PhpArray::new();
+        nested.insert("leaf", Value::String("source".to_string()));
+
+        let mut source = PhpArray::new();
+        source.insert("nested", Value::Array(nested));
+
+        let mut copy = source.clone();
+        assert!(source
+            .get_slot("nested")
+            .unwrap()
+            .shares_cell_with(copy.get_slot("nested").unwrap()));
+
+        let Value::Array(copy_nested) = copy.get_slot_mut("nested").unwrap().value_mut() else {
+            panic!("nested slot should hold an array");
+        };
+        copy_nested.insert("leaf", Value::String("copy".to_string()));
+
+        assert!(!source
+            .get_slot("nested")
+            .unwrap()
+            .shares_cell_with(copy.get_slot("nested").unwrap()));
+        assert_eq!(
+            source.get_cloned("nested"),
+            Some(Value::Array({
+                let mut expected = PhpArray::new();
+                expected.insert("leaf", Value::String("source".to_string()));
+                expected
+            }))
+        );
+        assert_eq!(
+            copy.get_cloned("nested"),
+            Some(Value::Array({
+                let mut expected = PhpArray::new();
+                expected.insert("leaf", Value::String("copy".to_string()));
+                expected
+            }))
+        );
     }
 
     #[test]

@@ -32,7 +32,20 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2284:
+The current in-progress implementation frontier is Lane 2285:
+
+- Lane 2285 moves plain PHP array slot clones onto shared runtime value cells
+  with detach-on-write, while reference-backed slots continue to share their
+  `PhpReferenceCell`. This is the first current-frontier step away from eager
+  array slot cloning and toward a real COW value model. Runtime tests prove
+  shared cell identity and nested write detachment, and focused system-PHP
+  coverage proves ordinary plain nested array copies detach while selected
+  reference leaves remain shared, including through a visible `__get()`
+  copied-bucket return. The interpreter still relies on `ArrayCopySource`
+  provenance ledgers for broad magic/`ArrayAccess` source recovery; arbitrary
+  side effects, untracked containers, broader whole-array identity, exact
+  diagnostics, string COW, and native reference/COW lowering remain
+  unsupported.
 
 - Lanes 2281 through 2284 detach stale copied-source aliases when supported
   magic/`ArrayAccess` bodies replace tracked object-property parent buckets
