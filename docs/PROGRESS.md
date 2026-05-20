@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Lane 2291-C for mixed by-reference/by-value helper calls that receive
+  copied arrays from supported magic `__get()` or public
+  `ArrayAccess::offsetGet()` bodies. Non-source-aware helper calls no longer
+  reconstruct by-value argument copy sources with a static post-evaluation
+  recognizer; they reuse the executed argument `Value + ArrayCopySource`
+  evaluator and import those bindings into the callee. The old static
+  call-argument source recognizer is now removed. Focused system-PHP fixtures
+  prove by-reference side effects plus by-value magic/ArrayAccess copied
+  arguments keep selected reference-backed leaves shared. Unsupported method
+  syntax, untracked containers without reachable cells, exact diagnostics,
+  string COW, and native reference/COW lowering remain incomplete.
+
 - Added Lane 2290-C for supported magic/`ArrayAccess` bodies that copy a
   tracked object-property array into a method-local value and then mutate a
   nested source bucket before returning the copy. Descendant writes no longer

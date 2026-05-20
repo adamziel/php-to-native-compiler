@@ -47058,10 +47058,14 @@ impl Interpreter {
                     )?;
                 (values, Vec::new(), by_value_array_copy_source_bindings)
             } else {
-                let (values, reference_bindings) =
-                    self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
-                let by_value_array_copy_source_bindings = self
-                    .array_copy_source_bindings_for_call_arguments(function, args, caller_scope);
+                let (values, reference_bindings, by_value_array_copy_source_bindings) = self
+                    .evaluate_user_function_call_arguments_with_options_and_array_copy_sources(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                        false,
+                    )?;
                 (
                     values,
                     reference_bindings,
@@ -47367,27 +47371,6 @@ impl Interpreter {
         }
 
         Ok((values, copy_source_bindings))
-    }
-
-    fn array_copy_source_bindings_for_call_arguments(
-        &self,
-        function: &FunctionDecl,
-        args: &[Expr],
-        caller_scope: &SymbolTable,
-    ) -> Vec<ArrayCopySourceBinding> {
-        function
-            .params
-            .iter()
-            .zip(args.iter())
-            .filter_map(|(param, arg)| {
-                if param.is_variadic {
-                    return None;
-                }
-                let source = self
-                    .public_object_property_array_copy_source_for_value_expr(arg, caller_scope)?;
-                Some((param.name.clone(), Vec::new(), source))
-            })
-            .collect()
     }
 
     fn by_value_array_copy_bindings_for_call_user_func_array_literal(

@@ -13,6 +13,24 @@ high-impact COW/runtime architecture before easier case-by-case patches. Use
 narrow fixtures to prove the architecture, not as a substitute for it, unless
 a one-off is genuinely the only viable route.
 
+## Loop Event 2026-05-20T13:55:00+02:00
+
+- Checkpoint before this task: `283ab478 runtime: preserve copy sources across
+  nested side effects`, pushed to `origin/master`.
+- Task attempted: Lane 2291-C, removing the remaining static post-evaluation
+  call-argument copied-source recognizer for mixed by-reference/by-value
+  helper calls and routing those by-value arguments through the executed
+  `Value + ArrayCopySource` evaluator.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2291/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Focused checks so far: `cargo check -q -p phpc` passed; system-PHP
+  comparison for `tests/fixtures/milestone2291` passed.
+- Remaining COW gaps: unsupported magic/`ArrayAccess` syntax outside the
+  interpreter subset, untracked dynamic containers without reachable cells,
+  broader dynamic holder writeback, exact diagnostics/Throwable parity, string
+  COW, and native reference/COW lowering.
+
 ## Loop Event 2026-05-20T13:20:00+02:00
 
 - Checkpoint before this task: `7bdf42a8 runtime: promote copied-source

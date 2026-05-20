@@ -66,6 +66,10 @@
   Reference-return user functions/methods evaluate by-value arguments with the
   executed copy-source metadata, so supported arbitrary magic/`ArrayAccess`
   bodies can feed selected copied leaves into reference-return callees.
+  Mixed by-reference/by-value helper calls use the same executed argument
+  metadata for by-value copied-array arguments instead of a static
+  post-evaluation recognizer, so by-reference helper side effects do not force
+  magic/`ArrayAccess` copied arguments back onto stale provenance.
   Broader dynamic holder writeback and untracked containers still use the
   legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,

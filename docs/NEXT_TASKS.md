@@ -222,9 +222,10 @@ handled.
   cell without requiring pre-seeded array-offset alias metadata. Descendant
   writes to a source container no longer erase whole-copy provenance for
   supported magic/`ArrayAccess` method-local copies, and reference-return
-  calls now keep executed by-value argument copy-source metadata. This task
-  stays open until broader dynamic holder writeback and untracked container
-  propagation consume handles directly.
+  calls plus mixed by-reference/by-value helpers now keep executed by-value
+  argument copy-source metadata. This task stays open until broader dynamic
+  holder writeback and untracked container propagation consume handles
+  directly.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

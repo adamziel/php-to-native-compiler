@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone2291/mixed_byref_helper_magic_arg_cow.php
+touched
+side
+updated
