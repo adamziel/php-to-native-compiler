@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Lane 2288-C for direct copied-local reference returns in supported
+  magic `__get()` and public `ArrayAccess::offsetGet()` bodies. Reference
+  returns like `$copy = $this->store; return $copy[$name];` now preserve
+  copied-source metadata while materializing the returned local offset, reuse a
+  proven existing alias group to promote the concrete source bucket to a real
+  `PhpReferenceCell`, and fall back to a detached local reference when no
+  alias group exists. Whole copied-local returns like
+  `$copy = $this->store[$name]; return $copy;` now rehydrate descendant
+  reference cells from the proven source before returning the local array.
+  Runtime `PhpArray` gained nested existing-path promotion, and focused
+  system-PHP fixtures prove direct magic/ArrayAccess copied-parent returns,
+  copied-child returns, and no-alias detach guards. This is still bounded to
+  supported method-body syntax and statically proven copy sources; arbitrary
+  side effects, untracked containers, exact diagnostics, string COW, and
+  native reference/COW lowering remain incomplete.
+
 - Added Lane 2287-C for whole-array reference identity across by-value helper
   boundaries. Proven array-valued alias groups can now be promoted to real
   `PhpReferenceCell`s from their current value, and by-value alias writeback

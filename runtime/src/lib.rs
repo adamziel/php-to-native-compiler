@@ -1409,6 +1409,24 @@ impl PhpArray {
         }
     }
 
+    pub fn promote_path_to_reference_cell(
+        &mut self,
+        keys: &[ArrayKey],
+    ) -> Option<PhpReferenceCell> {
+        let (key, rest) = keys.split_first()?;
+        let slot = self.get_slot_mut(key.clone())?;
+        if rest.is_empty() {
+            return Some(slot.promote_to_reference_cell());
+        }
+
+        let Value::Array(mut child) = slot.value_cloned() else {
+            return None;
+        };
+        let reference = child.promote_path_to_reference_cell(rest)?;
+        slot.set_value(Value::Array(child));
+        Some(reference)
+    }
+
     pub fn write_existing_path(&mut self, keys: &[ArrayKey], value: Value) -> bool {
         let Some((key, rest)) = keys.split_first() else {
             return false;
@@ -4421,6 +4439,23 @@ impl PhpObject {
         property.reference_cell()
     }
 
+    pub fn existing_property_reference_cell_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<Option<PhpReferenceCell>> {
+        let mut properties = self.properties.borrow_mut();
+        let property = self.context_property_mut(
+            &mut properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?;
+
+        property.existing_reference_cell()
+    }
+
     pub fn bind_property_reference_cell_to_context(
         &self,
         name: &str,
@@ -4832,6 +4867,20 @@ impl ObjectProperty {
                 self.storage = ObjectPropertyStorage::Reference(reference.clone());
                 Ok(reference)
             }
+        }
+    }
+
+    fn existing_reference_cell(&self) -> RuntimeResult<Option<PhpReferenceCell>> {
+        if !self.initialized {
+            return Err(RuntimeError::uninitialized_typed_property(
+                self.declaring_class_name.clone(),
+                self.name.clone(),
+            ));
+        }
+
+        match &self.storage {
+            ObjectPropertyStorage::Reference(reference) => Ok(Some(reference.clone())),
+            ObjectPropertyStorage::Value(_) => Ok(None),
         }
     }
 }
@@ -6995,6 +7044,31 @@ mod tests {
             array.get_path_cloned(&[ArrayKey::string("refs"), ArrayKey::Int(0)]),
             Some(Value::String("replacement-changed".to_string()))
         );
+    }
+
+    #[test]
+    fn php_array_promotes_existing_path_to_reference_cell() {
+        let mut child = PhpArray::new();
+        child.insert("leaf", Value::String("source".to_string()));
+
+        let mut array = PhpArray::new();
+        array.insert("nested", Value::Array(child));
+
+        let reference = array
+            .promote_path_to_reference_cell(&[ArrayKey::string("nested"), ArrayKey::string("leaf")])
+            .expect("existing nested path should promote");
+        reference.set_value(Value::String("changed".to_string()));
+
+        assert_eq!(
+            array.get_path_cloned(&[ArrayKey::string("nested"), ArrayKey::string("leaf")]),
+            Some(Value::String("changed".to_string()))
+        );
+        assert!(array
+            .promote_path_to_reference_cell(&[
+                ArrayKey::string("nested"),
+                ArrayKey::string("missing")
+            ])
+            .is_none());
     }
 
     #[test]

@@ -37,7 +37,12 @@
   cloned reads, checked/value/reference writes, and appends, so ordinary array
   COW parity is preserved for nested plain writes, selected reference leaves,
   materialized reference paths, and nested value/reference appends, including
-  copied buckets returned through a supported visible `__get()` body.
+  copied buckets returned through a supported visible `__get()` body. Supported
+  reference-return magic `__get()` and public `ArrayAccess::offsetGet()` bodies
+  also preserve direct copied-local returns when the body copies a tracked
+  object-property array into a local and returns either a selected local offset
+  or the copied local array itself; proven source-backed descendant references
+  remain shared, while no-alias copied buckets stay detached.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,
   visible `__isset()`, direct `ArrayAccess::offsetSet()`,
   `ArrayAccess::offsetUnset()`, and `ArrayAccess::offsetExists()` execute

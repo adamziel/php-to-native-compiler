@@ -18544,15 +18544,7 @@ impl Interpreter {
                 {
                     return Some(cell);
                 }
-                let value = SymbolTable::read_nested_array_offset_alias(&array, &keys)?;
-                let reference = PhpReferenceCell::new(value);
-                if !SymbolTable::write_nested_array_offset_alias_reference(
-                    &mut array,
-                    &keys,
-                    reference.clone(),
-                ) {
-                    return None;
-                }
+                let reference = array.promote_path_to_reference_cell(&keys)?;
                 object
                     .write_property_from_context(
                         property,
@@ -18574,6 +18566,117 @@ impl Interpreter {
                 scope.reference_cell_for_array_offset_alias_group(&aliases)
             }
         }
+    }
+
+    fn existing_reference_cell_for_array_copy_source_return_path(
+        &self,
+        source: &ArrayCopySource,
+        suffix_keys: &[ArrayKey],
+        scope: &mut SymbolTable,
+    ) -> Option<VariableCell> {
+        let mut keys = source.keys.clone();
+        keys.extend(suffix_keys.iter().cloned());
+
+        for root in scope.array_copy_source_roots(source) {
+            let alias = ArrayOffsetAlias {
+                root,
+                keys: keys.clone(),
+            };
+            if let Some(cell) = scope.read_array_offset_alias_reference_cell(&alias) {
+                return Some(cell);
+            }
+            if let Some(aliases) =
+                scope.array_offset_alias_group_for_stored_root_path(alias.clone(), None)
+            {
+                if let Some(cell) = scope.reference_cell_for_array_offset_alias_group(&aliases) {
+                    return Some(cell);
+                }
+                return self.reference_cell_for_array_copy_source_return_path(
+                    source,
+                    suffix_keys,
+                    scope,
+                );
+            }
+        }
+
+        match &source.root {
+            ArrayCopySourceRoot::ObjectProperty { object, property } => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                if keys.is_empty() {
+                    return object
+                        .existing_property_reference_cell_from_context(
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                        )
+                        .ok()
+                        .flatten();
+                }
+                let Value::Array(array) = object
+                    .read_property_from_context(property, current_class_id, &protected_class_ids)
+                    .ok()?
+                else {
+                    return None;
+                };
+                SymbolTable::read_nested_array_offset_alias_reference_cell(&array, &keys)
+            }
+            ArrayCopySourceRoot::AliasPath(root) => {
+                let alias = ArrayOffsetAlias {
+                    root: root.clone(),
+                    keys,
+                };
+                scope.read_array_offset_alias_reference_cell(&alias)
+            }
+        }
+    }
+
+    fn rehydrate_array_copy_return_cell_reference_cells(
+        &self,
+        source: &ArrayCopySource,
+        cell: &VariableCell,
+        scope: &mut SymbolTable,
+    ) {
+        let Value::Array(mut array) = cell.value_cloned() else {
+            return;
+        };
+
+        let mut relative_paths = Vec::new();
+        for source_root in scope.array_copy_source_roots(source) {
+            for alias in scope
+                .array_offset_aliases
+                .values()
+                .flat_map(|aliases| aliases.iter())
+            {
+                if alias.root != source_root
+                    || !alias.keys.starts_with(source.keys.as_slice())
+                    || alias.keys.len() <= source.keys.len()
+                {
+                    continue;
+                }
+                let relative_keys = alias.keys[source.keys.len()..].to_vec();
+                if !relative_paths.contains(&relative_keys) {
+                    relative_paths.push(relative_keys);
+                }
+            }
+        }
+
+        for relative_keys in relative_paths {
+            let Some(reference) = self.existing_reference_cell_for_array_copy_source_return_path(
+                source,
+                &relative_keys,
+                scope,
+            ) else {
+                continue;
+            };
+            SymbolTable::write_nested_array_offset_alias_reference(
+                &mut array,
+                &relative_keys,
+                reference,
+            );
+        }
+
+        cell.set_value(Value::Array(array));
     }
 
     fn promote_array_copy_source_mirror_paths_to_reference_cell(
@@ -37598,7 +37701,7 @@ impl Interpreter {
         keys: &[ArrayKey],
         span: Span,
     ) -> CompileResult<VariableCell> {
-        let Some((key, rest)) = keys.split_first() else {
+        if keys.is_empty() {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -37606,39 +37709,19 @@ impl Interpreter {
                     "static property array-offset reference roots require at least one key",
                 ),
             ));
-        };
-
-        if rest.is_empty() {
-            if array.get_slot(key.clone()).is_none() {
-                array.insert(key.clone(), Value::Null);
-            }
-            let slot = array.get_slot_mut(key.clone()).ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::invalid_array_access(
-                        "cannot bind static property array-offset reference".to_string(),
-                    ),
-                )
-            })?;
-            return Ok(slot.promote_to_reference_cell());
         }
 
-        let mut child = match array.get_cloned(key.clone()) {
-            Some(Value::Array(child)) => child,
-            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
-            Some(other) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::invalid_array_access(format!(
-                        "cannot read offset on {}",
-                        other.type_name()
-                    )),
-                ));
-            }
-        };
-        let cell = Self::static_property_array_offset_reference_cell(&mut child, rest, span)?;
-        array.insert(key.clone(), Value::Array(child));
-        Ok(cell)
+        array
+            .materialize_path(keys)
+            .map_err(|error| runtime_error(span, error))?;
+        array.promote_path_to_reference_cell(keys).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind static property array-offset reference".to_string(),
+                ),
+            )
+        })
     }
 
     fn write_named_static_property(
@@ -48332,6 +48415,39 @@ impl Interpreter {
             }
             _ => None,
         };
+        let returned_local_array_copy_source_cell = match result.as_ref() {
+            Ok(ReferenceReturnLocalBinding::ArrayOffset { root_name, keys }) => {
+                let source = local_scope
+                    .public_object_property_array_copy_source_for_static(root_name)
+                    .or_else(|| {
+                        local_scope
+                            .dirty_public_object_property_array_copy_source_for_static(root_name)
+                    });
+                source.and_then(|source| {
+                    self.existing_reference_cell_for_array_copy_source_return_path(
+                        &source,
+                        keys,
+                        &mut local_scope,
+                    )
+                    .or_else(|| {
+                        let alias = ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::StaticArray {
+                                name: root_name.clone(),
+                            },
+                            keys: keys.clone(),
+                        };
+                        self.reference_return_alias_cell(
+                            function,
+                            alias,
+                            function.span,
+                            &mut local_scope,
+                        )
+                        .ok()
+                    })
+                })
+            }
+            _ => None,
+        };
         let returned_local_array_offset_cell = match result.as_ref() {
             Ok(ReferenceReturnLocalBinding::ArrayOffset { root_name, keys }) => {
                 let alias = ArrayOffsetAlias {
@@ -48518,6 +48634,8 @@ impl Interpreter {
             }
         }
         if let Some(cell) = returned_value_copy_param_cell {
+            Ok(ReferenceReturnBinding::Cell(cell))
+        } else if let Some(cell) = returned_local_array_copy_source_cell {
             Ok(ReferenceReturnBinding::Cell(cell))
         } else if let Some(cell) = returned_local_array_offset_cell {
             Ok(ReferenceReturnBinding::Cell(cell))
@@ -50036,6 +50154,19 @@ impl Interpreter {
                 if let Some(aliases) = scope.array_offset_aliases_for_name(name) {
                     return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(aliases));
                 }
+                if let Some(source) = scope
+                    .public_object_property_array_copy_source_for_static(name)
+                    .or_else(|| scope.dirty_public_object_property_array_copy_source_for_static(name))
+                {
+                    if let Some(cell) = scope.read_cell(name) {
+                        self.rehydrate_array_copy_return_cell_reference_cells(
+                            &source,
+                            &cell,
+                            scope,
+                        );
+                        return Ok(ReferenceReturnLocalBinding::Cell(cell));
+                    }
+                }
                 scope
                     .read_cell(name)
                     .map(ReferenceReturnLocalBinding::Cell)
@@ -50106,7 +50237,12 @@ impl Interpreter {
                         },
                         keys: keys.clone(),
                     };
+                    let retained =
+                        scope.retained_static_copy_sources_for_aliases(std::slice::from_ref(
+                            &alias,
+                        ));
                     scope.materialize_array_offset_alias(&alias, span)?;
+                    scope.restore_retained_static_copy_sources(retained);
                     return Ok(ReferenceReturnLocalBinding::ArrayOffset {
                         root_name: root_name.to_string(),
                         keys,

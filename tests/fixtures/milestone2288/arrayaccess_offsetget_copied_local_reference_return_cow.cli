@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2288/arrayaccess_offsetget_copied_local_reference_return_cow.php

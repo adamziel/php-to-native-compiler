@@ -193,6 +193,11 @@ handled.
   promoting proven array-valued alias groups to real reference cells and
   writing those cells back to caller aliases, while keeping plain nested
   by-value copies detached.
+- [x] Lane 2288-C: preserve direct copied-local reference returns in supported
+  magic `__get()` and public `ArrayAccess::offsetGet()` bodies, covering
+  `$copy = $this->store; return $copy[$name];` and
+  `$copy = $this->store[$name]; return $copy;` with source-backed descendant
+  references plus no-alias detached-copy guards.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model by extracting root resolution into a
   runtime-backed alias/lvalue handle under `SymbolTable`, then migrating
@@ -200,8 +205,7 @@ handled.
   dynamic holder writeback away from stale path provenance. Known next probes
   should target whole-array identity through untracked containers,
   side-effecting helper/callback containers, dynamic holders that still cannot
-  expose either a materialized reference cell or a concrete writeback root, and
-  the remaining direct magic reference-return copied-local shapes.
+  expose either a materialized reference cell or a concrete writeback root.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

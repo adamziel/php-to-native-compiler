@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2288/arrayaccess_reference_return_direct_copied_parent_cow.php
