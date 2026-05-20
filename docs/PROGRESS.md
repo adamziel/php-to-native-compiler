@@ -23,6 +23,11 @@ Implemented:
   `call_user_func_array()` paths, avoiding another callback-shape-specific COW
   metadata path while preserving reference-return source promotion.
 
+- Reworked copied-source resolution around explicit live storage identities.
+  A resolved source now exposes visible object-property identities, alias roots,
+  and runtime cells through one comparison model, so direct object-property,
+  alias-root, and runtime-cell sources share a single storage matching path.
+
 - Continued the post-2289 COW frontier by moving copied-source reference-cell
   scanning and copied-source value reads onto `RuntimeAliasLvalueHandle`
   resolution first. Object-property writes that detach copied-source aliases,

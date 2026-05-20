@@ -1204,50 +1204,16 @@ impl RuntimeAliasLvalueHandle {
 
 #[derive(Debug, Clone)]
 struct ResolvedArrayCopySource {
-    source: ArrayCopySource,
-    handles: Vec<RuntimeAliasLvalueHandle>,
+    storage_identities: Vec<ArrayCopySourceStorageIdentity>,
 }
 
 impl ResolvedArrayCopySource {
     fn shares_storage_with(&self, other: &ResolvedArrayCopySource) -> bool {
-        match (&self.source.root, &other.source.root) {
-            (
-                ArrayCopySourceRoot::ObjectProperty {
-                    object: left_object,
-                    property: left_property,
-                },
-                ArrayCopySourceRoot::ObjectProperty {
-                    object: right_object,
-                    property: right_property,
-                },
-            ) => {
-                if left_object.id() == right_object.id() && left_property == right_property {
-                    return true;
-                }
-            }
-            (ArrayCopySourceRoot::AliasPath(left), ArrayCopySourceRoot::AliasPath(right)) => {
-                if left == right {
-                    return true;
-                }
-            }
-            (ArrayCopySourceRoot::RuntimeCell(left), ArrayCopySourceRoot::RuntimeCell(right)) => {
-                if left.shares_reference_with(right) {
-                    return true;
-                }
-            }
-            _ => {}
-        }
-
-        self.handles.iter().any(|left_handle| {
-            other.handles.iter().any(|right_handle| {
-                left_handle.root == right_handle.root
-                    || match (&left_handle.cell, &right_handle.cell) {
-                        (Some(left_cell), Some(right_cell)) => {
-                            left_cell.shares_reference_with(right_cell)
-                        }
-                        _ => false,
-                    }
-            })
+        self.storage_identities.iter().any(|left_identity| {
+            other
+                .storage_identities
+                .iter()
+                .any(|right_identity| left_identity.shares_storage_with(right_identity))
         })
     }
 
@@ -1257,28 +1223,65 @@ impl ResolvedArrayCopySource {
         object: &PhpObject,
         property: &str,
     ) -> bool {
-        if let ArrayCopySourceRoot::ObjectProperty {
-            object: source_object,
-            property: source_property,
-        } = &self.source.root
-        {
-            if source_object == object && source_property == property {
-                return true;
+        self.storage_identities.iter().any(|identity| {
+            identity.matches_object_property(symbols, object, property)
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+enum ArrayCopySourceStorageIdentity {
+    ObjectProperty { object_id: i64, property: String },
+    AliasRoot(ArrayOffsetAliasRoot),
+    RuntimeCell(VariableCell),
+}
+
+impl ArrayCopySourceStorageIdentity {
+    fn shares_storage_with(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::ObjectProperty {
+                    object_id: left_object_id,
+                    property: left_property,
+                },
+                Self::ObjectProperty {
+                    object_id: right_object_id,
+                    property: right_property,
+                },
+            ) => left_object_id == right_object_id && left_property == right_property,
+            (Self::AliasRoot(left), Self::AliasRoot(right)) => left == right,
+            (Self::RuntimeCell(left), Self::RuntimeCell(right)) => {
+                left.shares_reference_with(right)
             }
+            _ => false,
         }
-        if let ArrayCopySourceRoot::RuntimeCell(cell) = &self.source.root {
-            if object.properties().iter().any(|candidate| {
+    }
+
+    fn matches_object_property(
+        &self,
+        symbols: &SymbolTable,
+        object: &PhpObject,
+        property: &str,
+    ) -> bool {
+        match self {
+            Self::ObjectProperty {
+                object_id,
+                property: source_property,
+            } => object.id() == *object_id && source_property == property,
+            Self::AliasRoot(root) => symbols.alias_matches_object_property_value(
+                &ArrayOffsetAlias {
+                    root: root.clone(),
+                    keys: Vec::new(),
+                },
+                object,
+                property,
+            ),
+            Self::RuntimeCell(cell) => object.properties().iter().any(|candidate| {
                 candidate.name() == property
                     && candidate.is_initialized()
                     && candidate.reference_cell_id() == Some(cell.id())
-            }) {
-                return true;
-            }
+            }),
         }
-
-        self.handles.iter().any(|handle| {
-            symbols.alias_matches_object_property_value(&handle.alias(), object, property)
-        })
     }
 }
 
@@ -2515,9 +2518,101 @@ impl SymbolTable {
 
     fn resolved_array_copy_source(&self, source: &ArrayCopySource) -> ResolvedArrayCopySource {
         ResolvedArrayCopySource {
-            source: source.clone(),
-            handles: self.runtime_alias_lvalue_handles_for_array_copy_source(source),
+            storage_identities: self.array_copy_source_live_storage_identities(source),
         }
+    }
+
+    fn array_copy_source_live_storage_identities(
+        &self,
+        source: &ArrayCopySource,
+    ) -> Vec<ArrayCopySourceStorageIdentity> {
+        let mut identities = Vec::new();
+        match &source.root {
+            ArrayCopySourceRoot::ObjectProperty { object, property } => {
+                Self::push_array_copy_source_storage_identity(
+                    &mut identities,
+                    ArrayCopySourceStorageIdentity::ObjectProperty {
+                        object_id: object.id(),
+                        property: property.clone(),
+                    },
+                );
+            }
+            ArrayCopySourceRoot::AliasPath(root) => {
+                self.push_array_copy_source_storage_identities_for_alias_root(
+                    &mut identities,
+                    root,
+                );
+            }
+            ArrayCopySourceRoot::RuntimeCell(cell) => {
+                Self::push_array_copy_source_storage_identity(
+                    &mut identities,
+                    ArrayCopySourceStorageIdentity::RuntimeCell(cell.clone()),
+                );
+            }
+        }
+
+        for handle in self.runtime_alias_lvalue_handles_for_array_copy_source(source) {
+            self.push_array_copy_source_storage_identities_for_alias_root(
+                &mut identities,
+                &handle.root,
+            );
+            if let Some(cell) = handle.cell {
+                Self::push_array_copy_source_storage_identity(
+                    &mut identities,
+                    ArrayCopySourceStorageIdentity::RuntimeCell(cell),
+                );
+            }
+        }
+        identities
+    }
+
+    fn push_array_copy_source_storage_identities_for_alias_root(
+        &self,
+        identities: &mut Vec<ArrayCopySourceStorageIdentity>,
+        root: &ArrayOffsetAliasRoot,
+    ) {
+        Self::push_array_copy_source_storage_identity(
+            identities,
+            ArrayCopySourceStorageIdentity::AliasRoot(root.clone()),
+        );
+        if let Some(identity) = self.object_property_storage_identity_for_alias_root(root) {
+            Self::push_array_copy_source_storage_identity(identities, identity);
+        }
+    }
+
+    fn object_property_storage_identity_for_alias_root(
+        &self,
+        root: &ArrayOffsetAliasRoot,
+    ) -> Option<ArrayCopySourceStorageIdentity> {
+        let (object_name, property) = match root {
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+            | ArrayOffsetAliasRoot::ContextObjectProperty {
+                object, property, ..
+            } => (object, property),
+            ArrayOffsetAliasRoot::StaticArray { .. } | ArrayOffsetAliasRoot::GlobalArray { .. } => {
+                return None;
+            }
+        };
+        let Value::Object(object) = self.read_storage_named(object_name)? else {
+            return None;
+        };
+        Some(ArrayCopySourceStorageIdentity::ObjectProperty {
+            object_id: object.id(),
+            property: property.clone(),
+        })
+    }
+
+    fn push_array_copy_source_storage_identity(
+        identities: &mut Vec<ArrayCopySourceStorageIdentity>,
+        identity: ArrayCopySourceStorageIdentity,
+    ) {
+        if identities
+            .iter()
+            .any(|candidate| candidate.shares_storage_with(&identity))
+        {
+            return;
+        }
+        identities.push(identity);
     }
 
     fn public_object_property_array_copy_source_for_static(
