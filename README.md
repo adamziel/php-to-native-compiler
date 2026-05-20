@@ -14,7 +14,8 @@ The current project has two execution surfaces:
 For the long-term compatibility target, read `GOAL.MD`. For exact support
 boundaries, read `docs/SUPPORT.md`. For design notes, read
 `docs/ARCHITECTURE.md`. For the chronological proof log, read
-`docs/PROGRESS.md`.
+`docs/PROGRESS.md`. For the copy-on-write consolidation audit, read
+`docs/COW_COVERAGE_MATRIX.md`.
 
 ## Build
 

@@ -1219,12 +1219,11 @@ impl ResolvedArrayCopySource {
 
     fn matches_object_property(
         &self,
-        symbols: &SymbolTable,
         object: &PhpObject,
         property: &str,
     ) -> bool {
         self.storage_identities.iter().any(|identity| {
-            identity.matches_object_property(symbols, object, property)
+            identity.matches_object_property(object, property)
         })
     }
 }
@@ -1259,7 +1258,6 @@ impl ArrayCopySourceStorageIdentity {
 
     fn matches_object_property(
         &self,
-        symbols: &SymbolTable,
         object: &PhpObject,
         property: &str,
     ) -> bool {
@@ -1268,19 +1266,7 @@ impl ArrayCopySourceStorageIdentity {
                 object_id,
                 property: source_property,
             } => object.id() == *object_id && source_property == property,
-            Self::AliasRoot(root) => symbols.alias_matches_object_property_value(
-                &ArrayOffsetAlias {
-                    root: root.clone(),
-                    keys: Vec::new(),
-                },
-                object,
-                property,
-            ),
-            Self::RuntimeCell(cell) => object.properties().iter().any(|candidate| {
-                candidate.name() == property
-                    && candidate.is_initialized()
-                    && candidate.reference_cell_id() == Some(cell.id())
-            }),
+            Self::AliasRoot(_) | Self::RuntimeCell(_) => false,
         }
     }
 }
@@ -1373,14 +1359,13 @@ impl<'a> ArrayCopySourceMutationTarget<'a> {
             } => {
                 let resolved = symbols.resolved_array_copy_source(source);
                 (
-                    resolved.matches_object_property(symbols, object, property),
+                    resolved.matches_object_property(object, property),
                     keys,
                 )
             }
             Self::HolderStorageBoundary(boundary) => {
                 let resolved = symbols.resolved_array_copy_source(source);
                 let matches_boundary = resolved.matches_object_property(
-                    symbols,
                     &boundary.object,
                     &boundary.property,
                 ) || match &source.root {
@@ -1626,7 +1611,7 @@ impl SymbolTable {
 
     fn write_detached_static(&mut self, name: &str, value: Value) {
         self.clear_public_object_property_array_copy_source(name);
-        self.array_literal_copy_source_paths.remove(name);
+        self.clear_array_literal_copy_source_paths_for_root(name);
         let target_is_alias = self.array_offset_aliases.remove(name).is_some();
         let replaces_copied_array_provenance = self.has_copied_array_provenance_path(name);
         if replaces_copied_array_provenance {
@@ -1657,7 +1642,7 @@ impl SymbolTable {
 
     fn unset_static(&mut self, name: &str) {
         self.clear_public_object_property_array_copy_source(name);
-        self.array_literal_copy_source_paths.remove(name);
+        self.clear_array_literal_copy_source_paths_for_root(name);
         let target_is_alias = self.array_offset_aliases.remove(name).is_some();
         if !target_is_alias {
             let object_alias_fallbacks = self.public_object_roots_alias_fallbacks(name);
@@ -1699,7 +1684,7 @@ impl SymbolTable {
     }
 
     fn write_named(&mut self, name: &str, value: Value) {
-        self.array_literal_copy_source_paths.remove(name);
+        self.clear_array_literal_copy_source_paths_for_root(name);
         if let Some(aliases) = self.array_offset_aliases.get(name).cloned() {
             if self.write_array_offset_aliases(&aliases, value.clone()) {
                 return;
@@ -1723,7 +1708,7 @@ impl SymbolTable {
     where
         F: Fn(&PhpObject, &str) -> bool,
     {
-        self.array_literal_copy_source_paths.remove(name);
+        self.clear_array_literal_copy_source_paths_for_root(name);
         if let Some(aliases) = self.array_offset_aliases.get(name).cloned() {
             if self.write_array_offset_aliases_checked_with_object_type_resolver(
                 &aliases,
@@ -1750,7 +1735,7 @@ impl SymbolTable {
 
     fn write_global_name(&mut self, name: &str, value: Value) {
         self.clear_public_object_property_array_copy_source(name);
-        self.array_literal_copy_source_paths.remove(name);
+        self.clear_array_literal_copy_source_paths_for_root(name);
         let storage = self.global_storage().clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
@@ -1770,7 +1755,7 @@ impl SymbolTable {
         object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
     ) -> CompileResult<()> {
         self.clear_public_object_property_array_copy_source(name);
-        self.array_literal_copy_source_paths.remove(name);
+        self.clear_array_literal_copy_source_paths_for_root(name);
         let storage = self.global_storage().clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
@@ -1794,7 +1779,7 @@ impl SymbolTable {
 
     fn write_storage_named(&mut self, name: &str, value: Value) {
         self.clear_public_object_property_array_copy_source(name);
-        self.array_literal_copy_source_paths.remove(name);
+        self.clear_array_literal_copy_source_paths_for_root(name);
         let storage = self.routed_storage(name).clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
@@ -1817,7 +1802,7 @@ impl SymbolTable {
         F: Fn(&PhpObject, &str) -> bool,
     {
         self.clear_public_object_property_array_copy_source(name);
-        self.array_literal_copy_source_paths.remove(name);
+        self.clear_array_literal_copy_source_paths_for_root(name);
         let storage = self.routed_storage(name).clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
@@ -1851,7 +1836,7 @@ impl SymbolTable {
             .read_cell(source)
             .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(source)))?;
         self.clear_public_object_property_array_copy_source(target);
-        self.array_literal_copy_source_paths.remove(target);
+        self.clear_array_literal_copy_source_paths_for_root(target);
         self.array_offset_aliases.remove(target);
         self.routed_storage(target)
             .borrow_mut()
@@ -1913,7 +1898,7 @@ impl SymbolTable {
 
     fn bind_static_to_cell(&mut self, target: &str, cell: VariableCell) {
         self.clear_public_object_property_array_copy_source(target);
-        self.array_literal_copy_source_paths.remove(target);
+        self.clear_array_literal_copy_source_paths_for_root(target);
         self.array_offset_aliases.remove(target);
         self.routed_storage(target)
             .borrow_mut()
@@ -2413,6 +2398,7 @@ impl SymbolTable {
             .collect()
     }
 
+    #[cfg(test)]
     fn invalidate_array_copy_sources_for_object_property_write(
         &mut self,
         object: &PhpObject,
@@ -2612,6 +2598,7 @@ impl SymbolTable {
             .collect()
     }
 
+    #[cfg(test)]
     fn rehydrate_array_copy_sources_for_object_property_write(
         &mut self,
         object: &PhpObject,
@@ -4709,6 +4696,8 @@ impl SymbolTable {
         }
 
         for source_handle in self.runtime_alias_lvalue_handles_for_array_copy_source(&source) {
+            let source_handle_allows_array_literal_promotion =
+                self.array_copy_source_handle_allows_array_literal_promotion(&source_handle);
             let matching_aliases = self
                 .array_offset_aliases
                 .values()
@@ -4738,11 +4727,7 @@ impl SymbolTable {
                                 self.reference_cell_for_array_copy_alias_group(&alias_group)
                             })
                             .or_else(|| {
-                                matches!(
-                                    &source.root,
-                                    ArrayCopySourceRoot::ObjectProperty { .. }
-                                        | ArrayCopySourceRoot::RuntimeCell(_)
-                                )
+                                source_handle_allows_array_literal_promotion
                                     .then(|| {
                                         self.reference_cell_for_array_literal_alias_group(
                                             &alias_group,
@@ -4756,11 +4741,7 @@ impl SymbolTable {
                                 )
                             })
                             .or_else(|| {
-                                matches!(
-                                    &source.root,
-                                    ArrayCopySourceRoot::ObjectProperty { .. }
-                                        | ArrayCopySourceRoot::RuntimeCell(_)
-                                )
+                                source_handle_allows_array_literal_promotion
                                     .then(|| {
                                         self.reference_cell_for_array_literal_alias_group_with_value_promotion(
                                             &alias_group,
@@ -4773,6 +4754,12 @@ impl SymbolTable {
                 let Some(reference) = existing_reference.or(promoted_reference) else {
                     continue;
                 };
+                if promote_missing_reference_cells && source_handle_allows_array_literal_promotion {
+                    let _ = self.promote_array_offset_alias_to_reference_cell(
+                        &alias,
+                        reference.clone(),
+                    );
+                }
                 Self::write_nested_array_offset_alias_reference(
                     &mut array,
                     &relative_keys,
@@ -4880,6 +4867,18 @@ impl SymbolTable {
             }
         }
         cell.set_value(Value::Array(array));
+    }
+
+    fn array_copy_source_handle_allows_array_literal_promotion(
+        &self,
+        handle: &RuntimeAliasLvalueHandle,
+    ) -> bool {
+        handle.cell.is_some()
+            || matches!(
+                handle.root,
+                ArrayOffsetAliasRoot::PublicObjectProperty { .. }
+                    | ArrayOffsetAliasRoot::ContextObjectProperty { .. }
+            )
     }
 
     fn overlay_reference_cells_from_source_array(target: &mut PhpArray, source: &PhpArray) {
@@ -5016,15 +5015,35 @@ impl SymbolTable {
                     .collect()
             }
             ArrayCopySourceRoot::AliasPath(root @ ArrayOffsetAliasRoot::GlobalArray { name }) => {
-                vec![
+                let mut handles = vec![
                     self.runtime_alias_lvalue_handle(root.clone()),
                     self.runtime_alias_lvalue_handle(ArrayOffsetAliasRoot::StaticArray {
                         name: name.clone(),
                     }),
-                ]
+                ];
+                let cells = handles
+                    .iter()
+                    .filter_map(|handle| handle.cell.clone())
+                    .collect::<Vec<_>>();
+                for cell in cells {
+                    for handle in self.runtime_alias_lvalue_handles_for_reference_cell(&cell) {
+                        if !handles.iter().any(|candidate| candidate.root == handle.root) {
+                            handles.push(handle);
+                        }
+                    }
+                }
+                handles
             }
             ArrayCopySourceRoot::AliasPath(root) => {
-                vec![self.runtime_alias_lvalue_handle(root.clone())]
+                let mut handles = vec![self.runtime_alias_lvalue_handle(root.clone())];
+                if let Some(cell) = handles.first().and_then(|handle| handle.cell.clone()) {
+                    for handle in self.runtime_alias_lvalue_handles_for_reference_cell(&cell) {
+                        if !handles.iter().any(|candidate| candidate.root == handle.root) {
+                            handles.push(handle);
+                        }
+                    }
+                }
+                handles
             }
             ArrayCopySourceRoot::RuntimeCell(cell) => {
                 self.runtime_alias_lvalue_handles_for_reference_cell(cell)
@@ -5703,6 +5722,31 @@ impl SymbolTable {
             .into_iter()
             .map(|root| self.runtime_alias_lvalue_handle(root))
             .find(|handle| handle.cell.is_some())
+            .or_else(|| {
+                object.properties().iter().find_map(|candidate| {
+                    if candidate.name() != property || !candidate.is_initialized() {
+                        return None;
+                    }
+                    let declaring_class_id = candidate.declaring_class_id();
+                    let cell = object
+                        .existing_property_reference_cell_from_context(
+                            property,
+                            Some(declaring_class_id),
+                            &[declaring_class_id],
+                        )
+                        .ok()
+                        .flatten()?;
+                    Some(RuntimeAliasLvalueHandle {
+                        root: ArrayOffsetAliasRoot::ContextObjectProperty {
+                            object: String::new(),
+                            property: property.to_string(),
+                            current_class_id: Some(declaring_class_id),
+                            protected_class_ids: vec![declaring_class_id],
+                        },
+                        cell: Some(cell),
+                    })
+                })
+            })
             .unwrap_or_else(|| RuntimeAliasLvalueHandle {
                 root: ArrayOffsetAliasRoot::PublicObjectProperty {
                     object: String::new(),
@@ -6711,6 +6755,8 @@ impl SymbolTable {
         reference: VariableCell,
     ) -> bool {
         if alias.keys.is_empty() {
+            let boundary =
+                self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
             return match &alias.root {
                 ArrayOffsetAliasRoot::StaticArray { name } => {
                     if name == "GLOBALS" {
@@ -6731,9 +6777,13 @@ impl SymbolTable {
                     let Some(Value::Object(object)) = self.read_storage_named(object) else {
                         return false;
                     };
-                    object
+                    let wrote = object
                         .bind_property_reference_cell_to_context(property, reference, None, &[])
-                        .is_ok()
+                        .is_ok();
+                    if wrote {
+                        self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
+                    }
+                    wrote
                 }
                 ArrayOffsetAliasRoot::ContextObjectProperty {
                     object,
@@ -6744,14 +6794,18 @@ impl SymbolTable {
                     let Some(Value::Object(object)) = self.read_storage_named(object) else {
                         return false;
                     };
-                    object
+                    let wrote = object
                         .bind_property_reference_cell_to_context(
                             property,
                             reference,
                             *current_class_id,
                             protected_class_ids,
                         )
-                        .is_ok()
+                        .is_ok();
+                    if wrote {
+                        self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
+                    }
+                    wrote
                 }
             };
         }
@@ -6761,12 +6815,18 @@ impl SymbolTable {
             return false;
         };
 
+        let boundary = self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
         if !Self::write_nested_array_offset_alias_reference(&mut array, &alias.keys, reference) {
             return false;
         }
 
-        self.write_alias_root_value_for_reference_promotion(alias, Value::Array(array))
-            .is_ok()
+        let wrote = self
+            .write_alias_root_value_for_reference_promotion(alias, Value::Array(array))
+            .is_ok();
+        if wrote {
+            self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
+        }
+        wrote
     }
 
     fn write_alias_root_value_for_reference_promotion(
@@ -6810,9 +6870,15 @@ impl SymbolTable {
 
     fn write_array_offset_alias(&mut self, alias: &ArrayOffsetAlias, value: Value) -> bool {
         if alias.keys.is_empty() {
-            return self
+            let boundary =
+                self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
+            let wrote = self
                 .write_alias_root_value(alias, value, Span::new(0, 0))
                 .is_ok();
+            if wrote {
+                self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
+            }
+            return wrote;
         }
 
         let Ok(Some(Value::Array(mut array))) = self.read_alias_root_value(alias, Span::new(0, 0))
@@ -6821,6 +6887,7 @@ impl SymbolTable {
         };
         let retained = self.retained_static_copy_sources_for_aliases(std::slice::from_ref(alias));
 
+        let boundary = self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
         if !Self::write_nested_array_offset_alias(&mut array, &alias.keys, value) {
             return false;
         }
@@ -6828,6 +6895,7 @@ impl SymbolTable {
             .write_alias_root_value(alias, Value::Array(array), Span::new(0, 0))
             .is_ok();
         if wrote {
+            self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
             self.restore_retained_static_copy_sources(retained);
         }
         wrote
@@ -6841,12 +6909,15 @@ impl SymbolTable {
         object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
     ) -> CompileResult<bool> {
         if alias.keys.is_empty() {
+            let boundary =
+                self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
             self.write_alias_root_value_checked_with_object_type_resolver(
                 alias,
                 value,
                 span,
                 object_type_resolver,
             )?;
+            self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
             return Ok(true);
         }
 
@@ -6855,6 +6926,7 @@ impl SymbolTable {
         };
         let retained = self.retained_static_copy_sources_for_aliases(std::slice::from_ref(alias));
 
+        let boundary = self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
         if !Self::write_nested_array_offset_alias_checked_with_object_type_resolver(
             &mut array,
             &alias.keys,
@@ -6871,6 +6943,7 @@ impl SymbolTable {
             span,
             object_type_resolver,
         )?;
+        self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
         self.restore_retained_static_copy_sources(retained);
         Ok(true)
     }
@@ -6889,11 +6962,17 @@ impl SymbolTable {
             return false;
         };
 
+        let boundary = self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
         if !Self::write_nested_array_offset_alias_reference(&mut array, &alias.keys, reference) {
             return false;
         }
-        self.write_alias_root_value_for_reference_promotion(alias, Value::Array(array))
-            .is_ok()
+        let wrote = self
+            .write_alias_root_value_for_reference_promotion(alias, Value::Array(array))
+            .is_ok();
+        if wrote {
+            self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
+        }
+        wrote
     }
 
     fn write_array_offset_aliases(&mut self, aliases: &[ArrayOffsetAlias], value: Value) -> bool {
@@ -13360,12 +13439,20 @@ impl Interpreter {
 
         let alias_fallbacks =
             scope.public_object_property_root_alias_fallbacks(object_name, property);
-        scope.rehydrate_array_copy_sources_for_object_property_write(&object, property, &[]);
+        let boundary = scope.object_property_holder_storage_boundary(
+            object_name,
+            &object,
+            property,
+            &[],
+            current_class_id,
+            &protected_class_ids,
+        );
+        scope.pre_replace_holder_storage(&boundary);
         let found = object
             .unset_property_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(span, error))?;
         if found {
-            scope.invalidate_array_copy_sources_for_object_property_write(&object, property, &[]);
+            scope.post_replace_holder_storage(&boundary);
             scope.remove_public_object_property_root_from_array_offset_aliases(
                 object_name,
                 property,
@@ -13654,9 +13741,15 @@ impl Interpreter {
                         keys: keys.clone(),
                     },
                 ];
-                scope.rehydrate_array_copy_sources_for_object_property_write(
-                    &object, property, &keys,
+                let boundary = scope.object_property_holder_storage_boundary(
+                    object_name,
+                    &object,
+                    property,
+                    &keys,
+                    current_class_id,
+                    &protected_class_ids,
                 );
+                scope.pre_replace_holder_storage(&boundary);
                 scope.detach_array_offset_aliases_for_unset_paths(&unset_paths);
                 Self::unset_nested_array_value(array, &keys, span)?;
                 object
@@ -13667,9 +13760,7 @@ impl Interpreter {
                         &protected_class_ids,
                     )
                     .map_err(|error| runtime_error(span, error))?;
-                scope.invalidate_array_copy_sources_for_object_property_write(
-                    &object, property, &keys,
-                );
+                scope.post_replace_holder_storage(&boundary);
                 scope.sync_array_offset_aliases_for_object_property_root(object_name, property);
                 Ok(())
             }
@@ -19601,23 +19692,25 @@ impl Interpreter {
         };
 
         let mut relative_paths = Vec::new();
-        for source_handle in scope.runtime_alias_lvalue_handles_for_array_copy_source(source) {
-            for alias in scope
-                .array_offset_aliases
-                .values()
-                .flat_map(|aliases| aliases.iter())
-            {
-                if alias.root != source_handle.root
-                    || !alias.keys.starts_with(source.keys.as_slice())
-                    || alias.keys.len() <= source.keys.len()
-                {
-                    continue;
-                }
-                let relative_keys = alias.keys[source.keys.len()..].to_vec();
-                if !relative_paths.contains(&relative_keys) {
-                    relative_paths.push(relative_keys);
-                }
+        for alias in scope
+            .array_offset_aliases
+            .values()
+            .flat_map(|aliases| aliases.iter())
+        {
+            let alias_source = ArrayCopySource::alias_path(
+                alias.root.clone(),
+                alias.keys.clone(),
+                source.include_exact_path,
+            );
+            let Some(relative_keys) =
+                scope.array_copy_source_relative_path_from_ancestor(source, &alias_source)
+            else {
+                continue;
+            };
+            if relative_keys.is_empty() || relative_paths.contains(&relative_keys) {
+                continue;
             }
+            relative_paths.push(relative_keys);
         }
 
         for relative_keys in relative_paths {
@@ -22914,11 +23007,15 @@ impl Interpreter {
                     self.current_property_access_context();
                 match scope.read_static(object, *span)? {
                     Value::Object(object_value) => {
-                        scope.rehydrate_array_copy_sources_for_object_property_write(
+                        let boundary = scope.object_property_holder_storage_boundary(
+                            object,
                             &object_value,
                             property,
                             &[],
+                            current_class_id,
+                            &protected_class_ids,
                         );
+                        scope.pre_replace_holder_storage(&boundary);
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(object, property);
                         match object_value.write_property_from_context_with_object_type_resolver(
@@ -22931,11 +23028,7 @@ impl Interpreter {
                             },
                         ) {
                             Ok(()) => {
-                                scope.invalidate_array_copy_sources_for_object_property_write(
-                                    &object_value,
-                                    property,
-                                    &[],
-                                );
+                                scope.post_replace_holder_storage(&boundary);
                                 scope.remove_public_object_property_root_from_array_offset_aliases(
                                     object,
                                     property,
@@ -23855,15 +23948,19 @@ impl Interpreter {
                 };
                 match scope.read_static(object, *span)? {
                     Value::Object(object_value) => {
-                        scope.rehydrate_array_copy_sources_for_object_property_write(
+                        let (current_class_id, protected_class_ids) =
+                            self.current_property_access_context();
+                        let boundary = scope.object_property_holder_storage_boundary(
+                            object,
                             &object_value,
                             &property,
                             &[],
+                            current_class_id,
+                            &protected_class_ids,
                         );
+                        scope.pre_replace_holder_storage(&boundary);
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(object, &property);
-                        let (current_class_id, protected_class_ids) =
-                            self.current_property_access_context();
                         match object_value.write_property_from_context_with_object_type_resolver(
                             &property,
                             value.clone(),
@@ -23907,11 +24004,7 @@ impl Interpreter {
                             }
                             Err(error) => return Err(runtime_error(*span, error)),
                         }
-                        scope.invalidate_array_copy_sources_for_object_property_write(
-                            &object_value,
-                            &property,
-                            &[],
-                        );
+                        scope.post_replace_holder_storage(&boundary);
                         scope.remove_public_object_property_root_from_array_offset_aliases(
                             object,
                             &property,
@@ -26142,9 +26235,15 @@ impl Interpreter {
 
         match &mut slot {
             Value::String(string) if keys.len() == 1 => {
-                scope.rehydrate_array_copy_sources_for_object_property_write(
-                    &object, property, keys,
+                let boundary = scope.object_property_holder_storage_boundary(
+                    object_name,
+                    &object,
+                    property,
+                    keys,
+                    current_class_id,
+                    &protected_class_ids,
                 );
+                scope.pre_replace_holder_storage(&boundary);
                 self.write_ascii_string_offset(string, &keys[0], value, span)?;
                 object
                     .write_property_from_context_with_object_type_resolver(
@@ -26157,15 +26256,19 @@ impl Interpreter {
                         },
                     )
                     .map_err(|error| runtime_error(span, error))?;
-                scope.invalidate_array_copy_sources_for_object_property_write(
-                    &object, property, keys,
-                );
+                scope.post_replace_holder_storage(&boundary);
                 Ok(())
             }
             Value::Array(array) => {
-                scope.rehydrate_array_copy_sources_for_object_property_write(
-                    &object, property, keys,
+                let boundary = scope.object_property_holder_storage_boundary(
+                    object_name,
+                    &object,
+                    property,
+                    keys,
+                    current_class_id,
+                    &protected_class_ids,
                 );
+                scope.pre_replace_holder_storage(&boundary);
                 self.write_nested_array_value(array, keys, value, span)?;
                 object
                     .write_property_from_context(
@@ -26175,9 +26278,7 @@ impl Interpreter {
                         &protected_class_ids,
                     )
                     .map_err(|error| runtime_error(span, error))?;
-                scope.invalidate_array_copy_sources_for_object_property_write(
-                    &object, property, keys,
-                );
+                scope.post_replace_holder_storage(&boundary);
                 Ok(())
             }
             other => Err(runtime_error(
@@ -26248,9 +26349,15 @@ impl Interpreter {
 
         match &mut slot {
             Value::Array(array) => {
-                scope.rehydrate_array_copy_sources_for_object_property_write(
-                    &object, property, keys,
+                let boundary = scope.object_property_holder_storage_boundary(
+                    object_name,
+                    &object,
+                    property,
+                    keys,
+                    current_class_id,
+                    &protected_class_ids,
                 );
+                scope.pre_replace_holder_storage(&boundary);
                 Self::append_nested_array_value(array, keys, value, span)?;
                 object
                     .write_property_from_context(
@@ -26260,9 +26367,7 @@ impl Interpreter {
                         &protected_class_ids,
                     )
                     .map_err(|error| runtime_error(span, error))?;
-                scope.invalidate_array_copy_sources_for_object_property_write(
-                    &object, property, keys,
-                );
+                scope.post_replace_holder_storage(&boundary);
                 Ok(())
             }
             other => Err(runtime_error(
@@ -26293,18 +26398,29 @@ impl Interpreter {
         )?;
         let root = self.context_object_property_alias_root(object_name, property, span, scope)?;
         let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let boundary = match scope.read_static(object_name, span)? {
+            Value::Object(object) => Some(scope.object_property_holder_storage_boundary(
+                object_name,
+                &object,
+                property,
+                keys,
+                current_class_id,
+                &protected_class_ids,
+            )),
+            _ => None,
+        };
+        if let Some(boundary) = boundary.as_ref() {
+            scope.pre_replace_holder_storage(boundary);
+        }
         let appended_alias = scope.append_object_property_array_offset_reference_alias(
             root,
             keys.to_vec(),
             stored_value,
             span,
         )?;
-        if let Some(Value::Object(object_value)) = scope.read_named(object_name) {
-            scope.invalidate_array_copy_sources_for_object_property_write(
-                &object_value,
-                property,
-                &appended_alias.keys,
-            );
+        if let Some(boundary) = boundary.as_ref() {
+            scope.post_replace_holder_storage(boundary);
         }
         scope.sync_array_offset_aliases_for_root_path(&appended_alias.root, &appended_alias.keys);
         Ok(())
@@ -27076,11 +27192,15 @@ impl Interpreter {
                     self.current_property_access_context();
                 match scope.read_static(&object, span)? {
                     Value::Object(object_value) => {
-                        scope.rehydrate_array_copy_sources_for_object_property_write(
+                        let boundary = scope.object_property_holder_storage_boundary(
+                            &object,
                             &object_value,
                             &property,
                             &[],
+                            current_class_id,
+                            &protected_class_ids,
                         );
+                        scope.pre_replace_holder_storage(&boundary);
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(&object, &property);
                         object_value
@@ -27091,11 +27211,7 @@ impl Interpreter {
                                 &protected_class_ids,
                             )
                             .map_err(|error| runtime_error(span, error))?;
-                        scope.invalidate_array_copy_sources_for_object_property_write(
-                            &object_value,
-                            &property,
-                            &[],
-                        );
+                        scope.post_replace_holder_storage(&boundary);
                         scope.remove_public_object_property_root_from_array_offset_aliases(
                             &object,
                             &property,
@@ -27141,11 +27257,15 @@ impl Interpreter {
                                 )),
                             ));
                         };
-                        scope.rehydrate_array_copy_sources_for_object_property_write(
+                        let boundary = scope.object_property_holder_storage_boundary(
+                            &object,
                             &object_value,
                             &property,
                             &keys,
+                            current_class_id,
+                            &protected_class_ids,
                         );
+                        scope.pre_replace_holder_storage(&boundary);
                         self.write_nested_array_value(array, &keys, value, span)?;
                         object_value
                             .write_property_from_context(
@@ -27155,11 +27275,7 @@ impl Interpreter {
                                 &protected_class_ids,
                             )
                             .map_err(|error| runtime_error(span, error))?;
-                        scope.invalidate_array_copy_sources_for_object_property_write(
-                            &object_value,
-                            &property,
-                            &keys,
-                        );
+                        scope.post_replace_holder_storage(&boundary);
                         scope.sync_array_offset_aliases_for_object_property_root(
                             &object,
                             &property,
@@ -27636,15 +27752,37 @@ impl Interpreter {
                 if should_assign {
                     let value = self.evaluate(expr, scope)?;
                     match scope.read_static(object, *span)? {
-                        Value::Object(object) => object
-                            .write_property_from_context(
+                        Value::Object(object_value) => {
+                            let boundary = scope.object_property_holder_storage_boundary(
+                                object,
+                                &object_value,
                                 property,
-                                value.clone(),
+                                &[],
                                 current_class_id,
                                 &protected_class_ids,
-                            )
-                            .map(|()| value)
-                            .map_err(|error| runtime_error(*span, error)),
+                            );
+                            scope.pre_replace_holder_storage(&boundary);
+                            let alias_fallbacks =
+                                scope.public_object_property_root_alias_fallbacks(object, property);
+                            object_value
+                                .write_property_from_context(
+                                    property,
+                                    value.clone(),
+                                    current_class_id,
+                                    &protected_class_ids,
+                                )
+                                .map_err(|error| runtime_error(*span, error))?;
+                            scope.post_replace_holder_storage(&boundary);
+                            scope.remove_public_object_property_root_from_array_offset_aliases(
+                                object,
+                                property,
+                                &alias_fallbacks,
+                            );
+                            scope.sync_array_offset_aliases_for_object_property_root(
+                                object, property,
+                            );
+                            Ok(value)
+                        }
                         other => Err(runtime_error(
                             *span,
                             RuntimeError::invalid_property_access(format!(
@@ -27657,15 +27795,62 @@ impl Interpreter {
                     unreachable!("non-null object properties return before assignment")
                 }
             }
-            AssignTarget::DynamicProperty { span, .. }
-            | AssignTarget::NonDirectProperty { span, .. }
-            | AssignTarget::NonDirectDynamicProperty { span, .. } => Err(runtime_error(
-                *span,
-                RuntimeError::unsupported_call(
-                    "??=",
-                    "dynamic property targets are not implemented",
-                ),
-            )),
+            AssignTarget::DynamicProperty {
+                object,
+                property,
+                span,
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let target = AssignTarget::Property {
+                    object: object.clone(),
+                    property,
+                    span: *span,
+                };
+                self.evaluate_null_coalesce_assignment(&target, expr, scope)
+            }
+            AssignTarget::NonDirectProperty {
+                holder,
+                property,
+                span,
+            } => {
+                let temp_name = self.non_direct_object_holder_temp(holder, property, scope, *span)?;
+                let target = AssignTarget::Property {
+                    object: temp_name,
+                    property: property.clone(),
+                    span: *span,
+                };
+                self.evaluate_null_coalesce_assignment(&target, expr, scope)
+            }
+            AssignTarget::NonDirectDynamicProperty {
+                holder,
+                property,
+                span,
+            } => {
+                let source_snapshot = scope.public_array_copy_source_snapshot();
+                let holder_value = self.evaluate(holder, scope)?;
+                scope.restore_unchanged_public_array_copy_sources(source_snapshot);
+                let holder_object = match holder_value {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot write dynamic property on {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Object(holder_object));
+                let target = AssignTarget::Property {
+                    object: temp_name,
+                    property,
+                    span: *span,
+                };
+                self.evaluate_null_coalesce_assignment(&target, expr, scope)
+            }
             AssignTarget::ObjectStaticProperty { span, .. } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_call(
@@ -41467,29 +41652,22 @@ impl Interpreter {
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
-            let (values, reference_bindings) = self
-                .evaluate_call_user_func_reference_return_value_arguments(
-                    function,
-                    &args[1..],
-                    span,
-                    caller_scope,
-                )?;
-            let by_value_array_copy_source_bindings =
-                Self::array_copy_source_bindings_for_reference_bindings(
-                    &reference_bindings,
-                    caller_scope,
-                );
-            return self
-                .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
-                    function,
-                    values,
-                    None,
-                    None,
-                    None,
-                    reference_bindings,
-                    caller_scope,
-                    by_value_array_copy_source_bindings,
-                );
+            let frame = self.call_user_func_expr_call_frame_bindings(
+                function,
+                &args[1..],
+                span,
+                caller_scope,
+                true,
+            )?;
+            return self.call_reference_return_function_value_with_call_frame_and_return_source(
+                function,
+                frame,
+                None,
+                None,
+                None,
+                caller_scope,
+                Vec::new(),
+            );
         }
 
         self.call_user_func_value_warning_function_with_array_copy_source(
@@ -41568,39 +41746,32 @@ impl Interpreter {
                     ensure_supported_function_metadata(function, span)?;
                 }
                 self.ensure_user_function_call_depth(function, span)?;
-                if function.returns_by_reference {
-                    let (values, reference_bindings) = self
-                        .evaluate_call_user_func_reference_return_value_arguments(
-                            function,
-                            args,
-                            span,
-                            caller_scope,
-                        )?;
-                    return self.call_reference_return_function_value_with_checked_values(
-                        function,
-                        values,
-                        Some(object.clone()),
-                        Some(class_id),
-                        Some(object.class_id()),
-                        reference_bindings,
-                        caller_scope,
-                    );
-                }
-                let values = self.evaluate_call_user_func_value_arguments(
+                let frame = self.call_user_func_expr_call_frame_bindings(
                     function,
                     args,
                     span,
                     caller_scope,
+                    function.returns_by_reference,
                 )?;
+                if function.returns_by_reference {
+                    return self.call_reference_return_function_value_with_call_frame(
+                        function,
+                        frame,
+                        Some(object.clone()),
+                        Some(class_id),
+                        Some(object.class_id()),
+                        caller_scope,
+                    );
+                }
 
-                self.call_user_function_with_checked_values(
+                self.call_user_function_with_call_frame(
                     function,
-                    values,
+                    frame,
                     Some(object.clone()),
                     Some(class_id),
                     Some(object.class_id()),
-                    Vec::new(),
                     Some(caller_scope),
+                    Vec::new(),
                 )
             }
             Value::String(class_name) => {
@@ -41660,39 +41831,32 @@ impl Interpreter {
                     ensure_supported_function_metadata(function, span)?;
                 }
                 self.ensure_user_function_call_depth(function, span)?;
-                if function.returns_by_reference {
-                    let (values, reference_bindings) = self
-                        .evaluate_call_user_func_reference_return_value_arguments(
-                            function,
-                            args,
-                            span,
-                            caller_scope,
-                        )?;
-                    return self.call_reference_return_function_value_with_checked_values(
-                        function,
-                        values,
-                        None,
-                        Some(declaring_class_id),
-                        Some(class_id),
-                        reference_bindings,
-                        caller_scope,
-                    );
-                }
-                let values = self.evaluate_call_user_func_value_arguments(
+                let frame = self.call_user_func_expr_call_frame_bindings(
                     function,
                     args,
                     span,
                     caller_scope,
+                    function.returns_by_reference,
                 )?;
+                if function.returns_by_reference {
+                    return self.call_reference_return_function_value_with_call_frame(
+                        function,
+                        frame,
+                        None,
+                        Some(declaring_class_id),
+                        Some(class_id),
+                        caller_scope,
+                    );
+                }
 
-                self.call_user_function_with_checked_values(
+                self.call_user_function_with_call_frame(
                     function,
-                    values,
+                    frame,
                     None,
                     Some(declaring_class_id),
                     Some(class_id),
-                    Vec::new(),
                     Some(caller_scope),
+                    Vec::new(),
                 )
             }
             _ => unreachable!("array_callable_parts restricts callback targets"),
@@ -41759,28 +41923,22 @@ impl Interpreter {
                 if function.returns_by_reference {
                     ensure_supported_reference_return_function_metadata(function, span)?;
                     self.ensure_user_function_call_depth(function, span)?;
-                    let (values, reference_bindings) = self
-                        .evaluate_call_user_func_reference_return_value_arguments(
-                            function,
-                            args,
-                            span,
-                            caller_scope,
-                        )?;
-                    let by_value_array_copy_source_bindings =
-                        Self::array_copy_source_bindings_for_reference_bindings(
-                            &reference_bindings,
-                            caller_scope,
-                        );
+                    let frame = self.call_user_func_expr_call_frame_bindings(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                        true,
+                    )?;
                     return self
-                        .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
+                        .call_reference_return_function_value_with_call_frame_and_return_source(
                             function,
-                            values,
+                            frame,
                             Some(object.clone()),
                             Some(class_id),
                             Some(object.class_id()),
-                            reference_bindings,
                             caller_scope,
-                            by_value_array_copy_source_bindings,
+                            Vec::new(),
                         );
                 }
                 self.call_user_func_value_warning_function_with_array_copy_source(
@@ -41847,28 +42005,22 @@ impl Interpreter {
                 if function.returns_by_reference {
                     ensure_supported_reference_return_function_metadata(function, span)?;
                     self.ensure_user_function_call_depth(function, span)?;
-                    let (values, reference_bindings) = self
-                        .evaluate_call_user_func_reference_return_value_arguments(
-                            function,
-                            args,
-                            span,
-                            caller_scope,
-                        )?;
-                    let by_value_array_copy_source_bindings =
-                        Self::array_copy_source_bindings_for_reference_bindings(
-                            &reference_bindings,
-                            caller_scope,
-                        );
+                    let frame = self.call_user_func_expr_call_frame_bindings(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                        true,
+                    )?;
                     return self
-                        .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
+                        .call_reference_return_function_value_with_call_frame_and_return_source(
                             function,
-                            values,
+                            frame,
                             None,
                             Some(declaring_class_id),
                             Some(class_id),
-                            reference_bindings,
                             caller_scope,
-                            by_value_array_copy_source_bindings,
+                            Vec::new(),
                         );
                 }
                 self.call_user_func_value_warning_function_with_array_copy_source(
@@ -41902,40 +42054,32 @@ impl Interpreter {
         }
         self.ensure_user_function_call_depth(function, span)?;
 
-        let by_value_array_copy_bindings =
-            Self::by_value_array_copy_bindings_for_call_user_func_value(function, args);
+        let frame = self.call_user_func_expr_call_frame_bindings(
+            function,
+            args,
+            span,
+            caller_scope,
+            function.returns_by_reference,
+        )?;
         if function.returns_by_reference {
-            let (values, reference_bindings) = self
-                .evaluate_call_user_func_reference_return_value_arguments(
-                    function,
-                    args,
-                    span,
-                    caller_scope,
-                )?;
-            return self.call_reference_return_function_value_with_checked_values(
+            return self.call_reference_return_function_value_with_call_frame(
                 function,
-                values,
+                frame,
                 None,
                 None,
                 None,
-                reference_bindings,
                 caller_scope,
             );
         }
 
-        let values =
-            self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
-
-        self.call_user_function_with_checked_values_and_locals(
+        self.call_user_function_with_call_frame(
             function,
-            values,
+            frame,
             None,
             None,
             None,
-            Vec::new(),
             Some(caller_scope),
             Vec::new(),
-            by_value_array_copy_bindings,
         )
     }
 
@@ -41974,27 +42118,27 @@ impl Interpreter {
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
-            let (values, reference_bindings) = self
-                .evaluate_call_user_func_reference_return_value_arguments(
-                    function,
-                    args,
-                    span,
-                    caller_scope,
-                )?;
+            let frame = self.call_user_func_expr_call_frame_bindings(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
             let prebound_locals = self.closure_prebound_locals(&closure);
             let (this_object, class_context, called_class_context) =
                 self.closure_call_context(&closure);
-            return self.call_reference_return_function_value_with_checked_values_and_locals(
-                function,
-                values,
-                this_object,
-                class_context,
-                called_class_context,
-                reference_bindings,
-                caller_scope,
-                prebound_locals,
-                Vec::new(),
-            );
+            return self
+                .call_reference_return_function_value_with_call_frame_and_return_source(
+                    function,
+                    frame,
+                    this_object,
+                    class_context,
+                    called_class_context,
+                    caller_scope,
+                    prebound_locals,
+                )
+                .map(|(value, _)| value);
         }
         ensure_supported_function_metadata(function, span)?;
         let prebound_locals = self.closure_prebound_locals(&closure);
@@ -42047,32 +42191,25 @@ impl Interpreter {
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
-            let (values, reference_bindings) = self
-                .evaluate_call_user_func_reference_return_value_arguments(
-                    function,
-                    args,
-                    span,
-                    caller_scope,
-                )?;
+            let frame = self.call_user_func_expr_call_frame_bindings(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
             let prebound_locals = self.closure_prebound_locals(&closure);
             let (this_object, class_context, called_class_context) =
                 self.closure_call_context(&closure);
-            let by_value_array_copy_source_bindings =
-                Self::array_copy_source_bindings_for_reference_bindings(
-                    &reference_bindings,
-                    caller_scope,
-                );
             return self
-                .call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
+                .call_reference_return_function_value_with_call_frame_and_return_source(
                     function,
-                    values,
+                    frame,
                     this_object,
                     class_context,
                     called_class_context,
-                    reference_bindings,
                     caller_scope,
                     prebound_locals,
-                    by_value_array_copy_source_bindings,
                 );
         }
         let prebound_locals = self.closure_prebound_locals(&closure);
@@ -42105,8 +42242,13 @@ impl Interpreter {
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let frame =
-            self.call_user_func_expr_call_frame_bindings(function, args, span, caller_scope, false)?;
+        let frame = self.call_user_func_expr_call_frame_bindings(
+            function,
+            args,
+            span,
+            caller_scope,
+            false,
+        )?;
 
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
@@ -42120,33 +42262,6 @@ impl Interpreter {
             frame.by_value_array_copy_bindings,
             frame.array_copy_source_bindings,
         )
-    }
-
-    fn evaluate_call_user_func_value_arguments(
-        &mut self,
-        function: &FunctionDecl,
-        args: &[Expr],
-        span: Span,
-        caller_scope: &mut SymbolTable,
-    ) -> CompileResult<Vec<Value>> {
-        let mut values = Vec::with_capacity(args.len());
-        for arg in args {
-            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
-        }
-        self.emit_call_user_func_reference_parameter_warnings(function, args.len(), span)?;
-        Ok(values)
-    }
-
-    fn evaluate_call_user_func_reference_return_value_arguments(
-        &mut self,
-        function: &FunctionDecl,
-        args: &[Expr],
-        span: Span,
-        caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
-        let frame =
-            self.call_user_func_expr_call_frame_bindings(function, args, span, caller_scope, true)?;
-        Ok((frame.values, frame.reference_bindings))
     }
 
     fn call_user_func_expr_call_frame_bindings(
@@ -42788,94 +42903,50 @@ impl Interpreter {
         let function = function.as_ref();
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
+            let frame = self.evaluate_call_user_func_array_call_frame_bindings(
+                function,
+                argument_expr,
+                span,
+                caller_scope,
+                true,
+            )?;
             self.ensure_user_function_call_depth(function, span)?;
-            let (values, reference_bindings) = self
-                .evaluate_call_user_func_array_checked_arguments(
-                    function,
-                    argument_expr,
-                    span,
-                    caller_scope,
-                )?;
             let prebound_locals = self.closure_prebound_locals(&closure);
             let (this_object, class_context, called_class_context) =
                 self.closure_call_context(&closure);
-            return self.call_reference_return_function_value_with_checked_values_and_locals(
-                function,
-                values,
-                this_object,
-                class_context,
-                called_class_context,
-                reference_bindings,
-                caller_scope,
-                prebound_locals,
-                Vec::new(),
-            );
+            return self
+                .call_reference_return_function_value_with_call_frame_and_return_source(
+                    function,
+                    frame,
+                    this_object,
+                    class_context,
+                    called_class_context,
+                    caller_scope,
+                    prebound_locals,
+                )
+                .map(|(value, _)| value);
         }
         ensure_supported_function_metadata(function, span)?;
-        self.ensure_user_function_call_depth(function, span)?;
-        let (values, reference_bindings) = self.evaluate_call_user_func_array_checked_arguments(
+        let frame = self.evaluate_call_user_func_array_call_frame_bindings(
             function,
             argument_expr,
             span,
             caller_scope,
+            false,
         )?;
-        let by_value_array_copy_source_bindings =
-            Self::array_copy_source_bindings_for_reference_bindings(
-                &reference_bindings,
-                caller_scope,
-            )
-            .into_iter()
-            .chain(
-                self.call_user_func_array_by_value_copy_source_bindings_for_argument(
-                    function,
-                    argument_expr,
-                    caller_scope,
-                )?,
-            )
-            .collect();
-        if function.returns_by_reference {
-            self.ensure_user_function_call_depth(function, span)?;
-            return self
-                .call_reference_return_function_value_with_checked_values_with_array_copy_sources(
-                    function,
-                    values,
-                    None,
-                    None,
-                    None,
-                    reference_bindings,
-                    caller_scope,
-                    by_value_array_copy_source_bindings,
-                );
-        }
-        let by_value_array_copy_bindings =
-            Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
-                function,
-                argument_expr,
-            )
-            .into_iter()
-            .chain(
-                Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
-                    function,
-                    argument_expr,
-                ),
-            )
-            .collect();
+        self.ensure_user_function_call_depth(function, span)?;
         let prebound_locals = self.closure_prebound_locals(&closure);
         let (this_object, class_context, called_class_context) =
             self.closure_call_context(&closure);
-        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+        self.call_user_function_with_call_frame(
             function,
-            values,
+            frame,
             this_object,
             class_context,
             called_class_context,
-            reference_bindings,
             Some(caller_scope),
             prebound_locals,
-            by_value_array_copy_bindings,
-            by_value_array_copy_source_bindings,
         )
-        .map(|(value, _)| value)
     }
 
     fn invoke_closure_value_from_call_user_func_array_with_array_copy_source(
@@ -42909,120 +42980,40 @@ impl Interpreter {
         }
         let function = function.as_ref();
         if function.returns_by_reference {
-            if let Some((values, reference_bindings, source_bindings)) = self
-                .evaluate_call_user_func_array_reference_return_value_arguments(
-                    function,
-                    argument_expr,
-                    span,
-                    caller_scope,
-                )?
-            {
-                ensure_supported_reference_return_function_metadata(function, span)?;
-                self.ensure_user_function_call_depth(function, span)?;
-                let prebound_locals = self.closure_prebound_locals(&closure);
-                let (this_object, class_context, called_class_context) =
-                    self.closure_call_context(&closure);
-                return self
-                    .call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
-                        function,
-                        values,
-                        this_object,
-                        class_context,
-                        called_class_context,
-                        reference_bindings,
-                        caller_scope,
-                        prebound_locals,
-                        source_bindings,
-                    );
-            }
-
-            return self
-                .invoke_closure_value_from_call_user_func_array(
-                    closure,
-                    argument_expr,
-                    span,
-                    caller_scope,
-                )
-                .map(|value| (value, None));
-        }
-        let prebound_locals = self.closure_prebound_locals(&closure);
-        if !Self::function_accepts_source_aware_by_value_arguments(function) {
-            let (values, reference_bindings) = self
-                .evaluate_call_user_func_array_checked_arguments(
-                    function,
-                    argument_expr,
-                    span,
-                    caller_scope,
-                )?;
-            let by_value_array_copy_source_bindings =
-                Self::array_copy_source_bindings_for_reference_bindings(
-                    &reference_bindings,
-                    caller_scope,
-                );
-            let by_value_array_copy_bindings =
-                Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
-                    function,
-                    argument_expr,
-                )
-                .into_iter()
-                .chain(
-                    Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
-                        function,
-                        argument_expr,
-                    ),
-                )
-                .collect();
-            self.ensure_user_function_call_depth(function, span)?;
-            let (this_object, class_context, called_class_context) =
-                self.closure_call_context(&closure);
-            return self
-                .call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
-                    function,
-                    values,
-                    this_object,
-                    class_context,
-                    called_class_context,
-                    reference_bindings,
-                    Some(caller_scope),
-                    prebound_locals,
-                    by_value_array_copy_bindings,
-                    by_value_array_copy_source_bindings,
-                );
-        }
-        let (this_object, class_context, called_class_context) =
-            self.closure_call_context(&closure);
-        if let Some(result) = self
-            .call_source_aware_user_function_with_call_user_func_array_argument(
+            let frame = self.evaluate_call_user_func_array_call_frame_bindings(
                 function,
                 argument_expr,
                 span,
                 caller_scope,
-                this_object.clone(),
+                true,
+            )?;
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            let prebound_locals = self.closure_prebound_locals(&closure);
+            let (this_object, class_context, called_class_context) =
+                self.closure_call_context(&closure);
+            return self.call_reference_return_function_value_with_call_frame_and_return_source(
+                function,
+                frame,
+                this_object,
                 class_context,
                 called_class_context,
-                prebound_locals.clone(),
-            )?
-        {
-            return Ok(result);
+                caller_scope,
+                prebound_locals,
+            );
         }
-
-        let (values, reference_bindings) = self.evaluate_call_user_func_array_checked_arguments(
+        let (this_object, class_context, called_class_context) =
+            self.closure_call_context(&closure);
+        let prebound_locals = self.closure_prebound_locals(&closure);
+        self.call_user_function_with_call_user_func_array_frame_and_array_copy_source(
             function,
             argument_expr,
             span,
             caller_scope,
-        )?;
-        self.ensure_user_function_call_depth(function, span)?;
-        self.call_user_function_with_checked_values_and_locals_with_array_copy_source(
-            function,
-            values,
             this_object,
             class_context,
             called_class_context,
-            reference_bindings,
-            Some(caller_scope),
             prebound_locals,
-            Vec::new(),
         )
     }
 
@@ -43085,73 +43076,44 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let function = function.as_ref();
-        if !function.returns_by_reference
-            && Self::function_accepts_source_aware_by_value_arguments(function)
-        {
-            if let Some((value, _)) = self
-                .call_source_aware_user_function_with_call_user_func_array_argument(
-                    function,
-                    argument_expr,
-                    span,
-                    caller_scope,
-                    None,
-                    None,
-                    None,
-                    Vec::new(),
-                )?
-            {
-                return Ok(value);
-            }
+        if function.returns_by_reference {
+            let frame = self.evaluate_call_user_func_array_call_frame_bindings(
+                function,
+                argument_expr,
+                span,
+                caller_scope,
+                true,
+            )?;
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            return self.call_reference_return_function_value_with_call_frame(
+                function,
+                frame,
+                None,
+                None,
+                None,
+                caller_scope,
+            );
         }
 
-        let (values, reference_bindings) = self.evaluate_call_user_func_array_checked_arguments(
+        let frame = self.evaluate_call_user_func_array_call_frame_bindings(
             function,
             argument_expr,
             span,
             caller_scope,
+            false,
         )?;
-        let by_value_array_copy_source_bindings =
-            Self::array_copy_source_bindings_for_reference_bindings(
-                &reference_bindings,
-                caller_scope,
-            )
-            .into_iter()
-            .chain(
-                self.call_user_func_array_by_value_copy_source_bindings_for_argument(
-                    function,
-                    argument_expr,
-                    caller_scope,
-                )?,
-            )
-            .collect();
-        let by_value_array_copy_bindings =
-            Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
-                function,
-                argument_expr,
-            )
-            .into_iter()
-            .chain(
-                Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
-                    function,
-                    argument_expr,
-                ),
-            )
-            .collect();
         self.ensure_user_function_call_depth(function, span)?;
 
-        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+        self.call_user_function_with_call_frame(
             function,
-            values,
+            frame,
             None,
             None,
             None,
-            reference_bindings,
             Some(caller_scope),
             Vec::new(),
-            by_value_array_copy_bindings,
-            by_value_array_copy_source_bindings,
         )
-        .map(|(value, _)| value)
     }
 
     fn call_user_func_array_by_value_copy_source_bindings_for_argument(
@@ -43279,29 +43241,15 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         include_reference_params: bool,
     ) -> CompileResult<CallFrameArgumentBindings> {
-        if let Some((values, array_copy_source_bindings, by_value_array_copy_bindings)) =
+        if let Some(frame) =
             self.evaluate_call_user_func_array_argument_with_array_copy_sources(
                 function,
                 argument_expr,
                 span,
                 caller_scope,
+                include_reference_params,
             )?
         {
-            let reference_bindings = if include_reference_params {
-                Self::reference_bindings_for_call_frame_array_copy_sources(
-                    function,
-                    &values,
-                    &array_copy_source_bindings,
-                )
-            } else {
-                Vec::new()
-            };
-            let frame = CallFrameArgumentBindings {
-                values,
-                reference_bindings,
-                array_copy_source_bindings,
-                by_value_array_copy_bindings,
-            };
             self.emit_call_frame_value_reference_parameter_warnings(function, &frame, span)?;
             return Ok(frame);
         }
@@ -43340,12 +43288,47 @@ impl Interpreter {
             )
             .collect();
 
-        Ok(CallFrameArgumentBindings {
+        Ok(Self::call_user_func_array_frame_from_value_sources(
+            function,
             values,
             reference_bindings,
             array_copy_source_bindings,
             by_value_array_copy_bindings,
-        })
+            include_reference_params,
+        ))
+    }
+
+    fn call_user_func_array_frame_from_value_sources(
+        function: &FunctionDecl,
+        values: Vec<Value>,
+        reference_bindings: Vec<ReferenceBinding>,
+        array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
+        by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
+        include_reference_params: bool,
+    ) -> CallFrameArgumentBindings {
+        let mut reference_bindings = reference_bindings;
+        if include_reference_params {
+            for binding in Self::reference_bindings_for_call_frame_array_copy_sources(
+                function,
+                &values,
+                &array_copy_source_bindings,
+            ) {
+                if reference_bindings
+                    .iter()
+                    .any(|candidate| candidate.param_name == binding.param_name)
+                {
+                    continue;
+                }
+                reference_bindings.push(binding);
+            }
+        }
+
+        CallFrameArgumentBindings {
+            values,
+            reference_bindings,
+            array_copy_source_bindings,
+            by_value_array_copy_bindings,
+        }
     }
 
     fn emit_call_frame_value_reference_parameter_warnings(
@@ -43385,17 +43368,15 @@ impl Interpreter {
                 true,
             )?;
             self.ensure_user_function_call_depth(function_ref, span)?;
-            return self
-                .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
-                    function_ref,
-                    frame.values,
-                    None,
-                    None,
-                    None,
-                    frame.reference_bindings,
-                    caller_scope,
-                    frame.array_copy_source_bindings,
-                );
+            return self.call_reference_return_function_value_with_call_frame_and_return_source(
+                function_ref,
+                frame,
+                None,
+                None,
+                None,
+                caller_scope,
+                Vec::new(),
+            );
         }
         if !Self::function_accepts_source_aware_by_value_arguments(function_ref) {
             let frame = self.evaluate_call_user_func_array_call_frame_bindings(
@@ -43406,19 +43387,15 @@ impl Interpreter {
                 true,
             )?;
             self.ensure_user_function_call_depth(function_ref, span)?;
-            return self
-                .call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
-                    function_ref,
-                    frame.values,
-                    None,
-                    None,
-                    None,
-                    frame.reference_bindings,
-                    Some(caller_scope),
-                    Vec::new(),
-                    frame.by_value_array_copy_bindings,
-                    frame.array_copy_source_bindings,
-                );
+            return self.call_user_function_with_call_frame_and_array_copy_source(
+                function_ref,
+                frame,
+                None,
+                None,
+                None,
+                Some(caller_scope),
+                Vec::new(),
+            );
         }
         ensure_supported_function_metadata(function_ref, span)?;
         let frame = self.evaluate_call_user_func_array_call_frame_bindings(
@@ -43430,17 +43407,14 @@ impl Interpreter {
         )?;
         self.ensure_user_function_call_depth(function_ref, span)?;
 
-        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+        self.call_user_function_with_call_frame_and_array_copy_source(
             function_ref,
-            frame.values,
+            frame,
             None,
             None,
             None,
-            frame.reference_bindings,
             Some(caller_scope),
             Vec::new(),
-            frame.by_value_array_copy_bindings,
-            frame.array_copy_source_bindings,
         )
     }
 
@@ -43498,45 +43472,22 @@ impl Interpreter {
                     ));
                 }
 
-                if let Some((values, reference_bindings, source_bindings)) = self
-                    .evaluate_call_user_func_array_reference_return_value_arguments(
-                        function,
-                        &args[1],
-                        span,
-                        caller_scope,
-                    )?
-                {
-                    self.ensure_user_function_call_depth(function, span)?;
-                    return self
-                        .call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
-                            function,
-                            values,
-                            None,
-                            None,
-                            None,
-                            reference_bindings,
-                            caller_scope,
-                            Vec::new(),
-                            source_bindings,
-                        );
-                }
-
-                let (values, reference_bindings) = self
-                    .evaluate_call_user_func_array_reference_return_arguments(
-                        function,
-                        &args[1],
-                        span,
-                        caller_scope,
-                    )?;
-                self.ensure_user_function_call_depth(function, span)?;
-                self.call_reference_return_function_with_checked_values_for_reference_assignment(
+                let frame = self.evaluate_call_user_func_array_call_frame_bindings(
                     function,
-                    values,
-                    None,
-                    None,
-                    None,
-                    reference_bindings,
+                    &args[1],
+                    span,
                     caller_scope,
+                    true,
+                )?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_reference_return_function_with_call_frame_for_reference_assignment(
+                    function,
+                    frame,
+                    None,
+                    None,
+                    None,
+                    caller_scope,
+                    Vec::new(),
                 )
             }
             Value::Array(callback) => self.call_user_func_array_reference_return_array_callable(
@@ -43578,51 +43529,25 @@ impl Interpreter {
                         ),
                     ));
                 }
-                if let Some((values, reference_bindings, source_bindings)) = self
-                    .evaluate_call_user_func_array_reference_return_value_arguments(
-                        function,
-                        &args[1],
-                        span,
-                        caller_scope,
-                    )?
-                {
-                    self.ensure_user_function_call_depth(function, span)?;
-                    let prebound_locals = self.closure_prebound_locals(closure);
-                    let (this_object, class_context, called_class_context) =
-                        self.closure_call_context(closure);
-                    return self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
-                        function,
-                        values,
-                        this_object,
-                        class_context,
-                        called_class_context,
-                        reference_bindings,
-                        caller_scope,
-                        prebound_locals,
-                        source_bindings,
-                    );
-                }
-                let (values, reference_bindings) = self
-                    .evaluate_call_user_func_array_reference_return_arguments(
-                        function,
-                        &args[1],
-                        span,
-                        caller_scope,
+                let frame = self.evaluate_call_user_func_array_call_frame_bindings(
+                    function,
+                    &args[1],
+                    span,
+                    caller_scope,
+                    true,
                 )?;
                 self.ensure_user_function_call_depth(function, span)?;
                 let prebound_locals = self.closure_prebound_locals(closure);
                 let (this_object, class_context, called_class_context) =
                     self.closure_call_context(closure);
-                self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
+                self.call_reference_return_function_with_call_frame_for_reference_assignment(
                     function,
-                    values,
+                    frame,
                     this_object,
                     class_context,
                     called_class_context,
-                    reference_bindings,
                     caller_scope,
                     prebound_locals,
-                    Vec::new(),
                 )
             }
             other => Err(runtime_error(
@@ -43694,21 +43619,21 @@ impl Interpreter {
                 ensure_user_function_arity(function, args.len().saturating_sub(1), span)?;
                 ensure_supported_reference_return_function_metadata(function, span)?;
                 self.ensure_user_function_call_depth(function, span)?;
-                let (values, reference_bindings) = self
-                    .evaluate_call_user_func_reference_return_value_arguments(
-                        function,
-                        &args[1..],
-                        span,
-                        caller_scope,
-                    )?;
-                self.call_reference_return_function_with_checked_values_for_reference_assignment(
+                let frame = self.call_user_func_expr_call_frame_bindings(
                     function,
-                    values,
-                    None,
-                    None,
-                    None,
-                    reference_bindings,
+                    &args[1..],
+                    span,
                     caller_scope,
+                    true,
+                )?;
+                self.call_reference_return_function_with_call_frame_for_reference_assignment(
+                    function,
+                    frame,
+                    None,
+                    None,
+                    None,
+                    caller_scope,
+                    Vec::new(),
                 )
             }
             Value::Closure(closure) => {
@@ -43747,26 +43672,24 @@ impl Interpreter {
                 ensure_user_function_arity(function, args.len().saturating_sub(1), span)?;
                 ensure_supported_reference_return_function_metadata(function, span)?;
                 self.ensure_user_function_call_depth(function, span)?;
-                let (values, reference_bindings) = self
-                    .evaluate_call_user_func_reference_return_value_arguments(
-                        function,
-                        &args[1..],
-                        span,
-                        caller_scope,
-                    )?;
+                let frame = self.call_user_func_expr_call_frame_bindings(
+                    function,
+                    &args[1..],
+                    span,
+                    caller_scope,
+                    true,
+                )?;
                 let prebound_locals = self.closure_prebound_locals(closure);
                 let (this_object, class_context, called_class_context) =
                     self.closure_call_context(closure);
-                self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
+                self.call_reference_return_function_with_call_frame_for_reference_assignment(
                     function,
-                    values,
+                    frame,
                     this_object,
                     class_context,
                     called_class_context,
-                    reference_bindings,
                     caller_scope,
                     prebound_locals,
-                    Vec::new(),
                 )
             }
             Value::Array(callback) => self
@@ -43869,15 +43792,16 @@ impl Interpreter {
                 ensure_user_function_arity(function, args.len(), span)?;
                 ensure_supported_reference_return_function_metadata(function, span)?;
                 self.ensure_user_function_call_depth(function, span)?;
-                let (values, reference_bindings) = if context == "call_user_func()" {
-                    self.evaluate_call_user_func_reference_return_value_arguments(
+                let frame = if context == "call_user_func()" {
+                    self.call_user_func_expr_call_frame_bindings(
                         function,
                         args,
                         span,
                         caller_scope,
+                        true,
                     )?
                 } else {
-                    self.evaluate_user_function_call_arguments_with_options(
+                    self.evaluate_user_function_call_frame_bindings_with_options(
                         function,
                         args,
                         span,
@@ -43885,14 +43809,14 @@ impl Interpreter {
                         true,
                     )?
                 };
-                self.call_reference_return_function_with_checked_values_for_reference_assignment(
+                self.call_reference_return_function_with_call_frame_for_reference_assignment(
                     function,
-                    values,
+                    frame,
                     Some(object.clone()),
                     Some(class_id),
                     Some(object.class_id()),
-                    reference_bindings,
                     caller_scope,
+                    Vec::new(),
                 )
             }
             Value::String(class_name) => {
@@ -43966,15 +43890,16 @@ impl Interpreter {
                 ensure_user_function_arity(function, args.len(), span)?;
                 ensure_supported_reference_return_function_metadata(function, span)?;
                 self.ensure_user_function_call_depth(function, span)?;
-                let (values, reference_bindings) = if context == "call_user_func()" {
-                    self.evaluate_call_user_func_reference_return_value_arguments(
+                let frame = if context == "call_user_func()" {
+                    self.call_user_func_expr_call_frame_bindings(
                         function,
                         args,
                         span,
                         caller_scope,
+                        true,
                     )?
                 } else {
-                    self.evaluate_user_function_call_arguments_with_options(
+                    self.evaluate_user_function_call_frame_bindings_with_options(
                         function,
                         args,
                         span,
@@ -43982,245 +43907,18 @@ impl Interpreter {
                         true,
                     )?
                 };
-                self.call_reference_return_function_with_checked_values_for_reference_assignment(
+                self.call_reference_return_function_with_call_frame_for_reference_assignment(
                     function,
-                    values,
+                    frame,
                     None,
                     Some(declaring_class_id),
                     Some(class_id),
-                    reference_bindings,
                     caller_scope,
+                    Vec::new(),
                 )
             }
             _ => unreachable!("array_callable_parts restricts callback targets"),
         }
-    }
-
-    fn evaluate_call_user_func_array_reference_return_arguments(
-        &mut self,
-        function: &FunctionDecl,
-        argument_expr: &Expr,
-        span: Span,
-        caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
-        ensure_supported_reference_return_function_metadata(function, span)?;
-
-        let Expr::Array { items, .. } = argument_expr else {
-            let stored_argument = match argument_expr {
-                Expr::Variable(array_name, _) => Some(StoredArgumentArrayEvaluation {
-                    root: StoredArgumentArrayRoot::DirectVariable(array_name.clone()),
-                    value: None,
-                }),
-                _ => self.stored_call_user_func_array_argument_root(
-                    argument_expr,
-                    argument_expr.span(),
-                    caller_scope,
-                )?,
-            };
-            let argument_array_value = match stored_argument
-                .as_ref()
-                .and_then(|stored| stored.value.clone())
-            {
-                Some(value) => value,
-                None => self.evaluate(argument_expr, caller_scope)?,
-            };
-            let Value::Array(argument_array) = &argument_array_value else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "call_user_func_array()",
-                        format!(
-                            "argument array must be array in the current subset, got {}",
-                            argument_array_value.type_name()
-                        ),
-                    ),
-                ));
-            };
-            ensure_user_function_arity(function, argument_array.len(), span)?;
-            if !function
-                .params
-                .iter()
-                .enumerate()
-                .any(|(index, param)| param.by_reference && index < argument_array.len())
-            {
-                let positional_args =
-                    Self::call_user_func_array_positional_values(argument_array, span)?;
-                return Ok((positional_args, Vec::new()));
-            }
-            if function.params.iter().enumerate().any(|(index, param)| {
-                param.by_reference && param.is_variadic && index < argument_array.len()
-            }) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        callable_name(&function.name),
-                        "variadic reference parameter invocation is not implemented",
-                    ),
-                ));
-            }
-
-            let Some(stored_argument) = stored_argument else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        callable_name(&function.name),
-                        "call_user_func_array() reference-return alias binding requires an array literal, direct stored array, or direct visible object-property stored array with covered reference slots in the current subset",
-                    ),
-                ));
-            };
-            return self.evaluate_stored_call_user_func_array_reference_arguments(
-                function,
-                argument_expr,
-                &argument_array,
-                stored_argument.root,
-                caller_scope,
-                true,
-            );
-        };
-
-        ensure_user_function_arity(function, items.len(), span)?;
-        if function
-            .params
-            .iter()
-            .enumerate()
-            .any(|(index, param)| param.by_reference && param.is_variadic && index < items.len())
-        {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    callable_name(&function.name),
-                    "variadic reference parameter invocation is not implemented",
-                ),
-            ));
-        }
-
-        let mut values = Vec::with_capacity(items.len());
-        let mut reference_bindings = Vec::new();
-        let uses_named_arguments = items.iter().any(|item| {
-            item.key.as_ref().is_some_and(|key_expr| {
-                matches!(
-                    self.evaluate_array_key_for_literal_check(key_expr),
-                    Some(ArrayKey::String(_))
-                )
-            })
-        });
-        if uses_named_arguments {
-            return self.evaluate_literal_call_user_func_array_named_reference_arguments(
-                function,
-                items,
-                span,
-                caller_scope,
-                true,
-            );
-        }
-        for (index, item) in items.iter().enumerate() {
-            if let Some(key_expr) = &item.key {
-                if matches!(
-                    self.evaluate_array_key(key_expr, caller_scope)?,
-                    ArrayKey::String(_)
-                ) {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "call_user_func_array() string-keyed named reference arguments are not implemented in the current subset",
-                        ),
-                    ));
-                }
-            }
-
-            let Some(param) = function.params.get(index) else {
-                values.push(self.evaluate(&item.value, caller_scope)?);
-                continue;
-            };
-
-            if param.by_reference {
-                if !item.by_reference {
-                    return Err(runtime_error(
-                        item.value.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "call_user_func_array() reference parameter invocation requires a by-reference array element in the current subset",
-                        ),
-                    ));
-                }
-                let Expr::Variable(caller_name, _) = &item.value else {
-                    if let Some((alias, value)) =
-                        self.evaluate_direct_array_reference_argument(&item.value, caller_scope)?
-                    {
-                        values.push(value);
-                        reference_bindings.push(ReferenceBinding {
-                            param_name: param.name.clone(),
-                            target: ReferenceBindingTarget::ArrayOffset(alias),
-                        });
-                        continue;
-                    }
-                    if let Some((alias, value)) =
-                        self.evaluate_magic_get_array_reference_argument(&item.value, caller_scope)?
-                    {
-                        values.push(value);
-                        reference_bindings.push(ReferenceBinding {
-                            param_name: param.name.clone(),
-                            target: ReferenceBindingTarget::ArrayOffset(alias),
-                        });
-                        continue;
-                    }
-                    if let Some((alias, value)) = self
-                        .evaluate_visible_object_property_array_reference_argument(
-                            &item.value,
-                            caller_scope,
-                            false,
-                        )?
-                    {
-                        values.push(value);
-                        reference_bindings.push(ReferenceBinding {
-                            param_name: param.name.clone(),
-                            target: ReferenceBindingTarget::ArrayOffset(alias),
-                        });
-                        continue;
-                    }
-                    return Err(runtime_error(
-                        item.value.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "call_user_func_array() reference-return alias binding is only implemented for direct variable, direct array-offset, and direct public object-property array-offset reference arguments in the current subset",
-                        ),
-                    ));
-                };
-                if let Some(aliases) = caller_scope.array_offset_aliases_for_name(caller_name) {
-                    let value = caller_scope.read_named(caller_name).ok_or_else(|| {
-                        runtime_error(
-                            item.value.span(),
-                            RuntimeError::undefined_variable(caller_name),
-                        )
-                    })?;
-                    values.push(value);
-                    reference_bindings.push(ReferenceBinding {
-                        param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::ArrayOffsets(aliases),
-                    });
-                    continue;
-                }
-                let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
-                    runtime_error(
-                        item.value.span(),
-                        RuntimeError::undefined_variable(caller_name),
-                    )
-                })?;
-                values.push(caller_cell.value_cloned());
-                reference_bindings.push(ReferenceBinding {
-                    param_name: param.name.clone(),
-                    target: ReferenceBindingTarget::CallerCell {
-                        name: caller_name.clone(),
-                        cell: caller_cell,
-                    },
-                });
-            } else {
-                values.push(self.evaluate(&item.value, caller_scope)?);
-            }
-        }
-
-        Ok((values, reference_bindings))
     }
 
     fn evaluate_array_key_for_literal_check(&self, key_expr: &Expr) -> Option<ArrayKey> {
@@ -44296,44 +43994,22 @@ impl Interpreter {
                         ),
                     ));
                 }
-                if let Some((values, reference_bindings, source_bindings)) = self
-                    .evaluate_call_user_func_array_reference_return_value_arguments(
-                        function,
-                        argument_expr,
-                        span,
-                        caller_scope,
-                    )?
-                {
-                    self.ensure_user_function_call_depth(function, span)?;
-                    return self
-                        .call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
-                            function,
-                            values,
-                            Some(object.clone()),
-                            Some(class_id),
-                            Some(object.class_id()),
-                            reference_bindings,
-                            caller_scope,
-                            Vec::new(),
-                            source_bindings,
-                        );
-                }
-                let (values, reference_bindings) = self
-                    .evaluate_call_user_func_array_reference_return_arguments(
-                        function,
-                        argument_expr,
-                        span,
-                        caller_scope,
-                    )?;
-                self.ensure_user_function_call_depth(function, span)?;
-                self.call_reference_return_function_with_checked_values_for_reference_assignment(
+                let frame = self.evaluate_call_user_func_array_call_frame_bindings(
                     function,
-                    values,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                    true,
+                )?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_reference_return_function_with_call_frame_for_reference_assignment(
+                    function,
+                    frame,
                     Some(object.clone()),
                     Some(class_id),
                     Some(object.class_id()),
-                    reference_bindings,
                     caller_scope,
+                    Vec::new(),
                 )
             }
             Value::String(class_name) => {
@@ -44405,44 +44081,22 @@ impl Interpreter {
                         ),
                     ));
                 }
-                if let Some((values, reference_bindings, source_bindings)) = self
-                    .evaluate_call_user_func_array_reference_return_value_arguments(
-                        function,
-                        argument_expr,
-                        span,
-                        caller_scope,
-                    )?
-                {
-                    self.ensure_user_function_call_depth(function, span)?;
-                    return self
-                        .call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
-                            function,
-                            values,
-                            None,
-                            Some(declaring_class_id),
-                            Some(class_id),
-                            reference_bindings,
-                            caller_scope,
-                            Vec::new(),
-                            source_bindings,
-                        );
-                }
-                let (values, reference_bindings) = self
-                    .evaluate_call_user_func_array_reference_return_arguments(
-                        function,
-                        argument_expr,
-                        span,
-                        caller_scope,
-                    )?;
-                self.ensure_user_function_call_depth(function, span)?;
-                self.call_reference_return_function_with_checked_values_for_reference_assignment(
+                let frame = self.evaluate_call_user_func_array_call_frame_bindings(
                     function,
-                    values,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                    true,
+                )?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_reference_return_function_with_call_frame_for_reference_assignment(
+                    function,
+                    frame,
                     None,
                     Some(declaring_class_id),
                     Some(class_id),
-                    reference_bindings,
                     caller_scope,
+                    Vec::new(),
                 )
             }
             _ => unreachable!("array_callable_parts restricts callback targets"),
@@ -44722,104 +44376,6 @@ impl Interpreter {
         }
 
         Ok((values, reference_bindings))
-    }
-
-    fn evaluate_call_user_func_array_reference_return_value_arguments(
-        &mut self,
-        function: &FunctionDecl,
-        argument_expr: &Expr,
-        span: Span,
-        caller_scope: &mut SymbolTable,
-    ) -> CompileResult<Option<(Vec<Value>, Vec<ReferenceBinding>, Vec<ArrayCopySourceBinding>)>>
-    {
-        ensure_supported_reference_return_function_metadata(function, span)?;
-
-        let (values, source_bindings) = if let Expr::Array { items, .. } = argument_expr {
-            if !Self::literal_call_user_func_array_can_preserve_copy_sources(items) {
-                return Ok(None);
-            }
-            ensure_user_function_arity(function, items.len(), span)?;
-            self.evaluate_literal_call_user_func_array_value_arguments_with_array_copy_sources(
-                function,
-                items,
-                span,
-                caller_scope,
-                true,
-            )?
-        } else {
-            let Some((values, source_bindings)) = self
-                .evaluate_stored_call_user_func_array_value_arguments_with_array_copy_sources(
-                    function,
-                    argument_expr,
-                    span,
-                    caller_scope,
-                    true,
-                )?
-            else {
-                let Some((values, source_bindings)) = self
-                    .evaluate_general_call_user_func_array_value_arguments_with_array_copy_sources(
-                        function,
-                        argument_expr,
-                        span,
-                        caller_scope,
-                        true,
-                    )?
-                else {
-                    return Ok(None);
-                };
-                return self.call_user_func_array_reference_return_value_arguments_from_values(
-                    function,
-                    values,
-                    source_bindings,
-                    span,
-                );
-            };
-            (values, source_bindings)
-        };
-
-        self.call_user_func_array_reference_return_value_arguments_from_values(
-            function,
-            values,
-            source_bindings,
-            span,
-        )
-    }
-
-    fn call_user_func_array_reference_return_value_arguments_from_values(
-        &mut self,
-        function: &FunctionDecl,
-        values: Vec<Value>,
-        source_bindings: Vec<ArrayCopySourceBinding>,
-        span: Span,
-    ) -> CompileResult<Option<(Vec<Value>, Vec<ReferenceBinding>, Vec<ArrayCopySourceBinding>)>>
-    {
-        let reference_bindings = source_bindings
-            .iter()
-            .filter_map(|(param_name, target_keys, source)| {
-                function
-                    .params
-                    .iter()
-                    .any(|param| param.name == *param_name && param.by_reference)
-                    .then_some(ReferenceBinding {
-                        param_name: param_name.clone(),
-                        target: if target_keys.is_empty() {
-                            ReferenceBindingTarget::ValueWithArrayCopySource {
-                                source: source.clone(),
-                            }
-                        } else {
-                            ReferenceBindingTarget::ValueWithArrayCopySourceAtPath {
-                                target_keys: target_keys.clone(),
-                                source: source.clone(),
-                            }
-                        },
-                    })
-            })
-            .chain(Self::call_user_func_value_copy_reference_bindings(
-                function, &values,
-            ))
-            .collect::<Vec<_>>();
-        self.emit_call_user_func_reference_parameter_warnings(function, values.len(), span)?;
-        Ok(Some((values, reference_bindings, source_bindings)))
     }
 
     fn call_user_func_value_copy_reference_bindings(
@@ -48558,19 +48114,61 @@ impl Interpreter {
         .map(Some)
     }
 
+    fn call_user_function_with_call_user_func_array_frame_and_array_copy_source(
+        &mut self,
+        function: &FunctionDecl,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let frame = self.evaluate_call_user_func_array_call_frame_bindings(
+            function,
+            argument_expr,
+            span,
+            caller_scope,
+            true,
+        )?;
+
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            return self.call_reference_return_function_value_with_call_frame_and_return_source(
+                function,
+                frame,
+                this_object,
+                class_context,
+                called_class_context,
+                caller_scope,
+                prebound_locals,
+            );
+        }
+
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        self.call_user_function_with_call_frame_and_array_copy_source(
+            function,
+            frame,
+            this_object,
+            class_context,
+            called_class_context,
+            Some(caller_scope),
+            prebound_locals,
+        )
+    }
+
     fn evaluate_call_user_func_array_argument_with_array_copy_sources(
         &mut self,
         function: &FunctionDecl,
         argument_expr: &Expr,
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<
-        Option<(
-            Vec<Value>,
-            Vec<ArrayCopySourceBinding>,
-            Vec<(String, String, Vec<ArrayKey>)>,
-        )>,
-    > {
+        include_reference_params: bool,
+    ) -> CompileResult<Option<CallFrameArgumentBindings>> {
         if let Expr::Array { items, .. } = argument_expr {
             if !Self::literal_call_user_func_array_can_preserve_copy_sources(items) {
                 return Ok(None);
@@ -48583,17 +48181,20 @@ impl Interpreter {
                     items,
                     span,
                     caller_scope,
-                    false,
+                    include_reference_params,
                 )?;
             let by_value_array_copy_bindings =
                 Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
                     function,
                     argument_expr,
                 );
-            return Ok(Some((
+            return Ok(Some(Self::call_user_func_array_frame_from_value_sources(
+                function,
                 values,
+                Vec::new(),
                 by_value_array_copy_source_bindings,
                 by_value_array_copy_bindings,
+                include_reference_params,
             )));
         }
 
@@ -48603,7 +48204,7 @@ impl Interpreter {
                 argument_expr,
                 span,
                 caller_scope,
-                false,
+                include_reference_params,
             )?
         else {
             let Some((values, by_value_array_copy_source_bindings)) = self
@@ -48612,15 +48213,18 @@ impl Interpreter {
                     argument_expr,
                     span,
                     caller_scope,
-                    false,
+                    include_reference_params,
                 )?
             else {
                 return Ok(None);
             };
-            return Ok(Some((
+            return Ok(Some(Self::call_user_func_array_frame_from_value_sources(
+                function,
                 values,
+                Vec::new(),
                 by_value_array_copy_source_bindings,
                 Vec::new(),
+                include_reference_params,
             )));
         };
         let by_value_array_copy_bindings =
@@ -48628,10 +48232,13 @@ impl Interpreter {
                 function,
                 argument_expr,
             );
-        Ok(Some((
+        Ok(Some(Self::call_user_func_array_frame_from_value_sources(
+            function,
             values,
+            Vec::new(),
             by_value_array_copy_source_bindings,
             by_value_array_copy_bindings,
+            include_reference_params,
         )))
     }
 
@@ -48875,23 +48482,22 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) = self
-            .evaluate_user_function_call_arguments_with_options(
-                function,
-                args,
-                span,
-                caller_scope,
-                true,
-            )?;
-
-        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+        let frame = self.evaluate_user_function_call_frame_bindings_with_options(
             function,
-            values,
-            None,
-            None,
-            None,
-            reference_bindings,
+            args,
+            span,
             caller_scope,
+            true,
+        )?;
+
+        self.call_reference_return_function_with_call_frame_for_reference_assignment(
+            function,
+            frame,
+            None,
+            None,
+            None,
+            caller_scope,
+            Vec::new(),
         )
     }
 
@@ -48964,23 +48570,22 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) = self
-            .evaluate_user_function_call_arguments_with_options(
-                function,
-                args,
-                span,
-                caller_scope,
-                true,
-            )?;
-
-        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+        let frame = self.evaluate_user_function_call_frame_bindings_with_options(
             function,
-            values,
-            None,
-            None,
-            None,
-            reference_bindings,
+            args,
+            span,
             caller_scope,
+            true,
+        )?;
+
+        self.call_reference_return_function_with_call_frame_for_reference_assignment(
+            function,
+            frame,
+            None,
+            None,
+            None,
+            caller_scope,
+            Vec::new(),
         )
     }
 
@@ -49025,27 +48630,24 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) = self
-            .evaluate_user_function_call_arguments_with_options(
-                function,
-                args,
-                span,
-                caller_scope,
-                true,
-            )?;
+        let frame = self.evaluate_user_function_call_frame_bindings_with_options(
+            function,
+            args,
+            span,
+            caller_scope,
+            true,
+        )?;
         let prebound_locals = self.closure_prebound_locals(&closure);
         let (this_object, class_context, called_class_context) =
             self.closure_call_context(&closure);
-        self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
+        self.call_reference_return_function_with_call_frame_for_reference_assignment(
             function,
-            values,
+            frame,
             this_object,
             class_context,
             called_class_context,
-            reference_bindings,
             caller_scope,
             prebound_locals,
-            Vec::new(),
         )
     }
 
@@ -49125,24 +48727,23 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) = self
-            .evaluate_user_function_call_arguments_with_options(
-                function,
-                args,
-                span,
-                caller_scope,
-                true,
-            )?;
+        let frame = self.evaluate_user_function_call_frame_bindings_with_options(
+            function,
+            args,
+            span,
+            caller_scope,
+            true,
+        )?;
 
         let called_class_id = object.class_id();
-        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+        self.call_reference_return_function_with_call_frame_for_reference_assignment(
             function,
-            values,
+            frame,
             Some(object),
             Some(class_id),
             Some(called_class_id),
-            reference_bindings,
             caller_scope,
+            Vec::new(),
         )
     }
 
@@ -49268,14 +48869,13 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) = self
-            .evaluate_user_function_call_arguments_with_options(
-                function,
-                args,
-                span,
-                caller_scope,
-                true,
-            )?;
+        let frame = self.evaluate_user_function_call_frame_bindings_with_options(
+            function,
+            args,
+            span,
+            caller_scope,
+            true,
+        )?;
 
         let this_object = if is_static {
             None
@@ -49290,14 +48890,14 @@ impl Interpreter {
             )?)
         };
 
-        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+        self.call_reference_return_function_with_call_frame_for_reference_assignment(
             function,
-            values,
+            frame,
             this_object,
             Some(declaring_class_id),
             Some(class_id),
-            reference_bindings,
             caller_scope,
+            Vec::new(),
         )
     }
 
@@ -49360,14 +48960,13 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) = self
-            .evaluate_user_function_call_arguments_with_options(
-                function,
-                args,
-                span,
-                caller_scope,
-                true,
-            )?;
+        let frame = self.evaluate_user_function_call_frame_bindings_with_options(
+            function,
+            args,
+            span,
+            caller_scope,
+            true,
+        )?;
 
         let called_class_id = self
             .called_class_context
@@ -49386,14 +48985,14 @@ impl Interpreter {
                 caller_scope,
             )?)
         };
-        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+        self.call_reference_return_function_with_call_frame_for_reference_assignment(
             function,
-            values,
+            frame,
             this_object,
             Some(class_id),
             Some(called_class_id),
-            reference_bindings,
             caller_scope,
+            Vec::new(),
         )
     }
 
@@ -49459,14 +49058,13 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) = self
-            .evaluate_user_function_call_arguments_with_options(
-                function,
-                args,
-                span,
-                caller_scope,
-                true,
-            )?;
+        let frame = self.evaluate_user_function_call_frame_bindings_with_options(
+            function,
+            args,
+            span,
+            caller_scope,
+            true,
+        )?;
 
         let called_class_id = self
             .called_class_context
@@ -49485,14 +49083,14 @@ impl Interpreter {
                 caller_scope,
             )?)
         };
-        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+        self.call_reference_return_function_with_call_frame_for_reference_assignment(
             function,
-            values,
+            frame,
             this_object,
             Some(class_id),
             Some(called_class_id),
-            reference_bindings,
             caller_scope,
+            Vec::new(),
         )
     }
 
@@ -49555,14 +49153,13 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) = self
-            .evaluate_user_function_call_arguments_with_options(
-                function,
-                args,
-                span,
-                caller_scope,
-                true,
-            )?;
+        let frame = self.evaluate_user_function_call_frame_bindings_with_options(
+            function,
+            args,
+            span,
+            caller_scope,
+            true,
+        )?;
 
         let this_object = if is_static {
             None
@@ -49577,14 +49174,14 @@ impl Interpreter {
             )?)
         };
 
-        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+        self.call_reference_return_function_with_call_frame_for_reference_assignment(
             function,
-            values,
+            frame,
             this_object,
             Some(class_id),
             Some(called_class_id),
-            reference_bindings,
             caller_scope,
+            Vec::new(),
         )
     }
 
@@ -49675,14 +49272,13 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) = self
-            .evaluate_user_function_call_arguments_with_options(
-                function,
-                args,
-                span,
-                caller_scope,
-                true,
-            )?;
+        let frame = self.evaluate_user_function_call_frame_bindings_with_options(
+            function,
+            args,
+            span,
+            caller_scope,
+            true,
+        )?;
 
         let this_object = if is_static {
             None
@@ -49697,14 +49293,14 @@ impl Interpreter {
             )?)
         };
 
-        self.call_reference_return_function_with_checked_values_for_reference_assignment(
+        self.call_reference_return_function_with_call_frame_for_reference_assignment(
             function,
-            values,
+            frame,
             this_object,
             Some(declaring_class_id),
             Some(receiver_class_id),
-            reference_bindings,
             caller_scope,
+            Vec::new(),
         )
     }
 
@@ -50587,6 +50183,73 @@ impl Interpreter {
             caller_scope,
             Vec::new(),
             by_value_array_copy_source_bindings,
+        )
+    }
+
+    fn call_reference_return_function_value_with_call_frame(
+        &mut self,
+        function: &FunctionDecl,
+        frame: CallFrameArgumentBindings,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        self.call_reference_return_function_value_with_call_frame_and_return_source(
+            function,
+            frame,
+            this_object,
+            class_context,
+            called_class_context,
+            caller_scope,
+            Vec::new(),
+        )
+        .map(|(value, _)| value)
+    }
+
+    fn call_reference_return_function_value_with_call_frame_and_return_source(
+        &mut self,
+        function: &FunctionDecl,
+        frame: CallFrameArgumentBindings,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        caller_scope: &mut SymbolTable,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        self.call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
+            function,
+            frame.values,
+            this_object,
+            class_context,
+            called_class_context,
+            frame.reference_bindings,
+            caller_scope,
+            prebound_locals,
+            frame.array_copy_source_bindings,
+        )
+    }
+
+    fn call_reference_return_function_with_call_frame_for_reference_assignment(
+        &mut self,
+        function: &FunctionDecl,
+        frame: CallFrameArgumentBindings,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        caller_scope: &mut SymbolTable,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<ReferenceReturnBinding> {
+        self.call_reference_return_function_with_checked_values_and_locals_for_reference_assignment(
+            function,
+            frame.values,
+            this_object,
+            class_context,
+            called_class_context,
+            frame.reference_bindings,
+            caller_scope,
+            prebound_locals,
+            frame.array_copy_source_bindings,
         )
     }
 
@@ -54645,6 +54308,52 @@ impl Interpreter {
             prebound_locals,
             by_value_array_copy_bindings,
             Vec::new(),
+        )
+    }
+
+    fn call_user_function_with_call_frame(
+        &mut self,
+        function: &FunctionDecl,
+        frame: CallFrameArgumentBindings,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        reference_scope: Option<&mut SymbolTable>,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<Value> {
+        self.call_user_function_with_call_frame_and_array_copy_source(
+            function,
+            frame,
+            this_object,
+            class_context,
+            called_class_context,
+            reference_scope,
+            prebound_locals,
+        )
+        .map(|(value, _)| value)
+    }
+
+    fn call_user_function_with_call_frame_and_array_copy_source(
+        &mut self,
+        function: &FunctionDecl,
+        frame: CallFrameArgumentBindings,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        reference_scope: Option<&mut SymbolTable>,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+            function,
+            frame.values,
+            this_object,
+            class_context,
+            called_class_context,
+            frame.reference_bindings,
+            reference_scope,
+            prebound_locals,
+            frame.by_value_array_copy_bindings,
+            frame.array_copy_source_bindings,
         )
     }
 
@@ -61212,32 +60921,42 @@ impl Interpreter {
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
-                let (values, reference_bindings) = self
-                    .evaluate_call_user_func_array_checked_arguments(
+                if function.returns_by_reference {
+                    let frame = self.evaluate_call_user_func_array_call_frame_bindings(
                         function,
                         argument_expr,
                         span,
                         caller_scope,
+                        true,
                     )?;
-                let by_value_array_copy_source_bindings =
-                    Self::array_copy_source_bindings_for_reference_bindings(
-                        &reference_bindings,
+                    ensure_supported_reference_return_function_metadata(function, span)?;
+                    self.ensure_user_function_call_depth(function, span)?;
+                    return self.call_reference_return_function_value_with_call_frame(
+                        function,
+                        frame,
+                        Some(object.clone()),
+                        Some(class_id),
+                        Some(object.class_id()),
                         caller_scope,
                     );
-                self.ensure_user_function_call_depth(function, span)?;
-                self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+                }
+                let frame = self.evaluate_call_user_func_array_call_frame_bindings(
                     function,
-                    values,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                    false,
+                )?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_call_frame(
+                    function,
+                    frame,
                     Some(object.clone()),
                     Some(class_id),
                     Some(object.class_id()),
-                    reference_bindings,
                     Some(caller_scope),
                     Vec::new(),
-                    Vec::new(),
-                    by_value_array_copy_source_bindings,
                 )
-                .map(|(value, _)| value)
             }
             Value::String(_) => {
                 let Value::String(class_name) = target else {
@@ -61292,32 +61011,42 @@ impl Interpreter {
                     span,
                 )?;
                 let function = function.as_ref();
-                let (values, reference_bindings) = self
-                    .evaluate_call_user_func_array_checked_arguments(
+                if function.returns_by_reference {
+                    let frame = self.evaluate_call_user_func_array_call_frame_bindings(
                         function,
                         argument_expr,
                         span,
                         caller_scope,
+                        true,
                     )?;
-                let by_value_array_copy_source_bindings =
-                    Self::array_copy_source_bindings_for_reference_bindings(
-                        &reference_bindings,
+                    ensure_supported_reference_return_function_metadata(function, span)?;
+                    self.ensure_user_function_call_depth(function, span)?;
+                    return self.call_reference_return_function_value_with_call_frame(
+                        function,
+                        frame,
+                        None,
+                        Some(declaring_class_id),
+                        Some(class_id),
                         caller_scope,
                     );
-                self.ensure_user_function_call_depth(function, span)?;
-                self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+                }
+                let frame = self.evaluate_call_user_func_array_call_frame_bindings(
                     function,
-                    values,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                    false,
+                )?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_call_frame(
+                    function,
+                    frame,
                     None,
                     Some(declaring_class_id),
                     Some(class_id),
-                    reference_bindings,
                     Some(caller_scope),
                     Vec::new(),
-                    Vec::new(),
-                    by_value_array_copy_source_bindings,
                 )
-                .map(|(value, _)| value)
             }
             _ => unreachable!("array_callable_parts restricts callback targets"),
         }
@@ -61379,95 +61108,16 @@ impl Interpreter {
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
-                if function.returns_by_reference {
-                    if let Some((values, reference_bindings, source_bindings)) = self
-                        .evaluate_call_user_func_array_reference_return_value_arguments(
-                            function,
-                            argument_expr,
-                            span,
-                            caller_scope,
-                        )?
-                    {
-                        ensure_supported_reference_return_function_metadata(function, span)?;
-                        self.ensure_user_function_call_depth(function, span)?;
-                        return self
-                            .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
-                                function,
-                                values,
-                                Some(object.clone()),
-                                Some(class_id),
-                                Some(object.class_id()),
-                                reference_bindings,
-                                caller_scope,
-                                source_bindings,
-                            );
-                    }
-                }
-                if !function.returns_by_reference
-                    && !Self::function_accepts_source_aware_by_value_arguments(function)
-                {
-                    let (values, reference_bindings) = self
-                        .evaluate_call_user_func_array_checked_arguments(
-                            function,
-                            argument_expr,
-                            span,
-                            caller_scope,
-                        )?;
-                    let by_value_array_copy_source_bindings =
-                        Self::array_copy_source_bindings_for_reference_bindings(
-                            &reference_bindings,
-                            caller_scope,
-                        );
-                    let by_value_array_copy_bindings =
-                        Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
-                            function,
-                            argument_expr,
-                        )
-                        .into_iter()
-                        .chain(
-                            Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
-                                function,
-                                argument_expr,
-                            ),
-                        )
-                        .collect();
-                    self.ensure_user_function_call_depth(function, span)?;
-                    return self
-                        .call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
-                            function,
-                            values,
-                            Some(object.clone()),
-                            Some(class_id),
-                            Some(object.class_id()),
-                            reference_bindings,
-                            Some(caller_scope),
-                            Vec::new(),
-                            by_value_array_copy_bindings,
-                            by_value_array_copy_source_bindings,
-                        );
-                }
-                if let Some(result) = self
-                    .call_source_aware_user_function_with_call_user_func_array_argument(
-                        function,
-                        argument_expr,
-                        span,
-                        caller_scope,
-                        Some(object.clone()),
-                        Some(class_id),
-                        Some(object.class_id()),
-                        Vec::new(),
-                    )?
-                {
-                    return Ok(result);
-                }
-
-                self.call_user_func_array_array_callable(
-                    callback,
+                self.call_user_function_with_call_user_func_array_frame_and_array_copy_source(
+                    function,
                     argument_expr,
                     span,
                     caller_scope,
+                    Some(object.clone()),
+                    Some(class_id),
+                    Some(object.class_id()),
+                    Vec::new(),
                 )
-                .map(|value| (value, None))
             }
             Value::String(class_name) => {
                 let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
@@ -61519,95 +61169,16 @@ impl Interpreter {
                     span,
                 )?;
                 let function = function.as_ref();
-                if function.returns_by_reference {
-                    if let Some((values, reference_bindings, source_bindings)) = self
-                        .evaluate_call_user_func_array_reference_return_value_arguments(
-                            function,
-                            argument_expr,
-                            span,
-                            caller_scope,
-                        )?
-                    {
-                        ensure_supported_reference_return_function_metadata(function, span)?;
-                        self.ensure_user_function_call_depth(function, span)?;
-                        return self
-                            .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
-                                function,
-                                values,
-                                None,
-                                Some(declaring_class_id),
-                                Some(class_id),
-                                reference_bindings,
-                                caller_scope,
-                                source_bindings,
-                            );
-                    }
-                }
-                if !function.returns_by_reference
-                    && !Self::function_accepts_source_aware_by_value_arguments(function)
-                {
-                    let (values, reference_bindings) = self
-                        .evaluate_call_user_func_array_checked_arguments(
-                            function,
-                            argument_expr,
-                            span,
-                            caller_scope,
-                        )?;
-                    let by_value_array_copy_source_bindings =
-                        Self::array_copy_source_bindings_for_reference_bindings(
-                            &reference_bindings,
-                            caller_scope,
-                        );
-                    let by_value_array_copy_bindings =
-                        Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
-                            function,
-                            argument_expr,
-                        )
-                        .into_iter()
-                        .chain(
-                            Self::by_value_array_copy_bindings_for_call_user_func_array_stored(
-                                function,
-                                argument_expr,
-                            ),
-                        )
-                        .collect();
-                    self.ensure_user_function_call_depth(function, span)?;
-                    return self
-                        .call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
-                            function,
-                            values,
-                            None,
-                            Some(declaring_class_id),
-                            Some(class_id),
-                            reference_bindings,
-                            Some(caller_scope),
-                            Vec::new(),
-                            by_value_array_copy_bindings,
-                            by_value_array_copy_source_bindings,
-                        );
-                }
-                if let Some(result) = self
-                    .call_source_aware_user_function_with_call_user_func_array_argument(
-                        function,
-                        argument_expr,
-                        span,
-                        caller_scope,
-                        None,
-                        Some(declaring_class_id),
-                        Some(class_id),
-                        Vec::new(),
-                    )?
-                {
-                    return Ok(result);
-                }
-
-                self.call_user_func_array_array_callable(
-                    callback,
+                self.call_user_function_with_call_user_func_array_frame_and_array_copy_source(
+                    function,
                     argument_expr,
                     span,
                     caller_scope,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    Vec::new(),
                 )
-                .map(|value| (value, None))
             }
             _ => unreachable!("array_callable_parts restricts callback targets"),
         }
@@ -78094,6 +77665,49 @@ mod tests {
     }
 
     #[test]
+    fn object_property_alias_copy_source_uses_visible_storage_identity() {
+        let mut scope = SymbolTable::new();
+        let leaf_key = ArrayKey::String("leaf".to_string());
+
+        let mut items = PhpArray::new();
+        items.insert(leaf_key.clone(), Value::String("value".to_string()));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .write_public_property("items", Value::Array(items))
+            .unwrap();
+        scope.write_static("box", Value::Object(object.clone()));
+
+        let direct_source =
+            ArrayCopySource::object_property(object.clone(), "items".to_string(), Vec::new(), true);
+        let alias_source = ArrayCopySource::alias_path(
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: "box".to_string(),
+                property: "items".to_string(),
+            },
+            Vec::new(),
+            true,
+        );
+
+        assert!(scope.array_copy_sources_match(&direct_source, &alias_source));
+        assert_eq!(
+            scope.array_copy_source_mutation_impact_for_object_property_write(
+                &alias_source,
+                &object,
+                "items",
+                std::slice::from_ref(&leaf_key),
+            ),
+            Some(ArrayCopySourceMutationImpact::ReplacesSelectedChildPath)
+        );
+    }
+
+    #[test]
     fn holder_storage_record_impacts_cover_all_copy_source_locations() {
         let mut scope = SymbolTable::new();
 
@@ -79490,6 +79104,526 @@ mod tests {
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
         assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+    }
+
+    #[test]
+    fn alias_variable_object_property_write_rehydrates_runtime_cell_copy_source() {
+        let branch_key = ArrayKey::String("branch".to_string());
+        let leaf_key = ArrayKey::String("leaf".to_string());
+        let leaf_cell = PhpReferenceCell::new(Value::String("old".to_string()));
+        let mut source_branch = PhpArray::new();
+        source_branch.insert_reference(leaf_key.clone(), leaf_cell.clone());
+        let mut source_items = PhpArray::new();
+        source_items.insert(branch_key.clone(), Value::Array(source_branch));
+        let source_cell = PhpReferenceCell::new(Value::Array(source_items));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        let mut copied_branch = PhpArray::new();
+        copied_branch.insert(leaf_key.clone(), Value::String("copy".to_string()));
+
+        let span = Span::new(1, 1);
+        let mut scope = SymbolTable::new();
+        scope.write_static("box", Value::Object(object));
+        scope.write_static("copy", Value::Array(copied_branch));
+        scope.record_public_object_property_array_copy_source(
+            "copy",
+            ArrayCopySource::runtime_cell(source_cell, vec![branch_key.clone()], true),
+        );
+        scope
+            .bind_static_to_existing_array_offset_alias_root(
+                "alias",
+                ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: "box".to_string(),
+                    property: "items".to_string(),
+                },
+                vec![branch_key],
+                span,
+            )
+            .unwrap();
+
+        scope
+            .write_static_checked_with_object_type_resolver(
+                "alias",
+                Value::Array(PhpArray::new()),
+                span,
+                |_, _| true,
+            )
+            .unwrap();
+
+        let Value::Array(copy) = scope.read_static("copy", span).unwrap() else {
+            panic!("expected copied array");
+        };
+        let copied_leaf_cell = copy
+            .get_slot(leaf_key)
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected copied leaf reference cell");
+
+        assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
+        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+    }
+
+    #[test]
+    fn object_property_root_reference_promotion_rehydrates_runtime_cell_copy_source() {
+        let leaf_key = ArrayKey::String("leaf".to_string());
+        let leaf_cell = PhpReferenceCell::new(Value::String("old".to_string()));
+        let mut source_items = PhpArray::new();
+        source_items.insert_reference(leaf_key.clone(), leaf_cell.clone());
+        let source_cell = PhpReferenceCell::new(Value::Array(source_items));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        let mut copied_items = PhpArray::new();
+        copied_items.insert(leaf_key.clone(), Value::String("copy".to_string()));
+
+        let mut scope = SymbolTable::new();
+        scope.write_static("box", Value::Object(object));
+        scope.write_static("copy", Value::Array(copied_items));
+        scope.record_public_object_property_array_copy_source(
+            "copy",
+            ArrayCopySource::runtime_cell(source_cell, Vec::new(), true),
+        );
+
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: "box".to_string(),
+                property: "items".to_string(),
+            },
+            keys: Vec::new(),
+        };
+        let replacement = PhpReferenceCell::new(Value::Array(PhpArray::new()));
+        assert!(scope.promote_array_offset_alias_to_reference_cell(&alias, replacement));
+
+        let Value::Array(copy) = scope.read_static("copy", Span::new(1, 1)).unwrap() else {
+            panic!("expected copied array");
+        };
+        let copied_leaf_cell = copy
+            .get_slot(leaf_key)
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected copied leaf reference cell");
+
+        assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
+        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+    }
+
+    #[test]
+    fn object_property_nested_reference_promotion_rehydrates_runtime_cell_copy_source() {
+        let branch_key = ArrayKey::String("branch".to_string());
+        let leaf_key = ArrayKey::String("leaf".to_string());
+        let leaf_cell = PhpReferenceCell::new(Value::String("old".to_string()));
+        let mut source_branch = PhpArray::new();
+        source_branch.insert_reference(leaf_key.clone(), leaf_cell.clone());
+        let mut source_items = PhpArray::new();
+        source_items.insert(branch_key.clone(), Value::Array(source_branch));
+        let source_cell = PhpReferenceCell::new(Value::Array(source_items));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        let mut copied_branch = PhpArray::new();
+        copied_branch.insert(leaf_key.clone(), Value::String("copy".to_string()));
+
+        let mut scope = SymbolTable::new();
+        scope.write_static("box", Value::Object(object));
+        scope.write_static("copy", Value::Array(copied_branch));
+        scope.record_public_object_property_array_copy_source(
+            "copy",
+            ArrayCopySource::runtime_cell(source_cell, vec![branch_key.clone()], true),
+        );
+
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: "box".to_string(),
+                property: "items".to_string(),
+            },
+            keys: vec![branch_key],
+        };
+        let replacement = PhpReferenceCell::new(Value::Array(PhpArray::new()));
+        assert!(scope.promote_array_offset_alias_to_reference_cell(&alias, replacement));
+
+        let Value::Array(copy) = scope.read_static("copy", Span::new(1, 1)).unwrap() else {
+            panic!("expected copied array");
+        };
+        let copied_leaf_cell = copy
+            .get_slot(leaf_key)
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected copied leaf reference cell");
+
+        assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
+        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+    }
+
+    #[test]
+    fn dynamic_object_property_append_suffix_rehydrates_runtime_cell_copy_source() {
+        let branch_key = ArrayKey::String("branch".to_string());
+        let leaf_key = ArrayKey::String("leaf".to_string());
+        let leaf_cell = PhpReferenceCell::new(Value::String("old".to_string()));
+        let mut source_branch = PhpArray::new();
+        source_branch.insert_reference(leaf_key.clone(), leaf_cell.clone());
+        let mut source_items = PhpArray::new();
+        source_items.insert(branch_key.clone(), Value::Array(source_branch));
+        let source_cell = PhpReferenceCell::new(Value::Array(source_items));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        let mut copied_branch = PhpArray::new();
+        copied_branch.insert(leaf_key.clone(), Value::String("copy".to_string()));
+
+        let mut scope = SymbolTable::new();
+        scope.write_static("box", Value::Object(object));
+        scope.write_static("copy", Value::Array(copied_branch));
+        scope.write_static("prop", Value::String("items".to_string()));
+        scope.record_public_object_property_array_copy_source(
+            "copy",
+            ArrayCopySource::runtime_cell(source_cell, vec![branch_key], true),
+        );
+
+        let mut interpreter = Interpreter::from_program(
+            &Program {
+                statements: Vec::new(),
+            },
+            None,
+            RunOptions::default(),
+        )
+        .unwrap();
+        interpreter
+            .evaluate_assignment(
+                &AssignTarget::DynamicObjectPropertyArrayAppend {
+                    object: "box".to_string(),
+                    property: Expr::Variable("prop".to_string(), Span::new(1, 1)),
+                    indices: vec![Expr::String("branch".to_string(), Span::new(1, 1))],
+                    suffix_indices: vec![Expr::String("wrapped".to_string(), Span::new(1, 1))],
+                    span: Span::new(1, 1),
+                },
+                &Expr::String("stored".to_string(), Span::new(1, 1)),
+                &mut scope,
+            )
+            .unwrap();
+
+        let Value::Array(copy) = scope.read_static("copy", Span::new(1, 1)).unwrap() else {
+            panic!("expected copied array");
+        };
+        let copied_leaf_cell = copy
+            .get_slot(leaf_key)
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected copied leaf reference cell");
+
+        assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
+        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+    }
+
+    #[test]
+    fn dynamic_null_coalesce_object_property_invalidates_runtime_cell_copy_source() {
+        let leaf_key = ArrayKey::String("leaf".to_string());
+        let source_cell = PhpReferenceCell::new(Value::Null);
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        let mut copied_items = PhpArray::new();
+        copied_items.insert(leaf_key, Value::String("copy".to_string()));
+
+        let mut scope = SymbolTable::new();
+        scope.write_static("box", Value::Object(object));
+        scope.write_static("copy", Value::Array(copied_items));
+        scope.write_static("prop", Value::String("items".to_string()));
+        scope.record_public_object_property_array_copy_source(
+            "copy",
+            ArrayCopySource::runtime_cell(source_cell, Vec::new(), true),
+        );
+
+        let mut interpreter = Interpreter::from_program(
+            &Program {
+                statements: Vec::new(),
+            },
+            None,
+            RunOptions::default(),
+        )
+        .unwrap();
+        let value = interpreter
+            .evaluate_null_coalesce_assignment(
+                &AssignTarget::DynamicProperty {
+                    object: "box".to_string(),
+                    property: Expr::Variable("prop".to_string(), Span::new(1, 1)),
+                    span: Span::new(1, 1),
+                },
+                &Expr::Array {
+                    items: Vec::new(),
+                    span: Span::new(1, 1),
+                },
+                &mut scope,
+            )
+            .unwrap();
+
+        assert!(matches!(value, Value::Array(_)));
+        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+    }
+
+    #[test]
+    fn alias_path_copy_source_uses_handle_identity_for_literal_promotion() {
+        let mut scope = SymbolTable::new();
+        let leaf_key = ArrayKey::String("leaf".to_string());
+
+        let mut source_items = PhpArray::new();
+        source_items.insert(leaf_key.clone(), Value::String("shared".to_string()));
+        let source_cell = PhpReferenceCell::new(Value::Array(source_items.clone()));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        scope.write_static("this", Value::Object(object));
+        scope.bind_static_to_cell("copy", source_cell);
+        scope.array_offset_aliases.insert(
+            "property_leaf".to_string(),
+            vec![ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: "this".to_string(),
+                    property: "items".to_string(),
+                },
+                keys: vec![leaf_key.clone()],
+            }],
+        );
+
+        let source = ArrayCopySource::alias_path(
+            ArrayOffsetAliasRoot::StaticArray {
+                name: "copy".to_string(),
+            },
+            Vec::new(),
+            true,
+        );
+        let Value::Array(copy) = scope.value_with_object_property_aliases_from_array_copy(
+            Value::Array(source_items),
+            Some(source),
+            true,
+        ) else {
+            panic!("expected copied array");
+        };
+        let Value::Array(source_array) = scope.read_static("copy", Span::new(0, 0)).unwrap() else {
+            panic!("expected source array");
+        };
+        let source_leaf_cell = source_array
+            .get_slot(leaf_key.clone())
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected source leaf to be promoted through visible handle");
+        let copied_leaf_cell = copy
+            .get_slot(leaf_key)
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected copied leaf to use promoted source reference");
+
+        assert!(copied_leaf_cell.shares_reference_with(&source_leaf_cell));
+    }
+
+    #[test]
+    fn reference_binding_sync_removes_overwritten_array_literal_copy_source_metadata() {
+        let mut local_scope = SymbolTable::new();
+        let mut caller_scope = SymbolTable::new();
+        let slot_key = ArrayKey::Int(0);
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+
+        let source =
+            ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
+        caller_scope.record_array_literal_copy_source_path(
+            "copy",
+            std::slice::from_ref(&slot_key).to_vec(),
+            source.clone(),
+        );
+        local_scope.record_array_literal_copy_source_path(
+            "param",
+            std::slice::from_ref(&slot_key).to_vec(),
+            source,
+        );
+        local_scope.write_static("param", Value::Array(PhpArray::new()));
+
+        let binding = ReferenceBinding {
+            param_name: "param".to_string(),
+            target: ReferenceBindingTarget::CallerCell {
+                name: "copy".to_string(),
+                cell: PhpReferenceCell::new(Value::Array(PhpArray::new())),
+            },
+        };
+
+        Interpreter::sync_reference_binding_array_literal_copy_source_paths(
+            std::slice::from_ref(&binding),
+            &local_scope,
+            &mut caller_scope,
+        );
+
+        assert!(!caller_scope
+            .array_literal_copy_source_paths
+            .contains_key("copy"));
+    }
+
+    #[test]
+    fn array_copy_source_return_cell_rehydration_uses_resolved_alias_paths() {
+        let interpreter = Interpreter::from_program(
+            &Program {
+                statements: Vec::new(),
+            },
+            None,
+            RunOptions::default(),
+        )
+        .unwrap();
+        let leaf_key = ArrayKey::String("leaf".to_string());
+
+        let source_leaf_cell = PhpReferenceCell::new(Value::String("source".to_string()));
+        let mut source_items = PhpArray::new();
+        source_items.insert_reference(leaf_key.clone(), source_leaf_cell.clone());
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .write_public_property("items", Value::Array(source_items))
+            .unwrap();
+
+        let mut scope = SymbolTable::new();
+        scope.write_static("box", Value::Object(object.clone()));
+        scope.array_offset_aliases.insert(
+            "leaf_alias".to_string(),
+            vec![ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: "box".to_string(),
+                    property: "items".to_string(),
+                },
+                keys: vec![leaf_key.clone()],
+            }],
+        );
+
+        let source =
+            ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
+        let mut return_array = PhpArray::new();
+        return_array.insert(leaf_key.clone(), Value::String("copy".to_string()));
+        let return_cell = PhpReferenceCell::new(Value::Array(return_array));
+
+        interpreter.rehydrate_array_copy_return_cell_reference_cells(
+            &source,
+            &return_cell,
+            &mut scope,
+        );
+
+        let Value::Array(returned) = return_cell.value_cloned() else {
+            panic!("expected returned array");
+        };
+        let returned_leaf_cell = returned
+            .get_slot(leaf_key)
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected returned leaf reference cell");
+        assert_eq!(returned_leaf_cell.id(), source_leaf_cell.id());
+    }
+
+    #[test]
+    fn call_user_func_array_frame_imports_copy_sources_for_reference_params() {
+        let span = Span::new(1, 1);
+        let function = FunctionDecl {
+            name: "takes_ref".to_string(),
+            params: vec![FunctionParam {
+                name: "param".to_string(),
+                type_decl: None,
+                by_reference: true,
+                is_variadic: false,
+                default: None,
+                span,
+            }],
+            return_type: None,
+            returns_by_reference: false,
+            body: Vec::new(),
+            is_nested: false,
+            end_line: 1,
+            doc_comment: None,
+            span,
+        };
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        let source =
+            ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
+
+        let frame = Interpreter::call_user_func_array_frame_from_value_sources(
+            &function,
+            vec![Value::Array(PhpArray::new())],
+            Vec::new(),
+            vec![("param".to_string(), Vec::new(), source.clone())],
+            Vec::new(),
+            true,
+        );
+
+        assert_eq!(frame.values.len(), 1);
+        assert_eq!(frame.array_copy_source_bindings.len(), 1);
+        assert_eq!(frame.reference_bindings.len(), 1);
+        let ReferenceBindingTarget::ValueWithArrayCopySource { source: recovered } =
+            &frame.reference_bindings[0].target
+        else {
+            panic!("expected copied-source reference binding");
+        };
+        assert_eq!(&frame.reference_bindings[0].param_name, "param");
+        assert_eq!(recovered.keys, source.keys);
     }
 
     #[test]
