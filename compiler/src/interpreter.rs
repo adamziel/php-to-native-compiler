@@ -1326,6 +1326,79 @@ impl ArrayCopySourceMutationImpact {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ArrayCopySourceMutationTarget<'a> {
+    ObjectPropertyWrite {
+        object: &'a PhpObject,
+        property: &'a str,
+        keys: &'a [ArrayKey],
+    },
+    HolderStorageBoundary(&'a HolderStorageMutationBoundary),
+}
+
+impl<'a> ArrayCopySourceMutationTarget<'a> {
+    fn object_property_write(
+        object: &'a PhpObject,
+        property: &'a str,
+        keys: &'a [ArrayKey],
+    ) -> Self {
+        Self::ObjectPropertyWrite {
+            object,
+            property,
+            keys,
+        }
+    }
+
+    fn holder_storage_boundary(boundary: &'a HolderStorageMutationBoundary) -> Self {
+        Self::HolderStorageBoundary(boundary)
+    }
+
+    fn impact_on_source(
+        self,
+        symbols: &SymbolTable,
+        source: &ArrayCopySource,
+    ) -> Option<ArrayCopySourceMutationImpact> {
+        let (matches_target, keys) = match self {
+            Self::ObjectPropertyWrite {
+                object,
+                property,
+                keys,
+            } => {
+                let resolved = symbols.resolved_array_copy_source(source);
+                (
+                    resolved.matches_object_property(symbols, object, property),
+                    keys,
+                )
+            }
+            Self::HolderStorageBoundary(boundary) => {
+                let resolved = symbols.resolved_array_copy_source(source);
+                let matches_boundary = resolved.matches_object_property(
+                    symbols,
+                    &boundary.object,
+                    &boundary.property,
+                ) || match &source.root {
+                    ArrayCopySourceRoot::RuntimeCell(cell) => {
+                        boundary.identity.shares_reference_with(cell)
+                    }
+                    _ => false,
+                };
+                (matches_boundary, boundary.keys.as_slice())
+            }
+        };
+
+        if !matches_target {
+            return None;
+        }
+        if source.keys.starts_with(keys) {
+            return Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor);
+        }
+        if keys.starts_with(&source.keys) && keys.len() > source.keys.len() {
+            return Some(ArrayCopySourceMutationImpact::ReplacesSelectedChildPath);
+        }
+        None
+    }
+}
+
 #[derive(Debug, Clone)]
 enum ArrayCopySourceRecordLocation {
     CleanStatic(String),
@@ -2295,13 +2368,19 @@ impl SymbolTable {
         &self,
         boundary: &HolderStorageMutationBoundary,
     ) -> Vec<ArrayCopySourceRecordImpact> {
+        self.array_copy_source_records_impacted_by_mutation(
+            ArrayCopySourceMutationTarget::holder_storage_boundary(boundary),
+        )
+    }
+
+    fn array_copy_source_records_impacted_by_mutation(
+        &self,
+        target: ArrayCopySourceMutationTarget<'_>,
+    ) -> Vec<ArrayCopySourceRecordImpact> {
         self.array_copy_source_records()
             .into_iter()
             .filter_map(|record| {
-                let impact = self.array_copy_source_mutation_impact_for_holder_storage_boundary(
-                    &record.source,
-                    boundary,
-                )?;
+                let impact = self.array_copy_source_mutation_impact(&record.source, target)?;
                 Some(ArrayCopySourceRecordImpact { record, impact })
             })
             .collect()
@@ -2885,17 +2964,10 @@ impl SymbolTable {
         property: &str,
         write_keys: &[ArrayKey],
     ) -> Option<ArrayCopySourceMutationImpact> {
-        let resolved = self.resolved_array_copy_source(source);
-        if !resolved.matches_object_property(self, object, property) {
-            return None;
-        }
-        if source.keys.starts_with(write_keys) {
-            return Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor);
-        }
-        if write_keys.starts_with(&source.keys) && write_keys.len() > source.keys.len() {
-            return Some(ArrayCopySourceMutationImpact::ReplacesSelectedChildPath);
-        }
-        None
+        self.array_copy_source_mutation_impact(
+            source,
+            ArrayCopySourceMutationTarget::object_property_write(object, property, write_keys),
+        )
     }
 
     fn array_copy_source_mutation_impact_for_holder_storage_boundary(
@@ -2903,25 +2975,18 @@ impl SymbolTable {
         source: &ArrayCopySource,
         boundary: &HolderStorageMutationBoundary,
     ) -> Option<ArrayCopySourceMutationImpact> {
-        let resolved = self.resolved_array_copy_source(source);
-        let matches_boundary = resolved.matches_object_property(
-            self,
-            &boundary.object,
-            &boundary.property,
-        ) || match &source.root {
-            ArrayCopySourceRoot::RuntimeCell(cell) => boundary.identity.shares_reference_with(cell),
-            _ => false,
-        };
-        if !matches_boundary {
-            return None;
-        }
-        if source.keys.starts_with(&boundary.keys) {
-            return Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor);
-        }
-        if boundary.keys.starts_with(&source.keys) && boundary.keys.len() > source.keys.len() {
-            return Some(ArrayCopySourceMutationImpact::ReplacesSelectedChildPath);
-        }
-        None
+        self.array_copy_source_mutation_impact(
+            source,
+            ArrayCopySourceMutationTarget::holder_storage_boundary(boundary),
+        )
+    }
+
+    fn array_copy_source_mutation_impact(
+        &self,
+        source: &ArrayCopySource,
+        target: ArrayCopySourceMutationTarget<'_>,
+    ) -> Option<ArrayCopySourceMutationImpact> {
+        target.impact_on_source(self, source)
     }
 
     fn record_object_property_array_copy_source_paths(
