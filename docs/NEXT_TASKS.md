@@ -219,7 +219,10 @@ handled.
   helper/callee array-copy-source alias writeback plus copied-source
   mirror-path promotion now consume handles too. Runtime-cell handle discovery
   now includes initialized public object properties sharing the same reference
-  cell without requiring pre-seeded array-offset alias metadata. This task
+  cell without requiring pre-seeded array-offset alias metadata. Descendant
+  writes to a source container no longer erase whole-copy provenance for
+  supported magic/`ArrayAccess` method-local copies, and reference-return
+  calls now keep executed by-value argument copy-source metadata. This task
   stays open until broader dynamic holder writeback and untracked container
   propagation consume handles directly.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method

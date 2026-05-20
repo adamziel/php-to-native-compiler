@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 2290-C for supported magic/`ArrayAccess` bodies that copy a
+  tracked object-property array into a method-local value and then mutate a
+  nested source bucket before returning the copy. Descendant writes no longer
+  erase whole-copy provenance for those locals; only writes that replace the
+  copied source path or an ancestor invalidate it. Reference-return calls now
+  evaluate by-value arguments with their executed `Value + ArrayCopySource`
+  metadata, so supported arbitrary `__get()`/`offsetGet()` bodies can feed a
+  reference-return callee without falling back to stale static recognizers.
+  Focused system-PHP fixtures prove visible `__get()`, public
+  `ArrayAccess::offsetGet()`, and a reference-return function argument path.
+  Unsupported method syntax, untracked containers without reachable cells,
+  exact diagnostics, string COW, and native reference/COW lowering remain
+  incomplete.
+
 - Continued the post-2289 COW frontier by moving array-copy-source mirror-path
   promotion onto `RuntimeAliasLvalueHandle` resolution. When a runtime-cell
   copy source is also visible through an object-property handle, helper

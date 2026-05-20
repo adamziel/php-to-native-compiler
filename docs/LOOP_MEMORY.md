@@ -13,6 +13,25 @@ high-impact COW/runtime architecture before easier case-by-case patches. Use
 narrow fixtures to prove the architecture, not as a substitute for it, unless
 a one-off is genuinely the only viable route.
 
+## Loop Event 2026-05-20T13:20:00+02:00
+
+- Checkpoint before this task: `7bdf42a8 runtime: promote copied-source
+  mirrors through handles`, pushed to `origin/master`.
+- Task attempted: Lane 2290-C, preserving copied-source provenance for
+  supported magic/`ArrayAccess` method-local copies across later nested source
+  writes, and carrying executed by-value argument `ArrayCopySource` metadata
+  into reference-return callees instead of relying on static post-evaluation
+  recognizers.
+- Files changed: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2290/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Focused checks passed: `cargo check -q -p phpc`, `git diff --check`, and
+  system-PHP comparisons for milestones 2288, 2289, and 2290.
+- Remaining COW gaps: unsupported magic/`ArrayAccess` syntax outside the
+  interpreter subset, untracked dynamic containers without reachable cells,
+  broader dynamic holder writeback, exact diagnostics/Throwable parity, string
+  COW, and native reference/COW lowering.
+
 This file is durable memory for unattended Codex loop runs. The forever loop
 injects this file into every prompt. Each Codex pass should update it with:
 
@@ -41989,3 +42008,17 @@ next run, batch work aggressively:
   `tools/checkpoint.sh "runtime: promote copied-source mirrors through handles"`
   from this narrowed tree, then restore or separately handle the isolated
   runner-script stash after the runtime/docs checkpoint is complete.
+
+## Loop Event 2026-05-20T11:00:17Z
+
+- Checkpoint created: `7bdf42a8 runtime: promote copied-source mirrors through
+  handles`.
+- The checkpoint gate passed with `tools/checkpoint.sh`, including the full
+  `tools/run-tests.sh` suite: cargo tests passed, `phpc test` reported 2383
+  fixture tests passed with 0 failures, and `phpc test --compare-php`
+  reported 2383 fixture tests passed with 0 failures, 1671 system PHP
+  comparisons, and 712 skipped comparisons.
+- The isolated `tools/codex-lane2289-stable.sh` operational prompt edit was
+  restored after the checkpoint and remains the only pre-existing dirty file.
+- Next concrete task: decide whether to keep, checkpoint separately, or clear
+  the restored runner-script edit before starting another runtime/docs slice.

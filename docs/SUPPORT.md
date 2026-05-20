@@ -58,7 +58,14 @@
   before building bounded alias paths. Runtime-cell handle discovery also
   includes initialized public object properties that already share the same
   reference cell, even when no array-offset alias has been recorded below that
-  property.
+  property. For supported visible `__get()` and public
+  `ArrayAccess::offsetGet()` bodies, method-local copies of tracked
+  object-property arrays also keep their copy-source provenance across later
+  nested writes to the source container; those descendant writes detach the
+  written slot but do not erase selected reference-backed leaves in the copy.
+  Reference-return user functions/methods evaluate by-value arguments with the
+  executed copy-source metadata, so supported arbitrary magic/`ArrayAccess`
+  bodies can feed selected copied leaves into reference-return callees.
   Broader dynamic holder writeback and untracked containers still use the
   legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,

@@ -2049,9 +2049,7 @@ impl SymbolTable {
             }
             _ => false,
         };
-        source_property_matches
-            && (write_keys.starts_with(source.keys.as_slice())
-                || source.keys.starts_with(write_keys))
+        source_property_matches && source.keys.starts_with(write_keys)
     }
 
     fn invalidate_array_copy_sources_for_object_property_write(
@@ -4343,11 +4341,7 @@ impl SymbolTable {
                 let Some(reference) = reference else {
                     continue;
                 };
-                Self::write_nested_array_offset_alias_reference(
-                    &mut array,
-                    &alias.keys,
-                    reference,
-                );
+                Self::write_nested_array_offset_alias_reference(&mut array, &alias.keys, reference);
             }
         }
         cell.set_value(Value::Array(array));
@@ -4470,7 +4464,8 @@ impl SymbolTable {
     ) -> Vec<RuntimeAliasLvalueHandle> {
         match &source.root {
             ArrayCopySourceRoot::ObjectProperty { object, property } => {
-                let mut roots = self.public_object_property_alias_roots_for_object(object, property);
+                let mut roots =
+                    self.public_object_property_alias_roots_for_object(object, property);
                 for object_name in self.object_names_for_id(object.id()) {
                     let root = ArrayOffsetAliasRoot::PublicObjectProperty {
                         object: object_name,
@@ -4537,9 +4532,11 @@ impl SymbolTable {
                 if property.visibility() != Visibility::Public || !property.is_initialized() {
                     continue;
                 }
-                let Ok(Some(property_cell)) =
-                    object.existing_property_reference_cell_from_context(property.name(), None, &[])
-                else {
+                let Ok(Some(property_cell)) = object.existing_property_reference_cell_from_context(
+                    property.name(),
+                    None,
+                    &[],
+                ) else {
                     continue;
                 };
                 if !property_cell.shares_reference_with(cell) {
@@ -21199,8 +21196,7 @@ impl Interpreter {
                         || matches!(
                             array_copy_source.as_ref().map(|source| &source.root),
                             Some(ArrayCopySourceRoot::RuntimeCell(_))
-                        ))
-                {
+                        )) {
                     scope.value_with_object_property_aliases_from_array_copy(
                         value,
                         array_copy_source.clone(),
@@ -34350,17 +34346,14 @@ impl Interpreter {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
 
-            let (values, reference_bindings) = self
-                .evaluate_user_function_call_arguments_with_options(
+            let (values, reference_bindings, by_value_array_copy_source_bindings) = self
+                .evaluate_user_function_call_arguments_with_options_and_array_copy_sources(
                     function,
                     args,
                     span,
                     caller_scope,
                     true,
                 )?;
-
-            let by_value_array_copy_source_bindings =
-                self.array_copy_source_bindings_for_call_arguments(function, args, caller_scope);
             let called_class_id = object.class_id();
             return self
                 .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
@@ -35864,10 +35857,8 @@ impl Interpreter {
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
-            let by_value_array_copy_source_bindings =
-                self.array_copy_source_bindings_for_call_arguments(function, args, caller_scope);
-            let (values, reference_bindings) = self
-                .evaluate_user_function_call_arguments_with_options(
+            let (values, reference_bindings, by_value_array_copy_source_bindings) = self
+                .evaluate_user_function_call_arguments_with_options_and_array_copy_sources(
                     function,
                     args,
                     span,
@@ -47109,15 +47100,14 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) = self.evaluate_user_function_call_arguments_with_options(
-            function,
-            args,
-            span,
-            caller_scope,
-            true,
-        )?;
-        let by_value_array_copy_source_bindings =
-            self.array_copy_source_bindings_for_call_arguments(function, args, caller_scope);
+        let (values, reference_bindings, by_value_array_copy_source_bindings) = self
+            .evaluate_user_function_call_arguments_with_options_and_array_copy_sources(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
 
         self.call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
             function,
@@ -48774,7 +48764,10 @@ impl Interpreter {
                     caller_scope,
                 );
                 local_scope.mirror_array_copy_source_aliases_from_copy(&param.name, &source);
-                local_scope.record_public_object_property_array_copy_source(&param.name, source);
+                local_scope
+                    .record_public_object_property_array_copy_source(&param.name, source.clone());
+                value_copy_reference_params.push(param.name.clone());
+                value_copy_reference_param_sources.push((param.name.clone(), source));
             } else {
                 local_scope.write_static(&param.name, value);
             }
@@ -49251,8 +49244,10 @@ impl Interpreter {
         binding: &ReferenceReturnBinding,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
-        let source =
-            Self::public_object_property_array_copy_source_from_reference_binding(binding, caller_scope);
+        let source = Self::public_object_property_array_copy_source_from_reference_binding(
+            binding,
+            caller_scope,
+        );
         match binding {
             ReferenceReturnBinding::Cell(cell) => {
                 caller_scope.rehydrate_reference_cell_array_aliases(cell);
@@ -51034,8 +51029,32 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         allow_reference_return_array_bindings: bool,
     ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
+        let (values, reference_bindings, _) = self
+            .evaluate_user_function_call_arguments_with_options_and_array_copy_sources(
+                function,
+                args,
+                span,
+                caller_scope,
+                allow_reference_return_array_bindings,
+            )?;
+        Ok((values, reference_bindings))
+    }
+
+    fn evaluate_user_function_call_arguments_with_options_and_array_copy_sources(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        allow_reference_return_array_bindings: bool,
+    ) -> CompileResult<(
+        Vec<Value>,
+        Vec<ReferenceBinding>,
+        Vec<ArrayCopySourceBinding>,
+    )> {
         let mut values = Vec::with_capacity(args.len());
         let mut reference_bindings = Vec::new();
+        let mut by_value_array_copy_source_bindings = Vec::new();
 
         for (index, arg) in args.iter().enumerate() {
             let Some(param) = function.params.get(index) else {
@@ -51266,7 +51285,23 @@ impl Interpreter {
                     }
                 }
             } else {
-                values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
+                let (value, array_copy_source) =
+                    self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
+                let value = caller_scope.value_with_object_property_aliases_from_array_copy(
+                    value,
+                    array_copy_source.clone(),
+                    true,
+                );
+                if matches!(value, Value::Array(_)) {
+                    if let Some(source) = array_copy_source {
+                        by_value_array_copy_source_bindings.push((
+                            param.name.clone(),
+                            Vec::new(),
+                            source,
+                        ));
+                    }
+                }
+                values.push(value);
             }
         }
 
@@ -51285,7 +51320,11 @@ impl Interpreter {
             ));
         }
 
-        Ok((values, reference_bindings))
+        Ok((
+            values,
+            reference_bindings,
+            by_value_array_copy_source_bindings,
+        ))
     }
 
     fn evaluate_visible_object_property_reference_argument(
@@ -76147,13 +76186,11 @@ mod tests {
 
         let source = ArrayCopySource::runtime_cell(source_cell.clone(), Vec::new(), true);
         let cloned_value = source_cell.value_cloned();
-        let Value::Array(copy) =
-            symbols.value_with_object_property_aliases_from_array_copy(
-                cloned_value,
-                Some(source),
-                true,
-            )
-        else {
+        let Value::Array(copy) = symbols.value_with_object_property_aliases_from_array_copy(
+            cloned_value,
+            Some(source),
+            true,
+        ) else {
             panic!("expected copied array");
         };
         let Value::Array(source_array) = source_cell.value_cloned() else {
