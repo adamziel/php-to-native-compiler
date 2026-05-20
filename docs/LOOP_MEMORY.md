@@ -13,6 +13,25 @@ high-impact COW/runtime architecture before easier case-by-case patches. Use
 narrow fixtures to prove the architecture, not as a substitute for it, unless
 a one-off is genuinely the only viable route.
 
+## Loop Event 2026-05-20T14:35:00+02:00
+
+- Checkpoint before this task: `201720a3 runtime: carry executed copy sources
+  into mixed helpers`, pushed to `origin/master`.
+- Task attempted: Lane 2292-C, preserving stored `call_user_func_array()`
+  argument arrays that mix by-reference visible object-property slots with
+  by-value copied arrays from supported magic `__get()` or public
+  `ArrayAccess::offsetGet()` bodies.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2292/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Focused checks so far: `cargo check -q -p phpc` passed; system-PHP
+  comparisons for `tests/fixtures/milestone2290`, `milestone2291`, and
+  `milestone2292` passed.
+- Remaining COW gaps: unsupported magic/`ArrayAccess` syntax outside the
+  interpreter subset, untracked dynamic containers without reachable cells,
+  broader dynamic holder writeback, exact diagnostics/Throwable parity, string
+  COW, and native reference/COW lowering.
+
 ## Loop Event 2026-05-20T13:55:00+02:00
 
 - Checkpoint before this task: `283ab478 runtime: preserve copy sources across

@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Lane 2292-C for stored `call_user_func_array()` argument arrays that
+  mix by-reference visible object-property slots with by-value copied arrays
+  from supported magic `__get()` or public `ArrayAccess::offsetGet()` bodies.
+  Direct visible object-property reference elements can now be stored in array
+  literals, and non-source-aware callback dispatch recovers by-value slot copy
+  sources from the stored argument root on both value and source-returning call
+  paths. Callee parameter binding rehydrates those stored copied values before
+  return-source propagation, so selected reference-backed leaves remain shared
+  while plain leaves detach. Unsupported method syntax, untracked containers
+  without reachable cells, exact diagnostics, string COW, and native
+  reference/COW lowering remain incomplete.
+
 - Added Lane 2291-C for mixed by-reference/by-value helper calls that receive
   copied arrays from supported magic `__get()` or public
   `ArrayAccess::offsetGet()` bodies. Non-source-aware helper calls no longer

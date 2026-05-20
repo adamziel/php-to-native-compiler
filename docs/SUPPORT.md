@@ -69,7 +69,12 @@
   Mixed by-reference/by-value helper calls use the same executed argument
   metadata for by-value copied-array arguments instead of a static
   post-evaluation recognizer, so by-reference helper side effects do not force
-  magic/`ArrayAccess` copied arguments back onto stale provenance.
+  magic/`ArrayAccess` copied arguments back onto stale provenance. Stored
+  `call_user_func_array()` argument arrays can also mix by-reference visible
+  object-property slots with by-value copied arrays from supported magic
+  `__get()` or public `ArrayAccess::offsetGet()` bodies; copied-source
+  metadata is recovered from the stored argument slot and rehydrated in the
+  callee before return-source propagation.
   Broader dynamic holder writeback and untracked containers still use the
   legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,

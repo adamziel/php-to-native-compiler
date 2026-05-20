@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2292/call_user_func_array_byref_property_magic_arg_cow.php

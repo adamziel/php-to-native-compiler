@@ -203,6 +203,17 @@ handled.
   returns, method-local aliases, global function returns, `call_user_func()`
   array method callbacks, and zero-argument `call_user_func_array()` function
   callbacks, while leaving plain descendants detached.
+- [x] Lane 2290-C: keep copied-source provenance for supported
+  magic/`ArrayAccess` method-local copies across later nested writes to the
+  source container, and feed executed by-value copied-array metadata into
+  reference-return callees.
+- [x] Lane 2291-C: route mixed by-reference/by-value helper calls through
+  executed `Value + ArrayCopySource` metadata for supported magic/ArrayAccess
+  copied-array arguments instead of static post-evaluation source recovery.
+- [x] Lane 2292-C: preserve stored `call_user_func_array()` argument arrays
+  that mix by-reference visible object-property slots with by-value copied
+  arrays from supported magic `__get()` or public
+  `ArrayAccess::offsetGet()` bodies.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model by extracting root resolution into a
   runtime-backed alias/lvalue handle under `SymbolTable`, then migrating
@@ -223,9 +234,10 @@ handled.
   writes to a source container no longer erase whole-copy provenance for
   supported magic/`ArrayAccess` method-local copies, and reference-return
   calls plus mixed by-reference/by-value helpers now keep executed by-value
-  argument copy-source metadata. This task stays open until broader dynamic
-  holder writeback and untracked container propagation consume handles
-  directly.
+  argument copy-source metadata, including stored callback argument arrays
+  with by-reference visible object-property slots. This task stays open until
+  broader dynamic holder writeback and untracked container propagation consume
+  handles directly.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference
