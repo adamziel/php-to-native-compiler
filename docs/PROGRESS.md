@@ -4,6 +4,13 @@
 
 Implemented:
 
+- Removed the remaining copied-source object-property match wrapper from
+  detach and detached-source rehydration paths. Those consumers now delegate
+  directly to `array_copy_source_mutation_impact_for_object_property_write`,
+  and detached rehydration walks the shared `ArrayCopySourceRecord` view for
+  clean static, dirty static, object-property, and array-literal records
+  instead of rebuilding parallel source lists.
+
 - Continued the post-2289 COW frontier by moving copied-source reference-cell
   scanning and copied-source value reads onto `RuntimeAliasLvalueHandle`
   resolution first. Object-property writes that detach copied-source aliases,

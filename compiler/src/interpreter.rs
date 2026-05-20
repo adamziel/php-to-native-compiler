@@ -2247,15 +2247,6 @@ impl SymbolTable {
         .collect()
     }
 
-    fn array_copy_source_matches_object_property(
-        &self,
-        source: &ArrayCopySource,
-        object: &PhpObject,
-        property: &str,
-    ) -> bool {
-        self.array_copy_source_matches_object_property_value(source, object, property)
-    }
-
     fn invalidate_array_copy_sources_for_object_property_write(
         &mut self,
         object: &PhpObject,
@@ -2697,16 +2688,6 @@ impl SymbolTable {
         };
         alias_property == property
             && matches!(self.read_storage_named(object_name), Some(Value::Object(candidate)) if &candidate == object)
-    }
-
-    fn array_copy_source_matches_object_property_value(
-        &self,
-        source: &ArrayCopySource,
-        object: &PhpObject,
-        property: &str,
-    ) -> bool {
-        self.resolved_array_copy_source(source)
-            .matches_object_property(self, object, property)
     }
 
     fn array_copy_source_mutation_impact_for_object_property_write(
@@ -3265,23 +3246,17 @@ impl SymbolTable {
             );
         }
 
-        match &source.root {
-            ArrayCopySourceRoot::ObjectProperty { .. }
-            | ArrayCopySourceRoot::AliasPath(
-                ArrayOffsetAliasRoot::PublicObjectProperty { .. }
-                | ArrayOffsetAliasRoot::ContextObjectProperty { .. },
-            ) => {}
-            _ => return false,
-        };
         self.detached_object_property_array_offset_values
             .iter()
             .any(
                 |(candidate_object, candidate_property, candidate_keys, _)| {
-                    self.array_copy_source_matches_object_property(
+                    self.array_copy_source_mutation_impact_for_object_property_write(
                         source,
                         candidate_object,
                         candidate_property,
+                        candidate_keys,
                     )
+                    .is_some()
                         && candidate_keys.as_slice() == keys
                 },
             )
@@ -3461,68 +3436,48 @@ impl SymbolTable {
         property: &str,
         detached_paths: &[(Vec<ArrayKey>, VariableCell)],
     ) {
-        let root_sources = self.public_or_dirty_object_property_array_copy_source_entries();
-        for (name, source) in root_sources {
+        for record in self.array_copy_source_records() {
             let Some(paths) = self.detached_paths_for_array_copy_source(
-                &source,
+                &record.source,
                 object,
                 property,
                 detached_paths,
             ) else {
                 continue;
             };
-            self.rehydrate_static_array_copy_source_paths(&name, &[], &paths);
-        }
 
-        let nested_sources = self
-            .array_literal_copy_source_paths
-            .iter()
-            .map(|(name, paths)| (name.clone(), paths.clone()))
-            .collect::<Vec<_>>();
-        for (name, sources) in nested_sources {
-            for (prefix, source) in sources {
-                let Some(paths) = self.detached_paths_for_array_copy_source(
-                    &source,
-                    object,
-                    property,
-                    detached_paths,
-                ) else {
-                    continue;
-                };
-                self.rehydrate_static_array_copy_source_paths(&name, &prefix, &paths);
-            }
-        }
-
-        let object_property_sources = self
-            .object_property_array_copy_sources
-            .iter()
-            .map(|((object_id, property), sources)| (*object_id, property.clone(), sources.clone()))
-            .collect::<Vec<_>>();
-        for (target_object_id, target_property, sources) in object_property_sources {
-            if target_object_id == object.id() && target_property == property {
-                continue;
-            }
-            let mut target_paths = Vec::new();
-            for (prefix, source) in sources {
-                let Some(paths) = self.detached_paths_for_array_copy_source(
-                    &source,
-                    object,
-                    property,
-                    detached_paths,
-                ) else {
-                    continue;
-                };
-                for (mut relative_keys, cell) in paths {
-                    let mut target_keys = prefix.clone();
-                    target_keys.append(&mut relative_keys);
-                    target_paths.push((target_keys, cell));
+            match record.location {
+                ArrayCopySourceRecordLocation::CleanStatic(name)
+                | ArrayCopySourceRecordLocation::DirtyStatic(name) => {
+                    self.rehydrate_static_array_copy_source_paths(&name, &[], &paths);
                 }
+                ArrayCopySourceRecordLocation::ArrayLiteralPath { name, prefix } => {
+                    self.rehydrate_static_array_copy_source_paths(&name, &prefix, &paths);
+                }
+                ArrayCopySourceRecordLocation::ObjectPropertyPath {
+                    object_id,
+                    property: target_property,
+                    prefix,
+                } => {
+                    if object_id == object.id() && target_property == property {
+                        continue;
+                    }
+                    let target_paths = paths
+                        .into_iter()
+                        .map(|(mut relative_keys, cell)| {
+                            let mut target_keys = prefix.clone();
+                            target_keys.append(&mut relative_keys);
+                            (target_keys, cell)
+                        })
+                        .collect::<Vec<_>>();
+                    self.rehydrate_object_property_array_copy_source_paths(
+                        object_id,
+                        &target_property,
+                        &target_paths,
+                    );
+                }
+                ArrayCopySourceRecordLocation::DirtySource => {}
             }
-            self.rehydrate_object_property_array_copy_source_paths(
-                target_object_id,
-                &target_property,
-                &target_paths,
-            );
         }
     }
 
@@ -3533,17 +3488,13 @@ impl SymbolTable {
         property: &str,
         detached_paths: &[(Vec<ArrayKey>, VariableCell)],
     ) -> Option<Vec<(Vec<ArrayKey>, VariableCell)>> {
-        if !self.array_copy_source_matches_object_property(source, object, property) {
-            return None;
-        }
-
         let paths = detached_paths
             .iter()
             .filter_map(|(keys, cell)| {
-                if !keys.starts_with(&source.keys)
-                    || keys.len() == source.keys.len()
-                    || (!source.include_exact_path && keys.len() <= source.keys.len())
-                {
+                let impact = self.array_copy_source_mutation_impact_for_object_property_write(
+                    source, object, property, keys,
+                )?;
+                if impact != ArrayCopySourceMutationImpact::ReplacesSelectedChildPath {
                     return None;
                 }
                 Some((keys[source.keys.len()..].to_vec(), cell.clone()))
