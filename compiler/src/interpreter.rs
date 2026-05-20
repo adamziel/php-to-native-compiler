@@ -2211,16 +2211,40 @@ impl SymbolTable {
                 .any(|candidate| self.array_copy_sources_match(candidate, source))
     }
 
-    fn array_copy_source_invalidated_by_object_property_write(
+    fn array_copy_source_records_impacted_by_object_property_write(
         &self,
-        source: &ArrayCopySource,
         object: &PhpObject,
         property: &str,
         write_keys: &[ArrayKey],
-    ) -> bool {
-        self.array_copy_source_mutation_impact_for_object_property_write(
-            source, object, property, write_keys,
-        ) == Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor)
+    ) -> Vec<(ArrayCopySourceRecord, ArrayCopySourceMutationImpact)> {
+        self.array_copy_source_records()
+            .into_iter()
+            .filter_map(|record| {
+                let impact = self.array_copy_source_mutation_impact_for_object_property_write(
+                    &record.source,
+                    object,
+                    property,
+                    write_keys,
+                )?;
+                Some((record, impact))
+            })
+            .collect()
+    }
+
+    fn array_copy_source_records_replaced_by_object_property_write(
+        &self,
+        object: &PhpObject,
+        property: &str,
+        write_keys: &[ArrayKey],
+    ) -> Vec<ArrayCopySourceRecord> {
+        self.array_copy_source_records_impacted_by_object_property_write(
+            object, property, write_keys,
+        )
+        .into_iter()
+        .filter_map(|(record, impact)| {
+            (impact == ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor).then_some(record)
+        })
+        .collect()
     }
 
     fn array_copy_source_matches_object_property(
@@ -2250,20 +2274,17 @@ impl SymbolTable {
         let object = &boundary.object;
         let property = &boundary.property;
         let write_keys = &boundary.keys;
-        let records = self.array_copy_source_records();
+        let records =
+            self.array_copy_source_records_replaced_by_object_property_write(
+                object, property, write_keys,
+            );
         let stale_static_sources = records
             .iter()
             .filter_map(|record| {
                 let ArrayCopySourceRecordLocation::CleanStatic(name) = &record.location else {
                     return None;
                 };
-                self.array_copy_source_invalidated_by_object_property_write(
-                    &record.source,
-                    object,
-                    property,
-                    write_keys,
-                )
-                .then(|| name.clone())
+                Some(name.clone())
             })
             .collect::<Vec<_>>();
         for name in stale_static_sources {
@@ -2276,13 +2297,7 @@ impl SymbolTable {
                 let ArrayCopySourceRecordLocation::DirtyStatic(name) = &record.location else {
                     return None;
                 };
-                self.array_copy_source_invalidated_by_object_property_write(
-                    &record.source,
-                    object,
-                    property,
-                    write_keys,
-                )
-                .then(|| name.clone())
+                Some(name.clone())
             })
             .collect::<Vec<_>>();
         for name in stale_dirty_sources {
@@ -2294,11 +2309,6 @@ impl SymbolTable {
             .filter_map(|record| {
                 matches!(record.location, ArrayCopySourceRecordLocation::DirtySource)
                     .then(|| record.source.clone())
-            })
-            .filter(|source| {
-                self.array_copy_source_invalidated_by_object_property_write(
-                    source, object, property, write_keys,
-                )
             })
             .collect::<Vec<_>>();
         self.dirty_array_copy_source_values = self
@@ -2312,7 +2322,7 @@ impl SymbolTable {
             .cloned()
             .collect();
 
-        let mut object_copy_source_keys = records
+        let stale_object_copy_source_paths = records
             .iter()
             .filter_map(|record| {
                 let ArrayCopySourceRecordLocation::ObjectPropertyPath {
@@ -2323,15 +2333,12 @@ impl SymbolTable {
                 else {
                     return None;
                 };
-                let _ = prefix;
-                self.array_copy_source_invalidated_by_object_property_write(
-                    &record.source,
-                    object,
-                    property,
-                    write_keys,
-                )
-                .then(|| (*object_id, record_property.clone()))
+                Some(((*object_id, record_property.clone()), prefix.clone()))
             })
+            .collect::<Vec<_>>();
+        let mut object_copy_source_keys = stale_object_copy_source_paths
+            .iter()
+            .map(|(key, _)| key.clone())
             .collect::<Vec<_>>();
         object_copy_source_keys.sort();
         object_copy_source_keys.dedup();
@@ -2341,10 +2348,10 @@ impl SymbolTable {
             };
             let retained = paths
                 .into_iter()
-                .filter(|(_, source)| {
-                    !self.array_copy_source_invalidated_by_object_property_write(
-                        source, object, property, write_keys,
-                    )
+                .filter(|(prefix, _)| {
+                    !stale_object_copy_source_paths.iter().any(|(stale_key, stale_prefix)| {
+                        stale_key == &key && stale_prefix.as_slice() == prefix.as_slice()
+                    })
                 })
                 .collect::<Vec<_>>();
             if retained.is_empty() {
@@ -2356,7 +2363,7 @@ impl SymbolTable {
             self.dirty_object_property_array_copy_sources.insert(key);
         }
 
-        let mut literal_roots = records
+        let stale_array_literal_paths = records
             .iter()
             .filter_map(|record| {
                 let ArrayCopySourceRecordLocation::ArrayLiteralPath { name, prefix } =
@@ -2364,15 +2371,12 @@ impl SymbolTable {
                 else {
                     return None;
                 };
-                let _ = prefix;
-                self.array_copy_source_invalidated_by_object_property_write(
-                    &record.source,
-                    object,
-                    property,
-                    write_keys,
-                )
-                .then(|| name.clone())
+                Some((name.clone(), prefix.clone()))
             })
+            .collect::<Vec<_>>();
+        let mut literal_roots = stale_array_literal_paths
+            .iter()
+            .map(|(name, _)| name.clone())
             .collect::<Vec<_>>();
         literal_roots.sort();
         literal_roots.dedup();
@@ -2382,10 +2386,12 @@ impl SymbolTable {
             };
             let retained = paths
                 .into_iter()
-                .filter(|(_, source)| {
-                    !self.array_copy_source_invalidated_by_object_property_write(
-                        source, object, property, write_keys,
-                    )
+                .filter(|(prefix, _)| {
+                    !stale_array_literal_paths
+                        .iter()
+                        .any(|(stale_name, stale_prefix)| {
+                            stale_name == &name && stale_prefix.as_slice() == prefix.as_slice()
+                        })
                 })
                 .collect::<Vec<_>>();
             if retained.is_empty() {
@@ -2417,13 +2423,10 @@ impl SymbolTable {
         let property = &boundary.property;
         let write_keys = &boundary.keys;
         let mut detached_paths = Vec::new();
-        for record in self.array_copy_source_records() {
+        for record in self.array_copy_source_records_replaced_by_object_property_write(
+            object, property, write_keys,
+        ) {
             let source = record.source;
-            if !self.array_copy_source_invalidated_by_object_property_write(
-                &source, object, property, write_keys,
-            ) {
-                continue;
-            }
             for (keys, cell) in self.reference_cells_for_array_copy_source(&source) {
                 if !detached_paths.iter().any(
                     |(candidate_keys, _): &(Vec<ArrayKey>, VariableCell)| {
@@ -77564,12 +77567,12 @@ mod tests {
 
         let source = ArrayCopySource::runtime_cell(source_cell, Vec::new(), true);
 
-        assert!(scope.array_copy_source_invalidated_by_object_property_write(
-            &source,
-            &object,
-            "items",
-            &[]
-        ));
+        assert_eq!(
+            scope.array_copy_source_mutation_impact_for_object_property_write(
+                &source, &object, "items", &[]
+            ),
+            Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor)
+        );
         scope.record_detached_object_property_array_offset_cell(
             &object,
             "items",
