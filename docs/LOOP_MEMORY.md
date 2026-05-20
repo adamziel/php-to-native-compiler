@@ -41908,3 +41908,84 @@ next run, batch work aggressively:
   checkpoint gates, then checkpoint with
   `tools/checkpoint.sh "runtime: detach unset property reference cells"` if
   the full gate passes.
+
+## Loop Event 2026-05-20T10:49:35Z
+
+- Checkpoint before this task: `e2238722 runtime: resolve copied-source handles
+  for writeback`.
+- Task attempted: Lane 2289 post-checkpoint COW frontier, moving
+  copied-source mirror-path promotion from direct `ArrayCopySourceRoot`
+  equality to `RuntimeAliasLvalueHandle` root matching, and letting
+  runtime-cell handle discovery find initialized public object properties that
+  share the same reference cell without pre-seeded array-offset alias metadata.
+- Files changed so far: `compiler/src/interpreter.rs`, `docs/PROGRESS.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, and `docs/LOOP_MEMORY.md`. The pre-existing
+  `tools/codex-lane2289-stable.sh` edit remains unrelated and untouched.
+- Tests run so far:
+  `git diff --check`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo check -q -p phpc`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p phpc --lib array_copy_source_mirror_promotion_uses_runtime_lvalue_handles -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p phpc --lib lvalue_handles -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p phpc --lib array_copy_source_writeback_uses_runtime_lvalue_handles -- --test-threads=1`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2289`
+  passed.
+- Remaining COW gaps: broader dynamic holder writeback, untracked containers
+  without concrete handles/cells, arbitrary unsupported magic/`ArrayAccess`
+  side effects, exact diagnostics, string COW, and native reference/COW
+  lowering.
+- Next concrete task: either isolate the unrelated
+  `tools/codex-lane2289-stable.sh` edit before checkpointing this runtime/docs
+  slice, or handle that runner-script edit separately; then run
+  `tools/checkpoint.sh` only after the intended checkpoint scope is clean.
+
+## Loop Event 2026-05-20T10:54:11Z
+
+- Checkpoint before this task: `e2238722 runtime: resolve copied-source handles
+  for writeback`.
+- Task attempted: Lane 2289 stability pass for the current runtime-cell
+  copy-source handle migration. No runtime code was changed in this pass.
+- Fresh focused checks passed with bounded serialized commands and logs under
+  `.codex-stable/lane2289/`:
+  `git diff --check`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo check -q -p phpc`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -q -p phpc --lib array_copy_source_mirror_promotion_uses_runtime_lvalue_handles -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -q -p phpc --lib lvalue_handles -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -q -p phpc --lib array_copy_source_writeback_uses_runtime_lvalue_handles -- --test-threads=1`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2289`.
+- `tools/checkpoint.sh` was not run because it performs `git add -A`, and the
+  worktree still contains the unrelated dirty
+  `tools/codex-lane2289-stable.sh` prompt edit. Running the checkpoint gate
+  now would commit that unrelated runner-script change with the runtime/docs
+  slice.
+- Next concrete task: isolate or separately commit/clear
+  `tools/codex-lane2289-stable.sh`, then run
+  `tools/checkpoint.sh "runtime: promote copied-source mirrors through handles"`
+  for the Lane 2289 runtime/docs slice if the full gate passes.
+
+## Loop Event 2026-05-20T10:56:37Z
+
+- Checkpoint before this task: `e2238722 runtime: resolve copied-source handles
+  for writeback`.
+- Task attempted: Lane 2289 checkpoint readiness for the runtime-cell
+  copy-source handle migration. The unrelated
+  `tools/codex-lane2289-stable.sh` operational prompt edit was isolated with
+  `git stash push -m lane2289-runner-script-isolation --
+  tools/codex-lane2289-stable.sh`, leaving only the runtime/docs slice dirty.
+- Focused checks passed from the narrowed tree with logs under
+  `.codex-stable/lane2289/`: `git diff --check`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo check -q -p phpc`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -q -p phpc --lib array_copy_source_mirror_promotion_uses_runtime_lvalue_handles -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -q -p phpc --lib lvalue_handles -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -q -p phpc --lib array_copy_source_writeback_uses_runtime_lvalue_handles -- --test-threads=1`;
+  and `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2289`.
+- Remaining COW gaps: broader dynamic holder writeback, untracked containers
+  without concrete handles/cells, arbitrary unsupported magic/`ArrayAccess`
+  side effects, exact diagnostics, string COW, and native reference/COW
+  lowering.
+- Next concrete task: run
+  `tools/checkpoint.sh "runtime: promote copied-source mirrors through handles"`
+  from this narrowed tree, then restore or separately handle the isolated
+  runner-script stash after the runtime/docs checkpoint is complete.

@@ -54,7 +54,11 @@
   copied-source alias mirror/import setup consume those handles directly.
   Reference-return path promotion, existing-cell lookup, return-cell
   rehydration, copied-array alias mirroring, and helper/callee alias writeback
-  also resolve through those handles before building bounded alias paths.
+  plus copied-source mirror-path promotion also resolve through those handles
+  before building bounded alias paths. Runtime-cell handle discovery also
+  includes initialized public object properties that already share the same
+  reference cell, even when no array-offset alias has been recorded below that
+  property.
   Broader dynamic holder writeback and untracked containers still use the
   legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,

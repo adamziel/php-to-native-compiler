@@ -216,9 +216,12 @@ handled.
   rehydration/overlay plus helper/callback copied-source alias mirror/import
   setup now consume those handles directly. Reference-return path promotion,
   existing-cell lookup, return-cell rehydration, alias mirroring, and
-  helper/callee array-copy-source alias writeback now consume handles too; this
-  task stays open until broader dynamic holder writeback and untracked
-  container propagation consume handles directly.
+  helper/callee array-copy-source alias writeback plus copied-source
+  mirror-path promotion now consume handles too. Runtime-cell handle discovery
+  now includes initialized public object properties sharing the same reference
+  cell without requiring pre-seeded array-offset alias metadata. This task
+  stays open until broader dynamic holder writeback and untracked container
+  propagation consume handles directly.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference

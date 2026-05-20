@@ -4469,11 +4469,22 @@ impl SymbolTable {
         source: &ArrayCopySource,
     ) -> Vec<RuntimeAliasLvalueHandle> {
         match &source.root {
-            ArrayCopySourceRoot::ObjectProperty { object, property } => self
-                .public_object_property_alias_roots_for_object(object, property)
-                .into_iter()
-                .map(|root| self.runtime_alias_lvalue_handle(root))
-                .collect(),
+            ArrayCopySourceRoot::ObjectProperty { object, property } => {
+                let mut roots = self.public_object_property_alias_roots_for_object(object, property);
+                for object_name in self.object_names_for_id(object.id()) {
+                    let root = ArrayOffsetAliasRoot::PublicObjectProperty {
+                        object: object_name,
+                        property: property.clone(),
+                    };
+                    if !roots.contains(&root) {
+                        roots.push(root);
+                    }
+                }
+                roots
+                    .into_iter()
+                    .map(|root| self.runtime_alias_lvalue_handle(root))
+                    .collect()
+            }
             ArrayCopySourceRoot::AliasPath(root @ ArrayOffsetAliasRoot::GlobalArray { name }) => {
                 vec![
                     self.runtime_alias_lvalue_handle(root.clone()),
@@ -4510,6 +4521,73 @@ impl SymbolTable {
                     handles.push(RuntimeAliasLvalueHandle {
                         root: ArrayOffsetAliasRoot::GlobalArray { name: name.clone() },
                         cell: Some(candidate.clone()),
+                    });
+                }
+            }
+        }
+
+        for (name, candidate) in self.symbols.borrow().iter() {
+            if name.starts_with('\0') {
+                continue;
+            }
+            let Value::Object(object) = candidate.value_cloned() else {
+                continue;
+            };
+            for property in object.properties() {
+                if property.visibility() != Visibility::Public || !property.is_initialized() {
+                    continue;
+                }
+                let Ok(Some(property_cell)) =
+                    object.existing_property_reference_cell_from_context(property.name(), None, &[])
+                else {
+                    continue;
+                };
+                if !property_cell.shares_reference_with(cell) {
+                    continue;
+                }
+                let root = ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: name.clone(),
+                    property: property.name().to_string(),
+                };
+                if handles.iter().any(|handle| handle.root == root) {
+                    continue;
+                }
+                handles.push(RuntimeAliasLvalueHandle {
+                    root,
+                    cell: Some(property_cell),
+                });
+            }
+        }
+        if let Some(global_symbols) = &self.global_symbols {
+            for (name, candidate) in global_symbols.borrow().iter() {
+                if name.starts_with('\0') || !self.name_routes_to_global_storage(name) {
+                    continue;
+                }
+                let Value::Object(object) = candidate.value_cloned() else {
+                    continue;
+                };
+                for property in object.properties() {
+                    if property.visibility() != Visibility::Public || !property.is_initialized() {
+                        continue;
+                    }
+                    let Ok(Some(property_cell)) = object
+                        .existing_property_reference_cell_from_context(property.name(), None, &[])
+                    else {
+                        continue;
+                    };
+                    if !property_cell.shares_reference_with(cell) {
+                        continue;
+                    }
+                    let root = ArrayOffsetAliasRoot::PublicObjectProperty {
+                        object: name.clone(),
+                        property: property.name().to_string(),
+                    };
+                    if handles.iter().any(|handle| handle.root == root) {
+                        continue;
+                    }
+                    handles.push(RuntimeAliasLvalueHandle {
+                        root,
+                        cell: Some(property_cell),
                     });
                 }
             }
@@ -18878,6 +18956,11 @@ impl Interpreter {
         scope: &mut SymbolTable,
         span: Span,
     ) -> CompileResult<()> {
+        let source_handle_roots = scope
+            .runtime_alias_lvalue_handles_for_array_copy_source(source)
+            .into_iter()
+            .map(|handle| handle.root)
+            .collect::<Vec<_>>();
         let copy_source_paths = scope.object_property_array_copy_sources.clone();
         for ((object_id, property), paths) in copy_source_paths {
             let object_names = scope.object_names_for_id(object_id);
@@ -18885,9 +18968,14 @@ impl Interpreter {
                 continue;
             }
             for (copy_keys, copy_source) in paths {
-                if !Self::array_copy_source_root_matches(&copy_source.root, &source.root)
-                    || !source.keys.starts_with(copy_source.keys.as_slice())
-                {
+                if !source.keys.starts_with(copy_source.keys.as_slice()) {
+                    continue;
+                }
+                let copy_source_matches_handle = scope
+                    .runtime_alias_lvalue_handles_for_array_copy_source(&copy_source)
+                    .into_iter()
+                    .any(|handle| source_handle_roots.contains(&handle.root));
+                if !copy_source_matches_handle {
                     continue;
                 }
 
@@ -18908,31 +18996,6 @@ impl Interpreter {
             }
         }
         Ok(())
-    }
-
-    fn array_copy_source_root_matches(
-        left: &ArrayCopySourceRoot,
-        right: &ArrayCopySourceRoot,
-    ) -> bool {
-        match (left, right) {
-            (
-                ArrayCopySourceRoot::ObjectProperty {
-                    object: left_object,
-                    property: left_property,
-                },
-                ArrayCopySourceRoot::ObjectProperty {
-                    object: right_object,
-                    property: right_property,
-                },
-            ) => left_object == right_object && left_property == right_property,
-            (ArrayCopySourceRoot::AliasPath(left), ArrayCopySourceRoot::AliasPath(right)) => {
-                left == right
-            }
-            (ArrayCopySourceRoot::RuntimeCell(left), ArrayCopySourceRoot::RuntimeCell(right)) => {
-                left.shares_reference_with(right)
-            }
-            _ => false,
-        }
     }
 
     fn reference_return_aliases_cell(
@@ -76228,6 +76291,87 @@ mod tests {
         assert_eq!(
             property_items.get_cloned(slot_key),
             Some(Value::String("new".to_string()))
+        );
+    }
+
+    #[test]
+    fn array_copy_source_mirror_promotion_uses_runtime_lvalue_handles() {
+        let interpreter = Interpreter::from_program(
+            &Program {
+                statements: Vec::new(),
+            },
+            None,
+            RunOptions::default(),
+        )
+        .unwrap();
+        let span = Span::new(7, 3);
+        let holder_key = ArrayKey::Int(0);
+        let leaf_key = ArrayKey::String("leaf".to_string());
+
+        let mut source_items = PhpArray::new();
+        source_items.insert(leaf_key.clone(), Value::String("source".to_string()));
+        let source_cell = PhpReferenceCell::new(Value::Array(source_items));
+
+        let mut classes = PhpClassTable::new();
+        let source_class_id = classes.declare_class("SourceBox").unwrap();
+        let source_class = classes.get_mut(source_class_id).unwrap();
+        source_class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let source_object = PhpObject::from_class(source_class);
+        source_object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+
+        let holder_class_id = classes.declare_class("HolderBox").unwrap();
+        let holder_class = classes.get_mut(holder_class_id).unwrap();
+        holder_class
+            .add_property(PhpPropertyMetadata::instance("args", Visibility::Public))
+            .unwrap();
+        let holder_object = PhpObject::from_class(holder_class);
+        let mut holder_args = PhpArray::new();
+        holder_args.insert(holder_key.clone(), Value::Array(PhpArray::new()));
+        holder_object
+            .write_public_property("args", Value::Array(holder_args))
+            .unwrap();
+
+        let mut scope = SymbolTable::new();
+        scope.write_static("source_box", Value::Object(source_object.clone()));
+        scope.write_static("holder", Value::Object(holder_object.clone()));
+
+        let source = ArrayCopySource::runtime_cell(source_cell, Vec::new(), true);
+        let mirrored_source =
+            ArrayCopySource::object_property(source_object, "items".to_string(), Vec::new(), true);
+        scope.record_object_property_array_copy_source_path(
+            &holder_object,
+            "args",
+            vec![holder_key.clone()],
+            mirrored_source,
+        );
+
+        let reference = PhpReferenceCell::new(Value::String("promoted".to_string()));
+        interpreter
+            .promote_array_copy_source_mirror_paths_to_reference_cell(
+                &source,
+                std::slice::from_ref(&leaf_key),
+                reference.clone(),
+                &mut scope,
+                span,
+            )
+            .unwrap();
+
+        let Value::Object(holder_object) = scope.read_static("holder", span).unwrap() else {
+            panic!("expected holder object");
+        };
+        let Value::Array(args) = holder_object.read_public_property("args").unwrap() else {
+            panic!("expected holder args array");
+        };
+        let Some(Value::Array(arg)) = args.get_cloned(holder_key) else {
+            panic!("expected holder argument array");
+        };
+        assert_eq!(
+            arg.get_slot(leaf_key).unwrap().reference_cell_id(),
+            Some(reference.id())
         );
     }
 

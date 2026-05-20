@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Continued the post-2289 COW frontier by moving array-copy-source mirror-path
+  promotion onto `RuntimeAliasLvalueHandle` resolution. When a runtime-cell
+  copy source is also visible through an object-property handle, helper
+  reference-return promotion can now match mirrored object-property
+  copied-source paths through the handle roots instead of direct
+  `ArrayCopySourceRoot` equality. Runtime-cell handle discovery also scans
+  initialized public object properties for shared reference cells, so this
+  path no longer requires pre-seeded array-offset alias metadata for the
+  visible source property. Focused unit coverage proves a runtime-cell source
+  promotes a mirrored holder argument path recorded from the visible
+  object-property source. This remains an internal propagation migration;
+  broader dynamic holder writeback, untracked containers, exact diagnostics,
+  string COW, and native reference/COW lowering remain incomplete.
+
 - Continued the post-2289 COW frontier by moving the remaining
   array-copy-source root iteration sites for reference-return path promotion,
   existing-cell lookup, return-cell rehydration, alias mirroring, and

@@ -239,8 +239,12 @@ matching descendant aliases, and helper/callback copied-source alias
 mirror/import setup now resolves `ArrayCopySource` values to those handles
 before populating copied locals or callee scopes. Reference-return path
 promotion, existing-cell lookup, return-cell rehydration, copied-array alias
-mirroring, and helper/callee alias writeback also resolve through handles
-before building the concrete alias path needed for a specific operation.
+mirroring, helper/callee alias writeback, and copied-source mirror-path
+promotion also resolve through handles before building the concrete alias path
+needed for a specific operation. Runtime-cell handle discovery includes
+initialized public object-property cells that share the same reference, so a
+visible property root does not need pre-existing array-offset alias metadata
+before it can participate in these handle-based copied-source operations.
 Broader dynamic holder writeback and untracked containers remain later steps.
 
 Parent-bucket replacement is a copied-source invalidation boundary for tracked

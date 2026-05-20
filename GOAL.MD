@@ -48,7 +48,10 @@ The current in-progress implementation frontier is Lane 2289:
   provenance toward `RuntimeAliasLvalueHandle` resolution; runtime-cell
   rehydration/overlay, helper/callback mirror/import setup, reference-return
   path promotion, return-cell rehydration, alias mirroring, and helper/callee
-  alias writeback now consume handles directly. Broader dynamic holder
+  alias writeback plus copied-source mirror-path promotion now consume
+  handles directly. Runtime-cell handle discovery can now find initialized
+  public object properties that share the same reference cell without requiring
+  a pre-existing array-offset alias below the property. Broader dynamic holder
   writeback, arbitrary magic/`ArrayAccess` side effects, untracked containers,
   exact diagnostics, string COW, and native reference/COW lowering remain
   unsupported.
