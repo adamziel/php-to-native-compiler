@@ -1134,6 +1134,7 @@ struct SymbolTable {
     public_object_property_array_copy_sources: HashMap<String, ArrayCopySource>,
     dirty_public_object_property_array_copy_sources: HashSet<String>,
     dirty_public_object_property_array_copy_source_values: HashMap<String, ArrayCopySource>,
+    dirty_array_copy_source_values: Vec<ArrayCopySource>,
     object_property_array_copy_sources:
         HashMap<(i64, String), Vec<(Vec<ArrayKey>, ArrayCopySource)>>,
     dirty_object_property_array_copy_sources: HashSet<(i64, String)>,
@@ -1191,6 +1192,105 @@ impl RuntimeAliasLvalueHandle {
             .as_ref()
             .is_some_and(|candidate| candidate.shares_reference_with(cell))
     }
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedArrayCopySource {
+    source: ArrayCopySource,
+    handles: Vec<RuntimeAliasLvalueHandle>,
+}
+
+impl ResolvedArrayCopySource {
+    fn shares_storage_with(&self, other: &ResolvedArrayCopySource) -> bool {
+        match (&self.source.root, &other.source.root) {
+            (
+                ArrayCopySourceRoot::ObjectProperty {
+                    object: left_object,
+                    property: left_property,
+                },
+                ArrayCopySourceRoot::ObjectProperty {
+                    object: right_object,
+                    property: right_property,
+                },
+            ) => {
+                if left_object.id() == right_object.id() && left_property == right_property {
+                    return true;
+                }
+            }
+            (ArrayCopySourceRoot::AliasPath(left), ArrayCopySourceRoot::AliasPath(right)) => {
+                if left == right {
+                    return true;
+                }
+            }
+            (ArrayCopySourceRoot::RuntimeCell(left), ArrayCopySourceRoot::RuntimeCell(right)) => {
+                if left.shares_reference_with(right) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+
+        self.handles.iter().any(|left_handle| {
+            other.handles.iter().any(|right_handle| {
+                left_handle.root == right_handle.root
+                    || match (&left_handle.cell, &right_handle.cell) {
+                        (Some(left_cell), Some(right_cell)) => {
+                            left_cell.shares_reference_with(right_cell)
+                        }
+                        _ => false,
+                    }
+            })
+        })
+    }
+
+    fn matches_object_property(
+        &self,
+        symbols: &SymbolTable,
+        object: &PhpObject,
+        property: &str,
+    ) -> bool {
+        if let ArrayCopySourceRoot::ObjectProperty {
+            object: source_object,
+            property: source_property,
+        } = &self.source.root
+        {
+            if source_object == object && source_property == property {
+                return true;
+            }
+        }
+
+        self.handles.iter().any(|handle| {
+            symbols.alias_matches_object_property_value(&handle.alias(), object, property)
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArrayCopySourceMutationImpact {
+    ReplacesSourceOrAncestor,
+    ReplacesSelectedChildPath,
+}
+
+#[derive(Debug, Clone)]
+enum ArrayCopySourceRecordLocation {
+    CleanStatic(String),
+    DirtyStatic(String),
+    DirtySource,
+    ObjectPropertyPath {
+        object_id: i64,
+        property: String,
+        prefix: Vec<ArrayKey>,
+    },
+    ArrayLiteralPath {
+        name: String,
+        prefix: Vec<ArrayKey>,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct ArrayCopySourceRecord {
+    location: ArrayCopySourceRecordLocation,
+    source: ArrayCopySource,
 }
 
 #[derive(Debug, Clone)]
@@ -1259,6 +1359,7 @@ impl SymbolTable {
             public_object_property_array_copy_sources: HashMap::new(),
             dirty_public_object_property_array_copy_sources: HashSet::new(),
             dirty_public_object_property_array_copy_source_values: HashMap::new(),
+            dirty_array_copy_source_values: Vec::new(),
             object_property_array_copy_sources: HashMap::new(),
             dirty_object_property_array_copy_sources: HashSet::new(),
             array_literal_copy_source_paths: HashMap::new(),
@@ -1278,6 +1379,7 @@ impl SymbolTable {
             public_object_property_array_copy_sources: HashMap::new(),
             dirty_public_object_property_array_copy_sources: HashSet::new(),
             dirty_public_object_property_array_copy_source_values: HashMap::new(),
+            dirty_array_copy_source_values: Vec::new(),
             object_property_array_copy_sources: HashMap::new(),
             dirty_object_property_array_copy_sources: HashSet::new(),
             array_literal_copy_source_paths: HashMap::new(),
@@ -2039,10 +2141,58 @@ impl SymbolTable {
         entries
     }
 
+    fn array_copy_source_records(&self) -> Vec<ArrayCopySourceRecord> {
+        let mut records = Vec::new();
+        records.extend(self.public_object_property_array_copy_sources.iter().map(
+            |(name, source)| ArrayCopySourceRecord {
+                location: ArrayCopySourceRecordLocation::CleanStatic(name.clone()),
+                source: source.clone(),
+            },
+        ));
+        records.extend(self.dirty_public_object_property_array_copy_source_values.iter().map(
+            |(name, source)| ArrayCopySourceRecord {
+                location: ArrayCopySourceRecordLocation::DirtyStatic(name.clone()),
+                source: source.clone(),
+            },
+        ));
+        records.extend(self.dirty_array_copy_source_values.iter().map(|source| {
+            ArrayCopySourceRecord {
+                location: ArrayCopySourceRecordLocation::DirtySource,
+                source: source.clone(),
+            }
+        }));
+        records.extend(self.object_property_array_copy_sources.iter().flat_map(
+            |((object_id, property), paths)| {
+                paths.iter().map(|(prefix, source)| ArrayCopySourceRecord {
+                    location: ArrayCopySourceRecordLocation::ObjectPropertyPath {
+                        object_id: *object_id,
+                        property: property.clone(),
+                        prefix: prefix.clone(),
+                    },
+                    source: source.clone(),
+                })
+            },
+        ));
+        records.extend(self.array_literal_copy_source_paths.iter().flat_map(|(name, paths)| {
+            paths.iter().map(|(prefix, source)| ArrayCopySourceRecord {
+                location: ArrayCopySourceRecordLocation::ArrayLiteralPath {
+                    name: name.clone(),
+                    prefix: prefix.clone(),
+                },
+                source: source.clone(),
+            })
+        }));
+        records
+    }
+
     fn array_copy_source_was_dirtied(&self, source: &ArrayCopySource) -> bool {
         self.dirty_public_object_property_array_copy_source_values
             .values()
             .any(|candidate| self.array_copy_sources_match(candidate, source))
+            || self
+                .dirty_array_copy_source_values
+                .iter()
+                .any(|candidate| self.array_copy_sources_match(candidate, source))
     }
 
     fn array_copy_source_invalidated_by_object_property_write(
@@ -2052,8 +2202,9 @@ impl SymbolTable {
         property: &str,
         write_keys: &[ArrayKey],
     ) -> bool {
-        self.array_copy_source_matches_object_property(source, object, property)
-            && source.keys.starts_with(write_keys)
+        self.array_copy_source_mutation_impact_for_object_property_write(
+            source, object, property, write_keys,
+        ) == Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor)
     }
 
     fn array_copy_source_matches_object_property(
@@ -2062,53 +2213,7 @@ impl SymbolTable {
         object: &PhpObject,
         property: &str,
     ) -> bool {
-        if match &source.root {
-            ArrayCopySourceRoot::ObjectProperty {
-                object: source_object,
-                property: source_property,
-            } => source_object == object && source_property == property,
-            ArrayCopySourceRoot::AliasPath(
-                ArrayOffsetAliasRoot::PublicObjectProperty {
-                    object: source_object,
-                    property: source_property,
-                }
-                | ArrayOffsetAliasRoot::ContextObjectProperty {
-                    object: source_object,
-                    property: source_property,
-                    ..
-                },
-            ) => {
-                source_property == property
-                    && matches!(
-                        self.read_storage_named(source_object),
-                        Some(Value::Object(candidate)) if candidate == *object
-                    )
-            }
-            ArrayCopySourceRoot::RuntimeCell(cell) => {
-                Self::object_property_has_reference_cell(object, property, cell)
-            }
-            _ => false,
-        } {
-            return true;
-        }
-
-        self.runtime_alias_lvalue_handles_for_array_copy_source(source)
-            .into_iter()
-            .any(|handle| {
-                self.alias_matches_object_property_value(&handle.alias(), object, property)
-            })
-    }
-
-    fn object_property_has_reference_cell(
-        object: &PhpObject,
-        property: &str,
-        cell: &VariableCell,
-    ) -> bool {
-        object.properties().iter().any(|candidate| {
-            candidate.name() == property
-                && candidate.is_initialized()
-                && candidate.reference_cell_id() == Some(cell.id())
-        })
+        self.array_copy_source_matches_object_property_value(source, object, property)
     }
 
     fn invalidate_array_copy_sources_for_object_property_write(
@@ -2117,12 +2222,18 @@ impl SymbolTable {
         property: &str,
         write_keys: &[ArrayKey],
     ) {
-        let stale_static_sources = self
-            .public_object_property_array_copy_sources
+        let records = self.array_copy_source_records();
+        let stale_static_sources = records
             .iter()
-            .filter_map(|(name, source)| {
+            .filter_map(|record| {
+                let ArrayCopySourceRecordLocation::CleanStatic(name) = &record.location else {
+                    return None;
+                };
                 self.array_copy_source_invalidated_by_object_property_write(
-                    source, object, property, write_keys,
+                    &record.source,
+                    object,
+                    property,
+                    write_keys,
                 )
                 .then(|| name.clone())
             })
@@ -2131,12 +2242,17 @@ impl SymbolTable {
             self.clear_public_object_property_array_copy_source(&name);
         }
 
-        let stale_dirty_sources = self
-            .dirty_public_object_property_array_copy_source_values
+        let stale_dirty_sources = records
             .iter()
-            .filter_map(|(name, source)| {
+            .filter_map(|record| {
+                let ArrayCopySourceRecordLocation::DirtyStatic(name) = &record.location else {
+                    return None;
+                };
                 self.array_copy_source_invalidated_by_object_property_write(
-                    source, object, property, write_keys,
+                    &record.source,
+                    object,
+                    property,
+                    write_keys,
                 )
                 .then(|| name.clone())
             })
@@ -2145,11 +2261,52 @@ impl SymbolTable {
             self.clear_public_object_property_array_copy_source(&name);
         }
 
-        let object_copy_source_keys = self
-            .object_property_array_copy_sources
-            .keys()
-            .cloned()
+        let stale_dirty_source_values = records
+            .iter()
+            .filter_map(|record| {
+                matches!(record.location, ArrayCopySourceRecordLocation::DirtySource)
+                    .then(|| record.source.clone())
+            })
+            .filter(|source| {
+                self.array_copy_source_invalidated_by_object_property_write(
+                    source, object, property, write_keys,
+                )
+            })
             .collect::<Vec<_>>();
+        self.dirty_array_copy_source_values = self
+            .dirty_array_copy_source_values
+            .iter()
+            .filter(|source| {
+                !stale_dirty_source_values
+                    .iter()
+                    .any(|stale| self.array_copy_sources_match(source, stale))
+            })
+            .cloned()
+            .collect();
+
+        let mut object_copy_source_keys = records
+            .iter()
+            .filter_map(|record| {
+                let ArrayCopySourceRecordLocation::ObjectPropertyPath {
+                    object_id,
+                    property: record_property,
+                    prefix,
+                } = &record.location
+                else {
+                    return None;
+                };
+                let _ = prefix;
+                self.array_copy_source_invalidated_by_object_property_write(
+                    &record.source,
+                    object,
+                    property,
+                    write_keys,
+                )
+                .then(|| (*object_id, record_property.clone()))
+            })
+            .collect::<Vec<_>>();
+        object_copy_source_keys.sort();
+        object_copy_source_keys.dedup();
         for key in object_copy_source_keys {
             let Some(paths) = self.object_property_array_copy_sources.get(&key).cloned() else {
                 continue;
@@ -2171,11 +2328,26 @@ impl SymbolTable {
             self.dirty_object_property_array_copy_sources.insert(key);
         }
 
-        let literal_roots = self
-            .array_literal_copy_source_paths
-            .keys()
-            .cloned()
+        let mut literal_roots = records
+            .iter()
+            .filter_map(|record| {
+                let ArrayCopySourceRecordLocation::ArrayLiteralPath { name, prefix } =
+                    &record.location
+                else {
+                    return None;
+                };
+                let _ = prefix;
+                self.array_copy_source_invalidated_by_object_property_write(
+                    &record.source,
+                    object,
+                    property,
+                    write_keys,
+                )
+                .then(|| name.clone())
+            })
             .collect::<Vec<_>>();
+        literal_roots.sort();
+        literal_roots.dedup();
         for name in literal_roots {
             let Some(paths) = self.array_literal_copy_source_paths.get(&name).cloned() else {
                 continue;
@@ -2204,30 +2376,9 @@ impl SymbolTable {
         property: &str,
         write_keys: &[ArrayKey],
     ) {
-        let mut sources = Vec::new();
-        sources.extend(
-            self.public_object_property_array_copy_sources
-                .values()
-                .cloned(),
-        );
-        sources.extend(
-            self.dirty_public_object_property_array_copy_source_values
-                .values()
-                .cloned(),
-        );
-        sources.extend(
-            self.object_property_array_copy_sources
-                .values()
-                .flat_map(|paths| paths.iter().map(|(_, source)| source.clone())),
-        );
-        sources.extend(
-            self.array_literal_copy_source_paths
-                .values()
-                .flat_map(|paths| paths.iter().map(|(_, source)| source.clone())),
-        );
-
         let mut detached_paths = Vec::new();
-        for source in sources {
+        for record in self.array_copy_source_records() {
+            let source = record.source;
             if !self.array_copy_source_invalidated_by_object_property_write(
                 &source, object, property, write_keys,
             ) {
@@ -2352,57 +2503,15 @@ impl SymbolTable {
             return false;
         }
 
-        match (&left.root, &right.root) {
-            (
-                ArrayCopySourceRoot::ObjectProperty {
-                    object: left_object,
-                    property: left_property,
-                },
-                ArrayCopySourceRoot::ObjectProperty {
-                    object: right_object,
-                    property: right_property,
-                },
-            ) => left_object.id() == right_object.id() && left_property == right_property,
-            (ArrayCopySourceRoot::AliasPath(left_root), ArrayCopySourceRoot::AliasPath(right_root)) => {
-                left_root == right_root || self.array_copy_source_roots_share_runtime_lvalue(left, right)
-            }
-            (ArrayCopySourceRoot::RuntimeCell(left), ArrayCopySourceRoot::RuntimeCell(right)) => {
-                left.shares_reference_with(right)
-            }
-            (
-                ArrayCopySourceRoot::ObjectProperty { object, property },
-                _,
-            ) => self.array_copy_source_matches_object_property(right, object, property),
-            (
-                _,
-                ArrayCopySourceRoot::ObjectProperty { object, property },
-            ) => self.array_copy_source_matches_object_property(left, object, property),
-            (ArrayCopySourceRoot::AliasPath(root), ArrayCopySourceRoot::RuntimeCell(cell))
-            | (ArrayCopySourceRoot::RuntimeCell(cell), ArrayCopySourceRoot::AliasPath(root)) => {
-                self.runtime_alias_lvalue_handle(root.clone())
-                    .shares_reference_with(cell)
-            }
-        }
+        self.resolved_array_copy_source(left)
+            .shares_storage_with(&self.resolved_array_copy_source(right))
     }
 
-    fn array_copy_source_roots_share_runtime_lvalue(
-        &self,
-        left: &ArrayCopySource,
-        right: &ArrayCopySource,
-    ) -> bool {
-        let left_handles = self.runtime_alias_lvalue_handles_for_array_copy_source(left);
-        let right_handles = self.runtime_alias_lvalue_handles_for_array_copy_source(right);
-        left_handles.iter().any(|left_handle| {
-            right_handles.iter().any(|right_handle| {
-                left_handle.root == right_handle.root
-                    || match (&left_handle.cell, &right_handle.cell) {
-                        (Some(left_cell), Some(right_cell)) => {
-                            left_cell.shares_reference_with(right_cell)
-                        }
-                        _ => false,
-                    }
-            })
-        })
+    fn resolved_array_copy_source(&self, source: &ArrayCopySource) -> ResolvedArrayCopySource {
+        ResolvedArrayCopySource {
+            source: source.clone(),
+            handles: self.runtime_alias_lvalue_handles_for_array_copy_source(source),
+        }
     }
 
     fn public_object_property_array_copy_source_for_static(
@@ -2545,6 +2654,36 @@ impl SymbolTable {
         };
         alias_property == property
             && matches!(self.read_storage_named(object_name), Some(Value::Object(candidate)) if &candidate == object)
+    }
+
+    fn array_copy_source_matches_object_property_value(
+        &self,
+        source: &ArrayCopySource,
+        object: &PhpObject,
+        property: &str,
+    ) -> bool {
+        self.resolved_array_copy_source(source)
+            .matches_object_property(self, object, property)
+    }
+
+    fn array_copy_source_mutation_impact_for_object_property_write(
+        &self,
+        source: &ArrayCopySource,
+        object: &PhpObject,
+        property: &str,
+        write_keys: &[ArrayKey],
+    ) -> Option<ArrayCopySourceMutationImpact> {
+        let resolved = self.resolved_array_copy_source(source);
+        if !resolved.matches_object_property(self, object, property) {
+            return None;
+        }
+        if source.keys.starts_with(write_keys) {
+            return Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor);
+        }
+        if write_keys.starts_with(&source.keys) && write_keys.len() > source.keys.len() {
+            return Some(ArrayCopySourceMutationImpact::ReplacesSelectedChildPath);
+        }
+        None
     }
 
     fn record_object_property_array_copy_source_paths(
@@ -77406,6 +77545,57 @@ mod tests {
         assert!(paths.iter().any(|(keys, cell)| {
             keys == std::slice::from_ref(&leaf_key) && cell.shares_reference_with(&leaf_cell)
         }));
+    }
+
+    #[test]
+    fn array_copy_source_mutation_impact_distinguishes_source_and_child_paths() {
+        let mut scope = SymbolTable::new();
+        let outer_key = ArrayKey::String("outer".to_string());
+        let leaf_key = ArrayKey::String("leaf".to_string());
+
+        let source_cell = PhpReferenceCell::new(Value::Array(PhpArray::new()));
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+        scope.write_static("box", Value::Object(object.clone()));
+
+        let source = ArrayCopySource::runtime_cell(
+            source_cell,
+            std::slice::from_ref(&outer_key).to_vec(),
+            true,
+        );
+
+        assert_eq!(
+            scope.array_copy_source_mutation_impact_for_object_property_write(
+                &source, &object, "items", &[]
+            ),
+            Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor)
+        );
+        assert_eq!(
+            scope.array_copy_source_mutation_impact_for_object_property_write(
+                &source,
+                &object,
+                "items",
+                &[outer_key.clone(), leaf_key]
+            ),
+            Some(ArrayCopySourceMutationImpact::ReplacesSelectedChildPath)
+        );
+        assert_eq!(
+            scope.array_copy_source_mutation_impact_for_object_property_write(
+                &source,
+                &object,
+                "items",
+                &[ArrayKey::String("other".to_string())]
+            ),
+            None
+        );
     }
 
     #[test]
