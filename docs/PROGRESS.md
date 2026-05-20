@@ -30,12 +30,24 @@ Implemented:
   local copied-source metadata as still present, so by-reference helper
   synchronization does not remove the caller's source record after the callee
   has already moved the imported source into the dirty set.
+  has already moved the imported source into the dirty set. Direct
+  by-reference argument binding now also consults dirty-only static
+  copied-source metadata and carries that dirty marker into the callee
+  call-frame import, instead of degrading the argument to a plain caller cell.
+  Closure capture discovery and prebound closure locals use the same
+  dirty-aware source recovery, so captured copied arrays do not lose dirty-only
+  source metadata when invoked through supported closure call paths. The
+  reference-binding source-list fallback also consults dirty-only static
+  metadata for plain caller-cell bindings.
   Focused unit coverage proves a runtime-cell copy source visible through a
   public object-property handle exposes nested reference cells through the
   handle path, participates in detach matching, matches dirty object-property
   source state, keeps dirty static source metadata portable, and recovers dirty
   static source metadata through an alias group, a reference-promotion write,
   an object-property alias sync, and reference-binding metadata sync. This
+  an object-property alias sync, reference-binding metadata sync, and direct
+  by-reference argument binding, closure capture recovery, and reference-binding
+  source-list recovery. This
   remains an internal propagation migration; broader dynamic holder writeback,
   untracked
   containers, exact diagnostics, string COW, and native reference/COW lowering

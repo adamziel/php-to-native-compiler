@@ -72,6 +72,13 @@
   dirty-only metadata while rewriting a static alias group. Reference-binding
   metadata sync also treats dirty-only local copied-source metadata as a live
   imported source before deciding whether to remove caller metadata.
+  imported source before deciding whether to remove caller metadata, and direct
+  by-reference argument binding imports dirty-only static copied-source
+  metadata into the callee instead of dropping to a plain caller cell. Closure
+  capture source recovery and prebound closure local import use the same
+  dirty-aware metadata path, and reference-binding source-list recovery also
+  consults dirty-only static copied-source metadata for plain caller-cell
+  bindings.
   Runtime-cell handle discovery also includes initialized public object
   properties that already share the same reference cell, even when no
   array-offset alias has been recorded below that property.

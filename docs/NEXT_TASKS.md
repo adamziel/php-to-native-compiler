@@ -277,6 +277,15 @@ handled.
   bounded rehydrate/invalidate boundary, as do direct dynamic-property whole
   assignments once the property expression resolves to the tracked holder
   property. Descendant
+  caller metadata. Direct by-reference argument setup also imports dirty-only
+  static copied-source metadata as a source-aware binding and carries the dirty
+  marker into the callee frame. Closure capture source recovery and prebound
+  closure local import preserve the same dirty-only metadata through supported
+  closure call frames. Reference-binding source-list recovery also consults
+  dirty-only static copied-source metadata for plain caller-cell bindings.
+  Runtime-cell handle discovery now includes initialized public object
+  properties sharing the same reference cell without requiring pre-seeded
+  array-offset alias metadata. Descendant
   writes to a source container no longer erase whole-copy provenance for
   supported magic/`ArrayAccess` method-local copies, and reference-return
   calls plus mixed by-reference/by-value helpers now keep executed by-value

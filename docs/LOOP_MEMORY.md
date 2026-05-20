@@ -583,6 +583,32 @@ a one-off is genuinely the only viable route.
   then system-PHP comparisons for `tests/fixtures/milestone2294` and
   `tests/fixtures/milestone2295`, all with
   `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`.
+- Additional continuation in the same dirty worktree: direct by-reference
+  argument setup now uses clean-or-dirty static copied-source lookup and
+  carries a dirty marker on source-aware caller-cell bindings, so the callee
+  call frame imports dirty-only copied-source metadata instead of treating the
+  argument as a plain caller cell. Focused check passed:
+  `cargo test -q -p phpc --lib
+  by_reference_argument_binding_imports_dirty_static_copy_source_metadata`
+  with the constrained environment. Follow-up validation passed:
+  `git diff --check` and `cargo check -q -p phpc` with the same constrained
+  environment.
+- Additional continuation in the same dirty worktree: closure capture source
+  recovery now uses clean-or-dirty static copied-source lookup, and prebound
+  closure local imports preserve the dirty marker in supported closure call
+  frames. Focused check passed: `cargo test -q -p phpc --lib
+  closure_capture_source_recovery_uses_dirty_static_copy_source_metadata`
+  with the constrained environment. Follow-up validation passed:
+  `git diff --check` and `cargo check -q -p phpc` with the same constrained
+  environment.
+- Additional continuation in the same dirty worktree: reference-binding
+  source-list recovery now uses clean-or-dirty static copied-source lookup for
+  plain caller-cell bindings. Focused check passed:
+  `cargo test -q -p phpc --lib
+  reference_binding_source_list_uses_dirty_static_copy_source_metadata` with
+  the constrained environment. Follow-up validation passed:
+  `git diff --check` and `cargo check -q -p phpc` with the same constrained
+  environment.
 
 ## Loop Event 2026-05-20T16:00:00+02:00
 

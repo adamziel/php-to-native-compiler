@@ -270,6 +270,12 @@ the root array, and object-property alias syncs preserve the same dirty-only
 metadata while rewriting static alias groups. Reference-binding metadata sync
 uses the same clean-or-dirty lookup before removing caller-side copied-source
 metadata. Runtime-cell handle discovery includes
+metadata, and direct by-reference argument setup uses the same lookup while
+carrying the dirty marker into the callee frame. Closure capture source
+recovery and prebound closure locals also preserve that dirty marker through
+supported closure call frames. The fallback that rebuilds by-value
+array-copy-source bindings from reference bindings also consults dirty static
+metadata for plain caller-cell bindings. Runtime-cell handle discovery includes
 initialized public object-property cells that share the same reference, so a
 visible property root does not need pre-existing array-offset alias metadata
 before it can participate in these handle-based copied-source operations.

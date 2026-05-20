@@ -1750,9 +1750,8 @@ impl SymbolTable {
             let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root else {
                 continue;
             };
-            let Some(source) = self
-                .public_object_property_array_copy_source_for_static(name)
-                .or_else(|| self.dirty_public_object_property_array_copy_source_for_static(name))
+            let Some(source) =
+                self.public_or_dirty_object_property_array_copy_source_for_static(name)
             else {
                 continue;
             };
@@ -2699,10 +2698,7 @@ impl SymbolTable {
             }
             ArrayCopySourceRoot::AliasPath(ArrayOffsetAliasRoot::StaticArray { name }) => {
                 let mut base = source_scope
-                    .public_object_property_array_copy_source_for_static(name)
-                    .or_else(|| {
-                        source_scope.dirty_public_object_property_array_copy_source_for_static(name)
-                    })?;
+                    .public_or_dirty_object_property_array_copy_source_for_static(name)?;
                 base.keys.extend(source.keys.iter().cloned());
                 base.include_exact_path = source.include_exact_path;
                 Some(base)
@@ -7182,10 +7178,12 @@ enum ReferenceBindingTarget {
         name: String,
         cell: VariableCell,
         source: ArrayCopySource,
+        source_was_dirty: bool,
     },
     CallerCellWithArrayCopySource {
         cell: VariableCell,
         source: ArrayCopySource,
+        source_was_dirty: bool,
         object: PhpObject,
         property: String,
     },
@@ -9463,7 +9461,7 @@ impl Interpreter {
 
         match target {
             AssignTarget::Variable { name, .. } => {
-                scope.public_object_property_array_copy_source_for_static(name)
+                scope.public_or_dirty_object_property_array_copy_source_for_static(name)
             }
             _ => None,
         }
@@ -9483,7 +9481,7 @@ impl Interpreter {
         name: &str,
     ) -> Option<ArrayCopySource> {
         scope
-            .public_object_property_array_copy_source_for_static(name)
+            .public_or_dirty_object_property_array_copy_source_for_static(name)
             .or_else(|| {
                 scope
                     .array_offset_aliases_for_name(name)
@@ -9491,7 +9489,6 @@ impl Interpreter {
                         scope.public_object_property_array_copy_source_for_alias_group(&aliases)
                     })
             })
-            .or_else(|| scope.dirty_public_object_property_array_copy_source_for_static(name))
     }
 
     fn copied_array_write_replaces_live_alias_parent(
@@ -9500,7 +9497,7 @@ impl Interpreter {
         keys: &[ArrayKey],
     ) -> bool {
         if scope
-            .public_object_property_array_copy_source_for_static(name)
+            .public_or_dirty_object_property_array_copy_source_for_static(name)
             .is_none()
         {
             return false;
@@ -9593,13 +9590,6 @@ impl Interpreter {
         let (value, array_copy_source) = self.evaluate_value_with_array_copy_source(expr, scope)?;
         let fallback_source = if array_copy_source.is_none() && matches!(value, Value::Array(_)) {
             self.public_object_property_array_copy_source_for_value_expr(expr, scope)
-                .or_else(|| {
-                    if let Expr::Variable(name, _) = expr {
-                        scope.dirty_public_object_property_array_copy_source_for_static(name)
-                    } else {
-                        None
-                    }
-                })
         } else {
             None
         };
@@ -10228,7 +10218,7 @@ impl Interpreter {
     ) -> Option<ArrayCopySource> {
         if let Expr::Variable(name, _) = expr {
             return scope
-                .public_object_property_array_copy_source_for_static(name)
+                .public_or_dirty_object_property_array_copy_source_for_static(name)
                 .or_else(|| {
                     scope
                         .array_offset_aliases_for_name(name)
@@ -40170,7 +40160,7 @@ impl Interpreter {
         }
 
         scope
-            .public_object_property_array_copy_source_for_static(name)
+            .public_or_dirty_object_property_array_copy_source_for_static(name)
             .or_else(|| {
                 (scope.global_symbols.is_some()
                     && (scope.imported_globals.contains(name) || is_auto_global_name(name)))
@@ -42511,7 +42501,7 @@ impl Interpreter {
             let (target_keys, source) = match &binding.target {
                 ReferenceBindingTarget::CallerCell { name, .. } => (
                     Vec::new(),
-                    caller_scope.public_object_property_array_copy_source_for_static(name),
+                    caller_scope.public_or_dirty_object_property_array_copy_source_for_static(name),
                 ),
                 ReferenceBindingTarget::CallerCellWithStaticArrayCopySource { source, .. }
                 | ReferenceBindingTarget::CallerCellWithArrayCopySource { source, .. } => {
@@ -49211,6 +49201,7 @@ impl Interpreter {
                     source,
                     source_scope,
                 } => {
+                    let source_was_dirty = source_scope.array_copy_source_was_dirtied(&source);
                     local_scope.write_static(&name, value);
                     local_scope.import_array_copy_source_aliases_from_copy(
                         &name,
@@ -49219,6 +49210,9 @@ impl Interpreter {
                     );
                     local_scope.mirror_array_copy_source_aliases_from_copy(&name, &source);
                     local_scope.record_public_object_property_array_copy_source(&name, source);
+                    if source_was_dirty {
+                        local_scope.mark_public_object_property_array_copy_source_dirty(&name);
+                    }
                 }
                 PreboundLocal::Cell { name, cell } => local_scope.bind_static_to_cell(&name, cell),
                 PreboundLocal::CellWithArrayCopySource {
@@ -49227,6 +49221,7 @@ impl Interpreter {
                     source,
                     source_scope,
                 } => {
+                    let source_was_dirty = source_scope.array_copy_source_was_dirtied(&source);
                     local_scope.bind_static_to_cell(&name, cell);
                     local_scope.import_array_copy_source_aliases_from_copy(
                         &name,
@@ -49235,6 +49230,9 @@ impl Interpreter {
                     );
                     local_scope.mirror_array_copy_source_aliases_from_copy(&name, &source);
                     local_scope.record_public_object_property_array_copy_source(&name, source);
+                    if source_was_dirty {
+                        local_scope.mark_public_object_property_array_copy_source_dirty(&name);
+                    }
                 }
                 PreboundLocal::ArrayOffsets {
                     name,
@@ -49328,10 +49326,14 @@ impl Interpreter {
                     ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
                         cell,
                         source,
+                        source_was_dirty,
                         ..
                     }
                     | ReferenceBindingTarget::CallerCellWithArrayCopySource {
-                        cell, source, ..
+                        cell,
+                        source,
+                        source_was_dirty,
+                        ..
                     } => {
                         local_scope.bind_static_to_cell(&param.name, cell.clone());
                         local_scope.import_array_copy_source_aliases_from_copy(
@@ -49344,6 +49346,10 @@ impl Interpreter {
                             &param.name,
                             source.clone(),
                         );
+                        if *source_was_dirty {
+                            local_scope
+                                .mark_public_object_property_array_copy_source_dirty(&param.name);
+                        }
                     }
                     ReferenceBindingTarget::ValueWithArrayCopySource { source } => {
                         if let Some(arg) = args.get(index) {
@@ -49535,11 +49541,7 @@ impl Interpreter {
         let returned_local_array_copy_source_cell = match result.as_ref() {
             Ok(ReferenceReturnLocalBinding::ArrayOffset { root_name, keys }) => {
                 let source = local_scope
-                    .public_object_property_array_copy_source_for_static(root_name)
-                    .or_else(|| {
-                        local_scope
-                            .dirty_public_object_property_array_copy_source_for_static(root_name)
-                    });
+                    .public_or_dirty_object_property_array_copy_source_for_static(root_name);
                 source.and_then(|source| {
                     self.existing_reference_cell_for_array_copy_source_return_path(
                         &source,
@@ -50062,10 +50064,14 @@ impl Interpreter {
                     ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
                         cell,
                         source,
+                        source_was_dirty,
                         ..
                     }
                     | ReferenceBindingTarget::CallerCellWithArrayCopySource {
-                        cell, source, ..
+                        cell,
+                        source,
+                        source_was_dirty,
+                        ..
                     } => {
                         local_scope.bind_static_to_cell(&param.name, cell.clone());
                         if let Some(source_scope) = writeback_scope.as_deref() {
@@ -50080,6 +50086,10 @@ impl Interpreter {
                             &param.name,
                             source.clone(),
                         );
+                        if *source_was_dirty {
+                            local_scope
+                                .mark_public_object_property_array_copy_source_dirty(&param.name);
+                        }
                     }
                     ReferenceBindingTarget::ValueWithArrayCopySource { source } => {
                         if let Some(arg) = args.get(index) {
@@ -51344,8 +51354,7 @@ impl Interpreter {
                     return Ok(ReferenceReturnLocalBinding::ArrayOffsetAliases(aliases));
                 }
                 if let Some(source) = scope
-                    .public_object_property_array_copy_source_for_static(name)
-                    .or_else(|| scope.dirty_public_object_property_array_copy_source_for_static(name))
+                    .public_or_dirty_object_property_array_copy_source_for_static(name)
                 {
                     if let Some(cell) = scope.read_cell(name) {
                         self.rehydrate_array_copy_return_cell_reference_cells(
@@ -51796,15 +51805,21 @@ impl Interpreter {
                     let source = matches!(value, Value::Array(_))
                         .then(|| {
                             caller_scope
-                                .public_object_property_array_copy_source_for_static(caller_name)
+                                .public_or_dirty_object_property_array_copy_source_for_static(
+                                    caller_name,
+                                )
                         })
                         .flatten();
+                    let source_was_dirty = caller_scope
+                        .dirty_public_object_property_array_copy_sources
+                        .contains(caller_name);
                     values.push(value);
                     let target = if let Some(source) = source {
                         ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
                             name: caller_name.clone(),
                             cell: caller_cell,
                             source,
+                            source_was_dirty,
                         }
                     } else {
                         ReferenceBindingTarget::CallerCell {
@@ -51949,6 +51964,7 @@ impl Interpreter {
                                 ReferenceBindingTarget::CallerCellWithArrayCopySource {
                                     cell: caller_cell,
                                     source,
+                                    source_was_dirty: false,
                                     object,
                                     property,
                                 }
@@ -53926,6 +53942,7 @@ impl Interpreter {
                     source,
                     source_scope,
                 } => {
+                    let source_was_dirty = source_scope.array_copy_source_was_dirtied(&source);
                     local_scope.write_static(&name, value);
                     local_scope.import_array_copy_source_aliases_from_copy(
                         &name,
@@ -53934,6 +53951,9 @@ impl Interpreter {
                     );
                     local_scope.mirror_array_copy_source_aliases_from_copy(&name, &source);
                     local_scope.record_public_object_property_array_copy_source(&name, source);
+                    if source_was_dirty {
+                        local_scope.mark_public_object_property_array_copy_source_dirty(&name);
+                    }
                 }
                 PreboundLocal::Cell { name, cell } => local_scope.bind_static_to_cell(&name, cell),
                 PreboundLocal::CellWithArrayCopySource {
@@ -53942,6 +53962,7 @@ impl Interpreter {
                     source,
                     source_scope,
                 } => {
+                    let source_was_dirty = source_scope.array_copy_source_was_dirtied(&source);
                     local_scope.bind_static_to_cell(&name, cell);
                     local_scope.import_array_copy_source_aliases_from_copy(
                         &name,
@@ -53950,6 +53971,9 @@ impl Interpreter {
                     );
                     local_scope.mirror_array_copy_source_aliases_from_copy(&name, &source);
                     local_scope.record_public_object_property_array_copy_source(&name, source);
+                    if source_was_dirty {
+                        local_scope.mark_public_object_property_array_copy_source_dirty(&name);
+                    }
                 }
                 PreboundLocal::ArrayOffsets {
                     name,
@@ -54063,10 +54087,14 @@ impl Interpreter {
                     ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
                         cell,
                         source,
+                        source_was_dirty,
                         ..
                     }
                     | ReferenceBindingTarget::CallerCellWithArrayCopySource {
-                        cell, source, ..
+                        cell,
+                        source,
+                        source_was_dirty,
+                        ..
                     } => {
                         local_scope.bind_static_to_cell(&param.name, cell.clone());
                         if let Some(source_scope) = reference_scope.as_deref() {
@@ -54100,6 +54128,10 @@ impl Interpreter {
                             &param.name,
                             source.clone(),
                         );
+                        if *source_was_dirty {
+                            local_scope
+                                .mark_public_object_property_array_copy_source_dirty(&param.name);
+                        }
                     }
                     ReferenceBindingTarget::ValueWithArrayCopySource { source } => {
                         if let Some(arg) = args.get(index) {
@@ -77329,6 +77361,98 @@ mod tests {
     }
 
     #[test]
+    fn assignment_value_source_recovery_uses_dirty_static_copy_source_metadata() {
+        let interpreter = Interpreter::from_program(
+            &Program {
+                statements: Vec::new(),
+            },
+            None,
+            RunOptions::default(),
+        )
+        .unwrap();
+        let mut scope = SymbolTable::new();
+        let span = Span::new(1, 1);
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+
+        let source =
+            ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
+        let value = Value::Array(PhpArray::new());
+        scope.write_static("copy", value.clone());
+        scope.record_public_object_property_array_copy_source("copy", source.clone());
+        scope.mark_public_object_property_array_copy_source_dirty("copy");
+        scope.public_object_property_array_copy_sources.remove("copy");
+
+        let recovered_from_expr = interpreter
+            .public_object_property_array_copy_source_for_value_expr(
+                &Expr::Variable("copy".to_string(), span),
+                &scope,
+            )
+            .expect("expected dirty static copy source from value expression");
+        assert!(scope.array_copy_sources_match(&recovered_from_expr, &source));
+
+        let recovered_from_assignment = interpreter
+            .array_copy_source_for_assignment_target_result(
+                &AssignTarget::Variable {
+                    name: "copy".to_string(),
+                    span,
+                },
+                &value,
+                &scope,
+            )
+            .expect("expected dirty static copy source from assignment result");
+        assert!(scope.array_copy_sources_match(&recovered_from_assignment, &source));
+    }
+
+    #[test]
+    fn nested_write_parent_replacement_checks_dirty_static_copy_source_metadata() {
+        let mut scope = SymbolTable::new();
+        let child_key = ArrayKey::String("child".to_string());
+        let grandchild_key = ArrayKey::String("leaf".to_string());
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+
+        let source =
+            ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
+        scope.record_public_object_property_array_copy_source("copy", source);
+        scope.mark_public_object_property_array_copy_source_dirty("copy");
+        scope.public_object_property_array_copy_sources.remove("copy");
+        scope.array_offset_aliases.insert(
+            "leaf_alias".to_string(),
+            vec![ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::StaticArray {
+                    name: "copy".to_string(),
+                },
+                keys: vec![child_key.clone(), grandchild_key],
+            }],
+        );
+
+        assert!(Interpreter::copied_array_write_replaces_live_alias_parent(
+            &scope,
+            "copy",
+            std::slice::from_ref(&child_key)
+        ));
+        assert!(Interpreter::array_copy_source_preserved_after_nested_write(
+            &scope,
+            "copy",
+            std::slice::from_ref(&child_key)
+        )
+        .is_none());
+    }
+
+    #[test]
     fn reference_binding_metadata_sync_keeps_dirty_static_copy_source_metadata() {
         let mut interpreter = Interpreter::from_program(
             &Program {
@@ -77386,6 +77510,142 @@ mod tests {
             .public_object_property_array_copy_source_for_static("copy")
             .expect("expected caller source metadata to remain when local source is dirty-only");
         assert!(caller_scope.array_copy_sources_match(&recovered, &source));
+    }
+
+    #[test]
+    fn by_reference_argument_binding_imports_dirty_static_copy_source_metadata() {
+        let mut interpreter = Interpreter::from_program(
+            &Program {
+                statements: Vec::new(),
+            },
+            None,
+            RunOptions::default(),
+        )
+        .unwrap();
+        let mut caller_scope = SymbolTable::new();
+        let span = Span::new(1, 1);
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+
+        let source =
+            ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
+        caller_scope.write_static("copy", Value::Array(PhpArray::new()));
+        caller_scope.record_public_object_property_array_copy_source("copy", source.clone());
+        caller_scope.mark_public_object_property_array_copy_source_dirty("copy");
+        caller_scope.public_object_property_array_copy_sources.remove("copy");
+
+        let function = FunctionDecl {
+            name: "takes_ref".to_string(),
+            params: vec![FunctionParam {
+                name: "param".to_string(),
+                type_decl: None,
+                by_reference: true,
+                is_variadic: false,
+                default: None,
+                span,
+            }],
+            return_type: None,
+            returns_by_reference: false,
+            body: Vec::new(),
+            is_nested: false,
+            end_line: 1,
+            doc_comment: None,
+            span,
+        };
+        let args = vec![Expr::Variable("copy".to_string(), span)];
+
+        let (_, reference_bindings) = interpreter
+            .evaluate_user_function_call_arguments(&function, &args, span, &mut caller_scope)
+            .expect("reference argument evaluation should succeed");
+        let binding = reference_bindings
+            .first()
+            .expect("expected one reference binding");
+
+        let ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
+            name,
+            source: recovered,
+            source_was_dirty,
+            ..
+        } = &binding.target
+        else {
+            panic!("expected dirty static copy source reference binding");
+        };
+        assert_eq!(name, "copy");
+        assert!(*source_was_dirty);
+        assert!(caller_scope.array_copy_sources_match(recovered, &source));
+    }
+
+    #[test]
+    fn closure_capture_source_recovery_uses_dirty_static_copy_source_metadata() {
+        let mut scope = SymbolTable::new();
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+
+        let source =
+            ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
+        let value = Value::Array(PhpArray::new());
+        scope.write_static("copy", value.clone());
+        scope.record_public_object_property_array_copy_source("copy", source.clone());
+        scope.mark_public_object_property_array_copy_source_dirty("copy");
+        scope.public_object_property_array_copy_sources.remove("copy");
+
+        let recovered = Interpreter::array_copy_source_for_closure_capture(
+            "copy",
+            &value,
+            &scope,
+        )
+        .expect("expected dirty static copy source to be captured");
+
+        assert!(scope.array_copy_sources_match(&recovered, &source));
+    }
+
+    #[test]
+    fn reference_binding_source_list_uses_dirty_static_copy_source_metadata() {
+        let mut caller_scope = SymbolTable::new();
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+
+        let source =
+            ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
+        caller_scope.record_public_object_property_array_copy_source("copy", source.clone());
+        caller_scope.mark_public_object_property_array_copy_source_dirty("copy");
+        caller_scope.public_object_property_array_copy_sources.remove("copy");
+        let binding = ReferenceBinding {
+            param_name: "param".to_string(),
+            target: ReferenceBindingTarget::CallerCell {
+                name: "copy".to_string(),
+                cell: PhpReferenceCell::new(Value::Array(PhpArray::new())),
+            },
+        };
+
+        let bindings = Interpreter::array_copy_source_bindings_for_reference_bindings(
+            std::slice::from_ref(&binding),
+            &caller_scope,
+        );
+
+        let (_, keys, recovered) = bindings
+            .first()
+            .expect("expected dirty caller-cell source binding");
+        assert!(keys.is_empty());
+        assert!(caller_scope.array_copy_sources_match(recovered, &source));
     }
 
     #[test]
