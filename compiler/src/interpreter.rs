@@ -7557,6 +7557,14 @@ type ArrayCopySourceAliasWriteback = (
     Vec<ArrayOffsetAlias>,
 );
 
+#[derive(Debug, Clone, Default)]
+struct CallFrameArgumentBindings {
+    values: Vec<Value>,
+    reference_bindings: Vec<ReferenceBinding>,
+    array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
+    by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
+}
+
 #[derive(Debug, Clone)]
 enum ArrayCopySourceRoot {
     ObjectProperty { object: PhpObject, property: String },
@@ -41792,27 +41800,20 @@ impl Interpreter {
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, by_value_array_copy_source_bindings) = self
-            .evaluate_by_value_call_arguments_with_array_copy_sources(
-                function,
-                args,
-                caller_scope,
-            )?;
-        self.emit_call_user_func_reference_parameter_warnings(function, args.len(), span)?;
-        let by_value_array_copy_bindings =
-            Self::by_value_array_copy_bindings_for_call_user_func_value(function, args);
+        let frame =
+            self.call_user_func_expr_call_frame_bindings(function, args, span, caller_scope, false)?;
 
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
-            values,
+            frame.values,
             this_object,
             class_context,
             called_class_context,
-            Vec::new(),
+            frame.reference_bindings,
             Some(caller_scope),
             prebound_locals,
-            by_value_array_copy_bindings,
-            by_value_array_copy_source_bindings,
+            frame.by_value_array_copy_bindings,
+            frame.array_copy_source_bindings,
         )
     }
 
@@ -41838,31 +41839,73 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
-        let (values, source_bindings) = self
+        let frame =
+            self.call_user_func_expr_call_frame_bindings(function, args, span, caller_scope, true)?;
+        Ok((frame.values, frame.reference_bindings))
+    }
+
+    fn call_user_func_expr_call_frame_bindings(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        bind_value_copy_reference_params: bool,
+    ) -> CompileResult<CallFrameArgumentBindings> {
+        let (values, array_copy_source_bindings) = self
             .evaluate_by_value_call_arguments_with_array_copy_sources(
                 function,
                 args,
                 caller_scope,
             )?;
         self.emit_call_user_func_reference_parameter_warnings(function, args.len(), span)?;
-        let reference_bindings = source_bindings
-            .into_iter()
+        let reference_bindings = if bind_value_copy_reference_params {
+            Self::reference_bindings_for_call_frame_array_copy_sources(
+                function,
+                &values,
+                &array_copy_source_bindings,
+            )
+        } else {
+            Vec::new()
+        };
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call_user_func_value(function, args);
+
+        Ok(CallFrameArgumentBindings {
+            values,
+            reference_bindings,
+            array_copy_source_bindings,
+            by_value_array_copy_bindings,
+        })
+    }
+
+    fn reference_bindings_for_call_frame_array_copy_sources(
+        function: &FunctionDecl,
+        values: &[Value],
+        array_copy_source_bindings: &[ArrayCopySourceBinding],
+    ) -> Vec<ReferenceBinding> {
+        array_copy_source_bindings
+            .iter()
             .map(|(param_name, target_keys, source)| {
                 let target = if target_keys.is_empty() {
-                    ReferenceBindingTarget::ValueWithArrayCopySource { source }
+                    ReferenceBindingTarget::ValueWithArrayCopySource {
+                        source: source.clone(),
+                    }
                 } else {
                     ReferenceBindingTarget::ValueWithArrayCopySourceAtPath {
-                        target_keys,
-                        source,
+                        target_keys: target_keys.clone(),
+                        source: source.clone(),
                     }
                 };
-                ReferenceBinding { param_name, target }
+                ReferenceBinding {
+                    param_name: param_name.clone(),
+                    target,
+                }
             })
             .chain(Self::call_user_func_value_copy_reference_bindings(
-                function, &values,
+                function, values,
             ))
-            .collect();
-        Ok((values, reference_bindings))
+            .collect()
     }
 
     fn by_value_array_copy_bindings_for_call_user_func_value(
