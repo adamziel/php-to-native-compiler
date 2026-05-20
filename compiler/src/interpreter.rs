@@ -1179,6 +1179,13 @@ struct RuntimeAliasLvalueHandle {
 }
 
 impl RuntimeAliasLvalueHandle {
+    fn alias(&self) -> ArrayOffsetAlias {
+        ArrayOffsetAlias {
+            root: self.root.clone(),
+            keys: Vec::new(),
+        }
+    }
+
     fn shares_reference_with(&self, cell: &VariableCell) -> bool {
         self.cell
             .as_ref()
@@ -4184,13 +4191,13 @@ impl SymbolTable {
             self.overlay_array_copy_source_reference_cells(&mut array, &source);
         }
 
-        for source_root in self.array_copy_source_roots(&source) {
+        for source_handle in self.runtime_alias_lvalue_handles_for_array_copy_source(&source) {
             let matching_aliases = self
                 .array_offset_aliases
                 .values()
                 .flat_map(|aliases| aliases.iter())
                 .filter(|alias| {
-                    alias.root == source_root
+                    alias.root == source_handle.root
                         && alias.keys.starts_with(source.keys.as_slice())
                         && (source.include_exact_path || alias.keys.len() > source.keys.len())
                 })
@@ -4281,10 +4288,7 @@ impl SymbolTable {
             }
             ArrayCopySourceRoot::AliasPath(root) => self
                 .read_alias_root_value(
-                    &ArrayOffsetAlias {
-                        root: root.clone(),
-                        keys: Vec::new(),
-                    },
+                    &self.runtime_alias_lvalue_handle(root.clone()).alias(),
                     Span::new(0, 0),
                 )
                 .ok()??,
@@ -4310,13 +4314,16 @@ impl SymbolTable {
         let Value::Array(mut array) = cell.value_cloned() else {
             return;
         };
-        let roots = self.array_copy_source_roots_for_reference_cell(cell);
-        for root in roots {
+        let handles = self.runtime_alias_lvalue_handles_for_reference_cell(cell);
+        for handle in handles {
+            if !handle.shares_reference_with(cell) {
+                continue;
+            }
             let aliases = self
                 .array_offset_aliases
                 .values()
                 .flat_map(|aliases| aliases.iter())
-                .filter(|alias| alias.root == root && !alias.keys.is_empty())
+                .filter(|alias| alias.root == handle.root && !alias.keys.is_empty())
                 .cloned()
                 .collect::<Vec<_>>();
             for alias in aliases {
@@ -4484,6 +4491,33 @@ impl SymbolTable {
             .collect()
     }
 
+    fn runtime_alias_lvalue_handles_for_array_copy_source(
+        &self,
+        source: &ArrayCopySource,
+    ) -> Vec<RuntimeAliasLvalueHandle> {
+        match &source.root {
+            ArrayCopySourceRoot::ObjectProperty { object, property } => self
+                .public_object_property_alias_roots_for_object(object, property)
+                .into_iter()
+                .map(|root| self.runtime_alias_lvalue_handle(root))
+                .collect(),
+            ArrayCopySourceRoot::AliasPath(root @ ArrayOffsetAliasRoot::GlobalArray { name }) => {
+                vec![
+                    self.runtime_alias_lvalue_handle(root.clone()),
+                    self.runtime_alias_lvalue_handle(ArrayOffsetAliasRoot::StaticArray {
+                        name: name.clone(),
+                    }),
+                ]
+            }
+            ArrayCopySourceRoot::AliasPath(root) => {
+                vec![self.runtime_alias_lvalue_handle(root.clone())]
+            }
+            ArrayCopySourceRoot::RuntimeCell(cell) => {
+                self.runtime_alias_lvalue_handles_for_reference_cell(cell)
+            }
+        }
+    }
+
     fn runtime_alias_lvalue_handles_for_reference_cell(
         &self,
         cell: &VariableCell,
@@ -4514,8 +4548,7 @@ impl SymbolTable {
             .flat_map(|aliases| aliases.iter())
             .map(|alias| alias.root.clone())
             .collect::<Vec<_>>();
-        for root in alias_roots
-        {
+        for root in alias_roots {
             if handles.iter().any(|handle| handle.root == root) {
                 continue;
             }
@@ -76041,6 +76074,63 @@ mod tests {
             symbols.read_static("alias", span).unwrap(),
             symbols.read_static("items", span).unwrap()
         );
+    }
+
+    #[test]
+    fn symbol_table_runtime_cell_copy_sources_rehydrate_through_lvalue_handles() {
+        let mut symbols = SymbolTable::new();
+
+        let mut items = PhpArray::new();
+        items.insert("slot", Value::String("value".to_string()));
+        symbols.write_static("items", Value::Array(items));
+        let source_cell = symbols.read_cell("items").unwrap();
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .bind_public_property_reference_cell("items", source_cell.clone())
+            .unwrap();
+        symbols.write_static("box", Value::Object(object));
+        symbols.array_offset_aliases.insert(
+            "property_alias".to_string(),
+            vec![ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                    object: "box".to_string(),
+                    property: "items".to_string(),
+                },
+                keys: vec![ArrayKey::String("slot".to_string())],
+            }],
+        );
+
+        let source = ArrayCopySource::runtime_cell(source_cell.clone(), Vec::new(), true);
+        let cloned_value = source_cell.value_cloned();
+        let Value::Array(copy) =
+            symbols.value_with_object_property_aliases_from_array_copy(
+                cloned_value,
+                Some(source),
+                true,
+            )
+        else {
+            panic!("expected copied array");
+        };
+        let Value::Array(source_array) = source_cell.value_cloned() else {
+            panic!("expected source array");
+        };
+        let source_slot_cell = source_array
+            .get_slot("slot")
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected source slot reference cell");
+        let copied_slot_cell = copy
+            .get_slot("slot")
+            .and_then(|slot| slot.reference_cell())
+            .expect("expected copied slot reference cell");
+
+        assert_eq!(copied_slot_cell.id(), source_slot_cell.id());
     }
 
     #[test]

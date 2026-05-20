@@ -233,10 +233,12 @@ supported callback dispatch, but it is still bounded to cells and roots the
 interpreter can observe.
 That visible-root resolution now starts through a small
 `SymbolTable` runtime lvalue handle for static, global, and
-visible/context object-property roots. The current callers still project those
-handles back to legacy `ArrayOffsetAliasRoot` paths for copied-source
-propagation; moving `Value + ArrayCopySource` transfer and holder writeback
-onto handles remains a later step.
+visible/context object-property roots. Runtime-cell copied-source alias
+rehydration and reference-cell overlay now consume those handles directly when
+matching descendant aliases. Other copied-source transfer and holder writeback
+callers still project handles back to legacy `ArrayOffsetAliasRoot` paths;
+moving the rest of `Value + ArrayCopySource` propagation onto handles remains
+a later step.
 
 Parent-bucket replacement is a copied-source invalidation boundary for tracked
 object-property provenance. Before a supported magic/`ArrayAccess` method body

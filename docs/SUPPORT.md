@@ -49,8 +49,10 @@
   `call_user_func()` / zero-argument `call_user_func_array()` callback
   dispatch, while plain descendants remain detached. The visible root
   resolution used by this bridge now begins through a runtime lvalue handle
-  for static, global, and visible/context object-property roots, but copied
-  source propagation still uses the legacy bounded alias-root model.
+  for static, global, and visible/context object-property roots, and
+  runtime-cell copied-source alias rehydration/overlay consumes those handles
+  directly. Broader copied-source transfer, helper/callback containers, and
+  holder writeback still use the legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,
   visible `__isset()`, direct `ArrayAccess::offsetSet()`,
   `ArrayAccess::offsetUnset()`, and `ArrayAccess::offsetExists()` execute

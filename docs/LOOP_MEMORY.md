@@ -36,6 +36,32 @@ injects this file into every prompt. Each Codex pass should update it with:
   2289 workers, logs under `.codex-stable/lane2289/`, and explicitly avoids
   resuming the old thread and avoids the rustfmt OOM path.
 
+## Loop Event 2026-05-20T10:18:45Z
+
+- Checkpoint before this task: `5091458c runtime: extract runtime alias lvalue
+  handles`.
+- Task attempted: immediate post-2289 COW frontier, migrating runtime-cell
+  copied-source alias rehydration/overlay to consume `RuntimeAliasLvalueHandle`
+  directly.
+- Files changed so far: `compiler/src/interpreter.rs`, `docs/PROGRESS.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `git diff --check` passed; bounded
+  `cargo check -q -p phpc` passed; focused `cargo test -q -p phpc --lib
+  symbol_table_runtime_cell_copy_sources_rehydrate_through_lvalue_handles`
+  passed; system-PHP comparisons passed for `tests/fixtures/milestone2289`,
+  `tests/fixtures/milestone1673c`, and `tests/fixtures/milestone2288`. Logs
+  are under `.codex-stable/lane2289/`.
+- Remaining COW gaps: broader `Value + ArrayCopySource` transfer,
+  helper/callback containers, dynamic holder writeback, and untracked
+  containers still rely on legacy path provenance or concrete roots; exact
+  diagnostics, string COW, and native reference/COW lowering remain
+  unsupported.
+- Next concrete task: migrate another copied-source consumer, preferably
+  helper/callback container import or holder writeback, to consume runtime
+  lvalue handles directly while preserving `milestone2289`, `milestone2288`,
+  and `milestone1673c`.
+
 ## Loop Event 2026-05-20T12:09:56Z
 
 - Checkpoint before this task: `2de25cd6 runtime: preserve runtime-cell cow

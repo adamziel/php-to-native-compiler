@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Continued the post-2289 COW frontier by moving the runtime-cell
+  copied-source alias rehydration/overlay path onto
+  `RuntimeAliasLvalueHandle`s. `SymbolTable` now resolves
+  `ArrayCopySource` roots to lvalue handles before scanning descendant alias
+  groups, and runtime-cell rehydration walks those handles directly instead
+  of first projecting the returned `PhpReferenceCell` back into root-only
+  paths. Focused unit coverage proves a runtime-cell copied source can
+  rehydrate a visible object-property descendant through the handle path, and
+  Lane 2289, Lane 2288, and the previous callback-name reuse regression still
+  match system PHP. This is still an internal migration for the copied-source
+  import/overlay consumer; helper/callback containers, dynamic holder
+  writeback, broader `Value + ArrayCopySource` transfer, untracked containers,
+  exact diagnostics, string COW, and native reference/COW lowering remain
+  incomplete.
+
 - Started the next post-2289 COW frontier by extracting visible alias-root
   resolution into a `SymbolTable` runtime lvalue handle. Static roots, global
   roots, and visible/context object-property roots now resolve through one

@@ -212,8 +212,10 @@ handled.
   side-effecting helper/callback containers, dynamic holders that still cannot
   expose either a materialized reference cell or a concrete writeback root.
   Initial static/global/object-property root resolution now has a
-  `RuntimeAliasLvalueHandle`; this task stays open until copied-source
-  propagation and holder writeback consume handles directly.
+  `RuntimeAliasLvalueHandle`, and runtime-cell copied-source alias
+  rehydration/overlay now consumes those handles directly; this task stays
+  open until broader copied-source propagation and holder writeback consume
+  handles directly.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference
