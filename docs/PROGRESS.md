@@ -18,6 +18,11 @@ Implemented:
   through the captured boundary instead of depending on a fresh lookup after
   the storage has already changed.
 
+- Routed direct expression-argument source-aware user calls through the same
+  `CallFrameArgumentBindings` carrier used by callback and
+  `call_user_func_array()` paths, avoiding another callback-shape-specific COW
+  metadata path while preserving reference-return source promotion.
+
 - Continued the post-2289 COW frontier by moving copied-source reference-cell
   scanning and copied-source value reads onto `RuntimeAliasLvalueHandle`
   resolution first. Object-property writes that detach copied-source aliases,

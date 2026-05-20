@@ -48060,44 +48060,20 @@ impl Interpreter {
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings, by_value_array_copy_source_bindings) =
-            if Self::function_accepts_source_aware_by_value_arguments(function) {
-                let (values, by_value_array_copy_source_bindings) = self
-                    .evaluate_by_value_call_arguments_with_array_copy_sources(
-                        function,
-                        args,
-                        caller_scope,
-                    )?;
-                (values, Vec::new(), by_value_array_copy_source_bindings)
-            } else {
-                let (values, reference_bindings, by_value_array_copy_source_bindings) = self
-                    .evaluate_user_function_call_arguments_with_options_and_array_copy_sources(
-                        function,
-                        args,
-                        span,
-                        caller_scope,
-                        false,
-                    )?;
-                (
-                    values,
-                    reference_bindings,
-                    by_value_array_copy_source_bindings,
-                )
-            };
-        let by_value_array_copy_bindings =
-            Self::by_value_array_copy_bindings_for_call(function, args);
+        let frame =
+            self.source_aware_expr_call_frame_bindings(function, args, span, caller_scope, false)?;
 
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
-            values,
+            frame.values,
             this_object,
             class_context,
             called_class_context,
-            reference_bindings,
+            frame.reference_bindings,
             Some(caller_scope),
             prebound_locals,
-            by_value_array_copy_bindings,
-            by_value_array_copy_source_bindings,
+            frame.by_value_array_copy_bindings,
+            frame.array_copy_source_bindings,
         )
     }
 
@@ -48116,25 +48092,55 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings, by_value_array_copy_source_bindings) = self
-            .evaluate_user_function_call_arguments_with_options_and_array_copy_sources(
-                function,
-                args,
-                span,
-                caller_scope,
-                true,
-            )?;
+        let frame =
+            self.source_aware_expr_call_frame_bindings(function, args, span, caller_scope, true)?;
 
         self.call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
             function,
-            values,
+            frame.values,
             this_object,
             class_context,
             called_class_context,
-            reference_bindings,
+            frame.reference_bindings,
             caller_scope,
             prebound_locals,
-            by_value_array_copy_source_bindings,
+            frame.array_copy_source_bindings,
+        )
+    }
+
+    fn source_aware_expr_call_frame_bindings(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        allow_reference_return_array_bindings: bool,
+    ) -> CompileResult<CallFrameArgumentBindings> {
+        if !allow_reference_return_array_bindings
+            && Self::function_accepts_source_aware_by_value_arguments(function)
+        {
+            let (values, array_copy_source_bindings) = self
+                .evaluate_by_value_call_arguments_with_array_copy_sources(
+                    function,
+                    args,
+                    caller_scope,
+                )?;
+            return Ok(CallFrameArgumentBindings {
+                values,
+                reference_bindings: Vec::new(),
+                array_copy_source_bindings,
+                by_value_array_copy_bindings: Self::by_value_array_copy_bindings_for_call(
+                    function, args,
+                ),
+            });
+        }
+
+        self.evaluate_user_function_call_frame_bindings_with_options(
+            function,
+            args,
+            span,
+            caller_scope,
+            allow_reference_return_array_bindings,
         )
     }
 
@@ -52068,7 +52074,27 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         allow_reference_return_array_bindings: bool,
     ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
-        let (values, reference_bindings, _) = self
+        let frame = self.evaluate_user_function_call_frame_bindings_with_options(
+            function,
+            args,
+            span,
+            caller_scope,
+            allow_reference_return_array_bindings,
+        )?;
+        let values = frame.values;
+        let reference_bindings = frame.reference_bindings;
+        Ok((values, reference_bindings))
+    }
+
+    fn evaluate_user_function_call_frame_bindings_with_options(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        allow_reference_return_array_bindings: bool,
+    ) -> CompileResult<CallFrameArgumentBindings> {
+        let (values, reference_bindings, array_copy_source_bindings) = self
             .evaluate_user_function_call_arguments_with_options_and_array_copy_sources(
                 function,
                 args,
@@ -52076,7 +52102,15 @@ impl Interpreter {
                 caller_scope,
                 allow_reference_return_array_bindings,
             )?;
-        Ok((values, reference_bindings))
+        let by_value_array_copy_bindings =
+            Self::by_value_array_copy_bindings_for_call(function, args);
+
+        Ok(CallFrameArgumentBindings {
+            values,
+            reference_bindings,
+            array_copy_source_bindings,
+            by_value_array_copy_bindings,
+        })
     }
 
     fn evaluate_user_function_call_arguments_with_options_and_array_copy_sources(
