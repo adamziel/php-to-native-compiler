@@ -1179,6 +1179,13 @@ struct RuntimeAliasLvalueHandle {
     cell: Option<VariableCell>,
 }
 
+#[derive(Debug, Clone)]
+struct HolderStorageMutationBoundary {
+    object: PhpObject,
+    property: String,
+    keys: Vec<ArrayKey>,
+}
+
 impl RuntimeAliasLvalueHandle {
     fn alias(&self) -> ArrayOffsetAlias {
         ArrayOffsetAlias {
@@ -1255,6 +1262,15 @@ impl ResolvedArrayCopySource {
         } = &self.source.root
         {
             if source_object == object && source_property == property {
+                return true;
+            }
+        }
+        if let ArrayCopySourceRoot::RuntimeCell(cell) = &self.source.root {
+            if object.properties().iter().any(|candidate| {
+                candidate.name() == property
+                    && candidate.is_initialized()
+                    && candidate.reference_cell_id() == Some(cell.id())
+            }) {
                 return true;
             }
         }
@@ -2222,6 +2238,18 @@ impl SymbolTable {
         property: &str,
         write_keys: &[ArrayKey],
     ) {
+        let boundary =
+            self.holder_storage_mutation_boundary_for_object_property(object, property, write_keys);
+        self.post_replace_holder_storage(&boundary);
+    }
+
+    fn invalidate_array_copy_sources_for_holder_storage_boundary(
+        &mut self,
+        boundary: &HolderStorageMutationBoundary,
+    ) {
+        let object = &boundary.object;
+        let property = &boundary.property;
+        let write_keys = &boundary.keys;
         let records = self.array_copy_source_records();
         let stale_static_sources = records
             .iter()
@@ -2376,6 +2404,18 @@ impl SymbolTable {
         property: &str,
         write_keys: &[ArrayKey],
     ) {
+        let boundary =
+            self.holder_storage_mutation_boundary_for_object_property(object, property, write_keys);
+        self.pre_replace_holder_storage(&boundary);
+    }
+
+    fn rehydrate_array_copy_sources_for_holder_storage_boundary(
+        &mut self,
+        boundary: &HolderStorageMutationBoundary,
+    ) {
+        let object = &boundary.object;
+        let property = &boundary.property;
+        let write_keys = &boundary.keys;
         let mut detached_paths = Vec::new();
         for record in self.array_copy_source_records() {
             let source = record.source;
@@ -5381,15 +5421,49 @@ impl SymbolTable {
         }
     }
 
+    fn holder_storage_mutation_boundary_for_object_property(
+        &self,
+        object: &PhpObject,
+        property: &str,
+        keys: &[ArrayKey],
+    ) -> HolderStorageMutationBoundary {
+        HolderStorageMutationBoundary {
+            object: object.clone(),
+            property: property.to_string(),
+            keys: keys.to_vec(),
+        }
+    }
+
+    fn holder_storage_mutation_boundary_for_alias(
+        &self,
+        root: &ArrayOffsetAliasRoot,
+        keys: &[ArrayKey],
+    ) -> Option<HolderStorageMutationBoundary> {
+        let (object, property) = self.object_property_alias_target(root)?;
+        Some(HolderStorageMutationBoundary {
+            object,
+            property,
+            keys: keys.to_vec(),
+        })
+    }
+
+    fn pre_replace_holder_storage(&mut self, boundary: &HolderStorageMutationBoundary) {
+        self.rehydrate_array_copy_sources_for_holder_storage_boundary(boundary);
+    }
+
+    fn post_replace_holder_storage(&mut self, boundary: &HolderStorageMutationBoundary) {
+        self.invalidate_array_copy_sources_for_holder_storage_boundary(boundary);
+    }
+
     fn rehydrate_array_copy_sources_for_object_property_alias_write(
         &mut self,
         root: &ArrayOffsetAliasRoot,
         keys: &[ArrayKey],
     ) {
-        let Some((object, property)) = self.object_property_alias_target(root) else {
+        let Some(boundary) = self.holder_storage_mutation_boundary_for_alias(root, keys) else {
             return;
         };
-        self.rehydrate_array_copy_sources_for_object_property_write(&object, &property, keys);
+        self.pre_replace_holder_storage(&boundary);
     }
 
     fn invalidate_array_copy_sources_for_object_property_alias_write(
@@ -5397,10 +5471,10 @@ impl SymbolTable {
         root: &ArrayOffsetAliasRoot,
         keys: &[ArrayKey],
     ) {
-        let Some((object, property)) = self.object_property_alias_target(root) else {
+        let Some(boundary) = self.holder_storage_mutation_boundary_for_alias(root, keys) else {
             return;
         };
-        self.invalidate_array_copy_sources_for_object_property_write(&object, &property, keys);
+        self.post_replace_holder_storage(&boundary);
     }
 
     fn canonical_equivalent_object_property_alias_root(
