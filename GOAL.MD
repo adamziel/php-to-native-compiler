@@ -32,7 +32,22 @@ WordPress support yet.
 
 ## Current Evidence
 
-The current in-progress implementation frontier is Lane 2285:
+The current in-progress implementation frontier is Lane 2286:
+
+- Lane 2286 moves nested array-offset lvalue path operations into `PhpArray`.
+  Runtime arrays now own path materialization, cloned reads, reference-cell
+  reads, value and checked writes, reference writes, and value/reference
+  appends over nested key paths. `SymbolTable` keeps its existing alias helper
+  surface but delegates those operations to the runtime path API, so slot COW
+  detach/reference sharing happens under the value model instead of through
+  recursive compiler clone/reinsert helpers. Runtime tests prove the path API
+  uses shared COW cells and reference cells correctly, and focused system-PHP
+  coverage proves copied-array materialized reference paths plus nested value
+  and reference appends detach only the copied array. Root resolution,
+  `ArrayCopySource` provenance import/writeback, arbitrary magic/`ArrayAccess`
+  side effects, untracked containers, broader whole-array identity, exact
+  diagnostics, string COW, and native reference/COW lowering remain
+  unsupported.
 
 - Lane 2285 moves plain PHP array slot clones onto shared runtime value cells
   with detach-on-write, while reference-backed slots continue to share their

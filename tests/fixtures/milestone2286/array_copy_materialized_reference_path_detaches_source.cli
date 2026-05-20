@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2286/array_copy_materialized_reference_path_detaches_source.php

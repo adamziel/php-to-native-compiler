@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Lane 2286-C for runtime-owned array path lvalue operations. `PhpArray`
+  now owns nested path materialization, cloned reads, reference-cell reads,
+  existing-slot value writes, checked writes, reference writes, value appends,
+  and reference appends. `SymbolTable`'s nested array-offset alias helpers now
+  delegate those operations to the runtime path API instead of duplicating
+  recursive clone/reinsert traversal in the compiler. Runtime tests prove the
+  new path operations use slot-level COW cells and preserve reference-cell
+  identity, and focused system-PHP fixtures prove copied-array materialized
+  reference paths, nested appends, and nested reference appends detach only the
+  copied array. This is a compiler/runtime lvalue extraction step; root
+  resolution, `ArrayCopySource` provenance import/writeback, arbitrary
+  magic/`ArrayAccess` side effects, untracked containers, exact diagnostics,
+  string COW, and native reference/COW lowering remain incomplete.
+
 - Added Lane 2285-C as a real runtime value-model COW step for PHP arrays.
   Plain `ArraySlot` value clones now share the underlying value cell until a
   public write detaches that slot, while reference-backed slots continue to

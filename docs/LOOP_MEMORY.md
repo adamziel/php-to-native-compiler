@@ -23,6 +23,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - blockers or semantic gaps
 - next concrete task
 
+## Loop Event 2026-05-20T05:05:00+02:00
+
+- Checkpoint before this task: `783efcfb runtime: share array cow value
+  cells`, pushed to `origin/master`.
+- Task attempted: Lane 2286-C, extracting nested array-offset lvalue path
+  operations into `PhpArray` runtime methods and making `SymbolTable` alias
+  helpers delegate materialization, reads, value/checked/reference writes, and
+  appends through runtime slot COW operations.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2286/*`, `GOAL.MD`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file.
+- Tests run so far: `cargo check -q -p phpc` passed; focused `php_runtime`
+  array path and array-slot tests passed; focused system-PHP fixture
+  comparisons passed for `tests/fixtures/milestone2286`; adjacent COW fixture
+  comparisons passed for `milestone2241` through `milestone2286`; focused
+  Rust regressions passed for `object_model` magic and arrayaccess,
+  `functions_and_scopes` function tests, `fixture_manifest`, and
+  `milestone1_fixtures_pass`; `cargo fmt --check` and `git diff --check`
+  passed.
+- Remaining COW gaps: root resolution is still in `SymbolTable`, and the
+  interpreter still uses `Value + ArrayCopySource` provenance ledgers for
+  broad magic/`ArrayAccess` source recovery; arbitrary unsupported method
+  syntax and side effects, untracked dynamic containers, broader whole-array
+  reference identity, exact diagnostics/Throwable objects, string COW, and
+  native reference/COW lowering remain unsupported.
+- Next concrete task: run one full `tools/checkpoint.sh` bundle gate, then
+  push if it passes.
+
 ## Loop Event 2026-05-20T04:25:00+02:00
 
 - Checkpoint before this task: `56dde9a0 runtime: detach stale cow parent

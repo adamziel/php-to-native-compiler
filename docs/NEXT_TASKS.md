@@ -183,9 +183,13 @@ handled.
   cells with detach-on-write, while preserving shared `PhpReferenceCell`
   behavior for reference-backed slots and proving plain/reference COW parity
   through ordinary arrays and visible `__get()` copied-bucket returns.
+- [x] Lane 2286-C: move nested array-offset lvalue path operations into
+  `PhpArray` runtime methods and make `SymbolTable` alias helpers delegate
+  materialization, reads, checked/value/reference writes, and appends through
+  those slot-level COW operations.
 - [ ] Next COW gap, hard-first: keep extending the general
-  value/container identity model by introducing runtime-backed lvalue/slot
-  handles under `SymbolTable` for root+key paths, then migrating
+  value/container identity model by extracting root resolution into a
+  runtime-backed alias/lvalue handle under `SymbolTable`, then migrating
   `Value + ArrayCopySource` propagation, helper/callback containers, and
   dynamic holder writeback away from stale path provenance. Known next probes
   should target whole-array reference identity outside covered non-empty

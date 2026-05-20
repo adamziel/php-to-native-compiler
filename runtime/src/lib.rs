@@ -1352,6 +1352,206 @@ impl PhpArray {
         Ok(key)
     }
 
+    pub fn materialize_path(&mut self, keys: &[ArrayKey]) -> RuntimeResult<()> {
+        let Some((key, rest)) = keys.split_first() else {
+            return Err(RuntimeError::unsupported_call(
+                "reference assignment",
+                "array-offset reference aliases require at least one key",
+            ));
+        };
+
+        if rest.is_empty() {
+            if self.get_slot(key.clone()).is_none() {
+                self.insert(key.clone(), Value::Null);
+            }
+            return Ok(());
+        }
+
+        let mut child = match self.get_cloned(key.clone()) {
+            Some(Value::Array(child)) => child,
+            Some(Value::Null) | Some(Value::Bool(false)) | None => Self::new(),
+            Some(other) => {
+                return Err(RuntimeError::invalid_array_access(format!(
+                    "cannot read offset on {}",
+                    other.type_name()
+                )));
+            }
+        };
+
+        child.materialize_path(rest)?;
+        self.insert(key.clone(), Value::Array(child));
+        Ok(())
+    }
+
+    pub fn get_path_cloned(&self, keys: &[ArrayKey]) -> Option<Value> {
+        let (key, rest) = keys.split_first()?;
+        let value = self.get_cloned(key.clone())?;
+        if rest.is_empty() {
+            return Some(value);
+        }
+
+        match value {
+            Value::Array(child) => child.get_path_cloned(rest),
+            _ => None,
+        }
+    }
+
+    pub fn get_path_reference_cell(&self, keys: &[ArrayKey]) -> Option<PhpReferenceCell> {
+        let (key, rest) = keys.split_first()?;
+        let slot = self.get_slot(key.clone())?;
+        if rest.is_empty() {
+            return slot.reference_cell();
+        }
+
+        match slot.value_cloned() {
+            Value::Array(child) => child.get_path_reference_cell(rest),
+            _ => None,
+        }
+    }
+
+    pub fn write_existing_path(&mut self, keys: &[ArrayKey], value: Value) -> bool {
+        let Some((key, rest)) = keys.split_first() else {
+            return false;
+        };
+
+        if rest.is_empty() {
+            if self.get_slot(key.clone()).is_none() {
+                return false;
+            }
+            self.insert(key.clone(), value);
+            return true;
+        }
+
+        let Some(Value::Array(mut child)) = self.get_cloned(key.clone()) else {
+            return false;
+        };
+        if !child.write_existing_path(rest, value) {
+            return false;
+        }
+        self.insert(key.clone(), Value::Array(child));
+        true
+    }
+
+    pub fn write_existing_path_checked_with_object_type_resolver<F>(
+        &mut self,
+        keys: &[ArrayKey],
+        value: Value,
+        object_type_resolver: F,
+    ) -> RuntimeResult<bool>
+    where
+        F: Fn(&PhpObject, &str) -> bool + Copy,
+    {
+        let Some((key, rest)) = keys.split_first() else {
+            return Ok(false);
+        };
+
+        if rest.is_empty() {
+            if self.get_slot(key.clone()).is_none() {
+                return Ok(false);
+            }
+            self.insert_checked_with_object_type_resolver(
+                key.clone(),
+                value,
+                object_type_resolver,
+            )?;
+            return Ok(true);
+        }
+
+        let Some(Value::Array(mut child)) = self.get_cloned(key.clone()) else {
+            return Ok(false);
+        };
+        if !child.write_existing_path_checked_with_object_type_resolver(
+            rest,
+            value,
+            object_type_resolver,
+        )? {
+            return Ok(false);
+        }
+        self.insert_checked_with_object_type_resolver(
+            key.clone(),
+            Value::Array(child),
+            object_type_resolver,
+        )?;
+        Ok(true)
+    }
+
+    pub fn write_existing_path_reference(
+        &mut self,
+        keys: &[ArrayKey],
+        reference: PhpReferenceCell,
+    ) -> bool {
+        let Some((key, rest)) = keys.split_first() else {
+            return false;
+        };
+
+        if rest.is_empty() {
+            if self.get_slot(key.clone()).is_none() {
+                return false;
+            }
+            self.insert_reference(key.clone(), reference);
+            return true;
+        }
+
+        let Some(Value::Array(mut child)) = self.get_cloned(key.clone()) else {
+            return false;
+        };
+        if !child.write_existing_path_reference(rest, reference) {
+            return false;
+        }
+        self.insert(key.clone(), Value::Array(child));
+        true
+    }
+
+    pub fn append_path(&mut self, keys: &[ArrayKey], value: Value) -> RuntimeResult<Vec<ArrayKey>> {
+        let Some((key, rest)) = keys.split_first() else {
+            let appended = self.append(value)?;
+            return Ok(vec![appended]);
+        };
+
+        let mut child = match self.get_cloned(key.clone()) {
+            Some(Value::Array(child)) => child,
+            Some(Value::Null) | Some(Value::Bool(false)) | None => Self::new(),
+            Some(other) => {
+                return Err(RuntimeError::invalid_array_access(format!(
+                    "cannot write offset on {}",
+                    other.type_name()
+                )));
+            }
+        };
+
+        let mut alias_keys = vec![key.clone()];
+        alias_keys.extend(child.append_path(rest, value)?);
+        self.insert(key.clone(), Value::Array(child));
+        Ok(alias_keys)
+    }
+
+    pub fn append_path_reference(
+        &mut self,
+        keys: &[ArrayKey],
+        reference: PhpReferenceCell,
+    ) -> RuntimeResult<Vec<ArrayKey>> {
+        let Some((key, rest)) = keys.split_first() else {
+            let appended = self.append_reference(reference)?;
+            return Ok(vec![appended]);
+        };
+
+        let mut child = match self.get_cloned(key.clone()) {
+            Some(Value::Array(child)) => child,
+            Some(Value::Null) | Some(Value::Bool(false)) | None => Self::new(),
+            Some(other) => {
+                return Err(RuntimeError::invalid_array_access(format!(
+                    "cannot write offset on {}",
+                    other.type_name()
+                )));
+            }
+        };
+
+        let mut alias_keys = vec![key.clone()];
+        alias_keys.extend(child.append_path_reference(rest, reference)?);
+        self.insert(key.clone(), Value::Array(child));
+        Ok(alias_keys)
+    }
+
     pub fn sort_keys_numeric(&mut self) -> RuntimeResult<()> {
         let mut sortable = Vec::with_capacity(self.entries.len());
         for entry in &self.entries {
@@ -6702,6 +6902,98 @@ mod tests {
                 expected.insert("leaf", Value::String("copy".to_string()));
                 expected
             }))
+        );
+    }
+
+    #[test]
+    fn php_array_path_operations_use_slot_cow_cells() {
+        let mut nested = PhpArray::new();
+        nested.insert("leaf", Value::String("source".to_string()));
+
+        let mut source = PhpArray::new();
+        source.insert("nested", Value::Array(nested));
+
+        let mut copy = source.clone();
+        assert!(copy
+            .materialize_path(&[ArrayKey::string("nested"), ArrayKey::string("new")])
+            .is_ok());
+        assert!(copy.write_existing_path(
+            &[ArrayKey::string("nested"), ArrayKey::string("new")],
+            Value::String("copy".to_string()),
+        ));
+        assert_eq!(
+            source.get_path_cloned(&[ArrayKey::string("nested"), ArrayKey::string("new")]),
+            None
+        );
+        assert_eq!(
+            copy.get_path_cloned(&[ArrayKey::string("nested"), ArrayKey::string("new")]),
+            Some(Value::String("copy".to_string()))
+        );
+
+        let appended = copy
+            .append_path(
+                &[ArrayKey::string("nested"), ArrayKey::string("items")],
+                Value::String("appended".to_string()),
+            )
+            .unwrap();
+        assert_eq!(
+            appended,
+            vec![
+                ArrayKey::string("nested"),
+                ArrayKey::string("items"),
+                ArrayKey::Int(0)
+            ]
+        );
+        assert_eq!(
+            source.get_path_cloned(&[
+                ArrayKey::string("nested"),
+                ArrayKey::string("items"),
+                ArrayKey::Int(0),
+            ]),
+            None
+        );
+        assert_eq!(
+            copy.get_path_cloned(&[
+                ArrayKey::string("nested"),
+                ArrayKey::string("items"),
+                ArrayKey::Int(0),
+            ]),
+            Some(Value::String("appended".to_string()))
+        );
+    }
+
+    #[test]
+    fn php_array_path_reference_writes_share_reference_cells() {
+        let reference = PhpReferenceCell::new(Value::String("start".to_string()));
+        let mut array = PhpArray::new();
+        let appended = array
+            .append_path_reference(&[ArrayKey::string("refs")], reference.clone())
+            .unwrap();
+
+        assert_eq!(appended, vec![ArrayKey::string("refs"), ArrayKey::Int(0)]);
+        assert_eq!(
+            array
+                .get_path_reference_cell(&[ArrayKey::string("refs"), ArrayKey::Int(0)])
+                .unwrap()
+                .id(),
+            reference.id()
+        );
+
+        reference.set_value(Value::String("changed".to_string()));
+        assert_eq!(
+            array.get_path_cloned(&[ArrayKey::string("refs"), ArrayKey::Int(0)]),
+            Some(Value::String("changed".to_string()))
+        );
+
+        let replacement = PhpReferenceCell::new(Value::String("replacement".to_string()));
+        assert!(array.write_existing_path_reference(
+            &[ArrayKey::string("refs"), ArrayKey::Int(0)],
+            replacement.clone(),
+        ));
+        replacement.set_value(Value::String("replacement-changed".to_string()));
+        assert_eq!(
+            array.get_path_cloned(&[ArrayKey::string("refs"), ArrayKey::Int(0)]),
+            Some(Value::String("replacement-changed".to_string()))
         );
     }
 

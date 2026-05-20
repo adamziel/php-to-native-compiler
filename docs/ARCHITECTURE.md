@@ -919,7 +919,12 @@ Implemented now:
   interpreter array copies real slot-level COW storage while the higher-level
   magic/`ArrayAccess` paths still use provenance ledgers for source recovery;
   `PhpArray::get_slot()` and `get_slot_mut()` expose normalized-key slot
-  lookup without introducing aliasing
+  lookup without introducing aliasing. `PhpArray` also owns the nested path
+  operations used by interpreter array-offset lvalues: path materialization,
+  cloned path reads, reference-cell path reads, existing path value/checked
+  writes, reference-cell writes, and value/reference appends all recurse
+  through `ArraySlot` so COW detach and reference-cell sharing stay in the
+  runtime instead of being duplicated in the compiler symbol table
 
 Planned runtime values and semantics:
 

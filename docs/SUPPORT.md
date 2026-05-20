@@ -33,9 +33,11 @@
 - PHP array by-value copies use shared runtime value cells for plain array
   slots and detach the written slot before mutation; reference-backed array
   slots continue to share their `PhpReferenceCell`. The covered interpreter
-  paths therefore preserve ordinary array COW parity for nested plain writes
-  and selected reference leaves, including copied buckets returned through a
-  supported visible `__get()` body.
+  paths use runtime-owned nested array path operations for materialization,
+  cloned reads, checked/value/reference writes, and appends, so ordinary array
+  COW parity is preserved for nested plain writes, selected reference leaves,
+  materialized reference paths, and nested value/reference appends, including
+  copied buckets returned through a supported visible `__get()` body.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,
   visible `__isset()`, direct `ArrayAccess::offsetSet()`,
   `ArrayAccess::offsetUnset()`, and `ArrayAccess::offsetExists()` execute

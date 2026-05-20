@@ -6451,71 +6451,20 @@ impl SymbolTable {
         keys: &[ArrayKey],
         span: Span,
     ) -> CompileResult<()> {
-        let Some((key, rest)) = keys.split_first() else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "reference assignment",
-                    "array-offset reference aliases require at least one key",
-                ),
-            ));
-        };
-
-        if rest.is_empty() {
-            if array.get_slot(key.clone()).is_none() {
-                array.insert(key.clone(), Value::Null);
-            }
-            return Ok(());
-        }
-
-        let mut child = match array.get_cloned(key.clone()) {
-            Some(Value::Array(child)) => child,
-            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
-            Some(other) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::invalid_array_access(format!(
-                        "cannot read offset on {}",
-                        other.type_name()
-                    )),
-                ));
-            }
-        };
-
-        Self::materialize_nested_array_offset_alias(&mut child, rest, span)?;
-        array.insert(key.clone(), Value::Array(child));
-        Ok(())
+        array
+            .materialize_path(keys)
+            .map_err(|error| runtime_error(span, error))
     }
 
     fn read_nested_array_offset_alias(array: &PhpArray, keys: &[ArrayKey]) -> Option<Value> {
-        let (key, rest) = keys.split_first()?;
-        let value = array.get_cloned(key.clone())?;
-        if rest.is_empty() {
-            return Some(value);
-        }
-
-        match value {
-            Value::Array(child) => Self::read_nested_array_offset_alias(&child, rest),
-            _ => None,
-        }
+        array.get_path_cloned(keys)
     }
 
     fn read_nested_array_offset_alias_reference_cell(
         array: &PhpArray,
         keys: &[ArrayKey],
     ) -> Option<VariableCell> {
-        let (key, rest) = keys.split_first()?;
-        let slot = array.get_slot(key.clone())?;
-        if rest.is_empty() {
-            return slot.reference_cell();
-        }
-
-        match slot.value_cloned() {
-            Value::Array(child) => {
-                Self::read_nested_array_offset_alias_reference_cell(&child, rest)
-            }
-            _ => None,
-        }
+        array.get_path_reference_cell(keys)
     }
 
     fn write_nested_array_offset_alias(
@@ -6523,26 +6472,7 @@ impl SymbolTable {
         keys: &[ArrayKey],
         value: Value,
     ) -> bool {
-        let Some((key, rest)) = keys.split_first() else {
-            return false;
-        };
-
-        if rest.is_empty() {
-            if array.get_slot(key.clone()).is_none() {
-                return false;
-            }
-            array.insert(key.clone(), value);
-            return true;
-        }
-
-        let Some(Value::Array(mut child)) = array.get_cloned(key.clone()) else {
-            return false;
-        };
-        if !Self::write_nested_array_offset_alias(&mut child, rest, value) {
-            return false;
-        }
-        array.insert(key.clone(), Value::Array(child));
-        true
+        array.write_existing_path(keys, value)
     }
 
     fn write_nested_array_offset_alias_checked_with_object_type_resolver(
@@ -6551,39 +6481,11 @@ impl SymbolTable {
         value: Value,
         object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
     ) -> RuntimeResult<bool> {
-        let Some((key, rest)) = keys.split_first() else {
-            return Ok(false);
-        };
-
-        if rest.is_empty() {
-            if array.get_slot(key.clone()).is_none() {
-                return Ok(false);
-            }
-            array.insert_checked_with_object_type_resolver(
-                key.clone(),
-                value,
-                |object, type_name| object_type_resolver(object, type_name),
-            )?;
-            return Ok(true);
-        }
-
-        let Some(Value::Array(mut child)) = array.get_cloned(key.clone()) else {
-            return Ok(false);
-        };
-        if !Self::write_nested_array_offset_alias_checked_with_object_type_resolver(
-            &mut child,
-            rest,
+        array.write_existing_path_checked_with_object_type_resolver(
+            keys,
             value,
-            object_type_resolver,
-        )? {
-            return Ok(false);
-        }
-        array.insert_checked_with_object_type_resolver(
-            key.clone(),
-            Value::Array(child),
             |object, type_name| object_type_resolver(object, type_name),
-        )?;
-        Ok(true)
+        )
     }
 
     fn write_nested_array_offset_alias_reference(
@@ -6591,26 +6493,7 @@ impl SymbolTable {
         keys: &[ArrayKey],
         reference: VariableCell,
     ) -> bool {
-        let Some((key, rest)) = keys.split_first() else {
-            return false;
-        };
-
-        if rest.is_empty() {
-            if array.get_slot(key.clone()).is_none() {
-                return false;
-            }
-            array.insert_reference(key.clone(), reference);
-            return true;
-        }
-
-        let Some(Value::Array(mut child)) = array.get_cloned(key.clone()) else {
-            return false;
-        };
-        if !Self::write_nested_array_offset_alias_reference(&mut child, rest, reference) {
-            return false;
-        }
-        array.insert(key.clone(), Value::Array(child));
-        true
+        array.write_existing_path_reference(keys, reference)
     }
 
     fn append_nested_array_offset_alias(
@@ -6619,33 +6502,9 @@ impl SymbolTable {
         value: Value,
         span: Span,
     ) -> CompileResult<Vec<ArrayKey>> {
-        let Some((key, rest)) = keys.split_first() else {
-            let appended = array
-                .append(value)
-                .map_err(|error| runtime_error(span, error))?;
-            return Ok(vec![appended]);
-        };
-
-        let mut child = match array.get_cloned(key.clone()) {
-            Some(Value::Array(child)) => child,
-            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
-            Some(other) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::invalid_array_access(format!(
-                        "cannot write offset on {}",
-                        other.type_name()
-                    )),
-                ));
-            }
-        };
-
-        let mut alias_keys = vec![key.clone()];
-        alias_keys.extend(Self::append_nested_array_offset_alias(
-            &mut child, rest, value, span,
-        )?);
-        array.insert(key.clone(), Value::Array(child));
-        Ok(alias_keys)
+        array
+            .append_path(keys, value)
+            .map_err(|error| runtime_error(span, error))
     }
 
     fn append_nested_array_offset_alias_reference(
@@ -6654,33 +6513,9 @@ impl SymbolTable {
         reference: VariableCell,
         span: Span,
     ) -> CompileResult<Vec<ArrayKey>> {
-        let Some((key, rest)) = keys.split_first() else {
-            let appended = array
-                .append_reference(reference)
-                .map_err(|error| runtime_error(span, error))?;
-            return Ok(vec![appended]);
-        };
-
-        let mut child = match array.get_cloned(key.clone()) {
-            Some(Value::Array(child)) => child,
-            Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
-            Some(other) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::invalid_array_access(format!(
-                        "cannot write offset on {}",
-                        other.type_name()
-                    )),
-                ));
-            }
-        };
-
-        let mut alias_keys = vec![key.clone()];
-        alias_keys.extend(Self::append_nested_array_offset_alias_reference(
-            &mut child, rest, reference, span,
-        )?);
-        array.insert(key.clone(), Value::Array(child));
-        Ok(alias_keys)
+        array
+            .append_path_reference(keys, reference)
+            .map_err(|error| runtime_error(span, error))
     }
 
     fn read_cell(&self, name: &str) -> Option<VariableCell> {
