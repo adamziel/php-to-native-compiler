@@ -48245,25 +48245,6 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         allow_reference_return_array_bindings: bool,
     ) -> CompileResult<CallFrameArgumentBindings> {
-        if !allow_reference_return_array_bindings
-            && Self::function_accepts_source_aware_by_value_arguments(function)
-        {
-            let (values, array_copy_source_bindings) = self
-                .evaluate_by_value_call_arguments_with_array_copy_sources(
-                    function,
-                    args,
-                    caller_scope,
-                )?;
-            return Ok(CallFrameArgumentBindings {
-                values,
-                reference_bindings: Vec::new(),
-                array_copy_source_bindings,
-                by_value_array_copy_bindings: Self::by_value_array_copy_bindings_for_call(
-                    function, args,
-                ),
-            });
-        }
-
         self.evaluate_user_function_call_frame_bindings_with_options(
             function,
             args,
@@ -52259,7 +52240,19 @@ impl Interpreter {
         let mut by_value_array_copy_source_bindings = Vec::new();
 
         for (index, arg) in args.iter().enumerate() {
-            let Some(param) = function.params.get(index) else {
+            let Some((param_index, param)) = function
+                .params
+                .get(index)
+                .map(|param| (index, param))
+                .or_else(|| {
+                    function
+                        .params
+                        .iter()
+                        .enumerate()
+                        .next_back()
+                        .filter(|(_, param)| param.is_variadic)
+                })
+            else {
                 values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
                 continue;
             };
@@ -52503,9 +52496,14 @@ impl Interpreter {
                 );
                 if matches!(value, Value::Array(_)) {
                     if let Some(source) = array_copy_source {
+                        let target_keys = if param.is_variadic {
+                            vec![ArrayKey::Int((index - param_index) as i64)]
+                        } else {
+                            Vec::new()
+                        };
                         by_value_array_copy_source_bindings.push((
                             param.name.clone(),
-                            Vec::new(),
+                            target_keys,
                             source,
                         ));
                     }

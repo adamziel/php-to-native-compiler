@@ -40,6 +40,12 @@ Implemented:
   boundary before writing and invalidate through the captured old storage
   identity only after a successful replacement.
 
+- Collapsed the remaining all-by-value direct expression-call copied-source
+  branch into the ordinary `CallFrameArgumentBindings` builder. Variadic
+  by-value array arguments now record copied-source bindings at the selected
+  variadic argument path, so direct calls and callback-style calls share the
+  same frame carrier for COW provenance.
+
 - Continued the post-2289 COW frontier by moving copied-source reference-cell
   scanning and copied-source value reads onto `RuntimeAliasLvalueHandle`
   resolution first. Object-property writes that detach copied-source aliases,
