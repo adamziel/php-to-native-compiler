@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2294/magic_array_merge_literal_assignment_cow.php

@@ -13,6 +13,25 @@ high-impact COW/runtime architecture before easier case-by-case patches. Use
 narrow fixtures to prove the architecture, not as a substitute for it, unless
 a one-off is genuinely the only viable route.
 
+## Loop Event 2026-05-20T16:00:00+02:00
+
+- Checkpoint before this task: `a3163fa2 runtime: preserve expression literal
+  copy sources`, pushed to `origin/master`.
+- Task attempted: Lane 2294-C, generalizing expression-literal copied-source
+  remapping from `array_values(array(...))` to assigned
+  `array_merge(array(...), ...)` wrappers, including integer reindexing and
+  string-key overwrite behavior.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2294/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and this memory file.
+- Focused checks so far: `cargo check -q -p phpc` passed; system-PHP
+  comparisons for `tests/fixtures/milestone2293` and `milestone2294` passed.
+- Remaining COW gaps: unsupported magic/`ArrayAccess` syntax outside the
+  interpreter subset, untracked dynamic containers without reachable cells,
+  broader dynamic holder writeback, arbitrary array-transform propagation,
+  exact diagnostics/Throwable parity, string COW, and native reference/COW
+  lowering.
+
 ## Loop Event 2026-05-20T15:25:00+02:00
 
 - Checkpoint before this task: `3484c1fe runtime: carry stored callback copy

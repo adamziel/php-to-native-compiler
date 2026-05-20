@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Lane 2294-C for copied-source metadata through supported
+  array-transform wrappers that rebuild arrays from expression-position array
+  literals. The `array_values(array(...))` path is now implemented through a
+  reusable literal-transform evaluator, and `array_merge(array(...), ...)`
+  remaps copied-source paths as integer keys are appended/reindexed and string
+  keys are overwritten. Focused system-PHP fixtures prove visible `__get()`
+  and public `ArrayAccess::offsetGet()` returns through assigned
+  `array_merge(array($copy))` wrappers, plus a string-key overwrite guard that
+  keeps the final selected source leaf attached. Unsupported method syntax,
+  untracked containers without reachable cells, arbitrary array transforms,
+  exact diagnostics, string COW, and native reference/COW lowering remain
+  incomplete.
+
 - Added Lane 2293-C for expression-position array literals and the supported
   `array_values(array(...))` reindexing path when they contain copied arrays
   from supported magic `__get()` or public `ArrayAccess::offsetGet()` bodies.

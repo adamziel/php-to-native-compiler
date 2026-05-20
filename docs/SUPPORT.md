@@ -79,6 +79,10 @@
   reads such as `array($copy)[0]` and assigned
   `array_values(array($copy))` wrapper arrays can preserve selected
   reference-backed leaves from supported magic/`ArrayAccess` copied arrays.
+  The same literal-transform metadata remapping covers assigned
+  `array_merge(array(...), ...)` wrappers, including integer-key reindexing
+  and string-key overwrite cases, for copied arrays from supported magic
+  `__get()` and public `ArrayAccess::offsetGet()` bodies.
   Broader dynamic holder writeback and untracked containers still use the
   legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,

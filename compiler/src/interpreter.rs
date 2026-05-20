@@ -21156,7 +21156,7 @@ impl Interpreter {
                     array_copy_source,
                     array_literal_copy_sources,
                 ) = if let Some((value, copy_sources)) =
-                    self.evaluate_array_values_literal_call_for_assignment(expr, scope)?
+                    self.evaluate_array_transform_literal_call_for_assignment(expr, scope)?
                 {
                     (value, Vec::new(), None, copy_sources)
                 } else {
@@ -33407,49 +33407,23 @@ impl Interpreter {
                 );
                 Ok(Some((value, source)))
             }
-            Expr::Call { name, args, .. }
-                if name.eq_ignore_ascii_case("array_values") && args.len() == 1 =>
-            {
-                let Expr::Array {
-                    items,
-                    span: array_span,
-                } = &args[0]
+            Expr::Call { .. } => {
+                let Some((Value::Array(array), copy_sources)) =
+                    self.evaluate_array_transform_literal_call_for_assignment(target, scope)?
                 else {
                     return Ok(None);
                 };
-                let (value, references, copy_sources) =
-                    self.evaluate_array_for_direct_assignment(items, *array_span, scope)?;
-                let value = self.value_with_assignment_reference_cells(
-                    value,
-                    &args[0],
-                    &references,
-                    &copy_sources,
-                    scope,
-                    *array_span,
-                )?;
-                let Value::Array(array) = value else {
-                    unreachable!("array literal evaluation returns array value");
-                };
                 let key = self.evaluate_array_key(index, scope)?;
-                let reindexed = array.values_reindexed();
-                let value = reindexed.get_cloned(key.clone()).ok_or_else(|| {
+                let value = array.get_cloned(key.clone()).ok_or_else(|| {
                     runtime_error(
                         span,
                         RuntimeError::undefined_array_key(key.diagnostic_key()),
                     )
                 })?;
-                let source = match key {
-                    ArrayKey::Int(index) if index >= 0 => array
-                        .entries()
-                        .get(index as usize)
-                        .and_then(|entry| {
-                            Self::array_literal_copy_source_for_expression_path(
-                                &copy_sources,
-                                std::slice::from_ref(&entry.key),
-                            )
-                        }),
-                    _ => None,
-                };
+                let source = Self::array_literal_copy_source_for_expression_path(
+                    &copy_sources,
+                    std::slice::from_ref(&key),
+                );
                 let value = scope.value_with_object_property_aliases_from_array_copy(
                     value,
                     source.clone(),
@@ -33472,7 +33446,7 @@ impl Interpreter {
             .map(|(_, source)| source.clone())
     }
 
-    fn evaluate_array_values_literal_call_for_assignment(
+    fn evaluate_array_transform_literal_call_for_assignment(
         &mut self,
         expr: &Expr,
         scope: &mut SymbolTable,
@@ -33480,18 +33454,54 @@ impl Interpreter {
         let Expr::Call { name, args, .. } = expr else {
             return Ok(None);
         };
-        if !name.eq_ignore_ascii_case("array_values") || args.len() != 1 {
-            return Ok(None);
+
+        if name.eq_ignore_ascii_case("array_values") && args.len() == 1 {
+            let Some((array, copy_sources)) =
+                self.evaluate_array_literal_argument_with_copy_sources(&args[0], scope)?
+            else {
+                return Ok(None);
+            };
+            let (value, reindexed_sources) =
+                Self::array_values_with_reindexed_copy_sources(&array, &copy_sources);
+            return Ok(Some((Value::Array(value), reindexed_sources)));
         }
-        let Expr::Array { items, span } = &args[0] else {
+
+        if name.eq_ignore_ascii_case("array_merge") {
+            let mut result = PhpArray::new();
+            let mut result_sources = Vec::new();
+            for arg in args {
+                let Some((array, copy_sources)) =
+                    self.evaluate_array_literal_argument_with_copy_sources(arg, scope)?
+                else {
+                    return Ok(None);
+                };
+                Self::merge_array_copy_sources_from_literal(
+                    &mut result,
+                    &mut result_sources,
+                    &array,
+                    &copy_sources,
+                    arg.span(),
+                )?;
+            }
+            return Ok(Some((Value::Array(result), result_sources)));
+        }
+
+        Ok(None)
+    }
+
+    fn evaluate_array_literal_argument_with_copy_sources(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(PhpArray, Vec<(Vec<ArrayKey>, ArrayCopySource)>)>> {
+        let Expr::Array { items, span } = expr else {
             return Ok(None);
         };
-
         let (value, references, copy_sources) =
             self.evaluate_array_for_direct_assignment(items, *span, scope)?;
         let value = self.value_with_assignment_reference_cells(
             value,
-            &args[0],
+            expr,
             &references,
             &copy_sources,
             scope,
@@ -33500,24 +33510,72 @@ impl Interpreter {
         let Value::Array(array) = value else {
             unreachable!("array literal evaluation returns array value");
         };
+        Ok(Some((array, copy_sources)))
+    }
 
+    fn array_values_with_reindexed_copy_sources(
+        array: &PhpArray,
+        copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
+    ) -> (PhpArray, Vec<(Vec<ArrayKey>, ArrayCopySource)>) {
         let mut reindexed_sources = Vec::new();
         for (index, entry) in array.entries().iter().enumerate() {
             let reindexed_key = ArrayKey::Int(index as i64);
-            for (source_keys, source) in &copy_sources {
-                let Some((source_key, rest)) = source_keys.split_first() else {
-                    continue;
-                };
-                if source_key != &entry.key {
-                    continue;
-                }
-                let mut keys = vec![reindexed_key.clone()];
-                keys.extend(rest.iter().cloned());
-                reindexed_sources.push((keys, source.clone()));
-            }
+            Self::push_rekeyed_copy_sources_for_entry(
+                &mut reindexed_sources,
+                copy_sources,
+                &entry.key,
+                reindexed_key,
+            );
         }
+        (array.values_reindexed(), reindexed_sources)
+    }
 
-        Ok(Some((Value::Array(array.values_reindexed()), reindexed_sources)))
+    fn merge_array_copy_sources_from_literal(
+        result: &mut PhpArray,
+        result_sources: &mut Vec<(Vec<ArrayKey>, ArrayCopySource)>,
+        array: &PhpArray,
+        copy_sources: &[(Vec<ArrayKey>, ArrayCopySource)],
+        span: Span,
+    ) -> CompileResult<()> {
+        for entry in array.entries() {
+            let target_key = match &entry.key {
+                ArrayKey::Int(_) => result
+                    .append(entry.value_cloned())
+                    .map_err(|error| runtime_error(span, error))?,
+                ArrayKey::String(key) => {
+                    let target_key = ArrayKey::String(key.clone());
+                    result.insert(target_key.clone(), entry.value_cloned());
+                    result_sources.retain(|(keys, _)| keys.first() != Some(&target_key));
+                    target_key
+                }
+            };
+            Self::push_rekeyed_copy_sources_for_entry(
+                result_sources,
+                copy_sources,
+                &entry.key,
+                target_key,
+            );
+        }
+        Ok(())
+    }
+
+    fn push_rekeyed_copy_sources_for_entry(
+        target_sources: &mut Vec<(Vec<ArrayKey>, ArrayCopySource)>,
+        source_paths: &[(Vec<ArrayKey>, ArrayCopySource)],
+        source_key: &ArrayKey,
+        target_key: ArrayKey,
+    ) {
+        for (source_keys, source) in source_paths {
+            let Some((candidate_key, rest)) = source_keys.split_first() else {
+                continue;
+            };
+            if candidate_key != source_key {
+                continue;
+            }
+            let mut keys = vec![target_key.clone()];
+            keys.extend(rest.iter().cloned());
+            target_sources.push((keys, source.clone()));
+        }
     }
 
     fn evaluate_null_coalescing(

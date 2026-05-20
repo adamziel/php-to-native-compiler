@@ -218,6 +218,9 @@ handled.
   expression-position array literals and assigned `array_values(array(...))`
   wrapper arrays for supported visible `__get()` and public
   `ArrayAccess::offsetGet()` copied-array returns.
+- [x] Lane 2294-C: generalize literal-array transform copied-source remapping
+  to assigned `array_merge(array(...), ...)` wrappers, including integer-key
+  reindexing and string-key overwrite guards.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model by extracting root resolution into a
   runtime-backed alias/lvalue handle under `SymbolTable`, then migrating
@@ -240,9 +243,9 @@ handled.
   calls plus mixed by-reference/by-value helpers now keep executed by-value
   argument copy-source metadata, including stored callback argument arrays
   with by-reference visible object-property slots and expression literal /
-  supported `array_values()` wrappers. This task stays open until broader
-  dynamic holder writeback and untracked container propagation consume handles
-  directly.
+  supported `array_values()`/`array_merge()` wrappers. This task stays open
+  until broader dynamic holder writeback and untracked container propagation
+  consume handles directly.
 - [ ] Remaining hard gaps: arbitrary unsupported magic/`ArrayAccess` method
   syntax, untracked dynamic containers that cannot expose a concrete
   bucket/object, broader callback containers, full whole-array reference
