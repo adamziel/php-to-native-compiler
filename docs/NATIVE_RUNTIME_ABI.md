@@ -158,8 +158,9 @@ general exception, warning, or errno channel. Binary PHP string values still
 lack native ABI coverage. `phpc_native_value_echo_bytes`
 returns runtime-owned echo bytes for the current value handle, and
 `phpc_native_value_echo_stdout` writes the current value handle's PHP echo bytes
-to stdout and returns the number of bytes written. Null handles and host write
-failures return zero until stdout diagnostics have ABI coverage.
+to stdout, flushes after a successful write, and returns the number of bytes
+written. Null handles and host write failures return zero until stdout
+diagnostics have ABI coverage.
 `phpc_native_value_free` releases the value handle.
 
 `NativeArrayHandle`, `NativeObjectHandle`, `NativeResourceHandle`, and
@@ -228,6 +229,15 @@ that round-trips a static byte payload through a string handle before freeing
 both the cloned buffer and the handle. The milestone also pins a CLI
 `--emit-ir` fixture proving normal generated string output still uses the
 existing direct `printf` path and does not call the new string helpers.
+
+Milestone 2300 adds the first linked native executable path. The CLI accepts
+`phpc compile <input.php> --emit-exe <output>`, builds `php_runtime` as a
+static library, emits C for the current straight-line native subset, links it
+with `cc`, and runs direct compile-time string `echo`/`print` output through
+the runtime string/value stdout helpers. This is a bounded executable proof
+only: dynamic string-pointer helper lowering remains LLVM-IR-only, and arrays,
+objects, functions, references, request state, exceptions, includes, and broad
+PHP coercions still do not have linked native semantics.
 
 Milestone 1579 adds the opaque runtime value handle declaration
 `%phpc.NativeValueHandle = type { ptr }`, a bounded

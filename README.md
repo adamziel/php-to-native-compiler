@@ -29,6 +29,7 @@ cargo build
 cargo run -p phpc -- run examples/hello.php
 cargo run -p phpc -- compile examples/hello.php --emit-ir
 cargo run -p phpc -- compile examples/hello.php --emit-asm
+cargo run -p phpc -- compile examples/hello.php --emit-exe /tmp/hello-phpc
 cargo run -p phpc -- test
 cargo run -p phpc -- test --list-fixtures
 cargo run -p phpc -- test --list-fixtures-json
@@ -234,6 +235,19 @@ missing tools, failed probes, selected-backend failures, empty or whitespace-onl
 assembly output, stderr handling on successful assembly, stdin handoff, and
 argument validation. The tests normalize success output instead of snapshotting
 platform-specific assembly text.
+
+### `phpc compile --emit-exe`
+
+`phpc compile <input.php> --emit-exe <output>` builds the first bounded linked
+native executable path. It currently emits C for the same narrow straight-line
+native subset, builds and links the Rust `php_runtime` static library with
+`cc`, and routes direct compile-time string `echo`/`print` output through the
+runtime string/value stdout helpers.
+
+This is not broad native PHP support. Arrays, objects, functions, references,
+request/session/stream/header state, exceptions, includes, dynamic
+string-pointer helper lowering, and broad PHP coercions remain unsupported or
+limited to the existing native diagnostics.
 
 ## Current Status
 

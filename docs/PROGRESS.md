@@ -1,5 +1,25 @@
 # Progress Log
 
+## 2026-05-21
+
+Implemented:
+
+- Added the first bounded linked native executable path:
+  `phpc compile <input.php> --emit-exe <output>` now emits C for the current
+  straight-line native subset, builds `php_runtime` as a static library, links
+  with `cc`, and writes an executable. Direct compile-time string output on
+  this path routes through `phpc_native_string_from_bytes`,
+  `phpc_native_value_from_string_with_diagnostic`, and
+  `phpc_native_value_echo_stdout` rather than direct `printf`.
+  `phpc_native_value_echo_stdout` now flushes stdout after successful writes so
+  C-linked native executables expose runtime-owned output before exit. Focused
+  tests prove the generated C helper calls and execute a linked binary against
+  `tests/fixtures/milestone2300/native_link_runtime_helper.php`. This is not a
+  broad native support claim: dynamic string-pointer helper lowering remains
+  LLVM-IR-only, and arrays, objects, functions, references,
+  request/session/stream/header state, exceptions, includes, and broad PHP
+  coercions remain unsupported or bounded by existing native diagnostics.
+
 ## 2026-05-20
 
 Implemented:

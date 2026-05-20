@@ -1,9 +1,9 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 
-use php_compiler::codegen::{emit_assembly, emit_llvm_ir};
+use php_compiler::codegen::{emit_assembly, emit_llvm_ir, emit_native_executable_c_source};
 use php_compiler::error::{CompileResult, Diagnostic, Phase};
 use php_compiler::interpreter::{run_program_with_source_file_and_options, RunOptions};
 use php_compiler::parser::parse_source;
@@ -44,7 +44,34 @@ fn real_main() -> CompileResult<u8> {
 }
 
 fn command_compile(args: &[String]) -> CompileResult<u8> {
-    if args.len() != 2 {
+    if args.len() != 2 && args.len() != 3 {
+        return Err(Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            "usage: phpc compile <input.php> (--emit-ir | --emit-asm | --emit-exe <output>)",
+        ));
+    }
+
+    let input = PathBuf::from(&args[0]);
+    let flag = args[1].as_str();
+    if flag != "--emit-ir" && flag != "--emit-asm" && flag != "--emit-exe" {
+        return Err(Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            "expected --emit-ir, --emit-asm, or --emit-exe",
+        ));
+    }
+    if flag == "--emit-exe" && args.len() != 3 {
+        return Err(Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            "usage: phpc compile <input.php> --emit-exe <output>",
+        ));
+    }
+    if flag != "--emit-exe" && args.len() != 2 {
         return Err(Diagnostic::new(
             Phase::Cli,
             0,
@@ -53,19 +80,16 @@ fn command_compile(args: &[String]) -> CompileResult<u8> {
         ));
     }
 
-    let input = PathBuf::from(&args[0]);
-    let flag = args[1].as_str();
-    if flag != "--emit-ir" && flag != "--emit-asm" {
-        return Err(Diagnostic::new(
-            Phase::Cli,
-            0,
-            0,
-            "expected --emit-ir or --emit-asm",
-        ));
-    }
-
     let source = read_source(&input)?;
     let program = parse_source(&source).map_err(|error| error.with_file(&input))?;
+
+    if flag == "--emit-exe" {
+        let output = PathBuf::from(&args[2]);
+        let c_source =
+            emit_native_executable_c_source(&program).map_err(|error| error.with_file(&input))?;
+        compile_native_executable(&c_source, &output)?;
+        return Ok(0);
+    }
 
     let output = match flag {
         "--emit-ir" => emit_llvm_ir(&program),
@@ -76,6 +100,126 @@ fn command_compile(args: &[String]) -> CompileResult<u8> {
 
     print!("{output}");
     Ok(0)
+}
+
+fn compile_native_executable(c_source: &str, output: &Path) -> CompileResult<()> {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or_else(|| Diagnostic::new(Phase::Cli, 0, 0, "compiler workspace root is unknown"))?;
+    ensure_native_runtime_staticlib(workspace_root)?;
+    let runtime = native_runtime_staticlib_path(workspace_root);
+    if !runtime.exists() {
+        return Err(Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            format!(
+                "native runtime static library was not built at {}",
+                runtime.display()
+            ),
+        ));
+    }
+
+    if let Some(parent) = output.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|error| {
+                Diagnostic::new(
+                    Phase::Cli,
+                    0,
+                    0,
+                    format!(
+                        "failed to create native output directory {}: {error}",
+                        parent.display()
+                    ),
+                )
+            })?;
+        }
+    }
+
+    let c_path = output.with_extension("phpc-native.c");
+    fs::write(&c_path, c_source).map_err(|error| {
+        Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            format!(
+                "failed to write native C source {}: {error}",
+                c_path.display()
+            ),
+        )
+    })?;
+
+    let output_status = Command::new("cc")
+        .arg(&c_path)
+        .arg(&runtime)
+        .args(["-ldl", "-lpthread", "-lm", "-o"])
+        .arg(output)
+        .output()
+        .map_err(|error| {
+            Diagnostic::new(
+                Phase::Cli,
+                0,
+                0,
+                format!("failed to start cc for native executable link: {error}"),
+            )
+        })?;
+
+    let _ = fs::remove_file(&c_path);
+
+    if !output_status.status.success() {
+        let stderr = String::from_utf8_lossy(&output_status.stderr);
+        let detail = stderr.trim();
+        return Err(Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            if detail.is_empty() {
+                "cc failed to link native executable without stderr".to_string()
+            } else {
+                format!("cc failed to link native executable: {detail}")
+            },
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_native_runtime_staticlib(workspace_root: &Path) -> CompileResult<()> {
+    let output = Command::new("cargo")
+        .current_dir(workspace_root)
+        .args(["build", "-q", "-p", "php_runtime"])
+        .output()
+        .map_err(|error| {
+            Diagnostic::new(
+                Phase::Cli,
+                0,
+                0,
+                format!("failed to start cargo build for native runtime: {error}"),
+            )
+        })?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let detail = stderr.trim();
+    Err(Diagnostic::new(
+        Phase::Cli,
+        0,
+        0,
+        if detail.is_empty() {
+            "cargo build -p php_runtime failed without stderr".to_string()
+        } else {
+            format!("cargo build -p php_runtime failed: {detail}")
+        },
+    ))
+}
+
+fn native_runtime_staticlib_path(workspace_root: &Path) -> PathBuf {
+    let target_dir = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace_root.join("target"));
+    target_dir.join("debug").join("libphp_runtime.a")
 }
 
 fn command_run(args: &[String]) -> CompileResult<u8> {
@@ -1037,6 +1181,7 @@ fn print_help() {
     println!("Commands:");
     println!("  phpc compile <input.php> --emit-ir");
     println!("  phpc compile <input.php> --emit-asm");
+    println!("  phpc compile <input.php> --emit-exe <output>");
     println!("  phpc run <input.php>");
     println!("  phpc test [--compare-php] [--list-fixtures | --list-fixtures-json] [fixture-dir]");
     println!("  phpc test --compare-php-json [fixture-dir]");

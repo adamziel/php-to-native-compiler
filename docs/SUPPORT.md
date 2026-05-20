@@ -7132,7 +7132,16 @@
   C fallback for the same narrow lowerable subset. CLI coverage for
   invalid compile output modes proves the mode flag is rejected before input
   IO or parsing, so unsupported modes such as `--emit-object` remain a CLI
-  usage boundary and do not imply object-file emission support. CLI coverage
+  usage boundary and do not imply object-file emission support. `--emit-exe`
+  is now the first bounded exception to that historical boundary: it emits C
+  for the current straight-line native subset, builds `php_runtime` as a static
+  library, links with `cc`, and routes direct compile-time string
+  `echo`/`print` output through `phpc_native_string_from_bytes`,
+  `phpc_native_value_from_string_with_diagnostic`, and
+  `phpc_native_value_echo_stdout`. It still does not claim object-file output,
+  dynamic string-pointer executable lowering, arrays, objects, functions,
+  references, request/session/stream/header state, exceptions, includes, or
+  broad PHP coercions. CLI coverage
   for
   `phpc compile --emit-asm` records a normalized success summary for the current
   scalar echo/assignment fixture instead of exact assembly text, because

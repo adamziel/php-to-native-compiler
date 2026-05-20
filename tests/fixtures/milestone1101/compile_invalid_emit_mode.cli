@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-cli error at 0:0: expected --emit-ir or --emit-asm
+cli error at 0:0: expected --emit-ir, --emit-asm, or --emit-exe
 --- stderr end ---

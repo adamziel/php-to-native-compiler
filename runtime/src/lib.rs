@@ -628,7 +628,11 @@ pub unsafe extern "C" fn phpc_native_value_echo_stdout(handle: NativeValueHandle
     };
 
     let output = value.echo_string();
-    match io::stdout().write_all(output.as_bytes()) {
+    let mut stdout = io::stdout();
+    match stdout
+        .write_all(output.as_bytes())
+        .and_then(|()| stdout.flush())
+    {
         Ok(()) => output.len(),
         Err(_) => 0,
     }
