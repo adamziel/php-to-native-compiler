@@ -48201,31 +48201,28 @@ impl Interpreter {
             return Ok(None);
         }
 
-        let Some((values, by_value_array_copy_source_bindings, by_value_array_copy_bindings)) =
-            self.evaluate_call_user_func_array_argument_with_array_copy_sources(
-                function,
-                argument_expr,
-                span,
-                caller_scope,
-            )?
-        else {
-            return Ok(None);
-        };
+        let frame = self.evaluate_call_user_func_array_call_frame_bindings(
+            function,
+            argument_expr,
+            span,
+            caller_scope,
+            false,
+        )?;
 
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
-            values,
+            frame.values,
             this_object,
             class_context,
             called_class_context,
-            Vec::new(),
+            frame.reference_bindings,
             Some(caller_scope),
             prebound_locals,
-            by_value_array_copy_bindings,
-            by_value_array_copy_source_bindings,
+            frame.by_value_array_copy_bindings,
+            frame.array_copy_source_bindings,
         )
         .map(Some)
     }
