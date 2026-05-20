@@ -233,6 +233,16 @@ handled.
   `call_user_func_array()` string, closure, and public object array-callable
   callbacks, so selected returned leaves can promote the original
   reference-backed source.
+- [x] Lane 2298-C: preserve returned copy-source metadata for by-value reads
+  from reference-return closure callbacks reached through `call_user_func()`
+  and positional `call_user_func_array()`, keeping selected reference-backed
+  object-property leaves shared while plain leaves detach.
+- [x] Lane 2299-C: route reference-return `call_user_func_array()` string and
+  public object array-callable callbacks with by-reference parameters through
+  the source-aware value-copy argument-container path before strict reference
+  slot fallback, so supported `array_merge(array($copy))` containers preserve
+  copied-source bindings and selected returned leaves promote back to the
+  original reference-backed source.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model by extracting root resolution into a
   runtime-backed alias/lvalue handle under `SymbolTable`, then migrating

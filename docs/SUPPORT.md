@@ -47,9 +47,12 @@
   runtime-cell array copy sources for selected reference-backed descendants,
   including direct method/global-function returns and supported
   `call_user_func()` / zero-argument `call_user_func_array()` callback
-  dispatch, while plain descendants remain detached. The visible root
-  resolution used by this bridge now begins through a runtime lvalue handle
-  for static, global, and visible/context object-property roots, and
+  dispatch. Reference-return closure callbacks reached through
+  `call_user_func()` or positional `call_user_func_array()` now keep the same
+  returned copy-source metadata on by-value reads, while plain descendants
+  remain detached. The visible root resolution used by this bridge now begins
+  through a runtime lvalue handle for static, global, and visible/context
+  object-property roots, and
   runtime-cell copied-source alias rehydration/overlay plus helper/callback
   copied-source alias mirror/import setup consume those handles directly.
   Reference-return path promotion, existing-cell lookup, return-cell
@@ -149,6 +152,13 @@
   the original reference-backed source.
   across multiple operands and string-key overwrite cases, for copied arrays
   from supported magic `__get()` and public `ArrayAccess::offsetGet()` bodies.
+  covered string callbacks. Reference-return string callbacks and public
+  object array-callable callbacks with by-reference parameters can also
+  consume supported value-copy literal-transform containers such as
+  `array_merge(array($copy))`; they keep the existing by-reference callback
+  warning behavior while preserving copied-source metadata for selected
+  returned leaves. Returning a selected copied leaf can promote the original
+  reference-backed source.
   Broader dynamic holder writeback and untracked containers still use the
   legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,

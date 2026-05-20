@@ -197,6 +197,16 @@ use the same parameter-name mapping before importing those bindings. This path
 is still bounded to literal array-transform inputs whose entries can be mapped
 to callback positions or parameter names; arbitrary transformed arrays and
 untracked dynamic containers remain outside the model.
+use the same parameter-name mapping before importing those bindings. For
+reference-return string callbacks and public object array-callable callbacks
+whose parameters are declared by reference, supported literal-transform
+containers without real reference-backed entries take the same source-aware
+value-copy path before the stricter reference-slot fallback; the existing
+callback reference warning behavior remains, and copied-source bindings are
+available for selected return-leaf promotion. This path is still bounded to
+literal array-transform inputs whose entries can be mapped to callback
+positions or parameter names; arbitrary transformed arrays and untracked
+dynamic containers remain outside the model.
 
 The method signature gate has a separate syntax-only path for COW-relevant
 magic and `ArrayAccess` dispatch. Ordinary functions accept untyped metadata
@@ -242,7 +252,11 @@ returned array value, the caller resolves that cell back to any visible
 static/global/object-property alias roots and materializes descendant reference
 aliases into real runtime reference cells. This advances the value model away
 from pure path provenance for direct method/global-function returns and
-supported callback dispatch, but it is still bounded to cells and roots the
+supported callback dispatch. Reference-return closure callbacks reached through
+`call_user_func()` or positional `call_user_func_array()` use the same
+source-aware return path on by-value reads instead of dropping the returned
+copy source through the value-only closure helper, but this is still bounded to
+cells and roots the
 interpreter can observe.
 That visible-root resolution now starts through a small
 `SymbolTable` runtime lvalue handle for static, global, and

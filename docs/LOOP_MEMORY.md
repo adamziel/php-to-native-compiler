@@ -256,6 +256,55 @@ a one-off is genuinely the only viable route.
 - Remaining COW gaps: untracked dynamic containers without reachable cells,
   arbitrary dynamic holder graph writeback, arbitrary array transforms, exact
   diagnostics/Throwable parity, string COW, and native reference/COW lowering.
+## Loop Event 2026-05-20T15:45:00+02:00
+
+- Checkpoint before this task: dirty Lane 2295-C/Lane 2296-C/Lane 2298-C
+  worktree on `lane/cow-callback-containers-20260520141814`.
+- Task attempted: Lane 2299-C, allowing reference-return
+  `call_user_func_array()` string and public object array-callable callbacks
+  with by-reference parameters to consume supported value-copy
+  literal-transform argument containers before strict reference-slot fallback.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2299/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, coordination
+  notes/status, and this memory file. Existing Lane 2295-C/Lane 2296-C/Lane
+  2298-C changes remain dirty in this worktree.
+- Focused checks: with
+  `CARGO_TARGET_DIR=/home/claude/tmp-cargo-target-callbacks-2297b
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1` and `umask 022`,
+  `cargo check -q -p phpc` passed; system-PHP comparisons for
+  `tests/fixtures/milestone2295`, `tests/fixtures/milestone2296`,
+  `tests/fixtures/milestone2298`, and `tests/fixtures/milestone2299` passed;
+  `git diff --check` passed.
+- Remaining COW gaps: unsupported method syntax, untracked containers without
+  reachable cells, arbitrary non-literal array transforms, exact diagnostics,
+  string COW, and native reference/COW lowering.
+
+## Loop Event 2026-05-20T15:30:00+02:00
+
+- Checkpoint before this task: `d2f015c9 runtime: carry copy sources through
+  array merge`.
+- Task attempted: Lane 2298-C, preserving returned copy-source metadata for
+  by-value reads from reference-return closure callbacks reached through
+  `call_user_func()` and positional `call_user_func_array()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `tests/fixtures/milestone2298/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, and this
+  memory file. Existing Lane 2295-C/Lane 2296-C compiler and fixture changes
+  remain dirty in this worktree.
+- Focused checks so far: with
+  `CARGO_TARGET_DIR=/home/claude/tmp-cargo-target-callbacks-2297b
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1` and `umask 022`,
+  `cargo check -q -p phpc` passed; system-PHP comparisons for
+  `tests/fixtures/milestone2295`, `tests/fixtures/milestone2296`, and
+  `tests/fixtures/milestone2298` passed. A combined multi-directory fixture
+  command was rejected by the CLI usage parser, and the old
+  `/home/claude/tmp-cargo-target-callbacks` cache still has permission issues.
+- Remaining COW gaps: unsupported method syntax, untracked containers without
+  reachable cells, broader dynamic holder writeback, arbitrary non-literal
+  array-transform propagation, exact diagnostics/Throwable parity, string COW,
+  and native reference/COW lowering.
+
 ## Loop Event 2026-05-20T14:49:27+02:00
 
 - Checkpoint before this task: `d2f015c9 runtime: carry copy sources through

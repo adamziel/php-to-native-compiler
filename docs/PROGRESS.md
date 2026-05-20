@@ -92,6 +92,33 @@ Implemented:
   holder graph writeback, exact diagnostics, string COW, and native
   reference/COW lowering remain incomplete.
 
+- Added Lane 2299-C for reference-return `call_user_func_array()` callbacks
+  with by-reference parameters fed by supported expression-position
+  literal-transform argument containers. The source-aware reference-return
+  callback path is now tried before the stricter by-reference argument-slot
+  fallback for string user callbacks and public object array-callable methods,
+  so `array_merge(array($copy))` value-copy containers can still import
+  copied-source bindings, emit the existing by-reference callback warning
+  behavior, and promote selected copied leaves back to the original
+  reference-backed source. Focused system-PHP fixtures prove string and public
+  object array-callable callbacks, plus adjacent `call_user_func()` closure
+  and array-callable reference-return copied-argument probes. Unsupported
+  method syntax, untracked containers without reachable cells, arbitrary
+  non-literal array transforms, exact diagnostics, string COW, and native
+  reference/COW lowering remain incomplete.
+
+- Added Lane 2298-C for by-value reads from reference-return closure
+  callbacks reached through `call_user_func()` and positional
+  `call_user_func_array()`. The source-aware closure callback paths now keep
+  the returned `Value + ArrayCopySource` metadata instead of delegating through
+  the value-only helper and discarding the return source, so copied arrays
+  returned by reference-return closures can still rehydrate selected
+  reference-backed object-property leaves while ordinary leaves detach.
+  Focused system-PHP fixtures prove both callback helpers. Unsupported method
+  syntax, untracked containers without reachable cells, arbitrary non-literal
+  array transforms, exact diagnostics, string COW, and native reference/COW
+  lowering remain incomplete.
+
 - Added Lane 2296-C for reference-return `call_user_func_array()` callbacks
   that receive expression-position literal-transform argument containers.
   Reference-return callback setup now carries the by-value copied-source

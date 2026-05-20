@@ -42610,6 +42610,29 @@ impl Interpreter {
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let function_ref = function.as_ref();
         if function_ref.returns_by_reference {
+            if let Some((values, reference_bindings, source_bindings)) = self
+                .evaluate_call_user_func_array_reference_return_value_arguments(
+                    function_ref,
+                    argument_expr,
+                    span,
+                    caller_scope,
+                )?
+            {
+                ensure_supported_reference_return_function_metadata(function_ref, span)?;
+                self.ensure_user_function_call_depth(function_ref, span)?;
+                return self
+                    .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
+                        function_ref,
+                        values,
+                        None,
+                        None,
+                        None,
+                        reference_bindings,
+                        caller_scope,
+                        source_bindings,
+                    );
+            }
+
             if Self::function_accepts_source_aware_by_value_arguments(function_ref) {
                 let maybe_source_aware_values = if let Expr::Array { items, .. } = argument_expr {
                     if Self::literal_call_user_func_array_can_preserve_copy_sources(items) {
@@ -60675,6 +60698,30 @@ impl Interpreter {
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
+                if function.returns_by_reference {
+                    if let Some((values, reference_bindings, source_bindings)) = self
+                        .evaluate_call_user_func_array_reference_return_value_arguments(
+                            function,
+                            argument_expr,
+                            span,
+                            caller_scope,
+                        )?
+                    {
+                        ensure_supported_reference_return_function_metadata(function, span)?;
+                        self.ensure_user_function_call_depth(function, span)?;
+                        return self
+                            .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
+                                function,
+                                values,
+                                Some(object.clone()),
+                                Some(class_id),
+                                Some(object.class_id()),
+                                reference_bindings,
+                                caller_scope,
+                                source_bindings,
+                            );
+                    }
+                }
                 if !function.returns_by_reference
                     && !Self::function_accepts_source_aware_by_value_arguments(function)
                 {
@@ -60791,6 +60838,30 @@ impl Interpreter {
                     span,
                 )?;
                 let function = function.as_ref();
+                if function.returns_by_reference {
+                    if let Some((values, reference_bindings, source_bindings)) = self
+                        .evaluate_call_user_func_array_reference_return_value_arguments(
+                            function,
+                            argument_expr,
+                            span,
+                            caller_scope,
+                        )?
+                    {
+                        ensure_supported_reference_return_function_metadata(function, span)?;
+                        self.ensure_user_function_call_depth(function, span)?;
+                        return self
+                            .call_reference_return_function_value_with_checked_values_with_array_copy_sources_and_return_source(
+                                function,
+                                values,
+                                None,
+                                Some(declaring_class_id),
+                                Some(class_id),
+                                reference_bindings,
+                                caller_scope,
+                                source_bindings,
+                            );
+                    }
+                }
                 if !function.returns_by_reference
                     && !Self::function_accepts_source_aware_by_value_arguments(function)
                 {
