@@ -1291,6 +1291,41 @@ enum ArrayCopySourceMutationImpact {
     ReplacesSelectedChildPath,
 }
 
+impl ArrayCopySourceMutationImpact {
+    fn replaces_source_or_ancestor(self) -> bool {
+        self == Self::ReplacesSourceOrAncestor
+    }
+
+    fn selected_child_detach_paths(
+        self,
+        source: &ArrayCopySource,
+        detached_paths: &[(Vec<ArrayKey>, VariableCell)],
+    ) -> Vec<(Vec<ArrayKey>, VariableCell)> {
+        if self != Self::ReplacesSelectedChildPath {
+            return Vec::new();
+        }
+
+        let mut paths = Vec::new();
+        for (keys, cell) in detached_paths {
+            if !keys.starts_with(&source.keys) || keys.len() <= source.keys.len() {
+                continue;
+            }
+            let relative_keys = keys[source.keys.len()..].to_vec();
+            if paths
+                .iter()
+                .any(|(candidate_keys, candidate_cell): &(Vec<ArrayKey>, VariableCell)| {
+                    candidate_keys.as_slice() == relative_keys.as_slice()
+                        && candidate_cell.shares_reference_with(cell)
+                })
+            {
+                continue;
+            }
+            paths.push((relative_keys, cell.clone()));
+        }
+        paths
+    }
+}
+
 #[derive(Debug, Clone)]
 enum ArrayCopySourceRecordLocation {
     CleanStatic(String),
@@ -1311,6 +1346,26 @@ enum ArrayCopySourceRecordLocation {
 struct ArrayCopySourceRecord {
     location: ArrayCopySourceRecordLocation,
     source: ArrayCopySource,
+}
+
+#[derive(Debug, Clone)]
+struct ArrayCopySourceRecordImpact {
+    record: ArrayCopySourceRecord,
+    impact: ArrayCopySourceMutationImpact,
+}
+
+impl ArrayCopySourceRecordImpact {
+    fn replaces_source_or_ancestor(&self) -> bool {
+        self.impact.replaces_source_or_ancestor()
+    }
+
+    fn selected_child_detach_paths(
+        &self,
+        detached_paths: &[(Vec<ArrayKey>, VariableCell)],
+    ) -> Vec<(Vec<ArrayKey>, VariableCell)> {
+        self.impact
+            .selected_child_detach_paths(&self.record.source, detached_paths)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -2133,6 +2188,17 @@ impl SymbolTable {
             .cloned()
     }
 
+    fn mark_array_copy_source_dirty(&mut self, source: ArrayCopySource) {
+        if self
+            .dirty_array_copy_source_values
+            .iter()
+            .any(|candidate| self.array_copy_sources_match(candidate, &source))
+        {
+            return;
+        }
+        self.dirty_array_copy_source_values.push(source);
+    }
+
     fn public_or_dirty_object_property_array_copy_source_for_static(
         &self,
         name: &str,
@@ -2219,16 +2285,24 @@ impl SymbolTable {
         &self,
         boundary: &HolderStorageMutationBoundary,
     ) -> Vec<ArrayCopySourceRecord> {
+        self.array_copy_source_record_impacts_for_holder_storage_boundary(boundary)
+            .into_iter()
+            .filter_map(|impact| impact.replaces_source_or_ancestor().then_some(impact.record))
+            .collect()
+    }
+
+    fn array_copy_source_record_impacts_for_holder_storage_boundary(
+        &self,
+        boundary: &HolderStorageMutationBoundary,
+    ) -> Vec<ArrayCopySourceRecordImpact> {
         self.array_copy_source_records()
             .into_iter()
             .filter_map(|record| {
-                let impact =
-                    self.array_copy_source_mutation_impact_for_holder_storage_boundary(
-                        &record.source,
-                        boundary,
-                    )?;
-                (impact == ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor)
-                    .then_some(record)
+                let impact = self.array_copy_source_mutation_impact_for_holder_storage_boundary(
+                    &record.source,
+                    boundary,
+                )?;
+                Some(ArrayCopySourceRecordImpact { record, impact })
             })
             .collect()
     }
@@ -2377,6 +2451,49 @@ impl SymbolTable {
             }
             self.dirty_array_literal_copy_source_roots.insert(name);
         }
+    }
+
+    fn array_copy_source_records_rehydrated_by_holder_storage_boundary(
+        &self,
+        boundary: &HolderStorageMutationBoundary,
+        detached_paths: &[(Vec<ArrayKey>, VariableCell)],
+    ) -> Vec<(ArrayCopySourceRecord, Vec<(Vec<ArrayKey>, VariableCell)>)> {
+        self.array_copy_source_records()
+            .into_iter()
+            .filter_map(|record| {
+                let mut paths = Vec::new();
+                for (keys, cell) in detached_paths {
+                    let mut path_boundary = boundary.clone();
+                    path_boundary.keys = keys.clone();
+                    let Some(impact) = self
+                        .array_copy_source_mutation_impact_for_holder_storage_boundary(
+                            &record.source,
+                            &path_boundary,
+                        )
+                    else {
+                        continue;
+                    };
+                    let impact = ArrayCopySourceRecordImpact {
+                        record: record.clone(),
+                        impact,
+                    };
+                    for (relative_keys, cell) in
+                        impact.selected_child_detach_paths(&[(keys.clone(), cell.clone())])
+                    {
+                        if paths.iter().any(
+                            |(candidate_keys, candidate_cell): &(Vec<ArrayKey>, VariableCell)| {
+                                candidate_keys.as_slice() == relative_keys.as_slice()
+                                    && candidate_cell.shares_reference_with(&cell)
+                            },
+                        ) {
+                            continue;
+                        }
+                        paths.push((relative_keys, cell));
+                    }
+                }
+                (!paths.is_empty()).then_some((record, paths))
+            })
+            .collect()
     }
 
     fn rehydrate_array_copy_sources_for_object_property_write(
@@ -2959,6 +3076,17 @@ impl SymbolTable {
         }
     }
 
+    fn sync_dirty_array_copy_sources_from_scope(&mut self, source_scope: &SymbolTable) {
+        for source in &source_scope.dirty_array_copy_source_values {
+            let Some(portable_source) =
+                Self::portable_array_copy_source_from_scope(source, source_scope)
+            else {
+                continue;
+            };
+            self.mark_array_copy_source_dirty(portable_source);
+        }
+    }
+
     fn portable_array_copy_source_from_scope(
         source: &ArrayCopySource,
         source_scope: &SymbolTable,
@@ -3533,15 +3661,12 @@ impl SymbolTable {
         property: &str,
         detached_paths: &[(Vec<ArrayKey>, VariableCell)],
     ) {
-        for record in self.array_copy_source_records() {
-            let Some(paths) = self.detached_paths_for_array_copy_source(
-                &record.source,
-                object,
-                property,
-                detached_paths,
-            ) else {
-                continue;
-            };
+        let boundary =
+            self.holder_storage_mutation_boundary_for_object_property(object, property, &[]);
+        for (record, paths) in self.array_copy_source_records_rehydrated_by_holder_storage_boundary(
+            &boundary,
+            detached_paths,
+        ) {
 
             match record.location {
                 ArrayCopySourceRecordLocation::CleanStatic(name)
@@ -3576,28 +3701,6 @@ impl SymbolTable {
                 ArrayCopySourceRecordLocation::DirtySource => {}
             }
         }
-    }
-
-    fn detached_paths_for_array_copy_source(
-        &self,
-        source: &ArrayCopySource,
-        object: &PhpObject,
-        property: &str,
-        detached_paths: &[(Vec<ArrayKey>, VariableCell)],
-    ) -> Option<Vec<(Vec<ArrayKey>, VariableCell)>> {
-        let paths = detached_paths
-            .iter()
-            .filter_map(|(keys, cell)| {
-                let impact = self.array_copy_source_mutation_impact_for_object_property_write(
-                    source, object, property, keys,
-                )?;
-                if impact != ArrayCopySourceMutationImpact::ReplacesSelectedChildPath {
-                    return None;
-                }
-                Some((keys[source.keys.len()..].to_vec(), cell.clone()))
-            })
-            .collect::<Vec<_>>();
-        (!paths.is_empty()).then_some(paths)
     }
 
     fn rehydrate_static_array_copy_source_paths(
@@ -50192,6 +50295,7 @@ impl Interpreter {
         captured_writeback_result?;
         if result.is_ok() {
             caller_scope.sync_dirty_object_property_array_copy_sources_from_scope(&local_scope);
+            caller_scope.sync_dirty_array_copy_sources_from_scope(&local_scope);
             if let Some(this_object) = this_object.as_ref() {
                 caller_scope
                     .detach_stale_object_aliases_from_local_scope(&local_scope, this_object);
@@ -50797,6 +50901,7 @@ impl Interpreter {
         if result.is_ok() {
             if let Some(target_scope) = writeback_scope.as_deref_mut() {
                 target_scope.sync_dirty_object_property_array_copy_sources_from_scope(&local_scope);
+                target_scope.sync_dirty_array_copy_sources_from_scope(&local_scope);
                 if let Some(this_object) = this_object.as_ref() {
                     target_scope
                         .detach_stale_object_aliases_from_local_scope(&local_scope, this_object);
@@ -55033,6 +55138,7 @@ impl Interpreter {
                                 .sync_dirty_object_property_array_copy_sources_from_scope(
                                     &local_scope,
                                 );
+                            reference_scope.sync_dirty_array_copy_sources_from_scope(&local_scope);
                         }
                         result
                     }
@@ -77705,9 +77811,20 @@ mod tests {
         ));
 
         let detached = vec![(vec![leaf_key.clone()], leaf_cell.clone())];
-        let paths = scope
-            .detached_paths_for_array_copy_source(&source, &object, "items", &detached)
-            .expect("expected detached source paths through handle");
+        scope.mark_array_copy_source_dirty(source);
+        let boundary =
+            scope.holder_storage_mutation_boundary_for_object_property(&object, "items", &[]);
+        let rehydrated = scope.array_copy_source_records_rehydrated_by_holder_storage_boundary(
+            &boundary,
+            &detached,
+        );
+        let paths = rehydrated
+            .iter()
+            .find_map(|(record, paths)| {
+                matches!(record.location, ArrayCopySourceRecordLocation::DirtySource)
+                    .then_some(paths)
+            })
+            .expect("expected detached source paths through holder boundary");
         assert!(paths.iter().any(|(keys, cell)| {
             keys == std::slice::from_ref(&leaf_key) && cell.shares_reference_with(&leaf_cell)
         }));
@@ -77762,6 +77879,58 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn holder_storage_record_impacts_cover_all_copy_source_locations() {
+        let mut scope = SymbolTable::new();
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+
+        let source =
+            ArrayCopySource::object_property(object.clone(), "items".to_string(), Vec::new(), true);
+        scope.record_public_object_property_array_copy_source("clean", source.clone());
+        scope.record_public_object_property_array_copy_source("dirty", source.clone());
+        scope.mark_public_object_property_array_copy_source_dirty("dirty");
+        scope.public_object_property_array_copy_sources.remove("dirty");
+        scope.mark_array_copy_source_dirty(source.clone());
+        scope.record_object_property_array_copy_source_path(
+            &object,
+            "copy",
+            Vec::new(),
+            source.clone(),
+        );
+        scope.record_array_literal_copy_source_path("literal", Vec::new(), source);
+
+        let boundary =
+            scope.holder_storage_mutation_boundary_for_object_property(&object, "items", &[]);
+        let impacts = scope.array_copy_source_record_impacts_for_holder_storage_boundary(&boundary);
+
+        assert_eq!(impacts.len(), 5);
+        assert!(impacts.iter().all(|impact| impact.replaces_source_or_ancestor()));
+        assert!(impacts
+            .iter()
+            .any(|impact| matches!(impact.record.location, ArrayCopySourceRecordLocation::CleanStatic(ref name) if name == "clean")));
+        assert!(impacts
+            .iter()
+            .any(|impact| matches!(impact.record.location, ArrayCopySourceRecordLocation::DirtyStatic(ref name) if name == "dirty")));
+        assert!(impacts
+            .iter()
+            .any(|impact| matches!(impact.record.location, ArrayCopySourceRecordLocation::DirtySource)));
+        assert!(impacts.iter().any(|impact| matches!(
+            impact.record.location,
+            ArrayCopySourceRecordLocation::ObjectPropertyPath { ref property, .. } if property == "copy"
+        )));
+        assert!(impacts.iter().any(|impact| matches!(
+            impact.record.location,
+            ArrayCopySourceRecordLocation::ArrayLiteralPath { ref name, .. } if name == "literal"
+        )));
     }
 
     #[test]
