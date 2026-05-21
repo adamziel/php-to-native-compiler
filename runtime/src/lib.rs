@@ -2455,10 +2455,50 @@ pub unsafe extern "C" fn phpc_native_comparison_operand_from_string_bytes(
     bytes: *const u8,
     len: usize,
 ) -> NativeComparisonOperand {
-    let mut diagnostic = NativeDiagnosticHandle::null();
-    let value =
-        unsafe { phpc_native_value_from_string_bytes_with_diagnostic(bytes, len, &mut diagnostic) };
-    NativeComparisonOperand::from_parts(value, diagnostic)
+    native_comparison_operand_from_value_result(unsafe {
+        native_value_from_string_bytes(bytes, len)
+    })
+}
+
+/// # Safety
+///
+/// `handle` must be null or a string handle previously returned by the runtime
+/// ABI and not yet freed. The returned operand owns either the materialized
+/// string value or the materialization diagnostic.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_operand_from_string(
+    handle: NativeStringHandle,
+) -> NativeComparisonOperand {
+    native_comparison_operand_from_value_result(unsafe { native_value_from_string(handle) })
+}
+
+/// # Safety
+///
+/// `handle` follows the same contract as
+/// `phpc_native_comparison_operand_from_string`. This helper consumes the
+/// string handle after materializing the comparison operand.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_operand_from_string_and_free(
+    handle: NativeStringHandle,
+) -> NativeComparisonOperand {
+    let operand = unsafe { phpc_native_comparison_operand_from_string(handle) };
+    unsafe { phpc_native_string_free(handle) };
+    operand
+}
+
+fn native_comparison_operand_from_value_result(
+    result: Result<Value, &'static str>,
+) -> NativeComparisonOperand {
+    match result {
+        Ok(value) => NativeComparisonOperand::from_parts(
+            NativeValueHandle::from_value(value),
+            NativeDiagnosticHandle::null(),
+        ),
+        Err(message) => NativeComparisonOperand::from_parts(
+            NativeValueHandle::null(),
+            NativeDiagnosticHandle::from_message(message),
+        ),
+    }
 }
 
 #[no_mangle]
@@ -13943,6 +13983,142 @@ mod tests {
                 )
             },
             "string bytes pointer is null",
+        );
+    }
+
+    #[test]
+    fn native_comparison_string_handle_operands_share_materialization_across_families() {
+        fn borrowed_string_operand(bytes: &[u8]) -> NativeComparisonOperand {
+            let handle = unsafe {
+                phpc_native_string_from_bytes(
+                    if bytes.is_empty() {
+                        std::ptr::null()
+                    } else {
+                        bytes.as_ptr()
+                    },
+                    bytes.len(),
+                )
+            };
+            let operand = unsafe { phpc_native_comparison_operand_from_string(handle) };
+            unsafe { phpc_native_string_free(handle) };
+            operand
+        }
+
+        fn owned_string_operand(bytes: &[u8]) -> NativeComparisonOperand {
+            let handle = unsafe {
+                phpc_native_string_from_bytes(
+                    if bytes.is_empty() {
+                        std::ptr::null()
+                    } else {
+                        bytes.as_ptr()
+                    },
+                    bytes.len(),
+                )
+            };
+            unsafe { phpc_native_comparison_operand_from_string_and_free(handle) }
+        }
+
+        let borrowed_numeric = borrowed_string_operand(b"10");
+        assert!(!phpc_native_comparison_operand_value(borrowed_numeric).is_null());
+        assert!(phpc_native_comparison_operand_diagnostic(borrowed_numeric).is_null());
+        assert_native_comparison_ok(
+            "borrowed string-handle numeric-string ordering",
+            unsafe {
+                phpc_native_comparison_operand_compare_and_free(
+                    borrowed_numeric,
+                    NativeComparisonOp::LooseGt.abi_opcode(),
+                    phpc_native_comparison_operand_from_scalar(phpc_native_int(2)),
+                )
+            },
+            true,
+        );
+
+        let owned_numeric_identity = unsafe {
+            phpc_native_comparison_operand_compare_branch_and_free(
+                owned_string_operand(b"2"),
+                NativeComparisonOp::StrictNe.abi_opcode(),
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(2)),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_result_status(owned_numeric_identity),
+            NativeComparisonStatus::Ok as u8
+        );
+        assert!(phpc_native_comparison_branch_result_is_true(
+            owned_numeric_identity
+        ));
+
+        assert_native_comparison_ok(
+            "string-handle binary string ordering",
+            unsafe {
+                phpc_native_comparison_operand_compare_and_free(
+                    owned_string_operand(b"alpha"),
+                    NativeComparisonOp::LooseLt.abi_opcode(),
+                    borrowed_string_operand(b"bravo"),
+                )
+            },
+            true,
+        );
+
+        let empty_equality_expected = Value::String(String::new())
+            .php_compare_checked(&Value::Bool(false), PhpComparisonOp::LooseEq)
+            .unwrap();
+        assert_native_comparison_ok(
+            "empty string-handle loose equality",
+            unsafe {
+                phpc_native_comparison_operand_compare_and_free(
+                    owned_string_operand(b""),
+                    NativeComparisonOp::LooseEq.abi_opcode(),
+                    phpc_native_comparison_operand_from_scalar(phpc_native_bool(false)),
+                )
+            },
+            empty_equality_expected,
+        );
+
+        for (label, op) in [
+            (
+                "null string-handle materialization through loose equality",
+                NativeComparisonOp::LooseEq,
+            ),
+            (
+                "null string-handle materialization through loose ordering",
+                NativeComparisonOp::LooseGt,
+            ),
+            (
+                "null string-handle materialization through strict identity",
+                NativeComparisonOp::StrictNe,
+            ),
+        ] {
+            let failed =
+                unsafe { phpc_native_comparison_operand_from_string(NativeStringHandle::null()) };
+            assert!(phpc_native_comparison_operand_value(failed).is_null());
+            assert!(!phpc_native_comparison_operand_diagnostic(failed).is_null());
+            assert_native_comparison_blocked(
+                label,
+                unsafe {
+                    phpc_native_comparison_operand_compare_and_free(
+                        failed,
+                        op.abi_opcode(),
+                        phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                    )
+                },
+                "string handle is null",
+            );
+        }
+
+        let invalid_bytes = [0xff];
+        let invalid_handle =
+            unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
+        assert_native_comparison_blocked(
+            "invalid string-handle materialization diagnostic",
+            unsafe {
+                phpc_native_comparison_operand_compare_and_free(
+                    phpc_native_comparison_operand_from_string_and_free(invalid_handle),
+                    NativeComparisonOp::StrictEq.abi_opcode(),
+                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                )
+            },
+            "string bytes are not valid UTF-8",
         );
     }
 
