@@ -688,6 +688,19 @@ fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
     }
 }
 
+fn native_value_result_echo_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Unary { op, .. } => native_value_unary_op_tag(*op).is_some(),
+        Expr::Binary { op, .. } => native_value_binary_op_tag(*op).is_some(),
+        Expr::Cast { .. } => true,
+        Expr::Call { name, .. } => {
+            native_value_cast_builtin_op_tag(name).is_some()
+                || native_value_type_name_tag(name).is_some()
+        }
+        _ => false,
+    }
+}
+
 fn native_value_cast_op_tag(kind: CastKind) -> &'static str {
     match kind {
         CastKind::String => "PHPC_NATIVE_VALUE_CAST_STRING",
@@ -10200,16 +10213,11 @@ impl CGenerator {
     }
 
     fn try_emit_native_value_result_echo(&mut self, expr: &Expr) -> CompileResult<bool> {
-        let value = match expr {
-            Expr::Cast { .. } => self.try_materialize_native_value_result_expr(expr, "")?,
-            Expr::Call { name, .. } if native_value_cast_builtin_op_tag(name).is_some() => {
-                self.try_materialize_native_value_result_expr(expr, "")?
-            }
-            Expr::Call { name, .. } if native_value_type_name_tag(name).is_some() => {
-                self.try_materialize_native_value_result_expr(expr, "")?
-            }
-            _ => None,
-        };
+        if !native_value_result_echo_expr(expr) {
+            return Ok(false);
+        }
+
+        let value = self.try_materialize_native_value_result_expr(expr, "")?;
         let Some(value) = value else {
             return Ok(false);
         };
