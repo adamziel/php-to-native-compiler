@@ -5599,7 +5599,7 @@ impl CGenerator {
                 output.push_str("#include <stdbool.h>\n");
             }
             output.push('\n');
-            if self.uses_native_comparison_helpers {
+            if self.uses_native_string_helpers || self.uses_native_comparison_helpers {
                 output.push_str(
                     "typedef struct { uint8_t tag; uint8_t bool_value; int64_t int_value; double float_value; } phpc_NativeScalarValue;\n",
                 );
@@ -5607,12 +5607,24 @@ impl CGenerator {
             output.push_str("typedef struct { void *ptr; } phpc_NativeStringHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeValueHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeDiagnosticHandle;\n");
+            if self.uses_native_string_helpers {
+                output.push_str(
+                    "typedef struct { uint8_t *ptr; size_t len; size_t cap; } phpc_NativeByteBuffer;\n",
+                );
+                output.push_str("typedef struct { phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeStringConversionResult;\n");
+            }
             if self.uses_native_comparison_helpers {
                 output.push_str("typedef struct { uint8_t status; uint8_t value; size_t diagnostic_len; } phpc_NativeComparisonBranchResult;\n");
             }
             output.push('\n');
             output.push_str("extern phpc_NativeStringHandle phpc_native_string_from_bytes(const uint8_t *ptr, size_t len);\n");
+            output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_scalar(phpc_NativeScalarValue value);\n");
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string_with_diagnostic(phpc_NativeStringHandle string, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string_bytes_with_diagnostic(const uint8_t *ptr, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            if self.uses_native_string_helpers {
+                output.push_str("extern phpc_NativeStringConversionResult phpc_native_value_to_string_bytes(phpc_NativeValueHandle value);\n");
+                output.push_str("extern void phpc_native_string_conversion_result_free(phpc_NativeStringConversionResult result);\n");
+            }
             output.push_str(
                 "extern size_t phpc_native_value_echo_stdout(phpc_NativeValueHandle value);\n",
             );
@@ -5624,8 +5636,6 @@ impl CGenerator {
             );
         }
         if self.uses_native_comparison_helpers {
-            output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_scalar(phpc_NativeScalarValue value);\n");
-            output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string_bytes_with_diagnostic(const uint8_t *ptr, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             output.push_str("extern int phpc_native_value_materialization_failure_exit_code(phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_value_compare_branch_and_free(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
             output.push_str("extern bool phpc_native_comparison_branch_result_is_true(phpc_NativeComparisonBranchResult result);\n");
@@ -6180,6 +6190,10 @@ impl CGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
+        if self.uses_native_string_helpers {
+            return self.emit_native_value_string_byte_len(value, span);
+        }
+
         self.strlen_result_for_value(&value)
             .map(|length| CValue::Int(length.to_string()))
             .ok_or_else(|| {
@@ -7121,6 +7135,110 @@ impl CGenerator {
                 })
             }
         }
+    }
+
+    fn emit_native_value_for_cvalue(&mut self, value: CValue, span: Span) -> CompileResult<String> {
+        let index = self.next_native_temp;
+        self.next_native_temp += 1;
+        let value_handle = format!("native_value_handle_{index}");
+
+        match value {
+            CValue::Null => {
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{0}});"
+                ));
+            }
+            CValue::Bool(value) => {
+                let bool_value = u8::from(value);
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{1, {bool_value}, 0, 0.0}});"
+                ));
+            }
+            CValue::BoolExpr(value) => {
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{1, (uint8_t)(({value}) != 0), 0, 0.0}});"
+                ));
+            }
+            CValue::Int(value) => {
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{2, 0, (int64_t)({value}), 0.0}});"
+                ));
+            }
+            CValue::Float(value) => {
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{3, 0, 0, (double)({value})}});"
+                ));
+            }
+            CValue::String(value) => {
+                let diagnostic_handle = format!("native_value_diagnostic_{index}");
+                let (bytes, byte_len) = if value.is_empty() {
+                    ("NULL".to_string(), "0".to_string())
+                } else {
+                    let bytes = c_byte_array(value.as_bytes());
+                    let data = format!("phpc_native_value_bytes_{index}");
+                    self.static_data
+                        .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
+                    (data, value.len().to_string())
+                };
+                self.body.push(format!(
+                    "phpc_NativeDiagnosticHandle {diagnostic_handle} = {{0}};"
+                ));
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_string_bytes_with_diagnostic({bytes}, {byte_len}, &{diagnostic_handle});"
+                ));
+                self.emit_report_native_diagnostic(&diagnostic_handle);
+            }
+            CValue::StringExpr(value) => {
+                let Some(byte_len) = self.c_string_expr_byte_len_operand(&value) else {
+                    return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+                };
+                let diagnostic_handle = format!("native_value_diagnostic_{index}");
+                self.body.push(format!(
+                    "phpc_NativeDiagnosticHandle {diagnostic_handle} = {{0}};"
+                ));
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_string_bytes_with_diagnostic((const uint8_t *)({value}), {byte_len}, &{diagnostic_handle});"
+                ));
+                self.emit_report_native_diagnostic(&diagnostic_handle);
+            }
+        }
+
+        Ok(value_handle)
+    }
+
+    fn emit_native_value_string_byte_len(
+        &mut self,
+        value: CValue,
+        span: Span,
+    ) -> CompileResult<CValue> {
+        let value_handle = self.emit_native_value_for_cvalue(value, span)?;
+        let conversion = format!("string_conversion_{}", self.next_native_temp);
+        self.next_native_temp += 1;
+        let byte_count = format!("byte_count_{}", self.next_native_temp);
+        self.next_native_temp += 1;
+
+        self.body.push(format!(
+            "phpc_NativeStringConversionResult {conversion} = phpc_native_value_to_string_bytes({value_handle});"
+        ));
+        self.body.push(format!(
+            "if ({conversion}.diagnostic.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({conversion}.diagnostic); }}"
+        ));
+        self.body.push(format!(
+            "long long {byte_count} = (long long){conversion}.bytes.len;"
+        ));
+        self.body.push(format!(
+            "phpc_native_string_conversion_result_free({conversion});"
+        ));
+        self.body
+            .push(format!("phpc_native_value_free({value_handle});"));
+
+        Ok(CValue::Int(byte_count))
+    }
+
+    fn emit_report_native_diagnostic(&mut self, diagnostic: &str) {
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); }}"
+        ));
     }
 
     fn native_comparison_string_expr_len_operand(

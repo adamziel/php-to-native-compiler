@@ -19,6 +19,48 @@ fn native_executable_c_source_routes_direct_strings_through_runtime_helpers() {
 }
 
 #[test]
+fn native_executable_c_source_routes_strlen_through_string_conversion_result() {
+    let program = parse(
+        "<?php\n$payload = \"A\0B\";\necho strlen(42);\necho strlen(false);\necho strlen(null);\necho strlen($payload);\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_NativeStringConversionResult"),
+        "{source}"
+    );
+    assert!(source.contains("phpc_NativeByteBuffer"), "{source}");
+    assert!(source.contains("phpc_native_value_from_scalar"), "{source}");
+    assert!(
+        source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = phpc_native_value_to_string_bytes(")
+            .count(),
+        4,
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches("  phpc_native_string_conversion_result_free(")
+            .count(),
+        4,
+        "{source}"
+    );
+    assert!(
+        source.contains(".bytes.len"),
+        "strlen should use runtime conversion byte lengths:\n{source}"
+    );
+    assert!(
+        !source.contains("strlen((const char *)"),
+        "generated C should not use C strlen for PHP strlen operands:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_comparison_families_through_runtime_contract() {
     let program = parse(
         r#"<?php
@@ -198,6 +240,56 @@ fn emit_exe_links_and_runs_direct_string_runtime_helper_program() {
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_strlen_conversion_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("strlen_conversion");
+    let source_path = native_link_output_path("strlen_conversion_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(
+        &source_path,
+        "<?php\n$payload = \"A\0B\";\necho strlen(42);\necho strlen(false);\necho strlen(null);\necho strlen($payload);\necho \"\\n\";\n",
+    )
+    .expect("native strlen conversion source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native strlen source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "2003\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
 }
 
 #[test]
