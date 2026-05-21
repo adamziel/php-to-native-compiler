@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 14:55 CEST
+Updated: 2026-05-21 15:03 CEST
 
 This file is a high-level roadmap and status digest for the native PHP compiler effort. Percentages are candid engineering estimates, not test-suite completion metrics. They separate work that is integrated in `master` from broader lane-local work that still needs review, integration, and gates.
 
@@ -9,9 +9,9 @@ This file is a high-level roadmap and status digest for the native PHP compiler 
 Estimated progress toward a broadly usable generalized PHP native compiler: **18%**
 
 ```
-Generalized runtime/ABI foundations      [##########----------] 50%
-Compiler/backend consumers               [######--------------] 30%
-Executable generalized PHP semantics     [###-----------------] 15%
+Generalized runtime/ABI foundations      [##########----------] 52%
+Compiler/backend consumers               [######--------------] 32%
+Executable generalized PHP semantics     [###-----------------] 16%
 Arrays, references, COW, lvalues         [##------------------] 10%
 Objects, properties, methods             [##------------------] 10%
 Diagnostics/control-flow composition     [###-----------------] 15%
@@ -25,6 +25,7 @@ Broad integrated verification            [##------------------] 10%
 - [x] Route multiple native call-result contexts through shared call-operation blockers instead of exact-shape backend rejections.
 - [x] Consume comparison branch-result ABI from generated C instead of direct struct-field reads.
 - [x] Share PHP numeric-string classification between runtime and codegen.
+- [x] Expose native string-conversion result/free boundaries for value/reference conversion blockers.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
 - [ ] Generalize value/result ownership across returns, call args, conditions, branch joins, discarded temporaries, stdout, and cleanup.
 - [ ] Implement full array lvalue/RMW semantics, writable roots, foreach/by-ref foreach, ArrayAccess/object/resource offsets, and COW/reference behavior.
@@ -39,6 +40,8 @@ Recent pushed primary commits show useful movement from lane-local artifacts int
 
 - `1c7b0495 codegen: reuse runtime numeric string semantics`
   - Exposes the runtime PHP numeric-string classifier and makes LLVM/generated-C known-value `is_numeric()` lowering use the shared runtime semantics.
+- `1aab675e runtime: expose native string conversion results`
+  - Adds a generalized runtime/ABI string-conversion result/free boundary for value/reference conversion success and blockers, with compiler ABI probes and focused scalar echo coverage.
 - `6c1b8eaa native: consume comparison branch accessors`
   - Adds runtime accessors for comparison branch results and makes generated C consume status/value through the ABI boundary.
 - `9be386f1 native: route value operands through call boundary`
@@ -47,13 +50,7 @@ Recent pushed primary commits show useful movement from lane-local artifacts int
 
 ## Current Work In Flight
 
-The primary worktree currently has an active integration slice in progress, owned by the `primary-integrator` lane:
-
-- `runtime/src/lib.rs`
-- `compiler/src/codegen.rs`
-- `compiler/tests/native_runtime_abi.rs`
-
-That slice is adding a generalized native string-conversion result/free boundary and reference/value string-conversion blockers. It is not counted as integrated until tested, committed, and pushed.
+The primary worktree is currently clean and synced with `origin/master` at `1aab675e`. The latest string-conversion slice is counted as integrated because it was tested, committed, and pushed.
 
 Lane-local workers are also producing candidate work in these areas:
 
