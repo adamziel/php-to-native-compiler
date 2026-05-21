@@ -133,6 +133,39 @@ if ($call("abc", $items, true)) {
 }
 
 #[test]
+fn in_array_strict_mode_uses_array_and_object_identity() {
+    let source = r#"<?php
+class Box {}
+
+$box = new Box();
+$other = new Box();
+$items = [];
+$items["array"] = ["value" => 1];
+$items["object"] = $box;
+
+if (in_array(["value" => 1], $items, true)) {
+    echo "array-match\n";
+}
+if (!in_array(["value" => "1"], $items, true)) {
+    echo "array-missing\n";
+}
+if (in_array($box, $items, true)) {
+    echo "object-match\n";
+}
+if (!in_array($other, $items, true)) {
+    echo "object-missing";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "array-match\narray-missing\nobject-match\nobject-missing"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn in_array_rejects_non_bool_strict_mode_argument() {
     let error = runtime_error("<?php\n$items = [1];\necho in_array(1, $items, \"yes\");\n");
 

@@ -160,6 +160,37 @@ echo $dynamic[0];
 }
 
 #[test]
+fn array_keys_strict_mode_filters_array_and_object_identity() {
+    let source = r#"<?php
+class Box {}
+
+$box = new Box();
+$other = new Box();
+$items = [];
+$items["array"] = ["value" => 1];
+$items["object"] = $box;
+
+$array_keys = array_keys($items, ["value" => 1], true);
+echo count($array_keys), "\n";
+echo $array_keys[0], "\n";
+
+$missing_array = array_keys($items, ["value" => "1"], true);
+echo count($missing_array), "\n";
+
+$object_keys = array_keys($items, $box, true);
+echo count($object_keys), "\n";
+echo $object_keys[0], "\n";
+
+$missing_object = array_keys($items, $other, true);
+echo count($missing_object);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "1\narray\n0\n1\nobject\n0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_keys_rejects_non_bool_strict_mode_argument() {
     let error = runtime_error("<?php\n$items = [1];\necho array_keys($items, 1, \"yes\");\n");
 
@@ -172,9 +203,9 @@ fn array_keys_rejects_non_bool_strict_mode_argument() {
 }
 
 #[test]
-fn array_keys_rejects_array_and_object_search_gaps() {
+fn array_keys_rejects_loose_array_and_object_search_gaps() {
     let array_search_value_error =
-        runtime_error("<?php\n$items = [1];\necho array_keys($items, [], true);\n");
+        runtime_error("<?php\n$items = [1];\necho array_keys($items, []);\n");
 
     assert_eq!(array_search_value_error.line, 3);
     assert_eq!(array_search_value_error.column, 6);

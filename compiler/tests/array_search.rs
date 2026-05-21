@@ -91,6 +91,31 @@ var_dump($call("abc", $items, true));
 }
 
 #[test]
+fn array_search_strict_mode_uses_array_and_object_identity() {
+    let source = r#"<?php
+class Box {}
+
+$box = new Box();
+$other = new Box();
+$items = [];
+$items["array"] = ["value" => 1];
+$items["object"] = $box;
+
+var_dump(array_search(["value" => 1], $items, true));
+var_dump(array_search(["value" => "1"], $items, true));
+var_dump(array_search($box, $items, true));
+var_dump(array_search($other, $items, true));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "string(5) \"array\"\nbool(false)\nstring(6) \"object\"\nbool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_search_rejects_non_bool_strict_mode_argument() {
     let error = runtime_error("<?php\n$items = [1];\necho array_search(1, $items, \"yes\");\n");
 

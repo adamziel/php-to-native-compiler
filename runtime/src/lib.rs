@@ -5234,8 +5234,12 @@ impl PhpArray {
     pub fn keys_matching_loose_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
-            ensure_array_keys_filter_values_supported(search_value, entry.value())?;
-            if search_value.php_cmp_checked(entry.value(), Comparison::Eq)? {
+            if array_comparison_matches(
+                "array_keys()",
+                search_value,
+                PhpComparisonOp::LooseEq,
+                entry.value(),
+            )? {
                 let key = i64::try_from(array.entries.len()).expect("array length fits in i64");
                 array.insert(key, array_key_to_value(&entry.key));
             }
@@ -5247,8 +5251,12 @@ impl PhpArray {
     pub fn keys_matching_strict_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
-            ensure_array_keys_filter_values_supported(search_value, entry.value())?;
-            if search_value.php_identical_checked(entry.value())? {
+            if array_comparison_matches(
+                "array_keys()",
+                search_value,
+                PhpComparisonOp::StrictEq,
+                entry.value(),
+            )? {
                 let key = i64::try_from(array.entries.len()).expect("array length fits in i64");
                 array.insert(key, array_key_to_value(&entry.key));
             }
@@ -5747,8 +5755,12 @@ impl PhpArray {
 
     pub fn contains_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
-            ensure_array_search_values_supported("in_array()", needle, entry.value())?;
-            if needle.php_cmp_checked(entry.value(), Comparison::Eq)? {
+            if array_comparison_matches(
+                "in_array()",
+                needle,
+                PhpComparisonOp::LooseEq,
+                entry.value(),
+            )? {
                 return Ok(true);
             }
         }
@@ -5758,8 +5770,12 @@ impl PhpArray {
 
     pub fn contains_value_strict_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
-            ensure_array_search_values_supported("in_array()", needle, entry.value())?;
-            if needle.php_identical_checked(entry.value())? {
+            if array_comparison_matches(
+                "in_array()",
+                needle,
+                PhpComparisonOp::StrictEq,
+                entry.value(),
+            )? {
                 return Ok(true);
             }
         }
@@ -5769,8 +5785,12 @@ impl PhpArray {
 
     pub fn search_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<Option<ArrayKey>> {
         for entry in &self.entries {
-            ensure_array_search_values_supported("array_search()", needle, entry.value())?;
-            if needle.php_cmp_checked(entry.value(), Comparison::Eq)? {
+            if array_comparison_matches(
+                "array_search()",
+                needle,
+                PhpComparisonOp::LooseEq,
+                entry.value(),
+            )? {
                 return Ok(Some(entry.key.clone()));
             }
         }
@@ -5780,8 +5800,12 @@ impl PhpArray {
 
     pub fn search_value_strict_scalar(&self, needle: &Value) -> RuntimeResult<Option<ArrayKey>> {
         for entry in &self.entries {
-            ensure_array_search_values_supported("array_search()", needle, entry.value())?;
-            if needle.php_identical_checked(entry.value())? {
+            if array_comparison_matches(
+                "array_search()",
+                needle,
+                PhpComparisonOp::StrictEq,
+                entry.value(),
+            )? {
                 return Ok(Some(entry.key.clone()));
             }
         }
@@ -5815,21 +5839,41 @@ impl Default for PhpArray {
     }
 }
 
-fn ensure_array_search_values_supported(
+fn array_comparison_matches(
     callable: &str,
-    needle: &Value,
-    value: &Value,
-) -> RuntimeResult<()> {
-    match (needle, value) {
-        (Value::Array(_), _) | (_, Value::Array(_)) => Err(RuntimeError::unsupported_call(
+    left: &Value,
+    op: PhpComparisonOp,
+    right: &Value,
+) -> RuntimeResult<bool> {
+    let family = op.operation_family();
+    if let Some(blocker) = comparison_blocker_for_family(left, right, family) {
+        return Err(RuntimeError::unsupported_call(
             callable,
-            "array needles and array values are not implemented",
-        )),
-        (Value::Object(_), _) | (_, Value::Object(_)) => Err(RuntimeError::unsupported_call(
-            callable,
-            "object needles and object values are not implemented",
-        )),
-        _ => Ok(()),
+            array_comparison_blocker_call_reason(callable, blocker),
+        ));
+    }
+
+    left.php_compare_checked(right, op)
+}
+
+fn array_comparison_blocker_call_reason(
+    callable: &str,
+    blocker: ComparisonBlocker,
+) -> &'static str {
+    match (callable, blocker) {
+        ("in_array()" | "array_search()", ComparisonBlocker::Array) => {
+            "array needles and array values are not implemented"
+        }
+        ("in_array()" | "array_search()", ComparisonBlocker::Object) => {
+            "object needles and object values are not implemented"
+        }
+        ("array_keys()", ComparisonBlocker::Array) => {
+            "array search values and array values are not implemented"
+        }
+        ("array_keys()", ComparisonBlocker::Object) => {
+            "object search values and object values are not implemented"
+        }
+        (_, blocker) => blocker.unsupported_reason(),
     }
 }
 
@@ -5852,23 +5896,6 @@ fn array_scalar_value_supported(callable: &str, value: &Value) -> RuntimeResult<
             ))
         }
         Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => Ok(()),
-    }
-}
-
-fn ensure_array_keys_filter_values_supported(
-    search_value: &Value,
-    value: &Value,
-) -> RuntimeResult<()> {
-    match (search_value, value) {
-        (Value::Array(_), _) | (_, Value::Array(_)) => Err(RuntimeError::unsupported_call(
-            "array_keys()",
-            "array search values and array values are not implemented",
-        )),
-        (Value::Object(_), _) | (_, Value::Object(_)) => Err(RuntimeError::unsupported_call(
-            "array_keys()",
-            "object search values and object values are not implemented",
-        )),
-        _ => Ok(()),
     }
 }
 
@@ -17637,24 +17664,86 @@ mod tests {
     }
 
     #[test]
-    fn in_array_rejects_array_comparison_gaps() {
-        let mut array = PhpArray::new();
-        array.insert("nested", Value::Array(PhpArray::new()));
+    fn array_search_consumers_use_strict_identity_for_non_scalar_values() {
+        let mut nested = PhpArray::new();
+        nested.insert("value", Value::Int(1));
+        let nested_value = Value::Array(nested.clone());
+        let mut different_nested = PhpArray::new();
+        different_nested.insert("value", Value::String("1".to_string()));
 
-        let error = array
-            .contains_value_loose_scalar(&Value::String("needle".to_string()))
-            .unwrap_err();
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get(class_id).unwrap();
+        let object = Value::Object(PhpObject::from_class(class));
+        let other_object = Value::Object(PhpObject::from_class(class));
+        let resource = Value::Resource(42);
+
+        let mut array = PhpArray::new();
+        array.insert("array", nested_value.clone());
+        array.insert("object", object.clone());
+        array.insert("resource", resource.clone());
+
+        assert!(array.contains_value_strict_scalar(&nested_value).unwrap());
+        assert!(!array
+            .contains_value_strict_scalar(&Value::Array(different_nested))
+            .unwrap());
         assert_eq!(
-            error.kind(),
-            &RuntimeErrorKind::UnsupportedCall {
-                callable: "in_array()".to_string(),
-                reason: "array needles and array values are not implemented".to_string(),
-            }
+            array.search_value_strict_scalar(&object).unwrap(),
+            Some(ArrayKey::String("object".to_string()))
         );
         assert_eq!(
-            error.message(),
-            "unsupported call in_array(): array needles and array values are not implemented"
+            array.search_value_strict_scalar(&other_object).unwrap(),
+            None
         );
+        assert_eq!(
+            array_key_values(&array.keys_matching_strict_scalar(&resource).unwrap()),
+            vec![Value::String("resource".to_string())]
+        );
+        assert!(array
+            .keys_matching_strict_scalar(&Value::Resource(7))
+            .unwrap()
+            .entries()
+            .is_empty());
+    }
+
+    #[test]
+    fn in_array_uses_shared_loose_comparison_blockers() {
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let object = Value::Object(PhpObject::from_class(classes.get(class_id).unwrap()));
+
+        for (value, expected_reason) in [
+            (
+                Value::Array(PhpArray::new()),
+                "array needles and array values are not implemented",
+            ),
+            (
+                object,
+                "object needles and object values are not implemented",
+            ),
+            (
+                Value::Resource(11),
+                "resource comparisons are not implemented",
+            ),
+        ] {
+            let mut array = PhpArray::new();
+            array.insert("blocked", value);
+
+            let error = array
+                .contains_value_loose_scalar(&Value::Int(1))
+                .unwrap_err();
+            assert_eq!(
+                error.kind(),
+                &RuntimeErrorKind::UnsupportedCall {
+                    callable: "in_array()".to_string(),
+                    reason: expected_reason.to_string(),
+                }
+            );
+            assert_eq!(
+                error.message(),
+                format!("unsupported call in_array(): {expected_reason}")
+            );
+        }
     }
 
     #[test]
@@ -17790,28 +17879,45 @@ mod tests {
     }
 
     #[test]
-    fn array_search_rejects_array_comparison_gaps() {
-        let mut array = PhpArray::new();
-        array.insert("nested", Value::Array(PhpArray::new()));
+    fn array_search_uses_shared_loose_comparison_blockers() {
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let object = Value::Object(PhpObject::from_class(classes.get(class_id).unwrap()));
 
-        let error = array
-            .search_value_loose_scalar(&Value::String("needle".to_string()))
-            .unwrap_err();
-        assert_eq!(
-            error.kind(),
-            &RuntimeErrorKind::UnsupportedCall {
-                callable: "array_search()".to_string(),
-                reason: "array needles and array values are not implemented".to_string(),
-            }
-        );
-        assert_eq!(
-            error.message(),
-            "unsupported call array_search(): array needles and array values are not implemented"
-        );
+        for (value, expected_reason) in [
+            (
+                Value::Array(PhpArray::new()),
+                "array needles and array values are not implemented",
+            ),
+            (
+                object,
+                "object needles and object values are not implemented",
+            ),
+            (
+                Value::Resource(13),
+                "resource comparisons are not implemented",
+            ),
+        ] {
+            let mut array = PhpArray::new();
+            array.insert("blocked", value);
+
+            let error = array.search_value_loose_scalar(&Value::Int(1)).unwrap_err();
+            assert_eq!(
+                error.kind(),
+                &RuntimeErrorKind::UnsupportedCall {
+                    callable: "array_search()".to_string(),
+                    reason: expected_reason.to_string(),
+                }
+            );
+            assert_eq!(
+                error.message(),
+                format!("unsupported call array_search(): {expected_reason}")
+            );
+        }
     }
 
     #[test]
-    fn array_keys_filter_rejects_array_comparison_gaps() {
+    fn array_keys_filter_uses_shared_comparison_blockers_only_for_loose_mode() {
         let mut array = PhpArray::new();
         array.insert("value", Value::Int(1));
 
@@ -17830,13 +17936,11 @@ mod tests {
             "unsupported call array_keys(): array search values and array values are not implemented"
         );
 
-        let error = array
+        assert!(array
             .keys_matching_strict_scalar(&Value::Array(PhpArray::new()))
-            .unwrap_err();
-        assert_eq!(
-            error.message(),
-            "unsupported call array_keys(): array search values and array values are not implemented"
-        );
+            .unwrap()
+            .entries()
+            .is_empty());
 
         let mut array = PhpArray::new();
         array.insert("nested", Value::Array(PhpArray::new()));
@@ -17856,13 +17960,11 @@ mod tests {
             "unsupported call array_keys(): array search values and array values are not implemented"
         );
 
-        let error = array
+        assert!(array
             .keys_matching_strict_scalar(&Value::String("needle".to_string()))
-            .unwrap_err();
-        assert_eq!(
-            error.message(),
-            "unsupported call array_keys(): array search values and array values are not implemented"
-        );
+            .unwrap()
+            .entries()
+            .is_empty());
     }
 
     #[test]
