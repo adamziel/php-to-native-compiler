@@ -959,6 +959,103 @@ echo (2 === 2) ? 1 : 0;
 
 const GENERALIZED_ARRAY_KEY_SOURCE: &str = "<?php\n$slot = \"slot\";\n$two = 2;\n$numeric = \"3\";\n$nil = null;\n$binary = \"A\0B\";\n$a = [$slot => \"text\", $two => \"two\", $numeric => \"three\", $nil => \"null-key\", $binary => \"bin\0ary\", false => \"false-key\", true => \"true-key\", 4.0 => \"float-key\"];\necho $a[$slot], \"\\n\";\necho $a[2], \"\\n\";\necho $a[\"3\"], \"\\n\";\necho $a[$nil], \"\\n\";\necho $a[$binary], \"\\n\";\necho $a[false], \"\\n\";\necho $a[true], \"\\n\";\necho $a[4.0], \"\\n\";\n$a[$slot] = \"updated\";\n$a[$two] = \"two-updated\";\necho $a[\"slot\"], \"\\n\";\necho $a[2], \"\\n\";\n";
 
+const NATIVE_VALUE_OPERATION_ARRAY_SOURCE: &str = "<?php\n$a = [];\n$a[\"s\" . \"lot\"] = (2 + 3) * (5 - 1);\n$a[(1 << 2) + 1] = \"fi\" . \"ve\";\n$a[\"neg\"] = -(\"6\" - 2);\necho $a[\"slot\"], \"|\", $a[5], \"|\", $a[\"neg\"];\n";
+
+#[test]
+fn native_executable_c_source_routes_array_key_and_value_expressions_through_value_result_abi() {
+    let program = parse(NATIVE_VALUE_OPERATION_ARRAY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_NativeValueOperationResult"),
+        "{source}"
+    );
+    assert!(
+        source.contains("extern phpc_NativeValueOperationResult phpc_native_value_binary_result"),
+        "{source}"
+    );
+    assert!(
+        source.contains("extern phpc_NativeValueOperationResult phpc_native_value_unary_result"),
+        "{source}"
+    );
+    for op in [
+        "PHPC_NATIVE_VALUE_BINARY_CONCAT",
+        "PHPC_NATIVE_VALUE_BINARY_ADD",
+        "PHPC_NATIVE_VALUE_BINARY_MUL",
+        "PHPC_NATIVE_VALUE_BINARY_SUB",
+        "PHPC_NATIVE_VALUE_BINARY_SHIFT_LEFT",
+        "PHPC_NATIVE_VALUE_UNARY_NEGATE",
+    ] {
+        assert!(source.contains(op), "{op}\n\n{source}");
+    }
+    assert!(
+        source
+            .matches(" = phpc_native_value_binary_result(")
+            .count()
+            >= 6,
+        "{source}"
+    );
+    assert!(
+        source.contains(" = phpc_native_value_unary_result("),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_operation_result_free"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_to_array_key")
+            && source.contains("phpc_native_array_insert_key_value_with_diagnostic"),
+        "value operation results should feed the existing array key/value boundaries:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_value_result_array_key_and_value_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php =
+        native_link_output_path("native_value_result_array_key_value").with_extension("php");
+    fs::write(&temp_php, NATIVE_VALUE_OPERATION_ARRAY_SOURCE)
+        .expect("write native value-result array key/value fixture");
+    let output_path = native_link_output_path("native_value_result_array_key_value");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"20|five|-4");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
+}
+
 #[test]
 fn native_executable_c_source_routes_array_keys_through_runtime_materialization() {
     let program = parse(GENERALIZED_ARRAY_KEY_SOURCE).unwrap();

@@ -138,6 +138,20 @@ const NATIVE_FILESYSTEM_PATH_HAS_OFFSET: u8 = 2;
 const NATIVE_FILESYSTEM_PATH_HAS_LENGTH: u8 = 4;
 const NATIVE_FILESYSTEM_PATH_HAS_PATH: u8 = 8;
 
+const NATIVE_VALUE_UNARY_NEGATE: u8 = 0;
+const NATIVE_VALUE_UNARY_BITWISE_NOT: u8 = 1;
+const NATIVE_VALUE_BINARY_ADD: u8 = 0;
+const NATIVE_VALUE_BINARY_SUB: u8 = 1;
+const NATIVE_VALUE_BINARY_MUL: u8 = 2;
+const NATIVE_VALUE_BINARY_DIV: u8 = 3;
+const NATIVE_VALUE_BINARY_MOD: u8 = 4;
+const NATIVE_VALUE_BINARY_CONCAT: u8 = 5;
+const NATIVE_VALUE_BINARY_BITWISE_AND: u8 = 6;
+const NATIVE_VALUE_BINARY_BITWISE_OR: u8 = 7;
+const NATIVE_VALUE_BINARY_BITWISE_XOR: u8 = 8;
+const NATIVE_VALUE_BINARY_SHIFT_LEFT: u8 = 9;
+const NATIVE_VALUE_BINARY_SHIFT_RIGHT: u8 = 10;
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeIntConversionOperation {
@@ -182,6 +196,21 @@ pub struct NativeArrayKeyMaterializationResult {
     pub tag: NativeArrayKeyMaterializationTag,
     pub int_value: i64,
     pub bytes: NativeByteBuffer,
+    pub diagnostic: NativeDiagnosticHandle,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeValueOperationResultTag {
+    Ok = 0,
+    Error = 1,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeValueOperationResult {
+    pub tag: NativeValueOperationResultTag,
+    pub value: NativeValueHandle,
     pub diagnostic: NativeDiagnosticHandle,
 }
 
@@ -430,6 +459,29 @@ impl NativeArrayKeyMaterializationResult {
             ArrayKey::Int(value) => Self::int(value),
             ArrayKey::String(value) => Self::string(value.into_bytes()),
         }
+    }
+}
+
+impl NativeValueOperationResult {
+    fn value(value: Value) -> Self {
+        Self {
+            tag: NativeValueOperationResultTag::Ok,
+            value: NativeValueHandle::from_value(value),
+            diagnostic: NativeDiagnosticHandle::null(),
+        }
+    }
+
+    fn diagnostic(message: impl Into<String>) -> Self {
+        Self {
+            tag: NativeValueOperationResultTag::Error,
+            value: NativeValueHandle::null(),
+            diagnostic: NativeDiagnosticHandle::from_message(message),
+        }
+    }
+
+    #[cfg(test)]
+    fn succeeded(&self) -> bool {
+        self.tag == NativeValueOperationResultTag::Ok
     }
 }
 
@@ -942,6 +994,18 @@ pub unsafe extern "C" fn phpc_native_array_key_materialization_result_free(
 ) {
     unsafe { phpc_native_byte_buffer_free(key.bytes) };
     unsafe { phpc_native_diagnostic_free(key.diagnostic) };
+}
+
+/// # Safety
+///
+/// `result` must be a value-operation result returned by the runtime ABI and
+/// not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_operation_result_free(
+    result: NativeValueOperationResult,
+) {
+    unsafe { phpc_native_value_free(result.value) };
+    unsafe { phpc_native_diagnostic_free(result.diagnostic) };
 }
 
 /// # Safety
@@ -7634,6 +7698,159 @@ impl Value {
     }
 }
 
+/// # Safety
+///
+/// `value` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. Null handles are treated as PHP null. The result
+/// carries either an owned value handle or a diagnostic explaining the
+/// unsupported semantic family.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_unary_result(
+    value: NativeValueHandle,
+    op: u8,
+) -> NativeValueOperationResult {
+    if !native_value_unary_op_is_supported(op) {
+        return NativeValueOperationResult::diagnostic(
+            "native value unary operation tag is not supported",
+        );
+    }
+
+    let null_value = Value::Null;
+    let value = unsafe { value.as_ref() }.unwrap_or(&null_value);
+
+    if let Some(message) = native_value_unary_blocker(value) {
+        return NativeValueOperationResult::diagnostic(message);
+    }
+
+    match native_value_unary_value(value, op) {
+        Ok(value) => NativeValueOperationResult::value(value),
+        Err(error) => NativeValueOperationResult::diagnostic(format!(
+            "native value unary operation rejected by runtime semantics: {}",
+            error.message()
+        )),
+    }
+}
+
+fn native_value_unary_op_is_supported(op: u8) -> bool {
+    matches!(
+        op,
+        NATIVE_VALUE_UNARY_NEGATE | NATIVE_VALUE_UNARY_BITWISE_NOT
+    )
+}
+
+fn native_value_unary_value(value: &Value, op: u8) -> RuntimeResult<Value> {
+    match op {
+        NATIVE_VALUE_UNARY_NEGATE => value.php_negate(),
+        NATIVE_VALUE_UNARY_BITWISE_NOT => value.php_bitwise_not(),
+        _ => Err(RuntimeError::invalid_arithmetic(
+            ArithmeticOp::Negate,
+            format!("native value unary operation tag {op} is not supported"),
+        )),
+    }
+}
+
+fn native_value_unary_blocker(value: &Value) -> Option<String> {
+    let unsupported = match value {
+        Value::Array(_) => "arrays",
+        Value::Object(_) | Value::Closure(_) => "objects or closures",
+        Value::Resource(_) => "resources",
+        _ => return None,
+    };
+
+    Some(format!(
+        "native value unary operation rejects {unsupported} until the value-operation boundary can model PHP array coercions, object/ArrayAccess coercion hooks, resource coercions, copy-on-write/reference identity, cleanup ownership, and exact diagnostics"
+    ))
+}
+
+/// # Safety
+///
+/// `left` and `right` must be null or value handles previously returned by the
+/// runtime ABI and not yet freed. Null handles are treated as PHP null. The
+/// result carries either an owned value handle or a diagnostic explaining the
+/// unsupported semantic family.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_binary_result(
+    left: NativeValueHandle,
+    op: u8,
+    right: NativeValueHandle,
+) -> NativeValueOperationResult {
+    if !native_value_binary_op_is_supported(op) {
+        return NativeValueOperationResult::diagnostic(
+            "native value binary operation tag is not supported",
+        );
+    }
+
+    let null_left = Value::Null;
+    let null_right = Value::Null;
+    let left = unsafe { left.as_ref() }.unwrap_or(&null_left);
+    let right = unsafe { right.as_ref() }.unwrap_or(&null_right);
+
+    if let Some(message) = native_value_binary_blocker(left, right) {
+        return NativeValueOperationResult::diagnostic(message);
+    }
+
+    match native_value_binary_value(left, op, right) {
+        Ok(value) => NativeValueOperationResult::value(value),
+        Err(error) => NativeValueOperationResult::diagnostic(format!(
+            "native value binary operation rejected by runtime semantics: {}",
+            error.message()
+        )),
+    }
+}
+
+fn native_value_binary_op_is_supported(op: u8) -> bool {
+    matches!(
+        op,
+        NATIVE_VALUE_BINARY_ADD
+            | NATIVE_VALUE_BINARY_SUB
+            | NATIVE_VALUE_BINARY_MUL
+            | NATIVE_VALUE_BINARY_DIV
+            | NATIVE_VALUE_BINARY_MOD
+            | NATIVE_VALUE_BINARY_CONCAT
+            | NATIVE_VALUE_BINARY_BITWISE_AND
+            | NATIVE_VALUE_BINARY_BITWISE_OR
+            | NATIVE_VALUE_BINARY_BITWISE_XOR
+            | NATIVE_VALUE_BINARY_SHIFT_LEFT
+            | NATIVE_VALUE_BINARY_SHIFT_RIGHT
+    )
+}
+
+fn native_value_binary_value(left: &Value, op: u8, right: &Value) -> RuntimeResult<Value> {
+    match op {
+        NATIVE_VALUE_BINARY_ADD => left.php_add(right),
+        NATIVE_VALUE_BINARY_SUB => left.php_sub(right),
+        NATIVE_VALUE_BINARY_MUL => left.php_mul(right),
+        NATIVE_VALUE_BINARY_DIV => left.php_div(right),
+        NATIVE_VALUE_BINARY_MOD => left.php_mod(right),
+        NATIVE_VALUE_BINARY_CONCAT => left.php_concat(right),
+        NATIVE_VALUE_BINARY_BITWISE_AND => left.php_bitwise_and(right),
+        NATIVE_VALUE_BINARY_BITWISE_OR => left.php_bitwise_or(right),
+        NATIVE_VALUE_BINARY_BITWISE_XOR => left.php_bitwise_xor(right),
+        NATIVE_VALUE_BINARY_SHIFT_LEFT => left.php_shift_left(right),
+        NATIVE_VALUE_BINARY_SHIFT_RIGHT => left.php_shift_right(right),
+        _ => Err(RuntimeError::invalid_arithmetic(
+            ArithmeticOp::Add,
+            format!("native value binary operation tag {op} is not supported"),
+        )),
+    }
+}
+
+fn native_value_binary_blocker(left: &Value, right: &Value) -> Option<String> {
+    let unsupported = match (left, right) {
+        (Value::Array(_), _) | (_, Value::Array(_)) => "arrays",
+        (Value::Object(_), _)
+        | (_, Value::Object(_))
+        | (Value::Closure(_), _)
+        | (_, Value::Closure(_)) => "objects or closures",
+        (Value::Resource(_), _) | (_, Value::Resource(_)) => "resources",
+        _ => return None,
+    };
+
+    Some(format!(
+        "native value binary operation rejects {unsupported} until the value-operation boundary can model PHP array union/arithmetic, array-to-string diagnostics, object/ArrayAccess coercion hooks, resource coercions, copy-on-write/reference identity, cleanup ownership, and exact diagnostics"
+    ))
+}
+
 fn bitwise_strings(
     left: &str,
     right: &str,
@@ -8244,6 +8461,101 @@ mod tests {
             unsafe { phpc_native_value_free(right) };
         }
         result
+    }
+
+    #[test]
+    fn native_value_operation_results_carry_unary_binary_values_and_blockers() {
+        let int_value = phpc_native_value_from_scalar(phpc_native_int(7));
+        let string_number = NativeValueHandle::from_value(Value::String("5".to_string()));
+        let divisor = phpc_native_value_from_scalar(phpc_native_int(2));
+        let suffix = NativeValueHandle::from_value(Value::String("x".to_string()));
+
+        let negated =
+            unsafe { phpc_native_value_unary_result(int_value, NATIVE_VALUE_UNARY_NEGATE) };
+        assert!(negated.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(negated.value), b"-7");
+        unsafe { phpc_native_value_operation_result_free(negated) };
+
+        let string_negated =
+            unsafe { phpc_native_value_unary_result(string_number, NATIVE_VALUE_UNARY_NEGATE) };
+        assert!(string_negated.succeeded());
+        assert_eq!(
+            native_value_echo_bytes_for_test(string_negated.value),
+            b"-5"
+        );
+        unsafe { phpc_native_value_operation_result_free(string_negated) };
+
+        let added = unsafe {
+            phpc_native_value_binary_result(int_value, NATIVE_VALUE_BINARY_ADD, string_number)
+        };
+        assert!(added.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(added.value), b"12");
+        unsafe { phpc_native_value_operation_result_free(added) };
+
+        let divided =
+            unsafe { phpc_native_value_binary_result(int_value, NATIVE_VALUE_BINARY_DIV, divisor) };
+        assert!(divided.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(divided.value), b"3.5");
+        unsafe { phpc_native_value_operation_result_free(divided) };
+
+        let concatenated = unsafe {
+            phpc_native_value_binary_result(string_number, NATIVE_VALUE_BINARY_CONCAT, suffix)
+        };
+        assert!(concatenated.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(concatenated.value), b"5x");
+        unsafe { phpc_native_value_operation_result_free(concatenated) };
+
+        let shifted = unsafe {
+            phpc_native_value_binary_result(int_value, NATIVE_VALUE_BINARY_SHIFT_LEFT, divisor)
+        };
+        assert!(shifted.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(shifted.value), b"28");
+        unsafe { phpc_native_value_operation_result_free(shifted) };
+
+        let null_added = unsafe {
+            phpc_native_value_binary_result(
+                NativeValueHandle::null(),
+                NATIVE_VALUE_BINARY_ADD,
+                int_value,
+            )
+        };
+        assert!(null_added.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(null_added.value), b"7");
+        unsafe { phpc_native_value_operation_result_free(null_added) };
+
+        let array_value = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let array_blocked = unsafe {
+            phpc_native_value_binary_result(array_value, NATIVE_VALUE_BINARY_ADD, int_value)
+        };
+        assert_eq!(array_blocked.tag, NativeValueOperationResultTag::Error);
+        assert!(native_diagnostic_message_for_test(array_blocked.diagnostic)
+            .contains("value-operation boundary"));
+        unsafe { phpc_native_value_operation_result_free(array_blocked) };
+
+        let resource_value = NativeValueHandle::from_value(Value::Resource(9));
+        let resource_blocked = unsafe {
+            phpc_native_value_unary_result(resource_value, NATIVE_VALUE_UNARY_BITWISE_NOT)
+        };
+        assert_eq!(resource_blocked.tag, NativeValueOperationResultTag::Error);
+        assert!(
+            native_diagnostic_message_for_test(resource_blocked.diagnostic).contains("resources")
+        );
+        unsafe { phpc_native_value_operation_result_free(resource_blocked) };
+
+        let bad_op = unsafe { phpc_native_value_binary_result(int_value, 255, divisor) };
+        assert_eq!(bad_op.tag, NativeValueOperationResultTag::Error);
+        assert_eq!(
+            native_diagnostic_message_for_test(bad_op.diagnostic),
+            "native value binary operation tag is not supported"
+        );
+        unsafe { phpc_native_value_operation_result_free(bad_op) };
+
+        unsafe { phpc_native_value_free(resource_value) };
+        unsafe { phpc_native_value_free(array_value) };
+        unsafe { phpc_native_value_free(suffix) };
+        unsafe { phpc_native_value_free(divisor) };
+        unsafe { phpc_native_value_free(string_number) };
+        unsafe { phpc_native_value_free(int_value) };
     }
 
     #[test]

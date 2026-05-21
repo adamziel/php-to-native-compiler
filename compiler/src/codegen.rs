@@ -543,6 +543,42 @@ fn native_expr_is_call_operation_root(expr: &Expr) -> bool {
     )
 }
 
+fn native_value_unary_op_tag(op: UnaryOp) -> Option<&'static str> {
+    match op {
+        UnaryOp::Negate => Some("PHPC_NATIVE_VALUE_UNARY_NEGATE"),
+        UnaryOp::BitwiseNot => Some("PHPC_NATIVE_VALUE_UNARY_BITWISE_NOT"),
+        UnaryOp::Not => None,
+    }
+}
+
+fn native_value_binary_op_tag(op: BinaryOp) -> Option<&'static str> {
+    match op {
+        BinaryOp::Add => Some("PHPC_NATIVE_VALUE_BINARY_ADD"),
+        BinaryOp::Sub => Some("PHPC_NATIVE_VALUE_BINARY_SUB"),
+        BinaryOp::Mul => Some("PHPC_NATIVE_VALUE_BINARY_MUL"),
+        BinaryOp::Div => Some("PHPC_NATIVE_VALUE_BINARY_DIV"),
+        BinaryOp::Mod => Some("PHPC_NATIVE_VALUE_BINARY_MOD"),
+        BinaryOp::Concat => Some("PHPC_NATIVE_VALUE_BINARY_CONCAT"),
+        BinaryOp::BitwiseAnd => Some("PHPC_NATIVE_VALUE_BINARY_BITWISE_AND"),
+        BinaryOp::BitwiseOr => Some("PHPC_NATIVE_VALUE_BINARY_BITWISE_OR"),
+        BinaryOp::BitwiseXor => Some("PHPC_NATIVE_VALUE_BINARY_BITWISE_XOR"),
+        BinaryOp::ShiftLeft => Some("PHPC_NATIVE_VALUE_BINARY_SHIFT_LEFT"),
+        BinaryOp::ShiftRight => Some("PHPC_NATIVE_VALUE_BINARY_SHIFT_RIGHT"),
+        BinaryOp::LogicalAnd
+        | BinaryOp::LogicalOr
+        | BinaryOp::LogicalXor
+        | BinaryOp::Eq
+        | BinaryOp::Ne
+        | BinaryOp::StrictEq
+        | BinaryOp::StrictNe
+        | BinaryOp::Lt
+        | BinaryOp::Le
+        | BinaryOp::Gt
+        | BinaryOp::Ge
+        | BinaryOp::NullCoalesce => None,
+    }
+}
+
 fn native_statement_assignment_rhs_call_operation(
     target: &AssignTarget,
     expr: &Expr,
@@ -5611,6 +5647,11 @@ struct CNativeArrayKeyMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+struct CNativeValueMaterialization {
+    handle: String,
+    cleanup_after_use: Vec<String>,
+}
+
 fn c_cleanup_sequence(cleanup: &[String]) -> String {
     if cleanup.is_empty() {
         String::new()
@@ -5678,6 +5719,21 @@ impl CGenerator {
             if self.uses_native_array_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeArrayHandle;\n");
                 output.push_str("typedef struct { uint8_t tag; int64_t int_value; phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeArrayKeyMaterializationResult;\n");
+                output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeValueOperationResult;\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_OPERATION_OK 0\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_UNARY_NEGATE 0\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_UNARY_BITWISE_NOT 1\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BINARY_ADD 0\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BINARY_SUB 1\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BINARY_MUL 2\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BINARY_DIV 3\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BINARY_MOD 4\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BINARY_CONCAT 5\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BINARY_BITWISE_AND 6\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BINARY_BITWISE_OR 7\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BINARY_BITWISE_XOR 8\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BINARY_SHIFT_LEFT 9\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BINARY_SHIFT_RIGHT 10\n");
             }
             output.push('\n');
             output.push_str("extern phpc_NativeStringHandle phpc_native_string_from_bytes(const uint8_t *ptr, size_t len);\n");
@@ -5706,9 +5762,12 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeArrayHandle phpc_native_array_empty(void);\n");
                 output.push_str("extern bool phpc_native_array_append_value(phpc_NativeArrayHandle array, phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key(phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_unary_result(phpc_NativeValueHandle value, uint8_t op);\n");
+                output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_binary_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
                 output.push_str("extern bool phpc_native_array_insert_key_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_array_read_key_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_array_key_materialization_result_free(phpc_NativeArrayKeyMaterializationResult key);\n");
+                output.push_str("extern void phpc_native_value_operation_result_free(phpc_NativeValueOperationResult result);\n");
                 output.push_str(
                     "extern void phpc_native_array_free(phpc_NativeArrayHandle array);\n\n",
                 );
@@ -9292,8 +9351,8 @@ impl CGenerator {
         key: &Expr,
         value: &Expr,
     ) -> CompileResult<()> {
-        let value_handle = self.emit_native_array_value_for_expr(value)?;
-        let value_cleanup = vec![format!("phpc_native_value_free({value_handle});")];
+        let value = self.materialize_native_array_expr_value_handle(value, "")?;
+        let value_cleanup = value.cleanup_after_use.clone();
         let key = self.materialize_native_array_key(key, &value_cleanup)?;
         let diagnostic = self.next_native_name("array_diagnostic");
         self.body
@@ -9306,8 +9365,9 @@ impl CGenerator {
         );
         let write_error_exit = self.native_error_exit(&local_cleanup);
         self.body.push(format!(
-            "if (!phpc_native_array_insert_key_value_with_diagnostic({handle}, {}, {value_handle}, &{diagnostic})) {{ {write_error_exit} }}",
-            key.result
+            "if (!phpc_native_array_insert_key_value_with_diagnostic({handle}, {}, {}, &{diagnostic})) {{ {write_error_exit} }}",
+            key.result,
+            value.handle
         ));
         self.body.extend(key.cleanup_after_use);
         self.body.extend(value_cleanup);
@@ -9315,22 +9375,186 @@ impl CGenerator {
     }
 
     fn emit_array_append_value(&mut self, handle: &str, value: &Expr) -> CompileResult<()> {
-        let value_handle = self.emit_native_array_value_for_expr(value)?;
-        let value_cleanup = vec![format!("phpc_native_value_free({value_handle});")];
+        let value = self.materialize_native_array_expr_value_handle(value, "")?;
+        let value_cleanup = value.cleanup_after_use;
         let append_error_exit = self.native_error_exit(&c_cleanup_sequence(&value_cleanup));
         self.body.push(format!(
-            "if (!phpc_native_array_append_value({handle}, {value_handle})) {{ {append_error_exit} }}"
+            "if (!phpc_native_array_append_value({handle}, {})) {{ {append_error_exit} }}",
+            value.handle
         ));
         self.body.extend(value_cleanup);
         Ok(())
     }
 
-    fn emit_native_array_value_for_expr(&mut self, expr: &Expr) -> CompileResult<String> {
-        let value = self.emit_expr(expr)?;
-        match value {
-            CValue::ArrayHandle(_) => Err(self.unsupported(expr.span(), ASSEMBLY_ARRAY_REJECTION)),
-            value => self.emit_native_value_for_cvalue(value, expr.span()),
+    fn materialize_native_array_expr_value_handle(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        if let Some(value) = self.try_materialize_native_value_result_expr(expr, failure_cleanup)? {
+            return Ok(value);
         }
+
+        let value = self.emit_expr(expr)?;
+        self.materialize_native_array_c_value_handle(value, expr.span())
+    }
+
+    fn materialize_native_array_c_value_handle(
+        &mut self,
+        value: CValue,
+        span: Span,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        match value {
+            CValue::ArrayHandle(_) => Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
+            value => {
+                let handle = self.emit_native_value_for_cvalue(value, span)?;
+                Ok(CNativeValueMaterialization {
+                    handle: handle.clone(),
+                    cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+                })
+            }
+        }
+    }
+
+    fn materialize_native_value_result_operand(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        if let Some(value) = self.try_materialize_native_value_result_expr(expr, failure_cleanup)? {
+            return Ok(value);
+        }
+
+        let value = self.emit_expr(expr)?;
+        self.materialize_native_array_c_value_handle(value, expr.span())
+    }
+
+    fn try_materialize_native_value_result_expr(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        match expr {
+            Expr::Unary { op, expr, .. } => {
+                let Some(op_tag) = native_value_unary_op_tag(*op) else {
+                    return Ok(None);
+                };
+                let value = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
+                Ok(Some(self.emit_native_value_unary_result_handle(
+                    value,
+                    op_tag,
+                    failure_cleanup,
+                )))
+            }
+            Expr::Binary {
+                left, op, right, ..
+            } => {
+                let Some(op_tag) = native_value_binary_op_tag(*op) else {
+                    return Ok(None);
+                };
+                let left_value =
+                    self.materialize_native_value_result_operand(left, failure_cleanup)?;
+                let right_failure_cleanup = format!(
+                    "{}{}",
+                    c_cleanup_sequence(&left_value.cleanup_after_use),
+                    failure_cleanup
+                );
+                let right_value =
+                    self.materialize_native_value_result_operand(right, &right_failure_cleanup)?;
+                Ok(Some(self.emit_native_value_binary_result_handle(
+                    left_value,
+                    op_tag,
+                    right_value,
+                    failure_cleanup,
+                )))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn emit_native_value_unary_result_handle(
+        &mut self,
+        value: CNativeValueMaterialization,
+        op_tag: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let value_handle = value.handle.clone();
+        self.emit_native_value_result_handle(
+            "native_value_unary_result",
+            "native_value_unary",
+            value.cleanup_after_use,
+            failure_cleanup,
+            |this, result| {
+                this.body.push(format!(
+                    "phpc_NativeValueOperationResult {result} = phpc_native_value_unary_result({value_handle}, {op_tag});"
+                ));
+            },
+        )
+    }
+
+    fn emit_native_value_binary_result_handle(
+        &mut self,
+        left: CNativeValueMaterialization,
+        op_tag: &str,
+        right: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let left_handle = left.handle.clone();
+        let right_handle = right.handle.clone();
+        let mut cleanup_after_use = right.cleanup_after_use;
+        cleanup_after_use.extend(left.cleanup_after_use);
+        self.emit_native_value_result_handle(
+            "native_value_binary_result",
+            "native_value_binary",
+            cleanup_after_use,
+            failure_cleanup,
+            |this, result| {
+                this.body.push(format!(
+                    "phpc_NativeValueOperationResult {result} = phpc_native_value_binary_result({left_handle}, {op_tag}, {right_handle});"
+                ));
+            },
+        )
+    }
+
+    fn emit_native_value_result_handle(
+        &mut self,
+        result_prefix: &str,
+        value_prefix: &str,
+        operand_cleanup: Vec<String>,
+        failure_cleanup: &str,
+        emit_call: impl FnOnce(&mut Self, &str),
+    ) -> CNativeValueMaterialization {
+        let result = self.next_native_name(result_prefix);
+        let value_result = self.next_native_name(value_prefix);
+        self.body
+            .push(format!("phpc_NativeValueHandle {value_result} = {{0}};"));
+        emit_call(self, &result);
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&operand_cleanup),
+            failure_cleanup
+        );
+        self.emit_native_value_operation_result_check(&result, &cleanup);
+        self.body.push(format!("{value_result} = {result}.value;"));
+        self.body.push(format!("{result}.value.ptr = NULL;"));
+        self.body.push(format!(
+            "phpc_native_value_operation_result_free({result});"
+        ));
+        self.body.extend(operand_cleanup);
+
+        CNativeValueMaterialization {
+            handle: value_result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value_result});")],
+        }
+    }
+
+    fn emit_native_value_operation_result_check(&mut self, result: &str, cleanup: &str) {
+        let result_error_exit = self.native_error_exit(&format!(
+            "{cleanup}phpc_native_value_operation_result_free({result}); "
+        ));
+        self.body.push(format!(
+            "if ({result}.tag != PHPC_NATIVE_VALUE_OPERATION_OK) {{ if ({result}.diagnostic.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({result}.diagnostic); }} {result_error_exit} }}"
+        ));
     }
 
     fn materialize_native_array_key(
@@ -9338,19 +9562,15 @@ impl CGenerator {
         key: &Expr,
         failure_cleanup: &[String],
     ) -> CompileResult<CNativeArrayKeyMaterialization> {
-        let key_value = self.emit_expr(key)?;
-        let key_value = match key_value {
-            CValue::ArrayHandle(_) => {
-                return Err(self.unsupported(key.span(), ASSEMBLY_ARRAY_REJECTION))
-            }
-            value => self.emit_native_value_for_cvalue(value, key.span())?,
-        };
+        let key_failure_cleanup = c_cleanup_sequence(failure_cleanup);
+        let key_value =
+            self.materialize_native_array_expr_value_handle(key, &key_failure_cleanup)?;
         let result = self.next_native_name("array_key");
         self.body.push(format!(
-            "phpc_NativeArrayKeyMaterializationResult {result} = phpc_native_value_to_array_key({key_value});"
+            "phpc_NativeArrayKeyMaterializationResult {result} = phpc_native_value_to_array_key({});",
+            key_value.handle
         ));
-        self.body
-            .push(format!("phpc_native_value_free({key_value});"));
+        self.body.extend(key_value.cleanup_after_use);
         if !failure_cleanup.is_empty() {
             let key_error_exit = self.native_error_exit(&format!(
                 "phpc_native_array_key_materialization_result_free({result}); {}",
