@@ -92,6 +92,16 @@ pub enum NativeComparisonOp {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeComparisonRelation {
+    Equal = 0,
+    Different = 1,
+    Less = 2,
+    Greater = 3,
+    Unordered = 4,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeComparisonOperationFamily {
     Invalid = 0,
     LooseEquality = 1,
@@ -223,6 +233,15 @@ pub enum NativeIntConversionOperation {
 pub struct NativeComparisonResult {
     status: u8,
     value: u8,
+    diagnostic: NativeDiagnosticHandle,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeComparisonRelationResult {
+    status: u8,
+    relation: u8,
+    family: u8,
     diagnostic: NativeDiagnosticHandle,
 }
 
@@ -973,6 +992,136 @@ impl NativeComparisonResult {
     }
 }
 
+impl NativeComparisonRelation {
+    fn from_relation(relation: ComparisonRelation) -> Self {
+        match relation {
+            ComparisonRelation::Equal => Self::Equal,
+            ComparisonRelation::Different => Self::Different,
+            ComparisonRelation::Less => Self::Less,
+            ComparisonRelation::Greater => Self::Greater,
+            ComparisonRelation::Unordered => Self::Unordered,
+        }
+    }
+
+    fn from_abi(tag: u8) -> Option<Self> {
+        Some(match tag {
+            value if value == Self::Equal as u8 => Self::Equal,
+            value if value == Self::Different as u8 => Self::Different,
+            value if value == Self::Less as u8 => Self::Less,
+            value if value == Self::Greater as u8 => Self::Greater,
+            value if value == Self::Unordered as u8 => Self::Unordered,
+            _ => return None,
+        })
+    }
+
+    fn satisfies(self, op: PhpComparisonOp) -> bool {
+        match op {
+            PhpComparisonOp::LooseEq => self == Self::Equal,
+            PhpComparisonOp::LooseNe => self != Self::Equal,
+            PhpComparisonOp::LooseLt => self == Self::Less,
+            PhpComparisonOp::LooseLe => matches!(self, Self::Less | Self::Equal),
+            PhpComparisonOp::LooseGt => self == Self::Greater,
+            PhpComparisonOp::LooseGe => matches!(self, Self::Greater | Self::Equal),
+            PhpComparisonOp::StrictEq => self == Self::Equal,
+            PhpComparisonOp::StrictNe => self == Self::Different,
+        }
+    }
+}
+
+impl NativeComparisonRelationResult {
+    fn ok(relation: ComparisonRelation, operation: NativeComparisonOperation) -> Self {
+        Self {
+            status: NativeComparisonStatus::Ok as u8,
+            relation: NativeComparisonRelation::from_relation(relation) as u8,
+            family: operation.family().abi_tag(),
+            diagnostic: NativeDiagnosticHandle::null(),
+        }
+    }
+
+    fn blocked(message: impl Into<String>, operation: NativeComparisonOperation) -> Self {
+        Self::blocked_with_diagnostic(
+            NativeDiagnosticHandle::from_blocker_message(message),
+            operation.family(),
+        )
+    }
+
+    fn blocked_with_diagnostic(
+        diagnostic: NativeDiagnosticHandle,
+        family: NativeComparisonOperationFamily,
+    ) -> Self {
+        Self {
+            status: NativeComparisonStatus::Blocked as u8,
+            relation: NativeComparisonRelation::Unordered as u8,
+            family: family.abi_tag(),
+            diagnostic,
+        }
+    }
+
+    fn from_evaluation(
+        evaluation: RuntimeResult<ComparisonRelationEvaluation>,
+        operation: NativeComparisonOperation,
+    ) -> Self {
+        match evaluation {
+            Ok(ComparisonRelationEvaluation::Relation(relation)) => Self::ok(relation, operation),
+            Ok(ComparisonRelationEvaluation::Blocked(blocker)) => {
+                Self::blocked(blocker.native_diagnostic_message(), operation)
+            }
+            Err(error) => Self::blocked(
+                format!("native comparison failed: {}", error.message()),
+                operation,
+            ),
+        }
+    }
+
+    fn status(&self) -> u8 {
+        if self.status == NativeComparisonStatus::Ok as u8 {
+            NativeComparisonStatus::Ok as u8
+        } else {
+            NativeComparisonStatus::Blocked as u8
+        }
+    }
+
+    fn relation(&self) -> Option<NativeComparisonRelation> {
+        NativeComparisonRelation::from_abi(self.relation)
+    }
+
+    fn family(&self) -> Option<NativeComparisonOperationFamily> {
+        NativeComparisonOperationFamily::from_abi_tag(self.family)
+    }
+
+    fn diagnostic(&self) -> NativeDiagnosticHandle {
+        self.diagnostic
+    }
+
+    fn is_blocked(&self) -> bool {
+        self.status() == NativeComparisonStatus::Blocked as u8
+    }
+
+    fn into_native_result(self, operation: NativeComparisonOperation) -> NativeComparisonResult {
+        if self.is_blocked() {
+            return NativeComparisonResult::blocked_with_diagnostic(self.diagnostic());
+        }
+
+        let op = match operation.php_operation() {
+            Ok(op) => op,
+            Err(outcome) => return outcome.into_native_result(),
+        };
+        let Some(relation) = self.relation() else {
+            return NativeComparisonResult::blocked(
+                "native comparison failed: relation result carried an invalid relation tag",
+            );
+        };
+        let expected_family = operation.family();
+        if self.family() != Some(expected_family) {
+            return NativeComparisonResult::blocked(
+                "native comparison failed: relation result family does not match comparison operation",
+            );
+        }
+
+        NativeComparisonResult::ok(relation.satisfies(op))
+    }
+}
+
 impl NativeComparisonOp {
     pub const ALL: [Self; 8] = [
         Self::LooseEq,
@@ -1020,6 +1169,16 @@ impl NativeComparisonOp {
 impl NativeComparisonOperationFamily {
     pub const fn abi_tag(self) -> u8 {
         self as u8
+    }
+
+    fn from_abi_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            value if value == Self::Invalid as u8 => Self::Invalid,
+            value if value == Self::LooseEquality as u8 => Self::LooseEquality,
+            value if value == Self::LooseOrdering as u8 => Self::LooseOrdering,
+            value if value == Self::StrictIdentity as u8 => Self::StrictIdentity,
+            _ => return None,
+        })
     }
 
     fn from_operation_family(family: ComparisonOperationFamily) -> Self {
@@ -4219,6 +4378,42 @@ pub unsafe extern "C" fn phpc_native_comparison_operand_compare_operation_and_fr
 ///
 /// `left` and `right` follow the same operand ownership contract as
 /// `phpc_native_comparison_operand_compare_and_free`. The helper consumes both
+/// operands and returns a relation result before any branch/result consumer
+/// applies the requested PHP comparison operation.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_operand_compare_relation_and_free(
+    left: NativeComparisonOperand,
+    op: u8,
+    right: NativeComparisonOperand,
+) -> NativeComparisonRelationResult {
+    let operation = NativeComparisonOperation::from_opcode(op);
+    unsafe {
+        phpc_native_comparison_operand_compare_operation_relation_and_free(left, operation, right)
+    }
+}
+
+/// # Safety
+///
+/// `left` and `right` follow the same operand ownership contract as
+/// `phpc_native_comparison_operand_compare_relation_and_free`. `operation`
+/// should be produced by `phpc_native_comparison_operation_from_opcode`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_operand_compare_operation_relation_and_free(
+    left: NativeComparisonOperand,
+    operation: NativeComparisonOperation,
+    right: NativeComparisonOperand,
+) -> NativeComparisonRelationResult {
+    unsafe {
+        native_comparison_operand_relation_with_materialization_operation_and_free(
+            left, operation, right,
+        )
+    }
+}
+
+/// # Safety
+///
+/// `left` and `right` follow the same operand ownership contract as
+/// `phpc_native_comparison_operand_compare_and_free`. The helper consumes both
 /// operands, reports blocked diagnostics to stderr, and returns the canonical
 /// branch result.
 #[no_mangle]
@@ -4285,6 +4480,33 @@ pub unsafe extern "C" fn phpc_native_comparison_operand_compare_operation_decisi
     unsafe { native_comparison_branch_decision_from_owned_result(result) }
 }
 
+unsafe fn native_comparison_operand_relation_with_materialization_operation_and_free(
+    left: NativeComparisonOperand,
+    operation: NativeComparisonOperation,
+    right: NativeComparisonOperand,
+) -> NativeComparisonRelationResult {
+    if let Some(result) = unsafe {
+        native_comparison_operand_materialization_failure_relation_result(left, operation)
+    } {
+        unsafe { phpc_native_diagnostic_free(right.diagnostic()) };
+        unsafe { native_free_unique_value_handles(left.value(), right.value()) };
+        return result;
+    }
+
+    if let Some(result) = unsafe {
+        native_comparison_operand_materialization_failure_relation_result(right, operation)
+    } {
+        unsafe { native_free_unique_value_handles(left.value(), right.value()) };
+        return result;
+    }
+
+    let result = unsafe {
+        native_value_compare_operation_relation_result(left.value(), operation, right.value())
+    };
+    unsafe { native_free_unique_value_handles(left.value(), right.value()) };
+    result
+}
+
 unsafe fn native_comparison_operand_result_with_materialization_operation_and_free(
     left: NativeComparisonOperand,
     operation: NativeComparisonOperation,
@@ -4326,6 +4548,61 @@ unsafe fn native_comparison_operand_materialization_failure_result(
     Some(NativeComparisonResult::blocked_with_diagnostic(
         operand.diagnostic(),
     ))
+}
+
+unsafe fn native_comparison_operand_materialization_failure_relation_result(
+    operand: NativeComparisonOperand,
+    operation: NativeComparisonOperation,
+) -> Option<NativeComparisonRelationResult> {
+    if !operand.value().is_null() {
+        unsafe { phpc_native_diagnostic_free(operand.diagnostic()) };
+        return None;
+    }
+
+    if operand.diagnostic().is_null() {
+        return Some(NativeComparisonRelationResult::blocked(
+            "native comparison failed: operand materialization returned null without diagnostic",
+            operation,
+        ));
+    }
+
+    Some(NativeComparisonRelationResult::blocked_with_diagnostic(
+        operand.diagnostic(),
+        operation.family(),
+    ))
+}
+
+unsafe fn native_value_compare_operation_relation_result(
+    left: NativeValueHandle,
+    operation: NativeComparisonOperation,
+    right: NativeValueHandle,
+) -> NativeComparisonRelationResult {
+    let op = match operation.php_operation() {
+        Ok(op) => op,
+        Err(NativeComparisonOutcome::Blocked(message)) => {
+            return NativeComparisonRelationResult::blocked(message, operation);
+        }
+        Err(NativeComparisonOutcome::Value(_)) => {
+            unreachable!("invalid comparison operations cannot produce successful outcomes")
+        }
+    };
+    let Some(left) = (unsafe { left.as_ref() }) else {
+        return NativeComparisonRelationResult::blocked(
+            "native comparison failed: left value handle is null",
+            operation,
+        );
+    };
+    let Some(right) = (unsafe { right.as_ref() }) else {
+        return NativeComparisonRelationResult::blocked(
+            "native comparison failed: right value handle is null",
+            operation,
+        );
+    };
+
+    NativeComparisonRelationResult::from_evaluation(
+        evaluate_php_comparison_relation(left, right, op),
+        operation,
+    )
 }
 
 unsafe fn native_free_unique_value_handles(left: NativeValueHandle, right: NativeValueHandle) {
@@ -4417,6 +4694,63 @@ pub extern "C" fn phpc_native_comparison_branch_decision_is_true(
     decision: NativeComparisonBranchDecision,
 ) -> bool {
     decision.is_true()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_relation_result_status(
+    result: NativeComparisonRelationResult,
+) -> u8 {
+    result.status()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_relation_result_relation(
+    result: NativeComparisonRelationResult,
+) -> u8 {
+    result
+        .relation()
+        .map(|relation| relation as u8)
+        .unwrap_or(NativeComparisonRelation::Unordered as u8)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_relation_result_is_blocked(
+    result: NativeComparisonRelationResult,
+) -> bool {
+    result.is_blocked()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_relation_result_diagnostic(
+    result: NativeComparisonRelationResult,
+) -> NativeDiagnosticHandle {
+    result.diagnostic()
+}
+
+/// # Safety
+///
+/// `result` must be a relation result returned by the runtime ABI, or a result
+/// whose diagnostic handle is null. The function releases the owned diagnostic
+/// carried by blocked relation results.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_relation_result_free(
+    result: NativeComparisonRelationResult,
+) {
+    unsafe { phpc_native_diagnostic_free(result.diagnostic()) };
+}
+
+/// # Safety
+///
+/// `result` must be a relation result returned by the runtime ABI. The helper
+/// consumes the relation result, reports and releases blocked diagnostics, and
+/// returns the canonical branch decision for comparison condition consumers.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_relation_result_decision_or_report_stderr_and_free(
+    result: NativeComparisonRelationResult,
+    operation: NativeComparisonOperation,
+) -> NativeComparisonBranchDecision {
+    let result = result.into_native_result(operation);
+    unsafe { native_comparison_branch_decision_from_owned_result(result) }
 }
 
 /// # Safety
@@ -10699,6 +11033,40 @@ impl ComparisonEvaluation {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComparisonRelation {
+    Equal,
+    Different,
+    Less,
+    Greater,
+    Unordered,
+}
+
+impl ComparisonRelation {
+    fn from_ordering(ordering: Option<Ordering>) -> Self {
+        match ordering {
+            Some(Ordering::Less) => Self::Less,
+            Some(Ordering::Equal) => Self::Equal,
+            Some(Ordering::Greater) => Self::Greater,
+            None => Self::Unordered,
+        }
+    }
+
+    fn from_identity(identical: bool) -> Self {
+        if identical {
+            Self::Equal
+        } else {
+            Self::Different
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComparisonRelationEvaluation {
+    Relation(ComparisonRelation),
+    Blocked(ComparisonBlocker),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum NativeComparisonOutcome {
     Value(bool),
@@ -10889,6 +11257,27 @@ fn evaluate_php_comparison(
                 .loose_comparison()
                 .expect("non-strict comparison has a loose operator"),
         ),
+    ))
+}
+
+fn evaluate_php_comparison_relation(
+    left: &Value,
+    right: &Value,
+    op: PhpComparisonOp,
+) -> RuntimeResult<ComparisonRelationEvaluation> {
+    let family = op.operation_family();
+    if let Some(blocker) = comparison_blocker_for_family(left, right, family) {
+        return Ok(ComparisonRelationEvaluation::Blocked(blocker));
+    }
+
+    if family.strict_identity_expectation().is_some() {
+        return Ok(ComparisonRelationEvaluation::Relation(
+            ComparisonRelation::from_identity(left.php_identical_checked(right)?),
+        ));
+    }
+
+    Ok(ComparisonRelationEvaluation::Relation(
+        ComparisonRelation::from_ordering(left.php_ordering(right)),
     ))
 }
 
@@ -14835,6 +15224,120 @@ mod tests {
             },
             "string bytes pointer is null",
         );
+    }
+
+    #[test]
+    fn native_comparison_operand_relation_result_feeds_decisions_across_families() {
+        fn value_operand(value: Value) -> NativeComparisonOperand {
+            NativeComparisonOperand::from_parts(
+                NativeValueHandle::from_value(value),
+                NativeDiagnosticHandle::null(),
+            )
+        }
+
+        for (label, left, op, right, expected_relation, expected_decision) in [
+            (
+                "loose equality relation",
+                phpc_native_comparison_operand_from_scalar(phpc_native_null()),
+                NativeComparisonOp::LooseEq,
+                phpc_native_comparison_operand_from_scalar(phpc_native_bool(false)),
+                NativeComparisonRelation::Equal,
+                true,
+            ),
+            (
+                "loose ordering relation",
+                value_operand(Value::String("10".to_string())),
+                NativeComparisonOp::LooseGt,
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(2)),
+                NativeComparisonRelation::Greater,
+                true,
+            ),
+            (
+                "strict identity relation",
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                NativeComparisonOp::StrictNe,
+                value_operand(Value::String("1".to_string())),
+                NativeComparisonRelation::Different,
+                true,
+            ),
+        ] {
+            let operation = phpc_native_comparison_operation_from_opcode(op.abi_opcode());
+            let relation = unsafe {
+                phpc_native_comparison_operand_compare_operation_relation_and_free(
+                    left, operation, right,
+                )
+            };
+            assert_eq!(
+                phpc_native_comparison_relation_result_status(relation),
+                NativeComparisonStatus::Ok as u8,
+                "{label}"
+            );
+            assert_eq!(
+                phpc_native_comparison_relation_result_relation(relation),
+                expected_relation as u8,
+                "{label}"
+            );
+            assert!(
+                !phpc_native_comparison_relation_result_is_blocked(relation),
+                "{label}"
+            );
+            assert!(
+                phpc_native_comparison_relation_result_diagnostic(relation).is_null(),
+                "{label}"
+            );
+
+            let decision = unsafe {
+                phpc_native_comparison_relation_result_decision_or_report_stderr_and_free(
+                    relation, operation,
+                )
+            };
+            assert_eq!(
+                phpc_native_comparison_branch_decision_abort_code(decision),
+                0,
+                "{label}"
+            );
+            assert_eq!(
+                phpc_native_comparison_branch_decision_is_true(decision),
+                expected_decision,
+                "{label}"
+            );
+        }
+
+        let operation =
+            phpc_native_comparison_operation_from_opcode(NativeComparisonOp::LooseEq.abi_opcode());
+        let blocked = unsafe {
+            phpc_native_comparison_operand_compare_operation_relation_and_free(
+                value_operand(Value::Array(PhpArray::new())),
+                operation,
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_relation_result_status(blocked),
+            NativeComparisonStatus::Blocked as u8
+        );
+        assert!(phpc_native_comparison_relation_result_is_blocked(blocked));
+        let diagnostic = phpc_native_comparison_relation_result_diagnostic(blocked);
+        assert!(native_diagnostic_message_for_test(diagnostic)
+            .contains("array comparisons are not implemented"));
+        unsafe { phpc_native_comparison_relation_result_free(blocked) };
+
+        let invalid_operation = phpc_native_comparison_operation_from_opcode(250);
+        let invalid = unsafe {
+            phpc_native_comparison_operand_compare_operation_relation_and_free(
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                invalid_operation,
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_relation_result_status(invalid),
+            NativeComparisonStatus::Blocked as u8
+        );
+        let diagnostic = phpc_native_comparison_relation_result_diagnostic(invalid);
+        assert!(native_diagnostic_message_for_test(diagnostic)
+            .contains("unsupported comparison opcode"));
+        unsafe { phpc_native_comparison_relation_result_free(invalid) };
     }
 
     #[test]

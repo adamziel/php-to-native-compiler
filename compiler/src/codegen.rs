@@ -5969,6 +5969,7 @@ impl CGenerator {
             if self.uses_native_comparison_helpers {
                 output.push_str("typedef struct { uint8_t opcode; uint8_t valid; } phpc_NativeComparisonOperation;\n");
                 output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeComparisonOperand;\n");
+                output.push_str("typedef struct { uint8_t status; uint8_t relation; uint8_t family; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeComparisonRelationResult;\n");
                 if self.uses_native_array_comparison_helpers {
                     output.push_str("typedef struct { uint8_t status; uint8_t value; size_t diagnostic_len; } phpc_NativeComparisonBranchResult;\n");
                 }
@@ -6074,7 +6075,8 @@ impl CGenerator {
             output.push_str("extern phpc_NativeComparisonOperation phpc_native_comparison_operation_from_opcode(uint8_t opcode);\n");
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_scalar(phpc_NativeScalarValue value);\n");
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_string_and_free(phpc_NativeStringHandle string);\n");
-            output.push_str("extern phpc_NativeComparisonBranchDecision phpc_native_comparison_operand_compare_operation_decision_and_free(phpc_NativeComparisonOperand left, phpc_NativeComparisonOperation operation, phpc_NativeComparisonOperand right);\n");
+            output.push_str("extern phpc_NativeComparisonRelationResult phpc_native_comparison_operand_compare_operation_relation_and_free(phpc_NativeComparisonOperand left, phpc_NativeComparisonOperation operation, phpc_NativeComparisonOperand right);\n");
+            output.push_str("extern phpc_NativeComparisonBranchDecision phpc_native_comparison_relation_result_decision_or_report_stderr_and_free(phpc_NativeComparisonRelationResult result, phpc_NativeComparisonOperation operation);\n");
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_branch_decision_result_operand(phpc_NativeComparisonBranchDecision decision);\n");
             if self.uses_native_array_comparison_helpers {
                 output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_array_compare_branch(phpc_NativeArrayHandle left, uint8_t op, phpc_NativeArrayHandle right);\n");
@@ -7967,6 +7969,7 @@ impl CGenerator {
                 let left = self.emit_native_comparison_operand(left, span)?;
                 let right = self.emit_native_comparison_operand(right, span)?;
                 let comparison_operation = format!("comparison_operation_{comparison_index}");
+                let comparison_relation = format!("comparison_relation_{comparison_index}");
                 let comparison_decision = format!("comparison_decision_{comparison_index}");
 
                 self.body.push(format!(
@@ -7974,8 +7977,11 @@ impl CGenerator {
                     native_comparison_c_uint8_argument(op)
                 ));
                 self.body.push(format!(
-                    "phpc_NativeComparisonBranchDecision {comparison_decision} = phpc_native_comparison_operand_compare_operation_decision_and_free({}, {comparison_operation}, {});",
+                    "phpc_NativeComparisonRelationResult {comparison_relation} = phpc_native_comparison_operand_compare_operation_relation_and_free({}, {comparison_operation}, {});",
                     left.operand, right.operand
+                ));
+                self.body.push(format!(
+                    "phpc_NativeComparisonBranchDecision {comparison_decision} = phpc_native_comparison_relation_result_decision_or_report_stderr_and_free({comparison_relation}, {comparison_operation});"
                 ));
                 let comparison_abort_code = self.emit_native_comparison_decision_abort_code(
                     comparison_index,

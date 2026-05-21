@@ -393,14 +393,26 @@ echo 1 !== "1";
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_operand_compare_operation_decision_and_free"),
-        "{source}"
+        source.contains("phpc_native_comparison_operand_compare_operation_relation_and_free"),
+        "runtime-linked native comparison should compute a shared relation result before branch consumption:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_comparison_relation_result_decision_or_report_stderr_and_free"),
+        "runtime-linked native comparison should convert relation results through the shared decision/reporting ABI:\n{source}"
     );
     assert!(
         source.contains("phpc_NativeComparisonOperation"),
         "{source}"
     );
     assert!(source.contains("phpc_NativeComparisonOperand"), "{source}");
+    assert!(
+        source.contains("phpc_NativeComparisonRelationResult"),
+        "comparison results should flow through the shared relation-result ABI before branch truth consumption:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_NativeComparisonRelationResult comparison_relation_"),
+        "generated C should allocate relation-result temporaries for comparison branch consumers:\n{source}"
+    );
     assert!(
         !source.contains("phpc_NativeComparisonBranchResult"),
         "scalar/string comparison branches should not expose intermediate branch-result storage:\n{source}"
@@ -411,7 +423,7 @@ echo 1 !== "1";
     );
     assert!(
         !source.contains("phpc_native_comparison_branch_decision_from_result"),
-        "scalar/string comparisons should consume operands through the direct decision ABI:\n{source}"
+        "scalar/string comparisons should consume relation results through the relation decision ABI:\n{source}"
     );
     assert!(
         source.contains("phpc_native_comparison_branch_decision_abort_code"),
@@ -435,7 +447,11 @@ echo 1 !== "1";
     );
     assert!(
         !source.contains("phpc_NativeComparisonResult"),
-        "generated C should consume comparison operands directly through the decision ABI:\n{source}"
+        "generated C should not materialize comparison result objects:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_operand_compare_operation_decision_and_free"),
+        "generated C should not bypass the relation-result comparison contract:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free"),
@@ -491,7 +507,7 @@ echo 1 !== "1";
     );
     assert!(
         !source.contains("phpc_native_comparison_result_branch_or_report_stderr_and_free"),
-        "generated C should not compose result branch consumption outside the owned branch boundary:\n{source}"
+        "generated C should not compose result branch consumption outside the relation-result boundary:\n{source}"
     );
     assert!(
         !source.contains("if (comparison_value_handle_"),
@@ -525,8 +541,12 @@ echo ((null == false) != ("10" < 2));
         "generated C should declare the branch-decision-to-operand ABI:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_operand_compare_operation_decision_and_free"),
-        "outer comparisons should still consume the shared comparison decision ABI:\n{source}"
+        source.contains("phpc_native_comparison_operand_compare_operation_relation_and_free"),
+        "outer comparisons should consume the shared comparison relation ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_comparison_relation_result_decision_or_report_stderr_and_free"),
+        "outer comparisons should convert relation results through the shared decision/reporting ABI:\n{source}"
     );
     assert!(
         source
@@ -680,8 +700,11 @@ fn native_executable_c_source_tracks_dynamic_string_operand_lengths() {
     assert!(
         source.contains("phpc_native_comparison_operation_from_opcode")
             && source
-                .contains("phpc_native_comparison_operand_compare_operation_decision_and_free"),
-        "dynamic string operands should feed the shared comparison operand-decision ABI:\n{source}"
+                .contains("phpc_native_comparison_operand_compare_operation_relation_and_free")
+            && source.contains(
+                "phpc_native_comparison_relation_result_decision_or_report_stderr_and_free"
+            ),
+        "dynamic string operands should feed the shared comparison relation-result ABI:\n{source}"
     );
     assert!(
         !source.contains("strlen((const char *)("),
