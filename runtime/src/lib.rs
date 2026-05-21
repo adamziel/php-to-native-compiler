@@ -53,6 +53,42 @@ pub struct NativeDiagnosticHandle {
     ptr: *mut NativeDiagnostic,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeComparisonStatus {
+    Ok = 0,
+    Blocked = 1,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeComparisonOp {
+    LooseEq = 0,
+    LooseNe = 1,
+    LooseLt = 2,
+    LooseLe = 3,
+    LooseGt = 4,
+    LooseGe = 5,
+    StrictEq = 6,
+    StrictNe = 7,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeComparisonResult {
+    status: u8,
+    value: u8,
+    diagnostic: NativeDiagnosticHandle,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeComparisonBranchResult {
+    status: u8,
+    value: u8,
+    diagnostic_len: usize,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeArrayHandle {
@@ -215,6 +251,108 @@ impl NativeDiagnosticHandle {
 
     unsafe fn as_ref(&self) -> Option<&NativeDiagnostic> {
         unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl NativeComparisonResult {
+    pub fn ok(value: bool) -> Self {
+        Self {
+            status: NativeComparisonStatus::Ok as u8,
+            value: value as u8,
+            diagnostic: NativeDiagnosticHandle::null(),
+        }
+    }
+
+    fn blocked_comparison(blocker: ComparisonBlocker) -> Self {
+        Self::blocked(format!(
+            "native comparison failed: {}",
+            blocker.runtime_message()
+        ))
+    }
+
+    fn blocked_runtime_error(error: RuntimeError) -> Self {
+        Self::blocked(format!("native comparison failed: {}", error.message()))
+    }
+
+    fn blocked_unsupported_opcode(op: u8) -> Self {
+        Self::blocked(format!(
+            "native comparison failed: unsupported comparison opcode {op}"
+        ))
+    }
+
+    fn blocked_null_handle(side: &str, handle_kind: &str) -> Self {
+        Self::blocked(format!(
+            "native comparison failed: {side} {handle_kind} handle is null"
+        ))
+    }
+
+    fn from_runtime_result(result: RuntimeResult<bool>) -> Self {
+        match result {
+            Ok(value) => Self::ok(value),
+            Err(error) => Self::blocked_runtime_error(error),
+        }
+    }
+
+    fn blocked(message: impl Into<String>) -> Self {
+        Self {
+            status: NativeComparisonStatus::Blocked as u8,
+            value: 0,
+            diagnostic: NativeDiagnosticHandle::from_message(message),
+        }
+    }
+
+    pub fn status(&self) -> u8 {
+        if self.is_ok() {
+            NativeComparisonStatus::Ok as u8
+        } else {
+            NativeComparisonStatus::Blocked as u8
+        }
+    }
+
+    pub fn value(&self) -> bool {
+        self.is_ok() && self.value != 0
+    }
+
+    pub fn diagnostic(&self) -> NativeDiagnosticHandle {
+        self.diagnostic
+    }
+
+    pub fn is_ok(&self) -> bool {
+        self.status == NativeComparisonStatus::Ok as u8
+    }
+}
+
+impl NativeComparisonBranchResult {
+    fn ok(value: bool) -> Self {
+        Self {
+            status: NativeComparisonStatus::Ok as u8,
+            value: u8::from(value),
+            diagnostic_len: 0,
+        }
+    }
+
+    fn blocked(diagnostic_len: usize) -> Self {
+        Self {
+            status: NativeComparisonStatus::Blocked as u8,
+            value: 0,
+            diagnostic_len,
+        }
+    }
+
+    pub fn status(&self) -> u8 {
+        if self.status == NativeComparisonStatus::Ok as u8 {
+            NativeComparisonStatus::Ok as u8
+        } else {
+            NativeComparisonStatus::Blocked as u8
+        }
+    }
+
+    pub fn value(&self) -> bool {
+        self.status() == NativeComparisonStatus::Ok as u8 && self.value != 0
+    }
+
+    pub fn diagnostic_len(&self) -> usize {
+        self.diagnostic_len
     }
 }
 
@@ -826,6 +964,203 @@ pub unsafe extern "C" fn phpc_native_value_echo_stdout(handle: NativeValueHandle
         Ok(()) => output.len(),
         Err(_) => 0,
     }
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_scalar_compare(
+    left: NativeScalarValue,
+    op: u8,
+    right: NativeScalarValue,
+) -> NativeComparisonResult {
+    let op = match native_comparison_op_from_abi(op) {
+        Ok(op) => op,
+        Err(result) => return result,
+    };
+    let left = left.to_value();
+    let right = right.to_value();
+
+    NativeComparisonResult::from_runtime_result(native_value_compare_checked(&left, &right, op))
+}
+
+/// # Safety
+///
+/// `left` and `right` must be null or value handles previously returned by the
+/// runtime ABI and not yet freed. The returned diagnostic handle is null on
+/// success; blocked comparison results own their diagnostic and callers should
+/// release it with `phpc_native_comparison_result_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_compare(
+    left: NativeValueHandle,
+    op: u8,
+    right: NativeValueHandle,
+) -> NativeComparisonResult {
+    let op = match native_comparison_op_from_abi(op) {
+        Ok(op) => op,
+        Err(result) => return result,
+    };
+    let Some(left) = (unsafe { left.as_ref() }) else {
+        return NativeComparisonResult::blocked_null_handle("left", "value");
+    };
+    let Some(right) = (unsafe { right.as_ref() }) else {
+        return NativeComparisonResult::blocked_null_handle("right", "value");
+    };
+
+    NativeComparisonResult::from_runtime_result(native_value_compare_checked(left, right, op))
+}
+
+/// # Safety
+///
+/// `left` and `right` must be null or value handles previously returned by the
+/// runtime ABI and not yet freed. The helper consumes each unique non-null value
+/// handle after producing the comparison result. The returned diagnostic handle
+/// follows the same ownership contract as `phpc_native_value_compare`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_compare_and_free(
+    left: NativeValueHandle,
+    op: u8,
+    right: NativeValueHandle,
+) -> NativeComparisonResult {
+    let result = unsafe { phpc_native_value_compare(left, op, right) };
+    unsafe { phpc_native_value_free(left) };
+    if left.ptr != right.ptr {
+        unsafe { phpc_native_value_free(right) };
+    }
+    result
+}
+
+/// # Safety
+///
+/// `left` and `right` must be null or array handles previously returned by the
+/// runtime ABI and not yet freed. Strict identity/non-identity compares current
+/// PHP array values; loose array comparisons return the shared comparison
+/// blocker until recursive PHP array comparison semantics are implemented.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_compare(
+    left: NativeArrayHandle,
+    op: u8,
+    right: NativeArrayHandle,
+) -> NativeComparisonResult {
+    let op = match native_comparison_op_from_abi(op) {
+        Ok(op) => op,
+        Err(result) => return result,
+    };
+    let Some(left) = (unsafe { left.as_ref() }) else {
+        return NativeComparisonResult::blocked_null_handle("left", "array");
+    };
+    let Some(right) = (unsafe { right.as_ref() }) else {
+        return NativeComparisonResult::blocked_null_handle("right", "array");
+    };
+    let left = Value::Array(left.value.clone());
+    let right = Value::Array(right.value.clone());
+
+    NativeComparisonResult::from_runtime_result(native_value_compare_checked(&left, &right, op))
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_reference_compare(
+    _left: NativeReferenceHandle,
+    op: u8,
+    _right: NativeReferenceHandle,
+) -> NativeComparisonResult {
+    native_handle_comparison_blocker(op, ComparisonBlocker::ReferenceDereference)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_object_compare(
+    _left: NativeObjectHandle,
+    op: u8,
+    _right: NativeObjectHandle,
+) -> NativeComparisonResult {
+    native_handle_comparison_blocker(op, ComparisonBlocker::NativeObjectHandle)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_resource_compare(
+    _left: NativeResourceHandle,
+    op: u8,
+    _right: NativeResourceHandle,
+) -> NativeComparisonResult {
+    native_handle_comparison_blocker(op, ComparisonBlocker::NativeResourceHandle)
+}
+
+fn native_handle_comparison_blocker(op: u8, blocker: ComparisonBlocker) -> NativeComparisonResult {
+    if let Err(result) = native_comparison_op_from_abi(op) {
+        return result;
+    };
+
+    NativeComparisonResult::blocked_comparison(blocker)
+}
+
+fn native_comparison_op_from_abi(op: u8) -> Result<PhpComparisonOp, NativeComparisonResult> {
+    PhpComparisonOp::from_native_abi(op)
+        .ok_or_else(|| NativeComparisonResult::blocked_unsupported_opcode(op))
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_result_status(result: NativeComparisonResult) -> u8 {
+    result.status()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_result_value(result: NativeComparisonResult) -> u8 {
+    u8::from(result.value())
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_result_diagnostic(
+    result: NativeComparisonResult,
+) -> NativeDiagnosticHandle {
+    result.diagnostic()
+}
+
+/// # Safety
+///
+/// `result` must be a comparison result returned by the runtime ABI, or a
+/// result whose diagnostic handle is null. The function releases the owned
+/// diagnostic carried by blocked comparison results.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_result_free(result: NativeComparisonResult) {
+    unsafe { phpc_native_diagnostic_free(result.diagnostic()) };
+}
+
+/// # Safety
+///
+/// `result` must be a comparison result returned by the runtime ABI, or a
+/// result whose diagnostic handle is null. The function writes blocked
+/// comparison diagnostics to stderr, releases the owned diagnostic, and returns
+/// the number of diagnostic bytes written.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_result_report_stderr_and_free(
+    result: NativeComparisonResult,
+) -> usize {
+    let written = if result.status() == NativeComparisonStatus::Blocked as u8 {
+        unsafe { phpc_native_diagnostic_message_stderr(result.diagnostic()) }
+    } else {
+        0
+    };
+    unsafe { phpc_native_comparison_result_free(result) };
+    written
+}
+
+/// # Safety
+///
+/// `result` must be a comparison result returned by the runtime ABI, or a
+/// result whose diagnostic handle is null. The function canonicalizes the
+/// branch status/value pair, reports blocked diagnostics to stderr, releases the
+/// owned diagnostic, and returns the diagnostic byte count for blocked results.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_result_branch_or_report_stderr_and_free(
+    result: NativeComparisonResult,
+) -> NativeComparisonBranchResult {
+    if result.status() == NativeComparisonStatus::Ok as u8 {
+        let branch = NativeComparisonBranchResult::ok(result.value());
+        unsafe { phpc_native_comparison_result_free(result) };
+        return branch;
+    }
+
+    let diagnostic_len = unsafe { phpc_native_diagnostic_message_stderr(result.diagnostic()) };
+    unsafe { phpc_native_comparison_result_free(result) };
+    NativeComparisonBranchResult::blocked(diagnostic_len)
 }
 
 /// # Safety
@@ -5706,6 +6041,8 @@ impl Value {
             (Value::Array(_), _) | (_, Value::Array(_)) => Ok(false),
             (Value::Object(left), Value::Object(right)) => Ok(left.id() == right.id()),
             (Value::Object(_), _) | (_, Value::Object(_)) => Ok(false),
+            (Value::Closure(left), Value::Closure(right)) => Ok(left.id() == right.id()),
+            (Value::Closure(_), _) | (_, Value::Closure(_)) => Ok(false),
             (Value::Resource(left), Value::Resource(right)) => Ok(left == right),
             (Value::Resource(_), _) | (_, Value::Resource(_)) => Ok(false),
             _ => Ok(self.php_identical_scalar(other)),
@@ -5936,6 +6273,158 @@ pub enum Comparison {
     Ge,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhpComparisonOp {
+    LooseEq,
+    LooseNe,
+    LooseLt,
+    LooseLe,
+    LooseGt,
+    LooseGe,
+    StrictEq,
+    StrictNe,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComparisonBlocker {
+    Array,
+    Object,
+    Resource,
+    NativeObjectHandle,
+    NativeResourceHandle,
+    ReferenceDereference,
+}
+
+impl ComparisonBlocker {
+    fn runtime_message(self) -> &'static str {
+        match self {
+            Self::Array => "unsupported comparison: array comparisons are not implemented",
+            Self::Object => "unsupported comparison: object comparisons are not implemented",
+            Self::Resource => "unsupported comparison: resource comparisons are not implemented",
+            Self::NativeObjectHandle => {
+                "unsupported comparison: native object handle comparisons require shared object identity and property comparison semantics"
+            }
+            Self::NativeResourceHandle => {
+                "unsupported comparison: native resource handle comparisons require shared resource identity semantics"
+            }
+            Self::ReferenceDereference => {
+                "unsupported comparison: reference comparisons require shared reference dereference semantics"
+            }
+        }
+    }
+
+    fn runtime_error(self) -> RuntimeError {
+        RuntimeError::unsupported_comparison(self.unsupported_reason())
+    }
+
+    fn unsupported_reason(self) -> &'static str {
+        match self {
+            Self::Array => "array comparisons are not implemented",
+            Self::Object => "object comparisons are not implemented",
+            Self::Resource => "resource comparisons are not implemented",
+            Self::NativeObjectHandle => {
+                "native object handle comparisons require shared object identity and property comparison semantics"
+            }
+            Self::NativeResourceHandle => {
+                "native resource handle comparisons require shared resource identity semantics"
+            }
+            Self::ReferenceDereference => {
+                "reference comparisons require shared reference dereference semantics"
+            }
+        }
+    }
+}
+
+impl PhpComparisonOp {
+    fn from_native_abi(op: u8) -> Option<Self> {
+        Some(match op {
+            value if value == NativeComparisonOp::LooseEq as u8 => Self::LooseEq,
+            value if value == NativeComparisonOp::LooseNe as u8 => Self::LooseNe,
+            value if value == NativeComparisonOp::LooseLt as u8 => Self::LooseLt,
+            value if value == NativeComparisonOp::LooseLe as u8 => Self::LooseLe,
+            value if value == NativeComparisonOp::LooseGt as u8 => Self::LooseGt,
+            value if value == NativeComparisonOp::LooseGe as u8 => Self::LooseGe,
+            value if value == NativeComparisonOp::StrictEq as u8 => Self::StrictEq,
+            value if value == NativeComparisonOp::StrictNe as u8 => Self::StrictNe,
+            _ => return None,
+        })
+    }
+
+    fn loose_comparison(self) -> Option<Comparison> {
+        Some(match self {
+            Self::LooseEq => Comparison::Eq,
+            Self::LooseNe => Comparison::Ne,
+            Self::LooseLt => Comparison::Lt,
+            Self::LooseLe => Comparison::Le,
+            Self::LooseGt => Comparison::Gt,
+            Self::LooseGe => Comparison::Ge,
+            Self::StrictEq | Self::StrictNe => return None,
+        })
+    }
+
+    fn is_strict_identity(self) -> bool {
+        matches!(self, Self::StrictEq | Self::StrictNe)
+    }
+}
+
+impl From<Comparison> for PhpComparisonOp {
+    fn from(value: Comparison) -> Self {
+        match value {
+            Comparison::Eq => Self::LooseEq,
+            Comparison::Ne => Self::LooseNe,
+            Comparison::Lt => Self::LooseLt,
+            Comparison::Le => Self::LooseLe,
+            Comparison::Gt => Self::LooseGt,
+            Comparison::Ge => Self::LooseGe,
+        }
+    }
+}
+
+fn native_value_compare_checked(
+    left: &Value,
+    right: &Value,
+    op: PhpComparisonOp,
+) -> RuntimeResult<bool> {
+    if let Some(blocker) = comparison_blocker(left, right, op) {
+        return Err(blocker.runtime_error());
+    }
+
+    if op.is_strict_identity() {
+        let identical = left.php_identical_checked(right)?;
+        return Ok(match op {
+            PhpComparisonOp::StrictEq => identical,
+            PhpComparisonOp::StrictNe => !identical,
+            _ => unreachable!("strict identity branch only handles strict comparison ops"),
+        });
+    }
+
+    Ok(left.php_cmp(
+        right,
+        op.loose_comparison()
+            .expect("non-strict comparison has a loose operator"),
+    ))
+}
+
+fn comparison_blocker(
+    left: &Value,
+    right: &Value,
+    op: PhpComparisonOp,
+) -> Option<ComparisonBlocker> {
+    if op.is_strict_identity() {
+        return None;
+    }
+
+    match (left, right) {
+        (Value::Array(_), _) | (_, Value::Array(_)) => Some(ComparisonBlocker::Array),
+        (Value::Object(_), _)
+        | (_, Value::Object(_))
+        | (Value::Closure(_), _)
+        | (_, Value::Closure(_)) => Some(ComparisonBlocker::Object),
+        (Value::Resource(_), _) | (_, Value::Resource(_)) => Some(ComparisonBlocker::Resource),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum Number {
     Int(i64),
@@ -6083,6 +6572,312 @@ mod tests {
         };
         unsafe { phpc_native_byte_buffer_free(buffer) };
         bytes
+    }
+
+    fn native_diagnostic_message_for_test(handle: NativeDiagnosticHandle) -> String {
+        let buffer = unsafe { phpc_native_diagnostic_message_clone_bytes(handle) };
+        let bytes = if buffer.ptr().is_null() {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(buffer.ptr(), buffer.len()) }.to_vec()
+        };
+        unsafe { phpc_native_byte_buffer_free(buffer) };
+        String::from_utf8(bytes).expect("runtime diagnostics should be valid UTF-8")
+    }
+
+    fn assert_native_comparison_ok(label: &str, result: NativeComparisonResult, expected: bool) {
+        assert_eq!(
+            phpc_native_comparison_result_status(result),
+            NativeComparisonStatus::Ok as u8,
+            "{label}"
+        );
+        assert_eq!(
+            phpc_native_comparison_result_value(result),
+            u8::from(expected),
+            "{label}"
+        );
+        assert!(
+            phpc_native_comparison_result_diagnostic(result).is_null(),
+            "{label}"
+        );
+        unsafe { phpc_native_comparison_result_free(result) };
+    }
+
+    fn assert_native_comparison_blocked(
+        label: &str,
+        result: NativeComparisonResult,
+        expected_message_part: &str,
+    ) {
+        assert_eq!(
+            phpc_native_comparison_result_status(result),
+            NativeComparisonStatus::Blocked as u8,
+            "{label}"
+        );
+        assert_eq!(phpc_native_comparison_result_value(result), 0, "{label}");
+
+        let diagnostic = phpc_native_comparison_result_diagnostic(result);
+        assert!(!diagnostic.is_null(), "{label}");
+        let message = native_diagnostic_message_for_test(diagnostic);
+        assert!(
+            message.contains(expected_message_part),
+            "{label}: {message:?} did not contain {expected_message_part:?}"
+        );
+
+        unsafe { phpc_native_comparison_result_free(result) };
+    }
+
+    fn compare_native_values_for_test(
+        left: Value,
+        op: NativeComparisonOp,
+        right: Value,
+    ) -> NativeComparisonResult {
+        let left = NativeValueHandle::from_value(left);
+        let right = NativeValueHandle::from_value(right);
+        let result = unsafe { phpc_native_value_compare(left, op as u8, right) };
+        unsafe { phpc_native_value_free(left) };
+        if left.ptr != right.ptr {
+            unsafe { phpc_native_value_free(right) };
+        }
+        result
+    }
+
+    #[test]
+    fn native_comparison_abi_tags_are_stable() {
+        assert_eq!(NativeComparisonStatus::Ok as u8, 0);
+        assert_eq!(NativeComparisonStatus::Blocked as u8, 1);
+        assert_eq!(NativeComparisonOp::LooseEq as u8, 0);
+        assert_eq!(NativeComparisonOp::LooseNe as u8, 1);
+        assert_eq!(NativeComparisonOp::LooseLt as u8, 2);
+        assert_eq!(NativeComparisonOp::LooseLe as u8, 3);
+        assert_eq!(NativeComparisonOp::LooseGt as u8, 4);
+        assert_eq!(NativeComparisonOp::LooseGe as u8, 5);
+        assert_eq!(NativeComparisonOp::StrictEq as u8, 6);
+        assert_eq!(NativeComparisonOp::StrictNe as u8, 7);
+    }
+
+    #[test]
+    fn native_scalar_comparison_covers_loose_and_strict_ops() {
+        for (label, left, op, right, expected) in [
+            (
+                "int loose less-than",
+                phpc_native_int(2),
+                NativeComparisonOp::LooseLt,
+                phpc_native_int(10),
+                true,
+            ),
+            (
+                "float loose greater-equal",
+                phpc_native_float(2.5),
+                NativeComparisonOp::LooseGe,
+                phpc_native_float(3.0),
+                false,
+            ),
+            (
+                "bool/null loose equality",
+                phpc_native_bool(false),
+                NativeComparisonOp::LooseEq,
+                phpc_native_null(),
+                true,
+            ),
+            (
+                "strict type mismatch",
+                phpc_native_int(1),
+                NativeComparisonOp::StrictEq,
+                phpc_native_float(1.0),
+                false,
+            ),
+            (
+                "strict non-identity",
+                phpc_native_bool(true),
+                NativeComparisonOp::StrictNe,
+                phpc_native_int(1),
+                true,
+            ),
+        ] {
+            assert_native_comparison_ok(
+                label,
+                phpc_native_scalar_compare(left, op as u8, right),
+                expected,
+            );
+        }
+
+        assert_native_comparison_blocked(
+            "invalid opcode",
+            phpc_native_scalar_compare(phpc_native_int(1), 99, phpc_native_int(1)),
+            "unsupported comparison opcode 99",
+        );
+    }
+
+    #[test]
+    fn native_value_comparison_covers_value_and_blocker_families() {
+        assert_native_comparison_ok(
+            "numeric string loose comparison",
+            compare_native_values_for_test(
+                Value::String("10".to_string()),
+                NativeComparisonOp::LooseGt,
+                Value::Int(2),
+            ),
+            true,
+        );
+
+        assert_native_comparison_ok(
+            "array strict identity",
+            compare_native_values_for_test(
+                Value::Array(PhpArray::new()),
+                NativeComparisonOp::StrictEq,
+                Value::Array(PhpArray::new()),
+            ),
+            true,
+        );
+
+        assert_native_comparison_ok(
+            "closure strict identity by id",
+            compare_native_values_for_test(
+                Value::Closure(PhpClosure::new(42, false, Vec::new())),
+                NativeComparisonOp::StrictEq,
+                Value::Closure(PhpClosure::new(42, false, Vec::new())),
+            ),
+            true,
+        );
+
+        assert_native_comparison_blocked(
+            "loose array blocker",
+            compare_native_values_for_test(
+                Value::Array(PhpArray::new()),
+                NativeComparisonOp::LooseEq,
+                Value::Int(1),
+            ),
+            "array comparisons are not implemented",
+        );
+
+        assert_native_comparison_blocked(
+            "loose closure blocker",
+            compare_native_values_for_test(
+                Value::Closure(PhpClosure::new(7, false, Vec::new())),
+                NativeComparisonOp::LooseEq,
+                Value::String("callable".to_string()),
+            ),
+            "object comparisons are not implemented",
+        );
+
+        assert_native_comparison_blocked(
+            "loose resource blocker",
+            compare_native_values_for_test(
+                Value::Resource(3),
+                NativeComparisonOp::LooseNe,
+                Value::Resource(4),
+            ),
+            "resource comparisons are not implemented",
+        );
+
+        let right = NativeValueHandle::from_value(Value::Int(1));
+        let null_left_result = unsafe {
+            phpc_native_value_compare(
+                NativeValueHandle::null(),
+                NativeComparisonOp::LooseEq as u8,
+                right,
+            )
+        };
+        unsafe { phpc_native_value_free(right) };
+        assert_native_comparison_blocked(
+            "null left value handle",
+            null_left_result,
+            "left value handle is null",
+        );
+    }
+
+    #[test]
+    fn native_value_compare_and_free_consumes_owned_handles_across_result_families() {
+        assert_native_comparison_ok(
+            "owned loose ordering",
+            unsafe {
+                phpc_native_value_compare_and_free(
+                    NativeValueHandle::from_value(Value::Int(1)),
+                    NativeComparisonOp::LooseLt as u8,
+                    NativeValueHandle::from_value(Value::Int(2)),
+                )
+            },
+            true,
+        );
+
+        let alias = NativeValueHandle::from_value(Value::String("same".to_string()));
+        assert_native_comparison_ok(
+            "owned strict alias identity",
+            unsafe {
+                phpc_native_value_compare_and_free(alias, NativeComparisonOp::StrictEq as u8, alias)
+            },
+            true,
+        );
+
+        assert_native_comparison_blocked(
+            "owned loose array blocker",
+            unsafe {
+                phpc_native_value_compare_and_free(
+                    NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                    NativeComparisonOp::LooseEq as u8,
+                    NativeValueHandle::from_value(Value::Int(1)),
+                )
+            },
+            "array comparisons are not implemented",
+        );
+    }
+
+    #[test]
+    fn native_array_and_opaque_handle_comparisons_share_result_contract() {
+        let left = phpc_native_array_empty();
+        let same = phpc_native_array_empty();
+        let different = phpc_native_array_empty();
+        assert!(unsafe { phpc_native_array_append_scalar(different, phpc_native_int(1)) });
+
+        assert_native_comparison_ok(
+            "array strict identity",
+            unsafe { phpc_native_array_compare(left, NativeComparisonOp::StrictEq as u8, same) },
+            true,
+        );
+        assert_native_comparison_ok(
+            "array strict non-identity",
+            unsafe {
+                phpc_native_array_compare(left, NativeComparisonOp::StrictNe as u8, different)
+            },
+            true,
+        );
+        assert_native_comparison_blocked(
+            "array loose blocker",
+            unsafe { phpc_native_array_compare(left, NativeComparisonOp::LooseEq as u8, same) },
+            "array comparisons are not implemented",
+        );
+
+        assert_native_comparison_blocked(
+            "object handle blocker",
+            phpc_native_object_compare(
+                NativeObjectHandle::null(),
+                NativeComparisonOp::LooseEq as u8,
+                NativeObjectHandle::null(),
+            ),
+            "native object handle comparisons require shared object identity",
+        );
+        assert_native_comparison_blocked(
+            "resource handle blocker",
+            phpc_native_resource_compare(
+                NativeResourceHandle::null(),
+                NativeComparisonOp::LooseEq as u8,
+                NativeResourceHandle::null(),
+            ),
+            "native resource handle comparisons require shared resource identity",
+        );
+        assert_native_comparison_blocked(
+            "reference handle blocker",
+            phpc_native_reference_compare(
+                NativeReferenceHandle::null(),
+                NativeComparisonOp::StrictEq as u8,
+                NativeReferenceHandle::null(),
+            ),
+            "reference comparisons require shared reference dereference semantics",
+        );
+
+        unsafe { phpc_native_array_free(left) };
+        unsafe { phpc_native_array_free(same) };
+        unsafe { phpc_native_array_free(different) };
     }
 
     #[test]
