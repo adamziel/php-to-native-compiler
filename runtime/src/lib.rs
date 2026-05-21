@@ -201,6 +201,13 @@ pub struct NativeComparisonBranchResult {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeComparisonBranchDecision {
+    exit_code: c_int,
+    value: u8,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeArrayHandle {
     ptr: *mut NativeArray,
 }
@@ -979,6 +986,23 @@ impl NativeComparisonBranchResult {
         } else {
             0
         }
+    }
+}
+
+impl NativeComparisonBranchDecision {
+    fn from_branch_result(result: NativeComparisonBranchResult) -> Self {
+        Self {
+            exit_code: result.exit_code(),
+            value: u8::from(result.is_true()),
+        }
+    }
+
+    pub fn exit_code(&self) -> c_int {
+        self.exit_code
+    }
+
+    pub fn is_true(&self) -> bool {
+        self.exit_code == 0 && self.value != 0
     }
 }
 
@@ -3856,6 +3880,27 @@ pub extern "C" fn phpc_native_comparison_branch_result_exit_code(
     result: NativeComparisonBranchResult,
 ) -> i32 {
     result.exit_code()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_decision_from_result(
+    result: NativeComparisonBranchResult,
+) -> NativeComparisonBranchDecision {
+    NativeComparisonBranchDecision::from_branch_result(result)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_decision_exit_code(
+    decision: NativeComparisonBranchDecision,
+) -> c_int {
+    decision.exit_code()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_decision_is_true(
+    decision: NativeComparisonBranchDecision,
+) -> bool {
+    decision.is_true()
 }
 
 /// # Safety
@@ -10729,6 +10774,81 @@ mod tests {
             11
         );
         assert_eq!(phpc_native_comparison_branch_result_exit_code(malformed), 1);
+    }
+
+    #[test]
+    fn native_comparison_branch_decision_consumes_branch_results_across_families() {
+        let scalar_order = unsafe {
+            phpc_native_value_compare_branch_and_free(
+                phpc_native_value_from_scalar(phpc_native_int(2)),
+                NativeComparisonOp::LooseLt as u8,
+                phpc_native_value_from_scalar(phpc_native_int(10)),
+            )
+        };
+        let scalar_equality = unsafe {
+            phpc_native_value_compare_branch_and_free(
+                phpc_native_value_from_scalar(phpc_native_null()),
+                NativeComparisonOp::LooseEq as u8,
+                phpc_native_value_from_scalar(phpc_native_bool(false)),
+            )
+        };
+        let scalar_identity = unsafe {
+            phpc_native_value_compare_branch_and_free(
+                phpc_native_value_from_scalar(phpc_native_int(2)),
+                NativeComparisonOp::StrictEq as u8,
+                phpc_native_value_from_scalar(phpc_native_int(2)),
+            )
+        };
+        let value_array_blocker = unsafe {
+            phpc_native_value_compare_branch_and_free(
+                NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                NativeComparisonOp::LooseEq as u8,
+                phpc_native_value_from_scalar(phpc_native_int(1)),
+            )
+        };
+        let array_loose_blocker = unsafe {
+            phpc_native_array_compare_branch_and_free(
+                phpc_native_array_empty(),
+                NativeComparisonOp::LooseEq as u8,
+                phpc_native_array_empty(),
+            )
+        };
+        let malformed = NativeComparisonBranchResult {
+            status: 99,
+            value: 7,
+            diagnostic_len: 11,
+        };
+
+        for (label, branch, expected_true, expected_exit) in [
+            ("loose ordering branch decision", scalar_order, true, 0),
+            ("loose equality branch decision", scalar_equality, true, 0),
+            ("strict identity branch decision", scalar_identity, true, 0),
+            (
+                "value-array blocker branch decision",
+                value_array_blocker,
+                false,
+                1,
+            ),
+            (
+                "array blocker branch decision",
+                array_loose_blocker,
+                false,
+                1,
+            ),
+            ("malformed branch decision", malformed, false, 1),
+        ] {
+            let decision = phpc_native_comparison_branch_decision_from_result(branch);
+            assert_eq!(
+                phpc_native_comparison_branch_decision_exit_code(decision),
+                expected_exit,
+                "{label}"
+            );
+            assert_eq!(
+                phpc_native_comparison_branch_decision_is_true(decision),
+                expected_true,
+                "{label}"
+            );
+        }
     }
 
     #[test]

@@ -319,12 +319,20 @@ echo 1 !== "1";
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_branch_result_exit_code"),
-        "generated C should route comparison blocker reporting, cleanup, and exit-code selection through the runtime branch ABI:\n{source}"
+        source.contains("phpc_NativeComparisonBranchDecision"),
+        "{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_branch_result_is_true"),
-        "generated C should route result truth consumption through the branch truth accessor:\n{source}"
+        source.contains("phpc_native_comparison_branch_decision_from_result"),
+        "generated C should route branch results through the runtime branch-decision ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_comparison_branch_decision_exit_code"),
+        "generated C should consume branch exits through the runtime branch-decision ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_comparison_branch_decision_is_true"),
+        "generated C should consume branch truth through the runtime branch-decision ABI:\n{source}"
     );
     assert!(
         !source.contains("phpc_NativeComparisonResult"),
@@ -353,6 +361,14 @@ echo 1 !== "1";
     assert!(
         !source.contains("phpc_native_comparison_branch_result_diagnostic_len"),
         "generated C should not need diagnostic-length access after branch ABI reporting:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_branch_result_exit_code"),
+        "generated C should not consume branch exits through raw branch-result accessors:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_branch_result_is_true"),
+        "generated C should not consume branch truth through raw branch-result accessors:\n{source}"
     );
     assert!(
         !source.contains(".status != 0"),
@@ -407,9 +423,19 @@ fn native_executable_c_source_routes_array_handle_comparisons_through_runtime_br
         "strict, loose-equality, and ordering array comparisons should share the array branch ABI:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_branch_result_exit_code")
-            && source.contains("phpc_native_comparison_branch_result_is_true"),
-        "array comparison results should use the common branch accessors:\n{source}"
+        source.contains("phpc_NativeComparisonBranchDecision")
+            && source.contains("phpc_native_comparison_branch_decision_from_result")
+            && source.contains("phpc_native_comparison_branch_decision_exit_code")
+            && source.contains("phpc_native_comparison_branch_decision_is_true"),
+        "array comparison results should use the common branch-decision ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_branch_result_exit_code"),
+        "array comparison results should not use raw branch-result exit accessors:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_branch_result_is_true"),
+        "array comparison results should not use raw branch-result truth accessors:\n{source}"
     );
     assert!(
         !source.contains(" = phpc_native_comparison_operand_compare_operation_branch_and_free("),
