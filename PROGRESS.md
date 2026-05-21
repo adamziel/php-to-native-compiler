@@ -21,7 +21,7 @@ Broad integrated verification            [######--------------] 28%
 
 ## Current Primary State
 
-- Product HEAD at this review: `5ccefbcf runtime: share PHP string raw buffer writes`, synced with `origin/master` before this progress update.
+- Product HEAD after this progress update: `cd300c58 docs: update progress after string raw buffer writes`, synced with `origin/master`.
 - Latest committed semantic baseline: `5ccefbcf runtime: share PHP string raw buffer writes`.
 - Live worktree status before this progress update: clean and synced after the string raw-buffer write commit.
 - Resource note: `/dev/shm` was tight at about 6.5G free, then the supervisor reclaimed inactive target directories after active cargo/rustc/linker checks and restored it to about 21G free. Broad primary gates should still remain isolated, single-job, and resource-aware because lane caches will rebuild quickly.
