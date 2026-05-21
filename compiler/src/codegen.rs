@@ -590,6 +590,44 @@ fn native_dereferenced_call_result_operation(expr: &Expr) -> Option<NativeCallOp
         .map(|callee| NativeCallOperation::dereferenced_value_result(span, callee))
 }
 
+fn native_assignment_target_call_result_operation(
+    target: &AssignTarget,
+) -> Option<NativeCallOperation> {
+    native_assignment_target_call_result_callee(target)
+        .map(|callee| NativeCallOperation::dereferenced_value_result(target.span(), callee))
+}
+
+fn native_assignment_target_call_result_callee(target: &AssignTarget) -> Option<NativeCallCallee> {
+    match target {
+        AssignTarget::NonDirectProperty { holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayIndex { holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayAppend { holder, .. }
+        | AssignTarget::NonDirectDynamicProperty { holder, .. }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { holder, .. }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { holder, .. } => {
+            native_reference_expr_call_callee(holder)
+        }
+        AssignTarget::ObjectStaticProperty { target, .. } => {
+            native_reference_expr_call_callee(target)
+        }
+        AssignTarget::Variable { .. }
+        | AssignTarget::List { .. }
+        | AssignTarget::ArrayIndex { .. }
+        | AssignTarget::NestedArrayIndex { .. }
+        | AssignTarget::NestedArrayAppend { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::ObjectPropertyArrayIndex { .. }
+        | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
+        | AssignTarget::ObjectPropertyArrayAppend { .. }
+        | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
+        | AssignTarget::DynamicProperty { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => None,
+    }
+}
+
 fn native_value_call_operation_for_expr(expr: &Expr) -> Option<NativeCallOperation> {
     let (span, callee, default_blocker, args) = match expr {
         Expr::Call { args, span, .. } => (
@@ -1654,6 +1692,9 @@ impl LlvmGenerator {
             Stmt::CompoundAssign { target, span, .. }
             | Stmt::IncrementDecrement { target, span, .. }
             | Stmt::NullCoalesceAssign { target, span, .. } => {
+                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
                 }
@@ -1963,6 +2004,9 @@ impl LlvmGenerator {
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, LLVM_CAST_REJECTION)),
             Expr::Assign { target, span, .. } => {
+                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
                 }
@@ -1974,6 +2018,9 @@ impl LlvmGenerator {
             Expr::CompoundAssign { target, span, .. }
             | Expr::NullCoalesceAssign { target, span, .. }
             | Expr::IncrementDecrement { target, span, .. } => {
+                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
                 }
@@ -2374,6 +2421,10 @@ impl LlvmGenerator {
     }
 
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
+        if let Some(operation) = native_assignment_target_call_result_operation(target) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         match target {
             AssignTarget::Variable { name, .. } => {
                 let value = self.emit_expr(expr)?;
@@ -4820,6 +4871,9 @@ impl CGenerator {
             Stmt::CompoundAssign { target, span, .. }
             | Stmt::IncrementDecrement { target, span, .. }
             | Stmt::NullCoalesceAssign { target, span, .. } => {
+                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
@@ -5131,6 +5185,9 @@ impl CGenerator {
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION)),
             Expr::Assign { target, span, .. } => {
+                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
@@ -5142,6 +5199,9 @@ impl CGenerator {
             Expr::CompoundAssign { target, span, .. }
             | Expr::NullCoalesceAssign { target, span, .. }
             | Expr::IncrementDecrement { target, span, .. } => {
+                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
@@ -5542,6 +5602,10 @@ impl CGenerator {
     }
 
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
+        if let Some(operation) = native_assignment_target_call_result_operation(target) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         match target {
             AssignTarget::Variable { name, .. } => {
                 let value = self.emit_expr(expr)?;
@@ -8939,6 +9003,78 @@ mod tests {
             native_dereferenced_call_result_operation(&Expr::Index {
                 target: Box::new(test_variable_expr("items")),
                 index: Box::new(Expr::Int(0, span)),
+                span,
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn native_assignment_target_call_result_operation_preserves_call_family_for_lvalue_roots() {
+        let span = test_span();
+
+        for (target, callee) in [
+            (
+                AssignTarget::NonDirectProperty {
+                    holder: Expr::Call {
+                        name: "result".to_string(),
+                        args: vec![Expr::Int(1, span)],
+                        span,
+                    },
+                    property: "value".to_string(),
+                    span,
+                },
+                NativeCallCallee::DirectNamed,
+            ),
+            (
+                AssignTarget::NonDirectDynamicProperty {
+                    holder: Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("callback")),
+                        args: vec![Expr::String("value".to_string(), span)],
+                        span,
+                    },
+                    property: test_variable_expr("property"),
+                    span,
+                },
+                NativeCallCallee::DynamicExpression,
+            ),
+            (
+                AssignTarget::NonDirectObjectPropertyArrayIndex {
+                    holder: Expr::MethodCall {
+                        target: Box::new(test_variable_expr("box")),
+                        method: "result".to_string(),
+                        args: vec![Expr::Bool(true, span)],
+                        span,
+                    },
+                    property: "items".to_string(),
+                    indices: vec![Expr::Int(0, span)],
+                    span,
+                },
+                NativeCallCallee::MethodDispatch,
+            ),
+            (
+                AssignTarget::ObjectStaticProperty {
+                    target: Expr::New {
+                        class_name: crate::ast::NewClassName::Named("Box".to_string()),
+                        args: vec![Expr::Int(3, span)],
+                        span,
+                    },
+                    property: "value".to_string(),
+                    span,
+                },
+                NativeCallCallee::ConstructorDispatch,
+            ),
+        ] {
+            assert_eq!(
+                native_assignment_target_call_result_operation(&target),
+                Some(NativeCallOperation::dereferenced_value_result(span, callee))
+            );
+        }
+
+        assert_eq!(
+            native_assignment_target_call_result_operation(&AssignTarget::Property {
+                object: "box".to_string(),
+                property: "value".to_string(),
                 span,
             }),
             None

@@ -10,11 +10,13 @@ const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects 
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
+const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
+const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 
 #[test]
@@ -142,6 +144,11 @@ fn emit_ir_routes_call_operation_blockers_across_call_families() {
             "<?php\n$call = \"missing\";\necho $call(strlen(\"abc\"));\n",
             LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
         ),
+        ("<?php\nmissing()->value = 1;\n", LLVM_FUNCTION_CALL_REJECTION),
+        (
+            "<?php\n$call = \"missing\";\necho ($call()->value = 1);\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
         ("<?php\necho missing()[0];\n", LLVM_FUNCTION_CALL_REJECTION),
         (
             "<?php\n$call = \"missing\";\necho $call()[1];\n",
@@ -160,7 +167,15 @@ fn emit_ir_routes_call_operation_blockers_across_call_families() {
             "<?php\necho $box->work()->value;\n",
             LLVM_METHOD_CALL_REJECTION,
         ),
+        (
+            "<?php\necho ($box->work()->value = 1);\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
         ("<?php\nWorker::run(1, 2);\n", LLVM_METHOD_CALL_REJECTION),
+        (
+            "<?php\necho (new Box()->value = 1);\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
         (
             "<?php\nfunction identity($value) { return $value; }\n",
             LLVM_FUNCTION_DECLARATION_REJECTION,
@@ -245,6 +260,14 @@ fn native_executable_c_source_routes_call_operation_blockers_across_call_familie
             ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
         ),
         (
+            "<?php\nmissing()->value = 1;\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho ($call()->value = 1);\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
             "<?php\necho missing()[0];\n",
             ASSEMBLY_FUNCTION_CALL_REJECTION,
         ),
@@ -269,8 +292,16 @@ fn native_executable_c_source_routes_call_operation_blockers_across_call_familie
             ASSEMBLY_METHOD_CALL_REJECTION,
         ),
         (
+            "<?php\necho ($box->work()->value = 1);\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
             "<?php\nWorker::run(1, 2);\n",
             ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho (new Box()->value = 1);\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
         ),
         (
             "<?php\nfunction identity($value) { return $value; }\n",
