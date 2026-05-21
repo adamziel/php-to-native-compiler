@@ -4349,11 +4349,7 @@ pub unsafe extern "C" fn phpc_native_comparison_operand_compare_and_free(
     right: NativeComparisonOperand,
 ) -> NativeComparisonResult {
     let operation = NativeComparisonOperation::from_opcode(op);
-    unsafe {
-        native_comparison_operand_result_with_materialization_operation_and_free(
-            left, operation, right,
-        )
-    }
+    unsafe { phpc_native_comparison_operand_compare_operation_and_free(left, operation, right) }
 }
 
 /// # Safety
@@ -4367,11 +4363,10 @@ pub unsafe extern "C" fn phpc_native_comparison_operand_compare_operation_and_fr
     operation: NativeComparisonOperation,
     right: NativeComparisonOperand,
 ) -> NativeComparisonResult {
-    unsafe {
-        native_comparison_operand_result_with_materialization_operation_and_free(
-            left, operation, right,
-        )
-    }
+    let relation = unsafe {
+        phpc_native_comparison_operand_compare_operation_relation_and_free(left, operation, right)
+    };
+    relation.into_native_result(operation)
 }
 
 /// # Safety
@@ -4423,10 +4418,9 @@ pub unsafe extern "C" fn phpc_native_comparison_operand_compare_branch_and_free(
     right: NativeComparisonOperand,
 ) -> NativeComparisonBranchResult {
     let operation = NativeComparisonOperation::from_opcode(op);
-    let result = unsafe {
-        phpc_native_comparison_operand_compare_operation_and_free(left, operation, right)
-    };
-    unsafe { phpc_native_comparison_result_branch_or_report_stderr_and_free(result) }
+    unsafe {
+        phpc_native_comparison_operand_compare_operation_branch_and_free(left, operation, right)
+    }
 }
 
 /// # Safety
@@ -4440,9 +4434,10 @@ pub unsafe extern "C" fn phpc_native_comparison_operand_compare_operation_branch
     operation: NativeComparisonOperation,
     right: NativeComparisonOperand,
 ) -> NativeComparisonBranchResult {
-    let result = unsafe {
-        phpc_native_comparison_operand_compare_operation_and_free(left, operation, right)
+    let relation = unsafe {
+        phpc_native_comparison_operand_compare_operation_relation_and_free(left, operation, right)
     };
+    let result = relation.into_native_result(operation);
     unsafe { phpc_native_comparison_result_branch_or_report_stderr_and_free(result) }
 }
 
@@ -4474,10 +4469,14 @@ pub unsafe extern "C" fn phpc_native_comparison_operand_compare_operation_decisi
     operation: NativeComparisonOperation,
     right: NativeComparisonOperand,
 ) -> NativeComparisonBranchDecision {
-    let result = unsafe {
-        phpc_native_comparison_operand_compare_operation_and_free(left, operation, right)
+    let relation = unsafe {
+        phpc_native_comparison_operand_compare_operation_relation_and_free(left, operation, right)
     };
-    unsafe { native_comparison_branch_decision_from_owned_result(result) }
+    unsafe {
+        phpc_native_comparison_relation_result_decision_or_report_stderr_and_free(
+            relation, operation,
+        )
+    }
 }
 
 unsafe fn native_comparison_operand_relation_with_materialization_operation_and_free(
@@ -4505,49 +4504,6 @@ unsafe fn native_comparison_operand_relation_with_materialization_operation_and_
     };
     unsafe { native_free_unique_value_handles(left.value(), right.value()) };
     result
-}
-
-unsafe fn native_comparison_operand_result_with_materialization_operation_and_free(
-    left: NativeComparisonOperand,
-    operation: NativeComparisonOperation,
-    right: NativeComparisonOperand,
-) -> NativeComparisonResult {
-    if let Some(result) = unsafe { native_comparison_operand_materialization_failure_result(left) }
-    {
-        unsafe { phpc_native_diagnostic_free(right.diagnostic()) };
-        unsafe { native_free_unique_value_handles(left.value(), right.value()) };
-        return result;
-    }
-
-    if let Some(result) = unsafe { native_comparison_operand_materialization_failure_result(right) }
-    {
-        unsafe { native_free_unique_value_handles(left.value(), right.value()) };
-        return result;
-    }
-
-    let outcome =
-        unsafe { native_value_compare_operation_outcome(left.value(), operation, right.value()) };
-    unsafe { native_free_unique_value_handles(left.value(), right.value()) };
-    outcome.into_native_result()
-}
-
-unsafe fn native_comparison_operand_materialization_failure_result(
-    operand: NativeComparisonOperand,
-) -> Option<NativeComparisonResult> {
-    if !operand.value().is_null() {
-        unsafe { phpc_native_diagnostic_free(operand.diagnostic()) };
-        return None;
-    }
-
-    if operand.diagnostic().is_null() {
-        return Some(NativeComparisonResult::blocked(
-            "native comparison failed: operand materialization returned null without diagnostic",
-        ));
-    }
-
-    Some(NativeComparisonResult::blocked_with_diagnostic(
-        operand.diagnostic(),
-    ))
 }
 
 unsafe fn native_comparison_operand_materialization_failure_relation_result(
@@ -15338,6 +15294,190 @@ mod tests {
         assert!(native_diagnostic_message_for_test(diagnostic)
             .contains("unsupported comparison opcode"));
         unsafe { phpc_native_comparison_relation_result_free(invalid) };
+    }
+
+    #[test]
+    fn native_comparison_operand_public_consumers_share_relation_result_across_families() {
+        fn result_snapshot(result: NativeComparisonResult) -> (u8, u8, Option<String>) {
+            let diagnostic = phpc_native_comparison_result_diagnostic(result);
+            let message =
+                (!diagnostic.is_null()).then(|| native_diagnostic_message_for_test(diagnostic));
+            let snapshot = (
+                phpc_native_comparison_result_status(result),
+                phpc_native_comparison_result_value(result),
+                message,
+            );
+            unsafe { phpc_native_comparison_result_free(result) };
+            snapshot
+        }
+
+        fn branch_snapshot(result: NativeComparisonBranchResult) -> (u8, u8, usize, i32) {
+            (
+                phpc_native_comparison_branch_result_status(result),
+                phpc_native_comparison_branch_result_value(result),
+                phpc_native_comparison_branch_result_diagnostic_len(result),
+                phpc_native_comparison_branch_result_exit_code(result),
+            )
+        }
+
+        fn decision_snapshot(decision: NativeComparisonBranchDecision) -> (u8, i32, i32, bool) {
+            (
+                phpc_native_comparison_branch_decision_status(decision),
+                phpc_native_comparison_branch_decision_exit_code(decision),
+                phpc_native_comparison_branch_decision_abort_code(decision),
+                phpc_native_comparison_branch_decision_is_true(decision),
+            )
+        }
+
+        fn scalar_operand(value: NativeScalarValue) -> NativeComparisonOperand {
+            phpc_native_comparison_operand_from_scalar(value)
+        }
+
+        fn string_operand(bytes: &'static [u8]) -> NativeComparisonOperand {
+            unsafe { phpc_native_comparison_operand_from_string_bytes(bytes.as_ptr(), bytes.len()) }
+        }
+
+        fn array_operand() -> NativeComparisonOperand {
+            NativeComparisonOperand::from_parts(
+                NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                NativeDiagnosticHandle::null(),
+            )
+        }
+
+        fn invalid_string_operand() -> NativeComparisonOperand {
+            unsafe { phpc_native_comparison_operand_from_string_bytes(std::ptr::null(), 4) }
+        }
+
+        fn assert_consumers_match_relation<L, R>(
+            label: &str,
+            operation: NativeComparisonOperation,
+            make_left: L,
+            make_right: R,
+        ) where
+            L: Fn() -> NativeComparisonOperand,
+            R: Fn() -> NativeComparisonOperand,
+        {
+            let actual_result = unsafe {
+                phpc_native_comparison_operand_compare_operation_and_free(
+                    make_left(),
+                    operation,
+                    make_right(),
+                )
+            };
+            let relation_result = unsafe {
+                phpc_native_comparison_operand_compare_operation_relation_and_free(
+                    make_left(),
+                    operation,
+                    make_right(),
+                )
+            };
+            let expected_result = relation_result.into_native_result(operation);
+            assert_eq!(
+                result_snapshot(actual_result),
+                result_snapshot(expected_result),
+                "{label} result"
+            );
+
+            let actual_branch = unsafe {
+                phpc_native_comparison_operand_compare_operation_branch_and_free(
+                    make_left(),
+                    operation,
+                    make_right(),
+                )
+            };
+            let relation_branch = unsafe {
+                phpc_native_comparison_operand_compare_operation_relation_and_free(
+                    make_left(),
+                    operation,
+                    make_right(),
+                )
+            };
+            let expected_branch = unsafe {
+                phpc_native_comparison_result_branch_or_report_stderr_and_free(
+                    relation_branch.into_native_result(operation),
+                )
+            };
+            assert_eq!(
+                branch_snapshot(actual_branch),
+                branch_snapshot(expected_branch),
+                "{label} branch"
+            );
+
+            let actual_decision = unsafe {
+                phpc_native_comparison_operand_compare_operation_decision_and_free(
+                    make_left(),
+                    operation,
+                    make_right(),
+                )
+            };
+            let relation_decision = unsafe {
+                phpc_native_comparison_operand_compare_operation_relation_and_free(
+                    make_left(),
+                    operation,
+                    make_right(),
+                )
+            };
+            let expected_decision = unsafe {
+                phpc_native_comparison_relation_result_decision_or_report_stderr_and_free(
+                    relation_decision,
+                    operation,
+                )
+            };
+            assert_eq!(
+                decision_snapshot(actual_decision),
+                decision_snapshot(expected_decision),
+                "{label} decision"
+            );
+        }
+
+        let loose_eq =
+            phpc_native_comparison_operation_from_opcode(NativeComparisonOp::LooseEq.abi_opcode());
+        assert_consumers_match_relation(
+            "null false loose equality",
+            loose_eq,
+            || scalar_operand(phpc_native_null()),
+            || scalar_operand(phpc_native_bool(false)),
+        );
+
+        let loose_gt =
+            phpc_native_comparison_operation_from_opcode(NativeComparisonOp::LooseGt.abi_opcode());
+        assert_consumers_match_relation(
+            "numeric string loose ordering",
+            loose_gt,
+            || string_operand(b"10"),
+            || scalar_operand(phpc_native_int(2)),
+        );
+
+        let strict_ne =
+            phpc_native_comparison_operation_from_opcode(NativeComparisonOp::StrictNe.abi_opcode());
+        assert_consumers_match_relation(
+            "string int strict non-identity",
+            strict_ne,
+            || string_operand(b"1"),
+            || scalar_operand(phpc_native_int(1)),
+        );
+
+        assert_consumers_match_relation(
+            "array loose comparison blocker",
+            loose_eq,
+            array_operand,
+            || scalar_operand(phpc_native_int(1)),
+        );
+
+        assert_consumers_match_relation(
+            "string materialization blocker",
+            strict_ne,
+            invalid_string_operand,
+            || scalar_operand(phpc_native_int(1)),
+        );
+
+        let invalid_operation = phpc_native_comparison_operation_from_opcode(250);
+        assert_consumers_match_relation(
+            "invalid comparison opcode blocker",
+            invalid_operation,
+            || scalar_operand(phpc_native_int(1)),
+            || scalar_operand(phpc_native_int(1)),
+        );
     }
 
     #[test]
