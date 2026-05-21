@@ -321,6 +321,125 @@ fn native_executable_c_source_routes_assignment_and_unset_lvalue_operand_calls_t
 }
 
 #[test]
+fn emit_ir_routes_value_operand_call_results_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\necho [missing_value()];\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$value = [$call()];\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nprint [$box->value()];\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\nprint [new Value()];\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\necho (missing_value() == 1);\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho ($call() == 1);\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho ($box->value() == 1);\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho (new Value() == 1);\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\necho (missing_value() . \"x\");\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho ($call() . \"x\");\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho ($box->value() . \"x\");\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho (new Value() . \"x\");\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_value_operand_call_results_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\necho [missing_value()];\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$value = [$call()];\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nprint [$box->value()];\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\nprint [new Value()];\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\necho (missing_value() == 1);\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho ($call() == 1);\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho ($box->value() == 1);\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho (new Value() == 1);\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\necho (missing_value() . \"x\");\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho ($call() . \"x\");\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho ($box->value() . \"x\");\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho (new Value() . \"x\");\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
 fn emit_ir_rejects_direct_calls_before_lowering_arguments() {
     for source in [
         "<?php\necho label([]);\nfunction label($value) { return $value; }\n",

@@ -213,6 +213,7 @@ enum NativeCallResult {
 enum NativeCallBlocker {
     DynamicCallableEvaluation,
     ArgumentEvaluationCleanup,
+    ValueOperandEvaluationCleanup,
     LvalueOperandEvaluationCleanup,
     ReturnValueOwnership,
     ByReferenceArgumentBinding,
@@ -462,6 +463,10 @@ fn native_expr_call_result_operation(
 
 fn native_lvalue_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
     native_expr_call_result_operation(expr, NativeCallBlocker::LvalueOperandEvaluationCleanup)
+}
+
+fn native_value_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
+    native_expr_call_result_operation(expr, NativeCallBlocker::ValueOperandEvaluationCleanup)
 }
 
 fn native_comparison_op_for_binary_op(op: BinaryOp) -> Option<NativeComparisonOp> {
@@ -1011,6 +1016,7 @@ fn native_direct_call_blocker_message(
         (
             NativeCallResult::Value,
             NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
             | NativeCallBlocker::UnknownCalleeDiagnostics,
@@ -1034,6 +1040,7 @@ fn native_dynamic_call_blocker_message(
             NativeCallResult::Value,
             NativeCallBlocker::DynamicCallableEvaluation
             | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
             | NativeCallBlocker::UnknownCalleeDiagnostics,
@@ -1057,6 +1064,7 @@ fn native_method_call_blocker_message(
             NativeCallResult::Value,
             NativeCallBlocker::MethodDispatch
             | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership,
         ) => backend.method_call_rejection(),
@@ -1079,6 +1087,7 @@ fn native_constructor_call_blocker_message(
             NativeCallResult::Value,
             NativeCallBlocker::ConstructorDispatch
             | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership,
         ) => backend.object_instantiation_rejection(),
@@ -2116,9 +2125,17 @@ impl LlvmGenerator {
             | Expr::LateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION))
             }
-            Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
+            Expr::Array { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
+            }
             Expr::Index { target, span, .. } => {
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 if let Some(superglobal_span) = request_superglobal_expr_span(target) {
@@ -2135,6 +2152,9 @@ impl LlvmGenerator {
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if let Some(superglobal_span) = request_superglobal_expr_span(target) {
                     return Err(
                         self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
@@ -2149,10 +2169,16 @@ impl LlvmGenerator {
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, LLVM_OBJECT_PROPERTY_REJECTION))
             }
             Expr::ObjectStaticProperty { span, .. } => {
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION))
@@ -2249,6 +2275,9 @@ impl LlvmGenerator {
             Expr::DynamicCall { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Call { .. } => Err(self.unsupported_value_call(expr)),
             Expr::InstanceOf { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, LLVM_INSTANCEOF_REJECTION))
             }
             Expr::Closure {
@@ -2263,7 +2292,12 @@ impl LlvmGenerator {
                 )),
             ),
             Expr::New { .. } => Err(self.unsupported_value_call(expr)),
-            Expr::Clone { span, .. } => Err(self.unsupported(*span, LLVM_CLONE_REJECTION)),
+            Expr::Clone { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, LLVM_CLONE_REJECTION))
+            }
             Expr::Unary { op, expr, span } => {
                 if matches!(op, UnaryOp::Not) {
                     if let Expr::Unary {
@@ -2297,12 +2331,23 @@ impl LlvmGenerator {
                 self.emit_unary(*op, value, *span)
             }
             Expr::ErrorControl { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, LLVM_ERROR_CONTROL_REJECTION))
             }
             Expr::Include { span, .. } | Expr::Require { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, LLVM_REQUIRE_EXPRESSION_REJECTION))
             }
-            Expr::Cast { span, .. } => Err(self.unsupported(*span, LLVM_CAST_REJECTION)),
+            Expr::Cast { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, LLVM_CAST_REJECTION))
+            }
             Expr::Assign { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
@@ -2347,6 +2392,9 @@ impl LlvmGenerator {
                     return self.emit_scalar_comparison_expr(left, *op, right, *span);
                 }
                 if matches!(op, BinaryOp::NullCoalesce) {
+                    if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                        return Err(self.unsupported_call_operation(operation));
+                    }
                     return Err(self.unsupported(*span, LLVM_CONDITIONAL_REJECTION));
                 }
                 if matches!(op, BinaryOp::Concat) {
@@ -3027,12 +3075,26 @@ impl LlvmGenerator {
         right: &Expr,
         span: Span,
     ) -> CompileResult<IrValue> {
-        let left = self
-            .emit_expr(left)
-            .map_err(|_| self.unsupported(span, llvm_comparison_rejection()))?;
-        let right = self
-            .emit_expr(right)
-            .map_err(|_| self.unsupported(span, llvm_comparison_rejection()))?;
+        let left = match self.emit_expr(left) {
+            Ok(value) => value,
+            Err(_) => {
+                return Err(self.unsupported_value_operand_or_fallback(
+                    left,
+                    span,
+                    llvm_comparison_rejection(),
+                ));
+            }
+        };
+        let right = match self.emit_expr(right) {
+            Ok(value) => value,
+            Err(_) => {
+                return Err(self.unsupported_value_operand_or_fallback(
+                    right,
+                    span,
+                    llvm_comparison_rejection(),
+                ));
+            }
+        };
         self.emit_scalar_comparison(left, op, right, span)
     }
 
@@ -3568,11 +3630,17 @@ impl LlvmGenerator {
         span: Span,
     ) -> CompileResult<IrValue> {
         if is_empty_string_literal(left) {
-            let right = self.emit_expr(right)?;
+            let right = match self.emit_expr(right) {
+                Ok(value) => value,
+                Err(error) => return Err(self.unsupported_value_operand_or_original(right, error)),
+            };
             return self.emit_empty_string_concat_identity(right, span);
         }
         if is_empty_string_literal(right) {
-            let left = self.emit_expr(left)?;
+            let left = match self.emit_expr(left) {
+                Ok(value) => value,
+                Err(error) => return Err(self.unsupported_value_operand_or_original(left, error)),
+            };
             return self.emit_empty_string_concat_identity(left, span);
         }
         let left = self.emit_static_string_concat_operand(left, span)?;
@@ -3633,7 +3701,7 @@ impl LlvmGenerator {
                 }
                 _ => Err(self.unsupported(span, LLVM_CONCAT_REJECTION)),
             },
-            _ => Err(self.unsupported(span, LLVM_CONCAT_REJECTION)),
+            _ => Err(self.unsupported_value_operand_or_fallback(expr, span, LLVM_CONCAT_REJECTION)),
         }
     }
 
@@ -4868,6 +4936,27 @@ impl LlvmGenerator {
             .unwrap_or_else(|| self.unsupported(span, fallback))
     }
 
+    fn unsupported_value_operand_or_fallback(
+        &self,
+        expr: &Expr,
+        span: Span,
+        fallback: &'static str,
+    ) -> Diagnostic {
+        native_value_operand_call_result_operation(expr)
+            .map(|operation| self.unsupported_call_operation(operation))
+            .unwrap_or_else(|| self.unsupported(span, fallback))
+    }
+
+    fn unsupported_value_operand_or_original(
+        &self,
+        expr: &Expr,
+        original: Diagnostic,
+    ) -> Diagnostic {
+        native_value_operand_call_result_operation(expr)
+            .map(|operation| self.unsupported_call_operation(operation))
+            .unwrap_or(original)
+    }
+
     fn unsupported_value_call(&self, expr: &Expr) -> Diagnostic {
         self.unsupported_call_operation(
             native_value_call_operation_for_expr(expr)
@@ -5375,9 +5464,17 @@ impl CGenerator {
             | Expr::LateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
-            Expr::Array { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
+            Expr::Array { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
+            }
             Expr::Index { target, span, .. } => {
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 if let Some(superglobal_span) = request_superglobal_expr_span(target) {
@@ -5394,6 +5491,9 @@ impl CGenerator {
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if let Some(superglobal_span) = request_superglobal_expr_span(target) {
                     return Err(
                         self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
@@ -5408,10 +5508,16 @@ impl CGenerator {
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_PROPERTY_REJECTION))
             }
             Expr::ObjectStaticProperty { span, .. } => {
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
@@ -5508,6 +5614,9 @@ impl CGenerator {
             Expr::DynamicCall { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Call { .. } => Err(self.unsupported_value_call(expr)),
             Expr::InstanceOf { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_INSTANCEOF_REJECTION))
             }
             Expr::Closure {
@@ -5522,7 +5631,12 @@ impl CGenerator {
                 )),
             ),
             Expr::New { .. } => Err(self.unsupported_value_call(expr)),
-            Expr::Clone { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CLONE_REJECTION)),
+            Expr::Clone { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_CLONE_REJECTION))
+            }
             Expr::Unary { op, expr, span } => {
                 if matches!(op, UnaryOp::Not) {
                     if let Expr::Unary {
@@ -5556,12 +5670,23 @@ impl CGenerator {
                 self.emit_unary(*op, value, *span)
             }
             Expr::ErrorControl { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_ERROR_CONTROL_REJECTION))
             }
             Expr::Include { span, .. } | Expr::Require { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_REQUIRE_EXPRESSION_REJECTION))
             }
-            Expr::Cast { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION)),
+            Expr::Cast { span, .. } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION))
+            }
             Expr::Assign { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
@@ -5606,6 +5731,9 @@ impl CGenerator {
                     return self.emit_scalar_comparison_expr(left, *op, right, *span);
                 }
                 if matches!(op, BinaryOp::NullCoalesce) {
+                    if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                        return Err(self.unsupported_call_operation(operation));
+                    }
                     return Err(self.unsupported(*span, ASSEMBLY_CONDITIONAL_REJECTION));
                 }
                 if matches!(op, BinaryOp::Concat) {
@@ -6275,12 +6403,26 @@ impl CGenerator {
         right: &Expr,
         span: Span,
     ) -> CompileResult<CValue> {
-        let left = self
-            .emit_expr(left)
-            .map_err(|_| self.unsupported(span, assembly_comparison_rejection()))?;
-        let right = self
-            .emit_expr(right)
-            .map_err(|_| self.unsupported(span, assembly_comparison_rejection()))?;
+        let left = match self.emit_expr(left) {
+            Ok(value) => value,
+            Err(_) => {
+                return Err(self.unsupported_value_operand_or_fallback(
+                    left,
+                    span,
+                    assembly_comparison_rejection(),
+                ));
+            }
+        };
+        let right = match self.emit_expr(right) {
+            Ok(value) => value,
+            Err(_) => {
+                return Err(self.unsupported_value_operand_or_fallback(
+                    right,
+                    span,
+                    assembly_comparison_rejection(),
+                ));
+            }
+        };
         self.emit_scalar_comparison(left, op, right, span)
     }
 
@@ -6934,11 +7076,17 @@ impl CGenerator {
         span: Span,
     ) -> CompileResult<CValue> {
         if is_empty_string_literal(left) {
-            let right = self.emit_expr(right)?;
+            let right = match self.emit_expr(right) {
+                Ok(value) => value,
+                Err(error) => return Err(self.unsupported_value_operand_or_original(right, error)),
+            };
             return self.emit_empty_string_concat_identity(right, span);
         }
         if is_empty_string_literal(right) {
-            let left = self.emit_expr(left)?;
+            let left = match self.emit_expr(left) {
+                Ok(value) => value,
+                Err(error) => return Err(self.unsupported_value_operand_or_original(left, error)),
+            };
             return self.emit_empty_string_concat_identity(left, span);
         }
         let left = self.emit_static_string_concat_operand(left, span)?;
@@ -6999,7 +7147,11 @@ impl CGenerator {
                 }
                 _ => Err(self.unsupported(span, ASSEMBLY_CONCAT_REJECTION)),
             },
-            _ => Err(self.unsupported(span, ASSEMBLY_CONCAT_REJECTION)),
+            _ => Err(self.unsupported_value_operand_or_fallback(
+                expr,
+                span,
+                ASSEMBLY_CONCAT_REJECTION,
+            )),
         }
     }
 
@@ -8070,6 +8222,27 @@ impl CGenerator {
         native_direct_call_argument_result_operation(args, span)
             .map(|operation| self.unsupported_call_operation(operation))
             .unwrap_or_else(|| self.unsupported(span, fallback))
+    }
+
+    fn unsupported_value_operand_or_fallback(
+        &self,
+        expr: &Expr,
+        span: Span,
+        fallback: &'static str,
+    ) -> Diagnostic {
+        native_value_operand_call_result_operation(expr)
+            .map(|operation| self.unsupported_call_operation(operation))
+            .unwrap_or_else(|| self.unsupported(span, fallback))
+    }
+
+    fn unsupported_value_operand_or_original(
+        &self,
+        expr: &Expr,
+        original: Diagnostic,
+    ) -> Diagnostic {
+        native_value_operand_call_result_operation(expr)
+            .map(|operation| self.unsupported_call_operation(operation))
+            .unwrap_or(original)
     }
 
     fn unsupported_value_call(&self, expr: &Expr) -> Diagnostic {
@@ -9831,6 +10004,88 @@ mod tests {
     }
 
     #[test]
+    fn native_value_operand_call_result_operation_classifies_value_operand_cleanup() {
+        let span = test_span();
+
+        for (expr, operation) in [
+            (
+                Expr::Array {
+                    items: vec![ArrayItem {
+                        key: None,
+                        value: Expr::Call {
+                            name: "produce".to_string(),
+                            args: vec![Expr::Int(1, span)],
+                            span,
+                        },
+                        by_reference: false,
+                    }],
+                    span,
+                },
+                NativeCallOperation::direct_named_value(
+                    span,
+                    NativeCallBlocker::ValueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                Expr::Index {
+                    target: Box::new(test_variable_expr("items")),
+                    index: Box::new(Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("key_factory")),
+                        args: vec![Expr::String("key".to_string(), span)],
+                        span,
+                    }),
+                    span,
+                },
+                NativeCallOperation::dynamic_value_with_blocker(
+                    span,
+                    NativeCallBlocker::ValueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                Expr::DynamicProperty {
+                    target: Box::new(test_variable_expr("box")),
+                    property: Box::new(Expr::MethodCall {
+                        target: Box::new(test_variable_expr("name_source")),
+                        method: "name".to_string(),
+                        args: vec![Expr::Bool(true, span)],
+                        span,
+                    }),
+                    span,
+                },
+                NativeCallOperation::method_value_with_blocker(
+                    span,
+                    NativeCallBlocker::ValueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                Expr::Cast {
+                    kind: crate::ast::CastKind::String,
+                    expr: Box::new(Expr::New {
+                        class_name: crate::ast::NewClassName::Named("Value".to_string()),
+                        args: vec![Expr::Int(2, span)],
+                        span,
+                    }),
+                    span,
+                },
+                NativeCallOperation::constructor_value(
+                    span,
+                    NativeCallBlocker::ValueOperandEvaluationCleanup,
+                ),
+            ),
+        ] {
+            assert_eq!(
+                native_value_operand_call_result_operation(&expr),
+                Some(operation)
+            );
+        }
+
+        assert_eq!(
+            native_value_operand_call_result_operation(&Expr::String("plain".to_string(), span)),
+            None
+        );
+    }
+
+    #[test]
     fn native_value_call_operation_classifies_named_dynamic_method_and_constructor_families() {
         let span = test_span();
 
@@ -10080,6 +10335,16 @@ mod tests {
                     backend,
                     NativeCallOperation::direct_named_value(
                         span,
+                        NativeCallBlocker::ValueOperandEvaluationCleanup,
+                    ),
+                ),
+                direct
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::direct_named_value(
+                        span,
                         NativeCallBlocker::LvalueOperandEvaluationCleanup,
                     ),
                 ),
@@ -10114,6 +10379,16 @@ mod tests {
                     backend,
                     NativeCallOperation::dynamic_value_with_blocker(
                         span,
+                        NativeCallBlocker::ValueOperandEvaluationCleanup,
+                    ),
+                ),
+                dynamic
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::dynamic_value_with_blocker(
+                        span,
                         NativeCallBlocker::LvalueOperandEvaluationCleanup,
                     ),
                 ),
@@ -10129,6 +10404,16 @@ mod tests {
                     NativeCallOperation::method_value_with_blocker(
                         span,
                         NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ),
+                ),
+                method
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::method_value_with_blocker(
+                        span,
+                        NativeCallBlocker::ValueOperandEvaluationCleanup,
                     ),
                 ),
                 method
@@ -10159,6 +10444,16 @@ mod tests {
                     NativeCallOperation::constructor_value(
                         span,
                         NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ),
+                ),
+                constructor
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::constructor_value(
+                        span,
+                        NativeCallBlocker::ValueOperandEvaluationCleanup,
                     ),
                 ),
                 constructor
