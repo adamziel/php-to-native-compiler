@@ -9,7 +9,8 @@ use crate::ast::{
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
     classify_php_numeric_string, is_php_truthy_string, NativeComparisonOp,
-    NativeStringDistanceOperation, NativeStringIntOperation, NativeStringPredicate,
+    NativeIntConversionOperation, NativeStringDistanceOperation, NativeStringIntOperation,
+    NativeStringPredicate,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -5682,6 +5683,7 @@ impl CGenerator {
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string_bytes_with_diagnostic(const uint8_t *ptr, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             if self.uses_native_string_helpers {
                 output.push_str("extern phpc_NativeStringConversionResult phpc_native_value_to_string_bytes(phpc_NativeValueHandle value);\n");
+                output.push_str("extern int64_t phpc_native_value_to_int64_with_diagnostic(phpc_NativeValueHandle value, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern _Bool phpc_native_value_string_predicate_with_diagnostic(phpc_NativeValueHandle haystack, phpc_NativeValueHandle needle, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_int_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_distance_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t insertion_cost, int64_t replacement_cost, int64_t deletion_cost, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -6395,8 +6397,20 @@ impl CGenerator {
         } else {
             "(phpc_NativeValueHandle){0}".to_string()
         };
-        let offset = self.emit_optional_string_int_operand(offset_arg, span, "0")?;
-        let length = self.emit_optional_string_int_operand(length_arg, span, "0")?;
+        let offset = self.emit_optional_native_int_argument(
+            offset_arg,
+            span,
+            "0",
+            NativeIntConversionOperation::StringOffset,
+            ASSEMBLY_STRING_INT_OPERATION_REJECTION,
+        )?;
+        let length = self.emit_optional_native_int_argument(
+            length_arg,
+            span,
+            "0",
+            NativeIntConversionOperation::StringLength,
+            ASSEMBLY_STRING_INT_OPERATION_REJECTION,
+        )?;
         let result = format!("string_int_result_{}", self.next_native_temp);
         self.next_native_temp += 1;
         let diagnostic = format!("string_int_diagnostic_{}", self.next_native_temp);
@@ -6420,20 +6434,36 @@ impl CGenerator {
         Ok(CValue::Int(result))
     }
 
-    fn emit_optional_string_int_operand(
+    fn emit_optional_native_int_argument(
         &mut self,
         expr: Option<&Expr>,
         span: Span,
         default: &str,
+        operation: NativeIntConversionOperation,
+        rejection: &'static str,
     ) -> CompileResult<String> {
         let Some(expr) = expr else {
             return Ok(default.to_string());
         };
 
-        match self.emit_expr(expr)? {
-            CValue::Int(value) => Ok(value),
-            _ => Err(self.unsupported(span, ASSEMBLY_STRING_INT_OPERATION_REJECTION)),
-        }
+        let value = self.emit_value_operand_expr(expr)?;
+        let value_handle = self
+            .emit_native_value_for_cvalue(value, span)
+            .map_err(|_| self.unsupported(span, rejection))?;
+        let result = self.next_native_name("int_conversion_result");
+        let diagnostic = self.next_native_name("int_conversion_diagnostic");
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "long long {result} = (long long)phpc_native_value_to_int64_with_diagnostic({value_handle}, {}, &{diagnostic});",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body
+            .push(format!("phpc_native_value_free({value_handle});"));
+
+        Ok(result)
     }
 
     fn emit_string_distance_operation_call(
@@ -6454,30 +6484,14 @@ impl CGenerator {
             ));
         }
 
-        let (subject_arg, operand_arg, insertion_cost, replacement_cost, deletion_cost) =
+        let (subject_arg, operand_arg, insertion_cost_arg, replacement_cost_arg, deletion_cost_arg) =
             match operation {
                 NativeStringDistanceOperation::Levenshtein if (2..=5).contains(&args.len()) => {
-                    let insertion_cost =
-                        self.emit_optional_string_distance_cost(args.get(2), span)?;
-                    let replacement_cost =
-                        self.emit_optional_string_distance_cost(args.get(3), span)?;
-                    let deletion_cost =
-                        self.emit_optional_string_distance_cost(args.get(4), span)?;
-                    (
-                        &args[0],
-                        &args[1],
-                        insertion_cost,
-                        replacement_cost,
-                        deletion_cost,
-                    )
+                    (&args[0], &args[1], args.get(2), args.get(3), args.get(4))
                 }
-                NativeStringDistanceOperation::SimilarText if args.len() == 2 => (
-                    &args[0],
-                    &args[1],
-                    "1".to_string(),
-                    "1".to_string(),
-                    "1".to_string(),
-                ),
+                NativeStringDistanceOperation::SimilarText if args.len() == 2 => {
+                    (&args[0], &args[1], None, None, None)
+                }
                 _ => {
                     return Err(self.unsupported_direct_named_call(
                         args,
@@ -6495,6 +6509,27 @@ impl CGenerator {
         let operand = self
             .emit_native_value_for_cvalue(operand, span)
             .map_err(|_| self.unsupported(span, ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION))?;
+        let insertion_cost = self.emit_optional_native_int_argument(
+            insertion_cost_arg,
+            span,
+            "1",
+            NativeIntConversionOperation::StringDistanceCost,
+            ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION,
+        )?;
+        let replacement_cost = self.emit_optional_native_int_argument(
+            replacement_cost_arg,
+            span,
+            "1",
+            NativeIntConversionOperation::StringDistanceCost,
+            ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION,
+        )?;
+        let deletion_cost = self.emit_optional_native_int_argument(
+            deletion_cost_arg,
+            span,
+            "1",
+            NativeIntConversionOperation::StringDistanceCost,
+            ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION,
+        )?;
         let result = self.next_native_name(match operation {
             NativeStringDistanceOperation::Levenshtein => "levenshtein_result",
             NativeStringDistanceOperation::SimilarText => "similar_text_result",
@@ -6514,21 +6549,6 @@ impl CGenerator {
             .push(format!("phpc_native_value_free({subject});"));
 
         Ok(CValue::Int(result))
-    }
-
-    fn emit_optional_string_distance_cost(
-        &mut self,
-        expr: Option<&Expr>,
-        span: Span,
-    ) -> CompileResult<String> {
-        let Some(expr) = expr else {
-            return Ok("1".to_string());
-        };
-
-        match self.emit_expr(expr)? {
-            CValue::Int(value) => Ok(value),
-            _ => Err(self.unsupported(span, ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION)),
-        }
     }
 
     fn emit_function_exists_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {

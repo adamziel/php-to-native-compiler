@@ -116,6 +116,14 @@ pub enum NativeStringDistanceOperation {
     SimilarText = 1,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeIntConversionOperation {
+    StringOffset = 0,
+    StringLength = 1,
+    StringDistanceCost = 2,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeComparisonResult {
@@ -1392,6 +1400,135 @@ pub unsafe extern "C" fn phpc_native_reference_to_string_bytes(
 ) -> NativeStringConversionResult {
     NativeStringConversionResult::failure(RuntimeError::invalid_string_conversion(
         "native reference conversion failed: references must be dereferenced before string conversion",
+    ))
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `diagnostic` may be null; when non-null, it must
+/// point to writable storage for one `NativeDiagnosticHandle`. On failure the
+/// helper stores a diagnostic handle that the caller owns and must release
+/// with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_to_int64_with_diagnostic(
+    handle: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> i64 {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_to_int64(handle, operation) } {
+        Ok(value) => value,
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            0
+        }
+    }
+}
+
+unsafe fn native_value_to_int64(handle: NativeValueHandle, operation: u8) -> RuntimeResult<i64> {
+    let operation = native_int_conversion_operation_from_abi(operation)?;
+    let value = unsafe { handle.as_ref() }.ok_or_else(|| {
+        RuntimeError::invalid_string_conversion(format!(
+            "native int conversion failed: {} value handle is null",
+            operation.description()
+        ))
+    })?;
+    value_to_native_int64(value, operation)
+}
+
+fn native_int_conversion_operation_from_abi(
+    operation: u8,
+) -> RuntimeResult<NativeIntConversionOperation> {
+    match operation {
+        value if value == NativeIntConversionOperation::StringOffset as u8 => {
+            Ok(NativeIntConversionOperation::StringOffset)
+        }
+        value if value == NativeIntConversionOperation::StringLength as u8 => {
+            Ok(NativeIntConversionOperation::StringLength)
+        }
+        value if value == NativeIntConversionOperation::StringDistanceCost as u8 => {
+            Ok(NativeIntConversionOperation::StringDistanceCost)
+        }
+        _ => Err(RuntimeError::invalid_string_conversion(
+            "native int conversion failed: unsupported operation tag",
+        )),
+    }
+}
+
+impl NativeIntConversionOperation {
+    fn description(self) -> &'static str {
+        match self {
+            Self::StringOffset => "string offset",
+            Self::StringLength => "string length",
+            Self::StringDistanceCost => "string distance cost",
+        }
+    }
+}
+
+fn value_to_native_int64(
+    value: &Value,
+    operation: NativeIntConversionOperation,
+) -> RuntimeResult<i64> {
+    match value {
+        Value::Null => Ok(0),
+        Value::Bool(false) => Ok(0),
+        Value::Bool(true) => Ok(1),
+        Value::Int(value) => Ok(*value),
+        Value::Float(value) => finite_float_to_int64(*value, operation),
+        Value::String(value) => {
+            let Some(number) = parse_numeric_string(value) else {
+                return Err(native_int_conversion_error(
+                    operation,
+                    "string is not numeric",
+                ));
+            };
+            native_number_to_int64(number, operation)
+        }
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+            Err(native_int_conversion_error(
+                operation,
+                format!("{} cannot be converted to int", value.type_name()),
+            ))
+        }
+    }
+}
+
+fn native_number_to_int64(
+    number: Number,
+    operation: NativeIntConversionOperation,
+) -> RuntimeResult<i64> {
+    match number {
+        Number::Int(value) => Ok(value),
+        Number::Float(value) => finite_float_to_int64(value, operation),
+    }
+}
+
+fn finite_float_to_int64(
+    value: f64,
+    operation: NativeIntConversionOperation,
+) -> RuntimeResult<i64> {
+    if value.is_finite() && value >= i64::MIN as f64 && value <= i64::MAX as f64 {
+        Ok(value as i64)
+    } else {
+        Err(native_int_conversion_error(
+            operation,
+            "non-finite or out-of-range float cannot be converted to int",
+        ))
+    }
+}
+
+fn native_int_conversion_error(
+    operation: NativeIntConversionOperation,
+    reason: impl Into<String>,
+) -> RuntimeError {
+    RuntimeError::invalid_string_conversion(format!(
+        "native int conversion failed for {}: {}",
+        operation.description(),
+        reason.into()
     ))
 }
 
@@ -9611,6 +9748,103 @@ mod tests {
             native_string_conversion_result_for_test(reference_result).unwrap_err(),
             "invalid string conversion: native reference conversion failed: references must be dereferenced before string conversion"
         );
+    }
+
+    #[test]
+    fn native_int_argument_conversion_reuses_numeric_boundary_across_string_consumers() {
+        fn convert(value: Value, operation: NativeIntConversionOperation) -> Result<i64, String> {
+            let handle = NativeValueHandle::from_value(value);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let converted = unsafe {
+                phpc_native_value_to_int64_with_diagnostic(handle, operation as u8, &mut diagnostic)
+            };
+            unsafe { phpc_native_value_free(handle) };
+            if diagnostic.is_null() {
+                Ok(converted)
+            } else {
+                let message = native_diagnostic_message_for_test(diagnostic);
+                unsafe { phpc_native_diagnostic_free(diagnostic) };
+                Err(message)
+            }
+        }
+
+        let success_cases = [
+            (
+                "numeric-string offset",
+                Value::String(" 2 ".to_string()),
+                NativeIntConversionOperation::StringOffset,
+                2,
+            ),
+            (
+                "float length",
+                Value::Float(4.75),
+                NativeIntConversionOperation::StringLength,
+                4,
+            ),
+            (
+                "bool distance cost",
+                Value::Bool(true),
+                NativeIntConversionOperation::StringDistanceCost,
+                1,
+            ),
+            (
+                "null distance cost",
+                Value::Null,
+                NativeIntConversionOperation::StringDistanceCost,
+                0,
+            ),
+        ];
+
+        for (label, value, operation, expected) in success_cases {
+            assert_eq!(convert(value, operation).unwrap(), expected, "{label}");
+        }
+
+        let non_numeric = convert(
+            Value::String("8px".to_string()),
+            NativeIntConversionOperation::StringOffset,
+        )
+        .unwrap_err();
+        assert_eq!(
+            non_numeric,
+            "invalid string conversion: native int conversion failed for string offset: string is not numeric"
+        );
+
+        let aggregate = convert(
+            Value::Array(PhpArray::new()),
+            NativeIntConversionOperation::StringDistanceCost,
+        )
+        .unwrap_err();
+        assert_eq!(
+            aggregate,
+            "invalid string conversion: native int conversion failed for string distance cost: array cannot be converted to int"
+        );
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let missing = unsafe {
+            phpc_native_value_to_int64_with_diagnostic(
+                NativeValueHandle::null(),
+                NativeIntConversionOperation::StringLength as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(missing, 0);
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native int conversion failed: string length value handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let handle = NativeValueHandle::from_value(Value::Int(1));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let invalid =
+            unsafe { phpc_native_value_to_int64_with_diagnostic(handle, 99, &mut diagnostic) };
+        assert_eq!(invalid, 0);
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native int conversion failed: unsupported operation tag"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(handle) };
     }
 
     #[test]

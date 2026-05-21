@@ -131,10 +131,16 @@ fn native_executable_c_source_routes_string_int_builtins_through_runtime_contrac
     assert!(
         source.contains(", 0, &string_int_diagnostic_")
             && source.contains(", 1, &string_int_diagnostic_")
-            && source.contains("(int64_t)(0), (int64_t)(6), 1, 1, &string_int_diagnostic_")
             && source.contains(", 5, &string_int_diagnostic_")
             && source.contains(", 6, &string_int_diagnostic_"),
         "case compare, substring count, ord, and crc32 should share the tagged string-int ABI:\n{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = (long long)phpc_native_value_to_int64_with_diagnostic(")
+            .count(),
+        2,
+        "substr_count offset and length should share the native int conversion ABI:\n{source}"
     );
     assert!(
         source.contains("phpc_native_value_from_scalar")
@@ -178,6 +184,13 @@ fn native_executable_c_source_routes_string_distance_builtins_through_runtime_co
             && source.contains(", 1, &string_distance_diagnostic_"),
         "levenshtein and similar_text should share the tagged string-distance ABI:\n{source}"
     );
+    assert_eq!(
+        source
+            .matches(" = (long long)phpc_native_value_to_int64_with_diagnostic(")
+            .count(),
+        3,
+        "levenshtein costs should share the native int conversion ABI:\n{source}"
+    );
     assert!(
         source.contains("phpc_native_value_from_scalar")
             && source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
@@ -186,6 +199,38 @@ fn native_executable_c_source_routes_string_distance_builtins_through_runtime_co
     assert!(
         !source.contains("strlen((const char *)"),
         "string-distance builtins should use PHP value-to-string byte conversion:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_string_integer_arguments_through_value_conversion() {
+    let program = parse(
+        "<?php\n$offset = \"0\";\n$length = 4.0;\n$insert = true;\n$replace = \"1\";\n$delete = 1.0;\necho substr_count(\"aaaa\", \"aa\", $offset, $length);\necho levenshtein(\"kitten\", \"sitting\", $insert, $replace, $delete);\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_to_int64_with_diagnostic"),
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = (long long)phpc_native_value_to_int64_with_diagnostic(")
+            .count(),
+        5,
+        "substr_count offset/length and levenshtein costs should share the same int conversion ABI:\n{source}"
+    );
+    assert!(
+        source.contains(", 0, &int_conversion_diagnostic_")
+            && source.contains(", 1, &int_conversion_diagnostic_")
+            && source.contains(", 2, &int_conversion_diagnostic_"),
+        "string offset, string length, and string distance cost roles should use operation tags:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_string_int_operation_with_diagnostic")
+            && source.contains("phpc_native_value_string_distance_operation_with_diagnostic"),
+        "converted int arguments should compose with both string-int and string-distance consumers:\n{source}"
     );
 }
 
@@ -577,6 +622,56 @@ fn emit_exe_links_and_runs_string_distance_operation_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "3\n2\n2\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_string_integer_argument_conversion_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("string_integer_argument_conversion");
+    let source_path = native_link_output_path("string_integer_argument_conversion_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(
+        &source_path,
+        "<?php\n$offset = \"0\";\n$length = 4.0;\n$insert = true;\n$replace = \"1\";\n$delete = 1.0;\necho substr_count(\"aaaa\", \"aa\", $offset, $length);\necho \"\\n\";\necho levenshtein(\"kitten\", \"sitting\", $insert, $replace, $delete);\necho \"\\n\";\n",
+    )
+    .expect("native int conversion source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native int conversion source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "2\n3\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&output_path);
