@@ -429,6 +429,40 @@ echo 1 !== "1";
     );
 }
 
+#[test]
+fn native_executable_c_source_rematerializes_comparison_decisions_as_operands() {
+    let program = parse(
+        r#"<?php
+$payload = "2";
+echo (($payload > 1) == true), "\n";
+echo (((1 < 2) == (2 > 1)) ? 1 : 0), "\n";
+echo ((null == false) != ("10" < 2));
+"#,
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("extern phpc_NativeComparisonOperand phpc_native_comparison_branch_decision_result_operand"),
+        "generated C should declare the branch-decision-to-operand ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_comparison_operand_compare_operation_decision_and_free"),
+        "outer comparisons should still consume the shared comparison decision ABI:\n{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_comparison_branch_decision_result_operand(")
+            .count()
+            >= 4,
+        "nested loose comparison operands should rematerialize branch decisions through the shared operand ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_comparison_branch_decision_is_true"),
+        "generated C should still consume final branch truth through the runtime ABI:\n{source}"
+    );
+}
+
 const ARRAY_HANDLE_COMPARISON_SOURCE: &str = "<?php\n$left = [1, \"two\" => 2];\n$right = [1, \"two\" => 2];\necho ($left === $right), \"\\n\";\necho ([1, \"two\" => 2] !== [1, \"two\" => 3]), \"\\n\";\necho ([1] == [1]), \"\\n\";\necho ([2] > [1]), \"\\n\";\n";
 
 #[test]
@@ -1127,6 +1161,65 @@ echo (2 === 2) ? 1 : 0;
         String::from_utf8_lossy(&run.stdout),
         "1\n1\n1\n1\n1\n1\n1\n1"
     );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn emit_exe_runs_nested_runtime_comparison_decision_operands() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php =
+        native_link_output_path("nested_runtime_comparison_operands").with_extension("php");
+    fs::write(
+        &temp_php,
+        r#"<?php
+$payload = "2";
+echo (($payload > 1) == true), "\n";
+echo (((1 < 2) == (2 > 1)) ? 1 : 0), "\n";
+echo ((null == false) != ("10" < 2));
+"#,
+    )
+    .expect("write temporary nested comparison operand source");
+    let output_path = native_link_output_path("nested_runtime_comparison_operands");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile nested comparison operand executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run nested comparison operand executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "nested comparison operand executable failed"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "1\n1\n1");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&output_path);

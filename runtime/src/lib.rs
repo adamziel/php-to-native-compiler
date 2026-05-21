@@ -1037,6 +1037,32 @@ impl NativeComparisonBranchDecision {
     }
 }
 
+fn native_comparison_branch_state_result_operand(
+    status: u8,
+    value: bool,
+    blocked_message: impl Into<String>,
+) -> NativeComparisonOperand {
+    if status == NativeComparisonStatus::Ok as u8 {
+        return phpc_native_comparison_operand_from_scalar(NativeScalarValue::bool(value));
+    }
+
+    NativeComparisonOperand::from_parts(
+        NativeValueHandle::null(),
+        NativeDiagnosticHandle::from_message(blocked_message),
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_decision_result_operand(
+    decision: NativeComparisonBranchDecision,
+) -> NativeComparisonOperand {
+    native_comparison_branch_state_result_operand(
+        decision.status(),
+        decision.is_true(),
+        "native comparison failed: comparison branch decision is blocked",
+    )
+}
+
 impl NativeArrayKeyMetadata {
     pub const fn invalid() -> Self {
         Self {
@@ -14540,6 +14566,122 @@ mod tests {
                 "{label}"
             );
         }
+    }
+
+    #[test]
+    fn native_comparison_branch_decision_result_operand_rematerializes_across_families() {
+        let cases = [
+            (
+                "numeric-string loose ordering true result",
+                unsafe {
+                    phpc_native_comparison_operand_compare_operation_decision_and_free(
+                        phpc_native_comparison_operand_from_string_bytes(
+                            b"10".as_ptr(),
+                            b"10".len(),
+                        ),
+                        phpc_native_comparison_operation_from_opcode(
+                            NativeComparisonOp::LooseGt.abi_opcode(),
+                        ),
+                        phpc_native_comparison_operand_from_scalar(phpc_native_int(2)),
+                    )
+                },
+                true,
+            ),
+            (
+                "scalar loose ordering false result",
+                unsafe {
+                    phpc_native_comparison_operand_compare_operation_decision_and_free(
+                        phpc_native_comparison_operand_from_scalar(phpc_native_int(2)),
+                        phpc_native_comparison_operation_from_opcode(
+                            NativeComparisonOp::LooseGt.abi_opcode(),
+                        ),
+                        phpc_native_comparison_operand_from_scalar(phpc_native_int(10)),
+                    )
+                },
+                false,
+            ),
+            (
+                "null loose equality true result",
+                unsafe {
+                    phpc_native_comparison_operand_compare_operation_decision_and_free(
+                        phpc_native_comparison_operand_from_scalar(phpc_native_null()),
+                        phpc_native_comparison_operation_from_opcode(
+                            NativeComparisonOp::LooseEq.abi_opcode(),
+                        ),
+                        phpc_native_comparison_operand_from_scalar(phpc_native_bool(false)),
+                    )
+                },
+                true,
+            ),
+            (
+                "strict identity true result",
+                unsafe {
+                    phpc_native_comparison_operand_compare_operation_decision_and_free(
+                        phpc_native_comparison_operand_from_string_bytes(
+                            b"10".as_ptr(),
+                            b"10".len(),
+                        ),
+                        phpc_native_comparison_operation_from_opcode(
+                            NativeComparisonOp::StrictNe.abi_opcode(),
+                        ),
+                        phpc_native_comparison_operand_from_scalar(phpc_native_int(10)),
+                    )
+                },
+                true,
+            ),
+        ];
+
+        for (label, decision, expected) in cases {
+            let operand = phpc_native_comparison_branch_decision_result_operand(decision);
+            assert!(!phpc_native_comparison_operand_value(operand).is_null());
+            assert!(phpc_native_comparison_operand_diagnostic(operand).is_null());
+
+            let branch = unsafe {
+                phpc_native_comparison_operand_compare_operation_branch_and_free(
+                    operand,
+                    phpc_native_comparison_operation_from_opcode(
+                        NativeComparisonOp::StrictEq.abi_opcode(),
+                    ),
+                    phpc_native_comparison_operand_from_scalar(phpc_native_bool(expected)),
+                )
+            };
+            assert_eq!(
+                phpc_native_comparison_branch_result_status(branch),
+                NativeComparisonStatus::Ok as u8,
+                "{label}"
+            );
+            assert!(
+                phpc_native_comparison_branch_result_is_true(branch),
+                "{label}"
+            );
+            assert_eq!(
+                phpc_native_comparison_branch_result_diagnostic_len(branch),
+                0,
+                "{label}"
+            );
+        }
+
+        let blocked_decision = NativeComparisonBranchDecision {
+            exit_code: 1,
+            value: 0,
+        };
+        let blocked_operand =
+            phpc_native_comparison_branch_decision_result_operand(blocked_decision);
+        assert!(phpc_native_comparison_operand_value(blocked_operand).is_null());
+        assert!(!phpc_native_comparison_operand_diagnostic(blocked_operand).is_null());
+        assert_native_comparison_blocked(
+            "blocked branch decision result operand",
+            unsafe {
+                phpc_native_comparison_operand_compare_operation_and_free(
+                    blocked_operand,
+                    phpc_native_comparison_operation_from_opcode(
+                        NativeComparisonOp::StrictEq.abi_opcode(),
+                    ),
+                    phpc_native_comparison_operand_from_scalar(phpc_native_bool(false)),
+                )
+            },
+            "comparison branch decision is blocked",
+        );
     }
 
     #[test]

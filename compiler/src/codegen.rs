@@ -5844,6 +5844,7 @@ enum CValue {
     ArrayHandle(String),
     Bool(bool),
     BoolExpr(String),
+    ComparisonDecision(String),
     Null,
 }
 
@@ -6012,6 +6013,7 @@ impl CGenerator {
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_scalar(phpc_NativeScalarValue value);\n");
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_string_and_free(phpc_NativeStringHandle string);\n");
             output.push_str("extern phpc_NativeComparisonBranchDecision phpc_native_comparison_operand_compare_operation_decision_and_free(phpc_NativeComparisonOperand left, phpc_NativeComparisonOperation operation, phpc_NativeComparisonOperand right);\n");
+            output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_branch_decision_result_operand(phpc_NativeComparisonBranchDecision decision);\n");
             if self.uses_native_array_comparison_helpers {
                 output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_array_compare_branch(phpc_NativeArrayHandle left, uint8_t op, phpc_NativeArrayHandle right);\n");
                 output.push_str("extern phpc_NativeComparisonBranchDecision phpc_native_comparison_branch_decision_from_result(phpc_NativeComparisonBranchResult result);\n");
@@ -6413,7 +6415,10 @@ impl CGenerator {
                     } = expr.as_ref()
                     {
                         let value = self.emit_value_operand_expr(expr)?;
-                        if matches!(value, CValue::Bool(_) | CValue::BoolExpr(_)) {
+                        if matches!(
+                            value,
+                            CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ComparisonDecision(_)
+                        ) {
                             return Ok(value);
                         }
                         let inverted = self.emit_bool_not(value, *span)?;
@@ -7128,7 +7133,7 @@ impl CGenerator {
             "is_null" => Ok(CValue::Bool(matches!(value, CValue::Null))),
             "is_bool" => Ok(CValue::Bool(matches!(
                 value,
-                CValue::Bool(_) | CValue::BoolExpr(_)
+                CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ComparisonDecision(_)
             ))),
             "is_int" | "is_integer" | "is_long" => {
                 Ok(CValue::Bool(matches!(value, CValue::Int(_))))
@@ -7143,6 +7148,7 @@ impl CGenerator {
                 value,
                 CValue::Bool(_)
                     | CValue::BoolExpr(_)
+                    | CValue::ComparisonDecision(_)
                     | CValue::Int(_)
                     | CValue::Float(_)
                     | CValue::String(_)
@@ -7278,9 +7284,11 @@ impl CGenerator {
     fn is_numeric_result_for_value(&self, value: &CValue) -> Option<bool> {
         match value {
             CValue::Int(_) | CValue::Float(_) => Some(true),
-            CValue::Null | CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ArrayHandle(_) => {
-                Some(false)
-            }
+            CValue::Null
+            | CValue::Bool(_)
+            | CValue::BoolExpr(_)
+            | CValue::ComparisonDecision(_)
+            | CValue::ArrayHandle(_) => Some(false),
             CValue::String(value) => Some(classify_php_numeric_string(value).is_numeric()),
             CValue::StringExpr(_) => {
                 let values = self.known_string_values_for_value(value)?;
@@ -7317,6 +7325,7 @@ impl CGenerator {
             CValue::Null
             | CValue::Bool(_)
             | CValue::BoolExpr(_)
+            | CValue::ComparisonDecision(_)
             | CValue::Int(_)
             | CValue::Float(_) => Some(false),
             _ => self.function_exists_result_for_value(value),
@@ -7595,6 +7604,7 @@ impl CGenerator {
                 CValue::Null
                 | CValue::Bool(_)
                 | CValue::BoolExpr(_)
+                | CValue::ComparisonDecision(_)
                 | CValue::String(_)
                 | CValue::StringExpr(_),
                 _,
@@ -7604,6 +7614,7 @@ impl CGenerator {
                 CValue::Null
                 | CValue::Bool(_)
                 | CValue::BoolExpr(_)
+                | CValue::ComparisonDecision(_)
                 | CValue::String(_)
                 | CValue::StringExpr(_),
             ) if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul) => {
@@ -7890,9 +7901,7 @@ impl CGenerator {
                 self.body.push(format!("  return {comparison_exit_code};"));
                 self.body.push("}".to_string());
 
-                Ok(CValue::BoolExpr(format!(
-                    "phpc_native_comparison_branch_decision_is_true({comparison_decision})"
-                )))
+                Ok(CValue::ComparisonDecision(comparison_decision))
             }
         }
     }
@@ -7965,9 +7974,7 @@ impl CGenerator {
         ));
         self.body.push("}".to_string());
 
-        CValue::BoolExpr(format!(
-            "phpc_native_comparison_branch_decision_is_true({comparison_decision})"
-        ))
+        CValue::ComparisonDecision(comparison_decision)
     }
 
     fn emit_native_comparison_operand(
@@ -7996,6 +8003,12 @@ impl CGenerator {
             CValue::BoolExpr(value) => {
                 self.body.push(format!(
                     "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_scalar((phpc_NativeScalarValue){{1, (uint8_t)(({value}) != 0), 0, 0.0}});"
+                ));
+                Ok(NativeCComparisonOperand { operand })
+            }
+            CValue::ComparisonDecision(decision) => {
+                self.body.push(format!(
+                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_branch_decision_result_operand({decision});"
                 ));
                 Ok(NativeCComparisonOperand { operand })
             }
@@ -8065,6 +8078,11 @@ impl CGenerator {
             CValue::BoolExpr(value) => {
                 self.body.push(format!(
                     "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{1, (uint8_t)(({value}) != 0), 0, 0.0}});"
+                ));
+            }
+            CValue::ComparisonDecision(decision) => {
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{1, (uint8_t)(phpc_native_comparison_branch_decision_is_true({decision}) != 0), 0, 0.0}});"
                 ));
             }
             CValue::Int(value) => {
@@ -8651,6 +8669,28 @@ impl CGenerator {
                 }
                 return self.emit_bool_comparison(left, op, right, span);
             }
+            (CValue::ComparisonDecision(left), right) => {
+                let Some(right) = c_bool_operand(right) else {
+                    return Err(self.unsupported(span, assembly_comparison_rejection()));
+                };
+                return self.emit_bool_comparison(
+                    c_comparison_decision_bool_expr(&left),
+                    op,
+                    right,
+                    span,
+                );
+            }
+            (left, CValue::ComparisonDecision(right)) => {
+                let Some(left) = c_bool_operand(left) else {
+                    return Err(self.unsupported(span, assembly_comparison_rejection()));
+                };
+                return self.emit_bool_comparison(
+                    left,
+                    op,
+                    c_comparison_decision_bool_expr(&right),
+                    span,
+                );
+            }
             (CValue::String(left), CValue::String(right)) => left == right,
             (CValue::StringExpr(left), CValue::StringExpr(right)) => {
                 if left == right {
@@ -9090,7 +9130,7 @@ impl CGenerator {
 
     fn require_bool_value(&self, value: CValue, span: Span) -> CompileResult<CValue> {
         match value {
-            CValue::Bool(_) | CValue::BoolExpr(_) => Ok(value),
+            CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ComparisonDecision(_) => Ok(value),
             _ => Err(self.unsupported(span, assembly_logical_rejection())),
         }
     }
@@ -9099,6 +9139,7 @@ impl CGenerator {
         match value {
             CValue::Bool(value) => Some(*value),
             CValue::BoolExpr(_) => None,
+            CValue::ComparisonDecision(_) => None,
             CValue::Int(value) => known_integer_truthiness(&self.known_integer_values(value)),
             CValue::Float(value) => known_float_truthiness(&self.known_float_values(value)),
             CValue::String(value) => Some(is_php_truthy_string(value)),
@@ -9264,7 +9305,10 @@ impl CGenerator {
                 self.emit_expr(if_false)
             };
         }
-        if !matches!(condition_value, CValue::BoolExpr(_)) {
+        if !matches!(
+            condition_value,
+            CValue::BoolExpr(_) | CValue::ComparisonDecision(_)
+        ) {
             return Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION));
         }
         let if_true = self.emit_expr(if_true)?;
@@ -9282,7 +9326,11 @@ impl CGenerator {
         if same_direct_variable_expr(condition, if_false) {
             if matches!(
                 condition_value,
-                CValue::BoolExpr(_) | CValue::Int(_) | CValue::Float(_) | CValue::StringExpr(_)
+                CValue::BoolExpr(_)
+                    | CValue::ComparisonDecision(_)
+                    | CValue::Int(_)
+                    | CValue::Float(_)
+                    | CValue::StringExpr(_)
             ) {
                 return Ok(condition_value);
             }
@@ -9339,9 +9387,12 @@ impl CGenerator {
             }
             CValue::Null => self.emit_expr(if_false),
             CValue::ArrayHandle(_) => Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION)),
-            condition @ CValue::BoolExpr(_) => {
+            condition @ (CValue::BoolExpr(_) | CValue::ComparisonDecision(_)) => {
                 let if_false = self.emit_expr(if_false)?;
-                if !matches!(if_false, CValue::Bool(_) | CValue::BoolExpr(_)) {
+                if !matches!(
+                    if_false,
+                    CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ComparisonDecision(_)
+                ) {
                     return Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION));
                 }
                 self.emit_ternary(condition, CValue::Bool(true), if_false, span)
@@ -9550,6 +9601,10 @@ impl CGenerator {
     fn emit_bool_not(&mut self, value: CValue, span: Span) -> CompileResult<CValue> {
         match value {
             CValue::Bool(value) => Ok(CValue::Bool(!value)),
+            CValue::ComparisonDecision(decision) => Ok(CValue::BoolExpr(format!(
+                "!({})",
+                c_comparison_decision_bool_expr(&decision)
+            ))),
             CValue::BoolExpr(value) => {
                 if let Some(result) = self.static_bool_not(&value) {
                     if result.is_single() {
@@ -10085,6 +10140,10 @@ impl CGenerator {
             CValue::BoolExpr(value) => {
                 self.emit_c_stdout_printf(format!("if ({value}) {{ printf(\"%s\", \"1\"); }}"))
             }
+            CValue::ComparisonDecision(decision) => self.emit_c_stdout_printf(format!(
+                "if ({}) {{ printf(\"%s\", \"1\"); }}",
+                c_comparison_decision_bool_expr(&decision)
+            )),
             CValue::Int(value) => self.emit_c_stdout_printf(format!("printf(\"%lld\", {value});")),
             CValue::Float(value) => self.emit_c_stdout_printf(format!("printf(\"%g\", {value});")),
             CValue::String(value) => {
@@ -10672,8 +10731,13 @@ fn c_bool_operand(value: CValue) -> Option<String> {
         CValue::Bool(true) => Some("1".to_string()),
         CValue::Bool(false) => Some("0".to_string()),
         CValue::BoolExpr(value) => Some(value),
+        CValue::ComparisonDecision(decision) => Some(c_comparison_decision_bool_expr(&decision)),
         _ => None,
     }
+}
+
+fn c_comparison_decision_bool_expr(decision: &str) -> String {
+    format!("phpc_native_comparison_branch_decision_is_true({decision})")
 }
 
 fn c_string_operand(value: CValue) -> String {
@@ -11459,7 +11523,7 @@ fn llvm_debug_type_name(value: &IrValue) -> &'static str {
 fn c_gettype_name(value: &CValue) -> &'static str {
     match value {
         CValue::Null => "NULL",
-        CValue::Bool(_) | CValue::BoolExpr(_) => "boolean",
+        CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ComparisonDecision(_) => "boolean",
         CValue::Int(_) => "integer",
         CValue::Float(_) => "double",
         CValue::String(_) | CValue::StringExpr(_) => "string",
@@ -11470,7 +11534,7 @@ fn c_gettype_name(value: &CValue) -> &'static str {
 fn c_debug_type_name(value: &CValue) -> &'static str {
     match value {
         CValue::Null => "null",
-        CValue::Bool(_) | CValue::BoolExpr(_) => "bool",
+        CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ComparisonDecision(_) => "bool",
         CValue::Int(_) => "int",
         CValue::Float(_) => "float",
         CValue::String(_) | CValue::StringExpr(_) => "string",
