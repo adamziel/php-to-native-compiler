@@ -504,44 +504,19 @@ pub extern "C" fn phpc_native_symbol_table_is_null(handle: NativeSymbolTableHand
 /// # Safety
 ///
 /// `handle` must be null or a symbol-table handle previously returned by the
-/// runtime ABI and not yet freed. `name` must be null with `name_len == 0`, or
-/// point to at least `name_len` readable bytes. `value` must be null or a value
-/// handle previously returned by the runtime ABI and not yet freed. The table
-/// stores a clone, so ownership of `value` remains with the caller.
+/// runtime ABI and not yet freed. `name` must either be null with
+/// `name_len == 0`, or point to at least `name_len` readable bytes. The
+/// returned value handle owns a clone of the variable value, or is null when
+/// the table handle is null, the name is invalid UTF-8, or the variable is
+/// missing.
 #[no_mangle]
-pub unsafe extern "C" fn phpc_native_symbol_table_write_value(
-    mut handle: NativeSymbolTableHandle,
-    name: *const u8,
-    name_len: usize,
-    value: NativeValueHandle,
-) -> bool {
-    let (Some(table), Some(name), Some(value)) = (
-        unsafe { handle.as_mut() },
-        unsafe { native_name_from_bytes(name, name_len) },
-        unsafe { value.as_ref() },
-    ) else {
-        return false;
-    };
-
-    table.values.insert(name, value.clone());
-    true
-}
-
-/// # Safety
-///
-/// `handle` must be null or a symbol-table handle previously returned by the
-/// runtime ABI and not yet freed. `name` must be null with `name_len == 0`, or
-/// point to at least `name_len` readable bytes. The returned value handle owns
-/// a clone of the stored value, or is null when the table/name is invalid or
-/// the variable is missing.
-#[no_mangle]
-pub unsafe extern "C" fn phpc_native_symbol_table_read_value(
+pub unsafe extern "C" fn phpc_native_symbol_table_read(
     handle: NativeSymbolTableHandle,
     name: *const u8,
     name_len: usize,
 ) -> NativeValueHandle {
     let (Some(table), Some(name)) = (unsafe { handle.as_ref() }, unsafe {
-        native_name_from_bytes(name, name_len)
+        native_symbol_name_from_bytes(name, name_len)
     }) else {
         return NativeValueHandle::null();
     };
@@ -557,6 +532,34 @@ pub unsafe extern "C" fn phpc_native_symbol_table_read_value(
 /// # Safety
 ///
 /// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. `name` must either be null with
+/// `name_len == 0`, or point to at least `name_len` readable bytes. `value`
+/// must be null or a value handle previously returned by the runtime ABI and
+/// not yet freed. The symbol table owns a clone of `value`; ownership of
+/// `value` remains with the caller. The helper returns `false` for null table
+/// handles, invalid names, or null value handles.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_write(
+    mut handle: NativeSymbolTableHandle,
+    name: *const u8,
+    name_len: usize,
+    value: NativeValueHandle,
+) -> bool {
+    let (Some(table), Some(name), Some(value)) = (
+        unsafe { handle.as_mut() },
+        unsafe { native_symbol_name_from_bytes(name, name_len) },
+        unsafe { value.as_ref() },
+    ) else {
+        return false;
+    };
+
+    table.values.insert(name, value.clone());
+    true
+}
+
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
 /// runtime ABI and not yet freed. Passing any other pointer is undefined
 /// behavior.
 #[no_mangle]
@@ -566,6 +569,18 @@ pub unsafe extern "C" fn phpc_native_symbol_table_free(handle: NativeSymbolTable
     }
 
     drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+unsafe fn native_symbol_name_from_bytes(name: *const u8, name_len: usize) -> Option<String> {
+    if name_len == 0 {
+        return Some(String::new());
+    }
+    if name.is_null() {
+        return None;
+    }
+
+    let bytes = unsafe { std::slice::from_raw_parts(name, name_len) };
+    std::str::from_utf8(bytes).ok().map(|name| name.to_string())
 }
 
 #[no_mangle]
@@ -775,15 +790,6 @@ unsafe fn native_value_from_string(handle: NativeStringHandle) -> Result<Value, 
     };
 
     Ok(Value::String(value))
-}
-
-unsafe fn native_name_from_bytes(name: *const u8, len: usize) -> Option<String> {
-    if name.is_null() {
-        return (len == 0).then(String::new);
-    }
-
-    let bytes = unsafe { std::slice::from_raw_parts(name, len) };
-    String::from_utf8(bytes.to_vec()).ok()
 }
 
 /// # Safety
@@ -6309,58 +6315,137 @@ mod tests {
     }
 
     #[test]
-    fn native_symbol_table_writes_and_reads_cloned_value_handles() {
+    fn native_symbol_table_handles_are_pointer_sized_and_nullable() {
+        assert_eq!(
+            std::mem::size_of::<NativeSymbolTableHandle>(),
+            std::mem::size_of::<*mut ()>()
+        );
+
+        let null = phpc_native_symbol_table_null();
+        assert!(null.is_null());
+        assert!(phpc_native_symbol_table_is_null(null));
+        unsafe { phpc_native_symbol_table_free(null) };
+
         let table = phpc_native_symbol_table_new();
-        let name = b"label";
-        let input = b"stored";
-        let string = unsafe { phpc_native_string_from_bytes(input.as_ptr(), input.len()) };
-        let value = unsafe { phpc_native_value_from_string(string) };
-
+        assert!(!table.is_null());
         assert!(!phpc_native_symbol_table_is_null(table));
-        assert!(unsafe {
-            phpc_native_symbol_table_write_value(table, name.as_ptr(), name.len(), value)
-        });
-        unsafe { phpc_native_value_free(value) };
-
-        let read = unsafe { phpc_native_symbol_table_read_value(table, name.as_ptr(), name.len()) };
-        assert_eq!(native_value_echo_bytes_for_test(read), b"stored");
-
-        unsafe { phpc_native_value_free(read) };
-        unsafe { phpc_native_string_free(string) };
         unsafe { phpc_native_symbol_table_free(table) };
     }
 
     #[test]
-    fn native_symbol_table_null_and_missing_reads_are_bounded() {
+    fn native_symbol_table_writes_and_reads_cloned_value_handles() {
+        let table = phpc_native_symbol_table_new();
+        let name = b"answer";
+        let value = NativeValueHandle::from_value(Value::String("forty-two".to_string()));
+
+        assert!(unsafe { phpc_native_symbol_table_write(table, name.as_ptr(), name.len(), value) });
+        unsafe { phpc_native_value_free(value) };
+
+        let first = unsafe { phpc_native_symbol_table_read(table, name.as_ptr(), name.len()) };
+        let second = unsafe { phpc_native_symbol_table_read(table, name.as_ptr(), name.len()) };
+        assert!(!first.is_null());
+        assert!(!second.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(first), b"forty-two");
+        unsafe { phpc_native_value_free(first) };
+
+        assert_eq!(native_value_echo_bytes_for_test(second), b"forty-two");
+        unsafe { phpc_native_symbol_table_free(table) };
+
+        assert_eq!(native_value_echo_bytes_for_test(second), b"forty-two");
+        unsafe { phpc_native_value_free(second) };
+    }
+
+    #[test]
+    fn native_symbol_table_overwrites_existing_variables_by_clone() {
+        let table = phpc_native_symbol_table_new();
+        let name = b"slot";
+        let first = NativeValueHandle::from_value(Value::String("old".to_string()));
+        let second = NativeValueHandle::from_value(Value::String("new".to_string()));
+
+        assert!(unsafe { phpc_native_symbol_table_write(table, name.as_ptr(), name.len(), first) });
+        assert!(unsafe {
+            phpc_native_symbol_table_write(table, name.as_ptr(), name.len(), second)
+        });
+        unsafe { phpc_native_value_free(first) };
+        unsafe { phpc_native_value_free(second) };
+
+        let read = unsafe { phpc_native_symbol_table_read(table, name.as_ptr(), name.len()) };
+        assert_eq!(native_value_echo_bytes_for_test(read), b"new");
+
+        unsafe { phpc_native_value_free(read) };
+        unsafe { phpc_native_symbol_table_free(table) };
+    }
+
+    #[test]
+    fn native_symbol_table_reads_missing_and_null_values_are_bounded() {
         let table = phpc_native_symbol_table_new();
         let missing = b"missing";
+        let null_name = b"nullable";
+        let null_value = NativeValueHandle::from_value(Value::Null);
 
-        assert!(phpc_native_symbol_table_is_null(
-            phpc_native_symbol_table_null()
-        ));
         assert!(unsafe {
-            phpc_native_symbol_table_read_value(table, missing.as_ptr(), missing.len())
-        }
-        .is_null());
-        assert!(unsafe {
-            phpc_native_symbol_table_read_value(
-                phpc_native_symbol_table_null(),
+            phpc_native_symbol_table_read(
+                NativeSymbolTableHandle::null(),
                 missing.as_ptr(),
                 missing.len(),
             )
         }
         .is_null());
+        assert!(
+            unsafe { phpc_native_symbol_table_read(table, missing.as_ptr(), missing.len()) }
+                .is_null()
+        );
+
+        assert!(unsafe {
+            phpc_native_symbol_table_write(table, null_name.as_ptr(), null_name.len(), null_value)
+        });
+        unsafe { phpc_native_value_free(null_value) };
+
+        let read =
+            unsafe { phpc_native_symbol_table_read(table, null_name.as_ptr(), null_name.len()) };
+        assert!(!read.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(read), b"");
+
+        unsafe { phpc_native_value_free(read) };
+        unsafe { phpc_native_symbol_table_free(table) };
+    }
+
+    #[test]
+    fn native_symbol_table_invalid_inputs_are_bounded() {
+        let table = phpc_native_symbol_table_new();
+        let name = b"x";
+        let invalid_utf8 = [0xff_u8];
+        let value = NativeValueHandle::from_value(Value::Int(1));
+
         assert!(!unsafe {
-            phpc_native_symbol_table_write_value(
-                phpc_native_symbol_table_null(),
-                missing.as_ptr(),
-                missing.len(),
+            phpc_native_symbol_table_write(
+                NativeSymbolTableHandle::null(),
+                name.as_ptr(),
+                name.len(),
+                value,
+            )
+        });
+        assert!(!unsafe { phpc_native_symbol_table_write(table, ptr::null(), 1, value) });
+        assert!(!unsafe {
+            phpc_native_symbol_table_write(table, invalid_utf8.as_ptr(), invalid_utf8.len(), value)
+        });
+        assert!(!unsafe {
+            phpc_native_symbol_table_write(
+                table,
+                name.as_ptr(),
+                name.len(),
                 NativeValueHandle::null(),
             )
         });
 
+        assert!(unsafe { phpc_native_symbol_table_read(table, ptr::null(), 1) }.is_null());
+        assert!(unsafe {
+            phpc_native_symbol_table_read(table, invalid_utf8.as_ptr(), invalid_utf8.len())
+        }
+        .is_null());
+
+        unsafe { phpc_native_value_free(value) };
         unsafe { phpc_native_symbol_table_free(table) };
-        unsafe { phpc_native_symbol_table_free(phpc_native_symbol_table_null()) };
     }
 
     #[test]
