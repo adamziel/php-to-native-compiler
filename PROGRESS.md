@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 15:05 CEST
+Updated: 2026-05-21 15:08 CEST
 Evaluation marker: 20260521T125958Z
 
 This file is a high-level roadmap and status digest for the native PHP compiler effort. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means it is committed on `master`; lane-local candidate work is useful source material but is not counted as product capability until selected, gated, committed, and pushed.
@@ -11,7 +11,7 @@ Estimated progress toward a broadly usable generalized PHP native compiler: **19
 
 ```
 Generalized runtime/ABI foundations      [###########---------] 55%
-Compiler/backend consumers               [#######-------------] 33%
+Compiler/backend consumers               [#######-------------] 34%
 Executable generalized PHP semantics     [###-----------------] 16%
 Arrays, references, COW, lvalues         [##------------------] 11%
 Objects, properties, methods             [##------------------] 10%
@@ -31,6 +31,7 @@ The leading edge is runtime/ABI and compiler-boundary convergence. The bottlenec
 - [x] Consume comparison branch-result ABI from generated C instead of direct struct-field reads.
 - [x] Share PHP numeric-string classification between runtime and codegen.
 - [x] Expose native string-conversion result/free boundaries for value/reference conversion blockers.
+- [x] Route reference-source lvalue call operands through the shared call-operation boundary.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
 - [ ] Generalize value/result ownership across returns, call args, conditions, branch joins, discarded temporaries, stdout, and cleanup.
 - [ ] Implement full array lvalue/RMW semantics, writable roots, foreach/by-ref foreach, ArrayAccess/object/resource offsets, and COW/reference behavior.
@@ -44,7 +45,7 @@ The leading edge is runtime/ABI and compiler-boundary convergence. The bottlenec
 | Active item | Primary-integrated estimate | Lane-local candidate maturity | Current read |
 | --- | ---: | ---: | --- |
 | String conversion and byte-buffer results | 30% | 55% | Result/free ABI is integrated; production backend consumption and exact PHP diagnostics remain blocked. |
-| Call operation cleanup and ownership | 24% | 45% | Many call-result contexts route through shared blockers; actual frames, binding, by-ref args, variadics, callbacks, and returns are not native-executable yet. |
+| Call operation cleanup and ownership | 26% | 45% | More reference-source and lvalue operand call contexts route through shared blockers; actual frames, binding, by-ref args, variadics, callbacks, and returns are not native-executable yet. |
 | Comparison/conversion semantics | 28% | 50% | Comparison ABI and known numeric-string classification are integrated; dynamic operands and diagnostics need broader execution. |
 | Arrays, lvalues, references, COW | 11% | 40% | Strong lane-local generated-C/result-boundary work exists; current uncommitted primary/test diffs are not counted yet. |
 | Symbols, globals, request state | 20% | 35% | Symbol-table ABI helpers are integrated; full request/global/superglobal behavior is still early. |
@@ -56,6 +57,8 @@ The leading edge is runtime/ABI and compiler-boundary convergence. The bottlenec
 
 Recent pushed primary commits show useful movement from lane-local artifacts into `master`:
 
+- `869bc280 native: route reference-source call operands`
+  - Routes reference-source lvalue operands containing direct, dynamic, method, and constructor call results through the shared native call-operation boundary in LLVM and generated-C paths.
 - `1aab675e runtime: expose native string conversion results`
   - Adds `NativeStringConversionResult`, runtime value/reference string-conversion entrypoints, result cleanup, and ABI probe coverage. This is a generalized runtime/ABI surface; broad production consumption is still pending.
 - `1c7b0495 codegen: reuse runtime numeric string semantics`
@@ -68,7 +71,7 @@ Recent pushed primary commits show useful movement from lane-local artifacts int
 
 ## Current Primary State
 
-Primary git is synced with `origin/master` at `452b6a85 docs: clarify progress head`. The latest semantic compiler/runtime commit is `1aab675e`. Current uncommitted implementation diffs are present in `compiler/src/codegen.rs`, `compiler/tests/native_function_call_boundary.rs`, and `compiler/tests/native_mutation_boundary.rs`; those are not counted as integrated until gated, committed, and pushed.
+Primary git is synced with `origin/master` at `869bc280 native: route reference-source call operands`. The latest semantic compiler/runtime commit is `869bc280`. The primary worktree was clean immediately after that integration push.
 
 ## Lane-Local Candidate Work
 
