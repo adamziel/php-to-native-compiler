@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 16:12 CEST
+Updated: 2026-05-21 16:20 CEST
 Evaluation marker: 20260521T135026Z
 
 This is a high-level roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local work is candidate material only until selected, gated, committed, and pushed.
@@ -11,7 +11,7 @@ Estimated progress toward a broadly usable generalized PHP native compiler: **20
 
 ```
 Generalized runtime/ABI foundations      [############--------] 58%
-Compiler/backend consumers               [#########-----------] 43%
+Compiler/backend consumers               [#########-----------] 44%
 Executable generalized PHP semantics     [####----------------] 19%
 Arrays, references, COW, lvalues         [##------------------] 12%
 Objects, properties, methods             [##------------------] 10%
@@ -47,7 +47,7 @@ The project is moving from isolated backend rejection paths toward shared semant
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, and byte-buffer results | 34% | 58% | Primary has string-conversion result/free ABI, comparison byte materialization, runtime-shared string truthiness, generated-C tracked dynamic string lengths, and runtime numeric-string classification. Lanes have broader string-result/debug/config/callable/regex blockers. Production execution and exact diagnostics remain limited. |
 | Call operation cleanup and ownership | 33% | 52% | Primary routes many call-result contexts through shared blockers. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
-| Comparison/conversion semantics | 35% | 55% | Primary has comparison ABI consumers, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness for known conditions/logical expressions. Lane conversion-source/pair work is promising but not integrated. |
+| Comparison/conversion semantics | 36% | 55% | Primary has comparison ABI consumers, canonical branch-result predicates/exit-code consumers, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness for known conditions/logical expressions. Lane conversion-source/pair work is promising but not integrated. |
 | Arrays, lvalues, references, COW | 12% | 44% | Lane-local generated-C owner-slot/RMW/reference-cell work is strong, but primary still lacks full executable array lvalue, foreach, reference/COW, and ArrayAccess behavior. |
 | Symbols, globals, request state | 21% | 39% | Primary has symbol-table ABI helpers; lanes have frame-slot/request operation contracts. Full request/global/superglobal behavior and exact diagnostics remain early. |
 | Objects, properties, methods | 10% | 33% | Mostly lane-local blocker/carrier work. Primary has little broad executable object/property/method behavior. |
@@ -58,6 +58,8 @@ The project is moving from isolated backend rejection paths toward shared semant
 
 Recent pushed primary commits show useful movement from lane-local artifacts into `master`:
 
+- `7c4017f1 codegen: consume comparison branch predicates`
+  - Adds canonical runtime accessors for comparison branch truth and process exit status, then routes generated-C comparison control flow through those predicates instead of backend-local status/value field checks. This keeps loose, strict, ordering, scalar/null/string, dynamic byte-string, and branch-condition comparison consumers on one result contract.
 - `495526a2 codegen: track native C string lengths`
   - Tracks generated-C string-expression byte lengths through ternary lowering so mixed-length and embedded-NUL dynamic string operands materialize through `phpc_native_value_from_string_bytes_with_diagnostic(..., len, ...)` and the owned runtime comparison branch ABI instead of C `strlen()`/`strcmp()` shortcuts.
 - `227c3a63 runtime: share PHP string truthiness semantics`
@@ -76,7 +78,7 @@ Recent pushed primary commits show useful movement from lane-local artifacts int
 
 ## Current Primary State
 
-During this progress refresh, primary git was clean and synced with `origin/master` at `495526a2 codegen: track native C string lengths`. The latest semantic compiler/runtime commit is `495526a2`.
+During this progress refresh, primary git was clean and synced with `origin/master` at `7c4017f1 codegen: consume comparison branch predicates`. The latest semantic compiler/runtime commit is `7c4017f1`.
 
 ## Lane-Local Candidate Work
 
