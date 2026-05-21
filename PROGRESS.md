@@ -1,32 +1,31 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 21:24 CEST
+Updated: 2026-05-21 21:33 CEST
 Evaluation marker: 20260521T185117Z
-Final refresh: 20260521T192400Z
+Final refresh: 20260521T193300Z
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local and dirty-worktree work is candidate material until selected, gated, committed, and pushed.
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **27%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **28%**
 
 ```
 Generalized runtime/ABI foundations      [##############------] 70%
-Compiler/backend consumers               [#############-------] 64%
-Executable generalized PHP semantics     [######--------------] 31%
+Compiler/backend consumers               [#############-------] 65%
+Executable generalized PHP semantics     [######--------------] 32%
 Arrays, references, COW, lvalues         [####----------------] 20%
 Objects, properties, methods             [##------------------] 10%
 Diagnostics/control-flow composition     [###-----------------] 17%
-Broad integrated verification            [####----------------] 19%
+Broad integrated verification            [####----------------] 20%
 ```
 
 ## Current Primary State
 
-- Primary semantic HEAD at final review check: `fed5f01c native: route compare cast type-name value results`.
-- Latest primary-integrated semantic commit: `fed5f01c native: route compare cast type-name value results`.
+- Primary semantic HEAD at final review check: `edbb031b native: route comparison operands to decision ABI`.
+- Latest primary-integrated semantic commit: `edbb031b native: route comparison operands to decision ABI`.
 - Progress metadata caveat: this `PROGRESS.md` refresh is a management artifact committed separately from semantic compiler progress.
-- Review race caveat: the bounded snapshot caught the comparison branch-decision work dirty while the dashboard still said primary was clean. A final recheck found it landed and pushed as `70872c2e`, so it is counted as integrated semantic progress.
-- Resource caveat: `/dev/shm` is fluctuating with active lane builds but was around 6-13G free during this refresh; use disk-backed primary targets when broad gates run.
+- Resource caveat: `/dev/shm` is fluctuating with active lane builds but was around 8G free during this refresh; use disk-backed primary targets when broad gates run.
 
 ## Grand Roadmap Position
 
@@ -52,16 +51,18 @@ The project has moved from scattered backend rejection paths toward reusable run
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, byte buffers | 47% | 72% | Primary has shared value string-form semantics, numeric-string classification, selected generated-C string builtin consumers, and comparison byte materialization. Lane-local work adds `PhpStringByteSource`, byte tokenizer/parser/string-result candidates, and stronger binary-byte surfaces. |
 | Call operation cleanup and ownership | 37% | 57% | Primary routes many call-result contexts through shared blockers. Lanes have callable-signature and sequence/consumer contracts, but real frames, binding, by-ref args/returns, dynamic calls, and return ownership remain mostly non-executable. |
-| Comparison and conversion semantics | 51% | 65% | Primary has reusable comparison operation validation, comparison operands, branch/free ABI, strict array/object identity in selected array-search builtins, generated-C array-handle comparisons, a centralized comparison branch-decision ABI, and generated-C compare/cast/type-name value-result consumers through the shared `NativeValueOperationResult` path. Loose array/object comparison, non-integral float array keys, warning order, LLVM parity, and broader conversion consumers remain open. |
+| Comparison and conversion semantics | 53% | 66% | Primary has reusable comparison operation validation, comparison operands, branch/free ABI, strict array/object identity in selected array-search builtins, generated-C array-handle comparisons, a centralized comparison branch-decision ABI, direct generated-C comparison operand decision consumers, and generated-C compare/cast/type-name value-result consumers through the shared `NativeValueOperationResult` path. Loose array/object comparison, non-integral float array keys, warning order, LLVM parity, and broader conversion consumers remain open. |
 | Arrays, lvalues, references, COW | 20% | 64% | Primary has array-key materialization, array value-operation result ABI, array-entry snapshots, and array-handle comparison consumers. Lanes have stronger RMW, `??=`, owner-slot, foreach, reference-operation, and generated-C lvalue candidates, but full executable lvalues/references/COW are not integrated. |
 | Symbols, globals, request state | 24% | 50% | Primary has symbol ABI helpers, request/superglobal snapshot ABI, and now routes `defined()` interpolated-string operands through the shared expression-result boundary instead of a one-shape global-constant rejection. Lanes have expression-result consumer and slot/readiness contracts. Mutable globals/superglobals, writes/unset, repeated calls, references/COW, and exact diagnostics remain early. |
 | Objects, properties, methods | 10% | 39% | Lane-local object/class/property dependency boundaries are improving. Primary still has little broad executable object/property/method behavior. |
 | Diagnostics and control-flow cleanup | 17% | 52% | Primary has selected severity/blocker surfaces. Lanes have diagnostic/result carriers and termination cleanup models, but exact warning/recovery order and executable cleanup across control flow are still broad blockers. |
 | Filesystem/path builtins and request state | 15% | 34% | Primary centralizes filesystem path/state blockers and request-state snapshots. Real stream/stat/cache/current-directory behavior and mutable request/global state are still not implemented. |
-| Broad composition verification | 19% | 32% | Focused native-link/runtime gates now include comparison branch-decision, full native-link, runtime comparison, and dynamic string comparison coverage. Broad differential PHP composition coverage remains thin, and broad `phpc --tests` still has a known pre-existing `builtin_exception_class` failure. |
+| Broad composition verification | 20% | 33% | Focused native-link/runtime gates now include comparison branch-decision, direct comparison operand-decision consumers, full native-link, runtime comparison, and dynamic string comparison coverage. Broad differential PHP composition coverage remains thin, and broad `phpc --tests` still has a known pre-existing `builtin_exception_class` failure. |
 
 ## Recent Primary-Integrated Work
 
+- `edbb031b native: route comparison operands to decision ABI`
+  - Routes generated-C scalar/string comparison conditions directly through the shared owned operand decision ABI, avoiding intermediate branch-result storage for those consumers while preserving array comparison branch-result handling. Focused runtime comparison, generated-C dynamic string comparison, linked native comparison executables, full `native_link`, package check, rustfmt, and diff checks passed.
 - `fed5f01c native: route compare cast type-name value results`
   - Extends the existing native value-operation result path to generated-C loose comparison, scalar cast, and type-name consumers. The batch routes supported compare/cast/type-name expressions through shared `NativeValueOperationResult` helpers and a semantic preflight classifier instead of the prior broad call blocker, then proves source and linked executable behavior across array key/value consumers. Non-integral float array keys, arbitrary nested calls, broader LLVM parity, and full conversion warning/recovery remain blocked.
 - `811cd281 native: route defined interpolation through expression boundary`
@@ -100,7 +101,7 @@ The project remains boundary-heavy. More result/blocker vocabulary without immed
 
 ## Near-Term Steering
 
-1. Treat `fed5f01c` as the latest integrated semantic baseline.
+1. Treat `edbb031b` as the latest integrated semantic baseline.
 2. Prefer small executable generated-C/LLVM consumers of existing ABI surfaces over more standalone vocabulary.
 3. Strong next candidates: array lvalue/reference operation consumers, request-state snapshot generated-C consumers, LLVM parity for comparison branch-decision/array comparison branch-free, value string semantics consumers, narrow string-result execution, or broader composition gates around comparison/array/string/diagnostic families.
 4. Keep `/dev/shm` closer to 10-12G free before broad native-link or workspace gates; use disk-backed primary targets while lane builds are active.
