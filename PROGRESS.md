@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 15:19 CEST
+Updated: 2026-05-21 15:31 CEST
 Evaluation marker: 20260521T125958Z
 
 This file is a high-level roadmap and status digest for the native PHP compiler effort. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means it is committed on `master`; lane-local candidate work is useful source material but is not counted as product capability until selected, gated, committed, and pushed.
@@ -11,7 +11,7 @@ Estimated progress toward a broadly usable generalized PHP native compiler: **20
 
 ```
 Generalized runtime/ABI foundations      [###########---------] 56%
-Compiler/backend consumers               [#######-------------] 36%
+Compiler/backend consumers               [########------------] 38%
 Executable generalized PHP semantics     [###-----------------] 17%
 Arrays, references, COW, lvalues         [##------------------] 11%
 Objects, properties, methods             [##------------------] 10%
@@ -33,6 +33,7 @@ The leading edge is runtime/ABI and compiler-boundary convergence. The bottlenec
 - [x] Expose native string-conversion result/free boundaries for value/reference conversion blockers.
 - [x] Route reference-source lvalue call operands through the shared call-operation boundary.
 - [x] Materialize generated-C comparison string operands through a runtime byte-boundary with diagnostic results.
+- [x] Route statement operands with call results through the shared call-operation boundary across LLVM and generated C.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
 - [ ] Generalize value/result ownership across returns, call args, conditions, branch joins, discarded temporaries, stdout, and cleanup.
 - [ ] Implement full array lvalue/RMW semantics, writable roots, foreach/by-ref foreach, ArrayAccess/object/resource offsets, and COW/reference behavior.
@@ -46,7 +47,7 @@ The leading edge is runtime/ABI and compiler-boundary convergence. The bottlenec
 | Active item | Primary-integrated estimate | Lane-local candidate maturity | Current read |
 | --- | ---: | ---: | --- |
 | String conversion and byte-buffer results | 30% | 55% | Result/free ABI is integrated; production backend consumption and exact PHP diagnostics remain blocked. |
-| Call operation cleanup and ownership | 26% | 45% | More reference-source and lvalue operand call contexts route through shared blockers; actual frames, binding, by-ref args, variadics, callbacks, and returns are not native-executable yet. |
+| Call operation cleanup and ownership | 29% | 47% | Statement, reference-source, lvalue, value, and argument call-result contexts route through shared blockers; actual frames, binding, by-ref args, variadics, callbacks, and returns are not native-executable yet. |
 | Comparison/conversion semantics | 32% | 52% | Comparison ABI, known numeric-string classification, and generated-C string-byte operand materialization are integrated; full PHP comparison order, recovery, and broad dynamic operands remain incomplete. |
 | Arrays, lvalues, references, COW | 11% | 40% | Strong lane-local generated-C/result-boundary work exists; current uncommitted primary/test diffs are not counted yet. |
 | Symbols, globals, request state | 20% | 35% | Symbol-table ABI helpers are integrated; full request/global/superglobal behavior is still early. |
@@ -58,6 +59,8 @@ The leading edge is runtime/ABI and compiler-boundary convergence. The bottlenec
 
 Recent pushed primary commits show useful movement from lane-local artifacts into `master`:
 
+- `d11d3c8d codegen: route statement operands through call boundary`
+  - Routes call results in statement operands through the shared call-operation cleanup boundary before broader array, control-flow, object/class, mutation, include, static-local, declaration, and statement blockers.
 - `d535a734 native: materialize comparison strings from bytes`
   - Adds a runtime byte-buffer-to-native-value boundary with diagnostics and routes generated-C comparison string operands through it, including dynamic string operand coverage.
 - `869bc280 native: route reference-source call operands`
@@ -74,7 +77,7 @@ Recent pushed primary commits show useful movement from lane-local artifacts int
 
 ## Current Primary State
 
-Primary git is synced with `origin/master`. The latest semantic compiler/runtime commit is `d535a734 native: materialize comparison strings from bytes`; the primary worktree was clean immediately after that progress update.
+Primary git is synced with `origin/master`. The latest semantic compiler/runtime commit is `d11d3c8d codegen: route statement operands through call boundary`; the primary worktree was clean immediately after that progress update.
 
 ## Lane-Local Candidate Work
 
