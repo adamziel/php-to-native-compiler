@@ -5969,6 +5969,9 @@ impl CGenerator {
             }
             Stmt::Echo { exprs, .. } => {
                 for (index, expr) in exprs.iter().enumerate() {
+                    if self.try_emit_native_value_result_echo(expr)? {
+                        continue;
+                    }
                     if self.try_emit_array_index_echo(expr)? {
                         continue;
                     }
@@ -9806,6 +9809,7 @@ impl CGenerator {
         failure_cleanup: &str,
         emit_call: impl FnOnce(&mut Self, &str),
     ) -> CNativeValueMaterialization {
+        self.uses_native_array_helpers = true;
         let result = self.next_native_name(result_prefix);
         let value_result = self.next_native_name(value_prefix);
         self.body
@@ -9868,6 +9872,24 @@ impl CGenerator {
                 "phpc_native_array_key_materialization_result_free({result});"
             )],
         })
+    }
+
+    fn try_emit_native_value_result_echo(&mut self, expr: &Expr) -> CompileResult<bool> {
+        let value = match expr {
+            Expr::Cast { .. } => self.try_materialize_native_value_result_expr(expr, "")?,
+            Expr::Call { name, .. } if native_value_type_name_tag(name).is_some() => {
+                self.try_materialize_native_value_result_expr(expr, "")?
+            }
+            _ => None,
+        };
+        let Some(value) = value else {
+            return Ok(false);
+        };
+
+        self.body
+            .push(format!("phpc_native_value_echo_stdout({});", value.handle));
+        self.body.extend(value.cleanup_after_use);
+        Ok(true)
     }
 
     fn try_emit_array_index_echo(&mut self, expr: &Expr) -> CompileResult<bool> {
