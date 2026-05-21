@@ -6012,20 +6012,20 @@ fn array_comparison_blocker_call_reason(
     callable: &str,
     blocker: ComparisonBlocker,
 ) -> &'static str {
-    match (callable, blocker) {
-        ("in_array()" | "array_search()", ComparisonBlocker::Array) => {
+    match (callable, blocker.value_family()) {
+        ("in_array()" | "array_search()", Some(ComparisonValueFamily::Array)) => {
             "array needles and array values are not implemented"
         }
-        ("in_array()" | "array_search()", ComparisonBlocker::Object) => {
+        ("in_array()" | "array_search()", Some(ComparisonValueFamily::Object)) => {
             "object needles and object values are not implemented"
         }
-        ("array_keys()", ComparisonBlocker::Array) => {
+        ("array_keys()", Some(ComparisonValueFamily::Array)) => {
             "array search values and array values are not implemented"
         }
-        ("array_keys()", ComparisonBlocker::Object) => {
+        ("array_keys()", Some(ComparisonValueFamily::Object)) => {
             "object search values and object values are not implemented"
         }
-        (_, blocker) => blocker.unsupported_reason(),
+        _ => blocker.unsupported_reason(),
     }
 }
 
@@ -10043,10 +10043,18 @@ enum ComparisonOperationFamily {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComparisonOperandSide {
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ComparisonBlocker {
-    Array,
-    Object,
-    Resource,
+    UnsupportedValueFamily {
+        side: ComparisonOperandSide,
+        family: ComparisonValueFamily,
+        operation: ComparisonOperationFamily,
+    },
     NativeObjectHandle,
     NativeResourceHandle,
     ReferenceDereference,
@@ -10066,9 +10074,9 @@ impl ComparisonBlocker {
 
     fn unsupported_reason(self) -> &'static str {
         match self {
-            Self::Array => "array comparisons are not implemented",
-            Self::Object => "object comparisons are not implemented",
-            Self::Resource => "resource comparisons are not implemented",
+            Self::UnsupportedValueFamily {
+                family, operation, ..
+            } => family.unsupported_comparison_reason(operation),
             Self::NativeObjectHandle => {
                 "native object handle comparisons require shared object identity and property comparison semantics"
             }
@@ -10077,6 +10085,23 @@ impl ComparisonBlocker {
             }
             Self::ReferenceDereference => {
                 "reference comparisons require shared reference dereference semantics"
+            }
+        }
+    }
+
+    fn unsupported_value_family(
+        side: ComparisonOperandSide,
+        family: ComparisonValueFamily,
+        operation: ComparisonOperationFamily,
+    ) -> Option<Self> {
+        family.comparison_blocker(side, operation)
+    }
+
+    fn value_family(self) -> Option<ComparisonValueFamily> {
+        match self {
+            Self::UnsupportedValueFamily { family, .. } => Some(family),
+            Self::NativeObjectHandle | Self::NativeResourceHandle | Self::ReferenceDereference => {
+                None
             }
         }
     }
@@ -10167,12 +10192,48 @@ impl ComparisonValueFamily {
         }
     }
 
-    fn loose_comparison_blocker(self) -> Option<ComparisonBlocker> {
+    fn comparison_blocker(
+        self,
+        side: ComparisonOperandSide,
+        operation: ComparisonOperationFamily,
+    ) -> Option<ComparisonBlocker> {
+        if !operation.uses_loose_value_semantics() {
+            return None;
+        }
+
         match self {
             Self::Scalar => None,
-            Self::Array => Some(ComparisonBlocker::Array),
-            Self::Object => Some(ComparisonBlocker::Object),
-            Self::Resource => Some(ComparisonBlocker::Resource),
+            Self::Array | Self::Object | Self::Resource => {
+                Some(ComparisonBlocker::UnsupportedValueFamily {
+                    side,
+                    family: self,
+                    operation,
+                })
+            }
+        }
+    }
+
+    fn unsupported_comparison_reason(self, operation: ComparisonOperationFamily) -> &'static str {
+        match (self, operation) {
+            (
+                Self::Array,
+                ComparisonOperationFamily::LooseEquality(_)
+                | ComparisonOperationFamily::LooseOrdering(_),
+            ) => "array comparisons are not implemented",
+            (
+                Self::Object,
+                ComparisonOperationFamily::LooseEquality(_)
+                | ComparisonOperationFamily::LooseOrdering(_),
+            ) => "object comparisons are not implemented",
+            (
+                Self::Resource,
+                ComparisonOperationFamily::LooseEquality(_)
+                | ComparisonOperationFamily::LooseOrdering(_),
+            ) => "resource comparisons are not implemented",
+            (Self::Scalar, _) => "scalar comparison blocker cannot be used for PHP comparisons",
+            (_, ComparisonOperationFamily::StrictIdentity { .. }) => {
+                "strict identity comparisons must not use loose value-family blockers"
+            }
         }
     }
 }
@@ -10263,9 +10324,18 @@ fn comparison_blocker_for_family(
         return None;
     }
 
-    ComparisonValueFamily::for_value(left)
-        .loose_comparison_blocker()
-        .or_else(|| ComparisonValueFamily::for_value(right).loose_comparison_blocker())
+    ComparisonBlocker::unsupported_value_family(
+        ComparisonOperandSide::Left,
+        ComparisonValueFamily::for_value(left),
+        family,
+    )
+    .or_else(|| {
+        ComparisonBlocker::unsupported_value_family(
+            ComparisonOperandSide::Right,
+            ComparisonValueFamily::for_value(right),
+            family,
+        )
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -10938,47 +11008,47 @@ mod tests {
             PhpComparisonOp::LooseGe,
         ];
 
-        for (label, value, family, blocker) in [
+        for (label, value, family) in [
             (
                 "array",
                 Value::Array(PhpArray::new()),
                 ComparisonValueFamily::Array,
-                ComparisonBlocker::Array,
             ),
-            (
-                "object",
-                object,
-                ComparisonValueFamily::Object,
-                ComparisonBlocker::Object,
-            ),
-            (
-                "closure",
-                closure,
-                ComparisonValueFamily::Object,
-                ComparisonBlocker::Object,
-            ),
+            ("object", object, ComparisonValueFamily::Object),
+            ("closure", closure, ComparisonValueFamily::Object),
             (
                 "resource",
                 Value::Resource(9),
                 ComparisonValueFamily::Resource,
-                ComparisonBlocker::Resource,
             ),
         ] {
             assert_eq!(ComparisonValueFamily::for_value(&value), family, "{label}");
 
             for op in loose_ops {
+                let operation = op.operation_family();
+                let left_blocker = ComparisonBlocker::UnsupportedValueFamily {
+                    side: ComparisonOperandSide::Left,
+                    family,
+                    operation,
+                };
+                let right_blocker = ComparisonBlocker::UnsupportedValueFamily {
+                    side: ComparisonOperandSide::Right,
+                    family,
+                    operation,
+                };
+
                 assert_eq!(
-                    comparison_blocker_for_family(&value, &Value::Int(1), op.operation_family()),
-                    Some(blocker),
+                    comparison_blocker_for_family(&value, &Value::Int(1), operation),
+                    Some(left_blocker),
                     "{label} left blocker for {op:?}",
                 );
                 assert_eq!(
                     comparison_blocker_for_family(
                         &Value::String("1".to_string()),
                         &value,
-                        op.operation_family()
+                        operation
                     ),
-                    Some(blocker),
+                    Some(right_blocker),
                     "{label} right blocker for {op:?}",
                 );
                 assert_eq!(
@@ -10986,7 +11056,7 @@ mod tests {
                         .php_compare_checked(&Value::Int(1), op)
                         .unwrap_err()
                         .message(),
-                    blocker.runtime_error().message(),
+                    left_blocker.runtime_error().message(),
                     "{label} runtime blocker for {op:?}",
                 );
             }
@@ -11453,14 +11523,26 @@ mod tests {
             ),
             (
                 "array semantic blocker",
-                Ok(ComparisonEvaluation::Blocked(ComparisonBlocker::Array)),
+                Ok(ComparisonEvaluation::Blocked(
+                    ComparisonBlocker::UnsupportedValueFamily {
+                        side: ComparisonOperandSide::Left,
+                        family: ComparisonValueFamily::Array,
+                        operation: PhpComparisonOp::LooseEq.operation_family(),
+                    },
+                )),
                 NativeComparisonStatus::Blocked as u8,
                 false,
                 1,
             ),
             (
                 "resource semantic blocker",
-                Ok(ComparisonEvaluation::Blocked(ComparisonBlocker::Resource)),
+                Ok(ComparisonEvaluation::Blocked(
+                    ComparisonBlocker::UnsupportedValueFamily {
+                        side: ComparisonOperandSide::Right,
+                        family: ComparisonValueFamily::Resource,
+                        operation: PhpComparisonOp::LooseLt.operation_family(),
+                    },
+                )),
                 NativeComparisonStatus::Blocked as u8,
                 false,
                 1,
