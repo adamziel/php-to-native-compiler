@@ -233,6 +233,94 @@ fn native_executable_c_source_routes_constant_table_call_argument_results_throug
 }
 
 #[test]
+fn emit_ir_routes_assignment_and_unset_lvalue_operand_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$items[key_name()] = 1;\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"key_name\";\n$items[$call()] = 1;\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$items[$box->key()] = 1;\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$items[new Key()] = 1;\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\nunset($items[key_name()]);\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"key_name\";\nunset($items[$call()]);\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nunset($items[$box->key()]);\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\nunset($items[new Key()]);\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_assignment_and_unset_lvalue_operand_calls_through_call_boundary(
+) {
+    for (source, expected) in [
+        (
+            "<?php\n$items[key_name()] = 1;\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"key_name\";\n$items[$call()] = 1;\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$items[$box->key()] = 1;\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$items[new Key()] = 1;\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\nunset($items[key_name()]);\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"key_name\";\nunset($items[$call()]);\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nunset($items[$box->key()]);\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\nunset($items[new Key()]);\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
 fn emit_ir_rejects_direct_calls_before_lowering_arguments() {
     for source in [
         "<?php\necho label([]);\nfunction label($value) { return $value; }\n",

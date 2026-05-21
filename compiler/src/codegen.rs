@@ -213,6 +213,7 @@ enum NativeCallResult {
 enum NativeCallBlocker {
     DynamicCallableEvaluation,
     ArgumentEvaluationCleanup,
+    LvalueOperandEvaluationCleanup,
     ReturnValueOwnership,
     ByReferenceArgumentBinding,
     VariadicArgumentBinding,
@@ -353,6 +354,114 @@ fn native_direct_call_argument_result_operation(
 ) -> Option<NativeCallOperation> {
     native_call_argument_list_blocker(args)
         .map(|blocker| NativeCallOperation::direct_named_value(span, blocker))
+}
+
+fn native_expr_call_result_operation(
+    expr: &Expr,
+    blocker: NativeCallBlocker,
+) -> Option<NativeCallOperation> {
+    match expr {
+        Expr::Call { span, .. } => Some(NativeCallOperation::direct_named_value(*span, blocker)),
+        Expr::DynamicCall { span, .. } => Some(NativeCallOperation::dynamic_value_with_blocker(
+            *span, blocker,
+        )),
+        Expr::MethodCall { span, .. }
+        | Expr::DynamicMethodCall { span, .. }
+        | Expr::ParentMethodCall { span, .. }
+        | Expr::StaticMethodCall { span, .. }
+        | Expr::ObjectStaticMethodCall { span, .. }
+        | Expr::SelfMethodCall { span, .. }
+        | Expr::LateStaticMethodCall { span, .. } => Some(
+            NativeCallOperation::method_value_with_blocker(*span, blocker),
+        ),
+        Expr::New { span, .. } => Some(NativeCallOperation::constructor_value(*span, blocker)),
+        Expr::Closure {
+            params,
+            returns_by_reference,
+            span,
+            ..
+        } => Some(NativeCallOperation::closure_frame(
+            *span,
+            native_closure_frame_blocker(params, *returns_by_reference),
+        )),
+        Expr::Array { items, .. } => items.iter().find_map(|item| {
+            item.key
+                .as_ref()
+                .and_then(|key| native_expr_call_result_operation(key, blocker))
+                .or_else(|| native_expr_call_result_operation(&item.value, blocker))
+        }),
+        Expr::Index { target, index, .. } => native_expr_call_result_operation(target, blocker)
+            .or_else(|| native_expr_call_result_operation(index, blocker)),
+        Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::InstanceOf { expr: target, .. } => {
+            native_expr_call_result_operation(target, blocker)
+        }
+        Expr::DynamicProperty {
+            target, property, ..
+        } => native_expr_call_result_operation(target, blocker)
+            .or_else(|| native_expr_call_result_operation(property, blocker)),
+        Expr::Clone { expr, .. }
+        | Expr::Unary { expr, .. }
+        | Expr::ErrorControl { expr, .. }
+        | Expr::Include { path: expr, .. }
+        | Expr::Require { path: expr, .. }
+        | Expr::Cast { expr, .. } => native_expr_call_result_operation(expr, blocker),
+        Expr::Binary { left, right, .. } => native_expr_call_result_operation(left, blocker)
+            .or_else(|| native_expr_call_result_operation(right, blocker)),
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => native_expr_call_result_operation(condition, blocker)
+            .or_else(|| native_expr_call_result_operation(if_true, blocker))
+            .or_else(|| native_expr_call_result_operation(if_false, blocker)),
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => native_expr_call_result_operation(condition, blocker)
+            .or_else(|| native_expr_call_result_operation(if_false, blocker)),
+        Expr::Assign { target, expr, .. }
+        | Expr::CompoundAssign { target, expr, .. }
+        | Expr::NullCoalesceAssign { target, expr, .. } => {
+            native_assignment_target_call_operation(target)
+                .or_else(|| native_expr_call_result_operation(expr, blocker))
+        }
+        Expr::IncrementDecrement { target, .. } => native_assignment_target_call_operation(target),
+        Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::InterpolatedString { .. }
+        | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. } => None,
+    }
+}
+
+fn native_lvalue_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
+    native_expr_call_result_operation(expr, NativeCallBlocker::LvalueOperandEvaluationCleanup)
 }
 
 fn native_comparison_op_for_binary_op(op: BinaryOp) -> Option<NativeComparisonOp> {
@@ -655,6 +764,144 @@ fn native_assignment_target_call_result_callee(target: &AssignTarget) -> Option<
     }
 }
 
+fn native_assignment_target_call_operation(target: &AssignTarget) -> Option<NativeCallOperation> {
+    native_assignment_target_call_result_operation(target)
+        .or_else(|| native_assignment_target_lvalue_operand_call_operation(target))
+}
+
+fn native_assignment_target_lvalue_operand_call_operation(
+    target: &AssignTarget,
+) -> Option<NativeCallOperation> {
+    match target {
+        AssignTarget::ArrayIndex { index, .. } => index
+            .as_ref()
+            .and_then(native_lvalue_operand_call_result_operation),
+        AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            native_expr_list_call_result_operation(indices)
+        }
+        AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => native_expr_list_call_result_operation(indices)
+            .or_else(|| native_expr_list_call_result_operation(suffix_indices)),
+        AssignTarget::NonDirectProperty { holder, .. } => {
+            native_lvalue_operand_call_result_operation(holder)
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        } => native_lvalue_operand_call_result_operation(holder)
+            .or_else(|| native_lvalue_operand_call_result_operation(property)),
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => native_lvalue_operand_call_result_operation(property)
+            .or_else(|| native_expr_list_call_result_operation(indices)),
+        AssignTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => native_lvalue_operand_call_result_operation(holder)
+            .or_else(|| native_expr_list_call_result_operation(indices)),
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => native_lvalue_operand_call_result_operation(holder)
+            .or_else(|| native_expr_list_call_result_operation(indices))
+            .or_else(|| native_expr_list_call_result_operation(suffix_indices)),
+        AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => native_lvalue_operand_call_result_operation(holder)
+            .or_else(|| native_lvalue_operand_call_result_operation(property))
+            .or_else(|| native_expr_list_call_result_operation(indices)),
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => native_lvalue_operand_call_result_operation(holder)
+            .or_else(|| native_lvalue_operand_call_result_operation(property))
+            .or_else(|| native_expr_list_call_result_operation(indices))
+            .or_else(|| native_expr_list_call_result_operation(suffix_indices)),
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => native_lvalue_operand_call_result_operation(property)
+            .or_else(|| native_expr_list_call_result_operation(indices))
+            .or_else(|| native_expr_list_call_result_operation(suffix_indices)),
+        AssignTarget::DynamicProperty { property, .. }
+        | AssignTarget::ObjectStaticProperty {
+            target: property, ..
+        } => native_lvalue_operand_call_result_operation(property),
+        AssignTarget::Variable { .. }
+        | AssignTarget::List { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => None,
+    }
+}
+
+fn native_unset_target_call_operation(target: &UnsetTarget) -> Option<NativeCallOperation> {
+    match target {
+        UnsetTarget::ArrayIndex { index, .. } => native_lvalue_operand_call_result_operation(index),
+        UnsetTarget::NestedArrayIndex { indices, .. }
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            native_expr_list_call_result_operation(indices)
+        }
+        UnsetTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => native_lvalue_operand_call_result_operation(holder)
+            .or_else(|| native_expr_list_call_result_operation(indices)),
+        UnsetTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => native_lvalue_operand_call_result_operation(property)
+            .or_else(|| native_expr_list_call_result_operation(indices)),
+        UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => native_lvalue_operand_call_result_operation(holder)
+            .or_else(|| native_lvalue_operand_call_result_operation(property))
+            .or_else(|| native_expr_list_call_result_operation(indices)),
+        UnsetTarget::DynamicObjectProperty { property, .. } => {
+            native_lvalue_operand_call_result_operation(property)
+        }
+        UnsetTarget::NonDirectObjectProperty { holder, .. } => {
+            native_lvalue_operand_call_result_operation(holder)
+        }
+        UnsetTarget::NonDirectDynamicObjectProperty {
+            holder, property, ..
+        } => native_lvalue_operand_call_result_operation(holder)
+            .or_else(|| native_lvalue_operand_call_result_operation(property)),
+        UnsetTarget::Variable { .. }
+        | UnsetTarget::ObjectProperty { .. }
+        | UnsetTarget::StaticProperty { .. }
+        | UnsetTarget::SelfStaticProperty { .. }
+        | UnsetTarget::ParentStaticProperty { .. }
+        | UnsetTarget::LateStaticProperty { .. } => None,
+    }
+}
+
+fn native_expr_list_call_result_operation(exprs: &[Expr]) -> Option<NativeCallOperation> {
+    exprs
+        .iter()
+        .find_map(native_lvalue_operand_call_result_operation)
+}
+
 fn native_value_call_operation_for_expr(expr: &Expr) -> Option<NativeCallOperation> {
     let (span, callee, default_blocker, args) = match expr {
         Expr::Call { args, span, .. } => (
@@ -764,6 +1011,7 @@ fn native_direct_call_blocker_message(
         (
             NativeCallResult::Value,
             NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
             | NativeCallBlocker::UnknownCalleeDiagnostics,
         ) => backend.function_call_rejection(),
@@ -786,6 +1034,7 @@ fn native_dynamic_call_blocker_message(
             NativeCallResult::Value,
             NativeCallBlocker::DynamicCallableEvaluation
             | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
             | NativeCallBlocker::UnknownCalleeDiagnostics,
         ) => backend.dynamic_function_call_rejection(),
@@ -808,6 +1057,7 @@ fn native_method_call_blocker_message(
             NativeCallResult::Value,
             NativeCallBlocker::MethodDispatch
             | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership,
         ) => backend.method_call_rejection(),
         (
@@ -829,6 +1079,7 @@ fn native_constructor_call_blocker_message(
             NativeCallResult::Value,
             NativeCallBlocker::ConstructorDispatch
             | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership,
         ) => backend.object_instantiation_rejection(),
         (
@@ -1719,7 +1970,7 @@ impl LlvmGenerator {
             Stmt::CompoundAssign { target, span, .. }
             | Stmt::IncrementDecrement { target, span, .. }
             | Stmt::NullCoalesceAssign { target, span, .. } => {
-                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 if is_object_property_array_access_target(target) {
@@ -1774,14 +2025,32 @@ impl LlvmGenerator {
             | Stmt::UnsetLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
-            Stmt::UnsetObjectProperty { span, .. }
-            | Stmt::UnsetDynamicObjectProperty { span, .. } => {
+            Stmt::UnsetObjectProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
-            Stmt::UnsetArrayIndex { span, .. } | Stmt::UnsetNestedArrayIndex { span, .. } => {
+            Stmt::UnsetDynamicObjectProperty { property, span, .. } => {
+                if let Some(operation) = native_lvalue_operand_call_result_operation(property) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
+            Stmt::UnsetArrayIndex { index, span, .. } => {
+                if let Some(operation) = native_lvalue_operand_call_result_operation(index) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
+            }
+            Stmt::UnsetNestedArrayIndex { indices, span, .. } => {
+                if let Some(operation) = native_expr_list_call_result_operation(indices) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             Stmt::UnsetMany { targets, span } => {
+                if let Some(operation) = targets.iter().find_map(native_unset_target_call_operation)
+                {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if targets
                     .iter()
                     .any(is_object_property_array_access_unset_target)
@@ -2035,7 +2304,7 @@ impl LlvmGenerator {
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, LLVM_CAST_REJECTION)),
             Expr::Assign { target, span, .. } => {
-                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 if is_object_property_array_access_target(target) {
@@ -2049,7 +2318,7 @@ impl LlvmGenerator {
             Expr::CompoundAssign { target, span, .. }
             | Expr::NullCoalesceAssign { target, span, .. }
             | Expr::IncrementDecrement { target, span, .. } => {
-                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 if is_object_property_array_access_target(target) {
@@ -2472,7 +2741,7 @@ impl LlvmGenerator {
     }
 
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
-        if let Some(operation) = native_assignment_target_call_result_operation(target) {
+        if let Some(operation) = native_assignment_target_call_operation(target) {
             return Err(self.unsupported_call_operation(operation));
         }
 
@@ -4958,7 +5227,7 @@ impl CGenerator {
             Stmt::CompoundAssign { target, span, .. }
             | Stmt::IncrementDecrement { target, span, .. }
             | Stmt::NullCoalesceAssign { target, span, .. } => {
-                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 if is_object_property_array_access_target(target) {
@@ -5015,14 +5284,32 @@ impl CGenerator {
             | Stmt::UnsetLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Stmt::UnsetObjectProperty { span, .. }
-            | Stmt::UnsetDynamicObjectProperty { span, .. } => {
+            Stmt::UnsetObjectProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Stmt::UnsetArrayIndex { span, .. } | Stmt::UnsetNestedArrayIndex { span, .. } => {
+            Stmt::UnsetDynamicObjectProperty { property, span, .. } => {
+                if let Some(operation) = native_lvalue_operand_call_result_operation(property) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
+            Stmt::UnsetArrayIndex { index, span, .. } => {
+                if let Some(operation) = native_lvalue_operand_call_result_operation(index) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
+            }
+            Stmt::UnsetNestedArrayIndex { indices, span, .. } => {
+                if let Some(operation) = native_expr_list_call_result_operation(indices) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             Stmt::UnsetMany { targets, span } => {
+                if let Some(operation) = targets.iter().find_map(native_unset_target_call_operation)
+                {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if targets
                     .iter()
                     .any(is_object_property_array_access_unset_target)
@@ -5276,7 +5563,7 @@ impl CGenerator {
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION)),
             Expr::Assign { target, span, .. } => {
-                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 if is_object_property_array_access_target(target) {
@@ -5290,7 +5577,7 @@ impl CGenerator {
             Expr::CompoundAssign { target, span, .. }
             | Expr::NullCoalesceAssign { target, span, .. }
             | Expr::IncrementDecrement { target, span, .. } => {
-                if let Some(operation) = native_assignment_target_call_result_operation(target) {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 if is_object_property_array_access_target(target) {
@@ -5713,7 +6000,7 @@ impl CGenerator {
     }
 
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
-        if let Some(operation) = native_assignment_target_call_result_operation(target) {
+        if let Some(operation) = native_assignment_target_call_operation(target) {
             return Err(self.unsupported_call_operation(operation));
         }
 
@@ -9379,6 +9666,171 @@ mod tests {
     }
 
     #[test]
+    fn native_assignment_target_call_operation_classifies_lvalue_operand_cleanup() {
+        let span = test_span();
+
+        for (target, operation) in [
+            (
+                AssignTarget::ArrayIndex {
+                    name: "items".to_string(),
+                    index: Some(Expr::Call {
+                        name: "key_name".to_string(),
+                        args: vec![Expr::Int(1, span)],
+                        span,
+                    }),
+                    span,
+                },
+                NativeCallOperation::direct_named_value(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                AssignTarget::NestedArrayIndex {
+                    name: "items".to_string(),
+                    indices: vec![Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("key_factory")),
+                        args: vec![Expr::String("slot".to_string(), span)],
+                        span,
+                    }],
+                    span,
+                },
+                NativeCallOperation::dynamic_value_with_blocker(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                AssignTarget::NonDirectDynamicProperty {
+                    holder: test_variable_expr("box"),
+                    property: Expr::MethodCall {
+                        target: Box::new(test_variable_expr("namer")),
+                        method: "property".to_string(),
+                        args: vec![Expr::Bool(true, span)],
+                        span,
+                    },
+                    span,
+                },
+                NativeCallOperation::method_value_with_blocker(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                AssignTarget::DynamicObjectPropertyArrayIndex {
+                    object: "box".to_string(),
+                    property: Expr::New {
+                        class_name: crate::ast::NewClassName::Named("Key".to_string()),
+                        args: vec![Expr::Int(2, span)],
+                        span,
+                    },
+                    indices: vec![Expr::Int(0, span)],
+                    span,
+                },
+                NativeCallOperation::constructor_value(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+        ] {
+            assert_eq!(
+                native_assignment_target_call_operation(&target),
+                Some(operation)
+            );
+        }
+
+        assert_eq!(
+            native_assignment_target_call_operation(&AssignTarget::ArrayIndex {
+                name: "items".to_string(),
+                index: Some(Expr::String("plain".to_string(), span)),
+                span,
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn native_unset_target_call_operation_classifies_lvalue_operand_cleanup() {
+        let span = test_span();
+
+        for (target, operation) in [
+            (
+                UnsetTarget::ArrayIndex {
+                    name: "items".to_string(),
+                    index: Expr::Call {
+                        name: "key_name".to_string(),
+                        args: vec![Expr::Int(1, span)],
+                        span,
+                    },
+                    span,
+                },
+                NativeCallOperation::direct_named_value(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                UnsetTarget::NestedArrayIndex {
+                    name: "items".to_string(),
+                    indices: vec![Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("key_factory")),
+                        args: vec![Expr::String("slot".to_string(), span)],
+                        span,
+                    }],
+                    span,
+                },
+                NativeCallOperation::dynamic_value_with_blocker(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                UnsetTarget::NonDirectDynamicObjectProperty {
+                    holder: test_variable_expr("box"),
+                    property: Expr::MethodCall {
+                        target: Box::new(test_variable_expr("namer")),
+                        method: "property".to_string(),
+                        args: vec![Expr::Bool(true, span)],
+                        span,
+                    },
+                    span,
+                },
+                NativeCallOperation::method_value_with_blocker(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                UnsetTarget::DynamicObjectPropertyArrayIndex {
+                    object: "box".to_string(),
+                    property: Expr::New {
+                        class_name: crate::ast::NewClassName::Named("Key".to_string()),
+                        args: vec![Expr::Int(2, span)],
+                        span,
+                    },
+                    indices: vec![Expr::Int(0, span)],
+                    span,
+                },
+                NativeCallOperation::constructor_value(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+        ] {
+            assert_eq!(native_unset_target_call_operation(&target), Some(operation));
+        }
+
+        assert_eq!(
+            native_unset_target_call_operation(&UnsetTarget::ArrayIndex {
+                name: "items".to_string(),
+                index: Expr::String("plain".to_string(), span),
+                span,
+            }),
+            None
+        );
+    }
+
+    #[test]
     fn native_value_call_operation_classifies_named_dynamic_method_and_constructor_families() {
         let span = test_span();
 
@@ -9628,6 +10080,16 @@ mod tests {
                     backend,
                     NativeCallOperation::direct_named_value(
                         span,
+                        NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                    ),
+                ),
+                direct
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::direct_named_value(
+                        span,
                         NativeCallBlocker::UnknownCalleeDiagnostics,
                     ),
                 ),
@@ -9643,6 +10105,16 @@ mod tests {
                     NativeCallOperation::dynamic_value_with_blocker(
                         span,
                         NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ),
+                ),
+                dynamic
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::dynamic_value_with_blocker(
+                        span,
+                        NativeCallBlocker::LvalueOperandEvaluationCleanup,
                     ),
                 ),
                 dynamic
@@ -9664,6 +10136,16 @@ mod tests {
             assert_eq!(
                 native_call_blocker_message(
                     backend,
+                    NativeCallOperation::method_value_with_blocker(
+                        span,
+                        NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                    ),
+                ),
+                method
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
                     NativeCallOperation::constructor_value(
                         span,
                         NativeCallBlocker::ConstructorDispatch,
@@ -9677,6 +10159,16 @@ mod tests {
                     NativeCallOperation::constructor_value(
                         span,
                         NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ),
+                ),
+                constructor
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::constructor_value(
+                        span,
+                        NativeCallBlocker::LvalueOperandEvaluationCleanup,
                     ),
                 ),
                 constructor
