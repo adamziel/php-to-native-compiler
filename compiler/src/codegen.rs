@@ -329,6 +329,7 @@ impl NativeCallOperation {
 enum NativeCallDiagnosticSubject<'a> {
     Operation(NativeCallOperation),
     CallRoot(&'a Expr),
+    #[cfg(test)]
     FunctionFrame(&'a FunctionDecl),
     ReturnStatement(Span),
 }
@@ -344,10 +345,8 @@ impl NativeCallDiagnosticSubject<'_> {
             Self::Operation(operation) => operation,
             Self::CallRoot(expr) => native_call_root_operation(expr)
                 .expect("native call diagnostic root must be a call expression"),
-            Self::FunctionFrame(function) => NativeCallOperation::function_frame(
-                function.span,
-                native_function_frame_blocker(function),
-            ),
+            #[cfg(test)]
+            Self::FunctionFrame(function) => native_function_frame_call_operation(function),
             Self::ReturnStatement(span) => NativeCallOperation::return_value(span),
         }
     }
@@ -370,10 +369,6 @@ impl NativeCallDiagnostics {
         self.subject(NativeCallDiagnosticSubject::CallRoot(expr))
     }
 
-    fn function_frame(self, function: &FunctionDecl) -> Diagnostic {
-        self.subject(NativeCallDiagnosticSubject::FunctionFrame(function))
-    }
-
     fn return_statement(self, span: Span) -> Diagnostic {
         self.subject(NativeCallDiagnosticSubject::ReturnStatement(span))
     }
@@ -385,6 +380,10 @@ impl NativeCallDiagnostics {
 
 fn native_function_frame_blocker(function: &FunctionDecl) -> NativeCallBlocker {
     native_callable_frame_blocker(&function.params, function.returns_by_reference)
+}
+
+fn native_function_frame_call_operation(function: &FunctionDecl) -> NativeCallOperation {
+    NativeCallOperation::function_frame(function.span, native_function_frame_blocker(function))
 }
 
 fn native_closure_frame_blocker(
@@ -1543,6 +1542,23 @@ fn native_call_operation_diagnostic(
     )
 }
 
+fn native_function_declaration_fallback_diagnostic(
+    backend: NativeCallBackend,
+    function: &FunctionDecl,
+    static_local_rejection: &'static str,
+) -> Diagnostic {
+    if let Some(span) = find_static_local_span(&function.body) {
+        return Diagnostic::new(
+            Phase::Codegen,
+            span.line,
+            span.column,
+            static_local_rejection,
+        );
+    }
+
+    native_call_operation_diagnostic(backend, native_function_frame_call_operation(function))
+}
+
 fn native_direct_call_blocker_message(
     backend: NativeCallBackend,
     operation: NativeCallOperation,
@@ -2619,12 +2635,11 @@ impl LlvmGenerator {
                 self.emit_expr(expr)?;
                 Ok(())
             }
-            Stmt::Function(function) => {
-                if let Some(span) = find_static_local_span(&function.body) {
-                    return Err(self.unsupported(span, LLVM_STATIC_LOCAL_REJECTION));
-                }
-                Err(self.native_call_diagnostics().function_frame(function))
-            }
+            Stmt::Function(function) => Err(native_function_declaration_fallback_diagnostic(
+                NativeCallBackend::Llvm,
+                function,
+                LLVM_STATIC_LOCAL_REJECTION,
+            )),
             Stmt::Interface(interface) => {
                 Err(self.unsupported(interface.span, LLVM_INTERFACE_REJECTION))
             }
@@ -6179,12 +6194,11 @@ impl CGenerator {
                 self.emit_expr(expr)?;
                 Ok(())
             }
-            Stmt::Function(function) => {
-                if let Some(span) = find_static_local_span(&function.body) {
-                    return Err(self.unsupported(span, ASSEMBLY_STATIC_LOCAL_REJECTION));
-                }
-                Err(self.native_call_diagnostics().function_frame(function))
-            }
+            Stmt::Function(function) => Err(native_function_declaration_fallback_diagnostic(
+                NativeCallBackend::Assembly,
+                function,
+                ASSEMBLY_STATIC_LOCAL_REJECTION,
+            )),
             Stmt::Interface(interface) => {
                 Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION))
             }
@@ -11821,7 +11835,7 @@ fn format_float_literal(value: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{ArrayItem, FunctionParam};
+    use crate::ast::{ArrayItem, FunctionParam, StaticLocalDeclarator};
 
     #[test]
     fn native_comparison_abi_opcodes_follow_runtime_contract() {
@@ -12000,6 +12014,75 @@ echo " 10" < "zeta";
             native_closure_frame_blocker(&[], true),
             NativeCallBlocker::ReturnValueOwnership
         ));
+    }
+
+    #[test]
+    fn native_function_declaration_fallback_diagnostic_reuses_frame_contract_for_frame_families() {
+        let span = test_span();
+
+        for (function, operation) in [
+            (
+                test_function(Vec::new(), false),
+                NativeCallOperation::function_frame(span, NativeCallBlocker::FunctionFrameHandoff),
+            ),
+            (
+                test_function(vec![test_param(true, false)], false),
+                NativeCallOperation::function_frame(
+                    span,
+                    NativeCallBlocker::ByReferenceArgumentBinding,
+                ),
+            ),
+            (
+                test_function(vec![test_param(false, true)], false),
+                NativeCallOperation::function_frame(
+                    span,
+                    NativeCallBlocker::VariadicArgumentBinding,
+                ),
+            ),
+            (
+                test_function(Vec::new(), true),
+                NativeCallOperation::function_frame(span, NativeCallBlocker::ReturnValueOwnership),
+            ),
+        ] {
+            for (backend, static_local_rejection) in [
+                (NativeCallBackend::Llvm, LLVM_STATIC_LOCAL_REJECTION),
+                (NativeCallBackend::Assembly, ASSEMBLY_STATIC_LOCAL_REJECTION),
+            ] {
+                let diagnostic = native_function_declaration_fallback_diagnostic(
+                    backend,
+                    &function,
+                    static_local_rejection,
+                );
+
+                assert_eq!(
+                    diagnostic.message,
+                    native_call_operation_diagnostic(backend, operation).message
+                );
+                assert_eq!(diagnostic.message, backend.function_declaration_rejection());
+            }
+        }
+
+        let static_span = Span::new(7, 5);
+        let mut static_local_function = test_function(Vec::new(), false);
+        static_local_function.body = vec![Stmt::StaticLocal {
+            declarations: vec![StaticLocalDeclarator {
+                name: "seen".to_string(),
+                default: None,
+                span: static_span,
+            }],
+            span: static_span,
+        }];
+
+        let diagnostic = native_function_declaration_fallback_diagnostic(
+            NativeCallBackend::Assembly,
+            &static_local_function,
+            ASSEMBLY_STATIC_LOCAL_REJECTION,
+        );
+
+        assert_eq!(diagnostic.phase, Phase::Codegen);
+        assert_eq!(diagnostic.line, static_span.line);
+        assert_eq!(diagnostic.column, static_span.column);
+        assert_eq!(diagnostic.message, ASSEMBLY_STATIC_LOCAL_REJECTION);
     }
 
     #[test]
