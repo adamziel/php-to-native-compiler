@@ -1,19 +1,19 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 19:29 CEST
-Evaluation marker: 20260521T172900Z
-Final refresh: 20260521T172900Z
+Updated: 2026-05-21 19:43 CEST
+Evaluation marker: 20260521T174300Z
+Final refresh: 20260521T174300Z
 
 This is a distilled roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local and dirty-worktree work is candidate material until selected, gated, committed, and pushed.
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **23%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **24%**
 
 ```
-Generalized runtime/ABI foundations      [#############-------] 64%
+Generalized runtime/ABI foundations      [#############-------] 66%
 Compiler/backend consumers               [############--------] 60%
-Executable generalized PHP semantics     [#####---------------] 26%
+Executable generalized PHP semantics     [#####---------------] 27%
 Arrays, references, COW, lvalues         [###-----------------] 17%
 Objects, properties, methods             [##------------------] 10%
 Diagnostics/control-flow composition     [###-----------------] 17%
@@ -22,10 +22,10 @@ Broad integrated verification            [###-----------------] 15%
 
 ## Current Primary State
 
-- Primary semantic HEAD before this progress update: `a56f1953 native: route comparisons through operand ABI`.
-- Latest primary-integrated semantic commit: `a56f1953 native: route comparisons through operand ABI`.
-- Product-code state at this refresh: semantic comparison operand runtime/generated-C consumer batch committed and pushed; this `PROGRESS.md` update is separate management metadata and not counted as compiler semantic progress.
-- Resource caveat: `/dev/shm` recovered to about 21G free after active-process-aware cleanup, then settled as active lane builds resumed.
+- Primary semantic HEAD before this progress update: `b05ed08b native: add request-state value snapshot ABI`.
+- Latest primary-integrated semantic commit: `b05ed08b native: add request-state value snapshot ABI`.
+- Product-code state at this refresh: generalized request-state/superglobal value snapshot runtime ABI, ABI probes, and focused runtime/ABI gates committed and pushed; this `PROGRESS.md` update is separate management metadata and not counted as compiler semantic progress.
+- Resource caveat: `/dev/shm` recovered to about 13G free after active-process-aware cleanup, then settled around 12G free as active lane builds resumed.
 
 ## Grand Roadmap Position
 
@@ -45,6 +45,7 @@ The project has moved from scattered backend rejection paths toward reusable run
 - [x] Route generated-C array keyed writes, keyed assignments, and indexed echo reads through runtime array-key materialization.
 - [x] Route generated-C array key/value operation consumers through a reusable runtime value-operation result ABI with linked coverage.
 - [x] Route generated-C filesystem path/state builtins through a shared operation-tagged runtime boundary and centralized blocker/result surface.
+- [x] Add a generalized request-state/superglobal value snapshot ABI with bag/key coercion status, operation results, cleanup, and pointer-width ABI probes.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
 - [ ] Generalize value/result ownership across returns, call args, conditions, branch joins, discarded temporaries, stdout, and cleanup.
 - [ ] Implement full array lvalue/RMW semantics, writable roots, foreach/by-ref foreach, ArrayAccess/object/resource offsets, and COW/reference behavior.
@@ -61,14 +62,16 @@ The project has moved from scattered backend rejection paths toward reusable run
 | Call operation cleanup and ownership | 37% | 56% | Primary routes many call-result contexts through shared blockers. Lanes centralize call cleanup/access/diagnostic families. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
 | Comparison/conversion semantics | 43% | 60% | Primary has comparison ABI consumers, centralized outcomes, arithmetic conversion sharing, report/free/exit sinks, byte materialization, comparison operand materialization with owned diagnostics, numeric-string classification, string truthiness, and native value-to-int conversion for selected generated-C consumers. Leading-numeric recovery, warning ordering, dynamic native `is_numeric()` lowering, and broader conversion-source/pair work are still candidate or blocked material. |
 | Arrays, lvalues, references, COW | 17% | 57% | Primary consumes runtime array-key materialization for keyed writes, keyed assignments, indexed echo reads, and now a runtime value-operation result ABI for generated-C array key/value consumers. Lanes still have stronger RMW/update-result, `??=`, direct-owner, value-root, reference-cell, path-preflight, foreach/result, and generated-C lvalue candidates. Primary still lacks full executable array lvalues, foreach, nested writes, references/COW, ArrayAccess, and exact warnings. |
-| Symbols, globals, request state | 21% | 44% | Primary has symbol-table ABI helpers. Lanes have expression-result consumer classification, root write value-flow contracts, request-state read access, slot plans, and immutable snapshot consumers. Mutable request/global/superglobal behavior remains early. |
+| Symbols, globals, request state | 24% | 46% | Primary has symbol-table ABI helpers plus a request-state/superglobal value snapshot ABI covering request bags, key coercion status, value/array/presence result shape, cleanup, and pointer-width ABI probes. Lanes have expression-result consumer classification, root write value-flow contracts, slot plans, and immutable snapshot consumers. Mutable request/global/superglobal behavior, symbol-table integration, writes/unset, repeated calls, references/COW, and exact diagnostics remain early. |
 | Objects, properties, methods | 10% | 38% | Lane-local object/property receiver, class-policy, declaration-body blocker, metadata, and stateful operation routes are more coherent, but primary still has little broad executable object/property/method behavior. |
 | Diagnostics and control-flow cleanup | 17% | 50% | Severity tags and selected blockers are integrated. Lanes now carry a broader diagnostic-result/family contract with ordered entries, report/free sinks, and producers for conversion, arrays, offsets, undefined variables, invalid callables, and non-object property reads. Exact warning/recovery order and executable cleanup remain broad blockers. |
-| Filesystem/path builtins and request state | 12% | 30% | Primary has a shared operation-tagged boundary for generated-C filesystem path/state calls across multiple builtin families. It deliberately reports blockers/placeholder values instead of real filesystem semantics; stat metadata, cache mutation, stream wrappers, warning-plus-false recovery, request state, and exact diagnostics remain open. |
+| Filesystem/path builtins and request state | 15% | 33% | Primary has a shared operation-tagged boundary for generated-C filesystem path/state calls across multiple builtin families and now has a request-state/superglobal snapshot ABI. Filesystem work still deliberately reports blockers/placeholder values instead of real filesystem semantics; request-state work is snapshot/read ABI infrastructure, not full mutable superglobal semantics. Stat metadata, cache mutation, stream wrappers, warning-plus-false recovery, writes/unset, request/global separation, and exact diagnostics remain open. |
 | Broad composition verification | 15% | 31% | Recent primary batches have focused runtime/source/linked executable gates, including full native-link checks for the array value-operation consumer and comparison operand ABI. Broad differential PHP composition coverage remains thin relative to the number of runtime/compiler contracts being introduced. |
 
 ## Recent Primary-Integrated Work
 
+- `b05ed08b native: add request-state value snapshot ABI`
+  - Moves request state beyond a null-only handle by adding request bag storage, scalar-key coercion status, a reusable superglobal operation result, cleanup/free APIs, and ABI probe coverage for both pointer widths. This is a real generalized runtime/ABI surface for request/superglobal snapshots, but mutable symbol-state integration, writes/unset, repeated-call request separation, references/COW, generated-C consumers, and exact diagnostics remain open.
 - `a56f1953 native: route comparisons through operand ABI`
   - Adds a reusable comparison operand ABI that owns value handles plus materialization diagnostics, then routes generated-C comparison lowering through operand comparison/result/branch helpers with cleanup. This reduces backend-local comparison materialization handling, but broader comparison/conversion parity, exact diagnostics, and LLVM parity remain open.
 - `92b8eb4d native: materialize array value ops via runtime`
@@ -92,22 +95,22 @@ The project has moved from scattered backend rejection paths toward reusable run
 
 - Lane-local array candidates: broader RMW/update-result contracts, null-coalescing assignment through the shared RMW boundary, direct owner policy, foreach/result finishers, reference-cell/lvalue contracts, and array path preflight.
 - Lane-local string/filesystem candidates: byte-preserving string-result execution such as `wordwrap()`, broader binary-safe string surfaces, printable/UU/byte-wrap helpers, stream/resource/path metadata boundaries, and interpreter/runtime PHP string-byte boundaries.
-- Lane-local symbol/request/call candidates: expression-result consumer classification, request-state read access, root write value-flow, slot contract plans, and call operation diagnostic families.
+- Lane-local symbol/request/call candidates: expression-result consumer classification, request-state generated-C consumers, mutable request/global/superglobal symbol-state, root write value-flow, slot contract plans, and call operation diagnostic families.
 - Lane-local object/control/diagnostic candidates: object/property receiver/class-policy blockers, unsupported declaration-body entrypoints, structured CFG/effect rows, termination cleanup stack scans, request diagnostics, and diagnostic result carriers.
 
 Lane-local work is useful source material, but it is not product capability until selected into a small primary batch, gated, committed, and pushed.
 
 ## Candid Assessment
 
-The direction is right. Recent primary commits are turning shared ABIs into generated-C consumers, especially comparison operand/result handling, string conversion, array keys/value operations, numeric strings, and filesystem path-operation blockers.
+The direction is right. Recent primary commits are turning shared ABIs into generated-C consumers and reusable runtime surfaces, especially comparison operand/result handling, string conversion, array keys/value operations, numeric strings, filesystem path-operation blockers, and request-state snapshots.
 
 The product is still boundary-heavy. Many changes make unsupported PHP fail through better semantic surfaces rather than execute more PHP correctly. The next highest-value work is a small executable consumer of an already-landed ABI surface, with cleanup and linked coverage, not more standalone vocabulary.
 
 ## Near-Term Steering
 
-1. Count `a56f1953` as the latest integrated semantic baseline.
+1. Count `b05ed08b` as the latest integrated semantic baseline.
 2. Keep preferring executable generated-C/LLVM consumers of existing ABI surfaces over pure blocker or diagnostic vocabulary.
-3. Next high-value candidates are narrow string-result execution, array RMW/lvalue behavior, or broader differential composition gates around the value-operation path.
+3. Next high-value candidates are generated-C consumers of the request-state snapshot ABI, narrow string-result execution, array RMW/lvalue behavior, or broader differential composition gates around the value-operation path.
 4. Keep filesystem work honest: current primary work centralizes blockers; it does not yet implement real stream/stat/cache/current-directory semantics.
 5. Keep `/dev/shm` above the 10-12G free warning band before primary gates; use disk-backed targets for broad checks when lane builds are active.
 6. Add broader differential composition checks around the families already touched by primary: comparisons, numeric strings, string conversions/results, array keys/RMW, call-result cleanup, and diagnostics.
