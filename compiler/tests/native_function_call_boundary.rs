@@ -321,6 +321,69 @@ fn native_executable_c_source_routes_assignment_and_unset_lvalue_operand_calls_t
 }
 
 #[test]
+fn emit_ir_routes_reference_source_lvalue_operand_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$alias =& $items[key_name()];\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"key_name\";\n$alias =& $items[$call()];\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& $items[$box->key()];\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& $items[new Key()];\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& identity(missing_call());\n",
+            LLVM_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_reference_source_lvalue_operand_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$alias =& $items[key_name()];\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"key_name\";\n$alias =& $items[$call()];\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& $items[$box->key()];\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& $items[new Key()];\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& identity(missing_call());\n",
+            ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
 fn emit_ir_routes_value_operand_call_results_through_call_boundary() {
     for (source, expected) in [
         (

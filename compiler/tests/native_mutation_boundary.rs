@@ -5,6 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 
@@ -122,16 +123,25 @@ fn emit_ir_rejects_reference_assignment_forms_with_specific_boundary() {
 }
 
 #[test]
-fn emit_ir_rejects_reference_assignment_before_lowering_source_operands() {
-    for source in [
-        "<?php\n$alias =& $items[missing_call()];\n",
-        "<?php\n$alias =& $box->items[missing_call()];\n",
-        "<?php\n$alias =& identity(missing_call());\n",
+fn emit_ir_routes_reference_assignment_source_operand_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$alias =& $items[missing_call()];\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& $box->items[missing_call()];\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& identity(missing_call());\n",
+            LLVM_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_REFERENCE_ASSIGNMENT_REJECTION);
+        assert_eq!(error.message, expected);
     }
 }
 

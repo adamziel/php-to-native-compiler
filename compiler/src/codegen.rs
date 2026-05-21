@@ -682,6 +682,13 @@ fn native_assign_target_contains_call_result(target: &AssignTarget) -> bool {
 }
 
 fn native_reference_source_call_operation(source: &ReferenceSource) -> Option<NativeCallOperation> {
+    native_reference_source_call_result_operation(source)
+        .or_else(|| native_reference_source_lvalue_operand_call_operation(source))
+}
+
+fn native_reference_source_call_result_operation(
+    source: &ReferenceSource,
+) -> Option<NativeCallOperation> {
     let (expr, span) = match source {
         ReferenceSource::MethodCall { expr, span }
         | ReferenceSource::Property { expr, span }
@@ -700,6 +707,70 @@ fn native_reference_source_call_operation(source: &ReferenceSource) -> Option<Na
 
     native_reference_expr_call_callee(expr)
         .map(|callee| NativeCallOperation::reference_result(span, callee))
+}
+
+fn native_reference_source_lvalue_operand_call_operation(
+    source: &ReferenceSource,
+) -> Option<NativeCallOperation> {
+    match source {
+        ReferenceSource::ArrayIndex { index, .. }
+        | ReferenceSource::ObjectPropertyArrayIndex { index, .. } => {
+            native_lvalue_operand_call_result_operation(index)
+        }
+        ReferenceSource::ArrayAppend { indices, .. }
+        | ReferenceSource::NestedArrayIndex { indices, .. }
+        | ReferenceSource::ObjectPropertyArrayAppend { indices, .. }
+        | ReferenceSource::ObjectPropertyNestedArrayIndex { indices, .. } => {
+            native_expr_list_call_result_operation(indices)
+        }
+        ReferenceSource::DynamicObjectPropertyArrayIndex {
+            property, index, ..
+        } => native_lvalue_operand_call_result_operation(property)
+            .or_else(|| native_lvalue_operand_call_result_operation(index)),
+        ReferenceSource::DynamicObjectPropertyArrayAppend {
+            property, indices, ..
+        }
+        | ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+            property, indices, ..
+        } => native_lvalue_operand_call_result_operation(property)
+            .or_else(|| native_expr_list_call_result_operation(indices)),
+        ReferenceSource::NonDirectObjectPropertyArrayAppend {
+            holder, indices, ..
+        }
+        | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+            holder, indices, ..
+        } => native_lvalue_operand_call_result_operation(holder)
+            .or_else(|| native_expr_list_call_result_operation(indices)),
+        ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            ..
+        }
+        | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => native_lvalue_operand_call_result_operation(holder)
+            .or_else(|| native_lvalue_operand_call_result_operation(property))
+            .or_else(|| native_expr_list_call_result_operation(indices)),
+        ReferenceSource::Property { expr, .. } | ReferenceSource::StaticProperty { expr, .. } => {
+            native_lvalue_operand_call_result_operation(expr)
+        }
+        ReferenceSource::StaticPropertyArrayIndex { expr, indices, .. } => {
+            native_lvalue_operand_call_result_operation(expr)
+                .or_else(|| native_expr_list_call_result_operation(indices))
+        }
+        ReferenceSource::ExpressionArrayIndex {
+            target, indices, ..
+        }
+        | ReferenceSource::ExpressionArrayAppend {
+            target, indices, ..
+        } => native_lvalue_operand_call_result_operation(target)
+            .or_else(|| native_expr_list_call_result_operation(indices)),
+        ReferenceSource::Variable { .. } | ReferenceSource::MethodCall { .. } => None,
+    }
 }
 
 fn native_reference_expr_call_callee(expr: &Expr) -> Option<NativeCallCallee> {
@@ -9667,6 +9738,91 @@ mod tests {
         assert_eq!(
             native_reference_source_call_operation(&ReferenceSource::Variable {
                 name: "value".to_string(),
+                span,
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn native_reference_source_call_operation_classifies_lvalue_operand_cleanup() {
+        let span = test_span();
+
+        for (source, operation) in [
+            (
+                ReferenceSource::ArrayIndex {
+                    name: "items".to_string(),
+                    index: Expr::Call {
+                        name: "key_name".to_string(),
+                        args: vec![Expr::String("id".to_string(), span)],
+                        span,
+                    },
+                    span,
+                },
+                NativeCallOperation::direct_named_value(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                ReferenceSource::DynamicObjectPropertyArrayIndex {
+                    object: "box".to_string(),
+                    property: Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("property_name")),
+                        args: vec![Expr::Bool(true, span)],
+                        span,
+                    },
+                    index: Expr::Int(0, span),
+                    span,
+                },
+                NativeCallOperation::dynamic_value_with_blocker(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+                    holder: test_variable_expr("box"),
+                    property: Expr::MethodCall {
+                        target: Box::new(test_variable_expr("names")),
+                        method: "current".to_string(),
+                        args: vec![Expr::Int(2, span)],
+                        span,
+                    },
+                    indices: vec![Expr::Int(0, span)],
+                    span,
+                },
+                NativeCallOperation::method_value_with_blocker(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                ReferenceSource::NestedArrayIndex {
+                    name: "items".to_string(),
+                    indices: vec![Expr::New {
+                        class_name: crate::ast::NewClassName::Named("Key".to_string()),
+                        args: vec![Expr::Int(3, span)],
+                        span,
+                    }],
+                    span,
+                },
+                NativeCallOperation::constructor_value(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+        ] {
+            assert_eq!(
+                native_reference_source_call_operation(&source),
+                Some(operation)
+            );
+        }
+
+        assert_eq!(
+            native_reference_source_call_operation(&ReferenceSource::ArrayIndex {
+                name: "items".to_string(),
+                index: Expr::String("plain".to_string(), span),
                 span,
             }),
             None
