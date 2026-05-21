@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 18:53 CEST
-Evaluation marker: 20260521T165300Z
-Final refresh: 20260521T165300Z
+Updated: 2026-05-21 19:08 CEST
+Evaluation marker: 20260521T170800Z
+Final refresh: 20260521T170800Z
 
 This is a distilled roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local and dirty-worktree work is candidate material until selected, gated, committed, and pushed.
 
@@ -11,8 +11,8 @@ This is a distilled roadmap for a supervisor who needs the current momentum quic
 Estimated progress toward a broadly usable generalized PHP native compiler: **22%**
 
 ```
-Generalized runtime/ABI foundations      [############--------] 61%
-Compiler/backend consumers               [###########---------] 57%
+Generalized runtime/ABI foundations      [############--------] 62%
+Compiler/backend consumers               [############--------] 58%
 Executable generalized PHP semantics     [#####---------------] 25%
 Arrays, references, COW, lvalues         [###-----------------] 16%
 Objects, properties, methods             [##------------------] 10%
@@ -22,9 +22,9 @@ Broad integrated verification            [###-----------------] 13%
 
 ## Current Primary State
 
-- Primary semantic HEAD before this progress update: `91481d33 native: convert string integer args through runtime`.
-- Latest primary-integrated semantic commit: `91481d33 native: convert string integer args through runtime`.
-- Product-code state at this refresh: semantic native int-conversion runtime/generated-C batch committed and pushed; this `PROGRESS.md` update is separate management metadata and not counted as compiler semantic progress.
+- Primary semantic HEAD before this progress update: `13a5d783 native: route filesystem path ops through shared boundary`.
+- Latest primary-integrated semantic commit: `13a5d783 native: route filesystem path ops through shared boundary`.
+- Product-code state at this refresh: semantic filesystem path-operation runtime/generated-C boundary batch committed and pushed; this `PROGRESS.md` update is separate management metadata and not counted as compiler semantic progress.
 - Dashboard caveat: `state/dashboard.md` lagged live git during this review, so current repo state outranks dashboard text.
 
 ## Grand Roadmap Position
@@ -43,6 +43,7 @@ The project has moved from scattered backend rejection paths toward reusable run
 - [x] Route generated-C `strlen()`, string predicates, and string-int builtins over lowerable values through runtime value-to-string ABIs, now including `strcasecmp()` and `substr_count()` on the shared string-int boundary with runtime integer conversion for offset/length/cost operands.
 - [x] Route generated-C `levenshtein()` and two-argument `similar_text()` over lowerable values through a runtime string-distance ABI.
 - [x] Route generated-C array keyed writes, keyed assignments, and indexed echo reads through runtime array-key materialization.
+- [x] Route generated-C filesystem path/state builtins through a shared operation-tagged runtime boundary and centralized blocker/result surface.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
 - [ ] Generalize value/result ownership across returns, call args, conditions, branch joins, discarded temporaries, stdout, and cleanup.
 - [ ] Implement full array lvalue/RMW semantics, writable roots, foreach/by-ref foreach, ArrayAccess/object/resource offsets, and COW/reference behavior.
@@ -62,10 +63,13 @@ The project has moved from scattered backend rejection paths toward reusable run
 | Symbols, globals, request state | 21% | 43% | Primary has symbol-table ABI helpers. Lanes have expression-result consumer classification, root write value-flow contracts, request-state read planners, and immutable snapshot consumers. Mutable request/global/superglobal behavior remains early. |
 | Objects, properties, methods | 10% | 36% | Lane-local object/property receiver, class-policy, metadata, and stateful operation blockers are more coherent, but primary still has little broad executable object/property/method behavior. |
 | Diagnostics and control-flow cleanup | 17% | 42% | Severity tags and selected blockers are integrated. Lanes are active on request diagnostics, diagnostic-result producers/sinks, structured CFG, branch/termination cleanup, and exit handoff. Exact warning/recovery order and executable cleanup remain broad blockers. |
+| Filesystem/path builtins and request state | 12% | 28% | Primary now has a shared operation-tagged boundary for generated-C filesystem path/state calls across multiple builtin families. It deliberately reports blockers/placeholder values instead of pretending real filesystem semantics exist; stat metadata, cache mutation, stream wrappers, warning-plus-false recovery, request state, and exact diagnostics remain open. |
 | Broad composition verification | 13% | 30% | Recent primary batches have focused runtime/source/linked executable gates. Broad differential PHP composition coverage is still thin. |
 
 ## Recent Primary-Integrated Work
 
+- `13a5d783 native: route filesystem path ops through shared boundary`
+  - Adds a reusable runtime filesystem path-operation ABI and routes generated-native C filesystem path/state builtins through that operation-tagged boundary, with focused runtime/native-link coverage across multiple filesystem operation families. This is generalized blocker/backend infrastructure, not complete executable filesystem behavior.
 - `91481d33 native: convert string integer args through runtime`
   - Adds a shared runtime value-to-int conversion ABI for generated-native string offset, string length, and string distance cost operands, then routes generated-C `substr_count()` offset/length and `levenshtein()` cost arguments through that diagnostic boundary instead of direct integer-only handling.
 - `cafb8dc5 native: extend string-int runtime boundary`
@@ -88,7 +92,7 @@ The project has moved from scattered backend rejection paths toward reusable run
 ## Candidate Work Not Yet Counted
 
 - Lane-local array candidates: generated-C array key/value expression materialization through value-result ABI, direct array-handle path preflight, owner-slot/value-root/RMW/reference-cell contracts, foreach/reference blockers, and array lvalue operation contracts.
-- Lane-local string candidates: broader binary-safe string result/debug/regex/hash/serialization/stream/configuration/HTML/entity/`chr()`/`ucwords()` surfaces, plus interpreter/runtime PHP string-byte boundaries.
+- Lane-local string/filesystem candidates: broader binary-safe string result/debug/regex/hash/serialization/stream/configuration/HTML/entity/`chr()`/`ucwords()` surfaces, stream/resource and path metadata boundaries, plus interpreter/runtime PHP string-byte boundaries.
 - Lane-local symbol/request/call candidates: expression-result consumer classification, request-state read access, root write value-flow, slot contract plans, and call operation diagnostic families.
 - Lane-local object/control/diagnostic candidates: object/property receiver/class-policy blockers, structured CFG/effect rows, termination cleanup stack scans, request diagnostics, and diagnostic result carriers.
 
@@ -96,13 +100,13 @@ Lane-local work is useful source material, but it is not product capability unti
 
 ## Candid Assessment
 
-The direction is right. Recent primary commits are turning shared ABIs into generated-C consumers, especially comparison, string conversion, and array keys. That is real progress toward generalized semantics.
+The direction is right. Recent primary commits are turning shared ABIs into generated-C consumers, especially comparison, string conversion, array keys, and now filesystem path-operation blockers. That is real progress toward generalized semantics.
 
-The product is still boundary-heavy. Many candidate changes make unsupported PHP fail through better semantic surfaces rather than execute more PHP correctly. The next highest-value work is a small executable consumer of an already-landed ABI surface, with cleanup and linked coverage, not more standalone vocabulary.
+The product is still boundary-heavy. Many candidate changes make unsupported PHP fail through better semantic surfaces rather than execute more PHP correctly; the filesystem path batch is explicitly in that category. The next highest-value work is a small executable consumer of an already-landed ABI surface, with cleanup and linked coverage, not more standalone vocabulary.
 
 ## Near-Term Steering
 
-1. Count `91481d33` as the latest integrated semantic baseline.
+1. Count `13a5d783` as the latest integrated semantic baseline.
 2. Prefer executable generated-C/LLVM consumers of existing ABI surfaces over pure blocker or diagnostic vocabulary.
 3. Keep string/conversion follow-up focused on generalized leading-numeric recovery, warning ordering, dynamic native `is_numeric()` lowering, broader value-to-int consumers, binary/non-UTF-8 value policy, and conversion cleanup.
 4. Consider the lane-local array key/value value-result consumer if it can land as a narrow primary batch without importing broad array-lvalue churn.
