@@ -36,7 +36,10 @@ echo 1 !== "1";
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(source.contains("phpc_native_value_from_scalar"), "{source}");
-    assert!(source.contains("phpc_native_value_from_string"), "{source}");
+    assert!(
+        source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+        "{source}"
+    );
     assert!(
         source.contains("phpc_native_value_compare_branch_and_free"),
         "{source}"
@@ -70,12 +73,16 @@ echo 1 !== "1";
         "generated C should consume owned comparison values through the branch-returning boundary:\n{source}"
     );
     assert!(
-        !source.contains("phpc_native_comparison_result_branch_or_report_stderr_and_free"),
-        "generated C should not compose result branch consumption outside the owned branch boundary:\n{source}"
+        !source.contains("comparison_string_handle_"),
+        "generated C should not allocate comparison-only string handles:\n{source}"
     );
     assert!(
-        !source.contains("phpc_native_value_free(comparison_value_handle_"),
-        "generated C should not open-code owned comparison value-handle cleanup:\n{source}"
+        !source.contains("phpc_native_value_from_string(comparison_string_handle_"),
+        "generated C should materialize comparison strings through the raw byte boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_result_branch_or_report_stderr_and_free"),
+        "generated C should not compose result branch consumption outside the owned branch boundary:\n{source}"
     );
     assert!(
         !source.contains("((1) =="),
