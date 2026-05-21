@@ -687,7 +687,7 @@ fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
     }
 }
 
-fn native_value_result_echo_expr(expr: &Expr) -> bool {
+fn native_value_result_output_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Unary { op, .. } => native_value_unary_op_tag(*op).is_some(),
         Expr::Binary { op, .. } => native_value_binary_op_tag(*op).is_some(),
@@ -6137,10 +6137,10 @@ impl CGenerator {
             }
             Stmt::Echo { exprs, .. } => {
                 for (index, expr) in exprs.iter().enumerate() {
-                    if self.try_emit_native_value_result_echo(expr)? {
+                    if self.try_emit_native_value_result_output(expr)? {
                         continue;
                     }
-                    if self.try_emit_array_index_echo(expr)? {
+                    if self.try_emit_array_index_output(expr)? {
                         continue;
                     }
                     let value = match self.emit_expr(expr) {
@@ -6162,6 +6162,12 @@ impl CGenerator {
                 Ok(())
             }
             Stmt::Print { expr, .. } => {
+                if self.try_emit_native_value_result_output(expr)? {
+                    return Ok(());
+                }
+                if self.try_emit_array_index_output(expr)? {
+                    return Ok(());
+                }
                 let value = self.emit_expr(expr)?;
                 self.emit_echo(value, expr.span())?;
                 Ok(())
@@ -10284,8 +10290,8 @@ impl CGenerator {
         })
     }
 
-    fn try_emit_native_value_result_echo(&mut self, expr: &Expr) -> CompileResult<bool> {
-        if !native_value_result_echo_expr(expr) {
+    fn try_emit_native_value_result_output(&mut self, expr: &Expr) -> CompileResult<bool> {
+        if !native_value_result_output_expr(expr) {
             return Ok(false);
         }
 
@@ -10300,7 +10306,7 @@ impl CGenerator {
         Ok(true)
     }
 
-    fn try_emit_array_index_echo(&mut self, expr: &Expr) -> CompileResult<bool> {
+    fn try_emit_array_index_output(&mut self, expr: &Expr) -> CompileResult<bool> {
         let Expr::Index { target, index, .. } = expr else {
             return Ok(false);
         };

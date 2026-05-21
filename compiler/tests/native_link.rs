@@ -1348,6 +1348,8 @@ const NATIVE_VALUE_CAST_ECHO_SOURCE: &str = "<?php\necho (int)\"5.9\", \"|\";\ne
 
 const NATIVE_VALUE_OPERATION_ECHO_SOURCE: &str = "<?php\n$left = \"6\";\n$right = 2;\necho -$left, \"|\";\necho $left + $right, \"|\";\necho $left / $right, \"|\";\necho \"A\" . \"\0B\", \"|\";\necho \"B\" & \"A\", \"|\";\necho 8 << \"1\";\n";
 
+const NATIVE_VALUE_OPERATION_PRINT_SOURCE: &str = "<?php\n$left = \"6\";\n$right = 2;\n$a = [];\n$a[\"sum\"] = $left + $right;\nprint -$left;\nprint \"|\";\nprint $left + $right;\nprint \"|\";\nprint $left / $right;\nprint \"|\";\nprint \"A\" . \"\0B\";\nprint \"|\";\nprint gettype((string)123);\nprint \"|\";\nprint $a[\"sum\"];\n";
+
 const NATIVE_VALUE_CAST_BUILTIN_SOURCE: &str = "<?php\n$a = [];\n$a[strval(5)] = floatval(\"3.5\");\n$a[\"truth\"] = doubleval(\"2.5\");\necho strval(\"A\"), \"|\", boolval(\"0\"), \"|\", floatval(\" -12.8 \"), \"|\", doubleval(\"2.5\"), \"|\", $a[\"5\"], \"|\", $a[\"truth\"];\n";
 
 const NATIVE_ARRAY_VALUE_OPERAND_SOURCE: &str = "<?php\n$a = [];\n$a[\"nested\"] = [1, 2];\necho (int)[1], \"|\", (int)[], \"|\", (float)[0], \"|\", boolval([0]), \"|\", gettype([1]);\n";
@@ -1915,6 +1917,46 @@ fn native_executable_c_source_routes_operation_echoes_through_value_result_abi()
 }
 
 #[test]
+fn native_executable_c_source_routes_print_values_through_value_result_and_array_read_abi() {
+    let program = parse(NATIVE_VALUE_OPERATION_PRINT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    for declaration in [
+        "extern phpc_NativeValueOperationResult phpc_native_value_unary_result",
+        "extern phpc_NativeValueOperationResult phpc_native_value_binary_result",
+        "extern phpc_NativeValueOperationResult phpc_native_value_type_name_result",
+        "extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic",
+        "extern phpc_NativeValueHandle phpc_native_array_read_key_with_diagnostic",
+    ] {
+        assert!(source.contains(declaration), "{declaration}\n\n{source}");
+    }
+
+    for op in [
+        "PHPC_NATIVE_VALUE_UNARY_NEGATE",
+        "PHPC_NATIVE_VALUE_BINARY_ADD",
+        "PHPC_NATIVE_VALUE_BINARY_DIV",
+        "PHPC_NATIVE_VALUE_BINARY_CONCAT",
+        "PHPC_NATIVE_VALUE_CAST_STRING",
+        "PHPC_NATIVE_VALUE_TYPE_NAME_GETTYPE",
+    ] {
+        assert!(source.contains(op), "{op}\n\n{source}");
+    }
+
+    assert!(
+        source.contains(" = phpc_native_value_unary_result(")
+            && source.contains(" = phpc_native_value_binary_result(")
+            && source.contains(" = phpc_native_value_type_name_result(")
+            && source.contains(" = phpc_native_value_cast_operation_with_diagnostic(")
+            && source.contains(" = phpc_native_array_read_key_with_diagnostic("),
+        "print should use the existing runtime value-result and array-read boundaries:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_native_value_echo_stdout(").count() >= 8,
+        "print output should flow through the value stdout ABI for direct and materialized values:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_scalar_cast_builtins_through_value_cast_contract() {
     let program = parse(NATIVE_VALUE_CAST_BUILTIN_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2089,6 +2131,52 @@ fn emit_exe_links_and_runs_native_operation_echo_value_result_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"-6|8|3|A\0B|@|16");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_operation_print_value_result_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php =
+        native_link_output_path("native_operation_print_value_result").with_extension("php");
+    fs::write(&temp_php, NATIVE_VALUE_OPERATION_PRINT_SOURCE)
+        .expect("write native operation print value-result fixture");
+    let output_path = native_link_output_path("native_operation_print_value_result");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"-6|8|3|A\0B|string|8");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
