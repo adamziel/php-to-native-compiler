@@ -5429,6 +5429,7 @@ struct CGenerator {
     known_ints: HashMap<String, KnownInt>,
     known_floats: HashMap<String, KnownFloat>,
     known_strings: HashMap<String, KnownString>,
+    known_string_lengths: HashMap<String, String>,
     known_bools: HashMap<String, KnownBool>,
     uses_strcmp: bool,
     uses_native_string_helpers: bool,
@@ -6989,6 +6990,10 @@ impl CGenerator {
         value: &str,
         span: Span,
     ) -> CompileResult<String> {
+        if let Some(length) = self.known_string_lengths.get(value) {
+            return Ok(length.clone());
+        }
+
         let Some(values) = self.known_string_values(value) else {
             return Err(self.unsupported(span, assembly_comparison_rejection()));
         };
@@ -7790,6 +7795,32 @@ impl CGenerator {
         }
     }
 
+    fn c_string_value_byte_len_operand(&mut self, value: &CValue) -> Option<String> {
+        match value {
+            CValue::String(value) => Some(value.len().to_string()),
+            CValue::StringExpr(value) => self.c_string_expr_byte_len_operand(value),
+            _ => None,
+        }
+    }
+
+    fn c_string_expr_byte_len_operand(&mut self, value: &str) -> Option<String> {
+        if let Some(length) = self.known_string_lengths.get(value) {
+            return Some(length.clone());
+        }
+
+        let values = self.known_string_values(value)?;
+        if let Some(byte_len) = known_strings_have_uniform_byte_length(&values) {
+            return Some(byte_len.to_string());
+        }
+
+        if known_strings_are_nul_free(&values) {
+            self.uses_strcmp = true;
+            return Some(format!("strlen((const char *)({value}))"));
+        }
+
+        None
+    }
+
     fn static_string_strict_identity(
         &self,
         left_values: Option<KnownString>,
@@ -8234,11 +8265,21 @@ impl CGenerator {
                             return Ok(CValue::String(result.values()[0].clone()));
                         }
                     }
+                    let if_true_len = self.c_string_value_byte_len_operand(&if_true);
+                    let if_false_len = self.c_string_value_byte_len_operand(&if_false);
                     let if_true = c_string_operand(if_true);
                     let if_false = c_string_operand(if_false);
                     let expression = format!("(({condition}) ? ({if_true}) : ({if_false}))");
                     if let Some(result) = result {
                         self.known_strings.insert(expression.clone(), result);
+                    }
+                    if let (Some(if_true_len), Some(if_false_len)) = (if_true_len, if_false_len) {
+                        let length = if if_true_len == if_false_len {
+                            if_true_len
+                        } else {
+                            format!("(({condition}) ? ({if_true_len}) : ({if_false_len}))")
+                        };
+                        self.known_string_lengths.insert(expression.clone(), length);
                     }
                     return Ok(CValue::StringExpr(expression));
                 }

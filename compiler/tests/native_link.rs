@@ -90,6 +90,39 @@ echo 1 !== "1";
     );
 }
 
+const DYNAMIC_BINARY_STRING_COMPARISON_SOURCE: &str = r#"<?php
+$flag = 1 < 2;
+$left = $flag ? "2\x00z" : "10\x00w";
+$right = $flag ? "2\x00g" : "10\x00a";
+echo ($left > $right) ? 1 : 0, "\n";
+echo ($right < $left) ? 1 : 0, "\n";
+echo ($left != "2\x00a") ? 1 : 0, "\n";
+echo ($left == "2\x00z") ? 1 : 0;
+"#;
+
+#[test]
+fn native_executable_c_source_tracks_dynamic_string_operand_lengths() {
+    let program = parse(DYNAMIC_BINARY_STRING_COMPARISON_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_from_string_bytes_with_diagnostic((const uint8_t *)("),
+        "dynamic string comparison operands should materialize through pointer-plus-length value construction:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_compare_branch_and_free"),
+        "dynamic string operands should feed the shared owned comparison branch ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("strlen((const char *)("),
+        "tracked dynamic PHP string lengths should avoid C strlen so embedded NUL bytes remain data:\n{source}"
+    );
+    assert!(
+        !source.contains("strcmp("),
+        "dynamic string comparisons should stay on the runtime PHP comparison ABI:\n{source}"
+    );
+}
+
 #[test]
 fn emit_exe_links_and_runs_direct_string_runtime_helper_program() {
     if !has_cc() {
@@ -147,6 +180,57 @@ fn emit_exe_links_and_runs_direct_string_runtime_helper_program() {
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_dynamic_binary_string_comparison_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php =
+        native_link_output_path("dynamic_binary_string_comparison").with_extension("php");
+    fs::write(&temp_php, DYNAMIC_BINARY_STRING_COMPARISON_SOURCE)
+        .expect("write temporary dynamic binary string comparison source");
+    let output_path = native_link_output_path("dynamic_binary_string_comparison");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile dynamic binary string comparison executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run dynamic binary string comparison executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "dynamic binary string comparison executable failed"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "1\n1\n1\n1");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
 }
 
 #[test]
