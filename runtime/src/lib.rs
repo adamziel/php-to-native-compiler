@@ -118,6 +118,28 @@ pub enum NativeStringDistanceOperation {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeFilesystemPathOperation {
+    FileGetContents = 0,
+    Realpath = 1,
+    FileExists = 2,
+    IsDir = 3,
+    IsFile = 4,
+    IsReadable = 5,
+    IsWritable = 6,
+    IsLink = 7,
+    FileSize = 8,
+    FileMTime = 9,
+    GetCwd = 10,
+    ClearStatCache = 11,
+}
+
+const NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION: u8 = 1;
+const NATIVE_FILESYSTEM_PATH_HAS_OFFSET: u8 = 2;
+const NATIVE_FILESYSTEM_PATH_HAS_LENGTH: u8 = 4;
+const NATIVE_FILESYSTEM_PATH_HAS_PATH: u8 = 8;
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeIntConversionOperation {
     StringOffset = 0,
     StringLength = 1,
@@ -1357,6 +1379,179 @@ pub unsafe extern "C" fn phpc_native_value_to_string_bytes(
     match unsafe { native_value_to_string_bytes(handle) } {
         Ok(bytes) => NativeStringConversionResult::success(bytes),
         Err(error) => NativeStringConversionResult::failure(error),
+    }
+}
+
+/// # Safety
+///
+/// `path` and `option` must be null or value handles previously returned by
+/// the runtime ABI and not yet freed. `diagnostic` may be null; when non-null,
+/// it must point to writable storage for one `NativeDiagnosticHandle`. On
+/// failure the helper stores a diagnostic handle that the caller owns and must
+/// release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_filesystem_path_operation_with_diagnostic(
+    path: NativeValueHandle,
+    option: NativeValueHandle,
+    offset: i64,
+    length: i64,
+    flags: u8,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_filesystem_path_operation_value(path, option, offset, length, flags, operation)
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            NativeValueHandle::null()
+        }
+    }
+}
+
+unsafe fn native_value_filesystem_path_operation_value(
+    path: NativeValueHandle,
+    option: NativeValueHandle,
+    _offset: i64,
+    _length: i64,
+    flags: u8,
+    operation: u8,
+) -> RuntimeResult<Value> {
+    if flags
+        & !(NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION
+            | NATIVE_FILESYSTEM_PATH_HAS_OFFSET
+            | NATIVE_FILESYSTEM_PATH_HAS_LENGTH
+            | NATIVE_FILESYSTEM_PATH_HAS_PATH)
+        != 0
+    {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native filesystem path operation failed: unsupported operation flags",
+        ));
+    }
+
+    match operation {
+        tag if tag == NativeFilesystemPathOperation::FileGetContents as u8 => {
+            if flags & !NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native filesystem path operation failed: file_get_contents does not accept offset/length/path flags",
+                ));
+            }
+            let path = unsafe { native_value_to_string_bytes(path) }?;
+            if flags & NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION != 0 {
+                let Some(option) = (unsafe { option.as_ref() }) else {
+                    return Err(RuntimeError::invalid_string_conversion(
+                        "native filesystem path operation failed: file_get_contents use_include_path value handle is null",
+                    ));
+                };
+                let _use_include_path = option.is_truthy();
+            }
+            let _path = path;
+            Err(RuntimeError::invalid_string_conversion(
+                "native filesystem path operation failed: file_get_contents() awaits the shared filesystem stream ABI",
+            ))
+        }
+        tag if tag == NativeFilesystemPathOperation::Realpath as u8 => {
+            if flags != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native filesystem path operation failed: realpath does not accept operation flags",
+                ));
+            }
+            let path = unsafe { native_value_to_string_bytes(path) }?;
+            let _path = path;
+            Err(RuntimeError::invalid_string_conversion(
+                "native filesystem path operation failed: realpath() awaits the shared filesystem canonicalization ABI",
+            ))
+        }
+        tag if tag == NativeFilesystemPathOperation::FileExists as u8
+            || tag == NativeFilesystemPathOperation::IsDir as u8
+            || tag == NativeFilesystemPathOperation::IsFile as u8
+            || tag == NativeFilesystemPathOperation::IsReadable as u8
+            || tag == NativeFilesystemPathOperation::IsWritable as u8
+            || tag == NativeFilesystemPathOperation::IsLink as u8 =>
+        {
+            if flags != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native filesystem path operation failed: stat predicates do not accept operation flags",
+                ));
+            }
+            let path = unsafe { native_value_to_string_bytes(path) }?;
+            let _path = path;
+            let operation = match tag {
+                value if value == NativeFilesystemPathOperation::FileExists as u8 => {
+                    "file_exists()"
+                }
+                value if value == NativeFilesystemPathOperation::IsDir as u8 => "is_dir()",
+                value if value == NativeFilesystemPathOperation::IsFile as u8 => "is_file()",
+                value if value == NativeFilesystemPathOperation::IsReadable as u8 => {
+                    "is_readable()"
+                }
+                value if value == NativeFilesystemPathOperation::IsWritable as u8 => {
+                    "is_writable()"
+                }
+                _ => "is_link()",
+            };
+            Err(RuntimeError::invalid_string_conversion(format!(
+                "native filesystem path operation failed: {operation} awaits the shared filesystem stat ABI"
+            )))
+        }
+        tag if tag == NativeFilesystemPathOperation::FileSize as u8
+            || tag == NativeFilesystemPathOperation::FileMTime as u8 =>
+        {
+            if flags != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native filesystem path operation failed: stat value operations do not accept operation flags",
+                ));
+            }
+            let path = unsafe { native_value_to_string_bytes(path) }?;
+            let _path = path;
+            let operation = match tag {
+                value if value == NativeFilesystemPathOperation::FileSize as u8 => "filesize()",
+                _ => "filemtime()",
+            };
+            Err(RuntimeError::invalid_string_conversion(format!(
+                "native filesystem path operation failed: {operation} awaits the shared filesystem stat-value ABI"
+            )))
+        }
+        tag if tag == NativeFilesystemPathOperation::GetCwd as u8 => {
+            if flags != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native filesystem path operation failed: getcwd does not accept operation flags",
+                ));
+            }
+            Err(RuntimeError::invalid_string_conversion(
+                "native filesystem path operation failed: getcwd() awaits the shared process current-directory ABI",
+            ))
+        }
+        tag if tag == NativeFilesystemPathOperation::ClearStatCache as u8 => {
+            if flags & (NATIVE_FILESYSTEM_PATH_HAS_OFFSET | NATIVE_FILESYSTEM_PATH_HAS_LENGTH) != 0
+            {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native filesystem path operation failed: clearstatcache does not accept offset/length flags",
+                ));
+            }
+            if flags & NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION != 0 {
+                let Some(option) = (unsafe { option.as_ref() }) else {
+                    return Err(RuntimeError::invalid_string_conversion(
+                        "native filesystem path operation failed: clearstatcache clear_realpath_cache value handle is null",
+                    ));
+                };
+                let _clear_realpath_cache = option.is_truthy();
+            }
+            if flags & NATIVE_FILESYSTEM_PATH_HAS_PATH != 0 {
+                let _path = unsafe { native_value_to_string_bytes(path) }?;
+            }
+            Err(RuntimeError::invalid_string_conversion(
+                "native filesystem path operation failed: clearstatcache() awaits the shared filesystem stat-cache ABI",
+            ))
+        }
+        _ => Err(RuntimeError::invalid_string_conversion(
+            "native filesystem path operation failed: unsupported operation tag",
+        )),
     }
 }
 
@@ -9748,6 +9943,102 @@ mod tests {
             native_string_conversion_result_for_test(reference_result).unwrap_err(),
             "invalid string conversion: native reference conversion failed: references must be dereferenced before string conversion"
         );
+    }
+
+    #[test]
+    fn native_filesystem_path_operation_blocker_reuses_value_string_boundary() {
+        fn expect_filesystem_blocker(
+            path: NativeValueHandle,
+            option: NativeValueHandle,
+            flags: u8,
+            operation: NativeFilesystemPathOperation,
+            expected: &str,
+        ) {
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let value = unsafe {
+                phpc_native_value_filesystem_path_operation_with_diagnostic(
+                    path,
+                    option,
+                    0,
+                    0,
+                    flags,
+                    operation as u8,
+                    &mut diagnostic,
+                )
+            };
+            assert!(value.is_null());
+            assert_eq!(native_diagnostic_message_for_test(diagnostic), expected);
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        let path = NativeValueHandle::from_value(Value::String("pmt/\0A".to_string()));
+        let offset_path = NativeValueHandle::from_value(Value::String("\0".to_string()));
+        let include_path = phpc_native_value_from_scalar(phpc_native_bool(true));
+
+        expect_filesystem_blocker(
+            path,
+            include_path,
+            NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION,
+            NativeFilesystemPathOperation::FileGetContents,
+            "invalid string conversion: native filesystem path operation failed: file_get_contents() awaits the shared filesystem stream ABI",
+        );
+        expect_filesystem_blocker(
+            path,
+            NativeValueHandle::null(),
+            0,
+            NativeFilesystemPathOperation::Realpath,
+            "invalid string conversion: native filesystem path operation failed: realpath() awaits the shared filesystem canonicalization ABI",
+        );
+        expect_filesystem_blocker(
+            offset_path,
+            NativeValueHandle::null(),
+            0,
+            NativeFilesystemPathOperation::FileExists,
+            "invalid string conversion: native filesystem path operation failed: file_exists() awaits the shared filesystem stat ABI",
+        );
+        expect_filesystem_blocker(
+            path,
+            NativeValueHandle::null(),
+            0,
+            NativeFilesystemPathOperation::FileSize,
+            "invalid string conversion: native filesystem path operation failed: filesize() awaits the shared filesystem stat-value ABI",
+        );
+        expect_filesystem_blocker(
+            offset_path,
+            NativeValueHandle::null(),
+            0,
+            NativeFilesystemPathOperation::FileMTime,
+            "invalid string conversion: native filesystem path operation failed: filemtime() awaits the shared filesystem stat-value ABI",
+        );
+        expect_filesystem_blocker(
+            NativeValueHandle::null(),
+            NativeValueHandle::null(),
+            0,
+            NativeFilesystemPathOperation::GetCwd,
+            "invalid string conversion: native filesystem path operation failed: getcwd() awaits the shared process current-directory ABI",
+        );
+        expect_filesystem_blocker(
+            offset_path,
+            include_path,
+            NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION | NATIVE_FILESYSTEM_PATH_HAS_PATH,
+            NativeFilesystemPathOperation::ClearStatCache,
+            "invalid string conversion: native filesystem path operation failed: clearstatcache() awaits the shared filesystem stat-cache ABI",
+        );
+
+        let resource = NativeValueHandle::from_value(Value::Resource(7));
+        expect_filesystem_blocker(
+            resource,
+            NativeValueHandle::null(),
+            0,
+            NativeFilesystemPathOperation::IsWritable,
+            "invalid string conversion: resource cannot be converted to string",
+        );
+
+        unsafe { phpc_native_value_free(resource) };
+        unsafe { phpc_native_value_free(include_path) };
+        unsafe { phpc_native_value_free(offset_path) };
+        unsafe { phpc_native_value_free(path) };
     }
 
     #[test]

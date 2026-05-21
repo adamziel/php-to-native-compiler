@@ -202,6 +202,46 @@ fn native_executable_c_source_routes_string_distance_builtins_through_runtime_co
     );
 }
 
+const FILESYSTEM_PATH_OPERATION_SOURCE: &str = "<?php\n$path = \"pmt/\\0A\";\n$flag = str_contains($path, \"\\0\");\nfile_get_contents($path, $flag);\nrealpath($path);\nfile_exists(42);\nis_writable($path);\nfilesize($path);\nfilemtime($path);\ngetcwd();\nclearstatcache($flag, $path);\necho \"done\\n\";\n";
+
+#[test]
+fn native_executable_c_source_routes_filesystem_path_builtins_through_shared_blocker() {
+    let program = parse(FILESYSTEM_PATH_OPERATION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_filesystem_path_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = phpc_native_value_filesystem_path_operation_with_diagnostic(")
+            .count(),
+        8,
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_string_predicate_with_diagnostic"),
+        "filesystem optional flags should compose with the existing truthy value producer:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_from_scalar")
+            && source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+        "filesystem path operands should enter the same native value boundary for scalar and string families:\n{source}"
+    );
+    assert!(
+        source.contains(", 0, &filesystem_path_operation_diagnostic_")
+            && source.contains(", 1, &filesystem_path_operation_diagnostic_")
+            && source.contains(", 2, &filesystem_path_operation_diagnostic_")
+            && source.contains(", 6, &filesystem_path_operation_diagnostic_")
+            && source.contains(", 8, &filesystem_path_operation_diagnostic_")
+            && source.contains(", 9, &filesystem_path_operation_diagnostic_")
+            && source.contains(", 10, &filesystem_path_operation_diagnostic_")
+            && source.contains(", 11, &filesystem_path_operation_diagnostic_"),
+        "filesystem path builtins should share one operation-tagged ABI:\n{source}"
+    );
+}
+
 #[test]
 fn native_executable_c_source_routes_string_integer_arguments_through_value_conversion() {
     let program = parse(
@@ -623,6 +663,68 @@ fn emit_exe_links_and_runs_string_distance_operation_program() {
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "3\n2\n2\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_reports_shared_filesystem_path_blocker_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("filesystem_path_operation");
+    let source_path = native_link_output_path("filesystem_path_operation_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, FILESYSTEM_PATH_OPERATION_SOURCE)
+        .expect("native filesystem path source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native filesystem path source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "done\n");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    for expected in [
+        "file_get_contents() awaits the shared filesystem stream ABI",
+        "realpath() awaits the shared filesystem canonicalization ABI",
+        "file_exists() awaits the shared filesystem stat ABI",
+        "is_writable() awaits the shared filesystem stat ABI",
+        "filesize() awaits the shared filesystem stat-value ABI",
+        "filemtime() awaits the shared filesystem stat-value ABI",
+        "getcwd() awaits the shared process current-directory ABI",
+        "clearstatcache() awaits the shared filesystem stat-cache ABI",
+    ] {
+        assert!(
+            stderr.contains(expected),
+            "missing {expected:?} in {stderr:?}"
+        );
+    }
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);

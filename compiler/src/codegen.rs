@@ -9,13 +9,15 @@ use crate::ast::{
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
     classify_php_numeric_string, is_php_truthy_string, NativeComparisonOp,
-    NativeIntConversionOperation, NativeStringDistanceOperation, NativeStringIntOperation,
-    NativeStringPredicate,
+    NativeFilesystemPathOperation, NativeIntConversionOperation, NativeStringDistanceOperation,
+    NativeStringIntOperation, NativeStringPredicate,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
 const MAX_KNOWN_FLOAT_VALUES: usize = 4;
 const MAX_KNOWN_STRING_VALUES: usize = 4;
+const NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION: u8 = 1;
+const NATIVE_FILESYSTEM_PATH_HAS_PATH: u8 = 8;
 const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
@@ -40,6 +42,7 @@ const LLVM_IS_WRITABLE_REJECTION: &str = "LLVM is_writable lowering rejects dire
 const ASSEMBLY_IS_WRITABLE_REJECTION: &str = "assembly is_writable lowering rejects direct filesystem writability checks until native writability checks, permission policy, warnings, include_path/open_basedir, stream wrappers, symlink/stat-cache/TOCTOU behavior, non-UTF-8 paths, references/COW, and exact native is_writable diagnostics exist; phpc run handles current bounded is_writable behavior";
 const LLVM_CLEARSTATCACHE_REJECTION: &str = "LLVM clearstatcache lowering rejects stat-cache mutation until native filesystem metadata caches, realpath cache state, per-path invalidation, include_path/open_basedir policy, stream wrappers, request-local filesystem state, references/COW, and exact native diagnostics exist; phpc run handles current bounded stat-cache clearstatcache behavior";
 const ASSEMBLY_CLEARSTATCACHE_REJECTION: &str = "assembly clearstatcache lowering rejects stat-cache mutation until native filesystem metadata caches, realpath cache state, per-path invalidation, include_path/open_basedir policy, stream wrappers, request-local filesystem state, references/COW, and exact native diagnostics exist; phpc run handles current bounded stat-cache clearstatcache behavior";
+const ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "assembly filesystem-path builtin lowering rejects forms outside the reusable native filesystem path operation blocker, including unsupported arity, stream contexts, non-lowerable operands, filesystem policy, stat cache/current-directory state, references/copy-on-write, and exact native diagnostics; lowerable stream, canonicalization, stat-predicate, stat-value, current-directory, and stat-cache operands route through byte-preserving value-to-string conversion, optional truthiness, diagnostics, and cleanup";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
@@ -5687,6 +5690,7 @@ impl CGenerator {
                 output.push_str("extern _Bool phpc_native_value_string_predicate_with_diagnostic(phpc_NativeValueHandle haystack, phpc_NativeValueHandle needle, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_int_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_distance_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t insertion_cost, int64_t replacement_cost, int64_t deletion_cost, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_filesystem_path_operation_with_diagnostic(phpc_NativeValueHandle path, phpc_NativeValueHandle option, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_string_conversion_result_free(phpc_NativeStringConversionResult result);\n");
             }
             output.push_str(
@@ -6044,27 +6048,15 @@ impl CGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
                 Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_BASENAME_REJECTION))
             }
-            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("file_get_contents") => {
-                Err(self.unsupported_direct_named_call(
-                    args,
-                    *span,
-                    ASSEMBLY_FILE_GET_CONTENTS_REJECTION,
-                ))
+            Expr::Call { name, args, span }
+                if native_filesystem_path_operation_for_name(name).is_some() =>
+            {
+                let operation = native_filesystem_path_operation_for_name(name)
+                    .expect("filesystem-path guard should provide operation");
+                self.emit_filesystem_path_operation_call(operation, args, *span)
             }
             Expr::Call { name, args, span } if is_stream_resource_builtin(name) => Err(
                 self.unsupported_direct_named_call(args, *span, ASSEMBLY_STREAM_RESOURCE_REJECTION)
-            ),
-            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("getcwd") => {
-                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_GETCWD_REJECTION))
-            }
-            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("realpath") => {
-                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_REALPATH_REJECTION))
-            }
-            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("is_writable") => {
-                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_IS_WRITABLE_REJECTION))
-            }
-            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("clearstatcache") => Err(
-                self.unsupported_direct_named_call(args, *span, ASSEMBLY_CLEARSTATCACHE_REJECTION),
             ),
             Expr::Call { name, args, span } if is_header_state_builtin(name) => Err(
                 self.unsupported_direct_named_call(args, *span, ASSEMBLY_HEADER_STATE_REJECTION)
@@ -6549,6 +6541,181 @@ impl CGenerator {
             .push(format!("phpc_native_value_free({subject});"));
 
         Ok(CValue::Int(result))
+    }
+
+    fn emit_filesystem_path_operation_call(
+        &mut self,
+        operation: NativeFilesystemPathOperation,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<CValue> {
+        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(call_operation));
+        }
+
+        if !self.uses_native_string_helpers {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                native_filesystem_path_operation_assembly_rejection(operation),
+            ));
+        }
+
+        match operation {
+            NativeFilesystemPathOperation::FileGetContents => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(self.unsupported_direct_named_call(
+                        args,
+                        span,
+                        ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION,
+                    ));
+                }
+                let path = self.emit_value_operand_expr(&args[0])?;
+                let (option, flags) = if let Some(use_include_path) = args.get(1) {
+                    (
+                        Some(self.emit_value_operand_expr(use_include_path)?),
+                        NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION.to_string(),
+                    )
+                } else {
+                    (None, "0".to_string())
+                };
+                self.emit_native_filesystem_path_operation(
+                    operation,
+                    Some(path),
+                    option,
+                    "0".to_string(),
+                    "0".to_string(),
+                    flags,
+                    span,
+                )
+            }
+            NativeFilesystemPathOperation::Realpath
+            | NativeFilesystemPathOperation::FileExists
+            | NativeFilesystemPathOperation::IsDir
+            | NativeFilesystemPathOperation::IsFile
+            | NativeFilesystemPathOperation::IsReadable
+            | NativeFilesystemPathOperation::IsWritable
+            | NativeFilesystemPathOperation::IsLink
+            | NativeFilesystemPathOperation::FileSize
+            | NativeFilesystemPathOperation::FileMTime => {
+                if args.len() != 1 {
+                    return Err(self.unsupported_direct_named_call(
+                        args,
+                        span,
+                        ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION,
+                    ));
+                }
+                let path = self.emit_value_operand_expr(&args[0])?;
+                self.emit_native_filesystem_path_operation(
+                    operation,
+                    Some(path),
+                    None,
+                    "0".to_string(),
+                    "0".to_string(),
+                    "0".to_string(),
+                    span,
+                )
+            }
+            NativeFilesystemPathOperation::GetCwd => {
+                if !args.is_empty() {
+                    return Err(self.unsupported_direct_named_call(
+                        args,
+                        span,
+                        ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION,
+                    ));
+                }
+                self.emit_native_filesystem_path_operation(
+                    operation,
+                    None,
+                    None,
+                    "0".to_string(),
+                    "0".to_string(),
+                    "0".to_string(),
+                    span,
+                )
+            }
+            NativeFilesystemPathOperation::ClearStatCache => {
+                if args.len() > 2 {
+                    return Err(self.unsupported_direct_named_call(
+                        args,
+                        span,
+                        ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION,
+                    ));
+                }
+                let (option, mut flags) = if let Some(clear_realpath_cache) = args.first() {
+                    (
+                        Some(self.emit_value_operand_expr(clear_realpath_cache)?),
+                        NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION.to_string(),
+                    )
+                } else {
+                    (None, "0".to_string())
+                };
+                let path = if let Some(path) = args.get(1) {
+                    flags = format!("({flags} | {NATIVE_FILESYSTEM_PATH_HAS_PATH})");
+                    Some(self.emit_value_operand_expr(path)?)
+                } else {
+                    None
+                };
+                self.emit_native_filesystem_path_operation(
+                    operation,
+                    path,
+                    option,
+                    "0".to_string(),
+                    "0".to_string(),
+                    flags,
+                    span,
+                )
+            }
+        }
+    }
+
+    fn emit_native_filesystem_path_operation(
+        &mut self,
+        operation: NativeFilesystemPathOperation,
+        path: Option<CValue>,
+        option: Option<CValue>,
+        offset: String,
+        length: String,
+        flags: String,
+        span: Span,
+    ) -> CompileResult<CValue> {
+        let owns_path = path.is_some();
+        let path = match path {
+            Some(value) => self
+                .emit_native_value_for_cvalue(value, span)
+                .map_err(|_| {
+                    self.unsupported(span, ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION)
+                })?,
+            None => "(phpc_NativeValueHandle){0}".to_string(),
+        };
+        let owns_option = option.is_some();
+        let option = match option {
+            Some(value) => self
+                .emit_native_value_for_cvalue(value, span)
+                .map_err(|_| {
+                    self.unsupported(span, ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION)
+                })?,
+            None => "(phpc_NativeValueHandle){0}".to_string(),
+        };
+        let result =
+            self.next_native_name(native_filesystem_path_operation_result_prefix(operation));
+        let diagnostic = self.next_native_name("filesystem_path_operation_diagnostic");
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_filesystem_path_operation_with_diagnostic({path}, {option}, (int64_t)({offset}), (int64_t)({length}), {flags}, {}, &{diagnostic});",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.push(format!("phpc_native_value_free({result});"));
+        if owns_option {
+            self.body.push(format!("phpc_native_value_free({option});"));
+        }
+        if owns_path {
+            self.body.push(format!("phpc_native_value_free({path});"));
+        }
+        Ok(CValue::Null)
     }
 
     fn emit_function_exists_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
@@ -10064,6 +10231,62 @@ fn native_string_distance_operation_for_name(name: &str) -> Option<NativeStringD
         "levenshtein" => Some(NativeStringDistanceOperation::Levenshtein),
         "similar_text" => Some(NativeStringDistanceOperation::SimilarText),
         _ => None,
+    }
+}
+
+fn native_filesystem_path_operation_for_name(name: &str) -> Option<NativeFilesystemPathOperation> {
+    match name.to_ascii_lowercase().as_str() {
+        "file_get_contents" => Some(NativeFilesystemPathOperation::FileGetContents),
+        "realpath" => Some(NativeFilesystemPathOperation::Realpath),
+        "file_exists" => Some(NativeFilesystemPathOperation::FileExists),
+        "is_dir" => Some(NativeFilesystemPathOperation::IsDir),
+        "is_file" => Some(NativeFilesystemPathOperation::IsFile),
+        "is_readable" => Some(NativeFilesystemPathOperation::IsReadable),
+        "is_writable" => Some(NativeFilesystemPathOperation::IsWritable),
+        "is_link" => Some(NativeFilesystemPathOperation::IsLink),
+        "filesize" => Some(NativeFilesystemPathOperation::FileSize),
+        "filemtime" => Some(NativeFilesystemPathOperation::FileMTime),
+        "getcwd" => Some(NativeFilesystemPathOperation::GetCwd),
+        "clearstatcache" => Some(NativeFilesystemPathOperation::ClearStatCache),
+        _ => None,
+    }
+}
+
+fn native_filesystem_path_operation_result_prefix(
+    operation: NativeFilesystemPathOperation,
+) -> &'static str {
+    match operation {
+        NativeFilesystemPathOperation::FileGetContents => "file_get_contents_value",
+        NativeFilesystemPathOperation::Realpath => "realpath_value",
+        NativeFilesystemPathOperation::FileExists => "file_exists_value",
+        NativeFilesystemPathOperation::IsDir => "is_dir_value",
+        NativeFilesystemPathOperation::IsFile => "is_file_value",
+        NativeFilesystemPathOperation::IsReadable => "is_readable_value",
+        NativeFilesystemPathOperation::IsWritable => "is_writable_value",
+        NativeFilesystemPathOperation::IsLink => "is_link_value",
+        NativeFilesystemPathOperation::FileSize => "filesize_value",
+        NativeFilesystemPathOperation::FileMTime => "filemtime_value",
+        NativeFilesystemPathOperation::GetCwd => "getcwd_value",
+        NativeFilesystemPathOperation::ClearStatCache => "clearstatcache_value",
+    }
+}
+
+fn native_filesystem_path_operation_assembly_rejection(
+    operation: NativeFilesystemPathOperation,
+) -> &'static str {
+    match operation {
+        NativeFilesystemPathOperation::FileGetContents => ASSEMBLY_FILE_GET_CONTENTS_REJECTION,
+        NativeFilesystemPathOperation::Realpath => ASSEMBLY_REALPATH_REJECTION,
+        NativeFilesystemPathOperation::IsWritable => ASSEMBLY_IS_WRITABLE_REJECTION,
+        NativeFilesystemPathOperation::GetCwd => ASSEMBLY_GETCWD_REJECTION,
+        NativeFilesystemPathOperation::ClearStatCache => ASSEMBLY_CLEARSTATCACHE_REJECTION,
+        NativeFilesystemPathOperation::FileExists
+        | NativeFilesystemPathOperation::IsDir
+        | NativeFilesystemPathOperation::IsFile
+        | NativeFilesystemPathOperation::IsReadable
+        | NativeFilesystemPathOperation::IsLink
+        | NativeFilesystemPathOperation::FileSize
+        | NativeFilesystemPathOperation::FileMTime => ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION,
     }
 }
 
