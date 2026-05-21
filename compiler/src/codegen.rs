@@ -3,8 +3,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::ast::{
-    AssignTarget, BinaryOp, ClassMember, Expr, FunctionDecl, Program, ReferenceSource, Span, Stmt,
-    UnaryOp, UnsetTarget,
+    AssignTarget, BinaryOp, ClassMember, Expr, FunctionDecl, FunctionParam, Program,
+    ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -162,10 +162,24 @@ impl NativeCallBackend {
         }
     }
 
+    fn closure_rejection(self) -> &'static str {
+        match self {
+            Self::Llvm => LLVM_CLOSURE_REJECTION,
+            Self::Assembly => ASSEMBLY_CLOSURE_REJECTION,
+        }
+    }
+
     fn method_call_rejection(self) -> &'static str {
         match self {
             Self::Llvm => LLVM_METHOD_CALL_REJECTION,
             Self::Assembly => ASSEMBLY_METHOD_CALL_REJECTION,
+        }
+    }
+
+    fn object_instantiation_rejection(self) -> &'static str {
+        match self {
+            Self::Llvm => LLVM_OBJECT_INSTANTIATION_REJECTION,
+            Self::Assembly => ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
         }
     }
 
@@ -182,7 +196,9 @@ enum NativeCallCallee {
     DirectNamed,
     DynamicExpression,
     MethodDispatch,
+    ConstructorDispatch,
     FunctionFrame,
+    ClosureFrame,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,8 +216,10 @@ enum NativeCallBlocker {
     ByReferenceArgumentBinding,
     VariadicArgumentBinding,
     FunctionFrameHandoff,
+    ClosureFrameHandoff,
     UnknownCalleeDiagnostics,
     MethodDispatch,
+    ConstructorDispatch,
     ReferenceBinding,
 }
 
@@ -252,6 +270,19 @@ impl NativeCallOperation {
         }
     }
 
+    fn closure_frame(span: Span, blocker: NativeCallBlocker) -> Self {
+        Self {
+            span,
+            callee: NativeCallCallee::ClosureFrame,
+            result: NativeCallResult::FrameHandoff,
+            blocker,
+        }
+    }
+
+    fn constructor_value(span: Span, blocker: NativeCallBlocker) -> Self {
+        Self::value_result(span, NativeCallCallee::ConstructorDispatch, blocker)
+    }
+
     fn return_value(span: Span) -> Self {
         Self {
             span,
@@ -281,11 +312,28 @@ impl NativeCallOperation {
 }
 
 fn native_function_frame_blocker(function: &FunctionDecl) -> NativeCallBlocker {
-    if function.params.iter().any(|param| param.by_reference) {
+    native_callable_frame_blocker(&function.params, function.returns_by_reference)
+}
+
+fn native_closure_frame_blocker(
+    params: &[FunctionParam],
+    returns_by_reference: bool,
+) -> NativeCallBlocker {
+    match native_callable_frame_blocker(params, returns_by_reference) {
+        NativeCallBlocker::FunctionFrameHandoff => NativeCallBlocker::ClosureFrameHandoff,
+        blocker => blocker,
+    }
+}
+
+fn native_callable_frame_blocker(
+    params: &[FunctionParam],
+    returns_by_reference: bool,
+) -> NativeCallBlocker {
+    if params.iter().any(|param| param.by_reference) {
         NativeCallBlocker::ByReferenceArgumentBinding
-    } else if function.params.iter().any(|param| param.is_variadic) {
+    } else if params.iter().any(|param| param.is_variadic) {
         NativeCallBlocker::VariadicArgumentBinding
-    } else if function.returns_by_reference {
+    } else if returns_by_reference {
         NativeCallBlocker::ReturnValueOwnership
     } else {
         NativeCallBlocker::FunctionFrameHandoff
@@ -308,7 +356,9 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
         | Expr::StaticMethodCall { .. }
         | Expr::ObjectStaticMethodCall { .. }
         | Expr::SelfMethodCall { .. }
-        | Expr::LateStaticMethodCall { .. } => true,
+        | Expr::LateStaticMethodCall { .. }
+        | Expr::New { .. }
+        | Expr::Closure { .. } => true,
         Expr::Array { items, .. } => items.iter().any(|item| {
             item.key
                 .as_ref()
@@ -325,7 +375,6 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
         Expr::DynamicProperty {
             target, property, ..
         } => native_expr_contains_call_result(target) || native_expr_contains_call_result(property),
-        Expr::New { args, .. } => args.iter().any(native_expr_contains_call_result),
         Expr::Clone { expr, .. }
         | Expr::Unary { expr, .. }
         | Expr::ErrorControl { expr, .. }
@@ -387,8 +436,7 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
         | Expr::StaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
-        | Expr::LateStaticProperty { .. }
-        | Expr::Closure { .. } => false,
+        | Expr::LateStaticProperty { .. } => false,
     }
 }
 
@@ -568,6 +616,12 @@ fn native_value_call_operation_for_expr(expr: &Expr) -> Option<NativeCallOperati
             NativeCallBlocker::MethodDispatch,
             native_call_args_for_expr(expr),
         ),
+        Expr::New { args, span, .. } => (
+            *span,
+            NativeCallCallee::ConstructorDispatch,
+            NativeCallBlocker::ConstructorDispatch,
+            args.as_slice(),
+        ),
         _ => return None,
     };
     let blocker = native_call_argument_list_blocker(args).unwrap_or(default_blocker);
@@ -588,8 +642,14 @@ fn native_value_call_operation_for_expr(expr: &Expr) -> Option<NativeCallOperati
         NativeCallCallee::MethodDispatch => {
             NativeCallOperation::method_value_with_blocker(span, blocker)
         }
+        NativeCallCallee::ConstructorDispatch => {
+            NativeCallOperation::constructor_value(span, blocker)
+        }
         NativeCallCallee::FunctionFrame => {
             unreachable!("value-call classifier cannot produce a function-frame callee")
+        }
+        NativeCallCallee::ClosureFrame => {
+            unreachable!("value-call classifier cannot produce a closure-frame callee")
         }
     })
 }
@@ -621,9 +681,13 @@ fn native_call_blocker_message(
             native_dynamic_call_blocker_message(backend, operation)
         }
         NativeCallCallee::MethodDispatch => native_method_call_blocker_message(backend, operation),
+        NativeCallCallee::ConstructorDispatch => {
+            native_constructor_call_blocker_message(backend, operation)
+        }
         NativeCallCallee::FunctionFrame => {
             native_function_frame_blocker_message(backend, operation)
         }
+        NativeCallCallee::ClosureFrame => native_closure_frame_blocker_message(backend, operation),
     }
 }
 
@@ -691,6 +755,25 @@ fn native_method_call_blocker_message(
     }
 }
 
+fn native_constructor_call_blocker_message(
+    backend: NativeCallBackend,
+    operation: NativeCallOperation,
+) -> &'static str {
+    match (operation.result, operation.blocker) {
+        (
+            NativeCallResult::Value,
+            NativeCallBlocker::ConstructorDispatch
+            | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::ReturnValueOwnership,
+        ) => backend.object_instantiation_rejection(),
+        (
+            NativeCallResult::Reference,
+            NativeCallBlocker::ReferenceBinding | NativeCallBlocker::ReturnValueOwnership,
+        ) => backend.reference_assignment_rejection(),
+        _ => unreachable!("invalid native constructor-call blocker contract"),
+    }
+}
+
 fn native_function_frame_blocker_message(
     backend: NativeCallBackend,
     operation: NativeCallOperation,
@@ -707,6 +790,22 @@ fn native_function_frame_blocker_message(
             backend.function_declaration_rejection()
         }
         _ => unreachable!("invalid native function-frame blocker contract"),
+    }
+}
+
+fn native_closure_frame_blocker_message(
+    backend: NativeCallBackend,
+    operation: NativeCallOperation,
+) -> &'static str {
+    match (operation.result, operation.blocker) {
+        (
+            NativeCallResult::FrameHandoff,
+            NativeCallBlocker::ClosureFrameHandoff
+            | NativeCallBlocker::ByReferenceArgumentBinding
+            | NativeCallBlocker::VariadicArgumentBinding
+            | NativeCallBlocker::ReturnValueOwnership,
+        ) => backend.closure_rejection(),
+        _ => unreachable!("invalid native closure-frame blocker contract"),
     }
 }
 
@@ -1811,10 +1910,18 @@ impl LlvmGenerator {
             Expr::InstanceOf { span, .. } => {
                 Err(self.unsupported(*span, LLVM_INSTANCEOF_REJECTION))
             }
-            Expr::Closure { span, .. } => Err(self.unsupported(*span, LLVM_CLOSURE_REJECTION)),
-            Expr::New { span, .. } => {
-                Err(self.unsupported(*span, LLVM_OBJECT_INSTANTIATION_REJECTION))
-            }
+            Expr::Closure {
+                params,
+                returns_by_reference,
+                span,
+                ..
+            } => Err(
+                self.unsupported_call_operation(NativeCallOperation::closure_frame(
+                    *span,
+                    native_closure_frame_blocker(params, *returns_by_reference),
+                )),
+            ),
+            Expr::New { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Clone { span, .. } => Err(self.unsupported(*span, LLVM_CLONE_REJECTION)),
             Expr::Unary { op, expr, span } => {
                 if matches!(op, UnaryOp::Not) {
@@ -4971,10 +5078,18 @@ impl CGenerator {
             Expr::InstanceOf { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_INSTANCEOF_REJECTION))
             }
-            Expr::Closure { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CLOSURE_REJECTION)),
-            Expr::New { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION))
-            }
+            Expr::Closure {
+                params,
+                returns_by_reference,
+                span,
+                ..
+            } => Err(
+                self.unsupported_call_operation(NativeCallOperation::closure_frame(
+                    *span,
+                    native_closure_frame_blocker(params, *returns_by_reference),
+                )),
+            ),
+            Expr::New { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Clone { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CLONE_REJECTION)),
             Expr::Unary { op, expr, span } => {
                 if matches!(op, UnaryOp::Not) {
@@ -8575,6 +8690,19 @@ mod tests {
         Expr::Variable(name.to_string(), test_span())
     }
 
+    fn test_closure_expr(params: Vec<FunctionParam>, returns_by_reference: bool) -> Expr {
+        Expr::Closure {
+            params,
+            captures: Vec::new(),
+            return_type: None,
+            returns_by_reference,
+            body: Vec::new(),
+            is_static: false,
+            is_arrow: false,
+            span: test_span(),
+        }
+    }
+
     #[test]
     fn native_function_frame_blocker_classifies_parameter_and_return_families() {
         assert!(matches!(
@@ -8591,6 +8719,22 @@ mod tests {
         ));
         assert!(matches!(
             native_function_frame_blocker(&test_function(Vec::new(), true)),
+            NativeCallBlocker::ReturnValueOwnership
+        ));
+        assert!(matches!(
+            native_closure_frame_blocker(&[], false),
+            NativeCallBlocker::ClosureFrameHandoff
+        ));
+        assert!(matches!(
+            native_closure_frame_blocker(&[test_param(true, false)], false),
+            NativeCallBlocker::ByReferenceArgumentBinding
+        ));
+        assert!(matches!(
+            native_closure_frame_blocker(&[test_param(false, true)], false),
+            NativeCallBlocker::VariadicArgumentBinding
+        ));
+        assert!(matches!(
+            native_closure_frame_blocker(&[], true),
             NativeCallBlocker::ReturnValueOwnership
         ));
     }
@@ -8687,6 +8831,18 @@ mod tests {
                 },
                 NativeCallCallee::DynamicExpression,
             ),
+            (
+                ReferenceSource::ExpressionArrayIndex {
+                    target: Expr::New {
+                        class_name: crate::ast::NewClassName::Named("Box".to_string()),
+                        args: vec![Expr::Int(3, span)],
+                        span,
+                    },
+                    indices: vec![Expr::Int(0, span)],
+                    span,
+                },
+                NativeCallCallee::ConstructorDispatch,
+            ),
         ] {
             assert_eq!(
                 native_reference_source_call_operation(&source),
@@ -8760,6 +8916,18 @@ mod tests {
                 },
                 NativeCallCallee::DirectNamed,
             ),
+            (
+                Expr::Property {
+                    target: Box::new(Expr::New {
+                        class_name: crate::ast::NewClassName::Named("Box".to_string()),
+                        args: vec![Expr::Int(3, span)],
+                        span,
+                    }),
+                    property: "value".to_string(),
+                    span,
+                },
+                NativeCallCallee::ConstructorDispatch,
+            ),
         ] {
             assert_eq!(
                 native_dereferenced_call_result_operation(&expr),
@@ -8778,7 +8946,7 @@ mod tests {
     }
 
     #[test]
-    fn native_value_call_operation_classifies_named_dynamic_and_method_families() {
+    fn native_value_call_operation_classifies_named_dynamic_method_and_constructor_families() {
         let span = test_span();
 
         for (expr, operation) in [
@@ -8817,6 +8985,17 @@ mod tests {
                     span,
                 },
                 NativeCallOperation::method_value(span),
+            ),
+            (
+                Expr::New {
+                    class_name: crate::ast::NewClassName::Named("Box".to_string()),
+                    args: vec![Expr::Bool(false, span)],
+                    span,
+                },
+                NativeCallOperation::constructor_value(
+                    span,
+                    NativeCallBlocker::ConstructorDispatch,
+                ),
             ),
         ] {
             assert_eq!(native_value_call_operation_for_expr(&expr), Some(operation));
@@ -8888,6 +9067,22 @@ mod tests {
                 },
                 NativeCallCallee::MethodDispatch,
             ),
+            (
+                Expr::New {
+                    class_name: crate::ast::NewClassName::Named("Consumer".to_string()),
+                    args: vec![Expr::ShortTernary {
+                        condition: Box::new(Expr::Call {
+                            name: "produce".to_string(),
+                            args: vec![Expr::Int(4, span)],
+                            span,
+                        }),
+                        if_false: Box::new(Expr::String("fallback".to_string(), span)),
+                        span,
+                    }],
+                    span,
+                },
+                NativeCallCallee::ConstructorDispatch,
+            ),
         ] {
             assert_eq!(
                 native_value_call_operation_for_expr(&expr),
@@ -8906,19 +9101,25 @@ mod tests {
             ]),
             None
         );
+        assert_eq!(
+            native_call_argument_list_blocker(&[test_closure_expr(Vec::new(), false)]),
+            Some(NativeCallBlocker::ArgumentEvaluationCleanup)
+        );
     }
 
     #[test]
     fn native_call_blocker_message_routes_shared_contract_by_backend_and_call_family() {
         let span = test_span();
 
-        for (backend, direct, dynamic, method, frame, reference) in [
+        for (backend, direct, dynamic, method, constructor, frame, closure, reference) in [
             (
                 NativeCallBackend::Llvm,
                 LLVM_FUNCTION_CALL_REJECTION,
                 LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
                 LLVM_METHOD_CALL_REJECTION,
+                LLVM_OBJECT_INSTANTIATION_REJECTION,
                 LLVM_FUNCTION_DECLARATION_REJECTION,
+                LLVM_CLOSURE_REJECTION,
                 LLVM_REFERENCE_ASSIGNMENT_REJECTION,
             ),
             (
@@ -8926,7 +9127,9 @@ mod tests {
                 ASSEMBLY_FUNCTION_CALL_REJECTION,
                 ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
                 ASSEMBLY_METHOD_CALL_REJECTION,
+                ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
                 ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
+                ASSEMBLY_CLOSURE_REJECTION,
                 ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
             ),
         ] {
@@ -8981,6 +9184,26 @@ mod tests {
             assert_eq!(
                 native_call_blocker_message(
                     backend,
+                    NativeCallOperation::constructor_value(
+                        span,
+                        NativeCallBlocker::ConstructorDispatch,
+                    ),
+                ),
+                constructor
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::constructor_value(
+                        span,
+                        NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ),
+                ),
+                constructor
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
                     NativeCallOperation::function_frame(
                         span,
                         NativeCallBlocker::ByReferenceArgumentBinding,
@@ -9005,6 +9228,26 @@ mod tests {
             assert_eq!(
                 native_call_blocker_message(
                     backend,
+                    NativeCallOperation::closure_frame(
+                        span,
+                        NativeCallBlocker::ClosureFrameHandoff,
+                    ),
+                ),
+                closure
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::closure_frame(
+                        span,
+                        NativeCallBlocker::ByReferenceArgumentBinding,
+                    ),
+                ),
+                closure
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
                     NativeCallOperation::reference_result(span, NativeCallCallee::DirectNamed),
                 ),
                 reference
@@ -9023,6 +9266,16 @@ mod tests {
                 native_call_blocker_message(
                     backend,
                     NativeCallOperation::reference_result(span, NativeCallCallee::MethodDispatch),
+                ),
+                reference
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::reference_result(
+                        span,
+                        NativeCallCallee::ConstructorDispatch,
+                    ),
                 ),
                 reference
             );
