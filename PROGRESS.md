@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 18:23 CEST
-Evaluation marker: 20260521T162327Z
-Final refresh: 20260521T162327Z
+Updated: 2026-05-21 18:25 CEST
+Evaluation marker: 20260521T161953Z
+Final refresh: 20260521T162508Z
 
 This is a distilled roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local and dirty-worktree work is candidate material until selected, gated, committed, and pushed.
 
