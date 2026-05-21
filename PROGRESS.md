@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 16:57 CEST
+Updated: 2026-05-21 17:03 CEST
 Evaluation marker: 20260521T143958Z
-Final refresh: 20260521T145719Z
+Final refresh: 20260521T150316Z
 
 This is a high-level roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local work is candidate material only until selected, gated, committed, and pushed.
 
@@ -11,7 +11,7 @@ This is a high-level roadmap for a supervisor who needs the current momentum qui
 Estimated progress toward a broadly usable generalized PHP native compiler: **20%**
 
 ```
-Generalized runtime/ABI foundations      [############--------] 59%
+Generalized runtime/ABI foundations      [############--------] 60%
 Compiler/backend consumers               [##########----------] 48%
 Executable generalized PHP semantics     [####----------------] 19%
 Arrays, references, COW, lvalues         [##------------------] 12%
@@ -22,10 +22,10 @@ Broad integrated verification            [###-----------------] 13%
 
 ## Current Primary State
 
-- Latest pushed primary commit observed before this update: `ca029eb4 runtime: share comparison operation families`.
-- Latest integrated semantic compiler/runtime commit: `ca029eb4 runtime: share comparison operation families`.
+- Latest pushed primary commit observed before this update: `633da5fc runtime: share arithmetic operand conversion`.
+- Latest integrated semantic compiler/runtime commit: `633da5fc runtime: share arithmetic operand conversion`.
 - Product-code state at progress refresh: clean and synced with `origin/master`; only this `PROGRESS.md` update is dirty for the wrapper to commit.
-- Latest integrated read: runtime comparison operation/value-family dispatch now feeds existing runtime and native comparison consumers, replacing duplicated production comparison dispatch. This is shared infrastructure, not full array/object/resource comparison execution.
+- Latest integrated read: runtime arithmetic-number operand conversion now feeds `+`, `-`, `*`, and `/`, replacing duplicated production conversion sequencing while preserving left-to-right blocker ordering. This is shared runtime conversion infrastructure, not broad native arithmetic lowering.
 
 ## Grand Roadmap Position
 
@@ -42,6 +42,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 - [x] Materialize generated-C comparison string operands through a runtime byte-boundary with diagnostic results.
 - [x] Centralize generated-C comparison operand materialization failures behind a runtime-owned exit-code/report/free ABI.
 - [x] Share runtime comparison operation/value-family dispatch across existing runtime and native comparison consumers.
+- [x] Share runtime arithmetic-number operand conversion across `+`, `-`, `*`, and `/` consumers.
 - [x] Reuse runtime PHP string truthiness semantics in runtime values plus LLVM/generated-C known-string consumers.
 - [x] Track generated-C dynamic string byte lengths so mixed-length and embedded-NUL comparison operands can consume the runtime comparison ABI.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
@@ -58,7 +59,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, and byte-buffer results | 34% | 60% | Primary has string-conversion result/free ABI, comparison byte materialization, runtime-shared string truthiness, generated-C tracked dynamic string lengths, and runtime numeric-string classification. Lanes have broader binary-safe string-result, debug-output, regex, concat/interpolation, and array-transform consumers. Exact diagnostics and full backend parity remain limited. |
 | Call operation cleanup and ownership | 37% | 55% | Primary routes many call-result contexts through shared blockers across LLVM IR and generated C, including value operands in unary/binary/comparison/concat families and skipped later `echo` operands. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
-| Comparison/conversion semantics | 37% | 56% | Primary has comparison ABI consumers, runtime comparison operation/value-family sharing for loose equality/order and strict identity, canonical branch-result predicates/exit-code consumers, centralized comparison operand materialization failure handling, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness. Lane conversion-source/pair work is promising but still candidate material. |
+| Comparison/conversion semantics | 38% | 56% | Primary has comparison ABI consumers, runtime comparison operation/value-family sharing for loose equality/order and strict identity, shared arithmetic-number operand conversion for `+`, `-`, `*`, and `/`, canonical branch-result predicates/exit-code consumers, centralized comparison operand materialization failure handling, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness. Lane conversion-source/pair work is promising but still candidate material. |
 | Arrays, lvalues, references, COW | 12% | 47% | Lane-local generated-C owner-slot/value-root/RMW/reference-cell work is strong, especially undefined/null/false value-root routing, but primary still lacks full executable array lvalue, foreach, reference/COW, and ArrayAccess behavior. |
 | Symbols, globals, request state | 21% | 41% | Primary has symbol-table ABI helpers; lanes have expression-result consumers, frame-slot plans, request-state contracts, and stored call-result symbol boundaries. Full request/global/superglobal behavior and exact diagnostics remain early. |
 | Objects, properties, methods | 10% | 35% | Lane-local object/property receiver and operation blockers are more coherent, but primary has little broad executable object/property/method behavior beyond bounded blocker and seed paths. |
@@ -69,6 +70,8 @@ The project is moving from scattered backend rejection paths toward shared seman
 
 Recent pushed primary commits show useful movement from lane-local artifacts into `master`:
 
+- `633da5fc runtime: share arithmetic operand conversion`
+  - Shares runtime arithmetic-number operand conversion across addition, subtraction, multiplication, and division, replacing duplicated production conversion sequencing while preserving shared left-to-right blocker behavior across scalar and unsupported value families.
 - `ca029eb4 runtime: share comparison operation families`
   - Shares runtime comparison dispatch through operation families and scalar/array/object/resource value families, replacing duplicated production comparison blocker and strict-identity dispatch for existing runtime and native-value comparison consumers.
 - `c0ee80ae codegen: route echo operand calls through shared boundary`
