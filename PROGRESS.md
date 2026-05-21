@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 22:51 CEST
-Evaluation marker: 20260521T205106Z
+Updated: 2026-05-21 23:18 CEST
+Evaluation marker: 20260521T211800Z
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local work is candidate material until selected, gated, committed, and pushed.
 
@@ -21,10 +21,10 @@ Broad integrated verification            [####----------------] 22%
 
 ## Current Primary State
 
-- Primary semantic HEAD at this review: `e0280cee comparison: share string numeric-pair classifier`.
+- Primary semantic HEAD at this review: `325c9c7d codegen: centralize native call diagnostics`.
 - Primary worktree status at live check: semantic slice committed; this dashboard is committed separately per the primary progress-reporting exception.
-- Latest integrated progress is a small generalized runtime/compiler slice: runtime string comparison plus LLVM/C known-string safety decisions now use the shared `php_strings_use_numeric_comparison(left, right)` boundary instead of a compiler-local first-byte numeric-looking gate.
-- Resource caveat: `/dev/shm` is tight at about 6.2G free and 16G used; broad primary gates should continue using disk-backed targets until headroom improves.
+- Latest integrated progress is a small generalized compiler/backend slice: native call diagnostics for direct, dynamic, method, constructor, closure, frame handoff, return ownership, reference-result, and generated-C echo recovery paths now route through one shared call diagnostic subject boundary instead of duplicated backend-local diagnostic construction.
+- Resource note: `/dev/shm` has recovered to about 15G free and 7.2G used at this review. Broad primary gates should still use isolated/disk-backed targets when integration risk is high, but worker restarts are no longer blocked by the prior low-headroom condition.
 
 ## Grand Roadmap Position
 
@@ -51,17 +51,21 @@ The product is still far from full generalized PHP. The largest missing regions 
 | Active item | Primary-integrated | Lane-local candidate maturity | Current read |
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, byte buffers | 49% | 77% | Primary has shared value string-form semantics, numeric-string classification, selected generated-C string builtin consumers, cast/type-name echo value-result consumers, and comparison byte materialization. Lanes add formatter-tag, byte-source/view/result, tokenizer/parser/string-result, and interpreter output byte-sink candidates. |
-| Call operation cleanup and ownership | 40% | 60% | Primary routes many call-result contexts, termination-construct argument expressions, and direct special-form argument/arity failures through shared call-boundary blockers. Lanes add callable-signature, sequence, direct-special-form preflight, and recovery contracts, but real frames, binding, by-ref args/returns, dynamic calls, and return ownership remain mostly non-executable. |
+| Call operation cleanup and ownership | 42% | 61% | Primary routes many call-result contexts, termination-construct argument expressions, direct special-form argument/arity failures, and now shared backend call diagnostics through common call-boundary contracts. Lanes add callable-signature, sequence, direct-special-form preflight, and recovery contracts, but real frames, binding, by-ref args/returns, dynamic calls, and return ownership remain mostly non-executable. |
 | Comparison and conversion semantics | 59% | 70% | Primary has reusable comparison operation validation, branch/free/decision/status ABIs, direct operand-decision consumers, generated-C status guards, generated-C static/dynamic string-handle comparison operands, shared numeric-string pair classification for runtime and LLVM/C known-string safety, materialized value/diagnostic operand comparison entry points, array-handle comparison consumers, compare/cast/type-name value-result consumers, generated-C cast/type-name echo consumers, and operand-side/value-family/operation-aware blockers. Loose array/object/resource/reference execution, warning order, arbitrary expression materialization, and broader LLVM/generated-C parity remain open. |
 | Arrays, lvalues, references, COW | 21% | 70% | Primary has array-key materialization, array value-operation result ABI, array-entry snapshots, array-handle comparisons, and diagnostic array append consumers. Lanes have stronger RMW, `??=`, owner-slot, foreach, reference-operation, and generated-C lvalue candidates; full executable lvalues/references/COW are not integrated. |
 | Symbols, globals, request state | 24% | 54% | Primary has symbol ABI helpers, request/superglobal snapshot ABI, and `defined()` interpolation routed through expression-result boundaries. Lanes add expression-result consumer consolidation, slot transition contracts, scalar linked symbol-table execution, and request-state blocker/presence consolidation. Mutable globals/superglobals and repeated-call state remain early. |
 | Objects, properties, methods | 10% | 44% | Lane-local object/class/property blockers and operation plans are improving. Primary still has little broad executable object/property/method behavior. |
-| Diagnostics and control-flow cleanup | 19% | 59% | Primary has selected severity/blocker surfaces, diagnostic array append behavior, call-boundary cleanup routing, and comparison status/exit handling. Lanes have richer diagnostic-result carriers, sinks, termination handoffs, and CFG/control-flow rows; most control-flow rows are still non-emitting. |
+| Diagnostics and control-flow cleanup | 20% | 59% | Primary has selected severity/blocker surfaces, diagnostic array append behavior, centralized call diagnostic subjects, call-boundary cleanup routing, and comparison status/exit handling. Lanes have richer diagnostic-result carriers, sinks, termination handoffs, and CFG/control-flow rows; most control-flow rows are still non-emitting. |
 | Filesystem/path builtins and request state | 16% | 42% | Primary centralizes filesystem/path/request blockers and snapshots. Lanes route more request/configuration/runtime-state builtins through shared blockers, but real stream/stat/cache/current-directory/request mutation behavior is not implemented. |
 | Broad composition verification | 22% | 37% | Focused runtime/native-link gates now cover comparison decision/status paths, value-result consumers, array-handle comparisons, array append diagnostics, and full `native_link` filters for selected batches. Broad differential PHP composition coverage remains thin, and broad `phpc --tests` still has known pre-existing gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `325c9c7d codegen: centralize native call diagnostics`
+  - Adds shared `NativeCallDiagnostics` and `NativeCallDiagnosticSubject` handling for existing native call diagnostics across direct, dynamic, method, constructor, closure, function-frame handoff, return-value ownership, and explicit call-operation blockers. Generated-C echo recovery now continues far enough to report later call-family operand blockers instead of stopping at an earlier local echo-consumer blocker. This removes duplicated backend-local diagnostic construction; it does not add callable lookup, real frames, argument binding, by-ref/variadic ownership, closure/object dispatch, or return execution.
+- `cc50fb91 tests: prove string comparison classifier consumers`
+  - Adds proof coverage that the shared numeric-string pair classifier is consumed by LLVM, generated-C fallback, runtime comparison, and linked executable behavior. This is verification-only: no production lowering or string-pair special case was added.
 - `e0280cee comparison: share string numeric-pair classifier`
   - Adds shared `php_strings_use_numeric_comparison(left, right)` over the runtime numeric-string classifier, routes runtime string comparison through it, and replaces LLVM/C known-string native comparison safety checks with pairwise PHP semantics instead of a local first-byte recognizer. Focused runtime, LLVM boundary, native-link comparison, cargo-check, rustfmt, and diff gates passed. This removes a backend-local blocker decision; arbitrary dynamic expression comparison, binary/non-UTF-8 ownership, references/COW, and object/resource semantics remain blocked.
 - `315c03c3 codegen: route string comparisons through handles`
@@ -104,8 +108,8 @@ The project remains boundary-heavy. More result/blocker vocabulary without immed
 
 ## Near-Term Steering
 
-1. Treat `e0280cee` as the latest integrated semantic baseline.
+1. Treat `325c9c7d` as the latest integrated semantic baseline.
 2. Prefer small executable generated-C/LLVM consumers of existing ABI surfaces over more standalone vocabulary.
-3. Strong next candidates: narrow array lvalue/reference operation consumers, LLVM parity for comparison or array append diagnostic boundaries, diagnostic-result producers feeding real generated-C reads/offsets, narrow formatter/string-result execution, or request-state consumers that replace real backend fallbacks.
+3. Strong next candidates: narrow array lvalue/reference operation consumers, LLVM parity for comparison or array append diagnostic boundaries, diagnostic-result producers feeding real generated-C reads/offsets, narrow formatter/string-result execution, call/frame slices that add executable behavior beyond diagnostics, or request-state consumers that replace real backend fallbacks.
 4. Avoid whole-lane merges; several lanes contain broad, conflict-prone, or non-executable contract work.
-5. Keep broad primary gates disk-backed while `/dev/shm` is below roughly 10-12G free.
+5. Keep resource checks explicit before broad gates; `/dev/shm` is healthy at this review, but isolated target directories are still preferred for primary integration to avoid target-dir races.
