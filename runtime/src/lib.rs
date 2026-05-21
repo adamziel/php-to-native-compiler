@@ -570,6 +570,68 @@ enum NativeRequestStateOperation<'a> {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PhpStringByteView<'a> {
+    bytes: &'a [u8],
+}
+
+trait PhpStringByteSource {
+    fn string_byte_view(&self) -> Option<PhpStringByteView<'_>>;
+
+    fn string_bytes(&self) -> Option<&[u8]> {
+        self.string_byte_view().map(|bytes| bytes.as_slice())
+    }
+
+    fn string_clone_native_byte_buffer(&self) -> Option<NativeByteBuffer> {
+        self.string_byte_view()
+            .map(PhpStringByteView::clone_native_byte_buffer)
+    }
+
+    fn string_clone_native_handle(&self) -> Option<NativeStringHandle> {
+        self.string_byte_view()
+            .map(PhpStringByteView::clone_native_string_handle)
+    }
+
+    fn write_string_bytes_to<W: Write>(&self, writer: &mut W) -> Option<io::Result<usize>> {
+        self.string_byte_view().map(|bytes| bytes.write_to(writer))
+    }
+}
+
+impl<'a> PhpStringByteView<'a> {
+    fn from_slice(bytes: &'a [u8]) -> Self {
+        Self { bytes }
+    }
+
+    fn as_slice(self) -> &'a [u8] {
+        self.bytes
+    }
+
+    fn clone_native_byte_buffer(self) -> NativeByteBuffer {
+        NativeByteBuffer::from_slice(self.bytes)
+    }
+
+    fn clone_native_string_handle(self) -> NativeStringHandle {
+        NativeStringHandle::from_vec(self.bytes.to_vec())
+    }
+
+    fn write_to<W: Write>(self, writer: &mut W) -> io::Result<usize> {
+        writer.write_all(self.bytes)?;
+        Ok(self.bytes.len())
+    }
+}
+
+impl PhpStringByteSource for NativeString {
+    fn string_byte_view(&self) -> Option<PhpStringByteView<'_>> {
+        Some(PhpStringByteView::from_slice(&self.bytes))
+    }
+}
+
+impl PhpStringByteSource for NativeDiagnostic {
+    fn string_byte_view(&self) -> Option<PhpStringByteView<'_>> {
+        Some(PhpStringByteView::from_slice(self.message.as_bytes()))
+    }
+}
+
 impl NativeByteBuffer {
     pub const fn empty() -> Self {
         Self {
@@ -591,6 +653,10 @@ impl NativeByteBuffer {
         };
         std::mem::forget(bytes);
         buffer
+    }
+
+    pub fn from_slice(bytes: &[u8]) -> Self {
+        Self::from_vec(bytes.to_vec())
     }
 
     pub fn ptr(&self) -> *mut u8 {
@@ -736,11 +802,14 @@ impl NativeArrayKeyMaterializationResult {
         }
     }
 
-    fn string(bytes: Vec<u8>) -> Self {
+    fn string_source(source: &impl PhpStringByteSource) -> Self {
         Self {
             tag: NativeArrayKeyMaterializationTag::String,
             int_value: 0,
-            bytes: NativeByteBuffer::from_vec(bytes),
+            bytes: source
+                .string_bytes()
+                .map(NativeByteBuffer::from_slice)
+                .unwrap_or_else(NativeByteBuffer::empty),
             diagnostic: NativeDiagnosticHandle::null(),
         }
     }
@@ -755,9 +824,9 @@ impl NativeArrayKeyMaterializationResult {
     }
 
     fn from_array_key(key: ArrayKey) -> Self {
-        match key {
-            ArrayKey::Int(value) => Self::int(value),
-            ArrayKey::String(value) => Self::string(value.into_bytes()),
+        match &key {
+            ArrayKey::Int(value) => Self::int(*value),
+            ArrayKey::String(_) => Self::string_source(&key),
         }
     }
 }
@@ -2422,7 +2491,7 @@ pub unsafe extern "C" fn phpc_native_string_clone_bytes(
     handle: NativeStringHandle,
 ) -> NativeByteBuffer {
     unsafe { handle.as_ref() }
-        .map(|string| NativeByteBuffer::from_vec(string.bytes.clone()))
+        .and_then(PhpStringByteSource::string_clone_native_byte_buffer)
         .unwrap_or_else(NativeByteBuffer::empty)
 }
 
@@ -4531,7 +4600,7 @@ pub unsafe extern "C" fn phpc_native_diagnostic_message_clone_bytes(
     handle: NativeDiagnosticHandle,
 ) -> NativeByteBuffer {
     unsafe { handle.as_ref() }
-        .map(|diagnostic| NativeByteBuffer::from_vec(diagnostic.message.as_bytes().to_vec()))
+        .and_then(PhpStringByteSource::string_clone_native_byte_buffer)
         .unwrap_or_else(NativeByteBuffer::empty)
 }
 
@@ -4549,10 +4618,11 @@ pub unsafe extern "C" fn phpc_native_diagnostic_message_stderr(
         return 0;
     };
 
-    match io::stderr().write_all(diagnostic.message.as_bytes()) {
-        Ok(()) => diagnostic.message.len(),
-        Err(_) => 0,
-    }
+    let mut stderr = io::stderr();
+    diagnostic
+        .write_string_bytes_to(&mut stderr)
+        .and_then(Result::ok)
+        .unwrap_or(0)
 }
 
 /// # Safety
@@ -6980,6 +7050,15 @@ impl ArrayColumnKey {
     }
 }
 
+impl PhpStringByteSource for ArrayColumnKey {
+    fn string_byte_view(&self) -> Option<PhpStringByteView<'_>> {
+        match self {
+            Self::String(value) => Some(PhpStringByteView::from_slice(value.as_bytes())),
+            Self::Int(_) => None,
+        }
+    }
+}
+
 fn array_column_row_value(row: &Value, key: &ArrayColumnKey) -> Option<Value> {
     match row {
         Value::Array(row) => row.get_cloned(key.array_key()),
@@ -7087,6 +7166,15 @@ impl ArrayKey {
     }
 }
 
+impl PhpStringByteSource for ArrayKey {
+    fn string_byte_view(&self) -> Option<PhpStringByteView<'_>> {
+        match self {
+            Self::String(value) => Some(PhpStringByteView::from_slice(value.as_bytes())),
+            Self::Int(_) => None,
+        }
+    }
+}
+
 fn native_array_key_metadata(key: &ArrayKey) -> NativeArrayKeyMetadata {
     match key {
         ArrayKey::Int(value) => NativeArrayKeyMetadata::int(*value),
@@ -7095,10 +7183,8 @@ fn native_array_key_metadata(key: &ArrayKey) -> NativeArrayKeyMetadata {
 }
 
 fn native_array_key_string_clone(key: &ArrayKey) -> NativeStringHandle {
-    match key {
-        ArrayKey::Int(_) => NativeStringHandle::null(),
-        ArrayKey::String(value) => NativeStringHandle::from_vec(value.as_bytes().to_vec()),
-    }
+    key.string_clone_native_handle()
+        .unwrap_or_else(NativeStringHandle::null)
 }
 
 fn native_array_key_value(key: &ArrayKey) -> Value {
@@ -9206,6 +9292,22 @@ pub enum Value {
     Object(PhpObject),
     Closure(PhpClosure),
     Resource(i64),
+}
+
+impl PhpStringByteSource for Value {
+    fn string_byte_view(&self) -> Option<PhpStringByteView<'_>> {
+        match self {
+            Self::String(value) => Some(PhpStringByteView::from_slice(value.as_bytes())),
+            Self::Null
+            | Self::Bool(_)
+            | Self::Int(_)
+            | Self::Float(_)
+            | Self::Array(_)
+            | Self::Object(_)
+            | Self::Closure(_)
+            | Self::Resource(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -13655,6 +13757,87 @@ mod tests {
         assert_eq!(empty.len(), 0);
         assert_eq!(empty.cap(), 0);
         unsafe { phpc_native_byte_buffer_free(empty) };
+    }
+
+    #[test]
+    fn php_string_byte_sources_share_native_buffer_materialization() {
+        fn assert_source<S: PhpStringByteSource>(source: &S, expected: &[u8]) {
+            assert_eq!(source.string_bytes(), Some(expected));
+
+            let mut written = Vec::new();
+            assert_eq!(
+                source
+                    .write_string_bytes_to(&mut written)
+                    .expect("source should expose bytes")
+                    .unwrap(),
+                expected.len()
+            );
+            assert_eq!(written, expected);
+
+            let buffer = source
+                .string_clone_native_byte_buffer()
+                .expect("source should clone to a native byte buffer");
+            assert_eq!(native_byte_buffer_to_vec_for_test(buffer), expected);
+
+            let handle = source
+                .string_clone_native_handle()
+                .expect("source should clone to a native string handle");
+            assert_eq!(native_string_bytes_for_test(handle), expected);
+            unsafe { phpc_native_string_free(handle) };
+        }
+
+        assert_source(
+            &NativeString {
+                bytes: b"native\0string".to_vec(),
+            },
+            b"native\0string",
+        );
+        assert_source(
+            &NativeDiagnostic {
+                severity: NativeDiagnosticSeverity::Warning,
+                message: "diagnostic bytes".to_string(),
+            },
+            b"diagnostic bytes",
+        );
+        assert_source(&ArrayKey::String("array-key".to_string()), b"array-key");
+        assert_source(
+            &ArrayColumnKey::String("column-key".to_string()),
+            b"column-key",
+        );
+        assert_source(
+            &Value::String("runtime value".to_string()),
+            b"runtime value",
+        );
+
+        assert!(ArrayKey::Int(7).string_clone_native_byte_buffer().is_none());
+        assert!(ArrayColumnKey::Int(7)
+            .string_clone_native_handle()
+            .is_none());
+        assert!(Value::Int(7).string_bytes().is_none());
+
+        let handle = NativeStringHandle::from_vec(b"abi\0string".to_vec());
+        assert_eq!(native_string_bytes_for_test(handle), b"abi\0string");
+        unsafe { phpc_native_string_free(handle) };
+
+        let diagnostic = NativeDiagnosticHandle::from_message("abi diagnostic");
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "abi diagnostic"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let key_result = NativeArrayKeyMaterializationResult::from_array_key(ArrayKey::String(
+            "materialized-key".to_string(),
+        ));
+        assert_eq!(key_result.tag, NativeArrayKeyMaterializationTag::String);
+        let key_bytes =
+            unsafe { std::slice::from_raw_parts(key_result.bytes.ptr(), key_result.bytes.len()) };
+        assert_eq!(key_bytes, b"materialized-key");
+        unsafe { phpc_native_array_key_materialization_result_free(key_result) };
+
+        let key_handle = native_array_key_string_clone(&ArrayKey::String("cloned-key".to_string()));
+        assert_eq!(native_string_bytes_for_test(key_handle), b"cloned-key");
+        unsafe { phpc_native_string_free(key_handle) };
     }
 
     #[test]
