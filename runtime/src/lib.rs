@@ -402,6 +402,22 @@ impl NativeComparisonResult {
         self.diagnostic
     }
 
+    pub fn is_blocked(&self) -> bool {
+        self.status() == NativeComparisonStatus::Blocked as u8
+    }
+
+    pub fn is_true(&self) -> bool {
+        !self.is_blocked() && self.value != 0
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        if self.is_blocked() {
+            1
+        } else {
+            0
+        }
+    }
+
     pub fn is_ok(&self) -> bool {
         self.status == NativeComparisonStatus::Ok as u8
     }
@@ -1514,6 +1530,21 @@ pub extern "C" fn phpc_native_comparison_result_value(result: NativeComparisonRe
 }
 
 #[no_mangle]
+pub extern "C" fn phpc_native_comparison_result_is_blocked(result: NativeComparisonResult) -> bool {
+    result.is_blocked()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_result_is_true(result: NativeComparisonResult) -> bool {
+    result.is_true()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_result_exit_code(result: NativeComparisonResult) -> i32 {
+    result.exit_code()
+}
+
+#[no_mangle]
 pub extern "C" fn phpc_native_comparison_result_diagnostic(
     result: NativeComparisonResult,
 ) -> NativeDiagnosticHandle {
@@ -1540,13 +1571,26 @@ pub unsafe extern "C" fn phpc_native_comparison_result_free(result: NativeCompar
 pub unsafe extern "C" fn phpc_native_comparison_result_report_stderr_and_free(
     result: NativeComparisonResult,
 ) -> usize {
-    let written = if result.status() == NativeComparisonStatus::Blocked as u8 {
+    let written = if result.is_blocked() {
         unsafe { phpc_native_diagnostic_message_stderr(result.diagnostic()) }
     } else {
         0
     };
     unsafe { phpc_native_comparison_result_free(result) };
     written
+}
+
+/// # Safety
+///
+/// `result` must be a comparison result returned by the runtime ABI, or a
+/// result whose diagnostic handle is null. The function writes blocked
+/// comparison diagnostics to stderr, releases the owned diagnostic, and returns
+/// the canonical process exit code for comparison result consumers.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_result_report_stderr_exit_code_and_free(
+    result: NativeComparisonResult,
+) -> i32 {
+    unsafe { phpc_native_comparison_result_branch_or_report_stderr_and_free(result) }.exit_code()
 }
 
 /// # Safety
@@ -7735,6 +7779,156 @@ mod tests {
             11
         );
         assert_eq!(phpc_native_comparison_branch_result_exit_code(malformed), 1);
+    }
+
+    #[test]
+    fn native_comparison_result_exit_code_matches_branch_contract_across_families() {
+        for (label, result, expected_exit_code) in [
+            (
+                "scalar loose ordering success",
+                phpc_native_scalar_compare(
+                    phpc_native_int(2),
+                    NativeComparisonOp::LooseLt as u8,
+                    phpc_native_int(10),
+                ),
+                0,
+            ),
+            (
+                "scalar strict identity false success",
+                phpc_native_scalar_compare(
+                    phpc_native_bool(true),
+                    NativeComparisonOp::StrictEq as u8,
+                    phpc_native_int(1),
+                ),
+                0,
+            ),
+            (
+                "value numeric-string ordering success",
+                unsafe {
+                    phpc_native_value_compare_and_free(
+                        NativeValueHandle::from_value(Value::String("10".to_string())),
+                        NativeComparisonOp::LooseGt as u8,
+                        phpc_native_value_from_scalar(phpc_native_int(2)),
+                    )
+                },
+                0,
+            ),
+            (
+                "array loose blocker",
+                unsafe {
+                    phpc_native_value_compare_and_free(
+                        NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                        NativeComparisonOp::LooseEq as u8,
+                        phpc_native_value_from_scalar(phpc_native_int(1)),
+                    )
+                },
+                1,
+            ),
+            (
+                "reference semantic blocker",
+                phpc_native_reference_compare(
+                    NativeReferenceHandle::null(),
+                    NativeComparisonOp::StrictEq as u8,
+                    NativeReferenceHandle::null(),
+                ),
+                1,
+            ),
+            (
+                "invalid opcode blocker",
+                phpc_native_scalar_compare(phpc_native_int(1), 99, phpc_native_int(1)),
+                1,
+            ),
+        ] {
+            assert_eq!(
+                phpc_native_comparison_result_exit_code(result),
+                expected_exit_code,
+                "{label}"
+            );
+            let branch =
+                unsafe { phpc_native_comparison_result_branch_or_report_stderr_and_free(result) };
+            assert_eq!(
+                phpc_native_comparison_branch_result_exit_code(branch),
+                expected_exit_code,
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn native_comparison_result_report_stderr_exit_code_and_free_consumes_result_families() {
+        for (label, result, expected_exit_code) in [
+            (
+                "scalar equality success",
+                phpc_native_scalar_compare(
+                    phpc_native_int(1),
+                    NativeComparisonOp::LooseEq as u8,
+                    phpc_native_int(1),
+                ),
+                0,
+            ),
+            (
+                "value strict non-identity success",
+                unsafe {
+                    phpc_native_value_compare_and_free(
+                        NativeValueHandle::from_value(Value::String("2".to_string())),
+                        NativeComparisonOp::StrictNe as u8,
+                        phpc_native_value_from_scalar(phpc_native_int(2)),
+                    )
+                },
+                0,
+            ),
+            (
+                "scalar invalid opcode blocker",
+                phpc_native_scalar_compare(phpc_native_int(1), 99, phpc_native_int(1)),
+                1,
+            ),
+            (
+                "value null-handle blocker",
+                unsafe {
+                    phpc_native_value_compare_and_free(
+                        NativeValueHandle::null(),
+                        NativeComparisonOp::LooseEq as u8,
+                        phpc_native_value_from_scalar(phpc_native_int(1)),
+                    )
+                },
+                1,
+            ),
+            (
+                "array loose blocker",
+                unsafe {
+                    phpc_native_value_compare_and_free(
+                        NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                        NativeComparisonOp::LooseLt as u8,
+                        phpc_native_value_from_scalar(phpc_native_int(1)),
+                    )
+                },
+                1,
+            ),
+            (
+                "object blocker",
+                phpc_native_object_compare(
+                    NativeObjectHandle::null(),
+                    NativeComparisonOp::LooseGt as u8,
+                    NativeObjectHandle::null(),
+                ),
+                1,
+            ),
+            (
+                "resource blocker",
+                phpc_native_resource_compare(
+                    NativeResourceHandle::null(),
+                    NativeComparisonOp::StrictNe as u8,
+                    NativeResourceHandle::null(),
+                ),
+                1,
+            ),
+        ] {
+            assert_eq!(
+                unsafe { phpc_native_comparison_result_report_stderr_exit_code_and_free(result) },
+                expected_exit_code,
+                "{label}"
+            );
+        }
     }
 
     #[test]

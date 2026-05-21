@@ -173,20 +173,33 @@ echo 1 !== "1";
         "generated C should route comparison operand materialization failures through the runtime ABI:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_compare_branch_and_free"),
+        source.contains("phpc_native_value_compare_and_free"),
         "{source}"
     );
+    assert!(source.contains("phpc_NativeComparisonResult"), "{source}");
     assert!(
-        source.contains("phpc_NativeComparisonBranchResult"),
-        "{source}"
+        source.contains("phpc_native_comparison_result_report_stderr_exit_code_and_free"),
+        "generated C should route comparison result reporting, cleanup, and exit-code selection through the runtime ABI:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_branch_result_exit_code"),
-        "generated C should route blocked branch decisions through the exit-code accessor:\n{source}"
+        source.contains("phpc_native_comparison_result_is_true"),
+        "generated C should route result truth consumption through the truth accessor:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_branch_result_is_true"),
-        "generated C should route branch truth consumption through the truth accessor:\n{source}"
+        !source.contains("phpc_NativeComparisonBranchResult"),
+        "generated C should not need the branch-result ABI after consuming owned comparison results:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_compare_branch_and_free"),
+        "generated C should consume owned values through the comparison result boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_branch_result_exit_code"),
+        "generated C should not route owned comparison results through branch exit-code accessors:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_branch_result_is_true"),
+        "generated C should not route owned comparison results through branch truth accessors:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_comparison_branch_result_status"),
@@ -207,10 +220,6 @@ echo 1 !== "1";
     assert!(
         !source.contains(".value != 0"),
         "generated C should not inspect branch value fields directly:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_value_compare_and_free("),
-        "generated C should consume owned comparison values through the branch-returning boundary:\n{source}"
     );
     assert!(
         !source.contains("comparison_string_handle_"),
@@ -254,8 +263,8 @@ fn native_executable_c_source_tracks_dynamic_string_operand_lengths() {
         "dynamic string comparison operands should materialize through pointer-plus-length value construction:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_compare_branch_and_free"),
-        "dynamic string operands should feed the shared owned comparison branch ABI:\n{source}"
+        source.contains("phpc_native_value_compare_and_free"),
+        "dynamic string operands should feed the shared owned comparison result ABI:\n{source}"
     );
     assert!(
         !source.contains("strlen((const char *)("),
