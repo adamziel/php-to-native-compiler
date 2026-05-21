@@ -502,6 +502,21 @@ fn native_unemitted_value_operand_list_call_operation(
         .find_map(|expr| native_unemitted_value_operand_call_operation(expr))
 }
 
+fn native_unemitted_statement_operand_call_operation(expr: &Expr) -> Option<NativeCallOperation> {
+    native_unemitted_operand_call_operation(
+        expr,
+        NativeCallBlocker::StatementOperandEvaluationCleanup,
+    )
+}
+
+fn native_unemitted_statement_operand_list_call_operation(
+    exprs: &[Expr],
+) -> Option<NativeCallOperation> {
+    exprs
+        .iter()
+        .find_map(native_unemitted_statement_operand_call_operation)
+}
+
 fn native_expr_is_call_operation_root(expr: &Expr) -> bool {
     matches!(
         expr,
@@ -2245,8 +2260,16 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_NAMESPACE_REJECTION))
             }
             Stmt::Echo { exprs, .. } => {
-                for expr in exprs {
-                    let value = self.emit_expr(expr)?;
+                for (index, expr) in exprs.iter().enumerate() {
+                    let value = match self.emit_expr(expr) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            return Err(self.unsupported_unemitted_statement_operands_or_original(
+                                &exprs[index + 1..],
+                                error,
+                            ));
+                        }
+                    };
                     self.emit_echo(value);
                 }
                 Ok(())
@@ -5280,6 +5303,16 @@ impl LlvmGenerator {
             .unwrap_or(original)
     }
 
+    fn unsupported_unemitted_statement_operands_or_original(
+        &self,
+        exprs: &[Expr],
+        original: Diagnostic,
+    ) -> Diagnostic {
+        native_unemitted_statement_operand_list_call_operation(exprs)
+            .map(|operation| self.unsupported_call_operation(operation))
+            .unwrap_or(original)
+    }
+
     fn unsupported_value_call(&self, expr: &Expr) -> Diagnostic {
         self.unsupported_call_operation(
             native_value_call_operation_for_expr(expr)
@@ -5629,8 +5662,16 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_NAMESPACE_REJECTION))
             }
             Stmt::Echo { exprs, .. } => {
-                for expr in exprs {
-                    let value = self.emit_expr(expr)?;
+                for (index, expr) in exprs.iter().enumerate() {
+                    let value = match self.emit_expr(expr) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            return Err(self.unsupported_unemitted_statement_operands_or_original(
+                                &exprs[index + 1..],
+                                error,
+                            ));
+                        }
+                    };
                     self.emit_echo(value)?;
                 }
                 Ok(())
@@ -8708,6 +8749,16 @@ impl CGenerator {
             .unwrap_or(original)
     }
 
+    fn unsupported_unemitted_statement_operands_or_original(
+        &self,
+        exprs: &[Expr],
+        original: Diagnostic,
+    ) -> Diagnostic {
+        native_unemitted_statement_operand_list_call_operation(exprs)
+            .map(|operation| self.unsupported_call_operation(operation))
+            .unwrap_or(original)
+    }
+
     fn unsupported_value_call(&self, expr: &Expr) -> Diagnostic {
         self.unsupported_call_operation(
             native_value_call_operation_for_expr(expr)
@@ -11026,6 +11077,94 @@ mod tests {
                 span,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn native_unemitted_statement_operand_call_operation_preserves_call_contracts() {
+        let span = test_span();
+
+        for (expr, operation) in [
+            (
+                Expr::DynamicCall {
+                    callee: Box::new(test_variable_expr("callback")),
+                    args: Vec::new(),
+                    span,
+                },
+                NativeCallOperation::dynamic_value(span),
+            ),
+            (
+                Expr::MethodCall {
+                    target: Box::new(test_variable_expr("receiver")),
+                    method: "work".to_string(),
+                    args: Vec::new(),
+                    span,
+                },
+                NativeCallOperation::method_value(span),
+            ),
+            (
+                Expr::New {
+                    class_name: crate::ast::NewClassName::Named("Consumer".to_string()),
+                    args: vec![Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("produce")),
+                        args: Vec::new(),
+                        span,
+                    }],
+                    span,
+                },
+                NativeCallOperation::constructor_value(
+                    span,
+                    NativeCallBlocker::ArgumentEvaluationCleanup,
+                ),
+            ),
+            (
+                Expr::Binary {
+                    left: Box::new(Expr::Int(1, span)),
+                    op: BinaryOp::Add,
+                    right: Box::new(Expr::Call {
+                        name: "produce".to_string(),
+                        args: Vec::new(),
+                        span,
+                    }),
+                    span,
+                },
+                NativeCallOperation::direct_named_value(
+                    span,
+                    NativeCallBlocker::StatementOperandEvaluationCleanup,
+                ),
+            ),
+        ] {
+            assert_eq!(
+                native_unemitted_statement_operand_call_operation(&expr),
+                Some(operation)
+            );
+        }
+
+        let unsupported_first = Expr::Array {
+            items: Vec::new(),
+            span,
+        };
+        let later_call_operand = Expr::Binary {
+            left: Box::new(Expr::String("left".to_string(), span)),
+            op: BinaryOp::Concat,
+            right: Box::new(Expr::MethodCall {
+                target: Box::new(test_variable_expr("box")),
+                method: "label".to_string(),
+                args: Vec::new(),
+                span,
+            }),
+            span,
+        };
+
+        assert_eq!(
+            native_unemitted_statement_operand_list_call_operation(&[
+                unsupported_first,
+                later_call_operand,
+            ]),
+            Some(NativeCallOperation::method_value_with_blocker(
+                span,
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ))
         );
     }
 

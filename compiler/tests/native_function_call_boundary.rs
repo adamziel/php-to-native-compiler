@@ -1050,6 +1050,58 @@ fn native_executable_c_source_routes_unemitted_binary_right_operand_calls_throug
 }
 
 #[test]
+fn emit_ir_routes_unemitted_echo_operand_calls_through_call_boundary() {
+    for (source, expected) in [
+        ("<?php\necho [], missing();\n", LLVM_FUNCTION_CALL_REJECTION),
+        (
+            "<?php\n$call = \"missing\";\necho [], $call();\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho [], $box->work();\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho [], new Box();\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_unemitted_echo_operand_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\necho [], missing();\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho [], $call();\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho [], $box->work();\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho [], new Box();\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
 fn emit_asm_rejects_function_calls_before_backend_execution() {
     for source in [
         "<?php\necho label(\"abc\");\nfunction label($value) { return $value; }\n",
