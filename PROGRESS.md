@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 22:41 CEST
-Evaluation marker: 20260521T204122Z
+Updated: 2026-05-21 22:51 CEST
+Evaluation marker: 20260521T205106Z
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local work is candidate material until selected, gated, committed, and pushed.
 
@@ -10,8 +10,8 @@ This is a high-level supervisor dashboard. Percentages are candid engineering es
 Estimated progress toward a broadly usable generalized PHP native compiler: **30%**
 
 ```
-Generalized runtime/ABI foundations      [###############-----] 74%
-Compiler/backend consumers               [##############------] 69%
+Generalized runtime/ABI foundations      [###############-----] 75%
+Compiler/backend consumers               [##############------] 70%
 Executable generalized PHP semantics     [#######-------------] 36%
 Arrays, references, COW, lvalues         [####----------------] 21%
 Objects, properties, methods             [##------------------] 10%
@@ -21,9 +21,9 @@ Broad integrated verification            [####----------------] 22%
 
 ## Current Primary State
 
-- Primary semantic HEAD at this review: `315c03c3 codegen: route string comparisons through handles`.
+- Primary semantic HEAD at this review: `e0280cee comparison: share string numeric-pair classifier`.
 - Primary worktree status at live check: semantic slice committed; this dashboard is committed separately per the primary progress-reporting exception.
-- Latest integrated progress is a small generalized runtime/backend slice: generated-C static and dynamic string comparison operands now materialize length-aware `NativeStringHandle`s and consume the shared owned string-handle `NativeComparisonOperand` boundary.
+- Latest integrated progress is a small generalized runtime/compiler slice: runtime string comparison plus LLVM/C known-string safety decisions now use the shared `php_strings_use_numeric_comparison(left, right)` boundary instead of a compiler-local first-byte numeric-looking gate.
 - Resource caveat: `/dev/shm` is tight at about 6.2G free and 16G used; broad primary gates should continue using disk-backed targets until headroom improves.
 
 ## Grand Roadmap Position
@@ -52,7 +52,7 @@ The product is still far from full generalized PHP. The largest missing regions 
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, byte buffers | 49% | 77% | Primary has shared value string-form semantics, numeric-string classification, selected generated-C string builtin consumers, cast/type-name echo value-result consumers, and comparison byte materialization. Lanes add formatter-tag, byte-source/view/result, tokenizer/parser/string-result, and interpreter output byte-sink candidates. |
 | Call operation cleanup and ownership | 40% | 60% | Primary routes many call-result contexts, termination-construct argument expressions, and direct special-form argument/arity failures through shared call-boundary blockers. Lanes add callable-signature, sequence, direct-special-form preflight, and recovery contracts, but real frames, binding, by-ref args/returns, dynamic calls, and return ownership remain mostly non-executable. |
-| Comparison and conversion semantics | 58% | 70% | Primary has reusable comparison operation validation, branch/free/decision/status ABIs, direct operand-decision consumers, generated-C status guards, generated-C static/dynamic string-handle comparison operands, materialized value/diagnostic operand comparison entry points, array-handle comparison consumers, compare/cast/type-name value-result consumers, generated-C cast/type-name echo consumers, and operand-side/value-family/operation-aware blockers. Loose array/object/resource/reference execution, warning order, arbitrary expression materialization, and LLVM parity remain open. |
+| Comparison and conversion semantics | 59% | 70% | Primary has reusable comparison operation validation, branch/free/decision/status ABIs, direct operand-decision consumers, generated-C status guards, generated-C static/dynamic string-handle comparison operands, shared numeric-string pair classification for runtime and LLVM/C known-string safety, materialized value/diagnostic operand comparison entry points, array-handle comparison consumers, compare/cast/type-name value-result consumers, generated-C cast/type-name echo consumers, and operand-side/value-family/operation-aware blockers. Loose array/object/resource/reference execution, warning order, arbitrary expression materialization, and broader LLVM/generated-C parity remain open. |
 | Arrays, lvalues, references, COW | 21% | 70% | Primary has array-key materialization, array value-operation result ABI, array-entry snapshots, array-handle comparisons, and diagnostic array append consumers. Lanes have stronger RMW, `??=`, owner-slot, foreach, reference-operation, and generated-C lvalue candidates; full executable lvalues/references/COW are not integrated. |
 | Symbols, globals, request state | 24% | 54% | Primary has symbol ABI helpers, request/superglobal snapshot ABI, and `defined()` interpolation routed through expression-result boundaries. Lanes add expression-result consumer consolidation, slot transition contracts, scalar linked symbol-table execution, and request-state blocker/presence consolidation. Mutable globals/superglobals and repeated-call state remain early. |
 | Objects, properties, methods | 10% | 44% | Lane-local object/class/property blockers and operation plans are improving. Primary still has little broad executable object/property/method behavior. |
@@ -62,6 +62,8 @@ The product is still far from full generalized PHP. The largest missing regions 
 
 ## Recent Primary-Integrated Work
 
+- `e0280cee comparison: share string numeric-pair classifier`
+  - Adds shared `php_strings_use_numeric_comparison(left, right)` over the runtime numeric-string classifier, routes runtime string comparison through it, and replaces LLVM/C known-string native comparison safety checks with pairwise PHP semantics instead of a local first-byte recognizer. Focused runtime, LLVM boundary, native-link comparison, cargo-check, rustfmt, and diff gates passed. This removes a backend-local blocker decision; arbitrary dynamic expression comparison, binary/non-UTF-8 ownership, references/COW, and object/resource semantics remain blocked.
 - `315c03c3 codegen: route string comparisons through handles`
   - Wires the new string-handle comparison operand ABI into generated-C static and dynamic string comparison operands. Source and linked executable tests prove dynamic binary strings keep tracked byte lengths and feed the shared operand-decision ABI through `phpc_native_string_from_bytes(...)` and `phpc_native_comparison_operand_from_string_and_free(...)`, rather than bypassing via raw byte operand construction.
 - `fb99b703 runtime: compare native string handles as operands`
@@ -102,7 +104,7 @@ The project remains boundary-heavy. More result/blocker vocabulary without immed
 
 ## Near-Term Steering
 
-1. Treat `315c03c3` as the latest integrated semantic baseline.
+1. Treat `e0280cee` as the latest integrated semantic baseline.
 2. Prefer small executable generated-C/LLVM consumers of existing ABI surfaces over more standalone vocabulary.
 3. Strong next candidates: narrow array lvalue/reference operation consumers, LLVM parity for comparison or array append diagnostic boundaries, diagnostic-result producers feeding real generated-C reads/offsets, narrow formatter/string-result execution, or request-state consumers that replace real backend fallbacks.
 4. Avoid whole-lane merges; several lanes contain broad, conflict-prone, or non-executable contract work.
