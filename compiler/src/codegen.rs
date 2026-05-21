@@ -42,7 +42,8 @@ const LLVM_IS_WRITABLE_REJECTION: &str = "LLVM is_writable lowering rejects dire
 const ASSEMBLY_IS_WRITABLE_REJECTION: &str = "assembly is_writable lowering rejects direct filesystem writability checks until native writability checks, permission policy, warnings, include_path/open_basedir, stream wrappers, symlink/stat-cache/TOCTOU behavior, non-UTF-8 paths, references/COW, and exact native is_writable diagnostics exist; phpc run handles current bounded is_writable behavior";
 const LLVM_CLEARSTATCACHE_REJECTION: &str = "LLVM clearstatcache lowering rejects stat-cache mutation until native filesystem metadata caches, realpath cache state, per-path invalidation, include_path/open_basedir policy, stream wrappers, request-local filesystem state, references/COW, and exact native diagnostics exist; phpc run handles current bounded stat-cache clearstatcache behavior";
 const ASSEMBLY_CLEARSTATCACHE_REJECTION: &str = "assembly clearstatcache lowering rejects stat-cache mutation until native filesystem metadata caches, realpath cache state, per-path invalidation, include_path/open_basedir policy, stream wrappers, request-local filesystem state, references/COW, and exact native diagnostics exist; phpc run handles current bounded stat-cache clearstatcache behavior";
-const ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "assembly filesystem-path builtin lowering rejects forms outside the reusable native filesystem path operation blocker, including unsupported arity, stream contexts, non-lowerable operands, filesystem policy, stat cache/current-directory state, references/copy-on-write, and exact native diagnostics; lowerable stream, canonicalization, stat-predicate, stat-value, current-directory, and stat-cache operands route through byte-preserving value-to-string conversion, optional truthiness, diagnostics, and cleanup";
+const LLVM_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "LLVM filesystem-path builtin lowering rejects realpath_cache_get() and realpath_cache_size() until native filesystem realpath-cache ABI, request-local cache state, binary path byte fidelity, policy checks, warning-plus-false recovery, references/copy-on-write, and exact native diagnostics exist; generated-native C routes realpath-cache introspection through the shared runtime blocker";
+const ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "assembly filesystem-path builtin lowering rejects forms outside the reusable native filesystem path operation blocker, including unsupported arity, stream contexts, file_get_contents() offset/length forms, non-lowerable operands, filesystem policy, stat cache/current-directory state, realpath-cache introspection return ownership, references/copy-on-write, and exact native diagnostics; lowerable stream, canonicalization, stat-predicate, stat-value, current-directory, stat-cache, and realpath-cache operands route through byte-preserving value-to-string conversion, optional truthiness, diagnostics, and cleanup";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
@@ -2805,27 +2806,17 @@ impl LlvmGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
                 Err(self.unsupported_direct_named_call(args, *span, LLVM_BASENAME_REJECTION))
             }
-            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("file_get_contents") => {
+            Expr::Call { name, args, span }
+                if let Some(operation) = native_filesystem_path_operation_for_name(name) =>
+            {
                 Err(self.unsupported_direct_named_call(
                     args,
                     *span,
-                    LLVM_FILE_GET_CONTENTS_REJECTION,
+                    native_filesystem_path_operation_llvm_rejection(operation),
                 ))
             }
             Expr::Call { name, args, span } if is_stream_resource_builtin(name) => {
                 Err(self.unsupported_direct_named_call(args, *span, LLVM_STREAM_RESOURCE_REJECTION))
-            }
-            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("getcwd") => {
-                Err(self.unsupported_direct_named_call(args, *span, LLVM_GETCWD_REJECTION))
-            }
-            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("realpath") => {
-                Err(self.unsupported_direct_named_call(args, *span, LLVM_REALPATH_REJECTION))
-            }
-            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("is_writable") => {
-                Err(self.unsupported_direct_named_call(args, *span, LLVM_IS_WRITABLE_REJECTION))
-            }
-            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("clearstatcache") => {
-                Err(self.unsupported_direct_named_call(args, *span, LLVM_CLEARSTATCACHE_REJECTION))
             }
             Expr::Call { name, args, span } if is_header_state_builtin(name) => {
                 Err(self.unsupported_direct_named_call(args, *span, LLVM_HEADER_STATE_REJECTION))
@@ -6947,6 +6938,25 @@ impl CGenerator {
                     span,
                 )
             }
+            NativeFilesystemPathOperation::RealpathCacheGet
+            | NativeFilesystemPathOperation::RealpathCacheSize => {
+                if !args.is_empty() {
+                    return Err(self.unsupported_direct_named_call(
+                        args,
+                        span,
+                        ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION,
+                    ));
+                }
+                self.emit_native_filesystem_path_operation(
+                    operation,
+                    None,
+                    None,
+                    "0".to_string(),
+                    "0".to_string(),
+                    "0".to_string(),
+                    span,
+                )
+            }
             NativeFilesystemPathOperation::ClearStatCache => {
                 if args.len() > 2 {
                     return Err(self.unsupported_direct_named_call(
@@ -10988,6 +10998,8 @@ fn native_filesystem_path_operation_for_name(name: &str) -> Option<NativeFilesys
         "filemtime" => Some(NativeFilesystemPathOperation::FileMTime),
         "getcwd" => Some(NativeFilesystemPathOperation::GetCwd),
         "clearstatcache" => Some(NativeFilesystemPathOperation::ClearStatCache),
+        "realpath_cache_get" => Some(NativeFilesystemPathOperation::RealpathCacheGet),
+        "realpath_cache_size" => Some(NativeFilesystemPathOperation::RealpathCacheSize),
         _ => None,
     }
 }
@@ -11008,6 +11020,31 @@ fn native_filesystem_path_operation_result_prefix(
         NativeFilesystemPathOperation::FileMTime => "filemtime_value",
         NativeFilesystemPathOperation::GetCwd => "getcwd_value",
         NativeFilesystemPathOperation::ClearStatCache => "clearstatcache_value",
+        NativeFilesystemPathOperation::RealpathCacheGet => "realpath_cache_get_value",
+        NativeFilesystemPathOperation::RealpathCacheSize => "realpath_cache_size_value",
+    }
+}
+
+fn native_filesystem_path_operation_llvm_rejection(
+    operation: NativeFilesystemPathOperation,
+) -> &'static str {
+    match operation {
+        NativeFilesystemPathOperation::FileGetContents => LLVM_FILE_GET_CONTENTS_REJECTION,
+        NativeFilesystemPathOperation::Realpath => LLVM_REALPATH_REJECTION,
+        NativeFilesystemPathOperation::IsWritable => LLVM_IS_WRITABLE_REJECTION,
+        NativeFilesystemPathOperation::GetCwd => LLVM_GETCWD_REJECTION,
+        NativeFilesystemPathOperation::ClearStatCache => LLVM_CLEARSTATCACHE_REJECTION,
+        NativeFilesystemPathOperation::RealpathCacheGet
+        | NativeFilesystemPathOperation::RealpathCacheSize => {
+            LLVM_FILESYSTEM_PATH_OPERATION_REJECTION
+        }
+        NativeFilesystemPathOperation::FileExists
+        | NativeFilesystemPathOperation::IsDir
+        | NativeFilesystemPathOperation::IsFile
+        | NativeFilesystemPathOperation::IsReadable
+        | NativeFilesystemPathOperation::IsLink
+        | NativeFilesystemPathOperation::FileSize
+        | NativeFilesystemPathOperation::FileMTime => LLVM_FUNCTION_CALL_REJECTION,
     }
 }
 
@@ -11020,6 +11057,10 @@ fn native_filesystem_path_operation_assembly_rejection(
         NativeFilesystemPathOperation::IsWritable => ASSEMBLY_IS_WRITABLE_REJECTION,
         NativeFilesystemPathOperation::GetCwd => ASSEMBLY_GETCWD_REJECTION,
         NativeFilesystemPathOperation::ClearStatCache => ASSEMBLY_CLEARSTATCACHE_REJECTION,
+        NativeFilesystemPathOperation::RealpathCacheGet
+        | NativeFilesystemPathOperation::RealpathCacheSize => {
+            ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION
+        }
         NativeFilesystemPathOperation::FileExists
         | NativeFilesystemPathOperation::IsDir
         | NativeFilesystemPathOperation::IsFile

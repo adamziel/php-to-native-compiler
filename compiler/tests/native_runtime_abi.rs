@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use php_compiler::{
-    emit_ir_source, native_runtime_scalar_echo_probe_ir,
+    emit_ir_source, error::Phase, native_runtime_scalar_echo_probe_ir,
     native_runtime_scalar_echo_probe_ir_for_target, NativeRuntimeIrTarget,
 };
 
@@ -32,6 +32,29 @@ fn generated_ir_blocks_scalar_cast_builtins_at_shared_value_cast_boundary() {
                 "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts plus strval(), boolval(), floatval(), and doubleval()"
             ),
             "{source}: {}",
+            error.message
+        );
+    }
+}
+
+#[test]
+fn generated_ir_blocks_filesystem_path_builtins_at_shared_boundary() {
+    let cases = [
+        ("realpath cache get", "<?php\nrealpath_cache_get();\n"),
+        (
+            "realpath cache size",
+            "<?php\necho realpath_cache_size();\n",
+        ),
+    ];
+
+    for (label, source) in cases {
+        let error = emit_ir_source(source).unwrap_err();
+        assert_eq!(error.phase, Phase::Codegen, "{label}");
+        assert!(
+            error.message.contains(
+                "LLVM filesystem-path builtin lowering rejects realpath_cache_get() and realpath_cache_size()"
+            ),
+            "{label}: {}",
             error.message
         );
     }

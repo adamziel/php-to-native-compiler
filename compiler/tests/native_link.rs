@@ -202,7 +202,7 @@ fn native_executable_c_source_routes_string_distance_builtins_through_runtime_co
     );
 }
 
-const FILESYSTEM_PATH_OPERATION_SOURCE: &str = "<?php\n$path = \"pmt/\\0A\";\n$flag = str_contains($path, \"\\0\");\nfile_get_contents($path, $flag);\nrealpath($path);\nfile_exists(42);\nis_writable($path);\nfilesize($path);\nfilemtime($path);\ngetcwd();\nclearstatcache($flag, $path);\necho \"done\\n\";\n";
+const FILESYSTEM_PATH_OPERATION_SOURCE: &str = "<?php\n$path = \"pmt/\\0A\";\n$flag = str_contains($path, \"\\0\");\nfile_get_contents($path, $flag);\nrealpath($path);\nfile_exists(42);\nis_writable($path);\nfilesize($path);\nfilemtime($path);\ngetcwd();\nclearstatcache($flag, $path);\nrealpath_cache_get();\nrealpath_cache_size();\necho \"done\\n\";\n";
 
 #[test]
 fn native_executable_c_source_routes_filesystem_path_builtins_through_shared_blocker() {
@@ -217,7 +217,7 @@ fn native_executable_c_source_routes_filesystem_path_builtins_through_shared_blo
         source
             .matches(" = phpc_native_value_filesystem_path_operation_with_diagnostic(")
             .count(),
-        8,
+        10,
         "{source}"
     );
     assert!(
@@ -237,7 +237,9 @@ fn native_executable_c_source_routes_filesystem_path_builtins_through_shared_blo
             && source.contains(", 8, &filesystem_path_operation_diagnostic_")
             && source.contains(", 9, &filesystem_path_operation_diagnostic_")
             && source.contains(", 10, &filesystem_path_operation_diagnostic_")
-            && source.contains(", 11, &filesystem_path_operation_diagnostic_"),
+            && source.contains(", 11, &filesystem_path_operation_diagnostic_")
+            && source.contains(", 12, &filesystem_path_operation_diagnostic_")
+            && source.contains(", 13, &filesystem_path_operation_diagnostic_"),
         "filesystem path builtins should share one operation-tagged ABI:\n{source}"
     );
 }
@@ -925,6 +927,8 @@ fn emit_exe_links_and_reports_shared_filesystem_path_blocker_program() {
         "filemtime() awaits the shared filesystem stat-value ABI",
         "getcwd() awaits the shared process current-directory ABI",
         "clearstatcache() awaits the shared filesystem stat-cache ABI",
+        "realpath_cache_get() awaits the shared filesystem realpath-cache ABI",
+        "realpath_cache_size() awaits the shared filesystem realpath-cache ABI",
     ] {
         assert!(
             stderr.contains(expected),

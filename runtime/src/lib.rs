@@ -147,6 +147,8 @@ pub enum NativeFilesystemPathOperation {
     FileMTime = 9,
     GetCwd = 10,
     ClearStatCache = 11,
+    RealpathCacheGet = 12,
+    RealpathCacheSize = 13,
 }
 
 #[repr(u8)]
@@ -3185,6 +3187,23 @@ unsafe fn native_value_filesystem_path_operation_value(
             Err(RuntimeError::invalid_string_conversion(
                 "native filesystem path operation failed: clearstatcache() awaits the shared filesystem stat-cache ABI",
             ))
+        }
+        tag if tag == NativeFilesystemPathOperation::RealpathCacheGet as u8
+            || tag == NativeFilesystemPathOperation::RealpathCacheSize as u8 =>
+        {
+            if flags != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native filesystem path operation failed: realpath cache introspection does not accept operation flags",
+                ));
+            }
+            let operation = if tag == NativeFilesystemPathOperation::RealpathCacheGet as u8 {
+                "realpath_cache_get()"
+            } else {
+                "realpath_cache_size()"
+            };
+            Err(RuntimeError::invalid_string_conversion(format!(
+                "native filesystem path operation failed: {operation} awaits the shared filesystem realpath-cache ABI"
+            )))
         }
         _ => Err(RuntimeError::invalid_string_conversion(
             "native filesystem path operation failed: unsupported operation tag",
@@ -14820,6 +14839,20 @@ mod tests {
             NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION | NATIVE_FILESYSTEM_PATH_HAS_PATH,
             NativeFilesystemPathOperation::ClearStatCache,
             "invalid string conversion: native filesystem path operation failed: clearstatcache() awaits the shared filesystem stat-cache ABI",
+        );
+        expect_filesystem_blocker(
+            NativeValueHandle::null(),
+            NativeValueHandle::null(),
+            0,
+            NativeFilesystemPathOperation::RealpathCacheGet,
+            "invalid string conversion: native filesystem path operation failed: realpath_cache_get() awaits the shared filesystem realpath-cache ABI",
+        );
+        expect_filesystem_blocker(
+            NativeValueHandle::null(),
+            NativeValueHandle::null(),
+            0,
+            NativeFilesystemPathOperation::RealpathCacheSize,
+            "invalid string conversion: native filesystem path operation failed: realpath_cache_size() awaits the shared filesystem realpath-cache ABI",
         );
 
         let resource = NativeValueHandle::from_value(Value::Resource(7));

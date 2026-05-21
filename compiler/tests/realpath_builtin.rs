@@ -6,7 +6,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source, run_source_with_source_file};
 
 const LLVM_REALPATH_REJECTION: &str = "LLVM realpath lowering rejects direct filesystem canonicalization calls until native filesystem canonicalization, symlink/path policy, warning/false recovery, include_path/open_basedir/stat cache, non-UTF-8 path handling, references/COW, and exact native realpath diagnostics exist; phpc run handles current bounded realpath behavior";
-const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_REALPATH_CACHE_OPERATION_REJECTION: &str = "LLVM filesystem-path builtin lowering rejects realpath_cache_get() and realpath_cache_size() until native filesystem realpath-cache ABI, request-local cache state, binary path byte fidelity, policy checks, warning-plus-false recovery, references/copy-on-write, and exact native diagnostics exist; generated-native C routes realpath-cache introspection through the shared runtime blocker";
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -313,13 +313,19 @@ echo is_callable("realpath_cache_size") ? "1" : "0";
     assert_eq!(cache_size_ir_error.phase, Phase::Codegen);
     assert_eq!(cache_size_ir_error.line, 2);
     assert_eq!(cache_size_ir_error.column, 6);
-    assert_eq!(cache_size_ir_error.message, LLVM_FUNCTION_CALL_REJECTION);
+    assert_eq!(
+        cache_size_ir_error.message,
+        LLVM_REALPATH_CACHE_OPERATION_REJECTION
+    );
 
     let cache_size_asm_error = emit_asm_source("<?php\necho realpath_cache_size();\n").unwrap_err();
     assert_eq!(cache_size_asm_error.phase, Phase::Codegen);
     assert_eq!(cache_size_asm_error.line, 2);
     assert_eq!(cache_size_asm_error.column, 6);
-    assert_eq!(cache_size_asm_error.message, LLVM_FUNCTION_CALL_REJECTION);
+    assert_eq!(
+        cache_size_asm_error.message,
+        LLVM_REALPATH_CACHE_OPERATION_REJECTION
+    );
 }
 
 #[test]
