@@ -2894,8 +2894,14 @@ impl LlvmGenerator {
     }
 
     fn emit_isset_call(&self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         let [arg] = args else {
-            return Err(self.unsupported(span, LLVM_ISSET_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         };
 
         if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
@@ -2917,8 +2923,14 @@ impl LlvmGenerator {
     }
 
     fn emit_empty_call(&self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         let [arg] = args else {
-            return Err(self.unsupported(span, LLVM_EMPTY_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         };
 
         if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
@@ -3019,7 +3031,9 @@ impl LlvmGenerator {
         }
 
         if args.len() != 1 {
-            return Err(self.unsupported(span, LLVM_GLOBAL_CONSTANT_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let value = self.emit_expr(&args[0])?;
@@ -6421,8 +6435,14 @@ impl CGenerator {
     }
 
     fn emit_isset_call(&self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         let [arg] = args else {
-            return Err(self.unsupported(span, ASSEMBLY_ISSET_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         };
 
         if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
@@ -6444,8 +6464,14 @@ impl CGenerator {
     }
 
     fn emit_empty_call(&self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         let [arg] = args else {
-            return Err(self.unsupported(span, ASSEMBLY_EMPTY_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         };
 
         if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
@@ -6974,7 +7000,9 @@ impl CGenerator {
         }
 
         if args.len() != 1 {
-            return Err(self.unsupported(span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let value = self.emit_expr(&args[0])?;

@@ -233,6 +233,92 @@ fn native_executable_c_source_routes_constant_table_call_argument_results_throug
 }
 
 #[test]
+fn emit_ir_routes_direct_special_forms_through_call_boundary() {
+    for (source, expected) in [
+        ("<?php\n$value = defined();\n", LLVM_FUNCTION_CALL_REJECTION),
+        (
+            "<?php\n$value = defined(\"APP\", \"EXTRA\");\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        ("<?php\n$value = empty();\n", LLVM_FUNCTION_CALL_REJECTION),
+        (
+            "<?php\n$value = empty($value, $other);\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        ("<?php\n$value = isset();\n", LLVM_FUNCTION_CALL_REJECTION),
+        (
+            "<?php\n$value = isset($items[missing_key()]);\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing_key\";\n$value = empty($items[$call()]);\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = isset($items[$box->key()]);\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = empty(make_items()[0]);\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_direct_special_forms_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$value = defined();\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = defined(\"APP\", \"EXTRA\");\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = empty();\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = empty($value, $other);\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = isset();\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = isset($items[missing_key()]);\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing_key\";\n$value = empty($items[$call()]);\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = isset($items[$box->key()]);\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = empty(make_items()[0]);\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
 fn emit_ir_routes_assignment_and_unset_lvalue_operand_calls_through_call_boundary() {
     for (source, expected) in [
         (
