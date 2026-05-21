@@ -8342,24 +8342,17 @@ impl Value {
     }
 
     pub fn echo_string(&self) -> String {
-        match self {
-            Value::Null => String::new(),
-            Value::Bool(false) => String::new(),
-            Value::Bool(true) => "1".to_string(),
-            Value::Int(value) => value.to_string(),
-            Value::Float(value) => format_php_float(*value),
-            Value::String(value) => value.clone(),
-            Value::Array(_) => "Array".to_string(),
-            Value::Object(_) => "Object".to_string(),
-            Value::Closure(_) => "Object".to_string(),
-            Value::Resource(id) => format!("Resource id #{id}"),
-        }
+        analyze_php_value_string_semantics(self).into_string()
     }
 
     pub fn php_scalar_string_bytes(&self) -> Option<Vec<u8>> {
         match self {
             Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-                Some(self.echo_string().into_bytes())
+                Some(
+                    analyze_php_value_string_semantics(self)
+                        .into_string()
+                        .into_bytes(),
+                )
             }
             Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => None,
         }
@@ -8383,7 +8376,7 @@ impl Value {
             Value::Resource(_) => Err(RuntimeError::invalid_string_conversion(
                 "resource cannot be converted to string",
             )),
-            _ => Ok(self.echo_string()),
+            _ => Ok(analyze_php_value_string_semantics(self).into_string()),
         }
     }
 
@@ -9224,6 +9217,11 @@ enum Number {
     Float(f64),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpValueStringSemantics {
+    value: String,
+}
+
 impl Number {
     fn as_float(&self) -> f64 {
         match self {
@@ -9238,6 +9236,32 @@ impl Number {
             Number::Float(value) => format_php_float(value),
         }
     }
+}
+
+impl PhpValueStringSemantics {
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+
+    fn into_string(self) -> String {
+        self.value
+    }
+}
+
+pub fn analyze_php_value_string_semantics(value: &Value) -> PhpValueStringSemantics {
+    let value = match value {
+        Value::Null => String::new(),
+        Value::Bool(false) => String::new(),
+        Value::Bool(true) => "1".to_string(),
+        Value::Int(value) => value.to_string(),
+        Value::Float(value) => format_php_float(*value),
+        Value::String(value) => value.clone(),
+        Value::Array(_) => "Array".to_string(),
+        Value::Object(_) | Value::Closure(_) => "Object".to_string(),
+        Value::Resource(id) => format!("Resource id #{id}"),
+    };
+
+    PhpValueStringSemantics { value }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -10496,6 +10520,109 @@ mod tests {
         assert_eq!(Value::Int(42).echo_string(), "42");
         assert_eq!(Value::Float(1.5).echo_string(), "1.5");
         assert_eq!(Value::String("x".to_string()).echo_string(), "x");
+    }
+
+    #[test]
+    fn value_string_semantics_feed_echo_scalar_array_and_native_consumers() {
+        let mut array = PhpArray::new();
+        array.insert("item", Value::Int(1));
+
+        let cases = vec![
+            ("null", Value::Null, b"".as_slice(), true),
+            ("false", Value::Bool(false), b"", true),
+            ("true", Value::Bool(true), b"1", true),
+            ("int", Value::Int(-42), b"-42", true),
+            ("float", Value::Float(1.5), b"1.5", true),
+            (
+                "string",
+                Value::String("php\0value".to_string()),
+                b"php\0value",
+                true,
+            ),
+            ("array", Value::Array(array), b"Array", false),
+        ];
+
+        for (label, value, expected, scalar_string_allowed) in cases {
+            let expected_text = String::from_utf8_lossy(expected);
+            let semantics = analyze_php_value_string_semantics(&value);
+            assert_eq!(
+                semantics.as_str(),
+                expected_text,
+                "shared string semantics for {label}"
+            );
+            assert_eq!(
+                semantics.clone().into_string().as_bytes(),
+                expected,
+                "owned string semantics result for {label}"
+            );
+            assert_eq!(
+                value.echo_string().as_bytes(),
+                expected,
+                "legacy echo string consumer for {label}"
+            );
+            assert_eq!(
+                value.try_echo_string().unwrap().as_bytes(),
+                expected,
+                "checked echo conversion consumer for {label}"
+            );
+
+            let handle = NativeValueHandle::from_value(value.clone());
+            let result = unsafe { phpc_native_value_to_string_bytes(handle) };
+            assert_eq!(
+                native_string_conversion_result_for_test(result).unwrap(),
+                expected,
+                "native conversion result consumer for {label}"
+            );
+            unsafe { phpc_native_value_free(handle) };
+
+            if scalar_string_allowed {
+                assert_eq!(
+                    value.php_scalar_string_bytes().as_deref(),
+                    Some(expected),
+                    "scalar string bytes consumer for {label}"
+                );
+                assert_eq!(
+                    array_scalar_string_comparison_value("array_diff()", &value)
+                        .unwrap()
+                        .as_slice(),
+                    expected,
+                    "array string comparison consumer for {label}"
+                );
+            } else {
+                assert_eq!(
+                    value.php_scalar_string_bytes(),
+                    None,
+                    "scalar string blocker for {label}"
+                );
+                assert!(
+                    array_scalar_string_comparison_value("array_diff()", &value).is_err(),
+                    "array string comparison blocker for {label}"
+                );
+            }
+        }
+
+        let classes = PhpClassTable::with_core_classes();
+        let class = classes.lookup_class("stdClass").unwrap();
+        let object = Value::Object(PhpObject::from_class(class));
+        assert_eq!(
+            analyze_php_value_string_semantics(&object).as_str(),
+            "Object"
+        );
+        assert!(object.try_echo_string().is_err());
+
+        let closure = Value::Closure(PhpClosure::new(1, false, Vec::new()));
+        assert_eq!(
+            analyze_php_value_string_semantics(&closure).as_str(),
+            "Object"
+        );
+        assert!(closure.try_echo_string().is_err());
+
+        let resource = Value::Resource(7);
+        assert_eq!(
+            analyze_php_value_string_semantics(&resource).as_str(),
+            "Resource id #7"
+        );
+        assert!(resource.try_echo_string().is_err());
     }
 
     #[test]
