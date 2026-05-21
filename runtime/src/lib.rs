@@ -90,6 +90,14 @@ pub enum NativeComparisonOp {
     StrictNe = 7,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeStringPredicate {
+    StartsWith = 0,
+    EndsWith = 1,
+    Contains = 2,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeComparisonResult {
@@ -1133,6 +1141,35 @@ pub unsafe extern "C" fn phpc_native_value_to_string_bytes(
 
 /// # Safety
 ///
+/// `haystack` and `needle` must be null or value handles previously returned
+/// by the runtime ABI and not yet freed. `diagnostic` may be null; when
+/// non-null, it must point to writable storage for one `NativeDiagnosticHandle`.
+/// On failure the helper stores a diagnostic handle that the caller owns and
+/// must release with `phpc_native_diagnostic_free`. Predicate tags `0`, `1`,
+/// and `2` implement `str_starts_with()`, `str_ends_with()`, and
+/// `str_contains()` over PHP value-to-string bytes.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_string_predicate_with_diagnostic(
+    haystack: NativeValueHandle,
+    needle: NativeValueHandle,
+    predicate: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_string_predicate(haystack, needle, predicate) } {
+        Ok(value) => value,
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            false
+        }
+    }
+}
+
+/// # Safety
+///
 /// `handle` must be null or a reference handle previously returned by the
 /// runtime ABI and not yet freed. Native references must be dereferenced to a
 /// value before crossing the value-to-string boundary.
@@ -1143,6 +1180,36 @@ pub unsafe extern "C" fn phpc_native_reference_to_string_bytes(
     NativeStringConversionResult::failure(RuntimeError::invalid_string_conversion(
         "native reference conversion failed: references must be dereferenced before string conversion",
     ))
+}
+
+unsafe fn native_value_string_predicate(
+    haystack: NativeValueHandle,
+    needle: NativeValueHandle,
+    predicate: u8,
+) -> RuntimeResult<bool> {
+    match predicate {
+        value if value == NativeStringPredicate::StartsWith as u8 => {
+            let haystack = unsafe { native_value_to_string_bytes(haystack) }?;
+            let needle = unsafe { native_value_to_string_bytes(needle) }?;
+            Ok(needle.is_empty() || haystack.starts_with(&needle))
+        }
+        value if value == NativeStringPredicate::EndsWith as u8 => {
+            let haystack = unsafe { native_value_to_string_bytes(haystack) }?;
+            let needle = unsafe { native_value_to_string_bytes(needle) }?;
+            Ok(needle.is_empty() || haystack.ends_with(&needle))
+        }
+        value if value == NativeStringPredicate::Contains as u8 => {
+            let haystack = unsafe { native_value_to_string_bytes(haystack) }?;
+            let needle = unsafe { native_value_to_string_bytes(needle) }?;
+            Ok(needle.is_empty()
+                || haystack
+                    .windows(needle.len())
+                    .any(|window| window == needle.as_slice()))
+        }
+        _ => Err(RuntimeError::invalid_string_conversion(
+            "native string predicate failed: unsupported predicate tag",
+        )),
+    }
 }
 
 /// # Safety
@@ -8456,6 +8523,111 @@ mod tests {
             native_string_conversion_result_for_test(reference_result).unwrap_err(),
             "invalid string conversion: native reference conversion failed: references must be dereferenced before string conversion"
         );
+    }
+
+    #[test]
+    fn native_string_predicates_reuse_value_to_string_boundary() {
+        fn string_value_for_test(bytes: &[u8]) -> NativeValueHandle {
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let handle = unsafe {
+                phpc_native_value_from_string_bytes_with_diagnostic(
+                    bytes.as_ptr(),
+                    bytes.len(),
+                    &mut diagnostic,
+                )
+            };
+            assert!(!handle.is_null());
+            assert!(diagnostic.is_null());
+            handle
+        }
+
+        let haystack = string_value_for_test(b"A\0B");
+        let prefix = string_value_for_test(b"A\0");
+        let suffix = string_value_for_test(b"\0B");
+        let infix = string_value_for_test(b"\0");
+        let empty = string_value_for_test(b"");
+        let missing = string_value_for_test(b"C");
+        let scalar = phpc_native_value_from_scalar(phpc_native_int(42));
+        let scalar_needle = string_value_for_test(b"2");
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(unsafe {
+            phpc_native_value_string_predicate_with_diagnostic(
+                haystack,
+                prefix,
+                NativeStringPredicate::StartsWith as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe {
+            phpc_native_value_string_predicate_with_diagnostic(
+                haystack,
+                suffix,
+                NativeStringPredicate::EndsWith as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe {
+            phpc_native_value_string_predicate_with_diagnostic(
+                haystack,
+                infix,
+                NativeStringPredicate::Contains as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe {
+            phpc_native_value_string_predicate_with_diagnostic(
+                scalar,
+                scalar_needle,
+                NativeStringPredicate::Contains as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe {
+            phpc_native_value_string_predicate_with_diagnostic(
+                haystack,
+                empty,
+                NativeStringPredicate::Contains as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(!unsafe {
+            phpc_native_value_string_predicate_with_diagnostic(
+                haystack,
+                missing,
+                NativeStringPredicate::Contains as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe {
+            phpc_native_value_string_predicate_with_diagnostic(
+                haystack,
+                prefix,
+                99,
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string predicate failed: unsupported predicate tag"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(scalar_needle) };
+        unsafe { phpc_native_value_free(scalar) };
+        unsafe { phpc_native_value_free(missing) };
+        unsafe { phpc_native_value_free(empty) };
+        unsafe { phpc_native_value_free(infix) };
+        unsafe { phpc_native_value_free(suffix) };
+        unsafe { phpc_native_value_free(prefix) };
+        unsafe { phpc_native_value_free(haystack) };
     }
 
     #[test]

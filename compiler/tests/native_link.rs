@@ -61,6 +61,48 @@ fn native_executable_c_source_routes_strlen_through_string_conversion_result() {
 }
 
 #[test]
+fn native_executable_c_source_routes_string_predicates_through_runtime_contract() {
+    let program = parse(
+        "<?php\n$payload = \"A\0B\";\necho str_starts_with($payload, \"A\0\");\necho str_ends_with($payload, \"\0B\");\necho str_contains(42, \"2\");\necho str_contains($payload, \"C\");\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_string_predicate_with_diagnostic"),
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = phpc_native_value_string_predicate_with_diagnostic(")
+            .count(),
+        4,
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches("phpc_NativeDiagnosticHandle string_predicate_diagnostic_")
+            .count(),
+        4,
+        "{source}"
+    );
+    assert!(
+        source.contains("static const uint8_t phpc_native_value_bytes_"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_from_scalar"),
+        "scalar operands should be admitted through the native value boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("strncmp(")
+            && !source.contains("strstr(")
+            && !source.contains("strlen((const char *)"),
+        "string predicates should not use C string APIs for PHP byte semantics:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_comparison_families_through_runtime_contract() {
     let program = parse(
         r#"<?php
@@ -286,6 +328,56 @@ fn emit_exe_links_and_runs_strlen_conversion_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "2003\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_string_predicate_conversion_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("string_predicate_conversion");
+    let source_path = native_link_output_path("string_predicate_conversion_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(
+        &source_path,
+        "<?php\n$payload = \"A\0B\";\necho (str_starts_with($payload, \"A\0\") ? 1 : 0);\necho (str_ends_with($payload, \"\0B\") ? 1 : 0);\necho (str_contains(42, \"2\") ? 1 : 0);\necho (str_contains($payload, \"\") ? 1 : 0);\necho (str_contains($payload, \"C\") ? 1 : 0);\necho \"\\n\";\n",
+    )
+    .expect("native string predicate source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native string predicate source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "11110\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&output_path);
