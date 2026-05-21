@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 15:51 CEST
+Updated: 2026-05-21 16:04 CEST
 Evaluation marker: 20260521T135026Z
 
 This is a high-level roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local work is candidate material only until selected, gated, committed, and pushed.
@@ -10,8 +10,8 @@ This is a high-level roadmap for a supervisor who needs the current momentum qui
 Estimated progress toward a broadly usable generalized PHP native compiler: **20%**
 
 ```
-Generalized runtime/ABI foundations      [###########---------] 57%
-Compiler/backend consumers               [########------------] 41%
+Generalized runtime/ABI foundations      [############--------] 58%
+Compiler/backend consumers               [########------------] 42%
 Executable generalized PHP semantics     [####----------------] 18%
 Arrays, references, COW, lvalues         [##------------------] 12%
 Objects, properties, methods             [##------------------] 10%
@@ -26,11 +26,12 @@ The project is moving from isolated backend rejection paths toward shared semant
 ## Primary-Integrated Roadmap
 
 - [x] Establish supervised parallel implementation lanes and primary integration gate.
-- [x] Add shared runtime ABI surfaces for symbols, string boundaries, comparison results, diagnostic severity, numeric-string classification, and selected conversion helpers.
+- [x] Add shared runtime ABI surfaces for symbols, string boundaries, string truthiness, comparison results, diagnostic severity, numeric-string classification, and selected conversion helpers.
 - [x] Route value, lvalue, argument, reference-source, reference-assignment, statement, and unset call-result contexts through shared call-operation boundaries.
 - [x] Consume comparison branch-result ABI from generated C instead of direct struct-field reads.
 - [x] Materialize generated-C comparison string operands through a runtime byte-boundary with diagnostic results.
 - [x] Expose native string-conversion result/free boundaries for value/reference conversion blockers.
+- [x] Reuse runtime PHP string truthiness semantics in runtime values plus LLVM/generated-C known-string consumers.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
 - [ ] Generalize value/result ownership across returns, call args, conditions, branch joins, discarded temporaries, stdout, and cleanup.
 - [ ] Implement full array lvalue/RMW semantics, writable roots, foreach/by-ref foreach, ArrayAccess/object/resource offsets, and COW/reference behavior.
@@ -43,9 +44,9 @@ The project is moving from isolated backend rejection paths toward shared semant
 
 | Active item | Primary-integrated estimate | Lane-local candidate maturity | Current read |
 | --- | ---: | ---: | --- |
-| String conversion and byte-buffer results | 31% | 58% | Primary has string-conversion result/free ABI and comparison byte materialization; lanes have broader string-result/debug/config/callable/regex blockers. Production execution and exact diagnostics remain limited. |
+| String conversion, truthiness, and byte-buffer results | 33% | 58% | Primary has string-conversion result/free ABI, comparison byte materialization, runtime-shared string truthiness, and runtime numeric-string classification. Lanes have broader string-result/debug/config/callable/regex blockers. Production execution and exact diagnostics remain limited. |
 | Call operation cleanup and ownership | 33% | 52% | Primary routes many call-result contexts through shared blockers. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
-| Comparison/conversion semantics | 33% | 55% | Primary has comparison ABI consumers, runtime numeric-string reuse, and generated-C string-byte comparison operands. Lane conversion-source/pair work is promising but not integrated. |
+| Comparison/conversion semantics | 34% | 55% | Primary has comparison ABI consumers, runtime numeric-string reuse, generated-C string-byte comparison operands, and shared string truthiness for known conditions/logical expressions. Lane conversion-source/pair work is promising but not integrated. |
 | Arrays, lvalues, references, COW | 12% | 44% | Lane-local generated-C owner-slot/RMW/reference-cell work is strong, but primary still lacks full executable array lvalue, foreach, reference/COW, and ArrayAccess behavior. |
 | Symbols, globals, request state | 21% | 39% | Primary has symbol-table ABI helpers; lanes have frame-slot/request operation contracts. Full request/global/superglobal behavior and exact diagnostics remain early. |
 | Objects, properties, methods | 10% | 33% | Mostly lane-local blocker/carrier work. Primary has little broad executable object/property/method behavior. |
@@ -56,6 +57,8 @@ The project is moving from isolated backend rejection paths toward shared semant
 
 Recent pushed primary commits show useful movement from lane-local artifacts into `master`:
 
+- `227c3a63 runtime: share PHP string truthiness semantics`
+  - Adds a shared runtime `is_php_truthy_string()` helper and routes runtime value truthiness plus LLVM/generated-C known string condition, ternary, short-ternary, logical, and logical-not consumers through it. This removes duplicate compiler-local string truthiness parsing without adding dynamic exact-shape lowering.
 - `5c6b9393 codegen: route unset calls through statement boundary`
   - Consolidates unset lvalue call-result preflight behind the shared statement call-operation boundary and removes duplicated LLVM/generated-C unset checks.
 - `b8052d11 codegen: route reference assignment calls through call boundary`
@@ -70,9 +73,7 @@ Recent pushed primary commits show useful movement from lane-local artifacts int
 
 ## Current Primary State
 
-During the evaluator refresh, primary git was clean and synced with `origin/master` at `cda6ff4c docs: update progress after unset call boundary`. The latest semantic compiler/runtime commit is `5c6b9393 codegen: route unset calls through statement boundary`.
-
-While this dashboard update was being written, new active product diffs appeared in `compiler/src/codegen.rs` and `runtime/src/lib.rs`. They are not part of this progress-dashboard edit and are not counted as integrated capability until reviewed, gated, committed, and pushed by the primary integration path.
+During this progress refresh, primary git was clean and synced with `origin/master` at `227c3a63 runtime: share PHP string truthiness semantics`. The latest semantic compiler/runtime commit is `227c3a63`.
 
 ## Lane-Local Candidate Work
 
