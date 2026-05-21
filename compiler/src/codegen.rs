@@ -3,7 +3,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::ast::{
-    AssignTarget, BinaryOp, ClassMember, Expr, Program, Span, Stmt, UnaryOp, UnsetTarget,
+    AssignTarget, BinaryOp, ClassMember, Expr, FunctionDecl, Program, ReferenceSource, Span, Stmt,
+    UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -132,6 +133,582 @@ const LLVM_SESSION_STATE_REJECTION: &str = "LLVM session-state lowering rejects 
 const ASSEMBLY_SESSION_STATE_REJECTION: &str = "assembly session-state lowering rejects $_SESSION and session_start(), session_status(), session_cache_limiter(), session_cache_expire(), session_id(), and session_write_close() until native request/session storage, session id persistence, cache limiter state, locking, cookie/header emission, save handlers, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI session-state behavior";
 const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_length(), ob_list_handlers(), ob_get_status(), ob_get_clean(), ob_get_flush(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 const ASSEMBLY_OUTPUT_BUFFER_REJECTION: &str = "assembly output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_length(), ob_list_handlers(), ob_get_status(), ob_get_clean(), ob_get_flush(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeCallBackend {
+    Llvm,
+    Assembly,
+}
+
+impl NativeCallBackend {
+    fn function_call_rejection(self) -> &'static str {
+        match self {
+            Self::Llvm => LLVM_FUNCTION_CALL_REJECTION,
+            Self::Assembly => ASSEMBLY_FUNCTION_CALL_REJECTION,
+        }
+    }
+
+    fn dynamic_function_call_rejection(self) -> &'static str {
+        match self {
+            Self::Llvm => LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+            Self::Assembly => ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        }
+    }
+
+    fn function_declaration_rejection(self) -> &'static str {
+        match self {
+            Self::Llvm => LLVM_FUNCTION_DECLARATION_REJECTION,
+            Self::Assembly => ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
+        }
+    }
+
+    fn method_call_rejection(self) -> &'static str {
+        match self {
+            Self::Llvm => LLVM_METHOD_CALL_REJECTION,
+            Self::Assembly => ASSEMBLY_METHOD_CALL_REJECTION,
+        }
+    }
+
+    fn reference_assignment_rejection(self) -> &'static str {
+        match self {
+            Self::Llvm => LLVM_REFERENCE_ASSIGNMENT_REJECTION,
+            Self::Assembly => ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeCallCallee {
+    DirectNamed,
+    DynamicExpression,
+    MethodDispatch,
+    FunctionFrame,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeCallResult {
+    Value,
+    FrameHandoff,
+    Reference,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeCallBlocker {
+    DynamicCallableEvaluation,
+    ArgumentEvaluationCleanup,
+    ReturnValueOwnership,
+    ByReferenceArgumentBinding,
+    VariadicArgumentBinding,
+    FunctionFrameHandoff,
+    UnknownCalleeDiagnostics,
+    MethodDispatch,
+    ReferenceBinding,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeCallOperation {
+    span: Span,
+    callee: NativeCallCallee,
+    result: NativeCallResult,
+    blocker: NativeCallBlocker,
+}
+
+impl NativeCallOperation {
+    fn value_result(span: Span, callee: NativeCallCallee, blocker: NativeCallBlocker) -> Self {
+        Self {
+            span,
+            callee,
+            result: NativeCallResult::Value,
+            blocker,
+        }
+    }
+
+    fn direct_named_value(span: Span, blocker: NativeCallBlocker) -> Self {
+        Self::value_result(span, NativeCallCallee::DirectNamed, blocker)
+    }
+
+    fn dynamic_value(span: Span) -> Self {
+        Self::dynamic_value_with_blocker(span, NativeCallBlocker::DynamicCallableEvaluation)
+    }
+
+    fn dynamic_value_with_blocker(span: Span, blocker: NativeCallBlocker) -> Self {
+        Self::value_result(span, NativeCallCallee::DynamicExpression, blocker)
+    }
+
+    fn method_value(span: Span) -> Self {
+        Self::method_value_with_blocker(span, NativeCallBlocker::MethodDispatch)
+    }
+
+    fn method_value_with_blocker(span: Span, blocker: NativeCallBlocker) -> Self {
+        Self::value_result(span, NativeCallCallee::MethodDispatch, blocker)
+    }
+
+    fn function_frame(span: Span, blocker: NativeCallBlocker) -> Self {
+        Self {
+            span,
+            callee: NativeCallCallee::FunctionFrame,
+            result: NativeCallResult::FrameHandoff,
+            blocker,
+        }
+    }
+
+    fn return_value(span: Span) -> Self {
+        Self {
+            span,
+            callee: NativeCallCallee::FunctionFrame,
+            result: NativeCallResult::Value,
+            blocker: NativeCallBlocker::ReturnValueOwnership,
+        }
+    }
+
+    fn reference_result(span: Span, callee: NativeCallCallee) -> Self {
+        Self {
+            span,
+            callee,
+            result: NativeCallResult::Reference,
+            blocker: NativeCallBlocker::ReferenceBinding,
+        }
+    }
+
+    fn dereferenced_value_result(span: Span, callee: NativeCallCallee) -> Self {
+        Self {
+            span,
+            callee,
+            result: NativeCallResult::Value,
+            blocker: NativeCallBlocker::ReturnValueOwnership,
+        }
+    }
+}
+
+fn native_function_frame_blocker(function: &FunctionDecl) -> NativeCallBlocker {
+    if function.params.iter().any(|param| param.by_reference) {
+        NativeCallBlocker::ByReferenceArgumentBinding
+    } else if function.params.iter().any(|param| param.is_variadic) {
+        NativeCallBlocker::VariadicArgumentBinding
+    } else if function.returns_by_reference {
+        NativeCallBlocker::ReturnValueOwnership
+    } else {
+        NativeCallBlocker::FunctionFrameHandoff
+    }
+}
+
+fn native_call_argument_list_blocker(args: &[Expr]) -> Option<NativeCallBlocker> {
+    args.iter()
+        .any(native_expr_contains_call_result)
+        .then_some(NativeCallBlocker::ArgumentEvaluationCleanup)
+}
+
+fn native_expr_contains_call_result(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call { .. }
+        | Expr::DynamicCall { .. }
+        | Expr::MethodCall { .. }
+        | Expr::DynamicMethodCall { .. }
+        | Expr::ParentMethodCall { .. }
+        | Expr::StaticMethodCall { .. }
+        | Expr::ObjectStaticMethodCall { .. }
+        | Expr::SelfMethodCall { .. }
+        | Expr::LateStaticMethodCall { .. } => true,
+        Expr::Array { items, .. } => items.iter().any(|item| {
+            item.key
+                .as_ref()
+                .is_some_and(native_expr_contains_call_result)
+                || native_expr_contains_call_result(&item.value)
+        }),
+        Expr::Index { target, index, .. } => {
+            native_expr_contains_call_result(target) || native_expr_contains_call_result(index)
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::InstanceOf { expr: target, .. } => native_expr_contains_call_result(target),
+        Expr::DynamicProperty {
+            target, property, ..
+        } => native_expr_contains_call_result(target) || native_expr_contains_call_result(property),
+        Expr::New { args, .. } => args.iter().any(native_expr_contains_call_result),
+        Expr::Clone { expr, .. }
+        | Expr::Unary { expr, .. }
+        | Expr::ErrorControl { expr, .. }
+        | Expr::Include { path: expr, .. }
+        | Expr::Require { path: expr, .. }
+        | Expr::Cast { expr, .. } => native_expr_contains_call_result(expr),
+        Expr::Binary { left, right, .. } => {
+            native_expr_contains_call_result(left) || native_expr_contains_call_result(right)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            native_expr_contains_call_result(condition)
+                || native_expr_contains_call_result(if_true)
+                || native_expr_contains_call_result(if_false)
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => {
+            native_expr_contains_call_result(condition)
+                || native_expr_contains_call_result(if_false)
+        }
+        Expr::Assign { target, expr, .. }
+        | Expr::CompoundAssign { target, expr, .. }
+        | Expr::NullCoalesceAssign { target, expr, .. } => {
+            native_assign_target_contains_call_result(target)
+                || native_expr_contains_call_result(expr)
+        }
+        Expr::IncrementDecrement { target, .. } => {
+            native_assign_target_contains_call_result(target)
+        }
+        Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::InterpolatedString { .. }
+        | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::Closure { .. } => false,
+    }
+}
+
+fn native_assign_target_contains_call_result(target: &AssignTarget) -> bool {
+    match target {
+        AssignTarget::ArrayIndex { index, .. } => {
+            index.as_ref().is_some_and(native_expr_contains_call_result)
+        }
+        AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            indices.iter().any(native_expr_contains_call_result)
+        }
+        AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => indices
+            .iter()
+            .chain(suffix_indices.iter())
+            .any(native_expr_contains_call_result),
+        AssignTarget::NonDirectProperty { holder, .. } => native_expr_contains_call_result(holder),
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        } => native_expr_contains_call_result(holder) || native_expr_contains_call_result(property),
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            native_expr_contains_call_result(property)
+                || indices.iter().any(native_expr_contains_call_result)
+        }
+        AssignTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => {
+            native_expr_contains_call_result(holder)
+                || indices.iter().any(native_expr_contains_call_result)
+        }
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            native_expr_contains_call_result(holder)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(native_expr_contains_call_result)
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            native_expr_contains_call_result(holder)
+                || native_expr_contains_call_result(property)
+                || indices.iter().any(native_expr_contains_call_result)
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            native_expr_contains_call_result(holder)
+                || native_expr_contains_call_result(property)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(native_expr_contains_call_result)
+        }
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            native_expr_contains_call_result(property)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(native_expr_contains_call_result)
+        }
+        AssignTarget::DynamicProperty { property, .. }
+        | AssignTarget::ObjectStaticProperty {
+            target: property, ..
+        } => native_expr_contains_call_result(property),
+        AssignTarget::Variable { .. }
+        | AssignTarget::List { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => false,
+    }
+}
+
+fn native_reference_source_call_operation(source: &ReferenceSource) -> Option<NativeCallOperation> {
+    let (expr, span) = match source {
+        ReferenceSource::MethodCall { expr, span }
+        | ReferenceSource::Property { expr, span }
+        | ReferenceSource::StaticProperty { expr, span }
+        | ReferenceSource::StaticPropertyArrayIndex { expr, span, .. } => (expr, *span),
+        ReferenceSource::ExpressionArrayIndex { target, span, .. }
+        | ReferenceSource::ExpressionArrayAppend { target, span, .. } => (target, *span),
+        ReferenceSource::NonDirectObjectPropertyArrayAppend { holder, span, .. }
+        | ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend { holder, span, .. }
+        | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex { holder, span, .. }
+        | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+            holder, span, ..
+        } => (holder, *span),
+        _ => return None,
+    };
+
+    native_reference_expr_call_callee(expr)
+        .map(|callee| NativeCallOperation::reference_result(span, callee))
+}
+
+fn native_reference_expr_call_callee(expr: &Expr) -> Option<NativeCallCallee> {
+    if let Some(callee) = native_call_callee_for_expr(expr) {
+        return Some(callee);
+    }
+
+    match expr {
+        Expr::Index { target, .. }
+        | Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::DynamicProperty { target, .. }
+        | Expr::ObjectStaticProperty { target, .. } => native_reference_expr_call_callee(target),
+        _ => None,
+    }
+}
+
+fn native_dereferenced_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
+    let (target, span) = match expr {
+        Expr::Index { target, span, .. }
+        | Expr::AppendIndex { target, span }
+        | Expr::Property { target, span, .. }
+        | Expr::DynamicProperty { target, span, .. }
+        | Expr::ObjectStaticProperty { target, span, .. } => (target.as_ref(), *span),
+        _ => return None,
+    };
+
+    native_reference_expr_call_callee(target)
+        .map(|callee| NativeCallOperation::dereferenced_value_result(span, callee))
+}
+
+fn native_value_call_operation_for_expr(expr: &Expr) -> Option<NativeCallOperation> {
+    let (span, callee, default_blocker, args) = match expr {
+        Expr::Call { args, span, .. } => (
+            *span,
+            NativeCallCallee::DirectNamed,
+            NativeCallBlocker::UnknownCalleeDiagnostics,
+            args.as_slice(),
+        ),
+        Expr::DynamicCall { args, span, .. } => (
+            *span,
+            NativeCallCallee::DynamicExpression,
+            NativeCallBlocker::DynamicCallableEvaluation,
+            args.as_slice(),
+        ),
+        Expr::MethodCall { span, .. }
+        | Expr::DynamicMethodCall { span, .. }
+        | Expr::ParentMethodCall { span, .. }
+        | Expr::StaticMethodCall { span, .. }
+        | Expr::ObjectStaticMethodCall { span, .. }
+        | Expr::SelfMethodCall { span, .. }
+        | Expr::LateStaticMethodCall { span, .. } => (
+            *span,
+            NativeCallCallee::MethodDispatch,
+            NativeCallBlocker::MethodDispatch,
+            native_call_args_for_expr(expr),
+        ),
+        _ => return None,
+    };
+    let blocker = native_call_argument_list_blocker(args).unwrap_or(default_blocker);
+
+    Some(match callee {
+        NativeCallCallee::DirectNamed => NativeCallOperation::direct_named_value(span, blocker),
+        NativeCallCallee::DynamicExpression
+            if blocker == NativeCallBlocker::DynamicCallableEvaluation =>
+        {
+            NativeCallOperation::dynamic_value(span)
+        }
+        NativeCallCallee::DynamicExpression => {
+            NativeCallOperation::dynamic_value_with_blocker(span, blocker)
+        }
+        NativeCallCallee::MethodDispatch if blocker == NativeCallBlocker::MethodDispatch => {
+            NativeCallOperation::method_value(span)
+        }
+        NativeCallCallee::MethodDispatch => {
+            NativeCallOperation::method_value_with_blocker(span, blocker)
+        }
+        NativeCallCallee::FunctionFrame => {
+            unreachable!("value-call classifier cannot produce a function-frame callee")
+        }
+    })
+}
+
+fn native_call_args_for_expr(expr: &Expr) -> &[Expr] {
+    match expr {
+        Expr::MethodCall { args, .. }
+        | Expr::DynamicMethodCall { args, .. }
+        | Expr::ParentMethodCall { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::ObjectStaticMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. } => args.as_slice(),
+        _ => unreachable!("native call args requested for a non-method call expression"),
+    }
+}
+
+fn native_call_callee_for_expr(expr: &Expr) -> Option<NativeCallCallee> {
+    native_value_call_operation_for_expr(expr).map(|operation| operation.callee)
+}
+
+fn native_call_blocker_message(
+    backend: NativeCallBackend,
+    operation: NativeCallOperation,
+) -> &'static str {
+    match operation.callee {
+        NativeCallCallee::DirectNamed => native_direct_call_blocker_message(backend, operation),
+        NativeCallCallee::DynamicExpression => {
+            native_dynamic_call_blocker_message(backend, operation)
+        }
+        NativeCallCallee::MethodDispatch => native_method_call_blocker_message(backend, operation),
+        NativeCallCallee::FunctionFrame => {
+            native_function_frame_blocker_message(backend, operation)
+        }
+    }
+}
+
+fn native_direct_call_blocker_message(
+    backend: NativeCallBackend,
+    operation: NativeCallOperation,
+) -> &'static str {
+    match (operation.result, operation.blocker) {
+        (
+            NativeCallResult::Value,
+            NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::ReturnValueOwnership
+            | NativeCallBlocker::UnknownCalleeDiagnostics,
+        ) => backend.function_call_rejection(),
+        (
+            NativeCallResult::Reference,
+            NativeCallBlocker::ReferenceBinding
+            | NativeCallBlocker::ByReferenceArgumentBinding
+            | NativeCallBlocker::ReturnValueOwnership,
+        ) => backend.reference_assignment_rejection(),
+        _ => unreachable!("invalid native direct-call blocker contract"),
+    }
+}
+
+fn native_dynamic_call_blocker_message(
+    backend: NativeCallBackend,
+    operation: NativeCallOperation,
+) -> &'static str {
+    match (operation.result, operation.blocker) {
+        (
+            NativeCallResult::Value,
+            NativeCallBlocker::DynamicCallableEvaluation
+            | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::ReturnValueOwnership
+            | NativeCallBlocker::UnknownCalleeDiagnostics,
+        ) => backend.dynamic_function_call_rejection(),
+        (
+            NativeCallResult::Reference,
+            NativeCallBlocker::ReferenceBinding
+            | NativeCallBlocker::DynamicCallableEvaluation
+            | NativeCallBlocker::ReturnValueOwnership,
+        ) => backend.reference_assignment_rejection(),
+        _ => unreachable!("invalid native dynamic-call blocker contract"),
+    }
+}
+
+fn native_method_call_blocker_message(
+    backend: NativeCallBackend,
+    operation: NativeCallOperation,
+) -> &'static str {
+    match (operation.result, operation.blocker) {
+        (
+            NativeCallResult::Value,
+            NativeCallBlocker::MethodDispatch
+            | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::ReturnValueOwnership,
+        ) => backend.method_call_rejection(),
+        (
+            NativeCallResult::Reference,
+            NativeCallBlocker::ReferenceBinding
+            | NativeCallBlocker::ByReferenceArgumentBinding
+            | NativeCallBlocker::ReturnValueOwnership,
+        ) => backend.reference_assignment_rejection(),
+        _ => unreachable!("invalid native method-call blocker contract"),
+    }
+}
+
+fn native_function_frame_blocker_message(
+    backend: NativeCallBackend,
+    operation: NativeCallOperation,
+) -> &'static str {
+    match (operation.result, operation.blocker) {
+        (
+            NativeCallResult::FrameHandoff,
+            NativeCallBlocker::FunctionFrameHandoff
+            | NativeCallBlocker::ByReferenceArgumentBinding
+            | NativeCallBlocker::VariadicArgumentBinding
+            | NativeCallBlocker::ReturnValueOwnership,
+        )
+        | (NativeCallResult::Value, NativeCallBlocker::ReturnValueOwnership) => {
+            backend.function_declaration_rejection()
+        }
+        _ => unreachable!("invalid native function-frame blocker contract"),
+    }
+}
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -940,7 +1517,11 @@ impl LlvmGenerator {
                 Ok(())
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
-            Stmt::ReferenceAssign { span, .. } => {
+            Stmt::ReferenceAssign { source, span, .. } => {
+                if let Some(operation) = native_reference_source_call_operation(source) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+
                 Err(self.unsupported(*span, LLVM_REFERENCE_ASSIGNMENT_REJECTION))
             }
             Stmt::CompoundAssign { target, span, .. }
@@ -959,7 +1540,12 @@ impl LlvmGenerator {
                 if let Some(span) = find_static_local_span(&function.body) {
                     return Err(self.unsupported(span, LLVM_STATIC_LOCAL_REJECTION));
                 }
-                Err(self.unsupported(function.span, LLVM_FUNCTION_DECLARATION_REJECTION))
+                Err(
+                    self.unsupported_call_operation(NativeCallOperation::function_frame(
+                        function.span,
+                        native_function_frame_blocker(function),
+                    )),
+                )
             }
             Stmt::Interface(interface) => {
                 Err(self.unsupported(interface.span, LLVM_INTERFACE_REJECTION))
@@ -1018,7 +1604,7 @@ impl LlvmGenerator {
             Stmt::Throw { span, .. } => Err(self.unsupported(*span, LLVM_EXCEPTION_REJECTION)),
             Stmt::Try { span, .. } => Err(self.unsupported(*span, LLVM_TRY_BLOCK_REJECTION)),
             Stmt::Return { span, .. } => {
-                Err(self.unsupported(*span, LLVM_FUNCTION_DECLARATION_REJECTION))
+                Err(self.unsupported_call_operation(NativeCallOperation::return_value(*span)))
             }
             Stmt::Global { span, .. } => {
                 Err(self.unsupported(*span, LLVM_GLOBAL_DECLARATION_REJECTION))
@@ -1061,7 +1647,6 @@ impl LlvmGenerator {
             | Expr::ParentClassConstant { span, .. }
             | Expr::LateStaticClassConstant { span, .. }
             | Expr::StaticProperty { span, .. }
-            | Expr::ObjectStaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. } => {
@@ -1069,6 +1654,9 @@ impl LlvmGenerator {
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Expr::Index { target, span, .. } => {
+                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if let Some(superglobal_span) = request_superglobal_expr_span(target) {
                     return Err(
                         self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
@@ -1080,6 +1668,9 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             Expr::AppendIndex { target, span } => {
+                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if let Some(superglobal_span) = request_superglobal_expr_span(target) {
                     return Err(
                         self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
@@ -1091,17 +1682,24 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
+                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, LLVM_OBJECT_PROPERTY_REJECTION))
             }
-            Expr::MethodCall { span, .. }
-            | Expr::DynamicMethodCall { span, .. }
-            | Expr::ParentMethodCall { span, .. }
-            | Expr::StaticMethodCall { span, .. }
-            | Expr::ObjectStaticMethodCall { span, .. }
-            | Expr::SelfMethodCall { span, .. }
-            | Expr::LateStaticMethodCall { span, .. } => {
-                Err(self.unsupported(*span, LLVM_METHOD_CALL_REJECTION))
+            Expr::ObjectStaticProperty { span, .. } => {
+                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION))
             }
+            Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. }
+            | Expr::ParentMethodCall { .. }
+            | Expr::StaticMethodCall { .. }
+            | Expr::ObjectStaticMethodCall { .. }
+            | Expr::SelfMethodCall { .. }
+            | Expr::LateStaticMethodCall { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Variable(name, span) => {
                 if is_request_superglobal_name(name) {
                     return Err(self.unsupported(*span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
@@ -1180,10 +1778,8 @@ impl LlvmGenerator {
             Expr::Call { name, span, .. } if is_array_builtin(name) => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            Expr::DynamicCall { span, .. } => {
-                Err(self.unsupported(*span, LLVM_DYNAMIC_FUNCTION_CALL_REJECTION))
-            }
-            Expr::Call { span, .. } => Err(self.unsupported(*span, LLVM_FUNCTION_CALL_REJECTION)),
+            Expr::DynamicCall { .. } => Err(self.unsupported_value_call(expr)),
+            Expr::Call { .. } => Err(self.unsupported_value_call(expr)),
             Expr::InstanceOf { span, .. } => {
                 Err(self.unsupported(*span, LLVM_INSTANCEOF_REJECTION))
             }
@@ -1338,36 +1934,51 @@ impl LlvmGenerator {
 
     fn emit_strlen_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
         if args.len() != 1 {
-            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let value = self.emit_expr(&args[0])?;
         self.strlen_result_for_value(&value)
             .map(|length| IrValue::Int(length.to_string()))
-            .ok_or_else(|| self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION))
+            .ok_or_else(|| {
+                self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership)
+            })
     }
 
     fn emit_function_exists_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
         if args.len() != 1 {
-            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let value = self.emit_expr(&args[0])?;
         self.function_exists_result_for_value(&value)
             .map(IrValue::Bool)
-            .ok_or_else(|| self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION))
+            .ok_or_else(|| {
+                self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics)
+            })
     }
 
     fn emit_is_callable_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
         if !(1..=2).contains(&args.len()) {
-            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let value = self.emit_expr(&args[0])?;
         let syntax_only = if let Some(arg) = args.get(1) {
             match self.emit_expr(arg)? {
                 IrValue::Bool(value) => value,
-                _ => return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
+                _ => {
+                    return Err(self.unsupported_direct_call(
+                        span,
+                        NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ));
+                }
             }
         } else {
             false
@@ -1375,7 +1986,9 @@ impl LlvmGenerator {
 
         self.is_callable_result_for_value(&value, syntax_only)
             .map(IrValue::Bool)
-            .ok_or_else(|| self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION))
+            .ok_or_else(|| {
+                self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics)
+            })
     }
 
     fn emit_defined_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
@@ -1409,7 +2022,9 @@ impl LlvmGenerator {
         }
 
         if args.len() != 1 {
-            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let value = self.emit_expr(&args[0])?;
@@ -1442,15 +2057,20 @@ impl LlvmGenerator {
             "is_numeric" => self
                 .is_numeric_result_for_value(&value)
                 .map(IrValue::Bool)
-                .ok_or_else(|| self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
+                .ok_or_else(|| {
+                    self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership)
+                }),
             "is_countable" | "is_iterable" => Ok(IrValue::Bool(false)),
             "extension_loaded" => match value {
                 IrValue::String(name) => Ok(IrValue::Bool(is_compat_loaded_extension_name(&name))),
                 IrValue::StringPtr(_) => Ok(IrValue::Bool(false)),
-                _ => Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
+                _ => Err(self
+                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)),
             },
             "is_object" => Ok(IrValue::Bool(false)),
-            _ => Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
+            _ => {
+                Err(self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics))
+            }
         }
     }
 
@@ -1460,12 +2080,16 @@ impl LlvmGenerator {
         span: Span,
     ) -> CompileResult<IrValue> {
         if !(1..=2).contains(&args.len()) {
-            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let name = self.emit_expr(&args[0])?;
         if !matches!(name, IrValue::String(_) | IrValue::StringPtr(_)) {
-            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
         if self.ir_value_mentions_builtin_class(&name) {
             return Err(self.unsupported(span, LLVM_OBJECT_METADATA_REJECTION));
@@ -1474,7 +2098,8 @@ impl LlvmGenerator {
         if let Some(autoload) = args.get(1) {
             let autoload = self.emit_expr(autoload)?;
             if !matches!(autoload, IrValue::Bool(_) | IrValue::BoolExpr(_)) {
-                return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+                return Err(self
+                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup));
             }
         }
 
@@ -1487,7 +2112,9 @@ impl LlvmGenerator {
         span: Span,
     ) -> CompileResult<IrValue> {
         if args.len() != 2 {
-            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let object_or_class = self.emit_expr(&args[0])?;
@@ -1495,7 +2122,9 @@ impl LlvmGenerator {
         if !matches!(object_or_class, IrValue::String(_) | IrValue::StringPtr(_))
             || !matches!(member, IrValue::String(_) | IrValue::StringPtr(_))
         {
-            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
         if self.ir_value_mentions_builtin_class(&object_or_class) {
             return Err(self.unsupported(span, LLVM_OBJECT_METADATA_REJECTION));
@@ -1510,7 +2139,9 @@ impl LlvmGenerator {
         span: Span,
     ) -> CompileResult<IrValue> {
         if !(2..=3).contains(&args.len()) {
-            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let object_or_class = self.emit_expr(&args[0])?;
@@ -1518,7 +2149,9 @@ impl LlvmGenerator {
         if !matches!(object_or_class, IrValue::String(_) | IrValue::StringPtr(_))
             || !matches!(class_name, IrValue::String(_) | IrValue::StringPtr(_))
         {
-            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
         if self.ir_value_mentions_builtin_class(&object_or_class)
             || self.ir_value_mentions_builtin_class(&class_name)
@@ -1529,7 +2162,8 @@ impl LlvmGenerator {
         if let Some(allow_string) = args.get(2) {
             let allow_string = self.emit_expr(allow_string)?;
             if !matches!(allow_string, IrValue::Bool(_) | IrValue::BoolExpr(_)) {
-                return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+                return Err(self
+                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup));
             }
         }
 
@@ -3706,6 +4340,24 @@ impl LlvmGenerator {
         name
     }
 
+    fn unsupported_call_operation(&self, operation: NativeCallOperation) -> Diagnostic {
+        self.unsupported(
+            operation.span,
+            native_call_blocker_message(NativeCallBackend::Llvm, operation),
+        )
+    }
+
+    fn unsupported_direct_call(&self, span: Span, blocker: NativeCallBlocker) -> Diagnostic {
+        self.unsupported_call_operation(NativeCallOperation::direct_named_value(span, blocker))
+    }
+
+    fn unsupported_value_call(&self, expr: &Expr) -> Diagnostic {
+        self.unsupported_call_operation(
+            native_value_call_operation_for_expr(expr)
+                .expect("native value-call blocker called for a call expression"),
+        )
+    }
+
     fn unsupported(&self, span: Span, message: impl Into<String>) -> Diagnostic {
         Diagnostic::new(Phase::Codegen, span.line, span.column, message)
     }
@@ -4023,7 +4675,11 @@ impl CGenerator {
                 Ok(())
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
-            Stmt::ReferenceAssign { span, .. } => {
+            Stmt::ReferenceAssign { source, span, .. } => {
+                if let Some(operation) = native_reference_source_call_operation(source) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+
                 Err(self.unsupported(*span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION))
             }
             Stmt::CompoundAssign { target, span, .. }
@@ -4042,7 +4698,12 @@ impl CGenerator {
                 if let Some(span) = find_static_local_span(&function.body) {
                     return Err(self.unsupported(span, ASSEMBLY_STATIC_LOCAL_REJECTION));
                 }
-                Err(self.unsupported(function.span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
+                Err(
+                    self.unsupported_call_operation(NativeCallOperation::function_frame(
+                        function.span,
+                        native_function_frame_blocker(function),
+                    )),
+                )
             }
             Stmt::Interface(interface) => {
                 Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION))
@@ -4103,7 +4764,7 @@ impl CGenerator {
             Stmt::Throw { span, .. } => Err(self.unsupported(*span, ASSEMBLY_EXCEPTION_REJECTION)),
             Stmt::Try { span, .. } => Err(self.unsupported(*span, ASSEMBLY_TRY_BLOCK_REJECTION)),
             Stmt::Return { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
+                Err(self.unsupported_call_operation(NativeCallOperation::return_value(*span)))
             }
             Stmt::Global { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_DECLARATION_REJECTION))
@@ -4146,7 +4807,6 @@ impl CGenerator {
             | Expr::ParentClassConstant { span, .. }
             | Expr::LateStaticClassConstant { span, .. }
             | Expr::StaticProperty { span, .. }
-            | Expr::ObjectStaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. } => {
@@ -4154,6 +4814,9 @@ impl CGenerator {
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
             Expr::Index { target, span, .. } => {
+                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if let Some(superglobal_span) = request_superglobal_expr_span(target) {
                     return Err(
                         self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
@@ -4165,6 +4828,9 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             Expr::AppendIndex { target, span } => {
+                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 if let Some(superglobal_span) = request_superglobal_expr_span(target) {
                     return Err(
                         self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
@@ -4176,17 +4842,24 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
+                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_PROPERTY_REJECTION))
             }
-            Expr::MethodCall { span, .. }
-            | Expr::DynamicMethodCall { span, .. }
-            | Expr::ParentMethodCall { span, .. }
-            | Expr::StaticMethodCall { span, .. }
-            | Expr::ObjectStaticMethodCall { span, .. }
-            | Expr::SelfMethodCall { span, .. }
-            | Expr::LateStaticMethodCall { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_METHOD_CALL_REJECTION))
+            Expr::ObjectStaticProperty { span, .. } => {
+                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
+            Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. }
+            | Expr::ParentMethodCall { .. }
+            | Expr::StaticMethodCall { .. }
+            | Expr::ObjectStaticMethodCall { .. }
+            | Expr::SelfMethodCall { .. }
+            | Expr::LateStaticMethodCall { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Variable(name, span) => {
                 if is_request_superglobal_name(name) {
                     return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
@@ -4265,12 +4938,8 @@ impl CGenerator {
             Expr::Call { name, span, .. } if is_array_builtin(name) => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Expr::DynamicCall { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION))
-            }
-            Expr::Call { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION))
-            }
+            Expr::DynamicCall { .. } => Err(self.unsupported_value_call(expr)),
+            Expr::Call { .. } => Err(self.unsupported_value_call(expr)),
             Expr::InstanceOf { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_INSTANCEOF_REJECTION))
             }
@@ -4425,36 +5094,51 @@ impl CGenerator {
 
     fn emit_strlen_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
         if args.len() != 1 {
-            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let value = self.emit_expr(&args[0])?;
         self.strlen_result_for_value(&value)
             .map(|length| CValue::Int(length.to_string()))
-            .ok_or_else(|| self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION))
+            .ok_or_else(|| {
+                self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership)
+            })
     }
 
     fn emit_function_exists_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
         if args.len() != 1 {
-            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let value = self.emit_expr(&args[0])?;
         self.function_exists_result_for_value(&value)
             .map(CValue::Bool)
-            .ok_or_else(|| self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION))
+            .ok_or_else(|| {
+                self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics)
+            })
     }
 
     fn emit_is_callable_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
         if !(1..=2).contains(&args.len()) {
-            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let value = self.emit_expr(&args[0])?;
         let syntax_only = if let Some(arg) = args.get(1) {
             match self.emit_expr(arg)? {
                 CValue::Bool(value) => value,
-                _ => return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
+                _ => {
+                    return Err(self.unsupported_direct_call(
+                        span,
+                        NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ));
+                }
             }
         } else {
             false
@@ -4462,7 +5146,9 @@ impl CGenerator {
 
         self.is_callable_result_for_value(&value, syntax_only)
             .map(CValue::Bool)
-            .ok_or_else(|| self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION))
+            .ok_or_else(|| {
+                self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics)
+            })
     }
 
     fn emit_defined_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
@@ -4496,7 +5182,9 @@ impl CGenerator {
         }
 
         if args.len() != 1 {
-            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let value = self.emit_expr(&args[0])?;
@@ -4529,15 +5217,20 @@ impl CGenerator {
             "is_numeric" => self
                 .is_numeric_result_for_value(&value)
                 .map(CValue::Bool)
-                .ok_or_else(|| self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
+                .ok_or_else(|| {
+                    self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership)
+                }),
             "is_countable" | "is_iterable" => Ok(CValue::Bool(false)),
             "extension_loaded" => match value {
                 CValue::String(name) => Ok(CValue::Bool(is_compat_loaded_extension_name(&name))),
                 CValue::StringExpr(_) => Ok(CValue::Bool(false)),
-                _ => Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
+                _ => Err(self
+                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)),
             },
             "is_object" => Ok(CValue::Bool(false)),
-            _ => Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
+            _ => {
+                Err(self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics))
+            }
         }
     }
 
@@ -4547,12 +5240,16 @@ impl CGenerator {
         span: Span,
     ) -> CompileResult<CValue> {
         if !(1..=2).contains(&args.len()) {
-            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let name = self.emit_expr(&args[0])?;
         if !matches!(name, CValue::String(_) | CValue::StringExpr(_)) {
-            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
         if self.c_value_mentions_builtin_class(&name) {
             return Err(self.unsupported(span, ASSEMBLY_OBJECT_METADATA_REJECTION));
@@ -4561,7 +5258,8 @@ impl CGenerator {
         if let Some(autoload) = args.get(1) {
             let autoload = self.emit_expr(autoload)?;
             if !matches!(autoload, CValue::Bool(_) | CValue::BoolExpr(_)) {
-                return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+                return Err(self
+                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup));
             }
         }
 
@@ -4574,7 +5272,9 @@ impl CGenerator {
         span: Span,
     ) -> CompileResult<CValue> {
         if args.len() != 2 {
-            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let object_or_class = self.emit_expr(&args[0])?;
@@ -4582,7 +5282,9 @@ impl CGenerator {
         if !matches!(object_or_class, CValue::String(_) | CValue::StringExpr(_))
             || !matches!(member, CValue::String(_) | CValue::StringExpr(_))
         {
-            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
         if self.c_value_mentions_builtin_class(&object_or_class) {
             return Err(self.unsupported(span, ASSEMBLY_OBJECT_METADATA_REJECTION));
@@ -4597,7 +5299,9 @@ impl CGenerator {
         span: Span,
     ) -> CompileResult<CValue> {
         if !(2..=3).contains(&args.len()) {
-            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
 
         let object_or_class = self.emit_expr(&args[0])?;
@@ -4605,7 +5309,9 @@ impl CGenerator {
         if !matches!(object_or_class, CValue::String(_) | CValue::StringExpr(_))
             || !matches!(class_name, CValue::String(_) | CValue::StringExpr(_))
         {
-            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
         }
         if self.c_value_mentions_builtin_class(&object_or_class)
             || self.c_value_mentions_builtin_class(&class_name)
@@ -4616,7 +5322,8 @@ impl CGenerator {
         if let Some(allow_string) = args.get(2) {
             let allow_string = self.emit_expr(allow_string)?;
             if !matches!(allow_string, CValue::Bool(_) | CValue::BoolExpr(_)) {
-                return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+                return Err(self
+                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup));
             }
         }
 
@@ -6587,6 +7294,24 @@ impl CGenerator {
             .push(format!("phpc_native_string_free(string_{index});"));
     }
 
+    fn unsupported_call_operation(&self, operation: NativeCallOperation) -> Diagnostic {
+        self.unsupported(
+            operation.span,
+            native_call_blocker_message(NativeCallBackend::Assembly, operation),
+        )
+    }
+
+    fn unsupported_direct_call(&self, span: Span, blocker: NativeCallBlocker) -> Diagnostic {
+        self.unsupported_call_operation(NativeCallOperation::direct_named_value(span, blocker))
+    }
+
+    fn unsupported_value_call(&self, expr: &Expr) -> Diagnostic {
+        self.unsupported_call_operation(
+            native_value_call_operation_for_expr(expr)
+                .expect("native value-call blocker called for a call expression"),
+        )
+    }
+
     fn unsupported(&self, span: Span, message: impl Into<String>) -> Diagnostic {
         Diagnostic::new(Phase::Codegen, span.line, span.column, message)
     }
@@ -7774,5 +8499,505 @@ fn format_float_literal(value: f64) -> String {
         format!("{value:.1}")
     } else {
         value.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::{ArrayItem, FunctionParam};
+
+    fn test_span() -> Span {
+        Span::new(1, 1)
+    }
+
+    fn test_param(by_reference: bool, is_variadic: bool) -> FunctionParam {
+        FunctionParam {
+            name: "value".to_string(),
+            type_decl: None,
+            by_reference,
+            is_variadic,
+            default: None,
+            span: test_span(),
+        }
+    }
+
+    fn test_function(params: Vec<FunctionParam>, returns_by_reference: bool) -> FunctionDecl {
+        FunctionDecl {
+            name: "sample".to_string(),
+            params,
+            return_type: None,
+            returns_by_reference,
+            body: Vec::new(),
+            is_nested: false,
+            end_line: 1,
+            doc_comment: None,
+            span: test_span(),
+        }
+    }
+
+    fn test_call_reference_source(expr: Expr) -> ReferenceSource {
+        ReferenceSource::MethodCall {
+            expr,
+            span: test_span(),
+        }
+    }
+
+    fn test_variable_expr(name: &str) -> Expr {
+        Expr::Variable(name.to_string(), test_span())
+    }
+
+    #[test]
+    fn native_function_frame_blocker_classifies_parameter_and_return_families() {
+        assert!(matches!(
+            native_function_frame_blocker(&test_function(Vec::new(), false)),
+            NativeCallBlocker::FunctionFrameHandoff
+        ));
+        assert!(matches!(
+            native_function_frame_blocker(&test_function(vec![test_param(true, false)], false)),
+            NativeCallBlocker::ByReferenceArgumentBinding
+        ));
+        assert!(matches!(
+            native_function_frame_blocker(&test_function(vec![test_param(false, true)], false)),
+            NativeCallBlocker::VariadicArgumentBinding
+        ));
+        assert!(matches!(
+            native_function_frame_blocker(&test_function(Vec::new(), true)),
+            NativeCallBlocker::ReturnValueOwnership
+        ));
+    }
+
+    #[test]
+    fn native_reference_source_call_operation_preserves_call_family_for_reference_results() {
+        let span = test_span();
+
+        for (source, callee) in [
+            (
+                test_call_reference_source(Expr::Call {
+                    name: "borrow".to_string(),
+                    args: vec![Expr::Int(1, span)],
+                    span,
+                }),
+                NativeCallCallee::DirectNamed,
+            ),
+            (
+                test_call_reference_source(Expr::DynamicCall {
+                    callee: Box::new(test_variable_expr("callback")),
+                    args: vec![Expr::String("value".to_string(), span)],
+                    span,
+                }),
+                NativeCallCallee::DynamicExpression,
+            ),
+            (
+                test_call_reference_source(Expr::DynamicMethodCall {
+                    target: Box::new(test_variable_expr("box")),
+                    method: Box::new(test_variable_expr("method")),
+                    args: vec![Expr::Bool(true, span)],
+                    span,
+                }),
+                NativeCallCallee::MethodDispatch,
+            ),
+            (
+                test_call_reference_source(Expr::StaticMethodCall {
+                    class_name: "Box".to_string(),
+                    method: "borrow".to_string(),
+                    args: vec![Expr::Int(2, span)],
+                    span,
+                }),
+                NativeCallCallee::MethodDispatch,
+            ),
+            (
+                ReferenceSource::ExpressionArrayIndex {
+                    target: Expr::Call {
+                        name: "borrow".to_string(),
+                        args: vec![Expr::Int(3, span)],
+                        span,
+                    },
+                    indices: vec![Expr::Int(0, span)],
+                    span,
+                },
+                NativeCallCallee::DirectNamed,
+            ),
+            (
+                ReferenceSource::ExpressionArrayAppend {
+                    target: Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("callback")),
+                        args: vec![Expr::String("value".to_string(), span)],
+                        span,
+                    },
+                    indices: vec![Expr::Int(0, span)],
+                    span,
+                },
+                NativeCallCallee::DynamicExpression,
+            ),
+            (
+                ReferenceSource::Property {
+                    expr: Expr::Property {
+                        target: Box::new(Expr::MethodCall {
+                            target: Box::new(test_variable_expr("box")),
+                            method: "borrow".to_string(),
+                            args: vec![Expr::Bool(false, span)],
+                            span,
+                        }),
+                        property: "value".to_string(),
+                        span,
+                    },
+                    span,
+                },
+                NativeCallCallee::MethodDispatch,
+            ),
+            (
+                ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+                    holder: Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("callback")),
+                        args: vec![Expr::String("holder".to_string(), span)],
+                        span,
+                    },
+                    property: "items".to_string(),
+                    indices: vec![Expr::Int(1, span)],
+                    span,
+                },
+                NativeCallCallee::DynamicExpression,
+            ),
+        ] {
+            assert_eq!(
+                native_reference_source_call_operation(&source),
+                Some(NativeCallOperation::reference_result(span, callee))
+            );
+        }
+
+        assert_eq!(
+            native_reference_source_call_operation(&ReferenceSource::Variable {
+                name: "value".to_string(),
+                span,
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn native_dereferenced_call_result_operation_preserves_call_family_for_value_results() {
+        let span = test_span();
+
+        for (expr, callee) in [
+            (
+                Expr::Index {
+                    target: Box::new(Expr::Call {
+                        name: "result".to_string(),
+                        args: vec![Expr::Int(1, span)],
+                        span,
+                    }),
+                    index: Box::new(Expr::Int(0, span)),
+                    span,
+                },
+                NativeCallCallee::DirectNamed,
+            ),
+            (
+                Expr::AppendIndex {
+                    target: Box::new(Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("callback")),
+                        args: vec![Expr::String("value".to_string(), span)],
+                        span,
+                    }),
+                    span,
+                },
+                NativeCallCallee::DynamicExpression,
+            ),
+            (
+                Expr::Property {
+                    target: Box::new(Expr::MethodCall {
+                        target: Box::new(test_variable_expr("box")),
+                        method: "result".to_string(),
+                        args: vec![Expr::Bool(true, span)],
+                        span,
+                    }),
+                    property: "value".to_string(),
+                    span,
+                },
+                NativeCallCallee::MethodDispatch,
+            ),
+            (
+                Expr::DynamicProperty {
+                    target: Box::new(Expr::Index {
+                        target: Box::new(Expr::Call {
+                            name: "result".to_string(),
+                            args: vec![Expr::Int(2, span)],
+                            span,
+                        }),
+                        index: Box::new(Expr::Int(0, span)),
+                        span,
+                    }),
+                    property: Box::new(test_variable_expr("property")),
+                    span,
+                },
+                NativeCallCallee::DirectNamed,
+            ),
+        ] {
+            assert_eq!(
+                native_dereferenced_call_result_operation(&expr),
+                Some(NativeCallOperation::dereferenced_value_result(span, callee))
+            );
+        }
+
+        assert_eq!(
+            native_dereferenced_call_result_operation(&Expr::Index {
+                target: Box::new(test_variable_expr("items")),
+                index: Box::new(Expr::Int(0, span)),
+                span,
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn native_value_call_operation_classifies_named_dynamic_and_method_families() {
+        let span = test_span();
+
+        for (expr, operation) in [
+            (
+                Expr::Call {
+                    name: "missing".to_string(),
+                    args: vec![Expr::Int(1, span)],
+                    span,
+                },
+                NativeCallOperation::direct_named_value(
+                    span,
+                    NativeCallBlocker::UnknownCalleeDiagnostics,
+                ),
+            ),
+            (
+                Expr::DynamicCall {
+                    callee: Box::new(test_variable_expr("callback")),
+                    args: vec![Expr::String("value".to_string(), span)],
+                    span,
+                },
+                NativeCallOperation::dynamic_value(span),
+            ),
+            (
+                Expr::MethodCall {
+                    target: Box::new(test_variable_expr("box")),
+                    method: "work".to_string(),
+                    args: vec![Expr::Bool(true, span)],
+                    span,
+                },
+                NativeCallOperation::method_value(span),
+            ),
+            (
+                Expr::LateStaticMethodCall {
+                    method: "work".to_string(),
+                    args: vec![Expr::Int(2, span)],
+                    span,
+                },
+                NativeCallOperation::method_value(span),
+            ),
+        ] {
+            assert_eq!(native_value_call_operation_for_expr(&expr), Some(operation));
+        }
+
+        assert_eq!(
+            native_value_call_operation_for_expr(&Expr::Variable("value".to_string(), span)),
+            None
+        );
+    }
+
+    #[test]
+    fn native_value_call_operation_classifies_argument_cleanup_across_call_families() {
+        let span = test_span();
+
+        for (expr, callee) in [
+            (
+                Expr::Call {
+                    name: "consume".to_string(),
+                    args: vec![Expr::Binary {
+                        left: Box::new(Expr::Int(1, span)),
+                        op: BinaryOp::Add,
+                        right: Box::new(Expr::Call {
+                            name: "produce".to_string(),
+                            args: vec![Expr::String("value".to_string(), span)],
+                            span,
+                        }),
+                        span,
+                    }],
+                    span,
+                },
+                NativeCallCallee::DirectNamed,
+            ),
+            (
+                Expr::DynamicCall {
+                    callee: Box::new(test_variable_expr("consumer")),
+                    args: vec![Expr::Array {
+                        items: vec![ArrayItem {
+                            key: Some(Expr::Int(0, span)),
+                            value: Expr::DynamicCall {
+                                callee: Box::new(test_variable_expr("producer")),
+                                args: vec![Expr::Bool(true, span)],
+                                span,
+                            },
+                            by_reference: false,
+                        }],
+                        span,
+                    }],
+                    span,
+                },
+                NativeCallCallee::DynamicExpression,
+            ),
+            (
+                Expr::StaticMethodCall {
+                    class_name: "Consumer".to_string(),
+                    method: "take".to_string(),
+                    args: vec![Expr::Ternary {
+                        condition: Box::new(Expr::Bool(true, span)),
+                        if_true: Box::new(Expr::MethodCall {
+                            target: Box::new(test_variable_expr("producer")),
+                            method: "value".to_string(),
+                            args: vec![Expr::Int(2, span)],
+                            span,
+                        }),
+                        if_false: Box::new(Expr::String("fallback".to_string(), span)),
+                        span,
+                    }],
+                    span,
+                },
+                NativeCallCallee::MethodDispatch,
+            ),
+        ] {
+            assert_eq!(
+                native_value_call_operation_for_expr(&expr),
+                Some(NativeCallOperation::value_result(
+                    span,
+                    callee,
+                    NativeCallBlocker::ArgumentEvaluationCleanup,
+                ))
+            );
+        }
+
+        assert_eq!(
+            native_call_argument_list_blocker(&[
+                Expr::Int(1, span),
+                Expr::String("plain".to_string(), span),
+            ]),
+            None
+        );
+    }
+
+    #[test]
+    fn native_call_blocker_message_routes_shared_contract_by_backend_and_call_family() {
+        let span = test_span();
+
+        for (backend, direct, dynamic, method, frame, reference) in [
+            (
+                NativeCallBackend::Llvm,
+                LLVM_FUNCTION_CALL_REJECTION,
+                LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+                LLVM_METHOD_CALL_REJECTION,
+                LLVM_FUNCTION_DECLARATION_REJECTION,
+                LLVM_REFERENCE_ASSIGNMENT_REJECTION,
+            ),
+            (
+                NativeCallBackend::Assembly,
+                ASSEMBLY_FUNCTION_CALL_REJECTION,
+                ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+                ASSEMBLY_METHOD_CALL_REJECTION,
+                ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
+                ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
+            ),
+        ] {
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::direct_named_value(
+                        span,
+                        NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ),
+                ),
+                direct
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::direct_named_value(
+                        span,
+                        NativeCallBlocker::UnknownCalleeDiagnostics,
+                    ),
+                ),
+                direct
+            );
+            assert_eq!(
+                native_call_blocker_message(backend, NativeCallOperation::dynamic_value(span)),
+                dynamic
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::dynamic_value_with_blocker(
+                        span,
+                        NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ),
+                ),
+                dynamic
+            );
+            assert_eq!(
+                native_call_blocker_message(backend, NativeCallOperation::method_value(span)),
+                method
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::method_value_with_blocker(
+                        span,
+                        NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ),
+                ),
+                method
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::function_frame(
+                        span,
+                        NativeCallBlocker::ByReferenceArgumentBinding,
+                    ),
+                ),
+                frame
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::function_frame(
+                        span,
+                        NativeCallBlocker::VariadicArgumentBinding,
+                    ),
+                ),
+                frame
+            );
+            assert_eq!(
+                native_call_blocker_message(backend, NativeCallOperation::return_value(span)),
+                frame
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::reference_result(span, NativeCallCallee::DirectNamed),
+                ),
+                reference
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::reference_result(
+                        span,
+                        NativeCallCallee::DynamicExpression,
+                    ),
+                ),
+                reference
+            );
+            assert_eq!(
+                native_call_blocker_message(
+                    backend,
+                    NativeCallOperation::reference_result(span, NativeCallCallee::MethodDispatch),
+                ),
+                reference
+            );
+        }
     }
 }

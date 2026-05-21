@@ -3,10 +3,19 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use php_compiler::error::Phase;
-use php_compiler::{emit_asm_source, emit_ir_source, run_source};
+use php_compiler::{codegen::emit_native_executable_c_source, emit_asm_source, emit_ir_source};
+use php_compiler::{parse, run_source};
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
+const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
+const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
+const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
+const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
+const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
+const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
+const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 
 #[test]
 fn phpc_run_still_handles_current_function_call_subset() {
@@ -99,6 +108,220 @@ fn emit_ir_rejects_dynamic_calls_before_lowering_callee_or_arguments() {
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_DYNAMIC_FUNCTION_CALL_REJECTION);
+    }
+}
+
+#[test]
+fn emit_ir_routes_call_operation_blockers_across_call_families() {
+    for (source, expected) in [
+        (
+            "<?php\necho missing(1 + 2);\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho strlen(\"abc\", \"extra\");\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$flag = (1 + 2) === 3;\n$value = $flag ? \"1\" : \"nope\";\necho is_numeric($value);\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho missing(strlen(\"abc\"));\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = true ? \"strlen\" : \"count\";\necho $call(\"abc\");\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho $call(1 + 2, 3);\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho $call(strlen(\"abc\"));\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        ("<?php\necho missing()[0];\n", LLVM_FUNCTION_CALL_REJECTION),
+        (
+            "<?php\n$call = \"missing\";\necho $call()[1];\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        ("<?php\n$box->work(1 + 2);\n", LLVM_METHOD_CALL_REJECTION),
+        (
+            "<?php\n$method = true ? \"work\" : \"fallback\";\n$box->{$method}(1);\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"value\";\n$box->work($call());\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho $box->work()->value;\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        ("<?php\nWorker::run(1, 2);\n", LLVM_METHOD_CALL_REJECTION),
+        (
+            "<?php\nfunction identity($value) { return $value; }\n",
+            LLVM_FUNCTION_DECLARATION_REJECTION,
+        ),
+        (
+            "<?php\nfunction mutate(&$value) { return $value; }\n",
+            LLVM_FUNCTION_DECLARATION_REJECTION,
+        ),
+        (
+            "<?php\nfunction collect(...$items) { return $items; }\n",
+            LLVM_FUNCTION_DECLARATION_REJECTION,
+        ),
+        (
+            "<?php\nfunction &borrow() { $value = 1; return $value; }\n",
+            LLVM_FUNCTION_DECLARATION_REJECTION,
+        ),
+        (
+            "<?php\nreturn strlen(\"abc\");\n",
+            LLVM_FUNCTION_DECLARATION_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& missing();\n",
+            LLVM_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& missing()[0];\n",
+            LLVM_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$alias =& $call();\n",
+            LLVM_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$alias =& $call()[1];\n",
+            LLVM_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& $box->work();\n",
+            LLVM_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& $box->work()[0];\n",
+            LLVM_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_call_operation_blockers_across_call_families() {
+    for (source, expected) in [
+        (
+            "<?php\necho missing(1 + 2);\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho strlen(\"abc\", \"extra\");\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$flag = (1 + 2) === 3;\n$value = $flag ? \"1\" : \"nope\";\necho is_numeric($value);\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho missing(strlen(\"abc\"));\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = true ? \"strlen\" : \"count\";\necho $call(\"abc\");\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho $call(1 + 2, 3);\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho $call(strlen(\"abc\"));\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho missing()[0];\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho $call()[1];\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$box->work(1 + 2);\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$method = true ? \"work\" : \"fallback\";\n$box->{$method}(1);\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"value\";\n$box->work($call());\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho $box->work()->value;\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\nWorker::run(1, 2);\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\nfunction identity($value) { return $value; }\n",
+            ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
+        ),
+        (
+            "<?php\nfunction mutate(&$value) { return $value; }\n",
+            ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
+        ),
+        (
+            "<?php\nfunction collect(...$items) { return $items; }\n",
+            ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
+        ),
+        (
+            "<?php\nfunction &borrow() { $value = 1; return $value; }\n",
+            ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
+        ),
+        (
+            "<?php\nreturn strlen(\"abc\");\n",
+            ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& missing();\n",
+            ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& missing()[0];\n",
+            ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$alias =& $call();\n",
+            ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$alias =& $call()[1];\n",
+            ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& $box->work();\n",
+            ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$alias =& $box->work()[0];\n",
+            ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
     }
 }
 
