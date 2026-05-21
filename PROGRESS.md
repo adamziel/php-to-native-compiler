@@ -50,7 +50,7 @@ Recent pushed primary commits show useful movement from lane-local artifacts int
 
 ## Current Work In Flight
 
-The primary worktree is currently clean and synced with `origin/master` at `1aab675e`. The latest string-conversion slice is counted as integrated because it was tested, committed, and pushed.
+The primary worktree is currently clean and synced with `origin/master` at `baf5d73e`; the latest semantic compiler/runtime commit is `1aab675e`. The latest string-conversion slice is counted as integrated because it was tested, committed, and pushed.
 
 Lane-local workers are also producing candidate work in these areas:
 
