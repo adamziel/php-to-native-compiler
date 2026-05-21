@@ -1010,6 +1010,14 @@ impl NativeComparisonBranchDecision {
         }
     }
 
+    pub fn status(&self) -> u8 {
+        if self.exit_code == 0 {
+            NativeComparisonStatus::Ok as u8
+        } else {
+            NativeComparisonStatus::Blocked as u8
+        }
+    }
+
     pub fn exit_code(&self) -> c_int {
         self.exit_code
     }
@@ -4142,6 +4150,13 @@ pub extern "C" fn phpc_native_comparison_branch_decision_exit_code(
     decision: NativeComparisonBranchDecision,
 ) -> c_int {
     decision.exit_code()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_decision_status(
+    decision: NativeComparisonBranchDecision,
+) -> u8 {
+    decision.status()
 }
 
 #[no_mangle]
@@ -11632,6 +11647,16 @@ mod tests {
             ("malformed branch decision", malformed, false, 1),
         ] {
             let decision = phpc_native_comparison_branch_decision_from_result(branch);
+            let expected_status = if expected_exit == 0 {
+                NativeComparisonStatus::Ok as u8
+            } else {
+                NativeComparisonStatus::Blocked as u8
+            };
+            assert_eq!(
+                phpc_native_comparison_branch_decision_status(decision),
+                expected_status,
+                "{label}"
+            );
             assert_eq!(
                 phpc_native_comparison_branch_decision_exit_code(decision),
                 expected_exit,

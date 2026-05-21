@@ -5845,6 +5845,8 @@ impl CGenerator {
                     output.push_str("typedef struct { uint8_t status; uint8_t value; size_t diagnostic_len; } phpc_NativeComparisonBranchResult;\n");
                 }
                 output.push_str("typedef struct { int exit_code; uint8_t value; } phpc_NativeComparisonBranchDecision;\n");
+                output.push_str("#define PHPC_NATIVE_COMPARISON_STATUS_OK 0\n");
+                output.push_str("#define PHPC_NATIVE_COMPARISON_STATUS_BLOCKED 1\n");
             }
             if self.uses_native_array_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeArrayHandle;\n");
@@ -5930,6 +5932,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeComparisonBranchDecision phpc_native_comparison_branch_decision_from_result(phpc_NativeComparisonBranchResult result);\n");
             }
             output.push_str("extern int phpc_native_comparison_branch_decision_exit_code(phpc_NativeComparisonBranchDecision decision);\n");
+            output.push_str("extern uint8_t phpc_native_comparison_branch_decision_status(phpc_NativeComparisonBranchDecision decision);\n");
             output.push_str("extern bool phpc_native_comparison_branch_decision_is_true(phpc_NativeComparisonBranchDecision decision);\n\n");
         }
         if self.uses_strcmp {
@@ -7801,8 +7804,11 @@ impl CGenerator {
                     comparison_index,
                     &comparison_decision,
                 );
-                self.body
-                    .push(format!("if ({comparison_exit_code} != 0) {{"));
+                let comparison_status = self
+                    .emit_native_comparison_decision_status(comparison_index, &comparison_decision);
+                self.body.push(format!(
+                    "if ({comparison_status} != PHPC_NATIVE_COMPARISON_STATUS_OK) {{"
+                ));
                 self.body.push(format!("  return {comparison_exit_code};"));
                 self.body.push("}".to_string());
 
@@ -7839,6 +7845,18 @@ impl CGenerator {
         comparison_exit_code
     }
 
+    fn emit_native_comparison_decision_status(
+        &mut self,
+        comparison_index: usize,
+        comparison_decision: &str,
+    ) -> String {
+        let comparison_status = format!("comparison_status_{comparison_index}");
+        self.body.push(format!(
+            "uint8_t {comparison_status} = phpc_native_comparison_branch_decision_status({comparison_decision});"
+        ));
+        comparison_status
+    }
+
     fn emit_native_array_handle_comparison(
         &mut self,
         left: String,
@@ -7858,9 +7876,15 @@ impl CGenerator {
         ));
         let (comparison_decision, comparison_exit_code) =
             self.emit_native_comparison_branch_decision(comparison_index, &comparison_branch);
-        self.body
-            .push(format!("if ({comparison_exit_code} != 0) {{"));
-        self.body.push(format!("  {}", self.native_error_exit("")));
+        let comparison_status =
+            self.emit_native_comparison_decision_status(comparison_index, &comparison_decision);
+        self.body.push(format!(
+            "if ({comparison_status} != PHPC_NATIVE_COMPARISON_STATUS_OK) {{"
+        ));
+        self.body.push(format!(
+            "  {}",
+            self.native_error_exit_with_code("", &comparison_exit_code)
+        ));
         self.body.push("}".to_string());
 
         CValue::BoolExpr(format!(
@@ -9929,12 +9953,16 @@ impl CGenerator {
     }
 
     fn native_error_exit(&self, local_cleanup: &str) -> String {
+        self.native_error_exit_with_code(local_cleanup, "1")
+    }
+
+    fn native_error_exit_with_code(&self, local_cleanup: &str, exit_code: &str) -> String {
         let mut cleanup = String::new();
         cleanup.push_str(local_cleanup);
         for handle in self.array_cleanup_handles.iter().rev() {
             cleanup.push_str(&format!(" phpc_native_array_free({handle});"));
         }
-        cleanup.push_str(" return 1;");
+        cleanup.push_str(&format!(" return {exit_code};"));
         cleanup
     }
 

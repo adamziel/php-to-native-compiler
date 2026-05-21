@@ -323,6 +323,10 @@ echo 1 !== "1";
         "{source}"
     );
     assert!(
+        source.contains("PHPC_NATIVE_COMPARISON_STATUS_OK"),
+        "generated C should name the shared comparison status tags:\n{source}"
+    );
+    assert!(
         !source.contains("phpc_native_comparison_branch_decision_from_result"),
         "scalar/string comparisons should consume operands through the direct decision ABI:\n{source}"
     );
@@ -331,8 +335,16 @@ echo 1 !== "1";
         "generated C should consume branch exits through the runtime branch-decision ABI:\n{source}"
     );
     assert!(
+        source.contains("phpc_native_comparison_branch_decision_status"),
+        "generated C should classify branch decisions through the runtime status ABI:\n{source}"
+    );
+    assert!(
         source.contains("phpc_native_comparison_branch_decision_is_true"),
         "generated C should consume branch truth through the runtime branch-decision ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("if (comparison_exit_code_"),
+        "generated C should not use exit-code checks as the comparison status classifier:\n{source}"
     );
     assert!(
         !source.contains("phpc_NativeComparisonResult"),
@@ -430,8 +442,17 @@ fn native_executable_c_source_routes_array_handle_comparisons_through_runtime_br
         source.contains("phpc_NativeComparisonBranchDecision")
             && source.contains("phpc_native_comparison_branch_decision_from_result")
             && source.contains("phpc_native_comparison_branch_decision_exit_code")
+            && source.contains("phpc_native_comparison_branch_decision_status")
             && source.contains("phpc_native_comparison_branch_decision_is_true"),
-        "array comparison results should use the common branch-decision ABI:\n{source}"
+        "array comparison results should use the common branch-decision status/truth ABI:\n{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_COMPARISON_STATUS_OK"),
+        "array comparison guards should use named shared comparison status tags:\n{source}"
+    );
+    assert!(
+        !source.contains("if (comparison_exit_code_"),
+        "array comparison guards should not use exit-code checks as the status classifier:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_comparison_branch_result_exit_code"),
