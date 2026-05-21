@@ -2489,9 +2489,11 @@ fn ensure_array_search_values_supported(
     }
 }
 
-fn array_scalar_string_comparison_value(callable: &str, value: &Value) -> RuntimeResult<String> {
+fn array_scalar_string_comparison_value(callable: &str, value: &Value) -> RuntimeResult<Vec<u8>> {
     array_scalar_value_supported(callable, value)?;
-    Ok(value.echo_string())
+    Ok(value
+        .php_scalar_string_bytes()
+        .expect("array scalar support must match scalar string byte support"))
 }
 
 fn array_scalar_value_supported(callable: &str, value: &Value) -> RuntimeResult<()> {
@@ -5230,12 +5232,8 @@ fn coerce_property_value_with_object_type_resolver_dyn(
             _ => None,
         },
         "string" => match &value {
-            Value::String(_) => Some(value.clone()),
-            Value::Bool(false) => Some(Value::String(String::new())),
-            Value::Bool(true) => Some(Value::String("1".to_string())),
-            Value::Int(value) => Some(Value::String(value.to_string())),
-            Value::Float(value) => Some(Value::String(format_php_float(*value))),
-            _ => None,
+            Value::Null => None,
+            _ => value.php_scalar_string_value(),
         },
         _ => None,
     };
@@ -5473,6 +5471,21 @@ impl Value {
             Value::Closure(_) => "Object".to_string(),
             Value::Resource(id) => format!("Resource id #{id}"),
         }
+    }
+
+    pub fn php_scalar_string_bytes(&self) -> Option<Vec<u8>> {
+        match self {
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+                Some(self.echo_string().into_bytes())
+            }
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => None,
+        }
+    }
+
+    pub fn php_scalar_string_value(&self) -> Option<Self> {
+        self.php_scalar_string_bytes()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .map(Value::String)
     }
 
     pub fn try_echo_string(&self) -> RuntimeResult<String> {
@@ -6074,6 +6087,95 @@ mod tests {
         assert_eq!(Value::Int(42).echo_string(), "42");
         assert_eq!(Value::Float(1.5).echo_string(), "1.5");
         assert_eq!(Value::String("x".to_string()).echo_string(), "x");
+    }
+
+    #[test]
+    fn php_scalar_string_helpers_cover_scalar_and_blocker_boundaries() {
+        assert_eq!(Value::Null.php_scalar_string_bytes(), Some(Vec::new()));
+        assert_eq!(
+            Value::Bool(false).php_scalar_string_bytes(),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            Value::Bool(true).php_scalar_string_bytes(),
+            Some(b"1".to_vec())
+        );
+        assert_eq!(
+            Value::Int(-12).php_scalar_string_bytes(),
+            Some(b"-12".to_vec())
+        );
+        assert_eq!(
+            Value::Float(1.5).php_scalar_string_bytes(),
+            Some(b"1.5".to_vec())
+        );
+        assert_eq!(
+            Value::String("A\0".to_string()).php_scalar_string_bytes(),
+            Some(b"A\0".to_vec())
+        );
+        assert_eq!(
+            Value::Int(-12).php_scalar_string_value(),
+            Some(Value::String("-12".to_string()))
+        );
+        assert_eq!(
+            Value::Array(PhpArray::new()).php_scalar_string_bytes(),
+            None
+        );
+        assert_eq!(
+            Value::Closure(PhpClosure::new(1, false, Vec::new())).php_scalar_string_bytes(),
+            None
+        );
+        assert_eq!(Value::Resource(7).php_scalar_string_bytes(), None);
+    }
+
+    #[test]
+    fn php_scalar_string_boundary_reused_by_properties_and_array_comparisons() {
+        assert_eq!(
+            coerce_property_value("string", Value::Int(-12), "Packet", "payload").unwrap(),
+            Value::String("-12".to_string())
+        );
+        assert_eq!(
+            coerce_property_value("string", Value::Bool(false), "Packet", "payload").unwrap(),
+            Value::String(String::new())
+        );
+        assert_eq!(
+            coerce_property_value("string", Value::Null, "Packet", "payload")
+                .unwrap_err()
+                .message(),
+            "invalid property access: typed property Packet::$payload expects string, got null"
+        );
+
+        let mut left = PhpArray::new();
+        left.insert("null", Value::Null);
+        left.insert("false", Value::Bool(false));
+        left.insert("empty", Value::String(String::new()));
+        left.insert("true", Value::Bool(true));
+        left.insert("one", Value::Int(1));
+        left.insert("keep", Value::String("keep".to_string()));
+
+        let mut right = PhpArray::new();
+        right.append(Value::String(String::new())).unwrap();
+        right.append(Value::String("1".to_string())).unwrap();
+
+        let diff = left.diff_values_with(&right).unwrap();
+        assert_eq!(diff.entries().len(), 1);
+        assert_eq!(diff.get("keep"), Some(&Value::String("keep".to_string())));
+
+        let intersect = left.intersect_values_with(&right).unwrap();
+        assert_eq!(intersect.entries().len(), 5);
+        assert_eq!(intersect.get("null"), Some(&Value::Null));
+        assert_eq!(intersect.get("false"), Some(&Value::Bool(false)));
+        assert_eq!(intersect.get("empty"), Some(&Value::String(String::new())));
+        assert_eq!(intersect.get("true"), Some(&Value::Bool(true)));
+        assert_eq!(intersect.get("one"), Some(&Value::Int(1)));
+
+        let unique = left.unique_values_by_string().unwrap();
+        assert_eq!(unique.entries().len(), 3);
+        assert_eq!(unique.get("null"), Some(&Value::Null));
+        assert_eq!(unique.get("false"), None);
+        assert_eq!(unique.get("empty"), None);
+        assert_eq!(unique.get("true"), Some(&Value::Bool(true)));
+        assert_eq!(unique.get("one"), None);
+        assert_eq!(unique.get("keep"), Some(&Value::String("keep".to_string())));
     }
 
     #[test]
