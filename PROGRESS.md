@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 23:52 CEST
-Evaluation marker: 20260521T212433Z-plus-61c21cf6
+Updated: 2026-05-22 00:07 CEST
+Evaluation marker: 20260521T212433Z-plus-41f88885
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local work is candidate material until selected, gated, committed, and pushed.
 
@@ -10,33 +10,33 @@ This is a high-level supervisor dashboard. Percentages are candid engineering es
 Estimated progress toward a broadly usable generalized PHP native compiler: **30%**
 
 ```
-Generalized runtime/ABI foundations      [###############-----] 76%
-Compiler/backend consumers               [##############------] 72%
-Executable generalized PHP semantics     [########------------] 38%
+Generalized runtime/ABI foundations      [###############-----] 77%
+Compiler/backend consumers               [###############-----] 73%
+Executable generalized PHP semantics     [########------------] 39%
 Arrays, references, COW, lvalues         [#####---------------] 23%
 Objects, properties, methods             [##------------------] 10%
 Diagnostics/control-flow composition     [####----------------] 20%
-Broad integrated verification            [#####---------------] 25%
+Broad integrated verification            [#####---------------] 26%
 ```
 
 ## Current Primary State
 
-- Product HEAD at this review: `61c21cf6 codegen: rematerialize comparison decisions as operands`, synced with `origin/master`.
-- Latest committed semantic baseline: `61c21cf6 codegen: rematerialize comparison decisions as operands`.
-- Live worktree status: clean and synced after the comparison decision operand commit.
-- Resource note: `/dev/shm` is healthy at about 15G free and 7.6G used; `/home` has about 252G free. Prior windows still hit severe `/dev/shm` pressure, so broad primary gates should remain isolated or disk-backed when headroom falls.
+- Product HEAD at this review: `41f88885 native: route realpath cache through filesystem ABI`, synced with `origin/master`.
+- Latest committed semantic baseline: `41f88885 native: route realpath cache through filesystem ABI`.
+- Live worktree status: clean and synced after the realpath-cache filesystem ABI commit.
+- Resource note: `/dev/shm` was reclaimed from about 6.1G free to about 13G free by deleting only inactive `phpc-target-*` caches after active cargo/rustc/linker checks. Lane tests have since consumed some headroom; the latest supervisor sample was about 7-8G free. Broad primary gates should remain isolated and resource-aware.
 
 ## Grand Roadmap Position
 
-The compiler is steadily replacing backend-local rejections and ad hoc generated-C decisions with reusable runtime/ABI contracts and selected executable consumers. Recent primary progress is strongest in comparison routing, string-handle comparison operands, nested comparison decision rematerialization, numeric-string classifier sharing, value-result materialization, scalar value-cast ABI consumers, array-handle value operands, call-boundary cleanup ordering, and centralized native call diagnostics.
+The compiler is steadily replacing backend-local rejections and ad hoc generated-C decisions with reusable runtime/ABI contracts and selected executable consumers. Recent primary progress is strongest in comparison routing, string-handle comparison operands, nested comparison decision rematerialization, numeric-string classifier sharing, value-result materialization, scalar value-cast ABI consumers, array-handle value operands, selected filesystem/cache ABI routing, call-boundary cleanup ordering, and centralized native call diagnostics.
 
 The product is still far from full generalized PHP. The largest missing regions remain references/COW, executable lvalues, user calls and frames, object/class/property semantics, mutable globals/superglobals, include/require, exceptions/finally, exact diagnostics, and cleanup across real control flow.
 
 ## Done / In Progress / Not Done
 
 - [x] Supervised parallel lanes and primary integration gate established.
-- [x] Shared runtime ABI surfaces for strings, comparisons, numeric-string classification, array keys/value operations, request-state snapshots, selected conversion helpers, selected diagnostic carriers, branch-decision status, and string-handle comparison operands.
-- [x] Generated-C consumers for selected string builtins, array key/value operations, array-handle value operands, array append diagnostics, string-handle comparison operands/results/decisions, nested comparison decision operands, strict array/object identity in selected array-search builtins, array-handle comparisons, comparison status guards, cast/type-name echo value results, scalar value-cast operations, and centralized call diagnostics.
+- [x] Shared runtime ABI surfaces for strings, comparisons, numeric-string classification, array keys/value operations, request-state snapshots, selected conversion helpers, selected filesystem/cache operation blockers, selected diagnostic carriers, branch-decision status, and string-handle comparison operands.
+- [x] Generated-C consumers for selected string builtins, array key/value operations, array-handle value operands, array append diagnostics, string-handle comparison operands/results/decisions, nested comparison decision operands, strict array/object identity in selected array-search builtins, array-handle comparisons, comparison status guards, cast/type-name echo value results, scalar value-cast operations, selected realpath-cache filesystem operation blockers, and centralized call diagnostics.
 - [x] Reusable array-entry snapshot ABI for future foreach/lvalue/reference consumers.
 - [ ] In progress: replace shared blockers with executable semantics one family at a time.
 - [ ] In progress: generalize value/result ownership across returns, call args, conditions, branch joins, stdout, discarded temporaries, comparisons, casts, and cleanup.
@@ -57,11 +57,13 @@ The product is still far from full generalized PHP. The largest missing regions 
 | Symbols, globals, request state | 24% | 55% | Primary has symbol ABI helpers, request/superglobal snapshot ABI, and `defined()` interpolation routed through expression-result boundaries. Lanes add expression-result consumer consolidation, slot transition contracts, scalar linked symbol-table execution, and request-state blocker/presence consolidation. Mutable globals/superglobals and repeated-call state remain early. |
 | Objects, properties, methods | 10% | 45% | Lane-local object/class/property blockers and operation plans are improving. Primary still has little broad executable object/property/method behavior. |
 | Diagnostics and control-flow cleanup | 20% | 60% | Primary has selected severity/blocker surfaces, diagnostic array append behavior, centralized call diagnostic subjects, call-boundary cleanup routing, and comparison status/exit handling. Lanes have richer diagnostic-result carriers, sinks, termination handoffs, and CFG/control-flow rows; most control-flow rows are still non-emitting. |
-| Filesystem/path builtins and request state | 16% | 43% | Primary centralizes filesystem/path/request blockers and snapshots. Lanes route more request/configuration/runtime-state builtins through shared blockers, but real stream/stat/cache/current-directory/request mutation behavior is not implemented. |
-| Broad composition verification | 25% | 39% | Focused runtime/native-link gates cover comparison decision/status paths, nested comparison decision operand composition, value-result consumers, scalar value-cast consumers, array-handle value operands/comparisons, array append diagnostics, call diagnostics, and selected full `native_link` batches. Broad differential PHP composition coverage remains thin, and broad `phpc --tests` still has known pre-existing gaps. |
+| Filesystem/path builtins and request state | 18% | 43% | Primary centralizes filesystem/path/request blockers and snapshots, and now routes `realpath_cache_get()`/`realpath_cache_size()` through the shared filesystem path/cache operation ABI in generated-C/runtime paths while preserving legacy LLVM blockers for unrelated path predicates. Real stream/stat/cache/current-directory/request mutation behavior is not implemented. |
+| Broad composition verification | 26% | 39% | Focused runtime/native-link gates cover comparison decision/status paths, nested comparison decision operand composition, value-result consumers, scalar value-cast consumers, array-handle value operands/comparisons, array append diagnostics, realpath-cache filesystem blockers, call diagnostics, and selected full `native_link` batches. Broad differential PHP composition coverage remains thin, and broad `phpc --tests` still has known pre-existing gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `41f88885 native: route realpath cache through filesystem ABI`
+  - Adds `realpath_cache_get()` and `realpath_cache_size()` to the shared filesystem path/cache operation enum, routes generated-C/runtime cache introspection through the shared blocker/diagnostic path, and keeps older LLVM per-builtin filesystem rejections intact except for the new realpath-cache pair. Gates included runtime filesystem blocker coverage, generated-C source and linked executable checks, the focused LLVM boundary test, the realpath builtin suite, neighboring filesystem builtin suites, package check, rustfmt, and diff checks. This is still blocker/routing infrastructure; it does not implement real filesystem stat/cache/current-directory semantics, stream wrappers, warning-plus-false recovery, path byte policy, or open_basedir/include-path behavior.
 - `61c21cf6 codegen: rematerialize comparison decisions as operands`
   - Adds a shared comparison-branch-decision-to-operand ABI and generated-C carrier so nested comparison results can feed later comparison, condition, echo, truthiness, and type-name consumers through runtime comparison semantics instead of collapsing to a backend-local bool string. Runtime and native-link gates include source inspection, linked executable composition, broader comparison coverage, package check, rustfmt, and diff checks. This improves executable comparison composition, but loose array/object/resource/reference comparison execution, exact warning/recovery order, arbitrary expression materialization, and LLVM parity remain open.
 - `d02b1e76 codegen: materialize native arrays as value operands`
@@ -110,7 +112,7 @@ The project remains boundary-heavy. More result/blocker vocabulary without immed
 
 ## Near-Term Steering
 
-1. Treat `61c21cf6` as the latest integrated semantic baseline.
+1. Treat `41f88885` as the latest integrated semantic baseline.
 2. Prefer small executable generated-C/LLVM consumers of existing ABI surfaces over more standalone vocabulary.
 3. Strong next candidates: isolate one narrow array-lvalue consumer from `impl-array-linked-exec`; add LLVM parity for comparison or array append diagnostic boundaries; connect diagnostic/result producers to real generated-C reads/offsets; or consume another existing conversion/comparison ABI in a backend path.
 4. Avoid whole-lane merges. Several lanes contain broad, conflict-prone, or non-executable contract work.
