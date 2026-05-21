@@ -713,10 +713,6 @@ impl NativeComparisonResult {
         NativeComparisonOutcome::blocked_comparison(blocker).into_native_result()
     }
 
-    fn blocked_null_handle(side: &str, handle_kind: &str) -> Self {
-        NativeComparisonOutcome::blocked_null_handle(side, handle_kind).into_native_result()
-    }
-
     fn blocked(message: impl Into<String>) -> Self {
         Self {
             status: NativeComparisonStatus::Blocked as u8,
@@ -3344,21 +3340,83 @@ pub unsafe extern "C" fn phpc_native_array_compare(
     op: u8,
     right: NativeArrayHandle,
 ) -> NativeComparisonResult {
+    unsafe { native_array_compare_outcome(left, op, right) }.into_native_result()
+}
+
+/// # Safety
+///
+/// `left` and `right` must be null or array handles previously returned by the
+/// runtime ABI and not yet freed. The helper reports and releases blocked
+/// comparison diagnostics and returns the canonical branch status/value pair
+/// for the comparison result. Array handle ownership is unchanged.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_compare_branch(
+    left: NativeArrayHandle,
+    op: u8,
+    right: NativeArrayHandle,
+) -> NativeComparisonBranchResult {
+    unsafe { native_array_compare_outcome(left, op, right) }.into_branch_result()
+}
+
+/// # Safety
+///
+/// `left` and `right` must be null or array handles previously returned by the
+/// runtime ABI and not yet freed. The helper consumes each unique non-null
+/// array handle after producing the comparison result. The returned diagnostic
+/// handle follows the same ownership contract as `phpc_native_array_compare`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_compare_and_free(
+    left: NativeArrayHandle,
+    op: u8,
+    right: NativeArrayHandle,
+) -> NativeComparisonResult {
+    let outcome = unsafe { native_array_compare_outcome(left, op, right) };
+    unsafe { phpc_native_array_free(left) };
+    if left.ptr != right.ptr {
+        unsafe { phpc_native_array_free(right) };
+    }
+    outcome.into_native_result()
+}
+
+/// # Safety
+///
+/// `left` and `right` must be null or array handles previously returned by the
+/// runtime ABI and not yet freed. The helper consumes each unique non-null
+/// array handle, reports and releases blocked comparison diagnostics, and
+/// returns the canonical branch status/value pair for the comparison result.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_compare_branch_and_free(
+    left: NativeArrayHandle,
+    op: u8,
+    right: NativeArrayHandle,
+) -> NativeComparisonBranchResult {
+    let outcome = unsafe { native_array_compare_outcome(left, op, right) };
+    unsafe { phpc_native_array_free(left) };
+    if left.ptr != right.ptr {
+        unsafe { phpc_native_array_free(right) };
+    }
+    outcome.into_branch_result()
+}
+
+unsafe fn native_array_compare_outcome(
+    left: NativeArrayHandle,
+    op: u8,
+    right: NativeArrayHandle,
+) -> NativeComparisonOutcome {
     let op = match native_comparison_op_from_abi(op) {
         Ok(op) => op,
-        Err(outcome) => return outcome.into_native_result(),
+        Err(outcome) => return outcome,
     };
     let Some(left) = (unsafe { left.as_ref() }) else {
-        return NativeComparisonResult::blocked_null_handle("left", "array");
+        return NativeComparisonOutcome::blocked_null_handle("left", "array");
     };
     let Some(right) = (unsafe { right.as_ref() }) else {
-        return NativeComparisonResult::blocked_null_handle("right", "array");
+        return NativeComparisonOutcome::blocked_null_handle("right", "array");
     };
     let left = Value::Array(left.value.clone());
     let right = Value::Array(right.value.clone());
 
     NativeComparisonOutcome::from_evaluation(evaluate_php_comparison(&left, &right, op))
-        .into_native_result()
 }
 
 #[no_mangle]
@@ -10350,6 +10408,84 @@ mod tests {
         unsafe { phpc_native_array_free(left) };
         unsafe { phpc_native_array_free(same) };
         unsafe { phpc_native_array_free(different) };
+    }
+
+    #[test]
+    fn native_array_compare_branch_and_free_reuse_array_result_contract() {
+        let left = phpc_native_array_empty();
+        let same = phpc_native_array_empty();
+        let branch = unsafe {
+            phpc_native_array_compare_branch(left, NativeComparisonOp::StrictEq as u8, same)
+        };
+        assert_eq!(branch.status(), NativeComparisonStatus::Ok as u8);
+        assert!(branch.value());
+        assert_eq!(branch.diagnostic_len(), 0);
+        unsafe { phpc_native_array_free(left) };
+        unsafe { phpc_native_array_free(same) };
+
+        let left = phpc_native_array_empty();
+        let different = phpc_native_array_empty();
+        assert!(unsafe { phpc_native_array_append_scalar(different, phpc_native_int(1)) });
+        assert_native_comparison_ok(
+            "owned array strict non-identity",
+            unsafe {
+                phpc_native_array_compare_and_free(
+                    left,
+                    NativeComparisonOp::StrictNe as u8,
+                    different,
+                )
+            },
+            true,
+        );
+
+        let alias = phpc_native_array_empty();
+        let aliased_branch = unsafe {
+            phpc_native_array_compare_branch_and_free(
+                alias,
+                NativeComparisonOp::StrictEq as u8,
+                alias,
+            )
+        };
+        assert_eq!(aliased_branch.status(), NativeComparisonStatus::Ok as u8);
+        assert!(aliased_branch.value());
+        assert_eq!(aliased_branch.diagnostic_len(), 0);
+
+        let blocked_branch = unsafe {
+            phpc_native_array_compare_branch_and_free(
+                phpc_native_array_empty(),
+                NativeComparisonOp::LooseEq as u8,
+                phpc_native_array_empty(),
+            )
+        };
+        assert_eq!(
+            blocked_branch.status(),
+            NativeComparisonStatus::Blocked as u8
+        );
+        assert!(!blocked_branch.value());
+        assert!(blocked_branch.diagnostic_len() > 0);
+
+        assert_native_comparison_blocked(
+            "owned array invalid opcode",
+            unsafe {
+                phpc_native_array_compare_and_free(
+                    phpc_native_array_empty(),
+                    99,
+                    NativeArrayHandle::null(),
+                )
+            },
+            "unsupported comparison opcode",
+        );
+
+        let null_branch = unsafe {
+            phpc_native_array_compare_branch_and_free(
+                NativeArrayHandle::null(),
+                NativeComparisonOp::StrictEq as u8,
+                phpc_native_array_empty(),
+            )
+        };
+        assert_eq!(null_branch.status(), NativeComparisonStatus::Blocked as u8);
+        assert!(!null_branch.value());
+        assert!(null_branch.diagnostic_len() > 0);
     }
 
     #[test]
