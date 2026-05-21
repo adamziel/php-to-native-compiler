@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 17:45 CEST
+Updated: 2026-05-21 17:59 CEST
 Evaluation marker: 20260521T153122Z
-Final refresh: 20260521T153249Z
+Final refresh: 20260521T155900Z
 
 This is a high-level roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local work is candidate material only until selected, gated, committed, and pushed.
 
@@ -22,10 +22,10 @@ Broad integrated verification            [###-----------------] 13%
 
 ## Current Primary State
 
-- Latest pushed primary semantic commit before this progress update: `d0e6ab37 native: consume comparison results through exit sink`.
-- Latest integrated semantic compiler/runtime commit: `d0e6ab37 native: consume comparison results through exit sink`.
+- Latest pushed primary semantic commit before this progress update: `d2411a58 runtime: centralize comparison outcomes`.
+- Latest integrated semantic compiler/runtime commit: `d2411a58 runtime: centralize comparison outcomes`.
 - Product-code state at evaluator refresh: `master` is at `origin/master` with product code clean before this `PROGRESS.md` update; this update is being handled separately from implementation work.
-- Latest integrated read: generated-C comparisons now consume owned runtime comparison results through the report/free/exit sink after capturing comparison truth, so blocked comparison diagnostics and canonical exit codes are handled by the shared comparison result ABI. Prior generated-C `ord()`/`crc32()`, `strlen()`, string-predicate, comparison byte-materialization, dynamic string-length, and string-truthiness consumers remain integrated.
+- Latest integrated read: runtime comparison evaluation now feeds shared native result and branch outcomes across scalar, native value, owned value/free, branch/free, array, and runtime value comparison consumers. Generated-C comparisons continue to consume owned runtime comparison results through the report/free/exit sink after capturing comparison truth, so blocked comparison diagnostics and canonical exit codes are handled by the shared comparison result ABI. Prior generated-C `ord()`/`crc32()`, `strlen()`, string-predicate, comparison byte-materialization, dynamic string-length, and string-truthiness consumers remain integrated.
 - Latest pushed integration-lane candidate: `4b7da81c native: consume array key materialization in generated C` on `lane/native-integration-batch`. It is not primary capability until merged, but it gates a generated-C/native-executable consumer of the shared array-key materialization ABI with executable coverage for variable string, integer, numeric-string, null, and embedded-NUL binary string keys.
 
 ## Grand Roadmap Position
@@ -43,6 +43,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 - [x] Materialize generated-C comparison string operands through a runtime byte-boundary with diagnostic results.
 - [x] Centralize generated-C comparison operand materialization failures behind a runtime-owned exit-code/report/free ABI.
 - [x] Consume owned generated-C comparison results through the runtime comparison report/free/exit sink.
+- [x] Share comparison evaluation outcomes across runtime result and branch consumers.
 - [x] Share runtime comparison operation/value-family dispatch across existing runtime and native comparison consumers.
 - [x] Share runtime arithmetic-number operand conversion across `+`, `-`, `*`, and `/` consumers.
 - [x] Route generated-C `strlen()` over lowerable values through the runtime string conversion result ABI.
@@ -64,7 +65,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, and byte-buffer results | 41% | 60% | Primary has string-conversion result/free ABI, generated-C `strlen()` consuming runtime value-to-string byte lengths, generated-C `str_starts_with()`/`str_ends_with()`/`str_contains()` consuming a shared value-to-string predicate ABI for lowerable values, generated-C `ord()`/`crc32()` consuming a shared string-int ABI, comparison byte materialization, runtime-shared string truthiness, generated-C tracked dynamic string lengths, and runtime numeric-string classification. Lanes have broader binary-safe string-result, debug-output, regex, concat/interpolation, and array-transform consumers. Exact diagnostics, non-UTF-8 string storage, and full backend parity remain limited. |
 | Call operation cleanup and ownership | 37% | 55% | Primary routes many call-result contexts through shared blockers across LLVM IR and generated C, including value operands in unary/binary/comparison/concat families and skipped later `echo` operands. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
-| Comparison/conversion semantics | 39% | 56% | Primary has comparison ABI consumers, runtime comparison operation/value-family sharing for loose equality/order and strict identity, shared arithmetic-number operand conversion for `+`, `-`, `*`, and `/`, canonical branch-result predicates/exit-code consumers, generated-C owned comparison-result consumers through the report/free/exit sink, centralized comparison operand materialization failure handling, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness. Lane conversion-source/pair work is promising but still candidate material. |
+| Comparison/conversion semantics | 40% | 56% | Primary has comparison ABI consumers, runtime comparison operation/value-family sharing for loose equality/order and strict identity, centralized comparison evaluation outcomes for native result and branch consumers, shared arithmetic-number operand conversion for `+`, `-`, `*`, and `/`, canonical branch-result predicates/exit-code consumers, generated-C owned comparison-result consumers through the report/free/exit sink, centralized comparison operand materialization failure handling, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness. Lane conversion-source/pair work is promising but still candidate material. |
 | Arrays, lvalues, references, COW | 12% | 50% | Lane-local generated-C owner-slot/value-root/RMW/reference-cell work is strong, especially undefined/null/false value-root routing. `lane/native-integration-batch` now has a pushed candidate that consumes the shared array-key materialization ABI from generated C for keyed literal writes, keyed assignments, and indexed echo reads, with linked executable coverage for variable, integer, numeric-string, null, and binary string keys. Primary still lacks full executable array lvalue, foreach, reference/COW, and ArrayAccess behavior. |
 | Symbols, globals, request state | 21% | 41% | Primary has symbol-table ABI helpers; lanes have expression-result consumers, frame-slot plans, request-state contracts, and stored call-result symbol boundaries. Full request/global/superglobal behavior and exact diagnostics remain early. |
 | Objects, properties, methods | 10% | 35% | Lane-local object/property receiver and operation blockers are more coherent, but primary has little broad executable object/property/method behavior beyond bounded blocker and seed paths. |
@@ -75,6 +76,8 @@ The project is moving from scattered backend rejection paths toward shared seman
 
 Recent pushed primary commits show useful movement from lane-local artifacts into `master`:
 
+- `d2411a58 runtime: centralize comparison outcomes`
+  - Routes comparison evaluation through shared semantic outcomes before native result or branch conversion, so scalar, native value, owned value/free, branch/free, array, and runtime value comparison consumers no longer duplicate result/blocker conversion paths.
 - `d0e6ab37 native: consume comparison results through exit sink`
   - Routes generated-C comparison lowering over the owned runtime comparison result ABI, captures truth before reporting/freeing, and consumes the shared report/free/exit-code sink across success and blocker families.
 - `851d540f native: route string-int builtins through conversion`
