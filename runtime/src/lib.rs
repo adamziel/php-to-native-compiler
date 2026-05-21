@@ -6187,38 +6187,33 @@ impl Value {
     }
 
     pub fn php_add(&self, other: &Value) -> RuntimeResult<Value> {
-        match (
-            self.to_arithmetic_number(ArithmeticOp::Add)?,
-            other.to_arithmetic_number(ArithmeticOp::Add)?,
-        ) {
-            (Number::Int(a), Number::Int(b)) => Ok(Value::Int(a.wrapping_add(b))),
-            (a, b) => Ok(Value::Float(a.as_float() + b.as_float())),
+        let operands = convert_binary_arithmetic_numbers(self, other, ArithmeticOp::Add)?;
+        match (operands.left, operands.right) {
+            (Number::Int(left), Number::Int(right)) => Ok(Value::Int(left.wrapping_add(right))),
+            (left, right) => Ok(Value::Float(left.as_float() + right.as_float())),
         }
     }
 
     pub fn php_sub(&self, other: &Value) -> RuntimeResult<Value> {
-        match (
-            self.to_arithmetic_number(ArithmeticOp::Subtract)?,
-            other.to_arithmetic_number(ArithmeticOp::Subtract)?,
-        ) {
-            (Number::Int(a), Number::Int(b)) => Ok(Value::Int(a.wrapping_sub(b))),
-            (a, b) => Ok(Value::Float(a.as_float() - b.as_float())),
+        let operands = convert_binary_arithmetic_numbers(self, other, ArithmeticOp::Subtract)?;
+        match (operands.left, operands.right) {
+            (Number::Int(left), Number::Int(right)) => Ok(Value::Int(left.wrapping_sub(right))),
+            (left, right) => Ok(Value::Float(left.as_float() - right.as_float())),
         }
     }
 
     pub fn php_mul(&self, other: &Value) -> RuntimeResult<Value> {
-        match (
-            self.to_arithmetic_number(ArithmeticOp::Multiply)?,
-            other.to_arithmetic_number(ArithmeticOp::Multiply)?,
-        ) {
-            (Number::Int(a), Number::Int(b)) => Ok(Value::Int(a.wrapping_mul(b))),
-            (a, b) => Ok(Value::Float(a.as_float() * b.as_float())),
+        let operands = convert_binary_arithmetic_numbers(self, other, ArithmeticOp::Multiply)?;
+        match (operands.left, operands.right) {
+            (Number::Int(left), Number::Int(right)) => Ok(Value::Int(left.wrapping_mul(right))),
+            (left, right) => Ok(Value::Float(left.as_float() * right.as_float())),
         }
     }
 
     pub fn php_div(&self, other: &Value) -> RuntimeResult<Value> {
-        let left = self.to_arithmetic_number(ArithmeticOp::Divide)?;
-        let right = other.to_arithmetic_number(ArithmeticOp::Divide)?;
+        let operands = convert_binary_arithmetic_numbers(self, other, ArithmeticOp::Divide)?;
+        let left = operands.left;
+        let right = operands.right;
         if right.as_float() == 0.0 {
             return Err(RuntimeError::invalid_arithmetic(
                 ArithmeticOp::Divide,
@@ -6806,7 +6801,7 @@ fn comparison_blocker_for_family(
         .or_else(|| ComparisonValueFamily::for_value(right).loose_comparison_blocker())
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Number {
     Int(i64),
     Float(f64),
@@ -6826,6 +6821,22 @@ impl Number {
             Number::Float(value) => format_php_float(value),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ArithmeticNumberOperands {
+    left: Number,
+    right: Number,
+}
+
+fn convert_binary_arithmetic_numbers(
+    left: &Value,
+    right: &Value,
+    operation: ArithmeticOp,
+) -> RuntimeResult<ArithmeticNumberOperands> {
+    let left = left.to_arithmetic_number(operation)?;
+    let right = right.to_arithmetic_number(operation)?;
+    Ok(ArithmeticNumberOperands { left, right })
 }
 
 fn compare_numbers(left: Number, right: Number) -> Option<Ordering> {
@@ -8647,6 +8658,135 @@ mod tests {
                 .unwrap(),
             Value::Float(0.75)
         );
+    }
+
+    #[test]
+    fn binary_arithmetic_number_operands_feed_arithmetic_consumers() {
+        fn add(left: &Value, right: &Value) -> RuntimeResult<Value> {
+            left.php_add(right)
+        }
+
+        fn subtract(left: &Value, right: &Value) -> RuntimeResult<Value> {
+            left.php_sub(right)
+        }
+
+        fn multiply(left: &Value, right: &Value) -> RuntimeResult<Value> {
+            left.php_mul(right)
+        }
+
+        fn divide(left: &Value, right: &Value) -> RuntimeResult<Value> {
+            left.php_div(right)
+        }
+
+        type ArithmeticConsumer = fn(&Value, &Value) -> RuntimeResult<Value>;
+
+        let success_cases = [
+            (
+                "numeric string and bool",
+                Value::String(" 6 ".to_string()),
+                Value::Bool(true),
+                ArithmeticNumberOperands {
+                    left: Number::Int(6),
+                    right: Number::Int(1),
+                },
+                Value::Int(7),
+                Value::Int(5),
+                Value::Int(6),
+                Value::Int(6),
+            ),
+            (
+                "float and numeric string",
+                Value::Float(7.5),
+                Value::String("2.5".to_string()),
+                ArithmeticNumberOperands {
+                    left: Number::Float(7.5),
+                    right: Number::Float(2.5),
+                },
+                Value::Float(10.0),
+                Value::Float(5.0),
+                Value::Float(18.75),
+                Value::Float(3.0),
+            ),
+            (
+                "null and int",
+                Value::Null,
+                Value::Int(4),
+                ArithmeticNumberOperands {
+                    left: Number::Int(0),
+                    right: Number::Int(4),
+                },
+                Value::Int(4),
+                Value::Int(-4),
+                Value::Int(0),
+                Value::Int(0),
+            ),
+        ];
+
+        for (label, left, right, operands, added, subtracted, multiplied, divided) in success_cases
+        {
+            assert_eq!(
+                convert_binary_arithmetic_numbers(&left, &right, ArithmeticOp::Add).unwrap(),
+                operands,
+                "shared arithmetic operands for {label}",
+            );
+            assert_eq!(left.php_add(&right).unwrap(), added, "add for {label}");
+            assert_eq!(
+                left.php_sub(&right).unwrap(),
+                subtracted,
+                "subtract for {label}",
+            );
+            assert_eq!(
+                left.php_mul(&right).unwrap(),
+                multiplied,
+                "multiply for {label}",
+            );
+            assert_eq!(left.php_div(&right).unwrap(), divided, "divide for {label}");
+        }
+
+        let consumers: [(ArithmeticOp, ArithmeticConsumer); 4] = [
+            (ArithmeticOp::Add, add),
+            (ArithmeticOp::Subtract, subtract),
+            (ArithmeticOp::Multiply, multiply),
+            (ArithmeticOp::Divide, divide),
+        ];
+        let blocker_cases = [
+            (
+                "left non-numeric string wins before right array",
+                Value::String("abc".to_string()),
+                Value::Array(PhpArray::new()),
+                "string is not numeric",
+            ),
+            (
+                "right array blocker after left int succeeds",
+                Value::Int(1),
+                Value::Array(PhpArray::new()),
+                "arrays are not numeric",
+            ),
+            (
+                "left resource wins before right non-numeric string",
+                Value::Resource(9),
+                Value::String("abc".to_string()),
+                "resources are not numeric",
+            ),
+        ];
+
+        for (label, left, right, reason) in blocker_cases {
+            assert_eq!(
+                convert_binary_arithmetic_numbers(&left, &right, ArithmeticOp::Add)
+                    .unwrap_err()
+                    .message(),
+                format!("invalid arithmetic for +: {reason}"),
+                "shared arithmetic blocker for {label}",
+            );
+
+            for (operation, consumer) in consumers {
+                assert_eq!(
+                    consumer(&left, &right).unwrap_err().message(),
+                    format!("invalid arithmetic for {operation}: {reason}"),
+                    "runtime {operation} blocker for {label}",
+                );
+            }
+        }
     }
 
     #[test]
