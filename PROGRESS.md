@@ -1,31 +1,31 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 20:20 CEST
+Updated: 2026-05-21 20:27 CEST
 Evaluation marker: 20260521T180145Z
-Final refresh: 20260521T182000Z
+Final refresh: 20260521T182700Z
 
 This is a distilled roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local and dirty-worktree work is candidate material until selected, gated, committed, and pushed.
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **25%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **26%**
 
 ```
 Generalized runtime/ABI foundations      [##############------] 70%
 Compiler/backend consumers               [############--------] 61%
-Executable generalized PHP semantics     [#####---------------] 28%
+Executable generalized PHP semantics     [######--------------] 29%
 Arrays, references, COW, lvalues         [####----------------] 19%
 Objects, properties, methods             [##------------------] 10%
 Diagnostics/control-flow composition     [###-----------------] 17%
-Broad integrated verification            [###-----------------] 16%
+Broad integrated verification            [###-----------------] 17%
 ```
 
 ## Current Primary State
 
-- Primary git HEAD at this refresh: `ac2096e2 runtime: add array entry snapshot ABI`.
+- Primary git HEAD at this refresh: `1f4c2e2f runtime: route array search through comparison contract`.
 - Primary semantic HEAD before the evaluator's `PROGRESS.md` edit: `a93f3bb5 runtime: centralize value string semantics`.
-- Latest primary-integrated semantic commit: `ac2096e2 runtime: add array entry snapshot ABI`.
-- Product-code state at this refresh: array entry snapshot and fresh reference-cell ABI helpers are committed and pushed after the evaluator report; this `PROGRESS.md` refresh records that newer semantic baseline.
+- Latest primary-integrated semantic commit: `1f4c2e2f runtime: route array search through comparison contract`.
+- Product-code state at this refresh: array search/filter builtins now consume the shared comparison operation contract for strict array/object identity and preserve loose array/object blockers; this `PROGRESS.md` refresh records that newer semantic baseline.
 - Final verification caveat: progress metadata commits `2c4ea27e`, `2c654ccc`, and this refresh are management metadata and not counted as compiler semantic progress.
 - Review caveat: supervisor dashboard evidence lagged the latest primary semantic commit by this review; primary git and `primary-integrator.status.md` were treated as source of truth.
 - Resource caveat: `/dev/shm` is healthy at about 14G free in the live check, while `/home` has about 269G free.
@@ -53,6 +53,7 @@ The project has moved from scattered backend rejection paths toward reusable run
 - [x] Add branch/free runtime ABI helpers for array comparison results so array comparison diagnostics, branch results, and handle cleanup share the same comparison outcome contract.
 - [x] Centralize full-value PHP string-form semantics for runtime echo/scalar/native conversion consumers.
 - [x] Add a generalized runtime array-entry snapshot ABI with key metadata, key/value cloning, fresh reference-cell handles, and cleanup helpers for future foreach/lvalue/reference consumers.
+- [x] Route `array_keys()`, `in_array()`, and `array_search()` array/object strict identity through the shared comparison operation contract while keeping unsupported loose array/object comparison blockers centralized.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
 - [ ] Generalize value/result ownership across returns, call args, conditions, branch joins, discarded temporaries, stdout, and cleanup.
 - [ ] Implement full array lvalue/RMW semantics, writable roots, foreach/by-ref foreach, ArrayAccess/object/resource offsets, and COW/reference behavior.
@@ -67,16 +68,18 @@ The project has moved from scattered backend rejection paths toward reusable run
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, and byte-buffer results | 47% | 70% | Primary has string-conversion result/free ABI, generated-C `strlen()`, string predicates, `ord()`/`crc32()`, `strcasecmp()`, `substr_count()`, `levenshtein()`, two-argument `similar_text()`, comparison byte materialization, string truthiness, dynamic string lengths, numeric-string classification, shared runtime value-to-int conversion for selected generated-C operands, and a centralized full-value string-form analyzer feeding echo/scalar/native string consumers. Lane-local work now includes byte-preserving formatter/text, byte numeric parsing, path helpers, and string-result surfaces, but exact diagnostics, object/resource/Stringable parity, non-UTF-8 policy, LLVM parity, and full warning/recovery parity remain limited. |
 | Call operation cleanup and ownership | 37% | 57% | Primary routes many call-result contexts through shared blockers. Lanes centralize call cleanup/access/diagnostic families and now include a reusable callable-signature contract feeding default cleanup, by-ref blockers, variadic blockers, and return-by-reference blockers. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
-| Comparison/conversion semantics | 46% | 62% | Primary has comparison ABI consumers, centralized outcomes, arithmetic conversion sharing, report/free/exit sinks, byte materialization, comparison operand materialization with owned diagnostics, numeric-string classification, string truthiness, native value-to-int conversion for selected generated-C consumers, array comparison branch/free runtime ABI helpers, and now a reusable comparison operation validation ABI consumed by scalar, native-value, operand, branch, and array comparison paths. Lane-local work adds handle-blocker metadata and broader scalar coercion/conversion result sharing. Leading-numeric recovery, warning ordering, dynamic native `is_numeric()` lowering, generated-C array comparison consumers, and broader conversion-source/pair work are still candidate or blocked material. |
+| Comparison/conversion semantics | 47% | 62% | Primary has comparison ABI consumers, centralized outcomes, arithmetic conversion sharing, report/free/exit sinks, byte materialization, comparison operand materialization with owned diagnostics, numeric-string classification, string truthiness, native value-to-int conversion for selected generated-C consumers, array comparison branch/free runtime ABI helpers, reusable comparison operation validation consumed by scalar, native-value, operand, branch, and array comparison paths, and now public runtime consumers for `array_keys()`, `in_array()`, and `array_search()` strict array/object identity. Lane-local work adds handle-blocker metadata and broader scalar coercion/conversion result sharing. Loose array/object comparison semantics, leading-numeric recovery, warning ordering, dynamic native `is_numeric()` lowering, generated-C array comparison consumers, and broader conversion-source/pair work are still candidate or blocked material. |
 | Arrays, lvalues, references, COW | 19% | 58% | Primary consumes runtime array-key materialization for keyed writes, keyed assignments, indexed echo reads, a runtime value-operation result ABI for generated-C array key/value consumers, shared array comparison result/branch/free runtime helpers, and now an array-entry snapshot ABI with key/value clone and fresh reference-cell handles. Lanes still have stronger RMW/update-result, `??=`, direct-owner, value-root, owner-slot read/mutation classifiers, reference-cell, path-preflight, foreach/result, and generated-C lvalue candidates. Primary still lacks full executable array lvalues, foreach/by-ref foreach, nested writes, references/COW sharing semantics, ArrayAccess, generated-C array comparison consumers, and exact warnings. |
 | Symbols, globals, request state | 24% | 48% | Primary has symbol-table ABI helpers plus a request-state/superglobal value snapshot ABI covering request bags, key coercion status, value/array/presence result shape, cleanup, and pointer-width ABI probes. Lanes have expression-result consumer classification, selected-branch/result handoff, root write value-flow contracts, slot plans, and immutable snapshot consumers. Mutable request/global/superglobal behavior, symbol-table integration, writes/unset, repeated calls, references/COW, and exact diagnostics remain early. |
 | Objects, properties, methods | 10% | 38% | Lane-local object/property receiver, class-policy, declaration-body blocker, metadata, and stateful operation routes are more coherent, but primary still has little broad executable object/property/method behavior. |
 | Diagnostics and control-flow cleanup | 17% | 51% | Severity tags and selected blockers are integrated. Lanes now carry a broader diagnostic-result/family contract with ordered entries, report/free sinks, and producers for conversion, arrays, offsets, undefined variables, invalid callables, and non-object property reads, plus termination/branch-merge blocker classification. Exact warning/recovery order and executable cleanup remain broad blockers. |
 | Filesystem/path builtins and request state | 15% | 33% | Primary has a shared operation-tagged boundary for generated-C filesystem path/state calls across multiple builtin families and now has a request-state/superglobal snapshot ABI. Filesystem work still deliberately reports blockers/placeholder values instead of real filesystem semantics; request-state work is snapshot/read ABI infrastructure, not full mutable superglobal semantics. Stat metadata, cache mutation, stream wrappers, warning-plus-false recovery, writes/unset, request/global separation, and exact diagnostics remain open. |
-| Broad composition verification | 15% | 31% | Recent primary batches have focused runtime/source/linked executable gates, including full native-link checks for the array value-operation consumer and comparison operand ABI. Broad differential PHP composition coverage remains thin relative to the number of runtime/compiler contracts being introduced. |
+| Broad composition verification | 17% | 31% | Recent primary batches have focused runtime/source/linked executable gates, including full native-link checks for the array value-operation consumer and comparison operand ABI, plus public interpreter tests for `array_keys()`, `in_array()`, and `array_search()` over strict array/object identity. Broad differential PHP composition coverage remains thin relative to the number of runtime/compiler contracts being introduced. |
 
 ## Recent Primary-Integrated Work
 
+- `1f4c2e2f runtime: route array search through comparison contract`
+  - Routes `array_keys()`, `in_array()`, and `array_search()` matching through one shared runtime comparison helper, allowing strict array and object identity comparisons to use the existing generalized comparison operation path. Loose array/object comparisons still report centralized blockers. Focused public tests cover all three builtins with array and object identity; generated-C/LLVM consumers, loose array/object comparison semantics, exact warnings, and broader array comparison parity remain open.
 - `ac2096e2 runtime: add array entry snapshot ABI`
   - Adds a reusable `NativeArrayEntrySnapshotHandle`, array-key metadata, snapshot length/key/string/value clone helpers, key/value reference-clone helpers, and reference value/set/free helpers backed by `PhpReferenceCell`. This is generalized runtime infrastructure for future foreach, array lvalue, and reference/COW consumers, but it is not yet wired through compiler lowering or generated-C/LLVM execution for full by-value/by-reference foreach or shared array mutation semantics.
 - `cf6f8d21 native: validate comparisons through operation ABI`
@@ -123,9 +126,9 @@ The product is still boundary-heavy. Many changes make unsupported PHP fail thro
 
 ## Near-Term Steering
 
-1. Count `ac2096e2` as the latest integrated semantic baseline.
+1. Count `1f4c2e2f` as the latest integrated semantic baseline.
 2. Keep preferring executable generated-C/LLVM consumers of existing ABI surfaces over pure blocker or diagnostic vocabulary.
-3. Next high-value candidates are generated-C consumers of the value string semantics boundary, generated-C consumers of the request-state snapshot ABI, generated-C consumers of the array comparison branch/free ABI, compiler consumers of the new array-entry snapshot ABI for generalized foreach/lvalue paths, narrow string-result execution, array RMW/lvalue behavior, or broader differential composition gates around the value-operation path.
+3. Next high-value candidates are generated-C consumers of the value string semantics boundary, generated-C consumers of the request-state snapshot ABI, generated-C consumers of the array comparison branch/free ABI, compiler consumers of the new array-entry snapshot ABI for generalized foreach/lvalue paths, narrow string-result execution, array RMW/lvalue behavior, loose array/object comparison semantics through the same comparison contract, or broader differential composition gates around the value-operation path.
 4. Keep filesystem work honest: current primary work centralizes blockers; it does not yet implement real stream/stat/cache/current-directory semantics.
 5. Keep `/dev/shm` above the 10-12G free warning band before primary gates; use disk-backed targets for broad checks when lane builds are active.
 6. Add broader differential composition checks around the families already touched by primary: comparisons, numeric strings, string conversions/results, array keys/RMW, call-result cleanup, and diagnostics.
