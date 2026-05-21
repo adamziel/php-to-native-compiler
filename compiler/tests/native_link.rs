@@ -1093,6 +1093,8 @@ const GENERALIZED_ARRAY_KEY_SOURCE: &str = "<?php\n$slot = \"slot\";\n$two = 2;\
 
 const NATIVE_VALUE_OPERATION_ARRAY_SOURCE: &str = "<?php\n$a = [];\n$a[\"s\" . \"lot\"] = (2 + 3) * (5 - 1);\n$a[(1 << 2) + 1] = \"fi\" . \"ve\";\n$a[\"neg\"] = -(\"6\" - 2);\necho $a[\"slot\"], \"|\", $a[5], \"|\", $a[\"neg\"];\n";
 
+const NATIVE_VALUE_COMPARE_CAST_TYPE_NAME_SOURCE: &str = "<?php\n$a = [];\n$a[(int)\"5\"] = (string)((2 + 3) > 4);\n$a[(int)(3 <= 2)] = get_debug_type((string)123);\n$a[(float)\"3\"] = gettype((float)\"3.5\");\necho $a[5], \"|\", $a[0], \"|\", $a[3];\n";
+
 #[test]
 fn native_executable_c_source_routes_array_key_and_value_expressions_through_value_result_abi() {
     let program = parse(NATIVE_VALUE_OPERATION_ARRAY_SOURCE).unwrap();
@@ -1182,6 +1184,102 @@ fn emit_exe_links_and_runs_native_value_result_array_key_and_value_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"20|five|-4");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn native_executable_c_source_routes_compare_cast_and_type_name_results_through_value_result_abi() {
+    let program = parse(NATIVE_VALUE_COMPARE_CAST_TYPE_NAME_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    for declaration in [
+        "extern phpc_NativeValueOperationResult phpc_native_value_compare_result",
+        "extern phpc_NativeValueOperationResult phpc_native_value_cast_result",
+        "extern phpc_NativeValueOperationResult phpc_native_value_type_name_result",
+    ] {
+        assert!(source.contains(declaration), "{declaration}\n\n{source}");
+    }
+
+    for op in [
+        "PHPC_NATIVE_VALUE_COMPARISON_GT",
+        "PHPC_NATIVE_VALUE_COMPARISON_LE",
+        "PHPC_NATIVE_VALUE_CAST_STRING",
+        "PHPC_NATIVE_VALUE_CAST_INT",
+        "PHPC_NATIVE_VALUE_CAST_FLOAT",
+        "PHPC_NATIVE_VALUE_TYPE_NAME_GETTYPE",
+        "PHPC_NATIVE_VALUE_TYPE_NAME_DEBUG",
+    ] {
+        assert!(source.contains(op), "{op}\n\n{source}");
+    }
+
+    assert!(
+        source
+            .matches(" = phpc_native_value_compare_result(")
+            .count()
+            >= 2,
+        "{source}"
+    );
+    assert!(
+        source.matches(" = phpc_native_value_cast_result(").count() >= 6,
+        "{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_type_name_result(")
+            .count()
+            >= 2,
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_to_array_key")
+            && source.contains("phpc_native_array_insert_key_value_with_diagnostic"),
+        "compare/cast/type-name results should feed the existing array key/value boundaries:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_compare_cast_type_name_result_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php =
+        native_link_output_path("native_compare_cast_type_name_result").with_extension("php");
+    fs::write(&temp_php, NATIVE_VALUE_COMPARE_CAST_TYPE_NAME_SOURCE)
+        .expect("write native compare/cast/type-name value-result fixture");
+    let output_path = native_link_output_path("native_compare_cast_type_name_result");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1|string|double");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

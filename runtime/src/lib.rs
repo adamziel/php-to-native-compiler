@@ -167,6 +167,19 @@ const NATIVE_VALUE_BINARY_BITWISE_OR: u8 = 7;
 const NATIVE_VALUE_BINARY_BITWISE_XOR: u8 = 8;
 const NATIVE_VALUE_BINARY_SHIFT_LEFT: u8 = 9;
 const NATIVE_VALUE_BINARY_SHIFT_RIGHT: u8 = 10;
+const NATIVE_VALUE_COMPARISON_EQ: u8 = 0;
+const NATIVE_VALUE_COMPARISON_NE: u8 = 1;
+const NATIVE_VALUE_COMPARISON_LT: u8 = 2;
+const NATIVE_VALUE_COMPARISON_LE: u8 = 3;
+const NATIVE_VALUE_COMPARISON_GT: u8 = 4;
+const NATIVE_VALUE_COMPARISON_GE: u8 = 5;
+const NATIVE_VALUE_CAST_STRING: u8 = 0;
+const NATIVE_VALUE_CAST_INT: u8 = 1;
+const NATIVE_VALUE_CAST_BOOL: u8 = 2;
+const NATIVE_VALUE_CAST_FLOAT: u8 = 3;
+const NATIVE_VALUE_CAST_ARRAY: u8 = 4;
+const NATIVE_VALUE_TYPE_NAME_GETTYPE: u8 = 0;
+const NATIVE_VALUE_TYPE_NAME_DEBUG: u8 = 1;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9520,6 +9533,344 @@ fn native_value_binary_blocker(left: &Value, right: &Value) -> Option<String> {
     ))
 }
 
+/// # Safety
+///
+/// `left` and `right` must be null or value handles previously returned by the
+/// runtime ABI and not yet freed. Null handles are treated as PHP null. The
+/// result carries either a boolean value handle or a diagnostic explaining the
+/// unsupported semantic family.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_compare_result(
+    left: NativeValueHandle,
+    op: u8,
+    right: NativeValueHandle,
+) -> NativeValueOperationResult {
+    let Some(op) = native_value_comparison_op(op) else {
+        return NativeValueOperationResult::diagnostic(
+            "native value comparison operation tag is not supported",
+        );
+    };
+
+    let null_left = Value::Null;
+    let null_right = Value::Null;
+    let left = unsafe { left.as_ref() }.unwrap_or(&null_left);
+    let right = unsafe { right.as_ref() }.unwrap_or(&null_right);
+
+    if let Some(message) = native_value_comparison_blocker(left, right) {
+        return NativeValueOperationResult::diagnostic(message);
+    }
+
+    match left.php_cmp_checked(right, op) {
+        Ok(value) => NativeValueOperationResult::value(Value::Bool(value)),
+        Err(error) => NativeValueOperationResult::diagnostic(format!(
+            "native value comparison rejected by runtime comparison semantics: {}",
+            error.message()
+        )),
+    }
+}
+
+fn native_value_comparison_op(op: u8) -> Option<Comparison> {
+    Some(match op {
+        NATIVE_VALUE_COMPARISON_EQ => Comparison::Eq,
+        NATIVE_VALUE_COMPARISON_NE => Comparison::Ne,
+        NATIVE_VALUE_COMPARISON_LT => Comparison::Lt,
+        NATIVE_VALUE_COMPARISON_LE => Comparison::Le,
+        NATIVE_VALUE_COMPARISON_GT => Comparison::Gt,
+        NATIVE_VALUE_COMPARISON_GE => Comparison::Ge,
+        _ => return None,
+    })
+}
+
+fn native_value_comparison_blocker(left: &Value, right: &Value) -> Option<String> {
+    let unsupported = match (left, right) {
+        (Value::Array(_), _) | (_, Value::Array(_)) => "arrays",
+        (Value::Object(_), _)
+        | (_, Value::Object(_))
+        | (Value::Closure(_), _)
+        | (_, Value::Closure(_)) => "objects or closures",
+        (Value::Resource(_), _) | (_, Value::Resource(_)) => "resources",
+        _ => return None,
+    };
+
+    Some(format!(
+        "native value comparison rejects {unsupported} until the value-operation comparison boundary can model PHP array ordering, object comparison hooks, resource ordering, reference identity, cleanup ownership, and exact diagnostics"
+    ))
+}
+
+/// # Safety
+///
+/// `value` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. Null handles are treated as PHP null. The result
+/// carries either an owned value handle or a diagnostic explaining the
+/// unsupported semantic family.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_cast_result(
+    value: NativeValueHandle,
+    op: u8,
+) -> NativeValueOperationResult {
+    if !native_value_cast_op_is_supported(op) {
+        return NativeValueOperationResult::diagnostic(
+            "native value cast operation tag is not supported",
+        );
+    }
+
+    let null_value = Value::Null;
+    let value = unsafe { value.as_ref() }.unwrap_or(&null_value);
+
+    if let Some(message) = native_value_cast_blocker(value, op) {
+        return NativeValueOperationResult::diagnostic(message);
+    }
+
+    match native_value_cast_value(value, op) {
+        Ok(value) => NativeValueOperationResult::value(value),
+        Err(error) => NativeValueOperationResult::diagnostic(format!(
+            "native value cast rejected by runtime cast semantics: {}",
+            error.message()
+        )),
+    }
+}
+
+fn native_value_cast_op_is_supported(op: u8) -> bool {
+    matches!(
+        op,
+        NATIVE_VALUE_CAST_STRING
+            | NATIVE_VALUE_CAST_INT
+            | NATIVE_VALUE_CAST_BOOL
+            | NATIVE_VALUE_CAST_FLOAT
+            | NATIVE_VALUE_CAST_ARRAY
+    )
+}
+
+fn native_value_cast_value(value: &Value, op: u8) -> RuntimeResult<Value> {
+    match op {
+        NATIVE_VALUE_CAST_STRING => native_value_string_cast(value),
+        NATIVE_VALUE_CAST_INT => native_value_int_cast(value).map(Value::Int),
+        NATIVE_VALUE_CAST_BOOL => Ok(Value::Bool(value.is_truthy())),
+        NATIVE_VALUE_CAST_FLOAT => native_value_float_cast(value).map(Value::Float),
+        NATIVE_VALUE_CAST_ARRAY => native_value_array_cast(value).map(Value::Array),
+        _ => Err(RuntimeError::unsupported_call(
+            "native value cast",
+            format!("native value cast operation tag {op} is not supported"),
+        )),
+    }
+}
+
+fn native_value_string_cast(value: &Value) -> RuntimeResult<Value> {
+    match value {
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+            Ok(Value::String(value.echo_string()))
+        }
+        Value::Array(_) => Err(RuntimeError::unsupported_call(
+            "(string)",
+            "array-to-string cast warning behavior is not implemented",
+        )),
+        Value::Object(_) => Err(RuntimeError::unsupported_call(
+            "(string)",
+            "object __toString() and cast error behavior are not implemented",
+        )),
+        Value::Closure(_) => Err(RuntimeError::unsupported_call(
+            "(string)",
+            "Closure __toString() and cast error behavior are not implemented",
+        )),
+        Value::Resource(_) => Err(RuntimeError::unsupported_call(
+            "(string)",
+            "resource-to-string cast warning behavior is not implemented",
+        )),
+    }
+}
+
+fn native_value_int_cast(value: &Value) -> RuntimeResult<i64> {
+    match value {
+        Value::Null => Ok(0),
+        Value::Bool(value) => Ok(i64::from(*value)),
+        Value::Int(value) => Ok(*value),
+        Value::Float(value) => native_value_float_to_int(*value, "(int)"),
+        Value::String(value) => native_value_string_to_int(value),
+        Value::Array(_) => Err(RuntimeError::unsupported_call(
+            "(int)",
+            "array-to-int cast behavior is not implemented",
+        )),
+        Value::Object(_) => Err(RuntimeError::unsupported_call(
+            "(int)",
+            "object-to-int cast behavior is not implemented",
+        )),
+        Value::Closure(_) => Err(RuntimeError::unsupported_call(
+            "(int)",
+            "Closure object-to-int cast behavior is not implemented",
+        )),
+        Value::Resource(_) => Err(RuntimeError::unsupported_call(
+            "(int)",
+            "resource-to-int cast behavior is not implemented",
+        )),
+    }
+}
+
+fn native_value_float_cast(value: &Value) -> RuntimeResult<f64> {
+    match value {
+        Value::Null => Ok(0.0),
+        Value::Bool(value) => Ok(if *value { 1.0 } else { 0.0 }),
+        Value::Int(value) => Ok(*value as f64),
+        Value::Float(value) => Ok(*value),
+        Value::String(value) => native_value_string_to_float(value),
+        Value::Array(_) => Err(RuntimeError::unsupported_call(
+            "(float)",
+            "array-to-float cast behavior is not implemented",
+        )),
+        Value::Object(_) => Err(RuntimeError::unsupported_call(
+            "(float)",
+            "object-to-float cast behavior is not implemented",
+        )),
+        Value::Closure(_) => Err(RuntimeError::unsupported_call(
+            "(float)",
+            "Closure object-to-float cast behavior is not implemented",
+        )),
+        Value::Resource(_) => Err(RuntimeError::unsupported_call(
+            "(float)",
+            "resource-to-float cast behavior is not implemented",
+        )),
+    }
+}
+
+fn native_value_array_cast(value: &Value) -> RuntimeResult<PhpArray> {
+    match value {
+        Value::Null => Ok(PhpArray::new()),
+        Value::Array(value) => Ok(value.clone()),
+        Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+            let mut array = PhpArray::new();
+            array
+                .append(value.clone())
+                .expect("append into a fresh array should not fail");
+            Ok(array)
+        }
+        Value::Object(_) => Err(RuntimeError::unsupported_call(
+            "(array)",
+            "object-to-array cast property materialization is not implemented",
+        )),
+        Value::Closure(_) => Err(RuntimeError::unsupported_call(
+            "(array)",
+            "Closure object-to-array cast behavior is not implemented",
+        )),
+        Value::Resource(_) => Err(RuntimeError::unsupported_call(
+            "(array)",
+            "resource-to-array cast behavior is not implemented",
+        )),
+    }
+}
+
+fn native_value_string_to_int(value: &str) -> RuntimeResult<i64> {
+    match classify_php_numeric_string(value) {
+        PhpNumericStringClassification::Integer(value) => Ok(value),
+        PhpNumericStringClassification::Float(value) => native_value_float_to_int(value, "(int)"),
+        PhpNumericStringClassification::NonNumeric => Ok(0),
+        PhpNumericStringClassification::LeadingNumeric => Err(RuntimeError::unsupported_call(
+            "(int)",
+            "leading-numeric string cast warning/recovery behavior is not implemented",
+        )),
+    }
+}
+
+fn native_value_string_to_float(value: &str) -> RuntimeResult<f64> {
+    match classify_php_numeric_string(value) {
+        PhpNumericStringClassification::Integer(value) => Ok(value as f64),
+        PhpNumericStringClassification::Float(value) if value.is_finite() => Ok(value),
+        PhpNumericStringClassification::Float(_) => Err(RuntimeError::unsupported_call(
+            "(float)",
+            "non-finite float string cast behavior is not implemented",
+        )),
+        PhpNumericStringClassification::NonNumeric => Ok(0.0),
+        PhpNumericStringClassification::LeadingNumeric => Err(RuntimeError::unsupported_call(
+            "(float)",
+            "leading-numeric string cast warning/recovery behavior is not implemented",
+        )),
+    }
+}
+
+fn native_value_float_to_int(value: f64, callable: &'static str) -> RuntimeResult<i64> {
+    if !value.is_finite() || value < i64::MIN as f64 || value >= 9_223_372_036_854_775_808.0 {
+        return Err(RuntimeError::unsupported_call(
+            callable,
+            "non-finite or out-of-range float-to-int cast behavior is not implemented",
+        ));
+    }
+
+    Ok(value.trunc() as i64)
+}
+
+fn native_value_cast_blocker(value: &Value, op: u8) -> Option<String> {
+    if matches!(op, NATIVE_VALUE_CAST_BOOL) {
+        return None;
+    }
+
+    let unsupported = match (op, value) {
+        (NATIVE_VALUE_CAST_STRING, Value::Array(_)) => "array-to-string diagnostics",
+        (NATIVE_VALUE_CAST_STRING, Value::Object(_) | Value::Closure(_)) => {
+            "object __toString()/ArrayAccess coercion hooks"
+        }
+        (NATIVE_VALUE_CAST_STRING, Value::Resource(_)) => "resource-to-string diagnostics",
+        (NATIVE_VALUE_CAST_INT | NATIVE_VALUE_CAST_FLOAT, Value::Array(_)) => {
+            "array numeric cast diagnostics"
+        }
+        (NATIVE_VALUE_CAST_INT | NATIVE_VALUE_CAST_FLOAT, Value::Object(_) | Value::Closure(_)) => {
+            "object numeric cast hooks"
+        }
+        (NATIVE_VALUE_CAST_INT | NATIVE_VALUE_CAST_FLOAT, Value::Resource(_)) => {
+            "resource numeric casts"
+        }
+        (NATIVE_VALUE_CAST_ARRAY, Value::Object(_) | Value::Closure(_)) => {
+            "object property materialization"
+        }
+        (NATIVE_VALUE_CAST_ARRAY, Value::Resource(_)) => "resource array casts",
+        _ => return None,
+    };
+
+    Some(format!(
+        "native value cast rejects {unsupported} until the value-operation cast boundary can model PHP array/object/resource cast diagnostics, ArrayAccess/object hooks, copy-on-write/reference identity, cleanup ownership, and exact diagnostics"
+    ))
+}
+
+/// # Safety
+///
+/// `value` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. Null handles are treated as PHP null. The result
+/// carries either an owned PHP string value handle or a diagnostic explaining
+/// the unsupported semantic family.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_type_name_result(
+    value: NativeValueHandle,
+    kind: u8,
+) -> NativeValueOperationResult {
+    let null_value = Value::Null;
+    let value = unsafe { value.as_ref() }.unwrap_or(&null_value);
+    match native_value_type_name(value, kind) {
+        Ok(name) => NativeValueOperationResult::value(Value::String(name.to_string())),
+        Err(message) => NativeValueOperationResult::diagnostic(message),
+    }
+}
+
+fn native_value_type_name(value: &Value, kind: u8) -> Result<&'static str, String> {
+    match kind {
+        NATIVE_VALUE_TYPE_NAME_GETTYPE => Ok(value.gettype_name()),
+        NATIVE_VALUE_TYPE_NAME_DEBUG => native_value_debug_type_name(value),
+        _ => Err(format!(
+            "native value type-name operation tag {kind} is not supported"
+        )),
+    }
+}
+
+fn native_value_debug_type_name(value: &Value) -> Result<&'static str, String> {
+    match value {
+        Value::Object(_) | Value::Closure(_) => Err(
+            "native value get_debug_type rejects object debug names until native class metadata, closure names, object handles, copy-on-write/reference identity, cleanup ownership, and exact diagnostics exist"
+                .to_string(),
+        ),
+        Value::Resource(_) => Err(
+            "native value get_debug_type rejects resource debug names until native resource type names, resource lifecycle state, cleanup ownership, and exact diagnostics exist"
+                .to_string(),
+        ),
+        _ => Ok(value.type_name()),
+    }
+}
+
 fn bitwise_strings(
     left: &str,
     right: &str,
@@ -10250,6 +10601,144 @@ mod tests {
         unsafe { phpc_native_value_free(suffix) };
         unsafe { phpc_native_value_free(divisor) };
         unsafe { phpc_native_value_free(string_number) };
+        unsafe { phpc_native_value_free(int_value) };
+    }
+
+    #[test]
+    fn native_value_operation_results_cover_compare_cast_and_type_names() {
+        let int_value = phpc_native_value_from_scalar(phpc_native_int(7));
+        let numeric_string = NativeValueHandle::from_value(Value::String("7".to_string()));
+        let smaller_value = phpc_native_value_from_scalar(phpc_native_int(3));
+        let string_float = NativeValueHandle::from_value(Value::String("3.5".to_string()));
+        let string_zero = NativeValueHandle::from_value(Value::String("0".to_string()));
+        let array_value = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let resource_value = NativeValueHandle::from_value(Value::Resource(9));
+
+        let equal = unsafe {
+            phpc_native_value_compare_result(int_value, NATIVE_VALUE_COMPARISON_EQ, numeric_string)
+        };
+        assert!(equal.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(equal.value), b"1");
+        unsafe { phpc_native_value_operation_result_free(equal) };
+
+        let greater = unsafe {
+            phpc_native_value_compare_result(int_value, NATIVE_VALUE_COMPARISON_GT, smaller_value)
+        };
+        assert!(greater.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(greater.value), b"1");
+        unsafe { phpc_native_value_operation_result_free(greater) };
+
+        let int_cast =
+            unsafe { phpc_native_value_cast_result(string_float, NATIVE_VALUE_CAST_INT) };
+        assert!(int_cast.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(int_cast.value), b"3");
+        unsafe { phpc_native_value_operation_result_free(int_cast) };
+
+        let float_cast =
+            unsafe { phpc_native_value_cast_result(string_float, NATIVE_VALUE_CAST_FLOAT) };
+        assert!(float_cast.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(float_cast.value), b"3.5");
+        unsafe { phpc_native_value_operation_result_free(float_cast) };
+
+        let string_cast =
+            unsafe { phpc_native_value_cast_result(int_value, NATIVE_VALUE_CAST_STRING) };
+        assert!(string_cast.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(string_cast.value), b"7");
+        unsafe { phpc_native_value_operation_result_free(string_cast) };
+
+        let false_cast =
+            unsafe { phpc_native_value_cast_result(string_zero, NATIVE_VALUE_CAST_BOOL) };
+        assert!(false_cast.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(false_cast.value), b"");
+        unsafe { phpc_native_value_operation_result_free(false_cast) };
+
+        let null_array_cast = unsafe {
+            phpc_native_value_cast_result(NativeValueHandle::null(), NATIVE_VALUE_CAST_ARRAY)
+        };
+        assert!(null_array_cast.succeeded());
+        assert!(matches!(
+            unsafe { null_array_cast.value.as_ref() },
+            Some(Value::Array(array)) if array.is_empty()
+        ));
+        unsafe { phpc_native_value_operation_result_free(null_array_cast) };
+
+        let gettype_null = unsafe {
+            phpc_native_value_type_name_result(
+                NativeValueHandle::null(),
+                NATIVE_VALUE_TYPE_NAME_GETTYPE,
+            )
+        };
+        assert!(gettype_null.succeeded());
+        assert_eq!(
+            native_value_echo_bytes_for_test(gettype_null.value),
+            b"NULL"
+        );
+        unsafe { phpc_native_value_operation_result_free(gettype_null) };
+
+        let debug_array = unsafe {
+            phpc_native_value_type_name_result(array_value, NATIVE_VALUE_TYPE_NAME_DEBUG)
+        };
+        assert!(debug_array.succeeded());
+        assert_eq!(
+            native_value_echo_bytes_for_test(debug_array.value),
+            b"array"
+        );
+        unsafe { phpc_native_value_operation_result_free(debug_array) };
+
+        let array_comparison = unsafe {
+            phpc_native_value_compare_result(array_value, NATIVE_VALUE_COMPARISON_EQ, int_value)
+        };
+        assert_eq!(array_comparison.tag, NativeValueOperationResultTag::Error);
+        assert!(
+            native_diagnostic_message_for_test(array_comparison.diagnostic)
+                .contains("value-operation comparison boundary")
+        );
+        unsafe { phpc_native_value_operation_result_free(array_comparison) };
+
+        let resource_cast =
+            unsafe { phpc_native_value_cast_result(resource_value, NATIVE_VALUE_CAST_FLOAT) };
+        assert_eq!(resource_cast.tag, NativeValueOperationResultTag::Error);
+        assert!(native_diagnostic_message_for_test(resource_cast.diagnostic).contains("resource"));
+        unsafe { phpc_native_value_operation_result_free(resource_cast) };
+
+        let resource_type = unsafe {
+            phpc_native_value_type_name_result(resource_value, NATIVE_VALUE_TYPE_NAME_DEBUG)
+        };
+        assert_eq!(resource_type.tag, NativeValueOperationResultTag::Error);
+        assert!(native_diagnostic_message_for_test(resource_type.diagnostic)
+            .contains("resource debug names"));
+        unsafe { phpc_native_value_operation_result_free(resource_type) };
+
+        let bad_comparison = unsafe { phpc_native_value_compare_result(int_value, 255, int_value) };
+        assert_eq!(bad_comparison.tag, NativeValueOperationResultTag::Error);
+        assert_eq!(
+            native_diagnostic_message_for_test(bad_comparison.diagnostic),
+            "native value comparison operation tag is not supported"
+        );
+        unsafe { phpc_native_value_operation_result_free(bad_comparison) };
+
+        let bad_cast = unsafe { phpc_native_value_cast_result(int_value, 255) };
+        assert_eq!(bad_cast.tag, NativeValueOperationResultTag::Error);
+        assert_eq!(
+            native_diagnostic_message_for_test(bad_cast.diagnostic),
+            "native value cast operation tag is not supported"
+        );
+        unsafe { phpc_native_value_operation_result_free(bad_cast) };
+
+        let bad_type_name = unsafe { phpc_native_value_type_name_result(int_value, 255) };
+        assert_eq!(bad_type_name.tag, NativeValueOperationResultTag::Error);
+        assert_eq!(
+            native_diagnostic_message_for_test(bad_type_name.diagnostic),
+            "native value type-name operation tag 255 is not supported"
+        );
+        unsafe { phpc_native_value_operation_result_free(bad_type_name) };
+
+        unsafe { phpc_native_value_free(resource_value) };
+        unsafe { phpc_native_value_free(array_value) };
+        unsafe { phpc_native_value_free(string_zero) };
+        unsafe { phpc_native_value_free(string_float) };
+        unsafe { phpc_native_value_free(smaller_value) };
+        unsafe { phpc_native_value_free(numeric_string) };
         unsafe { phpc_native_value_free(int_value) };
     }
 

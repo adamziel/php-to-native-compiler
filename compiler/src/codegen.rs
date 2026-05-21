@@ -3,8 +3,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, ClassMember, Expr, ForAction, FunctionDecl, FunctionParam,
-    Program, ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassMember, Expr, ForAction, FunctionDecl,
+    FunctionParam, Program, ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
@@ -579,13 +579,89 @@ fn native_value_binary_op_tag(op: BinaryOp) -> Option<&'static str> {
     }
 }
 
+fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
+    match op {
+        BinaryOp::Eq => Some("PHPC_NATIVE_VALUE_COMPARISON_EQ"),
+        BinaryOp::Ne => Some("PHPC_NATIVE_VALUE_COMPARISON_NE"),
+        BinaryOp::Lt => Some("PHPC_NATIVE_VALUE_COMPARISON_LT"),
+        BinaryOp::Le => Some("PHPC_NATIVE_VALUE_COMPARISON_LE"),
+        BinaryOp::Gt => Some("PHPC_NATIVE_VALUE_COMPARISON_GT"),
+        BinaryOp::Ge => Some("PHPC_NATIVE_VALUE_COMPARISON_GE"),
+        BinaryOp::Add
+        | BinaryOp::Sub
+        | BinaryOp::Mul
+        | BinaryOp::Div
+        | BinaryOp::Mod
+        | BinaryOp::Concat
+        | BinaryOp::StrictEq
+        | BinaryOp::StrictNe
+        | BinaryOp::NullCoalesce
+        | BinaryOp::LogicalAnd
+        | BinaryOp::LogicalOr
+        | BinaryOp::LogicalXor
+        | BinaryOp::BitwiseAnd
+        | BinaryOp::BitwiseOr
+        | BinaryOp::BitwiseXor
+        | BinaryOp::ShiftLeft
+        | BinaryOp::ShiftRight => None,
+    }
+}
+
+fn native_value_cast_op_tag(kind: CastKind) -> &'static str {
+    match kind {
+        CastKind::String => "PHPC_NATIVE_VALUE_CAST_STRING",
+        CastKind::Int => "PHPC_NATIVE_VALUE_CAST_INT",
+        CastKind::Bool => "PHPC_NATIVE_VALUE_CAST_BOOL",
+        CastKind::Float => "PHPC_NATIVE_VALUE_CAST_FLOAT",
+        CastKind::Array => "PHPC_NATIVE_VALUE_CAST_ARRAY",
+    }
+}
+
+fn native_value_type_name_tag(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "gettype" => Some("PHPC_NATIVE_VALUE_TYPE_NAME_GETTYPE"),
+        "get_debug_type" => Some("PHPC_NATIVE_VALUE_TYPE_NAME_DEBUG"),
+        _ => None,
+    }
+}
+
+fn native_value_result_expr_call_operation(
+    expr: &Expr,
+    blocker: NativeCallBlocker,
+) -> Option<NativeCallOperation> {
+    match expr {
+        Expr::Unary { op, expr, .. } if native_value_unary_op_tag(*op).is_some() => {
+            native_value_result_expr_call_operation(expr, blocker)
+        }
+        Expr::Binary {
+            left, op, right, ..
+        } if native_value_binary_op_tag(*op).is_some()
+            || native_value_comparison_op_tag(*op).is_some() =>
+        {
+            native_value_result_expr_call_operation(left, blocker)
+                .or_else(|| native_value_result_expr_call_operation(right, blocker))
+        }
+        Expr::Cast { expr, .. } => native_value_result_expr_call_operation(expr, blocker),
+        Expr::Call { name, args, span } if native_value_type_name_tag(name).is_some() => {
+            let [arg] = args.as_slice() else {
+                return Some(NativeCallOperation::direct_named_value(*span, blocker));
+            };
+            native_value_result_expr_call_operation(arg, blocker)
+        }
+        _ => native_expr_call_result_operation(expr, blocker),
+    }
+}
+
 fn native_statement_assignment_rhs_call_operation(
     target: &AssignTarget,
     expr: &Expr,
 ) -> Option<NativeCallOperation> {
     match target {
         AssignTarget::Variable { .. } => None,
-        _ => native_statement_operand_call_result_operation(expr),
+        _ => native_value_result_expr_call_operation(
+            expr,
+            NativeCallBlocker::StatementOperandEvaluationCleanup,
+        ),
     }
 }
 
@@ -5771,6 +5847,19 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_VALUE_BINARY_BITWISE_XOR 8\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_BINARY_SHIFT_LEFT 9\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_BINARY_SHIFT_RIGHT 10\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_EQ 0\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_NE 1\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_LT 2\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_LE 3\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_GT 4\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_GE 5\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_CAST_STRING 0\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_CAST_INT 1\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_CAST_BOOL 2\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_CAST_FLOAT 3\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_CAST_ARRAY 4\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_GETTYPE 0\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_DEBUG 1\n");
             }
             output.push('\n');
             output.push_str("extern phpc_NativeStringHandle phpc_native_string_from_bytes(const uint8_t *ptr, size_t len);\n");
@@ -5801,6 +5890,9 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_unary_result(phpc_NativeValueHandle value, uint8_t op);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_binary_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
+                output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_compare_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
+                output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_cast_result(phpc_NativeValueHandle value, uint8_t op);\n");
+                output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_type_name_result(phpc_NativeValueHandle value, uint8_t kind);\n");
                 output.push_str("extern bool phpc_native_array_insert_key_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_array_read_key_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_array_key_materialization_result_free(phpc_NativeArrayKeyMaterializationResult key);\n");
@@ -9483,7 +9575,24 @@ impl CGenerator {
             Expr::Binary {
                 left, op, right, ..
             } => {
-                let Some(op_tag) = native_value_binary_op_tag(*op) else {
+                if let Some(op_tag) = native_value_binary_op_tag(*op) {
+                    let left_value =
+                        self.materialize_native_value_result_operand(left, failure_cleanup)?;
+                    let right_failure_cleanup = format!(
+                        "{}{}",
+                        c_cleanup_sequence(&left_value.cleanup_after_use),
+                        failure_cleanup
+                    );
+                    let right_value = self
+                        .materialize_native_value_result_operand(right, &right_failure_cleanup)?;
+                    return Ok(Some(self.emit_native_value_binary_result_handle(
+                        left_value,
+                        op_tag,
+                        right_value,
+                        failure_cleanup,
+                    )));
+                }
+                let Some(op_tag) = native_value_comparison_op_tag(*op) else {
                     return Ok(None);
                 };
                 let left_value =
@@ -9495,10 +9604,32 @@ impl CGenerator {
                 );
                 let right_value =
                     self.materialize_native_value_result_operand(right, &right_failure_cleanup)?;
-                Ok(Some(self.emit_native_value_binary_result_handle(
+                Ok(Some(self.emit_native_value_compare_result_handle(
                     left_value,
                     op_tag,
                     right_value,
+                    failure_cleanup,
+                )))
+            }
+            Expr::Cast { kind, expr, .. } => {
+                let value = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
+                Ok(Some(self.emit_native_value_cast_result_handle(
+                    value,
+                    native_value_cast_op_tag(*kind),
+                    failure_cleanup,
+                )))
+            }
+            Expr::Call { name, args, span } => {
+                let Some(type_name_tag) = native_value_type_name_tag(name) else {
+                    return Ok(None);
+                };
+                let [arg] = args.as_slice() else {
+                    return Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+                };
+                let value = self.materialize_native_value_result_operand(arg, failure_cleanup)?;
+                Ok(Some(self.emit_native_value_type_name_result_handle(
+                    value,
+                    type_name_tag,
                     failure_cleanup,
                 )))
             }
@@ -9545,6 +9676,70 @@ impl CGenerator {
             |this, result| {
                 this.body.push(format!(
                     "phpc_NativeValueOperationResult {result} = phpc_native_value_binary_result({left_handle}, {op_tag}, {right_handle});"
+                ));
+            },
+        )
+    }
+
+    fn emit_native_value_compare_result_handle(
+        &mut self,
+        left: CNativeValueMaterialization,
+        op_tag: &str,
+        right: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let left_handle = left.handle.clone();
+        let right_handle = right.handle.clone();
+        let mut cleanup_after_use = right.cleanup_after_use;
+        cleanup_after_use.extend(left.cleanup_after_use);
+        self.emit_native_value_result_handle(
+            "native_value_compare_result",
+            "native_value_compare",
+            cleanup_after_use,
+            failure_cleanup,
+            |this, result| {
+                this.body.push(format!(
+                    "phpc_NativeValueOperationResult {result} = phpc_native_value_compare_result({left_handle}, {op_tag}, {right_handle});"
+                ));
+            },
+        )
+    }
+
+    fn emit_native_value_cast_result_handle(
+        &mut self,
+        value: CNativeValueMaterialization,
+        op_tag: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let value_handle = value.handle.clone();
+        self.emit_native_value_result_handle(
+            "native_value_cast_result",
+            "native_value_cast",
+            value.cleanup_after_use,
+            failure_cleanup,
+            |this, result| {
+                this.body.push(format!(
+                    "phpc_NativeValueOperationResult {result} = phpc_native_value_cast_result({value_handle}, {op_tag});"
+                ));
+            },
+        )
+    }
+
+    fn emit_native_value_type_name_result_handle(
+        &mut self,
+        value: CNativeValueMaterialization,
+        type_name_tag: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let value_handle = value.handle.clone();
+        self.emit_native_value_result_handle(
+            "native_value_type_name_result",
+            "native_value_type_name",
+            value.cleanup_after_use,
+            failure_cleanup,
+            |this, result| {
+                this.body.push(format!(
+                    "phpc_NativeValueOperationResult {result} = phpc_native_value_type_name_result({value_handle}, {type_name_tag});"
                 ));
             },
         )
@@ -12016,6 +12211,88 @@ mod tests {
         assert_eq!(
             native_value_operand_call_result_operation(&Expr::String("plain".to_string(), span)),
             None
+        );
+    }
+
+    #[test]
+    fn native_value_result_expr_call_operation_preserves_owned_result_families() {
+        let span = test_span();
+        let nested_call_span = Span::new(2, 3);
+
+        let type_name_result = Expr::Call {
+            name: "get_debug_type".to_string(),
+            args: vec![Expr::Cast {
+                kind: crate::ast::CastKind::String,
+                expr: Box::new(Expr::Int(123, span)),
+                span,
+            }],
+            span,
+        };
+        assert_eq!(
+            native_value_result_expr_call_operation(
+                &type_name_result,
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ),
+            None
+        );
+
+        let compare_cast_result = Expr::Cast {
+            kind: crate::ast::CastKind::String,
+            expr: Box::new(Expr::Binary {
+                left: Box::new(Expr::Binary {
+                    left: Box::new(Expr::Int(2, span)),
+                    op: BinaryOp::Add,
+                    right: Box::new(Expr::Int(3, span)),
+                    span,
+                }),
+                op: BinaryOp::Gt,
+                right: Box::new(Expr::Int(4, span)),
+                span,
+            }),
+            span,
+        };
+        assert_eq!(
+            native_value_result_expr_call_operation(
+                &compare_cast_result,
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ),
+            None
+        );
+
+        let type_name_with_nested_call = Expr::Call {
+            name: "gettype".to_string(),
+            args: vec![Expr::Call {
+                name: "produce".to_string(),
+                args: Vec::new(),
+                span: nested_call_span,
+            }],
+            span,
+        };
+        assert_eq!(
+            native_value_result_expr_call_operation(
+                &type_name_with_nested_call,
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ),
+            Some(NativeCallOperation::direct_named_value(
+                nested_call_span,
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ))
+        );
+
+        let bad_type_name_arity = Expr::Call {
+            name: "gettype".to_string(),
+            args: vec![Expr::Int(1, span), Expr::Int(2, span)],
+            span,
+        };
+        assert_eq!(
+            native_value_result_expr_call_operation(
+                &bad_type_name_arity,
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ))
         );
     }
 
