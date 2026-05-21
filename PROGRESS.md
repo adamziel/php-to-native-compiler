@@ -1,7 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 20:54 CEST
+Updated: 2026-05-21 20:55 CEST
 Evaluation marker: 20260521T185117Z
+Final refresh: 20260521T185500Z
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local and dirty-worktree work is candidate material until selected, gated, committed, and pushed.
 
@@ -21,9 +22,9 @@ Broad integrated verification            [####----------------] 19%
 
 ## Current Primary State
 
-- Primary HEAD at final review check: `70872c2e native: centralize comparison branch decisions`.
+- Primary semantic HEAD at final review check: `70872c2e native: centralize comparison branch decisions`.
 - Latest primary-integrated semantic commit: `70872c2e native: centralize comparison branch decisions`.
-- Current worktree caveat: the only uncommitted primary repo change at final check is this evaluator update to `PROGRESS.md`; the wrapper should commit/push only this file.
+- Progress metadata caveat: this `PROGRESS.md` refresh is a management artifact committed separately from semantic compiler progress.
 - Review race caveat: the bounded snapshot caught the comparison branch-decision work dirty while the dashboard still said primary was clean. A final recheck found it landed and pushed as `70872c2e`, so it is counted as integrated semantic progress.
 - Resource caveat: `/dev/shm` has about 7.7G free, above the dispatcher floor but below the 10-12G comfort band; `/home` has about 260G free.
 
@@ -57,7 +58,7 @@ The project has moved from scattered backend rejection paths toward reusable run
 | Objects, properties, methods | 10% | 39% | Lane-local object/class/property dependency boundaries are improving. Primary still has little broad executable object/property/method behavior. |
 | Diagnostics and control-flow cleanup | 17% | 52% | Primary has selected severity/blocker surfaces. Lanes have diagnostic/result carriers and termination cleanup models, but exact warning/recovery order and executable cleanup across control flow are still broad blockers. |
 | Filesystem/path builtins and request state | 15% | 34% | Primary centralizes filesystem path/state blockers and request-state snapshots. Real stream/stat/cache/current-directory behavior and mutable request/global state are still not implemented. |
-| Broad composition verification | 18% | 32% | Focused native-link/runtime gates are improving. Broad differential PHP composition coverage remains thin, and broad `phpc --tests` still has a known pre-existing `builtin_exception_class` failure. |
+| Broad composition verification | 19% | 32% | Focused native-link/runtime gates now include comparison branch-decision, full native-link, runtime comparison, and dynamic string comparison coverage. Broad differential PHP composition coverage remains thin, and broad `phpc --tests` still has a known pre-existing `builtin_exception_class` failure. |
 
 ## Recent Primary-Integrated Work
 
@@ -89,7 +90,7 @@ Lane-local work is useful source material, but it is not product capability unti
 
 ## Candid Assessment
 
-Recent primary work is directionally sound because it turns shared ABI surfaces into generated-C consumers with focused runtime/native-link tests. The best current pattern is `238a6303`: remove a backend-local rejection, route through a shared runtime semantic contract, and prove executable behavior.
+Recent primary work is directionally sound because it turns shared ABI surfaces into generated-C consumers with focused runtime/native-link tests. The best current pattern is small and concrete: remove backend-local handling, route through a shared runtime semantic contract, and prove executable behavior.
 
 The project remains boundary-heavy. More result/blocker vocabulary without immediate executable consumers will not move the product much. The next valuable batches should each answer: what PHP behavior now runs that did not run before?
 
