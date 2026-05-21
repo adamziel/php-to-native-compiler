@@ -22,10 +22,11 @@ Broad integrated verification            [###-----------------] 15%
 
 ## Current Primary State
 
-- Primary git HEAD at this review: `7aa99634 docs: update progress after value string semantics`.
+- Primary git HEAD before this evaluator's `PROGRESS.md` edit: `7aa99634 docs: update progress after value string semantics`.
 - Primary semantic HEAD before this progress update: `a93f3bb5 runtime: centralize value string semantics`.
 - Latest primary-integrated semantic commit: `a93f3bb5 runtime: centralize value string semantics`.
 - Product-code state at this refresh: generalized full-value string-form runtime boundary committed and pushed; no newer semantic compiler/runtime commit landed between the prior progress refresh and evaluator marker `20260521T180145Z`.
+- Final verification caveat: after this dashboard was written, the external wrapper had committed progress metadata as `2c4ea27e docs: refresh progress after strategy evaluation`, and an unrelated active `runtime/src/lib.rs` implementation diff was present. That dirty product-code diff is not counted as integrated primary capability.
 - Review caveat: supervisor dashboard evidence lagged the latest primary semantic commit by this review; primary git and `primary-integrator.status.md` were treated as source of truth.
 - Resource caveat: `/dev/shm` is healthy at about 14G free in the live check, while `/home` has about 269G free.
 
