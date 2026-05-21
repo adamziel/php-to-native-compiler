@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 01:53 CEST
-Evaluation marker: 20260521T235225Z
+Updated: 2026-05-22 01:58 CEST
+Evaluation marker: 20260521T235808Z-plus-23df69e6
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local work is candidate material until selected, gated, committed, and pushed.
 
@@ -21,15 +21,14 @@ Broad integrated verification            [#######-------------] 35%
 
 ## Current Primary State
 
-- Product HEAD before this progress update: `1d6c8c70 docs: update progress after handle identity relations`.
-- Latest committed semantic baseline: `45d48d75 runtime: route native handles through strict identity relations`.
-- Primary was clean and synced with `origin/master` before this evaluator edited `PROGRESS.md`. Final verification after writing found an unrelated active `runtime/src/lib.rs` implementation diff; it is not counted in this dashboard and was left untouched.
-- Latest semantic batch routes native object/resource handle strict identity and non-identity through the shared comparison relation-result path, while preserving generalized loose-comparison blockers for missing object/property and resource semantics.
-- Resource note: `/dev/shm` is tight at this review: `22G` total, `16G` used, about `6.1G` free. Focused primary gates are acceptable with isolated target dirs and low job counts; broad concurrent gates should wait or reclaim inactive target dirs after process checks.
+- Product HEAD before this progress update: `23df69e6 runtime: route arrays through recursive comparison blockers`.
+- Latest committed semantic baseline: `23df69e6 runtime: route arrays through recursive comparison blockers`.
+- Latest semantic batch classifies loose array comparisons through a dedicated recursive-array blocker shared by value, array-handle, operand, relation, branch, and decision comparison consumers. It does not implement recursive array comparison execution.
+- Resource note: `/dev/shm` had about `14G` free during the focused gates. Continue using isolated target dirs and low job counts for primary integration because concurrent lane builds remain volatile.
 
 ## Grand Roadmap Position
 
-The compiler is steadily replacing backend-local decisions and direct scalar/string handling with reusable runtime/ABI contracts and selected generated-C/runtime consumers. Recent primary progress is strongest in comparison relation routing, public operand comparison consumers, native object/resource strict-identity relation results, generated-C value output for `echo`/`print`, type predicates, bitwise/shift operations, scalar casts, string byte materialization, array-handle value operands, selected call diagnostics, and focused verification gates.
+The compiler is steadily replacing backend-local decisions and direct scalar/string handling with reusable runtime/ABI contracts and selected generated-C/runtime consumers. Recent primary progress is strongest in comparison relation routing, public operand comparison consumers, recursive-array blocker classification, native object/resource strict-identity relation results, generated-C value output for `echo`/`print`, type predicates, bitwise/shift operations, scalar casts, string byte materialization, array-handle value operands, selected call diagnostics, and focused verification gates.
 
 The product is still far from full generalized PHP. The largest missing regions remain references/COW, executable lvalues, user calls and frames, object/class/property semantics, mutable globals/superglobals, include/require, exceptions/finally, exact diagnostics, and cleanup across real control flow.
 
@@ -54,7 +53,7 @@ The product is still far from full generalized PHP. The largest missing regions 
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, byte buffers | 55% | 84% | Primary has shared value string-form semantics, scalar value output, generated-C print output, comparison byte materialization, runtime string-byte materialization, and raw-buffer writes. Lane-local formatter stdout/byte-buffer work for `var_dump`, `print_r`, `serialize`, and `strlen` is stronger but not counted until integrated. |
 | Call operation cleanup and ownership | 43% | 67% | Primary routes many call-result contexts, function declaration fallbacks, and backend call diagnostics through common contracts. Lane-local required-lvalue/discarded-result cleanup is mostly blocker routing; real frames, binding, returns, by-ref semantics, and dispatch remain mostly non-executable. |
-| Comparison and conversion semantics | 70% | 78% | Primary has reusable comparison validation, relation-result/result/branch/free/decision/status/abort ABIs, generated-C relation-result consumers, public operand routing, string-handle operands, native object/resource strict identity, scalar casts, bitwise/shift consumers, value-operation output, and type predicates. Recursive array comparison, object property comparison, resource loose comparison, reference dereference comparison, and backend parity remain open. |
+| Comparison and conversion semantics | 70% | 78% | Primary has reusable comparison validation, relation-result/result/branch/free/decision/status/abort ABIs, generated-C relation-result consumers, public operand routing, recursive-array blocker classification, string-handle operands, native object/resource strict identity, scalar casts, bitwise/shift consumers, value-operation output, and type predicates. Executable recursive array comparison, object property comparison, resource loose comparison, reference dereference comparison, and backend parity remain open. |
 | Arrays, lvalues, references, COW | 24% | 80% | Primary has array-key materialization, array value-operation result ABI, array-entry snapshots, array-handle comparisons, append diagnostics, native array handles as owned value operands, and cloned-literal cleanup. Lane-local current-read/RMW/null-aware/foreach/reference/lvalue candidates are much stronger; full executable lvalues/references/COW are not integrated. |
 | Symbols, globals, request state | 24% | 61% | Primary has symbol ABI helpers, request/superglobal snapshot ABI, and selected expression-result boundaries. Lane-local scalar symbol-table execution and reference/COW slot contracts are promising but do not yet provide real generalized locals, frames, globals, imports, or request mutation in primary. |
 | Objects, properties, methods | 11% | 48% | Primary has native object handle strict-identity relation results and loose-comparison blockers through the shared comparison path. Lane-local object/class/property blockers and operation plans continue improving, but executable object/property/method behavior is still largely absent. |
@@ -63,6 +62,8 @@ The product is still far from full generalized PHP. The largest missing regions 
 
 ## Recent Primary-Integrated Work
 
+- `23df69e6 runtime: route arrays through recursive comparison blockers`
+  - Classifies loose array comparisons as a recursive-array comparison blocker through the shared runtime comparison family. Coverage proves the same blocker across direct value comparisons, native array-handle comparisons, owned operand relation results, branch results, and branch decisions. This is a centralized blocker/diagnostic boundary, not executable recursive array comparison.
 - `45d48d75 runtime: route native handles through strict identity relations`
   - Routes native object and resource handle strict identity/non-identity through `NativeComparisonRelationResult`. This removes another comparison bypass, but it does not implement object property comparison, resource loose comparison, reference dereference comparison, generated backend object/resource consumers, or full PHP object/resource diagnostics.
 - `61abb76d codegen: route print values through native result output`
@@ -96,7 +97,7 @@ The project remains boundary-heavy. More result/blocker vocabulary without immed
 
 ## Near-Term Steering
 
-1. Treat `45d48d75` as the latest integrated semantic baseline; `1d6c8c70` is a progress artifact.
+1. Treat `23df69e6` as the latest integrated semantic baseline; `44654896` and `1d6c8c70` are progress artifacts.
 2. Prefer small executable generated-C/LLVM consumers of existing ABI surfaces over more standalone vocabulary.
 3. Strong next candidates: isolate one narrow array-lvalue current-read/RMW consumer from `impl-array-linked-exec` or `impl-native-integration-batch`; integrate a formatter byte-buffer backend consumer only if it clearly generalizes value/string output; or select a minimal scalar symbol-table ABI consumer if it avoids linked-C fixture plumbing.
 4. Avoid whole-lane merges. Current patch-probe evidence shows broad lane stacks are large and conflict-prone.
