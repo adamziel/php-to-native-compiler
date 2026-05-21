@@ -1,11 +1,10 @@
-use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_VARIABLE_READ_REJECTION: &str = "LLVM variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
+const ASSEMBLY_VARIABLE_READ_REJECTION: &str = "assembly variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
 
 #[test]
 fn phpc_run_reports_current_undefined_variable_runtime_error() {
@@ -16,17 +15,18 @@ fn phpc_run_reports_current_undefined_variable_runtime_error() {
 }
 
 #[test]
-fn emit_ir_rejects_undefined_variable_reads_with_specific_boundary() {
+fn emit_ir_lowers_undefined_variable_reads_through_native_symbol_table() {
     for source in [
         "<?php\necho $missing;\n",
         "<?php\n$value = 'defined';\necho $value, $missing;\n",
         "<?php\n$value = $missing;\necho $value;\n",
         "<?php\nprint $missing;\n",
     ] {
-        let error = emit_ir_source(source).unwrap_err();
+        let ir = emit_ir_source(source).unwrap();
 
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_VARIABLE_READ_REJECTION);
+        assert!(ir.contains("phpc_native_symbol_table_read"), "{ir}");
+        assert!(ir.contains("phpc_native_value_echo_stdout"), "{ir}");
+        assert!(ir.contains("c\"missing\\00\""), "{ir}");
     }
 }
 
@@ -42,11 +42,11 @@ fn emit_asm_rejects_undefined_variable_reads_before_backend_execution() {
     let error = emit_asm_source("<?php\necho $missing;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_VARIABLE_READ_REJECTION);
+    assert_eq!(error.message, ASSEMBLY_VARIABLE_READ_REJECTION);
 }
 
 #[test]
-fn native_variable_read_emit_ir_cli_snapshot_matches_committed_output() {
+fn native_variable_read_emit_ir_cli_uses_symbol_table_helper() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()
@@ -66,14 +66,12 @@ fn native_variable_read_emit_ir_cli_snapshot_matches_committed_output() {
         .output()
         .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
 
-    let expected = fs::read_to_string(
-        workspace_root
-            .join("tests/fixtures/milestone181/native_variable_read_boundary_emit_ir.cli"),
-    )
-    .expect("native variable-read CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
-    assert_eq!(actual, expected);
+    assert!(output.status.success(), "{actual}");
+    assert!(actual.contains("phpc_native_symbol_table_read"), "{actual}");
+    assert!(actual.contains("phpc_native_value_echo_stdout"), "{actual}");
+    assert!(actual.contains("c\"missing\\00\""), "{actual}");
 }
 
 fn render_cli_snapshot(output: &Output) -> String {

@@ -2,17 +2,29 @@
 ; this is a dependency sketch, not production lowering or linked execution
 %phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }
 %phpc.NativeByteBuffer = type { ptr, i32, i32 }
+%phpc.NativeStringConversionResult = type { %phpc.NativeByteBuffer, %phpc.NativeDiagnosticHandle }
 %phpc.NativeStringHandle = type { ptr }
 %phpc.NativeValueHandle = type { ptr }
 %phpc.NativeDiagnosticHandle = type { ptr }
 %phpc.NativeArrayHandle = type { ptr }
+%phpc.NativeArrayKeySnapshotHandle = type { ptr }
+%phpc.NativeArrayEntrySnapshotHandle = type { ptr }
+%phpc.NativeArrayKeyMetadata = type { i8, [7 x i8], i64, i32 }
+%phpc.NativeArrayKeyMaterializationResult = type { i8, [7 x i8], i64, %phpc.NativeByteBuffer, %phpc.NativeDiagnosticHandle }
+%phpc.NativeClassMetadataHandle = type { ptr }
 %phpc.NativeObjectHandle = type { ptr }
 %phpc.NativeResourceHandle = type { ptr }
 %phpc.NativeReferenceHandle = type { ptr }
 %phpc.NativeRequestStateHandle = type { ptr }
+%phpc.NativeSymbolTableHandle = type { ptr }
 @phpc.probe.bytes = private unnamed_addr constant [4 x i8] c"heap"
 @phpc.probe.string = private unnamed_addr constant [7 x i8] c"php\00abi"
 @phpc.probe.invalid = private unnamed_addr constant [1 x i8] c"\FF"
+@phpc.probe.binary = private unnamed_addr constant [4 x i8] c"A\00\FF\0A"
+@phpc.probe.zero = private unnamed_addr constant [1 x i8] c"0"
+@phpc.probe.symbol = private unnamed_addr constant [5 x i8] c"label"
+@phpc.probe.text_membership_candidates = private unnamed_addr constant [1 x ptr] [ptr @phpc.probe.bytes]
+@phpc.probe.text_membership_candidate_lengths = private unnamed_addr constant [1 x i32] [i32 4]
 
 declare i32 @phpc_native_scalar_echo_len(%phpc.NativeScalarValue)
 declare i32 @phpc_native_scalar_echo_write(%phpc.NativeScalarValue, ptr, i32)
@@ -23,12 +35,30 @@ declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i32)
 declare i32 @phpc_native_string_len(%phpc.NativeStringHandle)
 declare ptr @phpc_native_string_bytes(%phpc.NativeStringHandle)
 declare %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStringHandle)
+declare i1 @phpc_native_string_truthy(ptr, i32)
 declare void @phpc_native_string_free(%phpc.NativeStringHandle)
+declare %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue)
 declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)
 declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)
+declare %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr, i32)
+declare %phpc.NativeValueHandle @phpc_native_value_clone(%phpc.NativeValueHandle)
+declare i1 @phpc_native_value_truthy(%phpc.NativeValueHandle)
+declare i32 @phpc_native_value_string_len(%phpc.NativeValueHandle)
+declare i32 @phpc_native_value_string_len_with_diagnostic(%phpc.NativeValueHandle, ptr)
+declare %phpc.NativeByteBuffer @phpc_native_value_string_clone_bytes(%phpc.NativeValueHandle)
+declare %phpc.NativeByteBuffer @phpc_native_value_string_clone_bytes_with_diagnostic(%phpc.NativeValueHandle, ptr)
 declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)
+declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes_with_diagnostic(%phpc.NativeValueHandle, ptr)
+declare %phpc.NativeByteBuffer @phpc_native_value_serialize_bytes_with_diagnostic(%phpc.NativeValueHandle, ptr)
+declare %phpc.NativeByteBuffer @phpc_native_value_var_dump_bytes_with_diagnostic(%phpc.NativeValueHandle, ptr)
+declare %phpc.NativeByteBuffer @phpc_native_value_print_r_bytes_with_diagnostic(%phpc.NativeValueHandle, ptr)
 declare i32 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)
 declare void @phpc_native_value_free(%phpc.NativeValueHandle)
+declare %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle)
+declare %phpc.NativeStringConversionResult @phpc_native_value_text_bytes(%phpc.NativeValueHandle, i8)
+declare i1 @phpc_native_value_text_membership_with_diagnostic(%phpc.NativeValueHandle, i8, ptr, ptr, i32, i1, ptr)
+declare %phpc.NativeValueHandle @phpc_native_value_string_array_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i8, i8, ptr)
+declare void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult)
 declare i32 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)
 declare %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle)
 declare i32 @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)
@@ -37,18 +67,76 @@ declare %phpc.NativeArrayHandle @phpc_native_array_null()
 declare %phpc.NativeArrayHandle @phpc_native_array_empty()
 declare i1 @phpc_native_array_is_null(%phpc.NativeArrayHandle)
 declare i32 @phpc_native_array_len(%phpc.NativeArrayHandle)
+declare i32 @phpc_native_value_array_len_with_diagnostic(%phpc.NativeValueHandle, ptr)
 declare i1 @phpc_native_array_append_scalar(%phpc.NativeArrayHandle, %phpc.NativeScalarValue)
 declare i1 @phpc_native_array_append_value(%phpc.NativeArrayHandle, %phpc.NativeValueHandle)
+declare i1 @phpc_native_array_write_int_scalar(%phpc.NativeArrayHandle, i64, %phpc.NativeScalarValue)
+declare i1 @phpc_native_array_write_int_value(%phpc.NativeArrayHandle, i64, %phpc.NativeValueHandle)
+declare i1 @phpc_native_array_write_string_scalar(%phpc.NativeArrayHandle, %phpc.NativeStringHandle, %phpc.NativeScalarValue)
+declare i1 @phpc_native_array_write_string_value(%phpc.NativeArrayHandle, %phpc.NativeStringHandle, %phpc.NativeValueHandle)
 declare %phpc.NativeValueHandle @phpc_native_array_read_int(%phpc.NativeArrayHandle, i64)
+declare %phpc.NativeValueHandle @phpc_native_array_read_string(%phpc.NativeArrayHandle, %phpc.NativeStringHandle)
+declare %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle)
+declare %phpc.NativeArrayKeySnapshotHandle @phpc_native_array_key_snapshot(%phpc.NativeArrayHandle)
+declare i1 @phpc_native_array_key_snapshot_is_null(%phpc.NativeArrayKeySnapshotHandle)
+declare i32 @phpc_native_array_key_snapshot_len(%phpc.NativeArrayKeySnapshotHandle)
+declare %phpc.NativeArrayKeyMetadata @phpc_native_array_key_snapshot_key_at(%phpc.NativeArrayKeySnapshotHandle, i32)
+declare %phpc.NativeStringHandle @phpc_native_array_key_snapshot_string_clone_at(%phpc.NativeArrayKeySnapshotHandle, i32)
+declare void @phpc_native_array_key_snapshot_free(%phpc.NativeArrayKeySnapshotHandle)
+declare %phpc.NativeArrayKeyMaterializationResult @phpc_native_value_to_array_key(%phpc.NativeValueHandle)
+declare i1 @phpc_native_value_array_key_exists_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, ptr)
+declare %phpc.NativeValueHandle @phpc_native_value_array_operation_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)
+declare %phpc.NativeValueHandle @phpc_native_value_array_query_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, i8, ptr)
+declare %phpc.NativeStringConversionResult @phpc_native_array_key_materialization_text_bytes(%phpc.NativeArrayKeyMaterializationResult, i8)
+declare %phpc.NativeValueHandle @phpc_native_array_key_materialization_to_value_with_diagnostic(%phpc.NativeArrayKeyMaterializationResult, ptr)
+declare void @phpc_native_array_key_materialization_result_free(%phpc.NativeArrayKeyMaterializationResult)
+declare %phpc.NativeArrayEntrySnapshotHandle @phpc_native_array_entry_snapshot(%phpc.NativeArrayHandle)
+declare i1 @phpc_native_array_entry_snapshot_is_null(%phpc.NativeArrayEntrySnapshotHandle)
+declare i32 @phpc_native_array_entry_snapshot_len(%phpc.NativeArrayEntrySnapshotHandle)
+declare %phpc.NativeArrayKeyMetadata @phpc_native_array_entry_snapshot_key_at(%phpc.NativeArrayEntrySnapshotHandle, i32)
+declare %phpc.NativeStringHandle @phpc_native_array_entry_snapshot_string_clone_at(%phpc.NativeArrayEntrySnapshotHandle, i32)
+declare %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_key_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle, i32)
+declare %phpc.NativeReferenceHandle @phpc_native_array_entry_snapshot_key_reference_clone_at(%phpc.NativeArrayEntrySnapshotHandle, i32)
+declare %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle, i32)
+declare %phpc.NativeReferenceHandle @phpc_native_array_entry_snapshot_value_reference_clone_at(%phpc.NativeArrayEntrySnapshotHandle, i32)
+declare void @phpc_native_array_entry_snapshot_free(%phpc.NativeArrayEntrySnapshotHandle)
 declare void @phpc_native_array_free(%phpc.NativeArrayHandle)
+declare %phpc.NativeClassMetadataHandle @phpc_native_class_metadata_null()
+declare i1 @phpc_native_class_metadata_is_null(%phpc.NativeClassMetadataHandle)
+declare %phpc.NativeClassMetadataHandle @phpc_native_class_metadata_from_name(ptr, i32)
+declare %phpc.NativeClassMetadataHandle @phpc_native_class_metadata_from_string(%phpc.NativeStringHandle)
+declare i32 @phpc_native_class_metadata_name_len(%phpc.NativeClassMetadataHandle)
+declare %phpc.NativeByteBuffer @phpc_native_class_metadata_name_clone_bytes(%phpc.NativeClassMetadataHandle)
+declare void @phpc_native_class_metadata_free(%phpc.NativeClassMetadataHandle)
 declare %phpc.NativeObjectHandle @phpc_native_object_null()
 declare i1 @phpc_native_object_is_null(%phpc.NativeObjectHandle)
+declare %phpc.NativeObjectHandle @phpc_native_object_alloc(%phpc.NativeClassMetadataHandle)
+declare i32 @phpc_native_object_class_name_len(%phpc.NativeObjectHandle)
+declare %phpc.NativeByteBuffer @phpc_native_object_class_name_clone_bytes(%phpc.NativeObjectHandle)
+declare %phpc.NativeClassMetadataHandle @phpc_native_object_class_metadata_clone(%phpc.NativeObjectHandle)
+declare void @phpc_native_object_free(%phpc.NativeObjectHandle)
 declare %phpc.NativeResourceHandle @phpc_native_resource_null()
 declare i1 @phpc_native_resource_is_null(%phpc.NativeResourceHandle)
 declare %phpc.NativeReferenceHandle @phpc_native_reference_null()
 declare i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle)
+declare i1 @phpc_native_reference_is_empty(%phpc.NativeReferenceHandle)
+declare %phpc.NativeReferenceHandle @phpc_native_reference_from_scalar(%phpc.NativeScalarValue)
+declare %phpc.NativeReferenceHandle @phpc_native_reference_from_value(%phpc.NativeValueHandle)
+declare %phpc.NativeReferenceHandle @phpc_native_reference_clone(%phpc.NativeReferenceHandle)
+declare %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle)
+declare i1 @phpc_native_reference_write_scalar(%phpc.NativeReferenceHandle, %phpc.NativeScalarValue)
+declare i1 @phpc_native_reference_write_value(%phpc.NativeReferenceHandle, %phpc.NativeValueHandle)
+declare i1 @phpc_native_reference_write_reference(%phpc.NativeReferenceHandle, %phpc.NativeReferenceHandle)
+declare %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle)
+declare void @phpc_native_reference_free(%phpc.NativeReferenceHandle)
 declare %phpc.NativeRequestStateHandle @phpc_native_request_state_null()
 declare i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle)
+declare %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_null()
+declare %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_new()
+declare i1 @phpc_native_symbol_table_is_null(%phpc.NativeSymbolTableHandle)
+declare i1 @phpc_native_symbol_table_write(%phpc.NativeSymbolTableHandle, ptr, i32, %phpc.NativeValueHandle)
+declare %phpc.NativeValueHandle @phpc_native_symbol_table_read(%phpc.NativeSymbolTableHandle, ptr, i32)
+declare void @phpc_native_symbol_table_free(%phpc.NativeSymbolTableHandle)
 
 define i32 @phpc_probe_scalar_echo_len() {
 entry:
@@ -103,6 +191,115 @@ entry:
   ret i32 %len
 }
 
+define i32 @phpc_probe_value_string_byte_diagnostics() {
+entry:
+  %len_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  %clone_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.binary, i32 0, i32 0
+  %value = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, i32 4)
+  %len = call i32 @phpc_native_value_string_len(%phpc.NativeValueHandle %value)
+  %len_with_diagnostic = call i32 @phpc_native_value_string_len_with_diagnostic(%phpc.NativeValueHandle %value, ptr %len_diagnostic_slot)
+  %clone = call %phpc.NativeByteBuffer @phpc_native_value_string_clone_bytes(%phpc.NativeValueHandle %value)
+  %clone_len = extractvalue %phpc.NativeByteBuffer %clone, 1
+  %clone_with_diagnostic = call %phpc.NativeByteBuffer @phpc_native_value_string_clone_bytes_with_diagnostic(%phpc.NativeValueHandle %value, ptr %clone_diagnostic_slot)
+  %clone_with_diagnostic_len = extractvalue %phpc.NativeByteBuffer %clone_with_diagnostic, 1
+  %len_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %len_diagnostic_slot
+  %clone_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %clone_diagnostic_slot
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %clone_with_diagnostic)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %clone)
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %clone_diagnostic)
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %len_diagnostic)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
+  %string_sum0 = add i32 %len, %len_with_diagnostic
+  %string_sum1 = add i32 %string_sum0, %clone_len
+  %string_sum2 = add i32 %string_sum1, %clone_with_diagnostic_len
+  ret i32 %string_sum2
+}
+
+define i32 @phpc_probe_value_formatter_diagnostics() {
+entry:
+  %echo_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  %serialize_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  %dump_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  %print_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.binary, i32 0, i32 0
+  %value = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, i32 4)
+  %echo = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes_with_diagnostic(%phpc.NativeValueHandle %value, ptr %echo_diagnostic_slot)
+  %echo_len = extractvalue %phpc.NativeByteBuffer %echo, 1
+  %serialized = call %phpc.NativeByteBuffer @phpc_native_value_serialize_bytes_with_diagnostic(%phpc.NativeValueHandle %value, ptr %serialize_diagnostic_slot)
+  %serialized_len = extractvalue %phpc.NativeByteBuffer %serialized, 1
+  %dump = call %phpc.NativeByteBuffer @phpc_native_value_var_dump_bytes_with_diagnostic(%phpc.NativeValueHandle %value, ptr %dump_diagnostic_slot)
+  %dump_len = extractvalue %phpc.NativeByteBuffer %dump, 1
+  %printed = call %phpc.NativeByteBuffer @phpc_native_value_print_r_bytes_with_diagnostic(%phpc.NativeValueHandle %value, ptr %print_diagnostic_slot)
+  %printed_len = extractvalue %phpc.NativeByteBuffer %printed, 1
+  %echo_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %echo_diagnostic_slot
+  %serialize_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %serialize_diagnostic_slot
+  %dump_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %dump_diagnostic_slot
+  %print_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %print_diagnostic_slot
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %printed)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %dump)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %serialized)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %echo)
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %print_diagnostic)
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %dump_diagnostic)
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %serialize_diagnostic)
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %echo_diagnostic)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
+  %format_sum0 = add i32 %echo_len, %serialized_len
+  %format_sum1 = add i32 %format_sum0, %dump_len
+  %format_sum2 = add i32 %format_sum1, %printed_len
+  ret i32 %format_sum2
+}
+
+define i1 @phpc_probe_string_truthy_boundaries() {
+entry:
+  %zero = getelementptr inbounds [1 x i8], ptr @phpc.probe.zero, i32 0, i32 0
+  %text = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, i32 0, i32 0
+  %zero_truthy = call i1 @phpc_native_string_truthy(ptr %zero, i32 1)
+  %text_truthy = call i1 @phpc_native_string_truthy(ptr %text, i32 7)
+  %empty_truthy = call i1 @phpc_native_string_truthy(ptr null, i32 0)
+  %zero_false = xor i1 %zero_truthy, true
+  %empty_false = xor i1 %empty_truthy, true
+  %false_boundaries = and i1 %zero_false, %empty_false
+  %result = and i1 %false_boundaries, %text_truthy
+  ret i1 %result
+}
+
+define i1 @phpc_probe_native_value_truthy_clone() {
+entry:
+  %zero_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
+  %zero_scalar = insertvalue %phpc.NativeScalarValue %zero_tag, i64 0, 3
+  %zero_value = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue %zero_scalar)
+  %zero_truthy = call i1 @phpc_native_value_truthy(%phpc.NativeValueHandle %zero_value)
+  %zero_false = xor i1 %zero_truthy, true
+  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, i32 0, i32 0
+  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, i32 7)
+  %string_value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)
+  %string_clone = call %phpc.NativeValueHandle @phpc_native_value_clone(%phpc.NativeValueHandle %string_value)
+  %string_truthy = call i1 @phpc_native_value_truthy(%phpc.NativeValueHandle %string_value)
+  %clone_truthy = call i1 @phpc_native_value_truthy(%phpc.NativeValueHandle %string_clone)
+  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()
+  %empty_array = call %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle %array)
+  %empty_array_truthy = call i1 @phpc_native_value_truthy(%phpc.NativeValueHandle %empty_array)
+  %empty_array_false = xor i1 %empty_array_truthy, true
+  %wrote = call i1 @phpc_native_array_append_scalar(%phpc.NativeArrayHandle %array, %phpc.NativeScalarValue %zero_scalar)
+  %non_empty_array = call %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle %array)
+  %array_truthy = call i1 @phpc_native_value_truthy(%phpc.NativeValueHandle %non_empty_array)
+  %strings_truthy = and i1 %string_truthy, %clone_truthy
+  %false_values = and i1 %zero_false, %empty_array_false
+  %true_values = and i1 %strings_truthy, %array_truthy
+  %value_boundaries = and i1 %false_values, %true_values
+  %result = and i1 %value_boundaries, %wrote
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %non_empty_array)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %empty_array)
+  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %string_clone)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %string_value)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %zero_value)
+  ret i1 %result
+}
+
 define i32 @phpc_probe_string_to_value_diagnostic() {
 entry:
   %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
@@ -151,19 +348,189 @@ cleanup:
   ret i32 %result
 }
 
+define i32 @phpc_probe_value_to_string_conversion_result() {
+entry:
+  %scalar_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
+  %scalar = insertvalue %phpc.NativeScalarValue %scalar_tag, i64 42, 3
+  %value = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue %scalar)
+  %conversion = call %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle %value)
+  %bytes = extractvalue %phpc.NativeStringConversionResult %conversion, 0
+  %len = extractvalue %phpc.NativeByteBuffer %bytes, 1
+  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %conversion)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
+  ret i32 %len
+}
+
+define i32 @phpc_probe_value_to_text_conversion_result() {
+entry:
+  %scalar_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
+  %scalar = insertvalue %phpc.NativeScalarValue %scalar_tag, i64 42, 3
+  %value = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue %scalar)
+  %conversion = call %phpc.NativeStringConversionResult @phpc_native_value_text_bytes(%phpc.NativeValueHandle %value, i8 4)
+  %bytes = extractvalue %phpc.NativeStringConversionResult %conversion, 0
+  %len = extractvalue %phpc.NativeByteBuffer %bytes, 1
+  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %conversion)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
+  ret i32 %len
+}
+
+define i32 @phpc_probe_value_text_membership() {
+entry:
+  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.bytes, i32 0, i32 0
+  %value = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, i32 4)
+  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot
+  %matched = call i1 @phpc_native_value_text_membership_with_diagnostic(%phpc.NativeValueHandle %value, i8 4, ptr @phpc.probe.text_membership_candidates, ptr @phpc.probe.text_membership_candidate_lengths, i32 1, i1 true, ptr %diagnostic_slot)
+  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
+  %result = zext i1 %matched to i32
+  ret i32 %result
+}
+
+define i32 @phpc_probe_value_string_array_operation() {
+entry:
+  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.binary, i32 0, i32 0
+  %separator_bytes = getelementptr inbounds [1 x i8], ptr @phpc.probe.invalid, i32 0, i32 0
+  %subject = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, i32 4)
+  %separator = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %separator_bytes, i32 1)
+  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot
+  %parts = call %phpc.NativeValueHandle @phpc_native_value_string_array_operation_with_diagnostic(%phpc.NativeValueHandle %subject, %phpc.NativeValueHandle %separator, i64 0, i8 0, i8 0, ptr %diagnostic_slot)
+  %parts_len = call i32 @phpc_native_value_array_len_with_diagnostic(%phpc.NativeValueHandle %parts, ptr %diagnostic_slot)
+  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %parts)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %separator)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %subject)
+  ret i32 %parts_len
+}
+
+define i32 @phpc_probe_array_key_to_value_materialization() {
+entry:
+  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.binary, i32 0, i32 0
+  %source = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, i32 4)
+  %key = call %phpc.NativeArrayKeyMaterializationResult @phpc_native_value_to_array_key(%phpc.NativeValueHandle %source)
+  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot
+  %key_value = call %phpc.NativeValueHandle @phpc_native_array_key_materialization_to_value_with_diagnostic(%phpc.NativeArrayKeyMaterializationResult %key, ptr %diagnostic_slot)
+  %echo = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %key_value)
+  %len = extractvalue %phpc.NativeByteBuffer %echo, 1
+  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %echo)
+  call void @phpc_native_array_key_materialization_result_free(%phpc.NativeArrayKeyMaterializationResult %key)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %key_value)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %source)
+  ret i32 %len
+}
+
+define i32 @phpc_probe_value_array_key_exists() {
+entry:
+  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()
+  %key_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
+  %key_scalar = insertvalue %phpc.NativeScalarValue %key_tag, i64 0, 3
+  %stored = call i1 @phpc_native_array_write_int_scalar(%phpc.NativeArrayHandle %array, i64 0, %phpc.NativeScalarValue zeroinitializer)
+  %array_value = call %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle %array)
+  %key_value = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue %key_scalar)
+  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot
+  %exists = call i1 @phpc_native_value_array_key_exists_with_diagnostic(%phpc.NativeValueHandle %array_value, %phpc.NativeValueHandle %key_value, ptr %diagnostic_slot)
+  %result_bool = and i1 %stored, %exists
+  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %key_value)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %array_value)
+  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)
+  %result = zext i1 %result_bool to i32
+  ret i32 %result
+}
+
+define i32 @phpc_probe_value_array_operation() {
+entry:
+  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()
+  %scalar_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
+  %scalar = insertvalue %phpc.NativeScalarValue %scalar_tag, i64 9, 3
+  %stored = call i1 @phpc_native_array_append_scalar(%phpc.NativeArrayHandle %array, %phpc.NativeScalarValue %scalar)
+  %array_value = call %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle %array)
+  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot
+  %values = call %phpc.NativeValueHandle @phpc_native_value_array_operation_with_diagnostic(%phpc.NativeValueHandle %array_value, i8 0, ptr %diagnostic_slot)
+  %is_list = call %phpc.NativeValueHandle @phpc_native_value_array_operation_with_diagnostic(%phpc.NativeValueHandle %array_value, i8 5, ptr %diagnostic_slot)
+  %values_len = call i32 @phpc_native_value_array_len_with_diagnostic(%phpc.NativeValueHandle %values, ptr %diagnostic_slot)
+  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %is_list)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %values)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %array_value)
+  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)
+  %stored_value = zext i1 %stored to i32
+  %result = add i32 %values_len, %stored_value
+  ret i32 %result
+}
+
+define i32 @phpc_probe_value_array_query_operation() {
+entry:
+  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()
+  %scalar_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
+  %scalar = insertvalue %phpc.NativeScalarValue %scalar_tag, i64 9, 3
+  %stored = call i1 @phpc_native_array_append_scalar(%phpc.NativeArrayHandle %array, %phpc.NativeScalarValue %scalar)
+  %array_value = call %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle %array)
+  %needle = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue %scalar)
+  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot
+  %contains = call %phpc.NativeValueHandle @phpc_native_value_array_query_operation_with_diagnostic(%phpc.NativeValueHandle %array_value, %phpc.NativeValueHandle %needle, i8 1, i8 1, ptr %diagnostic_slot)
+  %key = call %phpc.NativeValueHandle @phpc_native_value_array_query_operation_with_diagnostic(%phpc.NativeValueHandle %array_value, %phpc.NativeValueHandle %needle, i8 1, i8 2, ptr %diagnostic_slot)
+  %contains_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %contains)
+  %key_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %key)
+  %contains_len = extractvalue %phpc.NativeByteBuffer %contains_buffer, 1
+  %key_len = extractvalue %phpc.NativeByteBuffer %key_buffer, 1
+  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %key_buffer)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %contains_buffer)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %key)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %contains)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %needle)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %array_value)
+  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)
+  %stored_value = zext i1 %stored to i32
+  %partial = add i32 %contains_len, %key_len
+  %result = add i32 %partial, %stored_value
+  ret i32 %result
+}
+
+define i32 @phpc_probe_array_key_text_view_diagnostic() {
+entry:
+  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.binary, i32 0, i32 0
+  %source = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, i32 4)
+  %key = call %phpc.NativeArrayKeyMaterializationResult @phpc_native_value_to_array_key(%phpc.NativeValueHandle %source)
+  %text = call %phpc.NativeStringConversionResult @phpc_native_array_key_materialization_text_bytes(%phpc.NativeArrayKeyMaterializationResult %key, i8 1)
+  %diagnostic = extractvalue %phpc.NativeStringConversionResult %text, 1
+  %len = call i32 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)
+  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %text)
+  call void @phpc_native_array_key_materialization_result_free(%phpc.NativeArrayKeyMaterializationResult %key)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %source)
+  ret i32 %len
+}
+
 define i1 @phpc_probe_container_handle_null_shapes() {
 entry:
   %array = call %phpc.NativeArrayHandle @phpc_native_array_null()
   %array_is_null = call i1 @phpc_native_array_is_null(%phpc.NativeArrayHandle %array)
+  %class = call %phpc.NativeClassMetadataHandle @phpc_native_class_metadata_null()
+  %class_is_null = call i1 @phpc_native_class_metadata_is_null(%phpc.NativeClassMetadataHandle %class)
   %object = call %phpc.NativeObjectHandle @phpc_native_object_null()
   %object_is_null = call i1 @phpc_native_object_is_null(%phpc.NativeObjectHandle %object)
   %resource = call %phpc.NativeResourceHandle @phpc_native_resource_null()
   %resource_is_null = call i1 @phpc_native_resource_is_null(%phpc.NativeResourceHandle %resource)
   %reference = call %phpc.NativeReferenceHandle @phpc_native_reference_null()
   %reference_is_null = call i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle %reference)
-  %left = and i1 %array_is_null, %object_is_null
+  %left = and i1 %array_is_null, %class_is_null
+  %middle = and i1 %object_is_null, %resource_is_null
   %right = and i1 %resource_is_null, %reference_is_null
-  %all = and i1 %left, %right
+  %containers = and i1 %left, %middle
+  %all = and i1 %containers, %right
   ret i1 %all
 }
 
@@ -199,9 +566,265 @@ entry:
   ret i32 %len
 }
 
+define i32 @phpc_probe_array_key_snapshot_order() {
+entry:
+  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()
+  %int_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
+  %int_value = insertvalue %phpc.NativeScalarValue %int_tag, i64 7, 3
+  %wrote_int = call i1 @phpc_native_array_write_int_scalar(%phpc.NativeArrayHandle %array, i64 5, %phpc.NativeScalarValue %int_value)
+  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, i32 0, i32 0
+  %key = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, i32 7)
+  %wrote_string = call i1 @phpc_native_array_write_string_scalar(%phpc.NativeArrayHandle %array, %phpc.NativeStringHandle %key, %phpc.NativeScalarValue %int_value)
+  %snapshot = call %phpc.NativeArrayKeySnapshotHandle @phpc_native_array_key_snapshot(%phpc.NativeArrayHandle %array)
+  %snapshot_is_null = call i1 @phpc_native_array_key_snapshot_is_null(%phpc.NativeArrayKeySnapshotHandle %snapshot)
+  %snapshot_len = call i32 @phpc_native_array_key_snapshot_len(%phpc.NativeArrayKeySnapshotHandle %snapshot)
+  %first_key = call %phpc.NativeArrayKeyMetadata @phpc_native_array_key_snapshot_key_at(%phpc.NativeArrayKeySnapshotHandle %snapshot, i32 0)
+  %second_key = call %phpc.NativeArrayKeyMetadata @phpc_native_array_key_snapshot_key_at(%phpc.NativeArrayKeySnapshotHandle %snapshot, i32 1)
+  %first_tag = extractvalue %phpc.NativeArrayKeyMetadata %first_key, 0
+  %second_string_len = extractvalue %phpc.NativeArrayKeyMetadata %second_key, 3
+  %key_clone = call %phpc.NativeStringHandle @phpc_native_array_key_snapshot_string_clone_at(%phpc.NativeArrayKeySnapshotHandle %snapshot, i32 1)
+  %key_clone_len = call i32 @phpc_native_string_len(%phpc.NativeStringHandle %key_clone)
+  %int_flag = zext i1 %wrote_int to i32
+  %string_flag = zext i1 %wrote_string to i32
+  %snapshot_flag = zext i1 %snapshot_is_null to i32
+  %tag_value = zext i8 %first_tag to i32
+  %write_flags = add i32 %int_flag, %string_flag
+  %key_lens = add i32 %second_string_len, %key_clone_len
+  %shape = add i32 %snapshot_len, %tag_value
+  %flags_and_shape = add i32 %write_flags, %shape
+  %with_keys = add i32 %flags_and_shape, %key_lens
+  %result = sub i32 %with_keys, %snapshot_flag
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %key_clone)
+  call void @phpc_native_array_key_snapshot_free(%phpc.NativeArrayKeySnapshotHandle %snapshot)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %key)
+  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)
+  ret i32 %result
+}
+
+define i32 @phpc_probe_array_entry_snapshot_value_routes() {
+entry:
+  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()
+  %int_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
+  %int_value = insertvalue %phpc.NativeScalarValue %int_tag, i64 11, 3
+  %wrote_int = call i1 @phpc_native_array_write_int_scalar(%phpc.NativeArrayHandle %array, i64 2, %phpc.NativeScalarValue %int_value)
+  %key_bytes = getelementptr inbounds [5 x i8], ptr @phpc.probe.symbol, i32 0, i32 0
+  %key = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %key_bytes, i32 5)
+  %value_bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, i32 0, i32 0
+  %value_string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %value_bytes, i32 7)
+  %string_value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %value_string)
+  %wrote_string = call i1 @phpc_native_array_write_string_value(%phpc.NativeArrayHandle %array, %phpc.NativeStringHandle %key, %phpc.NativeValueHandle %string_value)
+  %snapshot = call %phpc.NativeArrayEntrySnapshotHandle @phpc_native_array_entry_snapshot(%phpc.NativeArrayHandle %array)
+  %snapshot_is_null = call i1 @phpc_native_array_entry_snapshot_is_null(%phpc.NativeArrayEntrySnapshotHandle %snapshot)
+  %snapshot_len = call i32 @phpc_native_array_entry_snapshot_len(%phpc.NativeArrayEntrySnapshotHandle %snapshot)
+  %first_key = call %phpc.NativeArrayKeyMetadata @phpc_native_array_entry_snapshot_key_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, i32 0)
+  %second_key = call %phpc.NativeArrayKeyMetadata @phpc_native_array_entry_snapshot_key_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, i32 1)
+  %first_tag = extractvalue %phpc.NativeArrayKeyMetadata %first_key, 0
+  %second_string_len = extractvalue %phpc.NativeArrayKeyMetadata %second_key, 3
+  %second_key_clone = call %phpc.NativeStringHandle @phpc_native_array_entry_snapshot_string_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, i32 1)
+  %second_key_clone_len = call i32 @phpc_native_string_len(%phpc.NativeStringHandle %second_key_clone)
+  %first_key_value = call %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_key_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, i32 0)
+  %second_key_value = call %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_key_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, i32 1)
+  %first_value = call %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, i32 0)
+  %second_value = call %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, i32 1)
+  %first_key_reference = call %phpc.NativeReferenceHandle @phpc_native_array_entry_snapshot_key_reference_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, i32 0)
+  %second_value_reference = call %phpc.NativeReferenceHandle @phpc_native_array_entry_snapshot_value_reference_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, i32 1)
+  %first_key_reference_value = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %first_key_reference)
+  %second_value_reference_value = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %second_value_reference)
+  %first_key_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %first_key_value)
+  %second_key_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %second_key_value)
+  %first_value_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %first_value)
+  %second_value_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %second_value)
+  %first_key_reference_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %first_key_reference_value)
+  %second_value_reference_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %second_value_reference_value)
+  %first_key_len = extractvalue %phpc.NativeByteBuffer %first_key_buffer, 1
+  %second_key_len = extractvalue %phpc.NativeByteBuffer %second_key_buffer, 1
+  %first_value_len = extractvalue %phpc.NativeByteBuffer %first_value_buffer, 1
+  %second_value_len = extractvalue %phpc.NativeByteBuffer %second_value_buffer, 1
+  %first_key_reference_len = extractvalue %phpc.NativeByteBuffer %first_key_reference_buffer, 1
+  %second_value_reference_len = extractvalue %phpc.NativeByteBuffer %second_value_reference_buffer, 1
+  %int_flag = zext i1 %wrote_int to i32
+  %string_flag = zext i1 %wrote_string to i32
+  %snapshot_flag = zext i1 %snapshot_is_null to i32
+  %first_tag_value = zext i8 %first_tag to i32
+  %write_flags = add i32 %int_flag, %string_flag
+  %key_shape = add i32 %second_string_len, %second_key_clone_len
+  %key_values = add i32 %first_key_len, %second_key_len
+  %entry_values = add i32 %first_value_len, %second_value_len
+  %reference_values = add i32 %first_key_reference_len, %second_value_reference_len
+  %value_routes = add i32 %key_values, %entry_values
+  %clone_routes = add i32 %value_routes, %reference_values
+  %shape = add i32 %snapshot_len, %first_tag_value
+  %with_keys = add i32 %shape, %key_shape
+  %with_flags = add i32 %with_keys, %write_flags
+  %with_routes = add i32 %with_flags, %clone_routes
+  %result = sub i32 %with_routes, %snapshot_flag
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %first_key_buffer)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %second_key_buffer)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %first_value_buffer)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %second_value_buffer)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %first_key_reference_buffer)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %second_value_reference_buffer)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %first_key_reference_value)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %second_value_reference_value)
+  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %first_key_reference)
+  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %second_value_reference)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %first_key_value)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %second_key_value)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %first_value)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %second_value)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %second_key_clone)
+  call void @phpc_native_array_entry_snapshot_free(%phpc.NativeArrayEntrySnapshotHandle %snapshot)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %string_value)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %value_string)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %key)
+  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)
+  ret i32 %result
+}
+
+define i32 @phpc_probe_object_class_metadata_alloc_name() {
+entry:
+  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, i32 0, i32 0
+  %class = call %phpc.NativeClassMetadataHandle @phpc_native_class_metadata_from_name(ptr %bytes, i32 7)
+  %class_len = call i32 @phpc_native_class_metadata_name_len(%phpc.NativeClassMetadataHandle %class)
+  %class_name = call %phpc.NativeByteBuffer @phpc_native_class_metadata_name_clone_bytes(%phpc.NativeClassMetadataHandle %class)
+  %object = call %phpc.NativeObjectHandle @phpc_native_object_alloc(%phpc.NativeClassMetadataHandle %class)
+  %object_len = call i32 @phpc_native_object_class_name_len(%phpc.NativeObjectHandle %object)
+  %object_name = call %phpc.NativeByteBuffer @phpc_native_object_class_name_clone_bytes(%phpc.NativeObjectHandle %object)
+  %cloned_class = call %phpc.NativeClassMetadataHandle @phpc_native_object_class_metadata_clone(%phpc.NativeObjectHandle %object)
+  %cloned_len = call i32 @phpc_native_class_metadata_name_len(%phpc.NativeClassMetadataHandle %cloned_class)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %object_name)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %class_name)
+  call void @phpc_native_class_metadata_free(%phpc.NativeClassMetadataHandle %cloned_class)
+  call void @phpc_native_object_free(%phpc.NativeObjectHandle %object)
+  call void @phpc_native_class_metadata_free(%phpc.NativeClassMetadataHandle %class)
+  %combined = add i32 %object_len, %cloned_len
+  %result = sub i32 %combined, %class_len
+  ret i32 %result
+}
+
+define i32 @phpc_probe_reference_cell_roundtrip() {
+entry:
+  %int_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
+  %int_value = insertvalue %phpc.NativeScalarValue %int_tag, i64 42, 3
+  %reference = call %phpc.NativeReferenceHandle @phpc_native_reference_from_scalar(%phpc.NativeScalarValue %int_value)
+  %initial_is_null = call i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle %reference)
+  %initial_is_empty = call i1 @phpc_native_reference_is_empty(%phpc.NativeReferenceHandle %reference)
+  %initial = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %reference)
+  %initial_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %initial)
+  %initial_len = extractvalue %phpc.NativeByteBuffer %initial_buffer, 1
+  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, i32 0, i32 0
+  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, i32 7)
+  %string_value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)
+  %value_reference = call %phpc.NativeReferenceHandle @phpc_native_reference_from_value(%phpc.NativeValueHandle %string_value)
+  %cloned_reference = call %phpc.NativeReferenceHandle @phpc_native_reference_clone(%phpc.NativeReferenceHandle %value_reference)
+  %wrote_reference = call i1 @phpc_native_reference_write_reference(%phpc.NativeReferenceHandle %reference, %phpc.NativeReferenceHandle %cloned_reference)
+  %after_reference = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %reference)
+  %after_reference_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %after_reference)
+  %after_reference_len = extractvalue %phpc.NativeByteBuffer %after_reference_buffer, 1
+  %wrote_string = call i1 @phpc_native_reference_write_value(%phpc.NativeReferenceHandle %reference, %phpc.NativeValueHandle %string_value)
+  %after_string_is_null = call i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle %reference)
+  %after_string_is_empty = call i1 @phpc_native_reference_is_empty(%phpc.NativeReferenceHandle %reference)
+  %after_string = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %reference)
+  %after_string_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %after_string)
+  %after_string_len = extractvalue %phpc.NativeByteBuffer %after_string_buffer, 1
+  %null_value = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 0, 0
+  %wrote_null = call i1 @phpc_native_reference_write_scalar(%phpc.NativeReferenceHandle %reference, %phpc.NativeScalarValue %null_value)
+  %after_null_is_null = call i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle %reference)
+  %after_null_is_empty = call i1 @phpc_native_reference_is_empty(%phpc.NativeReferenceHandle %reference)
+  %after_null = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %reference)
+  %after_null_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %after_null)
+  %after_null_len = extractvalue %phpc.NativeByteBuffer %after_null_buffer, 1
+  %cloned_read = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %cloned_reference)
+  %cloned_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %cloned_read)
+  %cloned_len = extractvalue %phpc.NativeByteBuffer %cloned_buffer, 1
+  %reference_flag = zext i1 %wrote_reference to i32
+  %string_flag = zext i1 %wrote_string to i32
+  %null_flag = zext i1 %wrote_null to i32
+  %initial_null_flag = zext i1 %initial_is_null to i32
+  %initial_empty_flag = zext i1 %initial_is_empty to i32
+  %after_string_null_flag = zext i1 %after_string_is_null to i32
+  %after_string_empty_flag = zext i1 %after_string_is_empty to i32
+  %after_null_null_flag = zext i1 %after_null_is_null to i32
+  %after_null_empty_flag = zext i1 %after_null_is_empty to i32
+  %first_sum = add i32 %initial_len, %after_reference_len
+  %second_sum = add i32 %after_string_len, %after_null_len
+  %third_sum = add i32 %second_sum, %cloned_len
+  %byte_count = add i32 %first_sum, %third_sum
+  %write_flags = add i32 %reference_flag, %string_flag
+  %flag_count = add i32 %write_flags, %null_flag
+  %initial_liveness = add i32 %initial_null_flag, %initial_empty_flag
+  %after_string_liveness = add i32 %after_string_null_flag, %after_string_empty_flag
+  %after_null_liveness = add i32 %after_null_null_flag, %after_null_empty_flag
+  %early_liveness = add i32 %initial_liveness, %after_string_liveness
+  %liveness_count = add i32 %early_liveness, %after_null_liveness
+  %counts = add i32 %byte_count, %flag_count
+  %result = add i32 %counts, %liveness_count
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %initial_buffer)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %after_reference_buffer)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %after_string_buffer)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %after_null_buffer)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %cloned_buffer)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %initial)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %after_reference)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %after_string)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %after_null)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %cloned_read)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %string_value)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
+  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %cloned_reference)
+  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %value_reference)
+  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %reference)
+  ret i32 %result
+}
+
+define i32 @phpc_probe_reference_string_conversion_diagnostic() {
+entry:
+  %scalar_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
+  %scalar = insertvalue %phpc.NativeScalarValue %scalar_tag, i64 7, 3
+  %reference = call %phpc.NativeReferenceHandle @phpc_native_reference_from_scalar(%phpc.NativeScalarValue %scalar)
+  %conversion = call %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle %reference)
+  %diagnostic = extractvalue %phpc.NativeStringConversionResult %conversion, 1
+  %len = call i32 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)
+  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %conversion)
+  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %reference)
+  ret i32 %len
+}
+
 define i1 @phpc_probe_request_state_handle_null_shape() {
 entry:
   %request_state = call %phpc.NativeRequestStateHandle @phpc_native_request_state_null()
   %request_state_is_null = call i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle %request_state)
   ret i1 %request_state_is_null
+}
+
+define i1 @phpc_probe_symbol_table_null_shape() {
+entry:
+  %symbols = call %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_null()
+  %symbols_is_null = call i1 @phpc_native_symbol_table_is_null(%phpc.NativeSymbolTableHandle %symbols)
+  ret i1 %symbols_is_null
+}
+
+define i32 @phpc_probe_symbol_table_write_read() {
+entry:
+  %symbols = call %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_new()
+  %symbols_is_null = call i1 @phpc_native_symbol_table_is_null(%phpc.NativeSymbolTableHandle %symbols)
+  %symbols_ready = xor i1 %symbols_is_null, true
+  %name = getelementptr inbounds [5 x i8], ptr @phpc.probe.symbol, i32 0, i32 0
+  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, i32 0, i32 0
+  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, i32 7)
+  %value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)
+  %written = call i1 @phpc_native_symbol_table_write(%phpc.NativeSymbolTableHandle %symbols, ptr %name, i32 5, %phpc.NativeValueHandle %value)
+  %read = call %phpc.NativeValueHandle @phpc_native_symbol_table_read(%phpc.NativeSymbolTableHandle %symbols, ptr %name, i32 5)
+  %buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %read)
+  %len = extractvalue %phpc.NativeByteBuffer %buffer, 1
+  %ready_len = zext i1 %symbols_ready to i32
+  %written_len = zext i1 %written to i32
+  %partial = add i32 %len, %ready_len
+  %result = add i32 %partial, %written_len
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %read)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
+  call void @phpc_native_symbol_table_free(%phpc.NativeSymbolTableHandle %symbols)
+  ret i32 %result
 }

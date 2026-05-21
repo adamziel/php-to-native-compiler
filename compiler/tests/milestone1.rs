@@ -225,13 +225,11 @@ fn emit_ir_rejects_array_offset_unset_until_native_lowering_exists() {
 }
 
 #[test]
-fn emit_ir_rejects_variable_unset_until_native_lowering_exists() {
-    let error = emit_ir_source("<?php\nunset($value);\n").unwrap_err();
-    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+fn emit_ir_lowers_direct_variable_unset_through_native_symbol_table() {
+    let ir = emit_ir_source("<?php\nunset($value);\n").unwrap();
     assert!(
-        error.message.contains("variable unset"),
-        "{}",
-        error.message
+        ir.contains("call i1 @phpc_native_symbol_table_unset"),
+        "{ir}"
     );
 }
 

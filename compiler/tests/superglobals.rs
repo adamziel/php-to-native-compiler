@@ -701,6 +701,51 @@ fn emit_ir_rejects_request_bag_superglobals_until_native_request_state_exists() 
 }
 
 #[test]
+fn emit_ir_request_superglobal_builtin_consumers_share_request_blocker() {
+    for source in [
+        "<?php\necho array_values($_GET);\n",
+        "<?php\necho array_key_exists($_GET['preview'], []);\n",
+        "<?php\necho array_key_exists('preview', $_GET);\n",
+        "<?php\nheader($_SERVER['SCRIPT_NAME']);\n",
+        "<?php\necho constant($_POST['action']);\n",
+        "<?php\necho file_get_contents($_REQUEST['template']);\n",
+        "<?php\necho get_class($_GET['class']);\n",
+        "<?php\necho stream_get_contents($_FILES['upload']);\n",
+        "<?php\nexit($_COOKIE['wordpress_test_cookie']);\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen, "{source}");
+        assert_eq!(
+            error.message, LLVM_REQUEST_SUPERGLOBAL_REJECTION,
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_request_superglobal_member_and_statement_consumers_share_request_blocker() {
+    for source in [
+        "<?php\n$obj->method($_POST['action']);\n",
+        "<?php\n$_GET['class']::boot();\n",
+        "<?php\n$obj->{$_POST['action']} = 'x';\n",
+        "<?php\n$_GET['class']::$prop = 1;\n",
+        "<?php\nreturn $_GET['preview'];\n",
+        "<?php\nthrow $_POST['action'];\n",
+        "<?php\nglobal $_COOKIE;\n",
+        "<?php\ninclude $_REQUEST['template'];\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen, "{source}");
+        assert_eq!(
+            error.message, LLVM_REQUEST_SUPERGLOBAL_REJECTION,
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn native_request_state_handle_boundary_emit_ir_cli_snapshot_matches_committed_output() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir

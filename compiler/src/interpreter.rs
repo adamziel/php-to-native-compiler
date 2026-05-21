@@ -635,7 +635,7 @@ fn is_auto_global_name(name: &str) -> bool {
 fn globals_offset_name(key: &ArrayKey) -> Option<&str> {
     match key {
         ArrayKey::String(name) => Some(name),
-        ArrayKey::Int(_) => None,
+        ArrayKey::Int(_) | ArrayKey::BinaryString(_) => None,
     }
 }
 
@@ -1217,14 +1217,10 @@ impl ResolvedArrayCopySource {
         })
     }
 
-    fn matches_object_property(
-        &self,
-        object: &PhpObject,
-        property: &str,
-    ) -> bool {
-        self.storage_identities.iter().any(|identity| {
-            identity.matches_object_property(object, property)
-        })
+    fn matches_object_property(&self, object: &PhpObject, property: &str) -> bool {
+        self.storage_identities
+            .iter()
+            .any(|identity| identity.matches_object_property(object, property))
     }
 }
 
@@ -1256,11 +1252,7 @@ impl ArrayCopySourceStorageIdentity {
         }
     }
 
-    fn matches_object_property(
-        &self,
-        object: &PhpObject,
-        property: &str,
-    ) -> bool {
+    fn matches_object_property(&self, object: &PhpObject, property: &str) -> bool {
         match self {
             Self::ObjectProperty {
                 object_id,
@@ -1294,12 +1286,8 @@ impl ArrayCopySourceMutationImpact {
         {
             return None;
         }
-        Some((
-            detached_keys[source.keys.len()..].to_vec(),
-            cell.clone(),
-        ))
+        Some((detached_keys[source.keys.len()..].to_vec(), cell.clone()))
     }
-
 }
 
 fn push_unique_array_copy_source_detach_path(
@@ -1307,13 +1295,12 @@ fn push_unique_array_copy_source_detach_path(
     keys: Vec<ArrayKey>,
     cell: VariableCell,
 ) {
-    if paths
-        .iter()
-        .any(|(candidate_keys, candidate_cell): &(Vec<ArrayKey>, VariableCell)| {
+    if paths.iter().any(
+        |(candidate_keys, candidate_cell): &(Vec<ArrayKey>, VariableCell)| {
             candidate_keys.as_slice() == keys.as_slice()
                 && candidate_cell.shares_reference_with(&cell)
-        })
-    {
+        },
+    ) {
         return;
     }
     paths.push((keys, cell));
@@ -1358,22 +1345,18 @@ impl<'a> ArrayCopySourceMutationTarget<'a> {
                 keys,
             } => {
                 let resolved = symbols.resolved_array_copy_source(source);
-                (
-                    resolved.matches_object_property(object, property),
-                    keys,
-                )
+                (resolved.matches_object_property(object, property), keys)
             }
             Self::HolderStorageBoundary(boundary) => {
                 let resolved = symbols.resolved_array_copy_source(source);
-                let matches_boundary = resolved.matches_object_property(
-                    &boundary.object,
-                    &boundary.property,
-                ) || match &source.root {
-                    ArrayCopySourceRoot::RuntimeCell(cell) => {
-                        boundary.identity.shares_reference_with(cell)
-                    }
-                    _ => false,
-                };
+                let matches_boundary = resolved
+                    .matches_object_property(&boundary.object, &boundary.property)
+                    || match &source.root {
+                        ArrayCopySourceRoot::RuntimeCell(cell) => {
+                            boundary.identity.shares_reference_with(cell)
+                        }
+                        _ => false,
+                    };
                 (matches_boundary, boundary.keys.as_slice())
             }
         };
@@ -2304,7 +2287,8 @@ impl SymbolTable {
             self.dirty_public_object_property_array_copy_source_values
                 .iter()
                 .filter(|(name, _)| {
-                    !self.public_object_property_array_copy_sources
+                    !self
+                        .public_object_property_array_copy_sources
                         .contains_key(*name)
                 })
                 .map(|(name, source)| (name.clone(), source.clone())),
@@ -2320,12 +2304,14 @@ impl SymbolTable {
                 source: source.clone(),
             },
         ));
-        records.extend(self.dirty_public_object_property_array_copy_source_values.iter().map(
-            |(name, source)| ArrayCopySourceRecord {
-                location: ArrayCopySourceRecordLocation::DirtyStatic(name.clone()),
-                source: source.clone(),
-            },
-        ));
+        records.extend(
+            self.dirty_public_object_property_array_copy_source_values
+                .iter()
+                .map(|(name, source)| ArrayCopySourceRecord {
+                    location: ArrayCopySourceRecordLocation::DirtyStatic(name.clone()),
+                    source: source.clone(),
+                }),
+        );
         records.extend(self.dirty_array_copy_source_values.iter().map(|source| {
             ArrayCopySourceRecord {
                 location: ArrayCopySourceRecordLocation::DirtySource,
@@ -2344,15 +2330,19 @@ impl SymbolTable {
                 })
             },
         ));
-        records.extend(self.array_literal_copy_source_paths.iter().flat_map(|(name, paths)| {
-            paths.iter().map(|(prefix, source)| ArrayCopySourceRecord {
-                location: ArrayCopySourceRecordLocation::ArrayLiteralPath {
-                    name: name.clone(),
-                    prefix: prefix.clone(),
-                },
-                source: source.clone(),
-            })
-        }));
+        records.extend(
+            self.array_literal_copy_source_paths
+                .iter()
+                .flat_map(|(name, paths)| {
+                    paths.iter().map(|(prefix, source)| ArrayCopySourceRecord {
+                        location: ArrayCopySourceRecordLocation::ArrayLiteralPath {
+                            name: name.clone(),
+                            prefix: prefix.clone(),
+                        },
+                        source: source.clone(),
+                    })
+                }),
+        );
         records
     }
 
@@ -2372,7 +2362,11 @@ impl SymbolTable {
     ) -> Vec<ArrayCopySourceRecord> {
         self.array_copy_source_record_impacts_for_holder_storage_boundary(boundary)
             .into_iter()
-            .filter_map(|impact| impact.replaces_source_or_ancestor().then_some(impact.record))
+            .filter_map(|impact| {
+                impact
+                    .replaces_source_or_ancestor()
+                    .then_some(impact.record)
+            })
             .collect()
     }
 
@@ -2490,9 +2484,11 @@ impl SymbolTable {
             let retained = paths
                 .into_iter()
                 .filter(|(prefix, _)| {
-                    !stale_object_copy_source_paths.iter().any(|(stale_key, stale_prefix)| {
-                        stale_key == &key && stale_prefix.as_slice() == prefix.as_slice()
-                    })
+                    !stale_object_copy_source_paths
+                        .iter()
+                        .any(|(stale_key, stale_prefix)| {
+                            stale_key == &key && stale_prefix.as_slice() == prefix.as_slice()
+                        })
                 })
                 .collect::<Vec<_>>();
             if retained.is_empty() {
@@ -2586,8 +2582,7 @@ impl SymbolTable {
                         record: record.clone(),
                         impact,
                     };
-                    let Some((relative_keys, cell)) =
-                        impact.selected_child_detach_path(*detached)
+                    let Some((relative_keys, cell)) = impact.selected_child_detach_path(*detached)
                     else {
                         continue;
                     };
@@ -2676,12 +2671,9 @@ impl SymbolTable {
         for (mut relative_keys, cell) in relative_paths {
             let mut keys = source.keys.clone();
             keys.append(&mut relative_keys);
-            if out
-                .iter()
-                .any(|(candidate_keys, candidate_cell)| {
-                    candidate_keys == &keys && candidate_cell.shares_reference_with(&cell)
-                })
-            {
+            if out.iter().any(|(candidate_keys, candidate_cell)| {
+                candidate_keys == &keys && candidate_cell.shares_reference_with(&cell)
+            }) {
                 continue;
             }
             out.push((keys, cell));
@@ -3556,14 +3548,15 @@ impl SymbolTable {
             };
             let source_path_cell =
                 Self::read_nested_array_offset_alias_reference_cell(&array, keys);
-            return self.detached_object_property_array_offset_values.iter().any(
-                |(_, _, candidate_keys, detached_cell)| {
+            return self
+                .detached_object_property_array_offset_values
+                .iter()
+                .any(|(_, _, candidate_keys, detached_cell)| {
                     candidate_keys.as_slice() == keys
                         && source_path_cell
                             .as_ref()
                             .is_some_and(|cell| cell.shares_reference_with(detached_cell))
-                },
-            );
+                });
         }
 
         self.detached_object_property_array_offset_values
@@ -3762,7 +3755,6 @@ impl SymbolTable {
             &boundary,
             detached_paths,
         ) {
-
             match record.location {
                 ArrayCopySourceRecordLocation::CleanStatic(name)
                 | ArrayCopySourceRecordLocation::DirtyStatic(name) => {
@@ -4755,10 +4747,8 @@ impl SymbolTable {
                     continue;
                 };
                 if promote_missing_reference_cells && source_handle_allows_array_literal_promotion {
-                    let _ = self.promote_array_offset_alias_to_reference_cell(
-                        &alias,
-                        reference.clone(),
-                    );
+                    let _ = self
+                        .promote_array_offset_alias_to_reference_cell(&alias, reference.clone());
                 }
                 Self::write_nested_array_offset_alias_reference(
                     &mut array,
@@ -4800,7 +4790,10 @@ impl SymbolTable {
         Self::read_nested_array_offset_alias(&array, &source.keys)
     }
 
-    fn runtime_alias_lvalue_handle_value(&self, handle: &RuntimeAliasLvalueHandle) -> Option<Value> {
+    fn runtime_alias_lvalue_handle_value(
+        &self,
+        handle: &RuntimeAliasLvalueHandle,
+    ) -> Option<Value> {
         if let Some(cell) = &handle.cell {
             return Some(cell.value_cloned());
         }
@@ -5027,7 +5020,10 @@ impl SymbolTable {
                     .collect::<Vec<_>>();
                 for cell in cells {
                     for handle in self.runtime_alias_lvalue_handles_for_reference_cell(&cell) {
-                        if !handles.iter().any(|candidate| candidate.root == handle.root) {
+                        if !handles
+                            .iter()
+                            .any(|candidate| candidate.root == handle.root)
+                        {
                             handles.push(handle);
                         }
                     }
@@ -5038,7 +5034,10 @@ impl SymbolTable {
                 let mut handles = vec![self.runtime_alias_lvalue_handle(root.clone())];
                 if let Some(cell) = handles.first().and_then(|handle| handle.cell.clone()) {
                     for handle in self.runtime_alias_lvalue_handles_for_reference_cell(&cell) {
-                        if !handles.iter().any(|candidate| candidate.root == handle.root) {
+                        if !handles
+                            .iter()
+                            .any(|candidate| candidate.root == handle.root)
+                        {
                             handles.push(handle);
                         }
                     }
@@ -6503,10 +6502,8 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&target_alias));
         self.materialize_array_offset_alias(&source_alias, span)?;
-        let boundary = self.pre_replace_holder_storage_for_alias_write(
-            &target_alias.root,
-            &target_alias.keys,
-        );
+        let boundary =
+            self.pre_replace_holder_storage_for_alias_write(&target_alias.root, &target_alias.keys);
         self.materialize_array_offset_alias(&target_alias, span)?;
         let aliases = vec![source_alias, target_alias];
         if !self.write_array_offset_aliases(&aliases, value) {
@@ -11917,6 +11914,17 @@ impl Interpreter {
                     )),
                 )
             })?,
+            ArrayKey::BinaryString(offset) => std::str::from_utf8(offset)
+                .ok()
+                .and_then(Self::parse_string_offset_key)
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "cannot {operation} offset on string"
+                        )),
+                    )
+                })?,
         };
 
         let resolved = if offset < 0 {
@@ -18080,6 +18088,10 @@ impl Interpreter {
         match key {
             ArrayKey::Int(_) => true,
             ArrayKey::String(value) => Self::parse_string_offset_key(value).is_some(),
+            ArrayKey::BinaryString(value) => std::str::from_utf8(value)
+                .ok()
+                .and_then(Self::parse_string_offset_key)
+                .is_some(),
         }
     }
 
@@ -21937,26 +21949,27 @@ impl Interpreter {
                     (value, Vec::new(), None, copy_sources)
                 } else {
                     match expr {
-                    Expr::Array { items, span } => {
-                        let (value, references, copy_sources) =
-                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references, None, copy_sources)
-                    }
-                    Expr::Index {
-                        target,
-                        index,
-                        span,
-                    } => {
-                        let (value, source) = self.evaluate_array_index_with_array_copy_source(
-                            target, index, *span, scope,
-                        )?;
-                        (value, Vec::new(), source, Vec::new())
-                    }
-                    _ => {
-                        let (value, source) =
-                            self.evaluate_value_with_array_copy_source(expr, scope)?;
-                        (value, Vec::new(), source, Vec::new())
-                    }
+                        Expr::Array { items, span } => {
+                            let (value, references, copy_sources) =
+                                self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                            (value, references, None, copy_sources)
+                        }
+                        Expr::Index {
+                            target,
+                            index,
+                            span,
+                        } => {
+                            let (value, source) = self
+                                .evaluate_array_index_with_array_copy_source(
+                                    target, index, *span, scope,
+                                )?;
+                            (value, Vec::new(), source, Vec::new())
+                        }
+                        _ => {
+                            let (value, source) =
+                                self.evaluate_value_with_array_copy_source(expr, scope)?;
+                            (value, Vec::new(), source, Vec::new())
+                        }
                     }
                 };
                 let direct_object_property_copy = match expr {
@@ -26926,7 +26939,8 @@ impl Interpreter {
                 indices,
                 ..
             } => {
-                let temp_name = self.non_direct_object_holder_temp(holder, property, scope, span)?;
+                let temp_name =
+                    self.non_direct_object_holder_temp(holder, property, scope, span)?;
                 let target = AssignTarget::ObjectPropertyArrayIndex {
                     object: temp_name,
                     property: property.clone(),
@@ -27021,7 +27035,8 @@ impl Interpreter {
             AssignTarget::NonDirectProperty {
                 holder, property, ..
             } => {
-                let temp_name = self.non_direct_object_holder_temp(holder, property, scope, span)?;
+                let temp_name =
+                    self.non_direct_object_holder_temp(holder, property, scope, span)?;
                 let target = AssignTarget::Property {
                     object: temp_name,
                     property: property.clone(),
@@ -27217,10 +27232,8 @@ impl Interpreter {
                             &property,
                             &alias_fallbacks,
                         );
-                        scope.sync_array_offset_aliases_for_object_property_root(
-                            &object,
-                            &property,
-                        );
+                        scope
+                            .sync_array_offset_aliases_for_object_property_root(&object, &property);
                         Ok(())
                     }
                     other => Err(runtime_error(
@@ -27276,10 +27289,8 @@ impl Interpreter {
                             )
                             .map_err(|error| runtime_error(span, error))?;
                         scope.post_replace_holder_storage(&boundary);
-                        scope.sync_array_offset_aliases_for_object_property_root(
-                            &object,
-                            &property,
-                        );
+                        scope
+                            .sync_array_offset_aliases_for_object_property_root(&object, &property);
                         Ok(())
                     }
                     other => Err(runtime_error(
@@ -27813,7 +27824,8 @@ impl Interpreter {
                 property,
                 span,
             } => {
-                let temp_name = self.non_direct_object_holder_temp(holder, property, scope, *span)?;
+                let temp_name =
+                    self.non_direct_object_holder_temp(holder, property, scope, *span)?;
                 let target = AssignTarget::Property {
                     object: temp_name,
                     property: property.clone(),
@@ -34504,11 +34516,11 @@ impl Interpreter {
         }
 
         if name.eq_ignore_ascii_case("array_replace") {
-            let Some((first, first_sources)) =
-                args.first()
-                    .map(|arg| self.evaluate_array_literal_argument_with_copy_sources(arg, scope))
-                    .transpose()?
-                    .flatten()
+            let Some((first, first_sources)) = args
+                .first()
+                .map(|arg| self.evaluate_array_literal_argument_with_copy_sources(arg, scope))
+                .transpose()?
+                .flatten()
             else {
                 return Ok(None);
             };
@@ -34588,6 +34600,12 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?,
                 ArrayKey::String(key) => {
                     let target_key = ArrayKey::String(key.clone());
+                    result.insert(target_key.clone(), entry.value_cloned());
+                    result_sources.retain(|(keys, _)| keys.first() != Some(&target_key));
+                    target_key
+                }
+                ArrayKey::BinaryString(key) => {
+                    let target_key = ArrayKey::BinaryString(key.clone());
                     result.insert(target_key.clone(), entry.value_cloned());
                     result_sources.retain(|(keys, _)| keys.first() != Some(&target_key));
                     target_key
@@ -42201,16 +42219,15 @@ impl Interpreter {
             let prebound_locals = self.closure_prebound_locals(&closure);
             let (this_object, class_context, called_class_context) =
                 self.closure_call_context(&closure);
-            return self
-                .call_reference_return_function_value_with_call_frame_and_return_source(
-                    function,
-                    frame,
-                    this_object,
-                    class_context,
-                    called_class_context,
-                    caller_scope,
-                    prebound_locals,
-                );
+            return self.call_reference_return_function_value_with_call_frame_and_return_source(
+                function,
+                frame,
+                this_object,
+                class_context,
+                called_class_context,
+                caller_scope,
+                prebound_locals,
+            );
         }
         let prebound_locals = self.closure_prebound_locals(&closure);
         let (this_object, class_context, called_class_context) =
@@ -43065,7 +43082,7 @@ impl Interpreter {
         argument_array
             .entries()
             .iter()
-            .any(|entry| matches!(entry.key, ArrayKey::String(_)))
+            .any(|entry| matches!(entry.key, ArrayKey::String(_) | ArrayKey::BinaryString(_)))
     }
 
     fn call_user_func_array_user_function(
@@ -43175,9 +43192,10 @@ impl Interpreter {
             let target_keys = variadic_offset
                 .map(|offset| vec![ArrayKey::Int(offset as i64)])
                 .unwrap_or_default();
-            if bindings.iter().any(|(param_name, keys, _)| {
-                param_name == &param.name && keys == &target_keys
-            }) {
+            if bindings
+                .iter()
+                .any(|(param_name, keys, _)| param_name == &param.name && keys == &target_keys)
+            {
                 continue;
             }
             bindings.push((param.name.clone(), target_keys, source));
@@ -43241,15 +43259,13 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         include_reference_params: bool,
     ) -> CompileResult<CallFrameArgumentBindings> {
-        if let Some(frame) =
-            self.evaluate_call_user_func_array_argument_with_array_copy_sources(
-                function,
-                argument_expr,
-                span,
-                caller_scope,
-                include_reference_params,
-            )?
-        {
+        if let Some(frame) = self.evaluate_call_user_func_array_argument_with_array_copy_sources(
+            function,
+            argument_expr,
+            span,
+            caller_scope,
+            include_reference_params,
+        )? {
             self.emit_call_frame_value_reference_parameter_warnings(function, &frame, span)?;
             return Ok(frame);
         }
@@ -43260,20 +43276,19 @@ impl Interpreter {
             span,
             caller_scope,
         )?;
-        let array_copy_source_bindings =
-            Self::array_copy_source_bindings_for_reference_bindings(
-                &reference_bindings,
+        let array_copy_source_bindings = Self::array_copy_source_bindings_for_reference_bindings(
+            &reference_bindings,
+            caller_scope,
+        )
+        .into_iter()
+        .chain(
+            self.call_user_func_array_by_value_copy_source_bindings_for_argument(
+                function,
+                argument_expr,
                 caller_scope,
-            )
-            .into_iter()
-            .chain(
-                self.call_user_func_array_by_value_copy_source_bindings_for_argument(
-                    function,
-                    argument_expr,
-                    caller_scope,
-                )?,
-            )
-            .collect();
+            )?,
+        )
+        .collect();
         let by_value_array_copy_bindings =
             Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
                 function,
@@ -44575,6 +44590,7 @@ impl Interpreter {
                         named_seen = true;
                         function.params.iter().find(|param| param.name == *name)
                     }
+                    ArrayKey::BinaryString(_) => None,
                     ArrayKey::Int(_) => {
                         if named_seen {
                             None
@@ -44855,6 +44871,15 @@ impl Interpreter {
                             )
                         })?
                 }
+                ArrayKey::BinaryString(_) => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() binary string named arguments are not implemented in the current subset",
+                        ),
+                    ));
+                }
                 ArrayKey::Int(_) => {
                     if named_seen {
                         return Err(runtime_error(
@@ -45017,6 +45042,15 @@ impl Interpreter {
                             )
                         })?
                 }
+                ArrayKey::BinaryString(_) => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() binary string named arguments are not implemented in the current subset",
+                        ),
+                    ));
+                }
                 ArrayKey::Int(_) => {
                     if named_seen {
                         return Err(runtime_error(
@@ -45118,6 +45152,15 @@ impl Interpreter {
                                     ),
                                 )
                             })?
+                    }
+                    ArrayKey::BinaryString(_) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "call_user_func_array() binary string named arguments are not implemented in the current subset",
+                            ),
+                        ));
                     }
                     ArrayKey::Int(_) => {
                         if named_seen {
@@ -45881,6 +45924,15 @@ impl Interpreter {
                                 ),
                             )
                         })?
+                }
+                ArrayKey::BinaryString(_) => {
+                    return Err(runtime_error(
+                        argument_expr.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() binary string named arguments are not implemented in the current subset",
+                        ),
+                    ));
                 }
                 ArrayKey::Int(_) => {
                     if named_seen {
@@ -47373,15 +47425,14 @@ impl Interpreter {
                 }
             };
 
-            let boundary =
-                caller_scope.object_property_holder_storage_boundary(
-                    object_name,
-                    &object,
-                    property,
-                    &[],
-                    current_class_id,
-                    &protected_class_ids,
-                );
+            let boundary = caller_scope.object_property_holder_storage_boundary(
+                object_name,
+                &object,
+                property,
+                &[],
+                current_class_id,
+                &protected_class_ids,
+            );
             caller_scope.pre_replace_holder_storage(&boundary);
             match object.write_property_from_context(
                 property,
@@ -47808,15 +47859,14 @@ impl Interpreter {
         };
         let value = array.next_value();
         property_array.insert(key.clone(), slot);
-        let boundary =
-            caller_scope.object_property_holder_storage_boundary(
-                object_name,
-                &object,
-                property,
-                std::slice::from_ref(&key),
-                current_class_id,
-                &protected_class_ids,
-            );
+        let boundary = caller_scope.object_property_holder_storage_boundary(
+            object_name,
+            &object,
+            property,
+            std::slice::from_ref(&key),
+            current_class_id,
+            &protected_class_ids,
+        );
         caller_scope.pre_replace_holder_storage(&boundary);
         object
             .write_property_from_context(
@@ -57595,15 +57645,14 @@ impl Interpreter {
             Value::Object(object_value) => {
                 let alias_fallbacks =
                     caller_scope.public_object_property_root_alias_fallbacks(object_name, property);
-                let boundary =
-                    caller_scope.object_property_holder_storage_boundary(
-                        object_name,
-                        &object_value,
-                        property,
-                        &[],
-                        current_class_id,
-                        &protected_class_ids,
-                    );
+                let boundary = caller_scope.object_property_holder_storage_boundary(
+                    object_name,
+                    &object_value,
+                    property,
+                    &[],
+                    current_class_id,
+                    &protected_class_ids,
+                );
                 caller_scope.pre_replace_holder_storage(&boundary);
                 match object_value.write_property_from_context_with_object_type_resolver(
                     property,
@@ -58937,6 +58986,7 @@ impl Interpreter {
                     .map(|key| match key {
                         Some(ArrayKey::Int(value)) => Value::Int(value),
                         Some(ArrayKey::String(value)) => Value::String(value),
+                        Some(ArrayKey::BinaryString(value)) => Value::BinaryString(value),
                         None => Value::Bool(false),
                     })
                     .map_err(|error| runtime_error(span, error)),
@@ -58945,6 +58995,7 @@ impl Interpreter {
                     .map(|key| match key {
                         Some(ArrayKey::Int(value)) => Value::Int(value),
                         Some(ArrayKey::String(value)) => Value::String(value),
+                        Some(ArrayKey::BinaryString(value)) => Value::BinaryString(value),
                         None => Value::Bool(false),
                     })
                     .map_err(|error| runtime_error(span, error)),
@@ -58953,6 +59004,7 @@ impl Interpreter {
                     .map(|key| match key {
                         Some(ArrayKey::Int(value)) => Value::Int(value),
                         Some(ArrayKey::String(value)) => Value::String(value),
+                        Some(ArrayKey::BinaryString(value)) => Value::BinaryString(value),
                         None => Value::Bool(false),
                     })
                     .map_err(|error| runtime_error(span, error)),
@@ -62768,6 +62820,7 @@ impl Interpreter {
         match key {
             Some(ArrayKey::Int(value)) => Value::Int(value),
             Some(ArrayKey::String(value)) => Value::String(value),
+            Some(ArrayKey::BinaryString(value)) => Value::BinaryString(value),
             None => Value::Null,
         }
     }
@@ -63272,6 +63325,7 @@ impl Interpreter {
 
         match value {
             Value::String(value) => Ok(Some(value)),
+            Value::BinaryString(value) => Ok(Some(String::from_utf8_lossy(&value).into_owned())),
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -63301,9 +63355,12 @@ impl Interpreter {
 
     fn value_to_string_cast(&mut self, value: Value, span: Span) -> CompileResult<String> {
         match value {
-            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-                Ok(value.echo_string())
-            }
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::String(_)
+            | Value::BinaryString(_) => Ok(value.echo_string()),
             Value::Array(_) => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -63414,6 +63471,9 @@ impl Interpreter {
                 Value::Int(value) => Ok(Value::Int(value)),
                 Value::Float(value) => cast_float_to_int(value, "(int)", span),
                 Value::String(value) => cast_string_to_int(&value, span),
+                Value::BinaryString(value) => {
+                    cast_string_to_int(&String::from_utf8_lossy(&value), span)
+                }
                 Value::Array(_) => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -63450,6 +63510,9 @@ impl Interpreter {
                 Value::Int(value) => Ok(Value::Float(value as f64)),
                 Value::Float(value) => Ok(Value::Float(value)),
                 Value::String(value) => cast_string_to_float(&value, span),
+                Value::BinaryString(value) => {
+                    cast_string_to_float(&String::from_utf8_lossy(&value), span)
+                }
                 Value::Array(_) => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -63482,7 +63545,11 @@ impl Interpreter {
             CastKind::Array => match value {
                 Value::Null => Ok(Value::Array(PhpArray::new())),
                 Value::Array(value) => Ok(Value::Array(value)),
-                Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+                Value::Bool(_)
+                | Value::Int(_)
+                | Value::Float(_)
+                | Value::String(_)
+                | Value::BinaryString(_) => {
                     let mut array = PhpArray::new();
                     array
                         .append(value)
@@ -67674,7 +67741,12 @@ fn normalize_runtime_class_constant_lookup_name(name: &str) -> Option<(&str, &st
 
 fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str> {
     match value {
-        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => None,
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::String(_)
+        | Value::BinaryString(_) => None,
         Value::Array(array) => array
             .entries()
             .iter()
@@ -74753,7 +74825,12 @@ fn call_implode(args: &[Value], span: Span) -> CompileResult<Value> {
     let mut parts = Vec::with_capacity(array.len());
     for entry in array.entries() {
         match entry.value() {
-            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::String(_)
+            | Value::BinaryString(_) => {
                 parts.push(entry.value().echo_string());
             }
             other => {
@@ -74784,8 +74861,9 @@ fn is_bounded_session_id(session_id: &str) -> bool {
 fn format_php_session_file(session_data: &PhpArray) -> Option<String> {
     let mut output = String::new();
     for entry in session_data.entries() {
-        let ArrayKey::String(name) = &entry.key else {
-            return None;
+        let name = match &entry.key {
+            ArrayKey::String(name) => name.as_str(),
+            ArrayKey::Int(_) | ArrayKey::BinaryString(_) => return None,
         };
         if name.is_empty() || name.contains('|') {
             return None;
@@ -74818,6 +74896,14 @@ fn format_php_serialized_value(value: &Value, output: &mut String) -> Option<()>
             output.push_str(value);
             output.push_str("\";");
         }
+        Value::BinaryString(value) => {
+            let value = String::from_utf8_lossy(value);
+            output.push_str("s:");
+            output.push_str(&value.len().to_string());
+            output.push_str(":\"");
+            output.push_str(&value);
+            output.push_str("\";");
+        }
         Value::Array(array) => {
             output.push_str("a:");
             output.push_str(&array.len().to_string());
@@ -74845,6 +74931,14 @@ fn format_php_serialized_array_key(key: &ArrayKey, output: &mut String) {
             output.push_str(&value.len().to_string());
             output.push_str(":\"");
             output.push_str(value);
+            output.push_str("\";");
+        }
+        ArrayKey::BinaryString(value) => {
+            let value = String::from_utf8_lossy(value);
+            output.push_str("s:");
+            output.push_str(&value.len().to_string());
+            output.push_str(":\"");
+            output.push_str(&value);
             output.push_str("\";");
         }
     }
@@ -76533,6 +76627,7 @@ fn value_from_array_key(key: &ArrayKey) -> Value {
     match key {
         ArrayKey::Int(value) => Value::Int(*value),
         ArrayKey::String(value) => Value::String(value.clone()),
+        ArrayKey::BinaryString(value) => Value::BinaryString(value.clone()),
     }
 }
 
@@ -76548,6 +76643,11 @@ fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
         Value::Int(value) => format!("{padding}int({value})\n"),
         Value::Float(value) => format!("{padding}float({})\n", value),
         Value::String(value) => format!("{padding}string({}) \"{}\"\n", value.len(), value),
+        Value::BinaryString(value) => format!(
+            "{padding}string({}) \"{}\"\n",
+            value.len(),
+            String::from_utf8_lossy(value)
+        ),
         Value::Array(value) => {
             let mut output = format!("{padding}array({}) {{\n", value.len());
             for entry in value.entries() {
@@ -76591,6 +76691,7 @@ fn format_var_dump_key(key: &ArrayKey) -> String {
     match key {
         ArrayKey::Int(value) => value.to_string(),
         ArrayKey::String(value) => format!("\"{value}\""),
+        ArrayKey::BinaryString(value) => format!("\"{}\"", String::from_utf8_lossy(value)),
     }
 }
 
@@ -77527,7 +77628,10 @@ mod tests {
 
         assert_eq!(
             scope.array_copy_source_mutation_impact_for_object_property_write(
-                &source, &object, "items", &[]
+                &source,
+                &object,
+                "items",
+                &[]
             ),
             Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor)
         );
@@ -77537,19 +77641,14 @@ mod tests {
             std::slice::from_ref(&leaf_key),
             leaf_cell.clone(),
         );
-        assert!(scope.array_copy_source_path_was_detached(
-            &source,
-            std::slice::from_ref(&leaf_key)
-        ));
+        assert!(scope.array_copy_source_path_was_detached(&source, std::slice::from_ref(&leaf_key)));
 
         let detached = vec![(vec![leaf_key.clone()], leaf_cell.clone())];
         scope.mark_array_copy_source_dirty(source);
         let boundary =
             scope.holder_storage_mutation_boundary_for_object_property(&object, "items", &[]);
-        let rehydrated = scope.array_copy_source_records_rehydrated_by_holder_storage_boundary(
-            &boundary,
-            &detached,
-        );
+        let rehydrated = scope
+            .array_copy_source_records_rehydrated_by_holder_storage_boundary(&boundary, &detached);
         let paths = rehydrated
             .iter()
             .find_map(|(record, paths)| {
@@ -77589,7 +77688,10 @@ mod tests {
 
         assert_eq!(
             scope.array_copy_source_mutation_impact_for_object_property_write(
-                &source, &object, "items", &[]
+                &source,
+                &object,
+                "items",
+                &[]
             ),
             Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor)
         );
@@ -77724,7 +77826,9 @@ mod tests {
         scope.record_public_object_property_array_copy_source("clean", source.clone());
         scope.record_public_object_property_array_copy_source("dirty", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("dirty");
-        scope.public_object_property_array_copy_sources.remove("dirty");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("dirty");
         scope.mark_array_copy_source_dirty(source.clone());
         scope.record_object_property_array_copy_source_path(
             &object,
@@ -77739,16 +77843,19 @@ mod tests {
         let impacts = scope.array_copy_source_record_impacts_for_holder_storage_boundary(&boundary);
 
         assert_eq!(impacts.len(), 5);
-        assert!(impacts.iter().all(|impact| impact.replaces_source_or_ancestor()));
+        assert!(impacts
+            .iter()
+            .all(|impact| impact.replaces_source_or_ancestor()));
         assert!(impacts
             .iter()
             .any(|impact| matches!(impact.record.location, ArrayCopySourceRecordLocation::CleanStatic(ref name) if name == "clean")));
         assert!(impacts
             .iter()
             .any(|impact| matches!(impact.record.location, ArrayCopySourceRecordLocation::DirtyStatic(ref name) if name == "dirty")));
-        assert!(impacts
-            .iter()
-            .any(|impact| matches!(impact.record.location, ArrayCopySourceRecordLocation::DirtySource)));
+        assert!(impacts.iter().any(|impact| matches!(
+            impact.record.location,
+            ArrayCopySourceRecordLocation::DirtySource
+        )));
         assert!(impacts.iter().any(|impact| matches!(
             impact.record.location,
             ArrayCopySourceRecordLocation::ObjectPropertyPath { ref property, .. } if property == "copy"
@@ -77799,9 +77906,10 @@ mod tests {
         assert!(records
             .iter()
             .any(|(record, _)| matches!(record.location, ArrayCopySourceRecordLocation::CleanStatic(ref name) if name == "copy")));
-        assert!(records
-            .iter()
-            .any(|(record, _)| matches!(record.location, ArrayCopySourceRecordLocation::DirtySource)));
+        assert!(records.iter().any(|(record, _)| matches!(
+            record.location,
+            ArrayCopySourceRecordLocation::DirtySource
+        )));
     }
 
     #[test]
@@ -77849,7 +77957,9 @@ mod tests {
             object_property_source.clone(),
         );
         source_scope.mark_public_object_property_array_copy_source_dirty("copy");
-        source_scope.public_object_property_array_copy_sources.remove("copy");
+        source_scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let source = ArrayCopySource::alias_path(
             ArrayOffsetAliasRoot::StaticArray {
@@ -77859,9 +77969,8 @@ mod tests {
             false,
         );
 
-        let portable =
-            SymbolTable::portable_array_copy_source_from_scope(&source, &source_scope)
-                .expect("expected dirty static copy source to remain portable");
+        let portable = SymbolTable::portable_array_copy_source_from_scope(&source, &source_scope)
+            .expect("expected dirty static copy source to remain portable");
 
         assert!(matches!(
             portable.root,
@@ -77887,7 +77996,9 @@ mod tests {
             ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let aliases = vec![ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::StaticArray {
@@ -77923,7 +78034,9 @@ mod tests {
         scope.write_static("copy", Value::Array(PhpArray::new()));
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         scope
             .write_alias_root_value_for_reference_promotion(
@@ -77967,7 +78080,9 @@ mod tests {
             ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
         scope.array_offset_aliases.insert(
             "copy".to_string(),
             vec![
@@ -78015,7 +78130,9 @@ mod tests {
         scope.write_static("copy", Value::Array(PhpArray::new()));
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let snapshot = scope.public_array_copy_source_snapshot();
         scope.clear_public_object_property_array_copy_source("copy");
@@ -78046,15 +78163,13 @@ mod tests {
         let mut copy = PhpArray::new();
         copy.insert(leaf_key.clone(), Value::String("plain".to_string()));
         scope.write_static("copy", Value::Array(copy));
-        let source = ArrayCopySource::object_property(
-            object.clone(),
-            "items".to_string(),
-            Vec::new(),
-            true,
-        );
+        let source =
+            ArrayCopySource::object_property(object.clone(), "items".to_string(), Vec::new(), true);
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let leaf_cell = PhpReferenceCell::new(Value::String("shared".to_string()));
         scope.rehydrate_detached_object_property_array_copy_sources(
@@ -78106,7 +78221,9 @@ mod tests {
         scope.write_static("copy", value.clone());
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let recovered_from_expr = interpreter
             .public_object_property_array_copy_source_for_value_expr(
@@ -78147,7 +78264,9 @@ mod tests {
             ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
         scope.record_public_object_property_array_copy_source("copy", source);
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
         scope.array_offset_aliases.insert(
             "leaf_alias".to_string(),
             vec![ArrayOffsetAlias {
@@ -78257,7 +78376,9 @@ mod tests {
         caller_scope.write_static("copy", Value::Array(PhpArray::new()));
         caller_scope.record_public_object_property_array_copy_source("copy", source.clone());
         caller_scope.mark_public_object_property_array_copy_source_dirty("copy");
-        caller_scope.public_object_property_array_copy_sources.remove("copy");
+        caller_scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let function = FunctionDecl {
             name: "takes_ref".to_string(),
@@ -78318,14 +78439,12 @@ mod tests {
         scope.write_static("copy", value.clone());
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
-        let recovered = Interpreter::array_copy_source_for_closure_capture(
-            "copy",
-            &value,
-            &scope,
-        )
-        .expect("expected dirty static copy source to be captured");
+        let recovered = Interpreter::array_copy_source_for_closure_capture("copy", &value, &scope)
+            .expect("expected dirty static copy source to be captured");
 
         assert!(scope.array_copy_sources_match(&recovered, &source));
     }
@@ -78346,7 +78465,9 @@ mod tests {
             ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
         caller_scope.record_public_object_property_array_copy_source("copy", source.clone());
         caller_scope.mark_public_object_property_array_copy_source_dirty("copy");
-        caller_scope.public_object_property_array_copy_sources.remove("copy");
+        caller_scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
         let binding = ReferenceBinding {
             param_name: "param".to_string(),
             target: ReferenceBindingTarget::CallerCell {
@@ -78556,7 +78677,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -78689,7 +78812,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -78755,7 +78880,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -78821,7 +78948,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -78892,7 +79021,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -78967,7 +79098,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79031,7 +79164,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79103,7 +79238,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79169,7 +79306,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79221,7 +79360,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79276,7 +79417,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79344,7 +79487,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79399,7 +79544,9 @@ mod tests {
             .unwrap();
 
         assert!(matches!(value, Value::Array(_)));
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]

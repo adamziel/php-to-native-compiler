@@ -2,7 +2,7 @@ use php_compiler::error::Phase;
 use php_compiler::run_source;
 
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, object property unset, static property unset, non-local unset operands, and mixed multiple-operand unset until native read-modify-write ordering, null-aware mutation, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_INSTANCEOF_REJECTION: &str = "LLVM instanceof lowering rejects class/interface relationship checks until native class metadata tables, object handles, inheritance/interface registries, class-name resolution, autoload interaction, references/copy-on-write, and exact native instanceof diagnostics exist; phpc run handles current bounded instanceof behavior";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
@@ -1694,17 +1694,21 @@ fn unparenthesized_nested_ternary_has_stable_parse_error() {
 }
 
 #[test]
-fn emit_ir_rejects_ternary_expression_after_parse() {
-    let error = php_compiler::emit_ir_source(
+fn emit_ir_lowers_direct_local_ternary_conditions_after_parse() {
+    let ir = php_compiler::emit_ir_source(
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$maybe = $flag ? 0 : 5;\necho $maybe ? 1 : 2;\n",
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
-        error.message,
-        "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior"
+        ir.matches("call i1 @phpc_native_symbol_table_empty")
+            .count(),
+        2,
+        "{ir}"
     );
+    assert!(ir.contains("xor i1"), "{ir}");
+    assert!(ir.contains("select i1"), "{ir}");
+    assert!(!ir.contains("LLVM conditional lowering rejects"), "{ir}");
 }
 
 #[test]

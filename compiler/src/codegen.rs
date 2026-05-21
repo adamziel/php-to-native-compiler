@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::ast::{
-    AssignTarget, BinaryOp, ClassMember, Expr, Program, Span, Stmt, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, ClassMember, Expr, NewClassName, Program, Span, Stmt,
+    UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -14,6 +15,8 @@ const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsu
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_VALUE_DEBUG_OUTPUT_REJECTION: &str = "LLVM debug-output builtin lowering rejects var_dump() and print_r() until native value formatting, stdout side effects, return-output ownership, references/copy-on-write, and exact native diagnostics are wired through the LLVM backend; generated-native C routes lowerable direct-output forms through the shared runtime debug-output contract";
+const ASSEMBLY_VALUE_DEBUG_OUTPUT_REJECTION: &str = "assembly debug-output builtin lowering rejects forms outside the reusable native value debug-output contract, including non-lowerable values and print_r() return-output ownership; lowerable var_dump() and direct-output print_r() values route through owned NativeValueHandle formatting, stdout, diagnostics, and cleanup";
 const LLVM_STR_STARTS_WITH_REJECTION: &str = "LLVM str_starts_with lowering rejects direct string-prefix calls until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native str_starts_with diagnostics exist; phpc run handles current bounded str_starts_with behavior";
 const ASSEMBLY_STR_STARTS_WITH_REJECTION: &str = "assembly str_starts_with lowering rejects direct string-prefix calls until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native str_starts_with diagnostics exist; phpc run handles current bounded str_starts_with behavior";
 const LLVM_STR_ENDS_WITH_REJECTION: &str = "LLVM str_ends_with lowering rejects direct string-suffix calls until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native str_ends_with diagnostics exist; phpc run handles current bounded str_ends_with behavior";
@@ -36,6 +39,30 @@ const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call l
 const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
+const LLVM_TERMINATION_PARTIAL_BRANCH_REJECTION: &str = "LLVM termination control-flow lowering rejects exit()/die() in branches that may continue until native branch merge cleanup, live value-handle ownership across paths, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die branch behavior";
+const ASSEMBLY_TERMINATION_PARTIAL_BRANCH_REJECTION: &str = "assembly termination control-flow lowering rejects exit()/die() in branches that may continue until native branch merge cleanup, live value-handle ownership across paths, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die branch behavior";
+const LLVM_TERMINATION_LOOP_SCOPE_REJECTION: &str = "LLVM termination cleanup-stack lowering rejects exit()/die() across loop scopes until native loop unwind cleanup, branch/block local ownership, live value-handle ownership, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die loop behavior";
+const ASSEMBLY_TERMINATION_LOOP_SCOPE_REJECTION: &str = "assembly termination cleanup-stack lowering rejects exit()/die() across loop scopes until native loop unwind cleanup, branch/block local ownership, live value-handle ownership, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die loop behavior";
+const LLVM_TERMINATION_SWITCH_SCOPE_REJECTION: &str = "LLVM termination cleanup-stack lowering rejects exit()/die() across switch scopes until native switch unwind cleanup, case/fallthrough ownership, live value-handle ownership, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die switch behavior";
+const ASSEMBLY_TERMINATION_SWITCH_SCOPE_REJECTION: &str = "assembly termination cleanup-stack lowering rejects exit()/die() across switch scopes until native switch unwind cleanup, case/fallthrough ownership, live value-handle ownership, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die switch behavior";
+const LLVM_TERMINATION_GOTO_SCOPE_REJECTION: &str = "LLVM termination cleanup-stack lowering rejects exit()/die() across goto/label scopes until native goto reachability, label ownership, branch/block local cleanup, live value-handle ownership, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die goto behavior";
+const ASSEMBLY_TERMINATION_GOTO_SCOPE_REJECTION: &str = "assembly termination cleanup-stack lowering rejects exit()/die() across goto/label scopes until native goto reachability, label ownership, branch/block local cleanup, live value-handle ownership, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die goto behavior";
+const LLVM_TERMINATION_FUNCTION_FRAME_REJECTION: &str = "LLVM termination cleanup-stack lowering rejects exit()/die() across function frames until native stack-frame unwinding, local/value-handle ownership, return-value handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die function behavior";
+const ASSEMBLY_TERMINATION_FUNCTION_FRAME_REJECTION: &str = "assembly termination cleanup-stack lowering rejects exit()/die() across function frames until native stack-frame unwinding, local/value-handle ownership, return-value handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die function behavior";
+const LLVM_TERMINATION_RETURN_CONTEXT_REJECTION: &str = "LLVM termination control-flow lowering rejects exit()/die() in return expressions until native function return unwinding, stack-frame cleanup, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die return behavior";
+const ASSEMBLY_TERMINATION_RETURN_CONTEXT_REJECTION: &str = "assembly termination control-flow lowering rejects exit()/die() in return expressions until native function return unwinding, stack-frame cleanup, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die return behavior";
+const LLVM_TERMINATION_EXPRESSION_CONTEXT_REJECTION: &str = "LLVM termination control-flow lowering rejects exit()/die() in expression contexts until native expression-level termination propagation, temporary cleanup, live value-handle ownership, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded statement-level exit/die behavior";
+const ASSEMBLY_TERMINATION_EXPRESSION_CONTEXT_REJECTION: &str = "assembly termination control-flow lowering rejects exit()/die() in expression contexts until native expression-level termination propagation, temporary cleanup, live value-handle ownership, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded statement-level exit/die behavior";
+const LLVM_TERMINATION_TRY_CONTEXT_REJECTION: &str = "LLVM termination control-flow lowering rejects exit()/die() in try/catch/finally contexts until native finally dispatch during termination, exception/termination unwinding, shutdown functions, destructors, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die try/finally behavior";
+const ASSEMBLY_TERMINATION_TRY_CONTEXT_REJECTION: &str = "assembly termination control-flow lowering rejects exit()/die() in try/catch/finally contexts until native finally dispatch during termination, exception/termination unwinding, shutdown functions, destructors, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die try/finally behavior";
+const LLVM_TERMINATION_OUTPUT_BUFFER_REJECTION: &str = "LLVM termination hook lowering rejects exit()/die() with active or queried output buffers until native output-buffer stack flushing, discard/flush ordering, shutdown flushing, SAPI interaction, live value cleanup, and exact native diagnostics exist; phpc run handles current bounded output-buffer termination behavior";
+const ASSEMBLY_TERMINATION_OUTPUT_BUFFER_REJECTION: &str = "assembly termination hook lowering rejects exit()/die() with active or queried output buffers until native output-buffer stack flushing, discard/flush ordering, shutdown flushing, SAPI interaction, live value cleanup, and exact native diagnostics exist; phpc run handles current bounded output-buffer termination behavior";
+const LLVM_TERMINATION_SHUTDOWN_REJECTION: &str = "LLVM termination hook lowering rejects exit()/die() after shutdown-function registration until native shutdown queue storage, callback invocation ordering, output-buffer flushing, destructor/finally interaction, live value cleanup, and exact native diagnostics exist; phpc run handles current bounded shutdown behavior";
+const ASSEMBLY_TERMINATION_SHUTDOWN_REJECTION: &str = "assembly termination hook lowering rejects exit()/die() after shutdown-function registration until native shutdown queue storage, callback invocation ordering, output-buffer flushing, destructor/finally interaction, live value cleanup, and exact native diagnostics exist; phpc run handles current bounded shutdown behavior";
+const LLVM_TERMINATION_DESTRUCTOR_REJECTION: &str = "LLVM termination hook lowering rejects exit()/die() with pending object destructor semantics until native object lifetime tracking, destructor ordering, shutdown/finally interaction, output-buffer flushing, live value cleanup, and exact native diagnostics exist; phpc run handles current bounded destructor behavior";
+const ASSEMBLY_TERMINATION_DESTRUCTOR_REJECTION: &str = "assembly termination hook lowering rejects exit()/die() with pending object destructor semantics until native object lifetime tracking, destructor ordering, shutdown/finally interaction, output-buffer flushing, live value cleanup, and exact native diagnostics exist; phpc run handles current bounded destructor behavior";
+const LLVM_TERMINATION_EXCEPTION_REJECTION: &str = "LLVM termination hook lowering rejects exit()/die() across exception-control contexts until native exception unwinding, finally dispatch, shutdown/destructor interaction, output-buffer flushing, live value cleanup, and exact native diagnostics exist; phpc run handles current bounded exception behavior";
+const ASSEMBLY_TERMINATION_EXCEPTION_REJECTION: &str = "assembly termination hook lowering rejects exit()/die() across exception-control contexts until native exception unwinding, finally dispatch, shutdown/destructor interaction, output-buffer flushing, live value cleanup, and exact native diagnostics exist; phpc run handles current bounded exception behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
@@ -92,9 +119,9 @@ const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects 
 const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, object property unset, static property unset, non-local unset operands, and mixed multiple-operand unset until native read-modify-write ordering, null-aware mutation, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
-const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
+const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, unsupported multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const ASSEMBLY_ISSET_REJECTION: &str = "assembly isset lowering rejects array offset operands, object property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset operands, object property operands, static property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
 const ASSEMBLY_EMPTY_REJECTION: &str = "assembly empty lowering rejects array offset operands, object property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
@@ -187,6 +214,226 @@ fn request_superglobal_expr_span(expr: &Expr) -> Option<Span> {
             request_superglobal_expr_span(target)
         }
         _ => None,
+    }
+}
+
+fn request_superglobal_name_span(name: &str, span: Span) -> Option<Span> {
+    is_request_superglobal_name(name).then_some(span)
+}
+
+fn request_superglobal_consumed_many_span<'a>(
+    exprs: impl IntoIterator<Item = &'a Expr>,
+) -> Option<Span> {
+    exprs
+        .into_iter()
+        .find_map(request_superglobal_consumed_expr_span)
+}
+
+fn request_superglobal_consumed_expr_span(expr: &Expr) -> Option<Span> {
+    if let Some(span) = request_superglobal_expr_span(expr) {
+        return Some(span);
+    }
+
+    match expr {
+        Expr::Array { items, .. } => items.iter().find_map(|item| {
+            item.key
+                .as_ref()
+                .and_then(request_superglobal_consumed_expr_span)
+                .or_else(|| request_superglobal_consumed_expr_span(&item.value))
+        }),
+        Expr::Index { index, .. } => request_superglobal_consumed_expr_span(index),
+        Expr::Property { target, .. } => request_superglobal_consumed_expr_span(target),
+        Expr::DynamicProperty {
+            target, property, ..
+        } => request_superglobal_consumed_expr_span(target)
+            .or_else(|| request_superglobal_consumed_expr_span(property)),
+        Expr::ObjectStaticProperty { target, .. } => request_superglobal_consumed_expr_span(target),
+        Expr::MethodCall { target, args, .. } => request_superglobal_consumed_expr_span(target)
+            .or_else(|| request_superglobal_consumed_args_span(args)),
+        Expr::DynamicMethodCall {
+            target,
+            method,
+            args,
+            ..
+        } => request_superglobal_consumed_expr_span(target)
+            .or_else(|| request_superglobal_consumed_expr_span(method))
+            .or_else(|| request_superglobal_consumed_args_span(args)),
+        Expr::ParentMethodCall { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. }
+        | Expr::Call { args, .. } => request_superglobal_consumed_args_span(args),
+        Expr::ObjectStaticMethodCall { target, args, .. } => {
+            request_superglobal_consumed_expr_span(target)
+                .or_else(|| request_superglobal_consumed_args_span(args))
+        }
+        Expr::DynamicCall { callee, args, .. } => request_superglobal_consumed_expr_span(callee)
+            .or_else(|| request_superglobal_consumed_args_span(args)),
+        Expr::InstanceOf { expr, .. }
+        | Expr::Clone { expr, .. }
+        | Expr::Unary { expr, .. }
+        | Expr::ErrorControl { expr, .. }
+        | Expr::Include { path: expr, .. }
+        | Expr::Require { path: expr, .. }
+        | Expr::Cast { expr, .. } => request_superglobal_consumed_expr_span(expr),
+        Expr::New {
+            class_name,
+            args,
+            span,
+        } => request_superglobal_consumed_new_class_name_span(class_name, *span)
+            .or_else(|| request_superglobal_consumed_args_span(args)),
+        Expr::Binary { left, right, .. } => request_superglobal_consumed_expr_span(left)
+            .or_else(|| request_superglobal_consumed_expr_span(right)),
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => request_superglobal_consumed_expr_span(condition)
+            .or_else(|| request_superglobal_consumed_expr_span(if_true))
+            .or_else(|| request_superglobal_consumed_expr_span(if_false)),
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => request_superglobal_consumed_expr_span(condition)
+            .or_else(|| request_superglobal_consumed_expr_span(if_false)),
+        Expr::Assign { expr, .. }
+        | Expr::CompoundAssign { expr, .. }
+        | Expr::NullCoalesceAssign { expr, .. } => request_superglobal_consumed_expr_span(expr),
+        Expr::IncrementDecrement { .. } => None,
+        _ => None,
+    }
+}
+
+fn request_superglobal_consumed_args_span(args: &[Expr]) -> Option<Span> {
+    args.iter().find_map(request_superglobal_consumed_expr_span)
+}
+
+fn request_superglobal_consumed_new_class_name_span(
+    class_name: &NewClassName,
+    span: Span,
+) -> Option<Span> {
+    match class_name {
+        NewClassName::DynamicVariable(name) => request_superglobal_name_span(name, span),
+        NewClassName::Named(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => None,
+    }
+}
+
+fn request_superglobal_consumed_assign_target_span(target: &AssignTarget) -> Option<Span> {
+    match target {
+        AssignTarget::Variable { name, span } => request_superglobal_name_span(name, *span),
+        AssignTarget::List { .. } => None,
+        AssignTarget::ArrayIndex { name, index, span } => {
+            request_superglobal_name_span(name, *span).or_else(|| {
+                index
+                    .as_ref()
+                    .and_then(request_superglobal_consumed_expr_span)
+            })
+        }
+        AssignTarget::NestedArrayIndex {
+            name,
+            indices,
+            span,
+        } => request_superglobal_name_span(name, *span)
+            .or_else(|| request_superglobal_consumed_many_span(indices)),
+        AssignTarget::NestedArrayAppend {
+            name,
+            indices,
+            suffix_indices,
+            span,
+        } => request_superglobal_name_span(name, *span)
+            .or_else(|| request_superglobal_consumed_many_span(indices))
+            .or_else(|| request_superglobal_consumed_many_span(suffix_indices)),
+        AssignTarget::Property { object, span, .. } => request_superglobal_name_span(object, *span),
+        AssignTarget::DynamicProperty {
+            object,
+            property,
+            span,
+        } => request_superglobal_name_span(object, *span)
+            .or_else(|| request_superglobal_consumed_expr_span(property)),
+        AssignTarget::NonDirectProperty { holder, .. } => {
+            request_superglobal_consumed_expr_span(holder)
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        } => request_superglobal_consumed_expr_span(holder)
+            .or_else(|| request_superglobal_consumed_expr_span(property)),
+        AssignTarget::ObjectPropertyArrayIndex {
+            object,
+            indices,
+            span,
+            ..
+        } => request_superglobal_name_span(object, *span)
+            .or_else(|| request_superglobal_consumed_many_span(indices)),
+        AssignTarget::ObjectPropertyArrayAppend {
+            object,
+            indices,
+            suffix_indices,
+            span,
+            ..
+        } => request_superglobal_name_span(object, *span)
+            .or_else(|| request_superglobal_consumed_many_span(indices))
+            .or_else(|| request_superglobal_consumed_many_span(suffix_indices)),
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            object,
+            property,
+            indices,
+            span,
+        } => request_superglobal_name_span(object, *span)
+            .or_else(|| request_superglobal_consumed_expr_span(property))
+            .or_else(|| request_superglobal_consumed_many_span(indices)),
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            object,
+            property,
+            indices,
+            suffix_indices,
+            span,
+            ..
+        } => request_superglobal_name_span(object, *span)
+            .or_else(|| request_superglobal_consumed_expr_span(property))
+            .or_else(|| request_superglobal_consumed_many_span(indices))
+            .or_else(|| request_superglobal_consumed_many_span(suffix_indices)),
+        AssignTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => request_superglobal_consumed_expr_span(holder)
+            .or_else(|| request_superglobal_consumed_many_span(indices)),
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => request_superglobal_consumed_expr_span(holder)
+            .or_else(|| request_superglobal_consumed_many_span(indices))
+            .or_else(|| request_superglobal_consumed_many_span(suffix_indices)),
+        AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => request_superglobal_consumed_expr_span(holder)
+            .or_else(|| request_superglobal_consumed_expr_span(property))
+            .or_else(|| request_superglobal_consumed_many_span(indices)),
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => request_superglobal_consumed_expr_span(holder)
+            .or_else(|| request_superglobal_consumed_expr_span(property))
+            .or_else(|| request_superglobal_consumed_many_span(indices))
+            .or_else(|| request_superglobal_consumed_many_span(suffix_indices)),
+        AssignTarget::ObjectStaticProperty { target, .. } => {
+            request_superglobal_consumed_expr_span(target)
+        }
+        AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => None,
     }
 }
 
@@ -310,6 +557,45 @@ fn is_object_offset_expr(expr: &Expr) -> bool {
     )
 }
 
+fn native_value_blocker_for_expr(expr: &Expr) -> Option<NativeValueBlocker> {
+    if request_superglobal_expr_span(expr).is_some() {
+        return Some(NativeValueBlocker::RequestState);
+    }
+
+    match expr {
+        Expr::Array { .. } => Some(NativeValueBlocker::Array),
+        Expr::Index { target, .. } | Expr::AppendIndex { target, .. } => {
+            if is_object_offset_expr(target) {
+                Some(NativeValueBlocker::ArrayAccess)
+            } else {
+                Some(NativeValueBlocker::Array)
+            }
+        }
+        Expr::Property { .. } | Expr::DynamicProperty { .. } => {
+            Some(NativeValueBlocker::ObjectProperty)
+        }
+        Expr::MethodCall { .. }
+        | Expr::DynamicMethodCall { .. }
+        | Expr::ParentMethodCall { .. }
+        | Expr::StaticMethodCall { .. }
+        | Expr::ObjectStaticMethodCall { .. }
+        | Expr::SelfMethodCall { .. }
+        | Expr::LateStaticMethodCall { .. } => Some(NativeValueBlocker::MethodCall),
+        Expr::New { .. } => Some(NativeValueBlocker::ObjectInstantiation),
+        Expr::Clone { .. } => Some(NativeValueBlocker::ObjectClone),
+        Expr::InstanceOf { .. } => Some(NativeValueBlocker::InstanceOf),
+        Expr::Call { name, .. } if is_stream_resource_builtin(name) => {
+            Some(NativeValueBlocker::Resource)
+        }
+        Expr::DynamicCall { .. } => Some(NativeValueBlocker::DynamicCall),
+        Expr::Assign { .. }
+        | Expr::CompoundAssign { .. }
+        | Expr::NullCoalesceAssign { .. }
+        | Expr::IncrementDecrement { .. } => Some(NativeValueBlocker::CopyOnWrite),
+        _ => None,
+    }
+}
+
 fn find_static_local_span(statements: &[Stmt]) -> Option<Span> {
     for statement in statements {
         match statement {
@@ -415,17 +701,31 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "; this is a dependency sketch, not production lowering or linked execution",
         "%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }",
         &format!("%phpc.NativeByteBuffer = type {{ ptr, {usize_type}, {usize_type} }}"),
+        "%phpc.NativeStringConversionResult = type { %phpc.NativeByteBuffer, %phpc.NativeDiagnosticHandle }",
         "%phpc.NativeStringHandle = type { ptr }",
         "%phpc.NativeValueHandle = type { ptr }",
         "%phpc.NativeDiagnosticHandle = type { ptr }",
         "%phpc.NativeArrayHandle = type { ptr }",
+        "%phpc.NativeArrayKeySnapshotHandle = type { ptr }",
+        "%phpc.NativeArrayEntrySnapshotHandle = type { ptr }",
+        &format!("%phpc.NativeArrayKeyMetadata = type {{ i8, [7 x i8], i64, {usize_type} }}"),
+        "%phpc.NativeArrayKeyMaterializationResult = type { i8, [7 x i8], i64, %phpc.NativeByteBuffer, %phpc.NativeDiagnosticHandle }",
+        "%phpc.NativeClassMetadataHandle = type { ptr }",
         "%phpc.NativeObjectHandle = type { ptr }",
         "%phpc.NativeResourceHandle = type { ptr }",
         "%phpc.NativeReferenceHandle = type { ptr }",
         "%phpc.NativeRequestStateHandle = type { ptr }",
+        "%phpc.NativeSymbolTableHandle = type { ptr }",
         "@phpc.probe.bytes = private unnamed_addr constant [4 x i8] c\"heap\"",
         "@phpc.probe.string = private unnamed_addr constant [7 x i8] c\"php\\00abi\"",
         "@phpc.probe.invalid = private unnamed_addr constant [1 x i8] c\"\\FF\"",
+        "@phpc.probe.binary = private unnamed_addr constant [4 x i8] c\"A\\00\\FF\\0A\"",
+        "@phpc.probe.zero = private unnamed_addr constant [1 x i8] c\"0\"",
+        "@phpc.probe.symbol = private unnamed_addr constant [5 x i8] c\"label\"",
+        "@phpc.probe.text_membership_candidates = private unnamed_addr constant [1 x ptr] [ptr @phpc.probe.bytes]",
+        &format!(
+            "@phpc.probe.text_membership_candidate_lengths = private unnamed_addr constant [1 x {usize_type}] [{usize_type} 4]"
+        ),
         "",
         &format!("declare {usize_type} @phpc_native_scalar_echo_len(%phpc.NativeScalarValue)"),
         &format!(
@@ -442,12 +742,36 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         &format!("declare {usize_type} @phpc_native_string_len(%phpc.NativeStringHandle)"),
         "declare ptr @phpc_native_string_bytes(%phpc.NativeStringHandle)",
         "declare %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStringHandle)",
+        &format!("declare i1 @phpc_native_string_truthy(ptr, {usize_type})"),
         "declare void @phpc_native_string_free(%phpc.NativeStringHandle)",
+        "declare %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue)",
         "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)",
         "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)",
+        &format!(
+            "declare %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr, {usize_type})"
+        ),
+        "declare %phpc.NativeValueHandle @phpc_native_value_clone(%phpc.NativeValueHandle)",
+        "declare i1 @phpc_native_value_truthy(%phpc.NativeValueHandle)",
+        &format!("declare {usize_type} @phpc_native_value_string_len(%phpc.NativeValueHandle)"),
+        &format!(
+            "declare {usize_type} @phpc_native_value_string_len_with_diagnostic(%phpc.NativeValueHandle, ptr)"
+        ),
+        "declare %phpc.NativeByteBuffer @phpc_native_value_string_clone_bytes(%phpc.NativeValueHandle)",
+        "declare %phpc.NativeByteBuffer @phpc_native_value_string_clone_bytes_with_diagnostic(%phpc.NativeValueHandle, ptr)",
         "declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)",
+        "declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes_with_diagnostic(%phpc.NativeValueHandle, ptr)",
+        "declare %phpc.NativeByteBuffer @phpc_native_value_serialize_bytes_with_diagnostic(%phpc.NativeValueHandle, ptr)",
+        "declare %phpc.NativeByteBuffer @phpc_native_value_var_dump_bytes_with_diagnostic(%phpc.NativeValueHandle, ptr)",
+        "declare %phpc.NativeByteBuffer @phpc_native_value_print_r_bytes_with_diagnostic(%phpc.NativeValueHandle, ptr)",
         &format!("declare {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)"),
         "declare void @phpc_native_value_free(%phpc.NativeValueHandle)",
+        "declare %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle)",
+        "declare %phpc.NativeStringConversionResult @phpc_native_value_text_bytes(%phpc.NativeValueHandle, i8)",
+        &format!(
+            "declare i1 @phpc_native_value_text_membership_with_diagnostic(%phpc.NativeValueHandle, i8, ptr, ptr, {usize_type}, i1, ptr)"
+        ),
+        "declare %phpc.NativeValueHandle @phpc_native_value_string_array_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i8, i8, ptr)",
+        "declare void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult)",
         &format!(
             "declare {usize_type} @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)"
         ),
@@ -460,18 +784,108 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "declare %phpc.NativeArrayHandle @phpc_native_array_empty()",
         "declare i1 @phpc_native_array_is_null(%phpc.NativeArrayHandle)",
         &format!("declare {usize_type} @phpc_native_array_len(%phpc.NativeArrayHandle)"),
+        &format!(
+            "declare {usize_type} @phpc_native_value_array_len_with_diagnostic(%phpc.NativeValueHandle, ptr)"
+        ),
         "declare i1 @phpc_native_array_append_scalar(%phpc.NativeArrayHandle, %phpc.NativeScalarValue)",
         "declare i1 @phpc_native_array_append_value(%phpc.NativeArrayHandle, %phpc.NativeValueHandle)",
+        "declare i1 @phpc_native_array_write_int_scalar(%phpc.NativeArrayHandle, i64, %phpc.NativeScalarValue)",
+        "declare i1 @phpc_native_array_write_int_value(%phpc.NativeArrayHandle, i64, %phpc.NativeValueHandle)",
+        "declare i1 @phpc_native_array_write_string_scalar(%phpc.NativeArrayHandle, %phpc.NativeStringHandle, %phpc.NativeScalarValue)",
+        "declare i1 @phpc_native_array_write_string_value(%phpc.NativeArrayHandle, %phpc.NativeStringHandle, %phpc.NativeValueHandle)",
         "declare %phpc.NativeValueHandle @phpc_native_array_read_int(%phpc.NativeArrayHandle, i64)",
+        "declare %phpc.NativeValueHandle @phpc_native_array_read_string(%phpc.NativeArrayHandle, %phpc.NativeStringHandle)",
+        "declare %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle)",
+        "declare %phpc.NativeArrayKeySnapshotHandle @phpc_native_array_key_snapshot(%phpc.NativeArrayHandle)",
+        "declare i1 @phpc_native_array_key_snapshot_is_null(%phpc.NativeArrayKeySnapshotHandle)",
+        &format!(
+            "declare {usize_type} @phpc_native_array_key_snapshot_len(%phpc.NativeArrayKeySnapshotHandle)"
+        ),
+        &format!(
+            "declare %phpc.NativeArrayKeyMetadata @phpc_native_array_key_snapshot_key_at(%phpc.NativeArrayKeySnapshotHandle, {usize_type})"
+        ),
+        &format!(
+            "declare %phpc.NativeStringHandle @phpc_native_array_key_snapshot_string_clone_at(%phpc.NativeArrayKeySnapshotHandle, {usize_type})"
+        ),
+        "declare void @phpc_native_array_key_snapshot_free(%phpc.NativeArrayKeySnapshotHandle)",
+        "declare %phpc.NativeArrayKeyMaterializationResult @phpc_native_value_to_array_key(%phpc.NativeValueHandle)",
+        "declare i1 @phpc_native_value_array_key_exists_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, ptr)",
+        "declare %phpc.NativeValueHandle @phpc_native_value_array_operation_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)",
+        "declare %phpc.NativeValueHandle @phpc_native_value_array_query_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, i8, ptr)",
+        "declare %phpc.NativeStringConversionResult @phpc_native_array_key_materialization_text_bytes(%phpc.NativeArrayKeyMaterializationResult, i8)",
+        "declare %phpc.NativeValueHandle @phpc_native_array_key_materialization_to_value_with_diagnostic(%phpc.NativeArrayKeyMaterializationResult, ptr)",
+        "declare void @phpc_native_array_key_materialization_result_free(%phpc.NativeArrayKeyMaterializationResult)",
+        "declare %phpc.NativeArrayEntrySnapshotHandle @phpc_native_array_entry_snapshot(%phpc.NativeArrayHandle)",
+        "declare i1 @phpc_native_array_entry_snapshot_is_null(%phpc.NativeArrayEntrySnapshotHandle)",
+        &format!(
+            "declare {usize_type} @phpc_native_array_entry_snapshot_len(%phpc.NativeArrayEntrySnapshotHandle)"
+        ),
+        &format!(
+            "declare %phpc.NativeArrayKeyMetadata @phpc_native_array_entry_snapshot_key_at(%phpc.NativeArrayEntrySnapshotHandle, {usize_type})"
+        ),
+        &format!(
+            "declare %phpc.NativeStringHandle @phpc_native_array_entry_snapshot_string_clone_at(%phpc.NativeArrayEntrySnapshotHandle, {usize_type})"
+        ),
+        &format!(
+            "declare %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_key_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle, {usize_type})"
+        ),
+        &format!(
+            "declare %phpc.NativeReferenceHandle @phpc_native_array_entry_snapshot_key_reference_clone_at(%phpc.NativeArrayEntrySnapshotHandle, {usize_type})"
+        ),
+        &format!(
+            "declare %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle, {usize_type})"
+        ),
+        &format!(
+            "declare %phpc.NativeReferenceHandle @phpc_native_array_entry_snapshot_value_reference_clone_at(%phpc.NativeArrayEntrySnapshotHandle, {usize_type})"
+        ),
+        "declare void @phpc_native_array_entry_snapshot_free(%phpc.NativeArrayEntrySnapshotHandle)",
         "declare void @phpc_native_array_free(%phpc.NativeArrayHandle)",
+        "declare %phpc.NativeClassMetadataHandle @phpc_native_class_metadata_null()",
+        "declare i1 @phpc_native_class_metadata_is_null(%phpc.NativeClassMetadataHandle)",
+        &format!(
+            "declare %phpc.NativeClassMetadataHandle @phpc_native_class_metadata_from_name(ptr, {usize_type})"
+        ),
+        "declare %phpc.NativeClassMetadataHandle @phpc_native_class_metadata_from_string(%phpc.NativeStringHandle)",
+        &format!(
+            "declare {usize_type} @phpc_native_class_metadata_name_len(%phpc.NativeClassMetadataHandle)"
+        ),
+        "declare %phpc.NativeByteBuffer @phpc_native_class_metadata_name_clone_bytes(%phpc.NativeClassMetadataHandle)",
+        "declare void @phpc_native_class_metadata_free(%phpc.NativeClassMetadataHandle)",
         "declare %phpc.NativeObjectHandle @phpc_native_object_null()",
         "declare i1 @phpc_native_object_is_null(%phpc.NativeObjectHandle)",
+        "declare %phpc.NativeObjectHandle @phpc_native_object_alloc(%phpc.NativeClassMetadataHandle)",
+        &format!(
+            "declare {usize_type} @phpc_native_object_class_name_len(%phpc.NativeObjectHandle)"
+        ),
+        "declare %phpc.NativeByteBuffer @phpc_native_object_class_name_clone_bytes(%phpc.NativeObjectHandle)",
+        "declare %phpc.NativeClassMetadataHandle @phpc_native_object_class_metadata_clone(%phpc.NativeObjectHandle)",
+        "declare void @phpc_native_object_free(%phpc.NativeObjectHandle)",
         "declare %phpc.NativeResourceHandle @phpc_native_resource_null()",
         "declare i1 @phpc_native_resource_is_null(%phpc.NativeResourceHandle)",
         "declare %phpc.NativeReferenceHandle @phpc_native_reference_null()",
         "declare i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle)",
+        "declare i1 @phpc_native_reference_is_empty(%phpc.NativeReferenceHandle)",
+        "declare %phpc.NativeReferenceHandle @phpc_native_reference_from_scalar(%phpc.NativeScalarValue)",
+        "declare %phpc.NativeReferenceHandle @phpc_native_reference_from_value(%phpc.NativeValueHandle)",
+        "declare %phpc.NativeReferenceHandle @phpc_native_reference_clone(%phpc.NativeReferenceHandle)",
+        "declare %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle)",
+        "declare i1 @phpc_native_reference_write_scalar(%phpc.NativeReferenceHandle, %phpc.NativeScalarValue)",
+        "declare i1 @phpc_native_reference_write_value(%phpc.NativeReferenceHandle, %phpc.NativeValueHandle)",
+        "declare i1 @phpc_native_reference_write_reference(%phpc.NativeReferenceHandle, %phpc.NativeReferenceHandle)",
+        "declare %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle)",
+        "declare void @phpc_native_reference_free(%phpc.NativeReferenceHandle)",
         "declare %phpc.NativeRequestStateHandle @phpc_native_request_state_null()",
         "declare i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle)",
+        "declare %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_null()",
+        "declare %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_new()",
+        "declare i1 @phpc_native_symbol_table_is_null(%phpc.NativeSymbolTableHandle)",
+        &format!(
+            "declare i1 @phpc_native_symbol_table_write(%phpc.NativeSymbolTableHandle, ptr, {usize_type}, %phpc.NativeValueHandle)"
+        ),
+        &format!(
+            "declare %phpc.NativeValueHandle @phpc_native_symbol_table_read(%phpc.NativeSymbolTableHandle, ptr, {usize_type})"
+        ),
+        "declare void @phpc_native_symbol_table_free(%phpc.NativeSymbolTableHandle)",
         "",
         &format!("define {usize_type} @phpc_probe_scalar_echo_len() {{"),
         "entry:",
@@ -544,6 +958,135 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         &format!("  ret {usize_type} %len"),
         "}",
         "",
+        &format!("define {usize_type} @phpc_probe_value_string_byte_diagnostics() {{"),
+        "entry:",
+        "  %len_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        "  %clone_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        &format!(
+            "  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.binary, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %value = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, {usize_type} 4)"
+        ),
+        &format!(
+            "  %len = call {usize_type} @phpc_native_value_string_len(%phpc.NativeValueHandle %value)"
+        ),
+        &format!(
+            "  %len_with_diagnostic = call {usize_type} @phpc_native_value_string_len_with_diagnostic(%phpc.NativeValueHandle %value, ptr %len_diagnostic_slot)"
+        ),
+        "  %clone = call %phpc.NativeByteBuffer @phpc_native_value_string_clone_bytes(%phpc.NativeValueHandle %value)",
+        &format!("  %clone_len = extractvalue %phpc.NativeByteBuffer %clone, 1"),
+        "  %clone_with_diagnostic = call %phpc.NativeByteBuffer @phpc_native_value_string_clone_bytes_with_diagnostic(%phpc.NativeValueHandle %value, ptr %clone_diagnostic_slot)",
+        &format!("  %clone_with_diagnostic_len = extractvalue %phpc.NativeByteBuffer %clone_with_diagnostic, 1"),
+        "  %len_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %len_diagnostic_slot",
+        "  %clone_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %clone_diagnostic_slot",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %clone_with_diagnostic)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %clone)",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %clone_diagnostic)",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %len_diagnostic)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
+        &format!("  %string_sum0 = add {usize_type} %len, %len_with_diagnostic"),
+        &format!("  %string_sum1 = add {usize_type} %string_sum0, %clone_len"),
+        &format!("  %string_sum2 = add {usize_type} %string_sum1, %clone_with_diagnostic_len"),
+        &format!("  ret {usize_type} %string_sum2"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_value_formatter_diagnostics() {{"),
+        "entry:",
+        "  %echo_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        "  %serialize_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        "  %dump_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        "  %print_diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        &format!(
+            "  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.binary, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %value = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, {usize_type} 4)"
+        ),
+        "  %echo = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes_with_diagnostic(%phpc.NativeValueHandle %value, ptr %echo_diagnostic_slot)",
+        &format!("  %echo_len = extractvalue %phpc.NativeByteBuffer %echo, 1"),
+        "  %serialized = call %phpc.NativeByteBuffer @phpc_native_value_serialize_bytes_with_diagnostic(%phpc.NativeValueHandle %value, ptr %serialize_diagnostic_slot)",
+        &format!("  %serialized_len = extractvalue %phpc.NativeByteBuffer %serialized, 1"),
+        "  %dump = call %phpc.NativeByteBuffer @phpc_native_value_var_dump_bytes_with_diagnostic(%phpc.NativeValueHandle %value, ptr %dump_diagnostic_slot)",
+        &format!("  %dump_len = extractvalue %phpc.NativeByteBuffer %dump, 1"),
+        "  %printed = call %phpc.NativeByteBuffer @phpc_native_value_print_r_bytes_with_diagnostic(%phpc.NativeValueHandle %value, ptr %print_diagnostic_slot)",
+        &format!("  %printed_len = extractvalue %phpc.NativeByteBuffer %printed, 1"),
+        "  %echo_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %echo_diagnostic_slot",
+        "  %serialize_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %serialize_diagnostic_slot",
+        "  %dump_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %dump_diagnostic_slot",
+        "  %print_diagnostic = load %phpc.NativeDiagnosticHandle, ptr %print_diagnostic_slot",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %printed)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %dump)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %serialized)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %echo)",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %print_diagnostic)",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %dump_diagnostic)",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %serialize_diagnostic)",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %echo_diagnostic)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
+        &format!("  %format_sum0 = add {usize_type} %echo_len, %serialized_len"),
+        &format!("  %format_sum1 = add {usize_type} %format_sum0, %dump_len"),
+        &format!("  %format_sum2 = add {usize_type} %format_sum1, %printed_len"),
+        &format!("  ret {usize_type} %format_sum2"),
+        "}",
+        "",
+        "define i1 @phpc_probe_string_truthy_boundaries() {",
+        "entry:",
+        &format!(
+            "  %zero = getelementptr inbounds [1 x i8], ptr @phpc.probe.zero, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %text = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!("  %zero_truthy = call i1 @phpc_native_string_truthy(ptr %zero, {usize_type} 1)"),
+        &format!("  %text_truthy = call i1 @phpc_native_string_truthy(ptr %text, {usize_type} 7)"),
+        &format!("  %empty_truthy = call i1 @phpc_native_string_truthy(ptr null, {usize_type} 0)"),
+        "  %zero_false = xor i1 %zero_truthy, true",
+        "  %empty_false = xor i1 %empty_truthy, true",
+        "  %false_boundaries = and i1 %zero_false, %empty_false",
+        "  %result = and i1 %false_boundaries, %text_truthy",
+        "  ret i1 %result",
+        "}",
+        "",
+        "define i1 @phpc_probe_native_value_truthy_clone() {",
+        "entry:",
+        "  %zero_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
+        "  %zero_scalar = insertvalue %phpc.NativeScalarValue %zero_tag, i64 0, 3",
+        "  %zero_value = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue %zero_scalar)",
+        "  %zero_truthy = call i1 @phpc_native_value_truthy(%phpc.NativeValueHandle %zero_value)",
+        "  %zero_false = xor i1 %zero_truthy, true",
+        &format!(
+            "  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, {usize_type} 7)"
+        ),
+        "  %string_value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)",
+        "  %string_clone = call %phpc.NativeValueHandle @phpc_native_value_clone(%phpc.NativeValueHandle %string_value)",
+        "  %string_truthy = call i1 @phpc_native_value_truthy(%phpc.NativeValueHandle %string_value)",
+        "  %clone_truthy = call i1 @phpc_native_value_truthy(%phpc.NativeValueHandle %string_clone)",
+        "  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()",
+        "  %empty_array = call %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle %array)",
+        "  %empty_array_truthy = call i1 @phpc_native_value_truthy(%phpc.NativeValueHandle %empty_array)",
+        "  %empty_array_false = xor i1 %empty_array_truthy, true",
+        "  %wrote = call i1 @phpc_native_array_append_scalar(%phpc.NativeArrayHandle %array, %phpc.NativeScalarValue %zero_scalar)",
+        "  %non_empty_array = call %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle %array)",
+        "  %array_truthy = call i1 @phpc_native_value_truthy(%phpc.NativeValueHandle %non_empty_array)",
+        "  %strings_truthy = and i1 %string_truthy, %clone_truthy",
+        "  %false_values = and i1 %zero_false, %empty_array_false",
+        "  %true_values = and i1 %strings_truthy, %array_truthy",
+        "  %value_boundaries = and i1 %false_values, %true_values",
+        "  %result = and i1 %value_boundaries, %wrote",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %non_empty_array)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %empty_array)",
+        "  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %string_clone)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %string_value)",
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %zero_value)",
+        "  ret i1 %result",
+        "}",
+        "",
         &format!("define {usize_type} @phpc_probe_string_to_value_diagnostic() {{"),
         "entry:",
         "  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
@@ -612,19 +1155,215 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         &format!("  ret {usize_type} %result"),
         "}",
         "",
+        &format!("define {usize_type} @phpc_probe_value_to_string_conversion_result() {{"),
+        "entry:",
+        "  %scalar_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
+        "  %scalar = insertvalue %phpc.NativeScalarValue %scalar_tag, i64 42, 3",
+        "  %value = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue %scalar)",
+        "  %conversion = call %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle %value)",
+        "  %bytes = extractvalue %phpc.NativeStringConversionResult %conversion, 0",
+        &format!("  %len = extractvalue %phpc.NativeByteBuffer %bytes, 1"),
+        "  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %conversion)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
+        &format!("  ret {usize_type} %len"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_value_to_text_conversion_result() {{"),
+        "entry:",
+        "  %scalar_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
+        "  %scalar = insertvalue %phpc.NativeScalarValue %scalar_tag, i64 42, 3",
+        "  %value = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue %scalar)",
+        "  %conversion = call %phpc.NativeStringConversionResult @phpc_native_value_text_bytes(%phpc.NativeValueHandle %value, i8 4)",
+        "  %bytes = extractvalue %phpc.NativeStringConversionResult %conversion, 0",
+        &format!("  %len = extractvalue %phpc.NativeByteBuffer %bytes, 1"),
+        "  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %conversion)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
+        &format!("  ret {usize_type} %len"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_value_text_membership() {{"),
+        "entry:",
+        &format!(
+            "  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.bytes, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %value = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, {usize_type} 4)"
+        ),
+        "  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        "  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot",
+        &format!(
+            "  %matched = call i1 @phpc_native_value_text_membership_with_diagnostic(%phpc.NativeValueHandle %value, i8 4, ptr @phpc.probe.text_membership_candidates, ptr @phpc.probe.text_membership_candidate_lengths, {usize_type} 1, i1 true, ptr %diagnostic_slot)"
+        ),
+        "  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
+        &format!("  %result = zext i1 %matched to {usize_type}"),
+        &format!("  ret {usize_type} %result"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_value_string_array_operation() {{"),
+        "entry:",
+        &format!(
+            "  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.binary, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %separator_bytes = getelementptr inbounds [1 x i8], ptr @phpc.probe.invalid, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %subject = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, {usize_type} 4)"
+        ),
+        &format!(
+            "  %separator = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %separator_bytes, {usize_type} 1)"
+        ),
+        "  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        "  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot",
+        "  %parts = call %phpc.NativeValueHandle @phpc_native_value_string_array_operation_with_diagnostic(%phpc.NativeValueHandle %subject, %phpc.NativeValueHandle %separator, i64 0, i8 0, i8 0, ptr %diagnostic_slot)",
+        &format!(
+            "  %parts_len = call {usize_type} @phpc_native_value_array_len_with_diagnostic(%phpc.NativeValueHandle %parts, ptr %diagnostic_slot)"
+        ),
+        "  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %parts)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %separator)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %subject)",
+        &format!("  ret {usize_type} %parts_len"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_array_key_to_value_materialization() {{"),
+        "entry:",
+        &format!(
+            "  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.binary, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %source = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, {usize_type} 4)"
+        ),
+        "  %key = call %phpc.NativeArrayKeyMaterializationResult @phpc_native_value_to_array_key(%phpc.NativeValueHandle %source)",
+        "  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        "  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot",
+        "  %key_value = call %phpc.NativeValueHandle @phpc_native_array_key_materialization_to_value_with_diagnostic(%phpc.NativeArrayKeyMaterializationResult %key, ptr %diagnostic_slot)",
+        "  %echo = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %key_value)",
+        &format!("  %len = extractvalue %phpc.NativeByteBuffer %echo, 1"),
+        "  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %echo)",
+        "  call void @phpc_native_array_key_materialization_result_free(%phpc.NativeArrayKeyMaterializationResult %key)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %key_value)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %source)",
+        &format!("  ret {usize_type} %len"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_value_array_key_exists() {{"),
+        "entry:",
+        "  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()",
+        "  %key_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
+        "  %key_scalar = insertvalue %phpc.NativeScalarValue %key_tag, i64 0, 3",
+        "  %stored = call i1 @phpc_native_array_write_int_scalar(%phpc.NativeArrayHandle %array, i64 0, %phpc.NativeScalarValue zeroinitializer)",
+        "  %array_value = call %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle %array)",
+        "  %key_value = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue %key_scalar)",
+        "  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        "  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot",
+        "  %exists = call i1 @phpc_native_value_array_key_exists_with_diagnostic(%phpc.NativeValueHandle %array_value, %phpc.NativeValueHandle %key_value, ptr %diagnostic_slot)",
+        "  %result_bool = and i1 %stored, %exists",
+        "  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %key_value)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %array_value)",
+        "  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)",
+        &format!("  %result = zext i1 %result_bool to {usize_type}"),
+        &format!("  ret {usize_type} %result"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_value_array_operation() {{"),
+        "entry:",
+        "  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()",
+        "  %scalar_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
+        "  %scalar = insertvalue %phpc.NativeScalarValue %scalar_tag, i64 9, 3",
+        "  %stored = call i1 @phpc_native_array_append_scalar(%phpc.NativeArrayHandle %array, %phpc.NativeScalarValue %scalar)",
+        "  %array_value = call %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle %array)",
+        "  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        "  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot",
+        "  %values = call %phpc.NativeValueHandle @phpc_native_value_array_operation_with_diagnostic(%phpc.NativeValueHandle %array_value, i8 0, ptr %diagnostic_slot)",
+        "  %is_list = call %phpc.NativeValueHandle @phpc_native_value_array_operation_with_diagnostic(%phpc.NativeValueHandle %array_value, i8 5, ptr %diagnostic_slot)",
+        &format!(
+            "  %values_len = call {usize_type} @phpc_native_value_array_len_with_diagnostic(%phpc.NativeValueHandle %values, ptr %diagnostic_slot)"
+        ),
+        "  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %is_list)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %values)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %array_value)",
+        "  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)",
+        &format!("  %stored_value = zext i1 %stored to {usize_type}"),
+        &format!("  %result = add {usize_type} %values_len, %stored_value"),
+        &format!("  ret {usize_type} %result"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_value_array_query_operation() {{"),
+        "entry:",
+        "  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()",
+        "  %scalar_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
+        "  %scalar = insertvalue %phpc.NativeScalarValue %scalar_tag, i64 9, 3",
+        "  %stored = call i1 @phpc_native_array_append_scalar(%phpc.NativeArrayHandle %array, %phpc.NativeScalarValue %scalar)",
+        "  %array_value = call %phpc.NativeValueHandle @phpc_native_value_from_array_clone(%phpc.NativeArrayHandle %array)",
+        "  %needle = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue %scalar)",
+        "  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        "  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot",
+        "  %contains = call %phpc.NativeValueHandle @phpc_native_value_array_query_operation_with_diagnostic(%phpc.NativeValueHandle %array_value, %phpc.NativeValueHandle %needle, i8 1, i8 1, ptr %diagnostic_slot)",
+        "  %key = call %phpc.NativeValueHandle @phpc_native_value_array_query_operation_with_diagnostic(%phpc.NativeValueHandle %array_value, %phpc.NativeValueHandle %needle, i8 1, i8 2, ptr %diagnostic_slot)",
+        "  %contains_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %contains)",
+        "  %key_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %key)",
+        "  %contains_len = extractvalue %phpc.NativeByteBuffer %contains_buffer, 1",
+        "  %key_len = extractvalue %phpc.NativeByteBuffer %key_buffer, 1",
+        "  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %key_buffer)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %contains_buffer)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %key)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %contains)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %needle)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %array_value)",
+        "  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)",
+        &format!("  %stored_value = zext i1 %stored to {usize_type}"),
+        &format!("  %partial = add {usize_type} %contains_len, %key_len"),
+        &format!("  %result = add {usize_type} %partial, %stored_value"),
+        &format!("  ret {usize_type} %result"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_array_key_text_view_diagnostic() {{"),
+        "entry:",
+        &format!(
+            "  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.binary, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %source = call %phpc.NativeValueHandle @phpc_native_binary_value_from_bytes(ptr %bytes, {usize_type} 4)"
+        ),
+        "  %key = call %phpc.NativeArrayKeyMaterializationResult @phpc_native_value_to_array_key(%phpc.NativeValueHandle %source)",
+        "  %text = call %phpc.NativeStringConversionResult @phpc_native_array_key_materialization_text_bytes(%phpc.NativeArrayKeyMaterializationResult %key, i8 1)",
+        "  %diagnostic = extractvalue %phpc.NativeStringConversionResult %text, 1",
+        &format!("  %len = call {usize_type} @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)"),
+        "  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %text)",
+        "  call void @phpc_native_array_key_materialization_result_free(%phpc.NativeArrayKeyMaterializationResult %key)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %source)",
+        &format!("  ret {usize_type} %len"),
+        "}",
+        "",
         "define i1 @phpc_probe_container_handle_null_shapes() {",
         "entry:",
         "  %array = call %phpc.NativeArrayHandle @phpc_native_array_null()",
         "  %array_is_null = call i1 @phpc_native_array_is_null(%phpc.NativeArrayHandle %array)",
+        "  %class = call %phpc.NativeClassMetadataHandle @phpc_native_class_metadata_null()",
+        "  %class_is_null = call i1 @phpc_native_class_metadata_is_null(%phpc.NativeClassMetadataHandle %class)",
         "  %object = call %phpc.NativeObjectHandle @phpc_native_object_null()",
         "  %object_is_null = call i1 @phpc_native_object_is_null(%phpc.NativeObjectHandle %object)",
         "  %resource = call %phpc.NativeResourceHandle @phpc_native_resource_null()",
         "  %resource_is_null = call i1 @phpc_native_resource_is_null(%phpc.NativeResourceHandle %resource)",
         "  %reference = call %phpc.NativeReferenceHandle @phpc_native_reference_null()",
         "  %reference_is_null = call i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle %reference)",
-        "  %left = and i1 %array_is_null, %object_is_null",
+        "  %left = and i1 %array_is_null, %class_is_null",
+        "  %middle = and i1 %object_is_null, %resource_is_null",
         "  %right = and i1 %resource_is_null, %reference_is_null",
-        "  %all = and i1 %left, %right",
+        "  %containers = and i1 %left, %middle",
+        "  %all = and i1 %containers, %right",
         "  ret i1 %all",
         "}",
         "",
@@ -666,11 +1405,341 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         &format!("  ret {usize_type} %len"),
         "}",
         "",
+        &format!("define {usize_type} @phpc_probe_array_key_snapshot_order() {{"),
+        "entry:",
+        "  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()",
+        "  %int_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
+        "  %int_value = insertvalue %phpc.NativeScalarValue %int_tag, i64 7, 3",
+        "  %wrote_int = call i1 @phpc_native_array_write_int_scalar(%phpc.NativeArrayHandle %array, i64 5, %phpc.NativeScalarValue %int_value)",
+        &format!(
+            "  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %key = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, {usize_type} 7)"
+        ),
+        "  %wrote_string = call i1 @phpc_native_array_write_string_scalar(%phpc.NativeArrayHandle %array, %phpc.NativeStringHandle %key, %phpc.NativeScalarValue %int_value)",
+        "  %snapshot = call %phpc.NativeArrayKeySnapshotHandle @phpc_native_array_key_snapshot(%phpc.NativeArrayHandle %array)",
+        "  %snapshot_is_null = call i1 @phpc_native_array_key_snapshot_is_null(%phpc.NativeArrayKeySnapshotHandle %snapshot)",
+        &format!(
+            "  %snapshot_len = call {usize_type} @phpc_native_array_key_snapshot_len(%phpc.NativeArrayKeySnapshotHandle %snapshot)"
+        ),
+        &format!(
+            "  %first_key = call %phpc.NativeArrayKeyMetadata @phpc_native_array_key_snapshot_key_at(%phpc.NativeArrayKeySnapshotHandle %snapshot, {usize_type} 0)"
+        ),
+        &format!(
+            "  %second_key = call %phpc.NativeArrayKeyMetadata @phpc_native_array_key_snapshot_key_at(%phpc.NativeArrayKeySnapshotHandle %snapshot, {usize_type} 1)"
+        ),
+        "  %first_tag = extractvalue %phpc.NativeArrayKeyMetadata %first_key, 0",
+        "  %second_string_len = extractvalue %phpc.NativeArrayKeyMetadata %second_key, 3",
+        &format!(
+            "  %key_clone = call %phpc.NativeStringHandle @phpc_native_array_key_snapshot_string_clone_at(%phpc.NativeArrayKeySnapshotHandle %snapshot, {usize_type} 1)"
+        ),
+        &format!(
+            "  %key_clone_len = call {usize_type} @phpc_native_string_len(%phpc.NativeStringHandle %key_clone)"
+        ),
+        &format!("  %int_flag = zext i1 %wrote_int to {usize_type}"),
+        &format!("  %string_flag = zext i1 %wrote_string to {usize_type}"),
+        &format!("  %snapshot_flag = zext i1 %snapshot_is_null to {usize_type}"),
+        &format!("  %tag_value = zext i8 %first_tag to {usize_type}"),
+        &format!("  %write_flags = add {usize_type} %int_flag, %string_flag"),
+        &format!("  %key_lens = add {usize_type} %second_string_len, %key_clone_len"),
+        &format!("  %shape = add {usize_type} %snapshot_len, %tag_value"),
+        &format!("  %flags_and_shape = add {usize_type} %write_flags, %shape"),
+        &format!("  %with_keys = add {usize_type} %flags_and_shape, %key_lens"),
+        &format!("  %result = sub {usize_type} %with_keys, %snapshot_flag"),
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %key_clone)",
+        "  call void @phpc_native_array_key_snapshot_free(%phpc.NativeArrayKeySnapshotHandle %snapshot)",
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %key)",
+        "  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)",
+        &format!("  ret {usize_type} %result"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_array_entry_snapshot_value_routes() {{"),
+        "entry:",
+        "  %array = call %phpc.NativeArrayHandle @phpc_native_array_empty()",
+        "  %int_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
+        "  %int_value = insertvalue %phpc.NativeScalarValue %int_tag, i64 11, 3",
+        "  %wrote_int = call i1 @phpc_native_array_write_int_scalar(%phpc.NativeArrayHandle %array, i64 2, %phpc.NativeScalarValue %int_value)",
+        &format!(
+            "  %key_bytes = getelementptr inbounds [5 x i8], ptr @phpc.probe.symbol, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %key = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %key_bytes, {usize_type} 5)"
+        ),
+        &format!(
+            "  %value_bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %value_string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %value_bytes, {usize_type} 7)"
+        ),
+        "  %string_value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %value_string)",
+        "  %wrote_string = call i1 @phpc_native_array_write_string_value(%phpc.NativeArrayHandle %array, %phpc.NativeStringHandle %key, %phpc.NativeValueHandle %string_value)",
+        "  %snapshot = call %phpc.NativeArrayEntrySnapshotHandle @phpc_native_array_entry_snapshot(%phpc.NativeArrayHandle %array)",
+        "  %snapshot_is_null = call i1 @phpc_native_array_entry_snapshot_is_null(%phpc.NativeArrayEntrySnapshotHandle %snapshot)",
+        &format!(
+            "  %snapshot_len = call {usize_type} @phpc_native_array_entry_snapshot_len(%phpc.NativeArrayEntrySnapshotHandle %snapshot)"
+        ),
+        &format!(
+            "  %first_key = call %phpc.NativeArrayKeyMetadata @phpc_native_array_entry_snapshot_key_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, {usize_type} 0)"
+        ),
+        &format!(
+            "  %second_key = call %phpc.NativeArrayKeyMetadata @phpc_native_array_entry_snapshot_key_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, {usize_type} 1)"
+        ),
+        "  %first_tag = extractvalue %phpc.NativeArrayKeyMetadata %first_key, 0",
+        "  %second_string_len = extractvalue %phpc.NativeArrayKeyMetadata %second_key, 3",
+        &format!(
+            "  %second_key_clone = call %phpc.NativeStringHandle @phpc_native_array_entry_snapshot_string_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, {usize_type} 1)"
+        ),
+        &format!(
+            "  %second_key_clone_len = call {usize_type} @phpc_native_string_len(%phpc.NativeStringHandle %second_key_clone)"
+        ),
+        &format!(
+            "  %first_key_value = call %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_key_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, {usize_type} 0)"
+        ),
+        &format!(
+            "  %second_key_value = call %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_key_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, {usize_type} 1)"
+        ),
+        &format!(
+            "  %first_value = call %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, {usize_type} 0)"
+        ),
+        &format!(
+            "  %second_value = call %phpc.NativeValueHandle @phpc_native_array_entry_snapshot_value_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, {usize_type} 1)"
+        ),
+        &format!(
+            "  %first_key_reference = call %phpc.NativeReferenceHandle @phpc_native_array_entry_snapshot_key_reference_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, {usize_type} 0)"
+        ),
+        &format!(
+            "  %second_value_reference = call %phpc.NativeReferenceHandle @phpc_native_array_entry_snapshot_value_reference_clone_at(%phpc.NativeArrayEntrySnapshotHandle %snapshot, {usize_type} 1)"
+        ),
+        "  %first_key_reference_value = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %first_key_reference)",
+        "  %second_value_reference_value = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %second_value_reference)",
+        "  %first_key_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %first_key_value)",
+        "  %second_key_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %second_key_value)",
+        "  %first_value_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %first_value)",
+        "  %second_value_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %second_value)",
+        "  %first_key_reference_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %first_key_reference_value)",
+        "  %second_value_reference_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %second_value_reference_value)",
+        "  %first_key_len = extractvalue %phpc.NativeByteBuffer %first_key_buffer, 1",
+        "  %second_key_len = extractvalue %phpc.NativeByteBuffer %second_key_buffer, 1",
+        "  %first_value_len = extractvalue %phpc.NativeByteBuffer %first_value_buffer, 1",
+        "  %second_value_len = extractvalue %phpc.NativeByteBuffer %second_value_buffer, 1",
+        "  %first_key_reference_len = extractvalue %phpc.NativeByteBuffer %first_key_reference_buffer, 1",
+        "  %second_value_reference_len = extractvalue %phpc.NativeByteBuffer %second_value_reference_buffer, 1",
+        &format!("  %int_flag = zext i1 %wrote_int to {usize_type}"),
+        &format!("  %string_flag = zext i1 %wrote_string to {usize_type}"),
+        &format!("  %snapshot_flag = zext i1 %snapshot_is_null to {usize_type}"),
+        &format!("  %first_tag_value = zext i8 %first_tag to {usize_type}"),
+        &format!("  %write_flags = add {usize_type} %int_flag, %string_flag"),
+        &format!("  %key_shape = add {usize_type} %second_string_len, %second_key_clone_len"),
+        &format!("  %key_values = add {usize_type} %first_key_len, %second_key_len"),
+        &format!("  %entry_values = add {usize_type} %first_value_len, %second_value_len"),
+        &format!(
+            "  %reference_values = add {usize_type} %first_key_reference_len, %second_value_reference_len"
+        ),
+        &format!("  %value_routes = add {usize_type} %key_values, %entry_values"),
+        &format!("  %clone_routes = add {usize_type} %value_routes, %reference_values"),
+        &format!("  %shape = add {usize_type} %snapshot_len, %first_tag_value"),
+        &format!("  %with_keys = add {usize_type} %shape, %key_shape"),
+        &format!("  %with_flags = add {usize_type} %with_keys, %write_flags"),
+        &format!("  %with_routes = add {usize_type} %with_flags, %clone_routes"),
+        &format!("  %result = sub {usize_type} %with_routes, %snapshot_flag"),
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %first_key_buffer)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %second_key_buffer)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %first_value_buffer)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %second_value_buffer)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %first_key_reference_buffer)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %second_value_reference_buffer)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %first_key_reference_value)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %second_value_reference_value)",
+        "  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %first_key_reference)",
+        "  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %second_value_reference)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %first_key_value)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %second_key_value)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %first_value)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %second_value)",
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %second_key_clone)",
+        "  call void @phpc_native_array_entry_snapshot_free(%phpc.NativeArrayEntrySnapshotHandle %snapshot)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %string_value)",
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %value_string)",
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %key)",
+        "  call void @phpc_native_array_free(%phpc.NativeArrayHandle %array)",
+        &format!("  ret {usize_type} %result"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_object_class_metadata_alloc_name() {{"),
+        "entry:",
+        &format!(
+            "  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %class = call %phpc.NativeClassMetadataHandle @phpc_native_class_metadata_from_name(ptr %bytes, {usize_type} 7)"
+        ),
+        &format!(
+            "  %class_len = call {usize_type} @phpc_native_class_metadata_name_len(%phpc.NativeClassMetadataHandle %class)"
+        ),
+        "  %class_name = call %phpc.NativeByteBuffer @phpc_native_class_metadata_name_clone_bytes(%phpc.NativeClassMetadataHandle %class)",
+        "  %object = call %phpc.NativeObjectHandle @phpc_native_object_alloc(%phpc.NativeClassMetadataHandle %class)",
+        &format!(
+            "  %object_len = call {usize_type} @phpc_native_object_class_name_len(%phpc.NativeObjectHandle %object)"
+        ),
+        "  %object_name = call %phpc.NativeByteBuffer @phpc_native_object_class_name_clone_bytes(%phpc.NativeObjectHandle %object)",
+        "  %cloned_class = call %phpc.NativeClassMetadataHandle @phpc_native_object_class_metadata_clone(%phpc.NativeObjectHandle %object)",
+        &format!(
+            "  %cloned_len = call {usize_type} @phpc_native_class_metadata_name_len(%phpc.NativeClassMetadataHandle %cloned_class)"
+        ),
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %object_name)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %class_name)",
+        "  call void @phpc_native_class_metadata_free(%phpc.NativeClassMetadataHandle %cloned_class)",
+        "  call void @phpc_native_object_free(%phpc.NativeObjectHandle %object)",
+        "  call void @phpc_native_class_metadata_free(%phpc.NativeClassMetadataHandle %class)",
+        &format!("  %combined = add {usize_type} %object_len, %cloned_len"),
+        &format!("  %result = sub {usize_type} %combined, %class_len"),
+        &format!("  ret {usize_type} %result"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_reference_cell_roundtrip() {{"),
+        "entry:",
+        "  %int_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
+        "  %int_value = insertvalue %phpc.NativeScalarValue %int_tag, i64 42, 3",
+        "  %reference = call %phpc.NativeReferenceHandle @phpc_native_reference_from_scalar(%phpc.NativeScalarValue %int_value)",
+        "  %initial_is_null = call i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle %reference)",
+        "  %initial_is_empty = call i1 @phpc_native_reference_is_empty(%phpc.NativeReferenceHandle %reference)",
+        "  %initial = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %reference)",
+        "  %initial_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %initial)",
+        "  %initial_len = extractvalue %phpc.NativeByteBuffer %initial_buffer, 1",
+        &format!(
+            "  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, {usize_type} 7)"
+        ),
+        "  %string_value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)",
+        "  %value_reference = call %phpc.NativeReferenceHandle @phpc_native_reference_from_value(%phpc.NativeValueHandle %string_value)",
+        "  %cloned_reference = call %phpc.NativeReferenceHandle @phpc_native_reference_clone(%phpc.NativeReferenceHandle %value_reference)",
+        "  %wrote_reference = call i1 @phpc_native_reference_write_reference(%phpc.NativeReferenceHandle %reference, %phpc.NativeReferenceHandle %cloned_reference)",
+        "  %after_reference = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %reference)",
+        "  %after_reference_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %after_reference)",
+        "  %after_reference_len = extractvalue %phpc.NativeByteBuffer %after_reference_buffer, 1",
+        "  %wrote_string = call i1 @phpc_native_reference_write_value(%phpc.NativeReferenceHandle %reference, %phpc.NativeValueHandle %string_value)",
+        "  %after_string_is_null = call i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle %reference)",
+        "  %after_string_is_empty = call i1 @phpc_native_reference_is_empty(%phpc.NativeReferenceHandle %reference)",
+        "  %after_string = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %reference)",
+        "  %after_string_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %after_string)",
+        "  %after_string_len = extractvalue %phpc.NativeByteBuffer %after_string_buffer, 1",
+        "  %null_value = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 0, 0",
+        "  %wrote_null = call i1 @phpc_native_reference_write_scalar(%phpc.NativeReferenceHandle %reference, %phpc.NativeScalarValue %null_value)",
+        "  %after_null_is_null = call i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle %reference)",
+        "  %after_null_is_empty = call i1 @phpc_native_reference_is_empty(%phpc.NativeReferenceHandle %reference)",
+        "  %after_null = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %reference)",
+        "  %after_null_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %after_null)",
+        "  %after_null_len = extractvalue %phpc.NativeByteBuffer %after_null_buffer, 1",
+        "  %cloned_read = call %phpc.NativeValueHandle @phpc_native_reference_read_value(%phpc.NativeReferenceHandle %cloned_reference)",
+        "  %cloned_buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %cloned_read)",
+        "  %cloned_len = extractvalue %phpc.NativeByteBuffer %cloned_buffer, 1",
+        &format!("  %reference_flag = zext i1 %wrote_reference to {usize_type}"),
+        &format!("  %string_flag = zext i1 %wrote_string to {usize_type}"),
+        &format!("  %null_flag = zext i1 %wrote_null to {usize_type}"),
+        &format!("  %initial_null_flag = zext i1 %initial_is_null to {usize_type}"),
+        &format!("  %initial_empty_flag = zext i1 %initial_is_empty to {usize_type}"),
+        &format!("  %after_string_null_flag = zext i1 %after_string_is_null to {usize_type}"),
+        &format!("  %after_string_empty_flag = zext i1 %after_string_is_empty to {usize_type}"),
+        &format!("  %after_null_null_flag = zext i1 %after_null_is_null to {usize_type}"),
+        &format!("  %after_null_empty_flag = zext i1 %after_null_is_empty to {usize_type}"),
+        &format!("  %first_sum = add {usize_type} %initial_len, %after_reference_len"),
+        &format!("  %second_sum = add {usize_type} %after_string_len, %after_null_len"),
+        &format!("  %third_sum = add {usize_type} %second_sum, %cloned_len"),
+        &format!("  %byte_count = add {usize_type} %first_sum, %third_sum"),
+        &format!("  %write_flags = add {usize_type} %reference_flag, %string_flag"),
+        &format!("  %flag_count = add {usize_type} %write_flags, %null_flag"),
+        &format!("  %initial_liveness = add {usize_type} %initial_null_flag, %initial_empty_flag"),
+        &format!(
+            "  %after_string_liveness = add {usize_type} %after_string_null_flag, %after_string_empty_flag"
+        ),
+        &format!("  %after_null_liveness = add {usize_type} %after_null_null_flag, %after_null_empty_flag"),
+        &format!("  %early_liveness = add {usize_type} %initial_liveness, %after_string_liveness"),
+        &format!("  %liveness_count = add {usize_type} %early_liveness, %after_null_liveness"),
+        &format!("  %counts = add {usize_type} %byte_count, %flag_count"),
+        &format!("  %result = add {usize_type} %counts, %liveness_count"),
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %initial_buffer)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %after_reference_buffer)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %after_string_buffer)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %after_null_buffer)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %cloned_buffer)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %initial)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %after_reference)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %after_string)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %after_null)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %cloned_read)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %string_value)",
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)",
+        "  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %cloned_reference)",
+        "  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %value_reference)",
+        "  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %reference)",
+        &format!("  ret {usize_type} %result"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_reference_string_conversion_diagnostic() {{"),
+        "entry:",
+        "  %scalar_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
+        "  %scalar = insertvalue %phpc.NativeScalarValue %scalar_tag, i64 7, 3",
+        "  %reference = call %phpc.NativeReferenceHandle @phpc_native_reference_from_scalar(%phpc.NativeScalarValue %scalar)",
+        "  %conversion = call %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle %reference)",
+        "  %diagnostic = extractvalue %phpc.NativeStringConversionResult %conversion, 1",
+        &format!(
+            "  %len = call {usize_type} @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)"
+        ),
+        "  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %conversion)",
+        "  call void @phpc_native_reference_free(%phpc.NativeReferenceHandle %reference)",
+        &format!("  ret {usize_type} %len"),
+        "}",
+        "",
         "define i1 @phpc_probe_request_state_handle_null_shape() {",
         "entry:",
         "  %request_state = call %phpc.NativeRequestStateHandle @phpc_native_request_state_null()",
         "  %request_state_is_null = call i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle %request_state)",
         "  ret i1 %request_state_is_null",
+        "}",
+        "",
+        "define i1 @phpc_probe_symbol_table_null_shape() {",
+        "entry:",
+        "  %symbols = call %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_null()",
+        "  %symbols_is_null = call i1 @phpc_native_symbol_table_is_null(%phpc.NativeSymbolTableHandle %symbols)",
+        "  ret i1 %symbols_is_null",
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_symbol_table_write_read() {{"),
+        "entry:",
+        "  %symbols = call %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_new()",
+        "  %symbols_is_null = call i1 @phpc_native_symbol_table_is_null(%phpc.NativeSymbolTableHandle %symbols)",
+        "  %symbols_ready = xor i1 %symbols_is_null, true",
+        &format!(
+            "  %name = getelementptr inbounds [5 x i8], ptr @phpc.probe.symbol, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, {usize_type} 7)"
+        ),
+        "  %value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)",
+        &format!(
+            "  %written = call i1 @phpc_native_symbol_table_write(%phpc.NativeSymbolTableHandle %symbols, ptr %name, {usize_type} 5, %phpc.NativeValueHandle %value)"
+        ),
+        &format!(
+            "  %read = call %phpc.NativeValueHandle @phpc_native_symbol_table_read(%phpc.NativeSymbolTableHandle %symbols, ptr %name, {usize_type} 5)"
+        ),
+        "  %buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %read)",
+        "  %len = extractvalue %phpc.NativeByteBuffer %buffer, 1",
+        &format!("  %ready_len = zext i1 %symbols_ready to {usize_type}"),
+        &format!("  %written_len = zext i1 %written to {usize_type}"),
+        &format!("  %partial = add {usize_type} %len, %ready_len"),
+        &format!("  %result = add {usize_type} %partial, %written_len"),
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %read)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)",
+        "  call void @phpc_native_symbol_table_free(%phpc.NativeSymbolTableHandle %symbols)",
+        &format!("  ret {usize_type} %result"),
         "}",
         "",
     ]
@@ -680,6 +1749,7 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
 #[derive(Default)]
 struct LlvmGenerator {
     strings: Vec<(String, String)>,
+    native_globals: Vec<String>,
     body: Vec<String>,
     variables: HashMap<String, IrValue>,
     known_ints: HashMap<String, KnownInt>,
@@ -692,6 +1762,11 @@ struct LlvmGenerator {
     next_label: usize,
     uses_strcmp: bool,
     uses_native_value_echo_stdout: bool,
+    uses_native_value_from_string: bool,
+    uses_native_value_from_scalar: bool,
+    uses_native_value_text_membership: bool,
+    uses_native_symbol_table_helpers: bool,
+    emitted_native_symbol_table: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -700,9 +1775,1433 @@ enum IrValue {
     Float(String),
     String(String),
     StringPtr(String),
+    NativeExpression {
+        value: NativeExpressionValue,
+        fallback: Box<IrValue>,
+    },
     Bool(bool),
     BoolExpr(String),
     Null,
+}
+
+#[derive(Debug, Clone)]
+enum NativeExpressionValue {
+    DirectLocalSymbol { name: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeValueHandleOwnership {
+    Owned,
+    #[allow(dead_code)]
+    Borrowed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeValueBlocker {
+    RequestState,
+    Array,
+    ArrayAccess,
+    ObjectProperty,
+    ObjectInstantiation,
+    ObjectClone,
+    MethodCall,
+    InstanceOf,
+    Resource,
+    Reference,
+    DynamicCall,
+    CopyOnWrite,
+    Unsupported,
+}
+
+impl NativeValueBlocker {
+    fn rejection(self) -> &'static str {
+        match self {
+            Self::RequestState => LLVM_REQUEST_SUPERGLOBAL_REJECTION,
+            Self::Array => LLVM_ARRAY_REJECTION,
+            Self::ArrayAccess => LLVM_ARRAY_ACCESS_REJECTION,
+            Self::ObjectProperty => LLVM_OBJECT_PROPERTY_REJECTION,
+            Self::ObjectInstantiation => LLVM_OBJECT_INSTANTIATION_REJECTION,
+            Self::ObjectClone => LLVM_CLONE_REJECTION,
+            Self::MethodCall => LLVM_METHOD_CALL_REJECTION,
+            Self::InstanceOf => LLVM_INSTANCEOF_REJECTION,
+            Self::Resource => LLVM_STREAM_RESOURCE_REJECTION,
+            Self::Reference => LLVM_REFERENCE_ASSIGNMENT_REJECTION,
+            Self::DynamicCall => LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+            Self::CopyOnWrite => LLVM_MUTATION_REJECTION,
+            Self::Unsupported => LLVM_FUNCTION_CALL_REJECTION,
+        }
+    }
+}
+
+#[derive(Debug)]
+enum NativeValueHandleResult {
+    Available(NativeValueMaterialization),
+    Blocked(NativeValueBlocker),
+}
+
+impl NativeValueHandleResult {
+    fn into_available(self) -> Option<NativeValueMaterialization> {
+        match self {
+            Self::Available(value) => Some(value),
+            Self::Blocked(blocker) => {
+                let _ = blocker.rejection();
+                None
+            }
+        }
+    }
+
+    fn into_result(self) -> Result<NativeValueMaterialization, NativeValueBlocker> {
+        match self {
+            Self::Available(value) => Ok(value),
+            Self::Blocked(blocker) => Err(blocker),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct NativeValueMaterialization {
+    handle: String,
+    ownership: NativeValueHandleOwnership,
+    cleanup: Vec<String>,
+}
+
+#[derive(Debug)]
+struct NativeCallArgumentMaterialization {
+    handles: Vec<String>,
+    cleanup: Vec<String>,
+}
+
+enum NativeSelectionBranch<'a> {
+    Value(IrValue),
+    Expr(&'a Expr),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NativeTextSurface {
+    FunctionName,
+    ExtensionName,
+}
+
+impl NativeTextSurface {
+    fn surface_tag(self) -> u8 {
+        match self {
+            Self::FunctionName => 4,
+            Self::ExtensionName => 6,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeControlFlowEffect {
+    Continues,
+    Terminates,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeBranchEffectJoin {
+    BothContinue,
+    BothTerminate,
+    ThenContinues,
+    ElseContinues,
+}
+
+#[allow(dead_code)]
+impl NativeBranchEffectJoin {
+    fn from_flows(then_flow: NativeControlFlowEffect, else_flow: NativeControlFlowEffect) -> Self {
+        match (then_flow, else_flow) {
+            (NativeControlFlowEffect::Continues, NativeControlFlowEffect::Continues) => {
+                Self::BothContinue
+            }
+            (NativeControlFlowEffect::Terminates, NativeControlFlowEffect::Terminates) => {
+                Self::BothTerminate
+            }
+            (NativeControlFlowEffect::Continues, NativeControlFlowEffect::Terminates) => {
+                Self::ThenContinues
+            }
+            (NativeControlFlowEffect::Terminates, NativeControlFlowEffect::Continues) => {
+                Self::ElseContinues
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeBranchLocalCleanupPlan {
+    control_join: NativeBranchEffectJoin,
+    entry_live_locals: Vec<String>,
+    then_live_locals: Vec<String>,
+    else_live_locals: Vec<String>,
+    stable_live_locals: Vec<String>,
+    divergent_live_locals: Vec<String>,
+    then_only_locals: Vec<String>,
+    else_only_locals: Vec<String>,
+}
+
+#[allow(dead_code)]
+impl NativeBranchLocalCleanupPlan {
+    fn from_states<Value: PartialEq>(
+        control_join: NativeBranchEffectJoin,
+        entry: &HashMap<String, Value>,
+        then_state: &HashMap<String, Value>,
+        else_state: &HashMap<String, Value>,
+    ) -> Self {
+        let entry_live_locals = sorted_local_names(entry);
+        let then_live_locals = sorted_local_names(then_state);
+        let else_live_locals = sorted_local_names(else_state);
+
+        let mut stable_live_locals = Vec::new();
+        let mut divergent_live_locals = Vec::new();
+        let mut then_only_locals = Vec::new();
+        let mut else_only_locals = Vec::new();
+
+        for name in local_name_union([entry, then_state, else_state]) {
+            match (then_state.get(&name), else_state.get(&name)) {
+                (Some(then_value), Some(else_value)) if then_value == else_value => {
+                    stable_live_locals.push(name);
+                }
+                (Some(_), Some(_)) => divergent_live_locals.push(name),
+                (Some(_), None) => {
+                    then_only_locals.push(name.clone());
+                    divergent_live_locals.push(name);
+                }
+                (None, Some(_)) => {
+                    else_only_locals.push(name.clone());
+                    divergent_live_locals.push(name);
+                }
+                (None, None) => {}
+            }
+        }
+
+        Self {
+            control_join,
+            entry_live_locals,
+            then_live_locals,
+            else_live_locals,
+            stable_live_locals,
+            divergent_live_locals,
+            then_only_locals,
+            else_only_locals,
+        }
+    }
+
+    fn control_join(&self) -> NativeBranchEffectJoin {
+        self.control_join
+    }
+
+    fn continuing_arm(&self) -> Option<NativeContinuingBranchArm> {
+        match self.control_join {
+            NativeBranchEffectJoin::ThenContinues => Some(NativeContinuingBranchArm::Then),
+            NativeBranchEffectJoin::ElseContinues => Some(NativeContinuingBranchArm::Else),
+            NativeBranchEffectJoin::BothContinue | NativeBranchEffectJoin::BothTerminate => None,
+        }
+    }
+
+    fn has_stable_local_merge(&self) -> bool {
+        self.control_join == NativeBranchEffectJoin::BothContinue
+            && self.divergent_live_locals.is_empty()
+            && self.then_live_locals == self.stable_live_locals
+            && self.else_live_locals == self.stable_live_locals
+    }
+
+    fn has_local_phi_merge_ownership(&self) -> bool {
+        self.control_join == NativeBranchEffectJoin::BothContinue
+            && self.then_only_locals.is_empty()
+            && self.else_only_locals.is_empty()
+    }
+
+    fn locals_requiring_phi(&self) -> &[String] {
+        &self.divergent_live_locals
+    }
+}
+
+fn sorted_local_names<Value>(locals: &HashMap<String, Value>) -> Vec<String> {
+    let mut names = locals.keys().cloned().collect::<Vec<_>>();
+    names.sort();
+    names
+}
+
+fn local_name_union<'a, Value: 'a>(
+    locals: impl IntoIterator<Item = &'a HashMap<String, Value>>,
+) -> Vec<String> {
+    let mut names = Vec::new();
+    for local_map in locals {
+        names.extend(local_map.keys().cloned());
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn sorted_unique_native_value_handles(handles: &[String]) -> Vec<String> {
+    let mut handles = handles.to_vec();
+    handles.sort();
+    handles.dedup();
+    handles
+}
+
+fn native_value_handle_set(handles: &[String]) -> HashSet<String> {
+    handles.iter().cloned().collect()
+}
+
+fn native_value_handle_union<'a>(handles: impl IntoIterator<Item = &'a [String]>) -> Vec<String> {
+    let mut names = Vec::new();
+    for handle_set in handles {
+        names.extend(handle_set.iter().cloned());
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeBranchValueFactCleanupPlan {
+    control_join: NativeBranchEffectJoin,
+    entry_live_facts: Vec<String>,
+    then_live_facts: Vec<String>,
+    else_live_facts: Vec<String>,
+    stable_live_facts: Vec<String>,
+    divergent_live_facts: Vec<String>,
+    then_only_facts: Vec<String>,
+    else_only_facts: Vec<String>,
+}
+
+#[allow(dead_code)]
+impl NativeBranchValueFactCleanupPlan {
+    fn from_states(
+        control_join: NativeBranchEffectJoin,
+        entry: &HashMap<String, String>,
+        then_state: &HashMap<String, String>,
+        else_state: &HashMap<String, String>,
+    ) -> Self {
+        let entry_live_facts = sorted_local_names(entry);
+        let then_live_facts = sorted_local_names(then_state);
+        let else_live_facts = sorted_local_names(else_state);
+
+        let mut stable_live_facts = Vec::new();
+        let mut divergent_live_facts = Vec::new();
+        let mut then_only_facts = Vec::new();
+        let mut else_only_facts = Vec::new();
+
+        for name in local_name_union([entry, then_state, else_state]) {
+            match (then_state.get(&name), else_state.get(&name)) {
+                (Some(then_value), Some(else_value)) if then_value == else_value => {
+                    stable_live_facts.push(name);
+                }
+                (Some(_), Some(_)) => divergent_live_facts.push(name),
+                (Some(_), None) => {
+                    then_only_facts.push(name.clone());
+                    divergent_live_facts.push(name);
+                }
+                (None, Some(_)) => {
+                    else_only_facts.push(name.clone());
+                    divergent_live_facts.push(name);
+                }
+                (None, None) => {}
+            }
+        }
+
+        Self {
+            control_join,
+            entry_live_facts,
+            then_live_facts,
+            else_live_facts,
+            stable_live_facts,
+            divergent_live_facts,
+            then_only_facts,
+            else_only_facts,
+        }
+    }
+
+    fn control_join(&self) -> NativeBranchEffectJoin {
+        self.control_join
+    }
+
+    fn has_live_facts(&self) -> bool {
+        !self.entry_live_facts.is_empty()
+            || !self.then_live_facts.is_empty()
+            || !self.else_live_facts.is_empty()
+    }
+
+    fn has_stable_value_fact_merge(&self) -> bool {
+        self.control_join == NativeBranchEffectJoin::BothContinue
+            && self.divergent_live_facts.is_empty()
+            && self.then_live_facts == self.stable_live_facts
+            && self.else_live_facts == self.stable_live_facts
+    }
+
+    fn merge_ownership(
+        &self,
+        local_cleanup_plan: &NativeBranchLocalCleanupPlan,
+    ) -> NativeBranchValueFactOwnership {
+        if self.has_stable_value_fact_merge() {
+            return NativeBranchValueFactOwnership::Stable;
+        }
+
+        if self.control_join != NativeBranchEffectJoin::BothContinue
+            || !self.then_only_facts.is_empty()
+            || !self.else_only_facts.is_empty()
+            || !local_cleanup_plan.has_local_phi_merge_ownership()
+        {
+            return NativeBranchValueFactOwnership::Blocked;
+        }
+
+        if self.divergent_live_facts.iter().all(|fact| {
+            fact.split_once(':').is_some_and(|(local, _)| {
+                local_cleanup_plan
+                    .locals_requiring_phi()
+                    .iter()
+                    .any(|name| name == local)
+            })
+        }) {
+            NativeBranchValueFactOwnership::LocalPhi
+        } else {
+            NativeBranchValueFactOwnership::Blocked
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeBranchLiveNativeValueCleanupPlan {
+    control_join: NativeBranchEffectJoin,
+    entry_live_handles: Vec<String>,
+    then_live_handles: Vec<String>,
+    else_live_handles: Vec<String>,
+    stable_live_handles: Vec<String>,
+    divergent_live_handles: Vec<String>,
+    then_only_handles: Vec<String>,
+    else_only_handles: Vec<String>,
+}
+
+#[allow(dead_code)]
+impl NativeBranchLiveNativeValueCleanupPlan {
+    fn from_handles(
+        control_join: NativeBranchEffectJoin,
+        entry: &[String],
+        then_state: &[String],
+        else_state: &[String],
+    ) -> Self {
+        let entry_live_handles = sorted_unique_native_value_handles(entry);
+        let then_live_handles = sorted_unique_native_value_handles(then_state);
+        let else_live_handles = sorted_unique_native_value_handles(else_state);
+        let then_live = native_value_handle_set(then_state);
+        let else_live = native_value_handle_set(else_state);
+
+        let mut stable_live_handles = Vec::new();
+        let mut divergent_live_handles = Vec::new();
+        let mut then_only_handles = Vec::new();
+        let mut else_only_handles = Vec::new();
+
+        for handle in native_value_handle_union([entry, then_state, else_state]) {
+            match (then_live.contains(&handle), else_live.contains(&handle)) {
+                (true, true) => stable_live_handles.push(handle),
+                (true, false) => {
+                    then_only_handles.push(handle.clone());
+                    divergent_live_handles.push(handle);
+                }
+                (false, true) => {
+                    else_only_handles.push(handle.clone());
+                    divergent_live_handles.push(handle);
+                }
+                (false, false) => {}
+            }
+        }
+
+        Self {
+            control_join,
+            entry_live_handles,
+            then_live_handles,
+            else_live_handles,
+            stable_live_handles,
+            divergent_live_handles,
+            then_only_handles,
+            else_only_handles,
+        }
+    }
+
+    fn control_join(&self) -> NativeBranchEffectJoin {
+        self.control_join
+    }
+
+    fn has_live_handles(&self) -> bool {
+        !self.entry_live_handles.is_empty()
+            || !self.then_live_handles.is_empty()
+            || !self.else_live_handles.is_empty()
+    }
+
+    fn has_stable_live_handle_merge(&self) -> bool {
+        self.control_join == NativeBranchEffectJoin::BothContinue
+            && self.divergent_live_handles.is_empty()
+            && self.then_live_handles == self.entry_live_handles
+            && self.else_live_handles == self.entry_live_handles
+    }
+
+    fn merge_ownership(&self) -> NativeBranchLiveNativeValueOwnership {
+        if !self.has_live_handles() {
+            NativeBranchLiveNativeValueOwnership::NoLiveHandles
+        } else if self.has_stable_live_handle_merge() {
+            NativeBranchLiveNativeValueOwnership::Stable
+        } else {
+            NativeBranchLiveNativeValueOwnership::Blocked
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeBranchValueFactOwnership {
+    NoLiveFacts,
+    Stable,
+    LocalPhi,
+    Blocked,
+}
+
+#[allow(dead_code)]
+impl NativeBranchValueFactOwnership {
+    fn can_merge_without_phi(self) -> bool {
+        matches!(self, Self::NoLiveFacts | Self::Stable)
+    }
+
+    fn can_merge_with_local_phi(self) -> bool {
+        matches!(self, Self::NoLiveFacts | Self::Stable | Self::LocalPhi)
+    }
+}
+
+fn branch_value_fact_ownership(
+    value_fact_plan: Option<&NativeBranchValueFactCleanupPlan>,
+    local_cleanup_plan: &NativeBranchLocalCleanupPlan,
+) -> NativeBranchValueFactOwnership {
+    value_fact_plan.map_or(NativeBranchValueFactOwnership::NoLiveFacts, |plan| {
+        plan.merge_ownership(local_cleanup_plan)
+    })
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeBranchLiveNativeValueOwnership {
+    NoLiveHandles,
+    Stable,
+    Blocked,
+}
+
+#[allow(dead_code)]
+impl NativeBranchLiveNativeValueOwnership {
+    fn can_merge_without_phi(self) -> bool {
+        matches!(self, Self::NoLiveHandles | Self::Stable)
+    }
+
+    fn allows_non_joining_control_flow(self) -> bool {
+        matches!(self, Self::NoLiveHandles)
+    }
+}
+
+fn branch_live_native_value_ownership(
+    live_native_value_plan: Option<&NativeBranchLiveNativeValueCleanupPlan>,
+) -> NativeBranchLiveNativeValueOwnership {
+    live_native_value_plan.map_or(
+        NativeBranchLiveNativeValueOwnership::NoLiveHandles,
+        NativeBranchLiveNativeValueCleanupPlan::merge_ownership,
+    )
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NativeTerminationCleanupAction<Handle> {
+    LiveNativeValueHandle(Handle),
+    BranchBlockLocals(NativeBranchLocalCleanupPlan),
+    BranchLiveNativeValues(NativeBranchLiveNativeValueCleanupPlan),
+    BranchValueFacts(NativeBranchValueFactCleanupPlan),
+    DiscardedNativeTemporaries,
+    GotoScope,
+    LoopScope,
+    SwitchScope,
+    FunctionFrame,
+    ReturnContext,
+    FinallyDispatch,
+    ExceptionUnwind,
+    ShutdownQueue,
+    DestructorQueue,
+    OutputBufferStack,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeTerminationCleanupStack<Handle> {
+    actions: Vec<NativeTerminationCleanupAction<Handle>>,
+}
+
+#[allow(dead_code)]
+struct NativeTerminationCleanupExecutionPlan<'a, Handle> {
+    live_native_value_handles: Vec<&'a Handle>,
+}
+
+#[allow(dead_code)]
+impl<'a, Handle> NativeTerminationCleanupExecutionPlan<'a, Handle> {
+    fn live_native_value_handles(&self) -> &[&'a Handle] {
+        &self.live_native_value_handles
+    }
+}
+
+#[allow(dead_code)]
+enum NativeTerminationCleanupStackPlan<'a, Handle> {
+    Executable(NativeTerminationCleanupExecutionPlan<'a, Handle>),
+    Blocked(NativeTerminationCleanupBoundaryKind),
+}
+
+#[allow(dead_code)]
+struct NativeTerminationReturnExecutionPlan<'a, Handle> {
+    status_value: Option<&'a Handle>,
+    cleanup_plan: NativeTerminationCleanupExecutionPlan<'a, Handle>,
+}
+
+#[allow(dead_code)]
+impl<'a, Handle> NativeTerminationReturnExecutionPlan<'a, Handle> {
+    fn status_value(&self) -> Option<&'a Handle> {
+        self.status_value
+    }
+
+    fn live_native_value_handles(&self) -> &[&'a Handle] {
+        self.cleanup_plan.live_native_value_handles()
+    }
+}
+
+#[allow(dead_code)]
+enum NativeTerminationReturnPlan<'a, Handle> {
+    Executable(NativeTerminationReturnExecutionPlan<'a, Handle>),
+    Blocked(NativeTerminationCleanupBoundaryKind),
+}
+
+#[allow(dead_code)]
+impl<Handle> NativeTerminationCleanupStack<Handle> {
+    fn new() -> Self {
+        Self {
+            actions: Vec::new(),
+        }
+    }
+
+    fn from_action(action: NativeTerminationCleanupAction<Handle>) -> Self {
+        Self::from_actions(vec![action])
+    }
+
+    fn from_actions(actions: Vec<NativeTerminationCleanupAction<Handle>>) -> Self {
+        Self { actions }
+    }
+
+    fn push_action(&mut self, action: NativeTerminationCleanupAction<Handle>) {
+        self.actions.push(action);
+    }
+
+    fn append_stack(&mut self, mut cleanup_stack: NativeTerminationCleanupStack<Handle>) {
+        self.actions.append(&mut cleanup_stack.actions);
+    }
+
+    fn prepend_stack(&mut self, mut cleanup_stack: NativeTerminationCleanupStack<Handle>) {
+        cleanup_stack.actions.append(&mut self.actions);
+        self.actions = cleanup_stack.actions;
+    }
+
+    fn from_branch_cleanup_plans(
+        local_cleanup_plan: NativeBranchLocalCleanupPlan,
+        value_fact_cleanup_plan: NativeBranchValueFactCleanupPlan,
+    ) -> Self {
+        let live_native_value_cleanup_plan = NativeBranchLiveNativeValueCleanupPlan::from_handles(
+            local_cleanup_plan.control_join,
+            &[],
+            &[],
+            &[],
+        );
+        Self::from_branch_cleanup_plans_with_live_native_values(
+            local_cleanup_plan,
+            live_native_value_cleanup_plan,
+            value_fact_cleanup_plan,
+        )
+    }
+
+    fn from_branch_cleanup_plans_with_live_native_values(
+        local_cleanup_plan: NativeBranchLocalCleanupPlan,
+        live_native_value_cleanup_plan: NativeBranchLiveNativeValueCleanupPlan,
+        value_fact_cleanup_plan: NativeBranchValueFactCleanupPlan,
+    ) -> Self {
+        let mut actions = vec![
+            NativeTerminationCleanupAction::DiscardedNativeTemporaries,
+            NativeTerminationCleanupAction::BranchBlockLocals(local_cleanup_plan),
+        ];
+        if live_native_value_cleanup_plan.has_live_handles() {
+            actions.push(NativeTerminationCleanupAction::BranchLiveNativeValues(
+                live_native_value_cleanup_plan,
+            ));
+        }
+        if value_fact_cleanup_plan.has_live_facts() {
+            actions.push(NativeTerminationCleanupAction::BranchValueFacts(
+                value_fact_cleanup_plan,
+            ));
+        }
+        Self { actions }
+    }
+
+    fn push_live_native_value_handle(&mut self, handle: Handle) {
+        self.push_action(NativeTerminationCleanupAction::LiveNativeValueHandle(
+            handle,
+        ));
+    }
+
+    fn actions(&self) -> &[NativeTerminationCleanupAction<Handle>] {
+        &self.actions
+    }
+
+    fn branch_local_cleanup_plan(&self) -> Option<&NativeBranchLocalCleanupPlan> {
+        self.actions.iter().find_map(|action| match action {
+            NativeTerminationCleanupAction::BranchBlockLocals(cleanup_plan) => Some(cleanup_plan),
+            _ => None,
+        })
+    }
+
+    fn branch_value_fact_cleanup_plan(&self) -> Option<&NativeBranchValueFactCleanupPlan> {
+        self.actions.iter().find_map(|action| match action {
+            NativeTerminationCleanupAction::BranchValueFacts(cleanup_plan) => Some(cleanup_plan),
+            _ => None,
+        })
+    }
+
+    fn branch_live_native_value_cleanup_plan(
+        &self,
+    ) -> Option<&NativeBranchLiveNativeValueCleanupPlan> {
+        self.actions.iter().find_map(|action| match action {
+            NativeTerminationCleanupAction::BranchLiveNativeValues(cleanup_plan) => {
+                Some(cleanup_plan)
+            }
+            _ => None,
+        })
+    }
+
+    fn runtime_execution_plan(&self) -> NativeTerminationCleanupStackPlan<'_, Handle> {
+        let mut live_native_value_handles = Vec::new();
+        for (index, action) in self.actions.iter().enumerate() {
+            match action {
+                NativeTerminationCleanupAction::LiveNativeValueHandle(handle) => {
+                    live_native_value_handles.push(handle);
+                }
+                NativeTerminationCleanupAction::BranchBlockLocals(_)
+                | NativeTerminationCleanupAction::BranchLiveNativeValues(_)
+                | NativeTerminationCleanupAction::BranchValueFacts(_) => {
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::BranchMerge,
+                    );
+                }
+                NativeTerminationCleanupAction::DiscardedNativeTemporaries => {
+                    if self.actions[index + 1..].iter().any(|action| {
+                        matches!(
+                            action,
+                            NativeTerminationCleanupAction::BranchBlockLocals(_)
+                                | NativeTerminationCleanupAction::BranchLiveNativeValues(_)
+                                | NativeTerminationCleanupAction::BranchValueFacts(_)
+                        )
+                    }) {
+                        return NativeTerminationCleanupStackPlan::Blocked(
+                            NativeTerminationCleanupBoundaryKind::BranchMerge,
+                        );
+                    }
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::Hook(
+                            NativeTerminationHookBoundary::ExpressionContext,
+                        ),
+                    );
+                }
+                NativeTerminationCleanupAction::GotoScope => {
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::Hook(
+                            NativeTerminationHookBoundary::GotoScope,
+                        ),
+                    );
+                }
+                NativeTerminationCleanupAction::LoopScope => {
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::Hook(
+                            NativeTerminationHookBoundary::LoopScope,
+                        ),
+                    );
+                }
+                NativeTerminationCleanupAction::SwitchScope => {
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::Hook(
+                            NativeTerminationHookBoundary::SwitchScope,
+                        ),
+                    );
+                }
+                NativeTerminationCleanupAction::FunctionFrame => {
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::Hook(
+                            NativeTerminationHookBoundary::FunctionFrame,
+                        ),
+                    );
+                }
+                NativeTerminationCleanupAction::ReturnContext => {
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::Hook(
+                            NativeTerminationHookBoundary::ReturnContext,
+                        ),
+                    );
+                }
+                NativeTerminationCleanupAction::FinallyDispatch => {
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::Hook(
+                            NativeTerminationHookBoundary::TryFinally,
+                        ),
+                    );
+                }
+                NativeTerminationCleanupAction::ExceptionUnwind => {
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::Hook(
+                            NativeTerminationHookBoundary::Exception,
+                        ),
+                    );
+                }
+                NativeTerminationCleanupAction::ShutdownQueue => {
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::Hook(
+                            NativeTerminationHookBoundary::Shutdown,
+                        ),
+                    );
+                }
+                NativeTerminationCleanupAction::DestructorQueue => {
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::Hook(
+                            NativeTerminationHookBoundary::Destructor,
+                        ),
+                    );
+                }
+                NativeTerminationCleanupAction::OutputBufferStack => {
+                    return NativeTerminationCleanupStackPlan::Blocked(
+                        NativeTerminationCleanupBoundaryKind::Hook(
+                            NativeTerminationHookBoundary::OutputBuffer,
+                        ),
+                    );
+                }
+            }
+        }
+        NativeTerminationCleanupStackPlan::Executable(NativeTerminationCleanupExecutionPlan {
+            live_native_value_handles,
+        })
+    }
+
+    #[cfg(test)]
+    fn unlowered_runtime_cleanup_boundary_kind(
+        &self,
+    ) -> Option<NativeTerminationCleanupBoundaryKind> {
+        match self.runtime_execution_plan() {
+            NativeTerminationCleanupStackPlan::Executable(_) => None,
+            NativeTerminationCleanupStackPlan::Blocked(boundary) => Some(boundary),
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeContinuingBranchArm {
+    Then,
+    Else,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeBranchTerminationEffect {
+    join: NativeBranchEffectJoin,
+    continuing_arm: Option<NativeContinuingBranchArm>,
+    cleanup_stack: NativeTerminationCleanupStack<()>,
+}
+
+#[allow(dead_code)]
+impl NativeBranchTerminationEffect {
+    fn from_states<Value: PartialEq>(
+        entry: &HashMap<String, Value>,
+        then_state: &HashMap<String, Value>,
+        else_state: &HashMap<String, Value>,
+        then_flow: NativeControlFlowEffect,
+        else_flow: NativeControlFlowEffect,
+    ) -> Self {
+        let empty_facts = HashMap::new();
+        Self::from_merge_inputs(
+            entry,
+            then_state,
+            else_state,
+            &empty_facts,
+            &empty_facts,
+            &empty_facts,
+            then_flow,
+            else_flow,
+        )
+    }
+
+    fn from_merge_inputs<Value: PartialEq>(
+        entry: &HashMap<String, Value>,
+        then_state: &HashMap<String, Value>,
+        else_state: &HashMap<String, Value>,
+        entry_value_facts: &HashMap<String, String>,
+        then_value_facts: &HashMap<String, String>,
+        else_value_facts: &HashMap<String, String>,
+        then_flow: NativeControlFlowEffect,
+        else_flow: NativeControlFlowEffect,
+    ) -> Self {
+        Self::from_merge_inputs_with_live_native_values(
+            entry,
+            then_state,
+            else_state,
+            entry_value_facts,
+            then_value_facts,
+            else_value_facts,
+            &[],
+            &[],
+            &[],
+            then_flow,
+            else_flow,
+        )
+    }
+
+    fn from_merge_inputs_with_live_native_values<Value: PartialEq>(
+        entry: &HashMap<String, Value>,
+        then_state: &HashMap<String, Value>,
+        else_state: &HashMap<String, Value>,
+        entry_value_facts: &HashMap<String, String>,
+        then_value_facts: &HashMap<String, String>,
+        else_value_facts: &HashMap<String, String>,
+        entry_live_native_value_handles: &[String],
+        then_live_native_value_handles: &[String],
+        else_live_native_value_handles: &[String],
+        then_flow: NativeControlFlowEffect,
+        else_flow: NativeControlFlowEffect,
+    ) -> Self {
+        let join = NativeBranchEffectJoin::from_flows(then_flow, else_flow);
+        let local_cleanup_plan =
+            NativeBranchLocalCleanupPlan::from_states(join, entry, then_state, else_state);
+        let cleanup_stack =
+            NativeTerminationCleanupStack::from_branch_cleanup_plans_with_live_native_values(
+                local_cleanup_plan.clone(),
+                NativeBranchLiveNativeValueCleanupPlan::from_handles(
+                    join,
+                    entry_live_native_value_handles,
+                    then_live_native_value_handles,
+                    else_live_native_value_handles,
+                ),
+                NativeBranchValueFactCleanupPlan::from_states(
+                    join,
+                    entry_value_facts,
+                    then_value_facts,
+                    else_value_facts,
+                ),
+            );
+        let continuing_arm = local_cleanup_plan.continuing_arm();
+
+        Self {
+            join,
+            continuing_arm,
+            cleanup_stack,
+        }
+    }
+
+    fn join(&self) -> NativeBranchEffectJoin {
+        self.join
+    }
+
+    fn has_stable_local_merge(&self) -> bool {
+        self.cleanup_stack
+            .branch_local_cleanup_plan()
+            .is_some_and(NativeBranchLocalCleanupPlan::has_stable_local_merge)
+    }
+
+    fn has_stable_value_fact_merge(&self) -> bool {
+        self.value_fact_ownership().can_merge_without_phi()
+    }
+
+    fn has_stable_live_native_value_merge(&self) -> bool {
+        self.live_native_value_ownership().can_merge_without_phi()
+    }
+
+    fn has_stable_control_merge(&self) -> bool {
+        self.has_stable_local_merge()
+            && self.has_stable_value_fact_merge()
+            && self.has_stable_live_native_value_merge()
+    }
+
+    fn has_local_phi_merge_ownership(&self) -> bool {
+        self.cleanup_stack
+            .branch_local_cleanup_plan()
+            .is_some_and(NativeBranchLocalCleanupPlan::has_local_phi_merge_ownership)
+    }
+
+    fn has_value_fact_merge_for_local_phi(&self) -> bool {
+        self.value_fact_ownership().can_merge_with_local_phi()
+    }
+
+    fn value_fact_ownership(&self) -> NativeBranchValueFactOwnership {
+        let Some(local_plan) = self.cleanup_stack.branch_local_cleanup_plan() else {
+            return NativeBranchValueFactOwnership::Blocked;
+        };
+        branch_value_fact_ownership(
+            self.cleanup_stack.branch_value_fact_cleanup_plan(),
+            local_plan,
+        )
+    }
+
+    fn live_native_value_ownership(&self) -> NativeBranchLiveNativeValueOwnership {
+        branch_live_native_value_ownership(
+            self.cleanup_stack.branch_live_native_value_cleanup_plan(),
+        )
+    }
+
+    fn continuing_arm(&self) -> Option<NativeContinuingBranchArm> {
+        self.continuing_arm
+    }
+
+    fn cleanup_stack(&self) -> &NativeTerminationCleanupStack<()> {
+        &self.cleanup_stack
+    }
+
+    fn into_cleanup_stack(self) -> NativeTerminationCleanupStack<()> {
+        self.cleanup_stack
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeTerminationCleanupBlocker {
+    span: Span,
+    termination_effect: NativeTerminationEffect<()>,
+    llvm_message: &'static str,
+    assembly_message: &'static str,
+}
+
+#[allow(dead_code)]
+impl NativeTerminationCleanupBlocker {
+    fn from_cleanup_boundary(boundary: NativeTerminationCleanupBoundary) -> Self {
+        let span = boundary.span();
+        let llvm_message = boundary.llvm_message();
+        let assembly_message = boundary.assembly_message();
+        Self {
+            span,
+            termination_effect: boundary.into_termination_effect(),
+            llvm_message,
+            assembly_message,
+        }
+    }
+
+    fn from_hook_boundary(span: Span, boundary: NativeTerminationHookBoundary) -> Self {
+        Self::from_cleanup_boundary(NativeTerminationCleanupBoundary::from_hook_boundary(
+            span, boundary,
+        ))
+    }
+
+    fn branch_effect(span: Span, branch_effect: NativeBranchTerminationEffect) -> Self {
+        Self::from_cleanup_boundary(NativeTerminationCleanupBoundary::from_branch_effect(
+            span,
+            branch_effect,
+        ))
+    }
+
+    fn span(&self) -> Span {
+        self.span
+    }
+
+    fn cleanup_stack(&self) -> &NativeTerminationCleanupStack<()> {
+        self.termination_effect.cleanup_stack()
+    }
+
+    fn termination_effect(&self) -> &NativeTerminationEffect<()> {
+        &self.termination_effect
+    }
+
+    fn llvm_message(&self) -> &'static str {
+        self.llvm_message
+    }
+
+    fn assembly_message(&self) -> &'static str {
+        self.assembly_message
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeBranchMergeKind {
+    BothTerminate,
+    ContinueWith(NativeContinuingBranchArm),
+    BothContinueStable,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeBranchMergeResult {
+    kind: NativeBranchMergeKind,
+    termination_effect: NativeTerminationEffect<()>,
+}
+
+#[allow(dead_code)]
+impl NativeBranchMergeResult {
+    fn new(kind: NativeBranchMergeKind, cleanup_stack: NativeTerminationCleanupStack<()>) -> Self {
+        Self {
+            kind,
+            termination_effect: NativeTerminationEffect::from_cleanup_stack(cleanup_stack),
+        }
+    }
+
+    fn kind(&self) -> NativeBranchMergeKind {
+        self.kind
+    }
+
+    fn cleanup_stack(&self) -> &NativeTerminationCleanupStack<()> {
+        self.termination_effect.cleanup_stack()
+    }
+
+    fn termination_effect(&self) -> &NativeTerminationEffect<()> {
+        &self.termination_effect
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NativeBranchMergeOutcome {
+    Merged(NativeBranchMergeResult),
+    Blocked(NativeTerminationCleanupBlocker),
+}
+
+#[allow(dead_code)]
+impl NativeBranchTerminationEffect {
+    fn into_merge_outcome(
+        self,
+        span: Span,
+        backend_states_can_merge_without_phi: bool,
+    ) -> NativeBranchMergeOutcome {
+        let live_native_value_ownership = self.live_native_value_ownership();
+        match self.join() {
+            NativeBranchEffectJoin::BothTerminate
+                if live_native_value_ownership.allows_non_joining_control_flow() =>
+            {
+                NativeBranchMergeOutcome::Merged(NativeBranchMergeResult::new(
+                    NativeBranchMergeKind::BothTerminate,
+                    self.into_cleanup_stack(),
+                ))
+            }
+            NativeBranchEffectJoin::ThenContinues
+                if live_native_value_ownership.allows_non_joining_control_flow() =>
+            {
+                NativeBranchMergeOutcome::Merged(NativeBranchMergeResult::new(
+                    NativeBranchMergeKind::ContinueWith(NativeContinuingBranchArm::Then),
+                    self.into_cleanup_stack(),
+                ))
+            }
+            NativeBranchEffectJoin::ElseContinues
+                if live_native_value_ownership.allows_non_joining_control_flow() =>
+            {
+                NativeBranchMergeOutcome::Merged(NativeBranchMergeResult::new(
+                    NativeBranchMergeKind::ContinueWith(NativeContinuingBranchArm::Else),
+                    self.into_cleanup_stack(),
+                ))
+            }
+            NativeBranchEffectJoin::BothContinue
+                if self.has_stable_control_merge() && backend_states_can_merge_without_phi =>
+            {
+                NativeBranchMergeOutcome::Merged(NativeBranchMergeResult::new(
+                    NativeBranchMergeKind::BothContinueStable,
+                    self.into_cleanup_stack(),
+                ))
+            }
+            _ => NativeBranchMergeOutcome::Blocked(NativeTerminationCleanupBlocker::branch_effect(
+                span, self,
+            )),
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NativeTerminationStatus<Handle> {
+    NativeValueHandle(Handle),
+    CleanupOnly,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeTerminationEffect<Handle> {
+    status: NativeTerminationStatus<Handle>,
+    cleanup_stack: NativeTerminationCleanupStack<Handle>,
+}
+
+#[allow(dead_code)]
+impl<Handle> NativeTerminationEffect<Handle> {
+    fn from_cleanup_stack(cleanup_stack: NativeTerminationCleanupStack<Handle>) -> Self {
+        Self {
+            status: NativeTerminationStatus::CleanupOnly,
+            cleanup_stack,
+        }
+    }
+
+    fn status_value(&self) -> Option<&Handle> {
+        match &self.status {
+            NativeTerminationStatus::NativeValueHandle(handle) => Some(handle),
+            NativeTerminationStatus::CleanupOnly => None,
+        }
+    }
+
+    fn cleanup_stack(&self) -> &NativeTerminationCleanupStack<Handle> {
+        &self.cleanup_stack
+    }
+
+    fn append_cleanup_stack(&mut self, cleanup_stack: NativeTerminationCleanupStack<Handle>) {
+        self.cleanup_stack.append_stack(cleanup_stack);
+    }
+
+    fn prepend_cleanup_stack(&mut self, cleanup_stack: NativeTerminationCleanupStack<Handle>) {
+        self.cleanup_stack.prepend_stack(cleanup_stack);
+    }
+
+    fn into_cleanup_stack(self) -> NativeTerminationCleanupStack<Handle> {
+        self.cleanup_stack
+    }
+
+    fn runtime_return_plan(&self) -> NativeTerminationReturnPlan<'_, Handle> {
+        match self.cleanup_stack.runtime_execution_plan() {
+            NativeTerminationCleanupStackPlan::Executable(cleanup_plan) => {
+                NativeTerminationReturnPlan::Executable(NativeTerminationReturnExecutionPlan {
+                    status_value: self.status_value(),
+                    cleanup_plan,
+                })
+            }
+            NativeTerminationCleanupStackPlan::Blocked(boundary) => {
+                NativeTerminationReturnPlan::Blocked(boundary)
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl<Handle: Clone> NativeTerminationEffect<Handle> {
+    fn from_native_value_handle(handle: Handle) -> Self {
+        let mut cleanup_stack = NativeTerminationCleanupStack::new();
+        cleanup_stack.push_live_native_value_handle(handle.clone());
+        Self {
+            status: NativeTerminationStatus::NativeValueHandle(handle),
+            cleanup_stack,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeTerminationHookBoundary {
+    Destructor,
+    Exception,
+    ExpressionContext,
+    FunctionFrame,
+    GotoScope,
+    LoopScope,
+    OutputBuffer,
+    ReturnContext,
+    Shutdown,
+    SwitchScope,
+    TryFinally,
+}
+
+#[allow(dead_code)]
+impl NativeTerminationHookBoundary {
+    fn llvm_message(self) -> &'static str {
+        match self {
+            Self::Destructor => LLVM_TERMINATION_DESTRUCTOR_REJECTION,
+            Self::Exception => LLVM_TERMINATION_EXCEPTION_REJECTION,
+            Self::ExpressionContext => LLVM_TERMINATION_EXPRESSION_CONTEXT_REJECTION,
+            Self::FunctionFrame => LLVM_TERMINATION_FUNCTION_FRAME_REJECTION,
+            Self::GotoScope => LLVM_TERMINATION_GOTO_SCOPE_REJECTION,
+            Self::LoopScope => LLVM_TERMINATION_LOOP_SCOPE_REJECTION,
+            Self::OutputBuffer => LLVM_TERMINATION_OUTPUT_BUFFER_REJECTION,
+            Self::ReturnContext => LLVM_TERMINATION_RETURN_CONTEXT_REJECTION,
+            Self::Shutdown => LLVM_TERMINATION_SHUTDOWN_REJECTION,
+            Self::SwitchScope => LLVM_TERMINATION_SWITCH_SCOPE_REJECTION,
+            Self::TryFinally => LLVM_TERMINATION_TRY_CONTEXT_REJECTION,
+        }
+    }
+
+    fn assembly_message(self) -> &'static str {
+        match self {
+            Self::Destructor => ASSEMBLY_TERMINATION_DESTRUCTOR_REJECTION,
+            Self::Exception => ASSEMBLY_TERMINATION_EXCEPTION_REJECTION,
+            Self::ExpressionContext => ASSEMBLY_TERMINATION_EXPRESSION_CONTEXT_REJECTION,
+            Self::FunctionFrame => ASSEMBLY_TERMINATION_FUNCTION_FRAME_REJECTION,
+            Self::GotoScope => ASSEMBLY_TERMINATION_GOTO_SCOPE_REJECTION,
+            Self::LoopScope => ASSEMBLY_TERMINATION_LOOP_SCOPE_REJECTION,
+            Self::OutputBuffer => ASSEMBLY_TERMINATION_OUTPUT_BUFFER_REJECTION,
+            Self::ReturnContext => ASSEMBLY_TERMINATION_RETURN_CONTEXT_REJECTION,
+            Self::Shutdown => ASSEMBLY_TERMINATION_SHUTDOWN_REJECTION,
+            Self::SwitchScope => ASSEMBLY_TERMINATION_SWITCH_SCOPE_REJECTION,
+            Self::TryFinally => ASSEMBLY_TERMINATION_TRY_CONTEXT_REJECTION,
+        }
+    }
+
+    fn cleanup_action(self) -> NativeTerminationCleanupAction<()> {
+        match self {
+            Self::Destructor => NativeTerminationCleanupAction::DestructorQueue,
+            Self::Exception => NativeTerminationCleanupAction::ExceptionUnwind,
+            Self::ExpressionContext => NativeTerminationCleanupAction::DiscardedNativeTemporaries,
+            Self::FunctionFrame => NativeTerminationCleanupAction::FunctionFrame,
+            Self::ReturnContext => NativeTerminationCleanupAction::ReturnContext,
+            Self::TryFinally => NativeTerminationCleanupAction::FinallyDispatch,
+            Self::GotoScope => NativeTerminationCleanupAction::GotoScope,
+            Self::LoopScope => NativeTerminationCleanupAction::LoopScope,
+            Self::OutputBuffer => NativeTerminationCleanupAction::OutputBufferStack,
+            Self::Shutdown => NativeTerminationCleanupAction::ShutdownQueue,
+            Self::SwitchScope => NativeTerminationCleanupAction::SwitchScope,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeTerminationCleanupBoundaryKind {
+    Hook(NativeTerminationHookBoundary),
+    BranchMerge,
+}
+
+#[allow(dead_code)]
+impl NativeTerminationCleanupBoundaryKind {
+    fn llvm_message(self) -> &'static str {
+        match self {
+            Self::Hook(boundary) => boundary.llvm_message(),
+            Self::BranchMerge => LLVM_TERMINATION_PARTIAL_BRANCH_REJECTION,
+        }
+    }
+
+    fn assembly_message(self) -> &'static str {
+        match self {
+            Self::Hook(boundary) => boundary.assembly_message(),
+            Self::BranchMerge => ASSEMBLY_TERMINATION_PARTIAL_BRANCH_REJECTION,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeTerminationCleanupBoundary {
+    span: Span,
+    diagnostic_boundary: NativeTerminationCleanupBoundaryKind,
+    cleanup_stack: NativeTerminationCleanupStack<()>,
+}
+
+#[allow(dead_code)]
+impl NativeTerminationCleanupBoundary {
+    fn from_hook_boundary(span: Span, boundary: NativeTerminationHookBoundary) -> Self {
+        Self {
+            span,
+            diagnostic_boundary: NativeTerminationCleanupBoundaryKind::Hook(boundary),
+            cleanup_stack: NativeTerminationCleanupStack::from_action(boundary.cleanup_action()),
+        }
+    }
+
+    fn from_branch_effect(span: Span, branch_effect: NativeBranchTerminationEffect) -> Self {
+        Self {
+            span,
+            diagnostic_boundary: NativeTerminationCleanupBoundaryKind::BranchMerge,
+            cleanup_stack: branch_effect.into_cleanup_stack(),
+        }
+    }
+
+    fn span(&self) -> Span {
+        self.span
+    }
+
+    fn llvm_message(&self) -> &'static str {
+        self.diagnostic_boundary.llvm_message()
+    }
+
+    fn assembly_message(&self) -> &'static str {
+        self.diagnostic_boundary.assembly_message()
+    }
+
+    fn append_cleanup_boundary(&mut self, boundary: NativeTerminationCleanupBoundary) {
+        self.cleanup_stack.append_stack(boundary.cleanup_stack);
+    }
+
+    fn prepend_cleanup_boundary(&mut self, boundary: NativeTerminationCleanupBoundary) {
+        self.cleanup_stack.prepend_stack(boundary.cleanup_stack);
+    }
+
+    fn with_outer_hook_boundary(
+        mut self,
+        span: Span,
+        boundary: NativeTerminationHookBoundary,
+    ) -> Self {
+        self.span = span;
+        self.diagnostic_boundary = NativeTerminationCleanupBoundaryKind::Hook(boundary);
+        self.cleanup_stack
+            .prepend_stack(NativeTerminationCleanupStack::from_action(
+                boundary.cleanup_action(),
+            ));
+        self
+    }
+
+    fn into_termination_effect(self) -> NativeTerminationEffect<()> {
+        NativeTerminationEffect::from_cleanup_stack(self.cleanup_stack)
+    }
+}
+
+impl NativeCallArgumentMaterialization {
+    fn from_values(values: Vec<NativeValueMaterialization>) -> Self {
+        let handles = values.iter().map(|value| value.handle.clone()).collect();
+        let cleanup = values
+            .into_iter()
+            .rev()
+            .flat_map(NativeValueMaterialization::cleanup_after_use)
+            .collect();
+
+        Self { handles, cleanup }
+    }
+
+    fn cleanup_after_call(self) -> Vec<String> {
+        self.cleanup
+    }
+}
+
+impl NativeValueMaterialization {
+    fn owned(handle: String, cleanup: Vec<String>) -> Self {
+        Self {
+            handle,
+            ownership: NativeValueHandleOwnership::Owned,
+            cleanup,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn borrowed(handle: String, cleanup: Vec<String>) -> Self {
+        Self {
+            handle,
+            ownership: NativeValueHandleOwnership::Borrowed,
+            cleanup,
+        }
+    }
+
+    fn cleanup_after_use(self) -> Vec<String> {
+        let mut cleanup = Vec::new();
+        if matches!(self.ownership, NativeValueHandleOwnership::Owned) {
+            cleanup.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {})",
+                self.handle
+            ));
+        }
+        cleanup.extend(self.cleanup);
+        cleanup
+    }
+
+    fn into_selection_branch_parts(self) -> (String, NativeValueHandleOwnership, Vec<String>) {
+        (self.handle, self.ownership, self.cleanup)
+    }
+}
+
+impl IrValue {
+    fn into_static_fallback(self) -> Self {
+        match self {
+            IrValue::NativeExpression { fallback, .. } => fallback.into_static_fallback(),
+            value => value,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -870,10 +3369,21 @@ impl LlvmGenerator {
 
         let mut output = String::new();
         output.push_str("; generated by phpc milestone 1\n");
-        if self.uses_native_value_echo_stdout {
+        if self.uses_native_value_from_scalar {
+            output.push_str("%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }\n");
+        }
+        if self.uses_native_value_echo_stdout
+            || self.uses_native_value_from_string
+            || self.uses_native_symbol_table_helpers
+            || self.uses_native_value_text_membership
+            || self.uses_native_value_from_scalar
+        {
             output.push_str("%phpc.NativeStringHandle = type { ptr }\n");
             output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
             output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
+        }
+        if self.uses_native_symbol_table_helpers {
+            output.push_str("%phpc.NativeSymbolTableHandle = type { ptr }\n");
         }
         output.push_str("declare i32 @printf(ptr, ...)\n");
         if self.uses_strcmp {
@@ -897,6 +3407,72 @@ impl LlvmGenerator {
             );
             output.push_str("declare void @phpc_native_string_free(%phpc.NativeStringHandle)\n");
         }
+        if self.uses_native_value_from_string && !self.uses_native_value_echo_stdout {
+            let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+            output.push_str(&format!(
+                "declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, {usize_type})\n"
+            ));
+            output.push_str("declare void @phpc_native_string_free(%phpc.NativeStringHandle)\n");
+        }
+        if self.uses_native_value_from_string && !self.uses_native_symbol_table_helpers {
+            output.push_str(
+                "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)\n",
+            );
+        }
+        if self.uses_native_value_from_scalar && !self.uses_native_symbol_table_helpers {
+            output.push_str(
+                "declare %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue)\n",
+            );
+        }
+        if self.uses_native_value_text_membership {
+            let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+            output.push_str(&format!(
+                "declare i1 @phpc_native_value_text_membership_with_diagnostic(%phpc.NativeValueHandle, i8, ptr, ptr, {usize_type}, i1, ptr)\n"
+            ));
+            if !self.uses_native_value_echo_stdout {
+                output.push_str(&format!(
+                    "declare {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)\n"
+                ));
+                output.push_str(
+                    "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
+                );
+            }
+            if !self.uses_native_value_echo_stdout {
+                output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
+            }
+        }
+        if self.uses_native_symbol_table_helpers {
+            let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+            output.push_str(
+                "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)\n",
+            );
+            if self.uses_native_value_from_scalar {
+                output.push_str(
+                    "declare %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue)\n",
+                );
+            }
+            output.push_str(
+                "declare %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_new()\n",
+            );
+            output.push_str(&format!(
+                "declare i1 @phpc_native_symbol_table_write(%phpc.NativeSymbolTableHandle, ptr, {usize_type}, %phpc.NativeValueHandle)\n"
+            ));
+            output.push_str(&format!(
+                "declare %phpc.NativeValueHandle @phpc_native_symbol_table_read(%phpc.NativeSymbolTableHandle, ptr, {usize_type})\n"
+            ));
+            output.push_str(&format!(
+                "declare i1 @phpc_native_symbol_table_isset(%phpc.NativeSymbolTableHandle, ptr, {usize_type})\n"
+            ));
+            output.push_str(&format!(
+                "declare i1 @phpc_native_symbol_table_empty(%phpc.NativeSymbolTableHandle, ptr, {usize_type})\n"
+            ));
+            output.push_str(&format!(
+                "declare i1 @phpc_native_symbol_table_unset(%phpc.NativeSymbolTableHandle, ptr, {usize_type})\n"
+            ));
+            output.push_str(
+                "declare void @phpc_native_symbol_table_free(%phpc.NativeSymbolTableHandle)\n",
+            );
+        }
         output.push('\n');
         output.push_str("@.fmt_int = private unnamed_addr constant [5 x i8] c\"%lld\\00\"\n");
         output.push_str("@.fmt_float = private unnamed_addr constant [3 x i8] c\"%g\\00\"\n");
@@ -909,6 +3485,10 @@ impl LlvmGenerator {
                 llvm_c_string(text)
             ));
         }
+        for global in &self.native_globals {
+            output.push_str(global);
+            output.push('\n');
+        }
 
         output.push_str("\ndefine i32 @main() {\nentry:\n");
         for line in &self.body {
@@ -917,6 +3497,11 @@ impl LlvmGenerator {
             }
             output.push_str(line);
             output.push('\n');
+        }
+        if self.uses_native_symbol_table_helpers {
+            output.push_str(
+                "  call void @phpc_native_symbol_table_free(%phpc.NativeSymbolTableHandle %phpc.symbols)\n",
+            );
         }
         output.push_str("  ret i32 0\n}\n");
         Ok(output)
@@ -941,11 +3526,39 @@ impl LlvmGenerator {
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
             Stmt::ReferenceAssign { span, .. } => {
-                Err(self.unsupported(*span, LLVM_REFERENCE_ASSIGNMENT_REJECTION))
+                Err(self.unsupported(*span, NativeValueBlocker::Reference.rejection()))
             }
-            Stmt::CompoundAssign { target, span, .. }
-            | Stmt::IncrementDecrement { target, span, .. }
-            | Stmt::NullCoalesceAssign { target, span, .. } => {
+            Stmt::CompoundAssign {
+                target, expr, span, ..
+            }
+            | Stmt::NullCoalesceAssign {
+                target, expr, span, ..
+            } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_assign_target_span(target)
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
+            Stmt::IncrementDecrement { target, span, .. } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_assign_target_span(target)
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
                 }
@@ -984,8 +3597,10 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_CONTROL_FLOW_REJECTION))
             }
             Stmt::Foreach { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
-            Stmt::UnsetVariable { span, .. } => {
-                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            Stmt::UnsetVariable { name, .. } => {
+                self.emit_native_symbol_table_unset(name);
+                self.variables.remove(name);
+                Ok(())
             }
             Stmt::UnsetStaticProperty { span, .. }
             | Stmt::UnsetSelfStaticProperty { span, .. }
@@ -1003,27 +3618,79 @@ impl LlvmGenerator {
             Stmt::UnsetMany { targets, span } => {
                 if targets
                     .iter()
+                    .all(|target| matches!(target, UnsetTarget::Variable { .. }))
+                {
+                    for target in targets {
+                        let UnsetTarget::Variable { name, .. } = target else {
+                            unreachable!("all unset targets are direct variables");
+                        };
+                        self.emit_native_symbol_table_unset(name);
+                        self.variables.remove(name);
+                    }
+                    return Ok(());
+                }
+                if targets
+                    .iter()
                     .any(is_object_property_array_access_unset_target)
                 {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
                 }
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
-            Stmt::ConstDeclaration { span, .. } => {
+            Stmt::ConstDeclaration { declarations, span } => {
+                if let Some(superglobal_span) = declarations.iter().find_map(|declaration| {
+                    request_superglobal_consumed_expr_span(&declaration.value)
+                }) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_GLOBAL_CONSTANT_REJECTION))
             }
-            Stmt::Require { span, .. } | Stmt::Include { span, .. } => {
+            Stmt::Require { path, span, .. } | Stmt::Include { path, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(path) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_REQUIRE_REJECTION))
             }
-            Stmt::Throw { span, .. } => Err(self.unsupported(*span, LLVM_EXCEPTION_REJECTION)),
-            Stmt::Try { span, .. } => Err(self.unsupported(*span, LLVM_TRY_BLOCK_REJECTION)),
-            Stmt::Return { span, .. } => {
-                Err(self.unsupported(*span, LLVM_FUNCTION_DECLARATION_REJECTION))
+            Stmt::Throw { expr, span } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, LLVM_EXCEPTION_REJECTION))
             }
-            Stmt::Global { span, .. } => {
+            Stmt::Try { span, .. } => Err(self.unsupported(*span, LLVM_TRY_BLOCK_REJECTION)),
+            Stmt::Return { value, span } => {
+                if let Some(value) = value {
+                    if let Some(superglobal_span) = request_superglobal_consumed_expr_span(value) {
+                        return Err(
+                            self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                        );
+                    }
+                }
+                self.emit_return_boundary(value.as_ref(), *span)
+            }
+            Stmt::Global { names, span } => {
+                if names.iter().any(|name| is_request_superglobal_name(name)) {
+                    return Err(self.unsupported(*span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
+                }
                 Err(self.unsupported(*span, LLVM_GLOBAL_DECLARATION_REJECTION))
             }
-            Stmt::StaticLocal { span, .. } => {
+            Stmt::StaticLocal { declarations, span } => {
+                if let Some(superglobal_span) = declarations.iter().find_map(|declaration| {
+                    declaration
+                        .default
+                        .as_ref()
+                        .and_then(request_superglobal_consumed_expr_span)
+                }) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_STATIC_LOCAL_REJECTION))
             }
         }
@@ -1061,13 +3728,32 @@ impl LlvmGenerator {
             | Expr::ParentClassConstant { span, .. }
             | Expr::LateStaticClassConstant { span, .. }
             | Expr::StaticProperty { span, .. }
-            | Expr::ObjectStaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION))
             }
-            Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
+            Expr::ObjectStaticProperty { target, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION))
+            }
+            Expr::Array { items, span } => {
+                if let Some(superglobal_span) = items.iter().find_map(|item| {
+                    item.key
+                        .as_ref()
+                        .and_then(request_superglobal_consumed_expr_span)
+                        .or_else(|| request_superglobal_consumed_expr_span(&item.value))
+                }) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
+            }
             Expr::Index { target, span, .. } => {
                 if let Some(superglobal_span) = request_superglobal_expr_span(target) {
                     return Err(
@@ -1090,34 +3776,110 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
+            Expr::Property { target, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_OBJECT_PROPERTY_REJECTION))
             }
-            Expr::MethodCall { span, .. }
-            | Expr::DynamicMethodCall { span, .. }
-            | Expr::ParentMethodCall { span, .. }
-            | Expr::StaticMethodCall { span, .. }
-            | Expr::ObjectStaticMethodCall { span, .. }
-            | Expr::SelfMethodCall { span, .. }
-            | Expr::LateStaticMethodCall { span, .. } => {
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target)
+                    .or_else(|| request_superglobal_consumed_expr_span(property))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, LLVM_OBJECT_PROPERTY_REJECTION))
+            }
+            Expr::MethodCall {
+                target, args, span, ..
+            } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target)
+                    .or_else(|| request_superglobal_consumed_args_span(args))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, LLVM_METHOD_CALL_REJECTION))
+            }
+            Expr::DynamicMethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target)
+                    .or_else(|| request_superglobal_consumed_expr_span(method))
+                    .or_else(|| request_superglobal_consumed_args_span(args))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, LLVM_METHOD_CALL_REJECTION))
+            }
+            Expr::ObjectStaticMethodCall {
+                target, args, span, ..
+            } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target)
+                    .or_else(|| request_superglobal_consumed_args_span(args))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, LLVM_METHOD_CALL_REJECTION))
+            }
+            Expr::ParentMethodCall { args, span, .. }
+            | Expr::StaticMethodCall { args, span, .. }
+            | Expr::SelfMethodCall { args, span, .. }
+            | Expr::LateStaticMethodCall { args, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_METHOD_CALL_REJECTION))
             }
             Expr::Variable(name, span) => {
                 if is_request_superglobal_name(name) {
                     return Err(self.unsupported(*span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
                 }
-                self.variables
-                    .get(name)
-                    .cloned()
-                    .ok_or_else(|| self.unsupported(*span, LLVM_VARIABLE_READ_REJECTION))
+                Ok(self.direct_local_native_expression_value(name))
             }
-            Expr::Call { name, span, .. } if is_exit_construct_name(name) => {
+            Expr::Call { name, args, span } if is_exit_construct_name(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_TERMINATION_REJECTION))
+            }
+            Expr::Call { name, args, span } if is_value_debug_output_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, LLVM_VALUE_DEBUG_OUTPUT_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("defined") => {
                 self.emit_defined_call(args, *span)
             }
-            Expr::Call { name, span, .. } if is_global_constant_builtin(name) => {
+            Expr::Call { name, args, span } if is_global_constant_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_GLOBAL_CONSTANT_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("isset") => {
@@ -1129,40 +3891,100 @@ impl LlvmGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("strlen") => {
                 self.emit_strlen_call(args, *span)
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("str_starts_with") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("str_starts_with") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_STR_STARTS_WITH_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("str_ends_with") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("str_ends_with") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_STR_ENDS_WITH_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("basename") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_BASENAME_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("file_get_contents") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("file_get_contents") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_FILE_GET_CONTENTS_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_stream_resource_builtin(name) => {
+            Expr::Call { name, args, span } if is_stream_resource_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_STREAM_RESOURCE_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("getcwd") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("getcwd") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_GETCWD_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("realpath") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("realpath") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_REALPATH_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("is_writable") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("is_writable") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_IS_WRITABLE_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("clearstatcache") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("clearstatcache") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_CLEARSTATCACHE_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_header_state_builtin(name) => {
+            Expr::Call { name, args, span } if is_header_state_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_HEADER_STATE_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_session_state_builtin(name) => {
+            Expr::Call { name, args, span } if is_session_state_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_SESSION_STATE_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_output_buffer_builtin(name) => {
+            Expr::Call { name, args, span } if is_output_buffer_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_OUTPUT_BUFFER_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
@@ -1174,24 +3996,72 @@ impl LlvmGenerator {
             Expr::Call { name, args, span } if is_native_type_introspection_builtin(name) => {
                 self.emit_native_type_introspection_call(name, args, *span)
             }
-            Expr::Call { name, span, .. } if is_object_metadata_builtin(name) => {
+            Expr::Call { name, args, span } if is_object_metadata_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_OBJECT_METADATA_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_array_builtin(name) => {
+            Expr::Call { name, args, span } if is_array_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            Expr::DynamicCall { span, .. } => {
-                Err(self.unsupported(*span, LLVM_DYNAMIC_FUNCTION_CALL_REJECTION))
+            Expr::DynamicCall { callee, args, span } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(callee)
+                    .or_else(|| request_superglobal_consumed_args_span(args))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, NativeValueBlocker::DynamicCall.rejection()))
             }
-            Expr::Call { span, .. } => Err(self.unsupported(*span, LLVM_FUNCTION_CALL_REJECTION)),
-            Expr::InstanceOf { span, .. } => {
+            Expr::Call { args, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                self.emit_unsupported_call_boundary(args, *span)
+            }
+            Expr::InstanceOf { expr, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_INSTANCEOF_REJECTION))
             }
             Expr::Closure { span, .. } => Err(self.unsupported(*span, LLVM_CLOSURE_REJECTION)),
-            Expr::New { span, .. } => {
+            Expr::New {
+                class_name,
+                args,
+                span,
+            } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_new_class_name_span(class_name, *span)
+                        .or_else(|| request_superglobal_consumed_args_span(args))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_OBJECT_INSTANTIATION_REJECTION))
             }
-            Expr::Clone { span, .. } => Err(self.unsupported(*span, LLVM_CLONE_REJECTION)),
+            Expr::Clone { expr, span } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, LLVM_CLONE_REJECTION))
+            }
             Expr::Unary { op, expr, span } => {
                 if matches!(op, UnaryOp::Not) {
                     if let Expr::Unary {
@@ -1224,14 +4094,39 @@ impl LlvmGenerator {
                 let value = self.emit_expr(expr)?;
                 self.emit_unary(*op, value, *span)
             }
-            Expr::ErrorControl { span, .. } => {
+            Expr::ErrorControl { expr, span } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_ERROR_CONTROL_REJECTION))
             }
-            Expr::Include { span, .. } | Expr::Require { span, .. } => {
+            Expr::Include { path, span, .. } | Expr::Require { path, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(path) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, LLVM_REQUIRE_EXPRESSION_REJECTION))
             }
-            Expr::Cast { span, .. } => Err(self.unsupported(*span, LLVM_CAST_REJECTION)),
-            Expr::Assign { target, span, .. } => {
+            Expr::Cast { expr, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, LLVM_CAST_REJECTION))
+            }
+            Expr::Assign { target, expr, span } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_assign_target_span(target)
+                        .or_else(|| request_superglobal_consumed_expr_span(expr))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
                 }
@@ -1240,9 +4135,33 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
-            Expr::CompoundAssign { target, span, .. }
-            | Expr::NullCoalesceAssign { target, span, .. }
-            | Expr::IncrementDecrement { target, span, .. } => {
+            Expr::CompoundAssign {
+                target, expr, span, ..
+            }
+            | Expr::NullCoalesceAssign {
+                target, expr, span, ..
+            } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_assign_target_span(target)
+                        .or_else(|| request_superglobal_consumed_expr_span(expr))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
+            Expr::IncrementDecrement { target, span, .. } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_assign_target_span(target)
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
                 }
@@ -1287,30 +4206,29 @@ impl LlvmGenerator {
         }
     }
 
-    fn emit_isset_call(&self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
-        let [arg] = args else {
+    fn emit_isset_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
+        if args.is_empty() {
             return Err(self.unsupported(span, LLVM_ISSET_REJECTION));
-        };
-
-        if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
-            return Err(self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
         }
 
-        if is_array_access_offset_expr(arg) {
-            return Err(self.unsupported(arg.span(), LLVM_ARRAY_ACCESS_REJECTION));
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.direct_local_native_expression_from_arg(arg, LLVM_ISSET_REJECTION)?);
         }
 
-        let Expr::Variable(name, _) = arg else {
-            return Err(self.unsupported(arg.span(), LLVM_ISSET_REJECTION));
-        };
+        let mut result = self.emit_native_expression_liveness_call("isset", &values[0]);
+        for value in values.iter().skip(1) {
+            let current = self.emit_native_expression_liveness_call("isset", value);
+            let combined = self.next_temp();
+            self.body
+                .push(format!("{combined} = and i1 {result}, {current}"));
+            result = combined;
+        }
 
-        Ok(IrValue::Bool(!matches!(
-            self.variables.get(name),
-            None | Some(IrValue::Null)
-        )))
+        Ok(IrValue::BoolExpr(result))
     }
 
-    fn emit_empty_call(&self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
+    fn emit_empty_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
         let [arg] = args else {
             return Err(self.unsupported(span, LLVM_EMPTY_REJECTION));
         };
@@ -1323,17 +4241,11 @@ impl LlvmGenerator {
             return Err(self.unsupported(arg.span(), LLVM_ARRAY_ACCESS_REJECTION));
         }
 
-        let Expr::Variable(name, _) = arg else {
-            return Err(self.unsupported(arg.span(), LLVM_EMPTY_REJECTION));
-        };
+        let value = self.direct_local_native_expression_from_arg(arg, LLVM_EMPTY_REJECTION)?;
 
-        let Some(value) = self.variables.get(name) else {
-            return Ok(IrValue::Bool(true));
-        };
-
-        self.known_truthiness_for_value(value)
-            .map(|truthy| IrValue::Bool(!truthy))
-            .ok_or_else(|| self.unsupported(arg.span(), LLVM_EMPTY_REJECTION))
+        Ok(IrValue::BoolExpr(
+            self.emit_native_expression_liveness_call("empty", &value),
+        ))
     }
 
     fn emit_strlen_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
@@ -1353,9 +4265,18 @@ impl LlvmGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
-        self.function_exists_result_for_value(&value)
-            .map(IrValue::Bool)
-            .ok_or_else(|| self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION))
+        if let Some(result) = self.function_exists_result_for_value(&value) {
+            return Ok(IrValue::Bool(result));
+        }
+
+        self.emit_native_text_membership_bool(
+            value,
+            NativeTextSurface::FunctionName,
+            NATIVE_KNOWN_FUNCTION_NAMES,
+            true,
+            span,
+            LLVM_FUNCTION_CALL_REJECTION,
+        )
     }
 
     fn emit_is_callable_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
@@ -1373,9 +4294,21 @@ impl LlvmGenerator {
             false
         };
 
-        self.is_callable_result_for_value(&value, syntax_only)
-            .map(IrValue::Bool)
-            .ok_or_else(|| self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION))
+        if let Some(result) = self.is_callable_result_for_value(&value, syntax_only) {
+            return Ok(IrValue::Bool(result));
+        }
+        if syntax_only {
+            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+        }
+
+        self.emit_native_text_membership_bool(
+            value,
+            NativeTextSurface::FunctionName,
+            NATIVE_KNOWN_FUNCTION_NAMES,
+            true,
+            span,
+            LLVM_FUNCTION_CALL_REJECTION,
+        )
     }
 
     fn emit_defined_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
@@ -1444,11 +4377,20 @@ impl LlvmGenerator {
                 .map(IrValue::Bool)
                 .ok_or_else(|| self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
             "is_countable" | "is_iterable" => Ok(IrValue::Bool(false)),
-            "extension_loaded" => match value {
-                IrValue::String(name) => Ok(IrValue::Bool(is_compat_loaded_extension_name(&name))),
-                IrValue::StringPtr(_) => Ok(IrValue::Bool(false)),
-                _ => Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
-            },
+            "extension_loaded" => {
+                if let IrValue::String(name) = &value {
+                    return Ok(IrValue::Bool(is_compat_loaded_extension_name(name)));
+                }
+
+                self.emit_native_text_membership_bool(
+                    value,
+                    NativeTextSurface::ExtensionName,
+                    COMPAT_LOADED_EXTENSION_NAMES,
+                    true,
+                    span,
+                    LLVM_FUNCTION_CALL_REJECTION,
+                )
+            }
             "is_object" => Ok(IrValue::Bool(false)),
             _ => Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
         }
@@ -1547,6 +4489,96 @@ impl LlvmGenerator {
             .unwrap_or(false)
     }
 
+    fn emit_native_text_membership_bool(
+        &mut self,
+        value: IrValue,
+        surface: NativeTextSurface,
+        candidates: &[&str],
+        case_insensitive: bool,
+        span: Span,
+        rejection: &'static str,
+    ) -> CompileResult<IrValue> {
+        let materialized = self
+            .materialize_native_value_handle(&value)
+            .into_result()
+            .map_err(|blocker| {
+                let message = if matches!(blocker, NativeValueBlocker::Unsupported) {
+                    rejection
+                } else {
+                    blocker.rejection()
+                };
+                self.unsupported(span, message)
+            })?;
+        let (candidate_ptrs, candidate_lengths) =
+            self.emit_native_text_membership_candidate_table(candidates);
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        let diagnostic = self.next_temp();
+
+        self.uses_native_value_text_membership = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call i1 @phpc_native_value_text_membership_with_diagnostic(%phpc.NativeValueHandle {}, i8 {}, ptr {candidate_ptrs}, ptr {candidate_lengths}, {usize_type} {}, i1 {}, ptr {diagnostic_slot})",
+            materialized.handle,
+            surface.surface_tag(),
+            candidates.len(),
+            if case_insensitive { "true" } else { "false" }
+        ));
+        self.body.push(format!(
+            "{diagnostic} = load %phpc.NativeDiagnosticHandle, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "call {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle {diagnostic})"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle {diagnostic})"
+        ));
+        self.body.extend(materialized.cleanup_after_use());
+
+        Ok(IrValue::BoolExpr(result))
+    }
+
+    fn emit_native_text_membership_candidate_table(
+        &mut self,
+        candidates: &[&str],
+    ) -> (String, String) {
+        if candidates.is_empty() {
+            return ("null".to_string(), "null".to_string());
+        }
+
+        let index = self.native_globals.len() / 2;
+        let ptrs = format!("phpc_text_membership_candidates_{index}");
+        let lengths = format!("phpc_text_membership_candidate_lengths_{index}");
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        let candidate_ptrs = candidates
+            .iter()
+            .map(|candidate| format!("ptr @{}", self.add_string(candidate)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let candidate_lengths = candidates
+            .iter()
+            .map(|candidate| format!("{usize_type} {}", candidate.len()))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        self.native_globals.push(format!(
+            "@{ptrs} = private unnamed_addr constant [{} x ptr] [{candidate_ptrs}]",
+            candidates.len()
+        ));
+        self.native_globals.push(format!(
+            "@{lengths} = private unnamed_addr constant [{} x {usize_type}] [{candidate_lengths}]",
+            candidates.len()
+        ));
+
+        (format!("@{ptrs}"), format!("@{lengths}"))
+    }
+
     fn is_numeric_result_for_value(&self, value: &IrValue) -> Option<bool> {
         match value {
             IrValue::Int(_) | IrValue::Float(_) => Some(true),
@@ -1555,6 +4587,9 @@ impl LlvmGenerator {
             IrValue::StringPtr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_numeric_result(&values)
+            }
+            IrValue::NativeExpression { fallback, .. } => {
+                self.is_numeric_result_for_value(fallback)
             }
         }
     }
@@ -1600,17 +4635,519 @@ impl LlvmGenerator {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_defined_result(&values)
             }
+            IrValue::NativeExpression { fallback, .. } => self.defined_result_for_value(fallback),
+            _ => None,
+        }
+    }
+
+    fn ensure_native_symbol_table(&mut self) -> &'static str {
+        self.uses_native_symbol_table_helpers = true;
+        if !self.emitted_native_symbol_table {
+            self.body.push(
+                "%phpc.symbols = call %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_new()"
+                    .to_string(),
+            );
+            self.emitted_native_symbol_table = true;
+        }
+        "%phpc.symbols"
+    }
+
+    fn emit_direct_local_assignment(&mut self, name: &str, expr: &Expr) -> CompileResult<()> {
+        if let Some(blocker) = native_value_blocker_for_expr(expr) {
+            return Err(self.unsupported(expr.span(), blocker.rejection()));
+        }
+
+        if matches!(expr, Expr::Ternary { .. } | Expr::ShortTernary { .. }) {
+            self.ensure_native_symbol_table();
+            let materialized = self.materialize_native_expr_value(expr, expr.span())?;
+            let stored_value = self.emit_native_direct_local_assignment_materialized(
+                name,
+                materialized,
+                IrValue::Null,
+            );
+            self.variables.insert(name.to_string(), stored_value);
+            return Ok(());
+        }
+
+        let value = self.emit_expr(expr)?;
+        let stored_value = self
+            .emit_native_direct_local_assignment(name, &value)
+            .unwrap_or(value);
+        self.variables.insert(name.to_string(), stored_value);
+        Ok(())
+    }
+
+    fn emit_return_boundary(&mut self, value: Option<&Expr>, span: Span) -> CompileResult<()> {
+        let materialized = self.materialize_native_return_value(value, span)?;
+        self.body.extend(materialized.cleanup_after_use());
+        Err(self.unsupported(span, LLVM_FUNCTION_DECLARATION_REJECTION))
+    }
+
+    fn emit_unsupported_call_boundary(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        let materialized_args = self.materialize_native_call_arguments(args, span)?;
+        let _argument_count = materialized_args.handles.len();
+        self.body.extend(materialized_args.cleanup_after_call());
+        Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION))
+    }
+
+    fn materialize_native_return_value(
+        &mut self,
+        value: Option<&Expr>,
+        span: Span,
+    ) -> CompileResult<NativeValueMaterialization> {
+        match value {
+            Some(value) => self.materialize_native_expr_value(value, span),
+            None => self
+                .materialize_native_value_handle(&IrValue::Null)
+                .into_result()
+                .map_err(|blocker| self.unsupported(span, blocker.rejection())),
+        }
+    }
+
+    fn materialize_native_call_arguments(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<NativeCallArgumentMaterialization> {
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.materialize_native_expr_value(arg, span)?);
+        }
+
+        Ok(NativeCallArgumentMaterialization::from_values(values))
+    }
+
+    fn materialize_native_expr_value(
+        &mut self,
+        expr: &Expr,
+        span: Span,
+    ) -> CompileResult<NativeValueMaterialization> {
+        match expr {
+            Expr::Ternary {
+                condition,
+                if_true,
+                if_false,
+                span,
+            } => {
+                return self.materialize_native_ternary_value(condition, if_true, if_false, *span);
+            }
+            Expr::ShortTernary {
+                condition,
+                if_false,
+                span,
+            } => return self.materialize_native_short_ternary_value(condition, if_false, *span),
+            _ => {}
+        }
+
+        if let Some(blocker) = native_value_blocker_for_expr(expr) {
+            return Err(self.unsupported(expr.span(), blocker.rejection()));
+        }
+
+        let value = self.emit_expr(expr)?;
+        self.materialize_native_value_handle(&value)
+            .into_result()
+            .map_err(|blocker| self.unsupported(span, blocker.rejection()))
+    }
+
+    fn materialize_native_ternary_value(
+        &mut self,
+        condition: &Expr,
+        if_true: &Expr,
+        if_false: &Expr,
+        span: Span,
+    ) -> CompileResult<NativeValueMaterialization> {
+        if let Some(blocker) = native_value_blocker_for_expr(condition) {
+            return Err(self.unsupported(condition.span(), blocker.rejection()));
+        }
+
+        let condition_value = self.emit_expr(condition)?;
+        if let Some(truthy) = self.known_truthiness_for_value(&condition_value) {
+            return if truthy {
+                self.materialize_native_expr_value(if_true, span)
+            } else {
+                self.materialize_native_expr_value(if_false, span)
+            };
+        }
+
+        let condition = self.native_selection_condition_operand(condition_value, span)?;
+        self.materialize_native_value_selection(
+            &condition,
+            NativeSelectionBranch::Expr(if_true),
+            NativeSelectionBranch::Expr(if_false),
+            span,
+        )
+    }
+
+    fn materialize_native_short_ternary_value(
+        &mut self,
+        condition: &Expr,
+        if_false: &Expr,
+        span: Span,
+    ) -> CompileResult<NativeValueMaterialization> {
+        if let Some(blocker) = native_value_blocker_for_expr(condition) {
+            return Err(self.unsupported(condition.span(), blocker.rejection()));
+        }
+
+        let condition_value = self.emit_expr(condition)?;
+        if let Some(truthy) = self.known_truthiness_for_value(&condition_value) {
+            return if truthy {
+                self.materialize_native_value_handle(&condition_value)
+                    .into_result()
+                    .map_err(|blocker| self.unsupported(span, blocker.rejection()))
+            } else {
+                self.materialize_native_expr_value(if_false, span)
+            };
+        }
+
+        let condition_operand =
+            self.native_selection_condition_operand(condition_value.clone(), span)?;
+        self.materialize_native_value_selection(
+            &condition_operand,
+            NativeSelectionBranch::Value(condition_value),
+            NativeSelectionBranch::Expr(if_false),
+            span,
+        )
+    }
+
+    fn native_selection_condition_operand(
+        &mut self,
+        condition: IrValue,
+        span: Span,
+    ) -> CompileResult<String> {
+        match condition {
+            IrValue::NativeExpression { value, .. } => {
+                Ok(self.emit_native_expression_truthiness(&value))
+            }
+            condition => {
+                let condition = condition.into_static_fallback();
+                llvm_bool_operand(condition)
+                    .ok_or_else(|| self.unsupported(span, LLVM_CONDITIONAL_REJECTION))
+            }
+        }
+    }
+
+    fn materialize_native_value_selection(
+        &mut self,
+        condition: &str,
+        if_true: NativeSelectionBranch<'_>,
+        if_false: NativeSelectionBranch<'_>,
+        span: Span,
+    ) -> CompileResult<NativeValueMaterialization> {
+        let true_label = self.next_label("native.select.true");
+        let false_label = self.next_label("native.select.false");
+        let merge_label = self.next_label("native.select.merge");
+
+        self.body.push(format!(
+            "br i1 {condition}, label %{true_label}, label %{false_label}"
+        ));
+
+        self.body.push(format!("{true_label}:"));
+        let true_value = self.materialize_native_selection_branch(if_true, span)?;
+        let (true_handle, true_ownership, true_cleanup) = true_value.into_selection_branch_parts();
+        self.body.extend(true_cleanup);
+        self.body.push(format!("br label %{merge_label}"));
+
+        self.body.push(format!("{false_label}:"));
+        let false_value = self.materialize_native_selection_branch(if_false, span)?;
+        let (false_handle, false_ownership, false_cleanup) =
+            false_value.into_selection_branch_parts();
+        self.body.extend(false_cleanup);
+        self.body.push(format!("br label %{merge_label}"));
+
+        let ownership = match (true_ownership, false_ownership) {
+            (NativeValueHandleOwnership::Owned, NativeValueHandleOwnership::Owned) => {
+                NativeValueHandleOwnership::Owned
+            }
+            (NativeValueHandleOwnership::Borrowed, NativeValueHandleOwnership::Borrowed) => {
+                NativeValueHandleOwnership::Borrowed
+            }
+            _ => return Err(self.unsupported(span, LLVM_CONDITIONAL_REJECTION)),
+        };
+
+        self.body.push(format!("{merge_label}:"));
+        let selected = self.next_temp();
+        self.body.push(format!(
+            "{selected} = phi %phpc.NativeValueHandle [ {true_handle}, %{true_label} ], [ {false_handle}, %{false_label} ]"
+        ));
+
+        Ok(NativeValueMaterialization {
+            handle: selected,
+            ownership,
+            cleanup: Vec::new(),
+        })
+    }
+
+    fn materialize_native_selection_branch(
+        &mut self,
+        branch: NativeSelectionBranch<'_>,
+        span: Span,
+    ) -> CompileResult<NativeValueMaterialization> {
+        match branch {
+            NativeSelectionBranch::Value(value) => self
+                .materialize_native_value_handle(&value)
+                .into_result()
+                .map_err(|blocker| self.unsupported(span, blocker.rejection())),
+            NativeSelectionBranch::Expr(expr) => self.materialize_native_expr_value(expr, span),
+        }
+    }
+
+    fn emit_native_direct_local_assignment(
+        &mut self,
+        name: &str,
+        value: &IrValue,
+    ) -> Option<IrValue> {
+        self.ensure_native_symbol_table();
+        let materialized = self
+            .materialize_native_value_handle(value)
+            .into_available()?;
+        Some(self.emit_native_direct_local_assignment_materialized(
+            name,
+            materialized,
+            value.clone(),
+        ))
+    }
+
+    fn emit_native_direct_local_assignment_materialized(
+        &mut self,
+        name: &str,
+        materialized: NativeValueMaterialization,
+        fallback: IrValue,
+    ) -> IrValue {
+        let table = self.ensure_native_symbol_table();
+        self.uses_native_value_echo_stdout = true;
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        let name_global = self.add_string(name);
+        let written = self.next_temp();
+
+        self.body.push(format!(
+            "{written} = call i1 @phpc_native_symbol_table_write(%phpc.NativeSymbolTableHandle {table}, ptr @{name_global}, {usize_type} {}, %phpc.NativeValueHandle {})",
+            name.len(),
+            materialized.handle
+        ));
+        self.body.extend(materialized.cleanup_after_use());
+
+        IrValue::NativeExpression {
+            value: self.direct_local_native_expression(name),
+            fallback: Box::new(fallback),
+        }
+    }
+
+    fn direct_local_native_expression(&self, name: &str) -> NativeExpressionValue {
+        NativeExpressionValue::DirectLocalSymbol {
+            name: name.to_string(),
+        }
+    }
+
+    fn direct_local_native_expression_from_arg(
+        &self,
+        arg: &Expr,
+        rejection: &'static str,
+    ) -> CompileResult<NativeExpressionValue> {
+        if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
+            return Err(self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
+        if is_array_access_offset_expr(arg) {
+            return Err(self.unsupported(arg.span(), LLVM_ARRAY_ACCESS_REJECTION));
+        }
+
+        let Expr::Variable(name, _) = arg else {
+            return Err(self.unsupported(arg.span(), rejection));
+        };
+
+        Ok(self.direct_local_native_expression(name))
+    }
+
+    fn direct_local_native_expression_value(&self, name: &str) -> IrValue {
+        IrValue::NativeExpression {
+            value: self.direct_local_native_expression(name),
+            fallback: Box::new(self.variables.get(name).cloned().unwrap_or(IrValue::Null)),
+        }
+    }
+
+    fn emit_native_expression_liveness_call(
+        &mut self,
+        helper: &str,
+        value: &NativeExpressionValue,
+    ) -> String {
+        let table = self.ensure_native_symbol_table();
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        let NativeExpressionValue::DirectLocalSymbol { name } = value;
+        let name_global = self.add_string(name);
+        let result = self.next_temp();
+
+        self.body.push(format!(
+            "{result} = call i1 @phpc_native_symbol_table_{helper}(%phpc.NativeSymbolTableHandle {table}, ptr @{name_global}, {usize_type} {})",
+            name.len()
+        ));
+
+        result
+    }
+
+    fn emit_native_symbol_table_unset(&mut self, name: &str) {
+        let value = self.direct_local_native_expression(name);
+        let _ = self.emit_native_expression_liveness_call("unset", &value);
+    }
+
+    fn emit_native_expression_truthiness(&mut self, value: &NativeExpressionValue) -> String {
+        let empty = self.emit_native_expression_liveness_call("empty", value);
+        let truthy = self.next_temp();
+        self.body.push(format!("{truthy} = xor i1 {empty}, true"));
+        truthy
+    }
+
+    fn emit_native_expression_read_value(
+        &mut self,
+        value: &NativeExpressionValue,
+    ) -> NativeValueMaterialization {
+        let table = self.ensure_native_symbol_table();
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        let NativeExpressionValue::DirectLocalSymbol { name } = value;
+        let name_global = self.add_string(name);
+        let runtime_value = self.next_temp();
+        self.body.push(format!(
+            "{runtime_value} = call %phpc.NativeValueHandle @phpc_native_symbol_table_read(%phpc.NativeSymbolTableHandle {table}, ptr @{name_global}, {usize_type} {})",
+            name.len()
+        ));
+
+        NativeValueMaterialization::owned(runtime_value, Vec::new())
+    }
+
+    fn materialize_native_value_handle(&mut self, value: &IrValue) -> NativeValueHandleResult {
+        match value {
+            IrValue::NativeExpression { value, .. } => {
+                NativeValueHandleResult::Available(self.emit_native_expression_read_value(value))
+            }
+            IrValue::String(_) | IrValue::StringPtr(_) => {
+                let Some((value_ptr, value_len)) = self.native_string_pointer_and_len(value) else {
+                    return NativeValueHandleResult::Blocked(NativeValueBlocker::Unsupported);
+                };
+                self.uses_native_value_from_string = true;
+                let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+                let string = self.next_temp();
+                let runtime_value = self.next_temp();
+
+                self.body.push(format!(
+                    "{string} = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr {value_ptr}, {usize_type} {value_len})"
+                ));
+                self.body.push(format!(
+                    "{runtime_value} = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle {string})"
+                ));
+
+                NativeValueHandleResult::Available(NativeValueMaterialization::owned(
+                    runtime_value,
+                    vec![format!(
+                        "call void @phpc_native_string_free(%phpc.NativeStringHandle {string})"
+                    )],
+                ))
+            }
+            IrValue::Int(value) => {
+                NativeValueHandleResult::Available(NativeValueMaterialization::owned(
+                    self.emit_native_scalar_value_handle(2, None, Some(value), None),
+                    Vec::new(),
+                ))
+            }
+            IrValue::Bool(value) => {
+                let bool_value = if *value { "1" } else { "0" };
+                NativeValueHandleResult::Available(NativeValueMaterialization::owned(
+                    self.emit_native_scalar_value_handle(1, Some(bool_value), None, None),
+                    Vec::new(),
+                ))
+            }
+            IrValue::BoolExpr(value) => {
+                let bool_value = self.next_temp();
+                self.body
+                    .push(format!("{bool_value} = zext i1 {value} to i8"));
+                NativeValueHandleResult::Available(NativeValueMaterialization::owned(
+                    self.emit_native_scalar_value_handle(1, Some(&bool_value), None, None),
+                    Vec::new(),
+                ))
+            }
+            IrValue::Float(value) => {
+                NativeValueHandleResult::Available(NativeValueMaterialization::owned(
+                    self.emit_native_scalar_value_handle(3, None, None, Some(value)),
+                    Vec::new(),
+                ))
+            }
+            IrValue::Null => NativeValueHandleResult::Available(NativeValueMaterialization::owned(
+                self.emit_native_scalar_value_handle(0, None, None, None),
+                Vec::new(),
+            )),
+        }
+    }
+
+    fn emit_native_scalar_value_handle(
+        &mut self,
+        tag: u8,
+        bool_value: Option<&str>,
+        int_value: Option<&str>,
+        float_value: Option<&str>,
+    ) -> String {
+        self.uses_native_value_from_scalar = true;
+        let tagged = self.next_temp();
+        self.body.push(format!(
+            "{tagged} = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 {tag}, 0"
+        ));
+
+        let scalar = if let Some(bool_value) = bool_value {
+            let scalar = self.next_temp();
+            self.body.push(format!(
+                "{scalar} = insertvalue %phpc.NativeScalarValue {tagged}, i8 {bool_value}, 1"
+            ));
+            scalar
+        } else if let Some(int_value) = int_value {
+            let scalar = self.next_temp();
+            self.body.push(format!(
+                "{scalar} = insertvalue %phpc.NativeScalarValue {tagged}, i64 {int_value}, 3"
+            ));
+            scalar
+        } else if let Some(float_value) = float_value {
+            let scalar = self.next_temp();
+            self.body.push(format!(
+                "{scalar} = insertvalue %phpc.NativeScalarValue {tagged}, double {float_value}, 4"
+            ));
+            scalar
+        } else {
+            tagged
+        };
+
+        let runtime_value = self.next_temp();
+        self.body.push(format!(
+            "{runtime_value} = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue {scalar})"
+        ));
+        runtime_value
+    }
+
+    fn native_string_pointer_and_len(&mut self, value: &IrValue) -> Option<(String, String)> {
+        match value {
+            IrValue::String(value) => {
+                let global = self.add_string(value);
+                Some((format!("@{global}"), value.len().to_string()))
+            }
+            IrValue::StringPtr(value) => {
+                let len = self.string_lengths.get(value)?.clone();
+                Some((value.clone(), len))
+            }
+            IrValue::NativeExpression { fallback, .. } => {
+                self.native_string_pointer_and_len(fallback)
+            }
             _ => None,
         }
     }
 
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
+        if let Some(superglobal_span) = request_superglobal_consumed_assign_target_span(target)
+            .or_else(|| request_superglobal_consumed_expr_span(expr))
+        {
+            return Err(self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
         match target {
-            AssignTarget::Variable { name, .. } => {
-                let value = self.emit_expr(expr)?;
-                self.variables.insert(name.clone(), value);
-                Ok(())
-            }
+            AssignTarget::Variable { name, .. } => self.emit_direct_local_assignment(name, expr),
             AssignTarget::List { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_DESTRUCTURING_REJECTION))
             }
@@ -1654,6 +5191,8 @@ impl LlvmGenerator {
         right: IrValue,
         span: Span,
     ) -> CompileResult<IrValue> {
+        let left = left.into_static_fallback();
+        let right = right.into_static_fallback();
         match op {
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Mod => {
                 self.emit_arithmetic_binary(left, op, right, span)
@@ -1903,6 +5442,8 @@ impl LlvmGenerator {
         right: IrValue,
         span: Span,
     ) -> CompileResult<IrValue> {
+        let left = left.into_static_fallback();
+        let right = right.into_static_fallback();
         match (left, right) {
             (IrValue::Null, IrValue::Null) => {
                 let Some(result) = null_comparison_result(op) else {
@@ -2886,6 +6427,8 @@ impl LlvmGenerator {
         ) {
             return Ok(IrValue::Bool(logical_truthiness_result(left, op, right)?));
         }
+        let left = left.into_static_fallback();
+        let right = right.into_static_fallback();
         match (left, right) {
             (IrValue::Bool(left), IrValue::Bool(right)) => Ok(IrValue::Bool(match op {
                 BinaryOp::LogicalAnd => left && right,
@@ -2974,7 +6517,7 @@ impl LlvmGenerator {
 
     fn require_bool_value(&self, value: IrValue, span: Span) -> CompileResult<IrValue> {
         match value {
-            IrValue::Bool(_) | IrValue::BoolExpr(_) => Ok(value),
+            value @ (IrValue::Bool(_) | IrValue::BoolExpr(_)) => Ok(value),
             _ => Err(self.unsupported(span, llvm_logical_rejection())),
         }
     }
@@ -2989,6 +6532,7 @@ impl LlvmGenerator {
             IrValue::StringPtr(value) => self
                 .known_string_values(value)
                 .and_then(|values| known_string_truthiness(&values)),
+            IrValue::NativeExpression { .. } => None,
             IrValue::Null => Some(false),
         }
     }
@@ -3136,6 +6680,10 @@ impl LlvmGenerator {
                 }
             }
             IrValue::Null => Ok(if_false),
+            IrValue::NativeExpression { value, .. } => {
+                let condition = self.emit_native_expression_truthiness(&value);
+                self.emit_dynamic_ternary(IrValue::BoolExpr(condition), if_true, if_false, span)
+            }
             condition => self.emit_dynamic_ternary(condition, if_true, if_false, span),
         }
     }
@@ -3158,6 +6706,12 @@ impl LlvmGenerator {
                 self.emit_expr(if_false)
             };
         }
+        if matches!(condition_value, IrValue::NativeExpression { .. }) {
+            let if_true = self.emit_expr(if_true)?;
+            let if_false = self.emit_expr(if_false)?;
+            return self.emit_ternary(condition_value, if_true, if_false, span);
+        }
+        let condition_value = condition_value.into_static_fallback();
         if !matches!(condition_value, IrValue::BoolExpr(_)) {
             return Err(self.unsupported(span, LLVM_CONDITIONAL_REJECTION));
         }
@@ -3181,6 +6735,11 @@ impl LlvmGenerator {
                 return Ok(condition_value);
             }
         }
+        let condition_value = if matches!(condition_value, IrValue::NativeExpression { .. }) {
+            return Err(self.unsupported(span, LLVM_CONDITIONAL_REJECTION));
+        } else {
+            condition_value.into_static_fallback()
+        };
         match condition_value {
             IrValue::Bool(true) => Ok(IrValue::Bool(true)),
             IrValue::Bool(false) => {
@@ -3238,6 +6797,9 @@ impl LlvmGenerator {
                     return Err(self.unsupported(span, LLVM_CONDITIONAL_REJECTION));
                 }
                 self.emit_ternary(condition, IrValue::Bool(true), if_false, span)
+            }
+            IrValue::NativeExpression { .. } => {
+                Err(self.unsupported(span, LLVM_CONDITIONAL_REJECTION))
             }
         }
     }
@@ -3500,6 +7062,9 @@ impl LlvmGenerator {
                 }
             }
             IrValue::Null => Ok(IrValue::Bool(true)),
+            IrValue::NativeExpression { value, .. } => Ok(IrValue::BoolExpr(
+                self.emit_native_expression_liveness_call("empty", &value),
+            )),
         }
     }
 
@@ -3551,34 +7116,50 @@ impl LlvmGenerator {
                     "call i32 (ptr, ...) @printf(ptr @.fmt_float, double {value})"
                 ));
             }
-            IrValue::String(value) => self.emit_native_value_string_stdout(&value),
+            value @ IrValue::String(_) => {
+                let _ = self.emit_native_value_result_stdout(&value);
+            }
             IrValue::StringPtr(value) => {
                 if let Some(len) = self.known_string_pointer_byte_len_operand(&value) {
-                    self.emit_native_value_string_ptr_stdout(&value, &len);
+                    let native_value = IrValue::StringPtr(value.clone());
+                    if !self.emit_native_value_result_stdout(&native_value) {
+                        self.emit_native_value_string_ptr_stdout(&value, &len);
+                    }
                 } else {
                     self.body.push(format!(
                         "call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr {value})"
                     ));
                 }
             }
+            IrValue::NativeExpression { value, .. } => {
+                let materialized = self.emit_native_expression_read_value(&value);
+                self.emit_native_value_handle_stdout(materialized);
+            }
         }
     }
 
     fn emit_print(&mut self, value: IrValue) {
-        match value {
-            IrValue::String(value) => self.emit_native_value_string_stdout(&value),
-            value => self.emit_echo(value),
-        }
+        self.emit_echo(value);
     }
 
-    fn emit_native_value_string_stdout(&mut self, value: &str) {
+    fn emit_native_value_result_stdout(&mut self, value: &IrValue) -> bool {
+        let Some(materialized) = self.materialize_native_value_handle(value).into_available()
+        else {
+            return false;
+        };
+
+        self.emit_native_value_handle_stdout(materialized);
+        true
+    }
+
+    fn emit_native_value_handle_stdout(&mut self, materialized: NativeValueMaterialization) {
+        self.uses_native_value_echo_stdout = true;
         let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
-        let global = self.add_string(value);
-        self.emit_native_value_string_pointer_stdout(
-            &format!("@{global}"),
-            usize_type,
-            &value.len().to_string(),
-        );
+        self.body.push(format!(
+            "call {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle {})",
+            materialized.handle
+        ));
+        self.body.extend(materialized.cleanup_after_use());
     }
 
     fn emit_native_value_string_ptr_stdout(&mut self, value: &str, len: &str) {
@@ -3928,18 +7509,194 @@ pub fn emit_native_executable_c_source(program: &Program) -> CompileResult<Strin
     generator.emit_program(program)
 }
 
+fn native_executable_symbol_table_helpers() -> &'static str {
+    r#"typedef struct {
+  int tag;
+  int bool_value;
+  long long int_value;
+  phpc_NativeValueHandle runtime_value;
+} phpc_NativeLinkedValue;
+
+static phpc_NativeLinkedValue phpc_native_linked_value_from_bool(int value) {
+  return (phpc_NativeLinkedValue){ 1, value ? 1 : 0, 0, {0} };
+}
+
+static phpc_NativeLinkedValue phpc_native_linked_value_from_int(long long value) {
+  return (phpc_NativeLinkedValue){ 2, 0, value, {0} };
+}
+
+static phpc_NativeLinkedValue phpc_native_linked_value_from_runtime_value(
+  phpc_NativeValueHandle value
+) {
+  return (phpc_NativeLinkedValue){ 3, 0, 0, value };
+}
+
+static void phpc_native_linked_value_echo_stdout(phpc_NativeLinkedValue value) {
+  switch (value.tag) {
+    case 1:
+      if (value.bool_value) {
+        printf("%s", "1");
+      }
+      return;
+    case 2:
+      printf("%lld", value.int_value);
+      return;
+    case 3:
+      phpc_native_value_echo_stdout(value.runtime_value);
+      return;
+    default:
+      return;
+  }
+}
+
+typedef struct {
+  const uint8_t *name;
+  size_t name_len;
+  phpc_NativeLinkedValue value;
+} phpc_NativeSymbolEntry;
+
+typedef struct {
+  phpc_NativeSymbolEntry *entries;
+  size_t len;
+  size_t cap;
+} phpc_NativeSymbolTable;
+
+static phpc_NativeSymbolTableHandle phpc_native_symbol_table_new(void) {
+  phpc_NativeSymbolTable *table = (phpc_NativeSymbolTable *)calloc(1, sizeof(*table));
+  return (phpc_NativeSymbolTableHandle){ table };
+}
+
+static int phpc_native_symbol_name_matches(
+  const phpc_NativeSymbolEntry *entry,
+  const uint8_t *name,
+  size_t name_len
+) {
+  return entry->name_len == name_len
+    && (name_len == 0 || memcmp(entry->name, name, name_len) == 0);
+}
+
+static int phpc_native_symbol_table_write(
+  phpc_NativeSymbolTableHandle handle,
+  const uint8_t *name,
+  size_t name_len,
+  phpc_NativeLinkedValue value
+) {
+  phpc_NativeSymbolTable *table = (phpc_NativeSymbolTable *)handle.ptr;
+  if (table == NULL || (name == NULL && name_len != 0)) {
+    return 0;
+  }
+
+  for (size_t i = 0; i < table->len; i++) {
+    if (phpc_native_symbol_name_matches(&table->entries[i], name, name_len)) {
+      table->entries[i].value = value;
+      return 1;
+    }
+  }
+
+  if (table->len == table->cap) {
+    size_t next_cap = table->cap == 0 ? 4 : table->cap * 2;
+    phpc_NativeSymbolEntry *entries =
+      (phpc_NativeSymbolEntry *)realloc(table->entries, next_cap * sizeof(*entries));
+    if (entries == NULL) {
+      return 0;
+    }
+    table->entries = entries;
+    table->cap = next_cap;
+  }
+
+  table->entries[table->len++] = (phpc_NativeSymbolEntry){ name, name_len, value };
+  return 1;
+}
+
+static phpc_NativeLinkedValue phpc_native_symbol_table_read(
+  phpc_NativeSymbolTableHandle handle,
+  const uint8_t *name,
+  size_t name_len
+) {
+  phpc_NativeSymbolTable *table = (phpc_NativeSymbolTable *)handle.ptr;
+  if (table == NULL || (name == NULL && name_len != 0)) {
+    return (phpc_NativeLinkedValue){0};
+  }
+
+  for (size_t i = 0; i < table->len; i++) {
+    if (phpc_native_symbol_name_matches(&table->entries[i], name, name_len)) {
+      return table->entries[i].value;
+    }
+  }
+
+  return (phpc_NativeLinkedValue){0};
+}
+
+static int phpc_native_symbol_table_isset(
+  phpc_NativeSymbolTableHandle handle,
+  const uint8_t *name,
+  size_t name_len
+) {
+  phpc_NativeSymbolTable *table = (phpc_NativeSymbolTable *)handle.ptr;
+  if (table == NULL || (name == NULL && name_len != 0)) {
+    return 0;
+  }
+
+  for (size_t i = 0; i < table->len; i++) {
+    if (phpc_native_symbol_name_matches(&table->entries[i], name, name_len)) {
+      return table->entries[i].value.tag != 0;
+    }
+  }
+
+  return 0;
+}
+
+static int phpc_native_symbol_table_unset(
+  phpc_NativeSymbolTableHandle handle,
+  const uint8_t *name,
+  size_t name_len
+) {
+  phpc_NativeSymbolTable *table = (phpc_NativeSymbolTable *)handle.ptr;
+  if (table == NULL || (name == NULL && name_len != 0)) {
+    return 0;
+  }
+
+  for (size_t i = 0; i < table->len; i++) {
+    if (phpc_native_symbol_name_matches(&table->entries[i], name, name_len)) {
+      table->entries[i] = table->entries[table->len - 1];
+      table->len--;
+      return 1;
+    }
+  }
+
+  return 1;
+}
+
+static void phpc_native_symbol_table_free(phpc_NativeSymbolTableHandle handle) {
+  phpc_NativeSymbolTable *table = (phpc_NativeSymbolTable *)handle.ptr;
+  if (table == NULL) {
+    return;
+  }
+  free(table->entries);
+  free(table);
+}
+
+"#
+}
+
 #[derive(Default)]
 struct CGenerator {
     body: Vec<String>,
     static_data: Vec<String>,
     variables: HashMap<String, CValue>,
+    array_variables: HashMap<String, String>,
+    array_cleanup_handles: Vec<String>,
     known_ints: HashMap<String, KnownInt>,
     known_floats: HashMap<String, KnownFloat>,
     known_strings: HashMap<String, KnownString>,
     known_bools: HashMap<String, KnownBool>,
+    symbol_table_variables: HashSet<String>,
     uses_strcmp: bool,
     uses_native_string_helpers: bool,
+    uses_native_symbol_table_helpers: bool,
+    emitted_native_symbol_table: bool,
     next_static_data: usize,
+    next_native_temp: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -3951,6 +7708,41 @@ enum CValue {
     Bool(bool),
     BoolExpr(String),
     Null,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NativeValueDebugOutputOperation {
+    VarDump,
+    PrintR,
+}
+
+impl NativeValueDebugOutputOperation {
+    fn operation_tag(self) -> u8 {
+        match self {
+            Self::VarDump => 0,
+            Self::PrintR => 1,
+        }
+    }
+}
+
+struct CNativeValueMaterialization {
+    handle: String,
+    cleanup_after_use: Vec<String>,
+}
+
+struct CNativeArrayKeyMaterialization {
+    result: String,
+    cleanup_after_use: Vec<String>,
+}
+
+fn c_cleanup_sequence(cleanup: &[String]) -> String {
+    if cleanup.is_empty() {
+        String::new()
+    } else {
+        let mut sequence = cleanup.join(" ");
+        sequence.push(' ');
+        sequence
+    }
 }
 
 impl CGenerator {
@@ -3969,11 +7761,29 @@ impl CGenerator {
         if self.uses_native_string_helpers {
             output.push_str("#include <stddef.h>\n");
             output.push_str("#include <stdint.h>\n\n");
+            output.push_str("#include <stdbool.h>\n\n");
+            output.push_str("typedef struct { uint8_t tag; uint8_t bool_value; int64_t int_value; double float_value; } phpc_NativeScalarValue;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeStringHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeValueHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeDiagnosticHandle;\n\n");
+            output.push_str(
+                "typedef struct { uint8_t *ptr; size_t len; size_t cap; } phpc_NativeByteBuffer;\n",
+            );
+            output.push_str("typedef struct { void *ptr; } phpc_NativeArrayHandle;\n");
+            output.push_str("typedef struct { uint8_t tag; int64_t int_value; phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeArrayKeyMaterializationResult;\n\n");
+            output.push_str("extern phpc_NativeScalarValue phpc_native_null(void);\n");
+            output.push_str("extern phpc_NativeScalarValue phpc_native_bool(bool value);\n");
+            output.push_str("extern phpc_NativeScalarValue phpc_native_int(int64_t value);\n");
+            output.push_str("extern phpc_NativeScalarValue phpc_native_float(double value);\n");
+            output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_scalar(phpc_NativeScalarValue value);\n");
+            if self.uses_native_symbol_table_helpers {
+                output.push_str("#include <stdlib.h>\n");
+                output.push_str("#include <string.h>\n\n");
+                output.push_str("typedef struct { void *ptr; } phpc_NativeSymbolTableHandle;\n\n");
+            }
             output.push_str("extern phpc_NativeStringHandle phpc_native_string_from_bytes(const uint8_t *ptr, size_t len);\n");
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string_with_diagnostic(phpc_NativeStringHandle string, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            output.push_str("extern phpc_NativeValueHandle phpc_native_value_debug_output_with_diagnostic(phpc_NativeValueHandle value, uint8_t operation, bool return_output, phpc_NativeDiagnosticHandle *diagnostic);\n");
             output.push_str(
                 "extern size_t phpc_native_value_echo_stdout(phpc_NativeValueHandle value);\n",
             );
@@ -3983,8 +7793,20 @@ impl CGenerator {
             output.push_str(
                 "extern void phpc_native_string_free(phpc_NativeStringHandle string);\n\n",
             );
+            output.push_str("extern phpc_NativeArrayHandle phpc_native_array_empty(void);\n");
+            output.push_str("extern bool phpc_native_array_append_value(phpc_NativeArrayHandle array, phpc_NativeValueHandle value);\n");
+            output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key(phpc_NativeValueHandle value);\n");
+            output.push_str("extern bool phpc_native_array_insert_key_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            output.push_str("extern phpc_NativeValueHandle phpc_native_array_read_key_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            output.push_str("extern void phpc_native_array_key_materialization_result_free(phpc_NativeArrayKeyMaterializationResult key);\n");
+            output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_array_clone(phpc_NativeArrayHandle array);\n");
+            output
+                .push_str("extern void phpc_native_array_free(phpc_NativeArrayHandle array);\n\n");
+            if self.uses_native_symbol_table_helpers {
+                output.push_str(native_executable_symbol_table_helpers());
+            }
         }
-        if self.uses_strcmp {
+        if self.uses_strcmp && !self.uses_native_symbol_table_helpers {
             output.push_str("#include <string.h>\n\n");
         }
         for line in &self.static_data {
@@ -4000,6 +7822,14 @@ impl CGenerator {
             output.push_str(line);
             output.push('\n');
         }
+        for handle in self.array_cleanup_handles.iter().rev() {
+            output.push_str("  phpc_native_array_free(");
+            output.push_str(handle);
+            output.push_str(");\n");
+        }
+        if self.emitted_native_symbol_table {
+            output.push_str("  phpc_native_symbol_table_free(phpc_symbols);\n");
+        }
         output.push_str("  return 0;\n");
         output.push_str("}\n");
         Ok(output)
@@ -4012,12 +7842,24 @@ impl CGenerator {
             }
             Stmt::Echo { exprs, .. } => {
                 for expr in exprs {
+                    if self.try_emit_native_symbol_table_echo(expr)? {
+                        continue;
+                    }
+                    if self.uses_native_string_helpers && self.emit_array_index_echo(expr)? {
+                        continue;
+                    }
                     let value = self.emit_expr(expr)?;
                     self.emit_echo(value)?;
                 }
                 Ok(())
             }
             Stmt::Print { expr, .. } => {
+                if self.try_emit_native_symbol_table_echo(expr)? {
+                    return Ok(());
+                }
+                if self.uses_native_string_helpers && self.emit_array_index_echo(expr)? {
+                    return Ok(());
+                }
                 let value = self.emit_expr(expr)?;
                 self.emit_echo(value)?;
                 Ok(())
@@ -4026,9 +7868,37 @@ impl CGenerator {
             Stmt::ReferenceAssign { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION))
             }
-            Stmt::CompoundAssign { target, span, .. }
-            | Stmt::IncrementDecrement { target, span, .. }
-            | Stmt::NullCoalesceAssign { target, span, .. } => {
+            Stmt::CompoundAssign {
+                target, expr, span, ..
+            }
+            | Stmt::NullCoalesceAssign {
+                target, expr, span, ..
+            } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_assign_target_span(target)
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
+            Stmt::IncrementDecrement { target, span, .. } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_assign_target_span(target)
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
@@ -4069,9 +7939,7 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_CONTROL_FLOW_REJECTION))
             }
             Stmt::Foreach { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
-            Stmt::UnsetVariable { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
-            }
+            Stmt::UnsetVariable { name, span } => self.emit_unset_variable(name, *span),
             Stmt::UnsetStaticProperty { span, .. }
             | Stmt::UnsetSelfStaticProperty { span, .. }
             | Stmt::UnsetParentStaticProperty { span, .. }
@@ -4085,30 +7953,62 @@ impl CGenerator {
             Stmt::UnsetArrayIndex { span, .. } | Stmt::UnsetNestedArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Stmt::UnsetMany { targets, span } => {
-                if targets
-                    .iter()
-                    .any(is_object_property_array_access_unset_target)
-                {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+            Stmt::UnsetMany { targets, span } => self.emit_unset_many(targets, *span),
+            Stmt::ConstDeclaration { declarations, span } => {
+                if let Some(superglobal_span) = declarations.iter().find_map(|declaration| {
+                    request_superglobal_consumed_expr_span(&declaration.value)
+                }) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
                 }
-                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
-            }
-            Stmt::ConstDeclaration { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
             }
-            Stmt::Require { span, .. } | Stmt::Include { span, .. } => {
+            Stmt::Require { path, span, .. } | Stmt::Include { path, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(path) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_REQUIRE_REJECTION))
             }
-            Stmt::Throw { span, .. } => Err(self.unsupported(*span, ASSEMBLY_EXCEPTION_REJECTION)),
+            Stmt::Throw { expr, span } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, ASSEMBLY_EXCEPTION_REJECTION))
+            }
             Stmt::Try { span, .. } => Err(self.unsupported(*span, ASSEMBLY_TRY_BLOCK_REJECTION)),
-            Stmt::Return { span, .. } => {
+            Stmt::Return { value, span } => {
+                if let Some(value) = value {
+                    if let Some(superglobal_span) = request_superglobal_consumed_expr_span(value) {
+                        return Err(self.unsupported(
+                            superglobal_span,
+                            ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION,
+                        ));
+                    }
+                }
                 Err(self.unsupported(*span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
             }
-            Stmt::Global { span, .. } => {
+            Stmt::Global { names, span } => {
+                if names.iter().any(|name| is_request_superglobal_name(name)) {
+                    return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_DECLARATION_REJECTION))
             }
-            Stmt::StaticLocal { span, .. } => {
+            Stmt::StaticLocal { declarations, span } => {
+                if let Some(superglobal_span) = declarations.iter().find_map(|declaration| {
+                    declaration
+                        .default
+                        .as_ref()
+                        .and_then(request_superglobal_consumed_expr_span)
+                }) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_LOCAL_REJECTION))
             }
         }
@@ -4146,13 +8046,32 @@ impl CGenerator {
             | Expr::ParentClassConstant { span, .. }
             | Expr::LateStaticClassConstant { span, .. }
             | Expr::StaticProperty { span, .. }
-            | Expr::ObjectStaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
-            Expr::Array { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
+            Expr::ObjectStaticProperty { target, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
+            }
+            Expr::Array { items, span } => {
+                if let Some(superglobal_span) = items.iter().find_map(|item| {
+                    item.key
+                        .as_ref()
+                        .and_then(request_superglobal_consumed_expr_span)
+                        .or_else(|| request_superglobal_consumed_expr_span(&item.value))
+                }) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
+            }
             Expr::Index { target, span, .. } => {
                 if let Some(superglobal_span) = request_superglobal_expr_span(target) {
                     return Err(
@@ -4175,16 +8094,77 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
+            Expr::Property { target, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_PROPERTY_REJECTION))
             }
-            Expr::MethodCall { span, .. }
-            | Expr::DynamicMethodCall { span, .. }
-            | Expr::ParentMethodCall { span, .. }
-            | Expr::StaticMethodCall { span, .. }
-            | Expr::ObjectStaticMethodCall { span, .. }
-            | Expr::SelfMethodCall { span, .. }
-            | Expr::LateStaticMethodCall { span, .. } => {
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target)
+                    .or_else(|| request_superglobal_consumed_expr_span(property))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, ASSEMBLY_OBJECT_PROPERTY_REJECTION))
+            }
+            Expr::MethodCall {
+                target, args, span, ..
+            } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target)
+                    .or_else(|| request_superglobal_consumed_args_span(args))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, ASSEMBLY_METHOD_CALL_REJECTION))
+            }
+            Expr::DynamicMethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target)
+                    .or_else(|| request_superglobal_consumed_expr_span(method))
+                    .or_else(|| request_superglobal_consumed_args_span(args))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, ASSEMBLY_METHOD_CALL_REJECTION))
+            }
+            Expr::ObjectStaticMethodCall {
+                target, args, span, ..
+            } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(target)
+                    .or_else(|| request_superglobal_consumed_args_span(args))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, ASSEMBLY_METHOD_CALL_REJECTION))
+            }
+            Expr::ParentMethodCall { args, span, .. }
+            | Expr::StaticMethodCall { args, span, .. }
+            | Expr::SelfMethodCall { args, span, .. }
+            | Expr::LateStaticMethodCall { args, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_METHOD_CALL_REJECTION))
             }
             Expr::Variable(name, span) => {
@@ -4196,13 +8176,26 @@ impl CGenerator {
                     .cloned()
                     .ok_or_else(|| self.unsupported(*span, ASSEMBLY_VARIABLE_READ_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_exit_construct_name(name) => {
+            Expr::Call { name, args, span } if is_exit_construct_name(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_TERMINATION_REJECTION))
+            }
+            Expr::Call { name, args, span } if is_value_debug_output_builtin(name) => {
+                self.emit_value_debug_output_call(name, args, *span)
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("defined") => {
                 self.emit_defined_call(args, *span)
             }
-            Expr::Call { name, span, .. } if is_global_constant_builtin(name) => {
+            Expr::Call { name, args, span } if is_global_constant_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("isset") => {
@@ -4214,40 +8207,100 @@ impl CGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("strlen") => {
                 self.emit_strlen_call(args, *span)
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("str_starts_with") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("str_starts_with") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_STR_STARTS_WITH_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("str_ends_with") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("str_ends_with") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_STR_ENDS_WITH_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("basename") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_BASENAME_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("file_get_contents") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("file_get_contents") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_FILE_GET_CONTENTS_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_stream_resource_builtin(name) => {
+            Expr::Call { name, args, span } if is_stream_resource_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_STREAM_RESOURCE_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("getcwd") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("getcwd") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_GETCWD_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("realpath") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("realpath") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_REALPATH_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("is_writable") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("is_writable") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_IS_WRITABLE_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("clearstatcache") => {
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("clearstatcache") => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_CLEARSTATCACHE_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_header_state_builtin(name) => {
+            Expr::Call { name, args, span } if is_header_state_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_HEADER_STATE_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_session_state_builtin(name) => {
+            Expr::Call { name, args, span } if is_session_state_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_SESSION_STATE_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_output_buffer_builtin(name) => {
+            Expr::Call { name, args, span } if is_output_buffer_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_OUTPUT_BUFFER_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
@@ -4259,26 +8312,72 @@ impl CGenerator {
             Expr::Call { name, args, span } if is_native_type_introspection_builtin(name) => {
                 self.emit_native_type_introspection_call(name, args, *span)
             }
-            Expr::Call { name, span, .. } if is_object_metadata_builtin(name) => {
+            Expr::Call { name, args, span } if is_object_metadata_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_METADATA_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_array_builtin(name) => {
+            Expr::Call { name, args, span } if is_array_builtin(name) => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Expr::DynamicCall { span, .. } => {
+            Expr::DynamicCall { callee, args, span } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(callee)
+                    .or_else(|| request_superglobal_consumed_args_span(args))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION))
             }
-            Expr::Call { span, .. } => {
+            Expr::Call { args, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION))
             }
-            Expr::InstanceOf { span, .. } => {
+            Expr::InstanceOf { expr, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_INSTANCEOF_REJECTION))
             }
             Expr::Closure { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CLOSURE_REJECTION)),
-            Expr::New { span, .. } => {
+            Expr::New {
+                class_name,
+                args,
+                span,
+            } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_new_class_name_span(class_name, *span)
+                        .or_else(|| request_superglobal_consumed_args_span(args))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION))
             }
-            Expr::Clone { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CLONE_REJECTION)),
+            Expr::Clone { expr, span } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, ASSEMBLY_CLONE_REJECTION))
+            }
             Expr::Unary { op, expr, span } => {
                 if matches!(op, UnaryOp::Not) {
                     if let Expr::Unary {
@@ -4311,14 +8410,39 @@ impl CGenerator {
                 let value = self.emit_expr(expr)?;
                 self.emit_unary(*op, value, *span)
             }
-            Expr::ErrorControl { span, .. } => {
+            Expr::ErrorControl { expr, span } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_ERROR_CONTROL_REJECTION))
             }
-            Expr::Include { span, .. } | Expr::Require { span, .. } => {
+            Expr::Include { path, span, .. } | Expr::Require { path, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(path) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 Err(self.unsupported(*span, ASSEMBLY_REQUIRE_EXPRESSION_REJECTION))
             }
-            Expr::Cast { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION)),
-            Expr::Assign { target, span, .. } => {
+            Expr::Cast { expr, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_consumed_expr_span(expr) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION))
+            }
+            Expr::Assign { target, expr, span } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_assign_target_span(target)
+                        .or_else(|| request_superglobal_consumed_expr_span(expr))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
@@ -4327,9 +8451,33 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Expr::CompoundAssign { target, span, .. }
-            | Expr::NullCoalesceAssign { target, span, .. }
-            | Expr::IncrementDecrement { target, span, .. } => {
+            Expr::CompoundAssign {
+                target, expr, span, ..
+            }
+            | Expr::NullCoalesceAssign {
+                target, expr, span, ..
+            } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_assign_target_span(target)
+                        .or_else(|| request_superglobal_consumed_expr_span(expr))
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
+            Expr::IncrementDecrement { target, span, .. } => {
+                if let Some(superglobal_span) =
+                    request_superglobal_consumed_assign_target_span(target)
+                {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
@@ -4374,27 +8522,51 @@ impl CGenerator {
         }
     }
 
-    fn emit_isset_call(&self, args: &[Expr], span: Span) -> CompileResult<CValue> {
-        let [arg] = args else {
+    fn emit_isset_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        if args.is_empty() {
             return Err(self.unsupported(span, ASSEMBLY_ISSET_REJECTION));
-        };
-
-        if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
-            return Err(self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
         }
 
-        if is_array_access_offset_expr(arg) {
-            return Err(self.unsupported(arg.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+        let mut symbol_table_checks = Vec::new();
+        for arg in args {
+            if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
+                return Err(
+                    self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                );
+            }
+
+            if is_array_access_offset_expr(arg) {
+                return Err(self.unsupported(arg.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+            }
+
+            let Expr::Variable(name, _) = arg else {
+                return Err(self.unsupported(arg.span(), ASSEMBLY_ISSET_REJECTION));
+            };
+
+            if self.uses_native_string_helpers
+                && (self.symbol_table_variables.contains(name)
+                    || !self.variables.contains_key(name))
+            {
+                symbol_table_checks.push(self.emit_native_symbol_table_isset_expr(name));
+                continue;
+            }
+
+            if matches!(self.variables.get(name), None | Some(CValue::Null)) {
+                return Ok(CValue::Bool(false));
+            }
         }
 
-        let Expr::Variable(name, _) = arg else {
-            return Err(self.unsupported(arg.span(), ASSEMBLY_ISSET_REJECTION));
-        };
+        if symbol_table_checks.is_empty() {
+            return Ok(CValue::Bool(true));
+        }
 
-        Ok(CValue::Bool(!matches!(
-            self.variables.get(name),
-            None | Some(CValue::Null)
-        )))
+        Ok(CValue::BoolExpr(
+            symbol_table_checks
+                .into_iter()
+                .map(|check| format!("({check})"))
+                .collect::<Vec<_>>()
+                .join(" && "),
+        ))
     }
 
     fn emit_empty_call(&self, args: &[Expr], span: Span) -> CompileResult<CValue> {
@@ -4463,6 +8635,225 @@ impl CGenerator {
         self.is_callable_result_for_value(&value, syntax_only)
             .map(CValue::Bool)
             .ok_or_else(|| self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION))
+    }
+
+    fn emit_value_debug_output_call(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<CValue> {
+        if !self.uses_native_string_helpers {
+            return Err(self.unsupported(span, ASSEMBLY_VALUE_DEBUG_OUTPUT_REJECTION));
+        }
+
+        if name.eq_ignore_ascii_case("var_dump") {
+            if args.is_empty() {
+                return Err(self.unsupported(span, ASSEMBLY_VALUE_DEBUG_OUTPUT_REJECTION));
+            }
+
+            for arg in args {
+                let value = self.materialize_native_debug_output_value(arg)?;
+                self.emit_native_value_debug_output(
+                    value,
+                    NativeValueDebugOutputOperation::VarDump,
+                );
+            }
+            return Ok(CValue::Null);
+        }
+
+        if !name.eq_ignore_ascii_case("print_r") || !(1..=2).contains(&args.len()) {
+            return Err(self.unsupported(span, ASSEMBLY_VALUE_DEBUG_OUTPUT_REJECTION));
+        }
+
+        let return_output = if let Some(arg) = args.get(1) {
+            let value = self.emit_expr(arg)?;
+            self.known_truthiness_for_value(&value).ok_or_else(|| {
+                self.unsupported(arg.span(), ASSEMBLY_VALUE_DEBUG_OUTPUT_REJECTION)
+            })?
+        } else {
+            false
+        };
+
+        if return_output {
+            return Err(self.unsupported(span, ASSEMBLY_VALUE_DEBUG_OUTPUT_REJECTION));
+        }
+
+        let value = self.materialize_native_debug_output_value(&args[0])?;
+        self.emit_native_value_debug_output(value, NativeValueDebugOutputOperation::PrintR);
+        Ok(CValue::Bool(true))
+    }
+
+    fn materialize_native_debug_output_value(
+        &mut self,
+        expr: &Expr,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        match expr {
+            Expr::Array { items, span } => {
+                if let Some(superglobal_span) = items.iter().find_map(|item| {
+                    item.key
+                        .as_ref()
+                        .and_then(request_superglobal_consumed_expr_span)
+                        .or_else(|| request_superglobal_consumed_expr_span(&item.value))
+                }) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+
+                let handle = self.emit_array_literal(items, *span)?;
+                return Ok(self.materialize_native_array_value_clone(&handle));
+            }
+            Expr::Variable(name, span) => {
+                if is_request_superglobal_name(name) {
+                    return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                }
+                if let Some(handle) = self.array_variables.get(name).cloned() {
+                    return Ok(self.materialize_native_array_value_clone(&handle));
+                }
+            }
+            _ => {}
+        }
+
+        let value = self.emit_expr(expr)?;
+        self.materialize_native_c_value_handle(&value, expr.span())
+    }
+
+    fn materialize_native_array_value_clone(
+        &mut self,
+        handle: &str,
+    ) -> CNativeValueMaterialization {
+        let value = self.next_native_name("debug_value");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_value_from_array_clone({handle});"
+        ));
+        CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        }
+    }
+
+    fn materialize_native_c_value_handle(
+        &mut self,
+        value: &CValue,
+        span: Span,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.materialize_native_c_value_handle_with_rejection(
+            value,
+            span,
+            ASSEMBLY_VALUE_DEBUG_OUTPUT_REJECTION,
+            "",
+        )
+    }
+
+    fn materialize_native_array_c_value_handle(
+        &mut self,
+        value: &CValue,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.materialize_native_c_value_handle_with_rejection(
+            value,
+            span,
+            ASSEMBLY_ARRAY_REJECTION,
+            failure_cleanup,
+        )
+    }
+
+    fn materialize_native_c_value_handle_with_rejection(
+        &mut self,
+        value: &CValue,
+        span: Span,
+        rejection: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        match value {
+            CValue::Null => Ok(self.materialize_native_scalar_value_handle("phpc_native_null()")),
+            CValue::Bool(value) => Ok(self.materialize_native_scalar_value_handle(&format!(
+                "phpc_native_bool({})",
+                if *value { "true" } else { "false" }
+            ))),
+            CValue::BoolExpr(value) => Ok(self.materialize_native_scalar_value_handle(&format!(
+                "phpc_native_bool(({value}) ? true : false)"
+            ))),
+            CValue::Int(value) => Ok(self.materialize_native_scalar_value_handle(&format!(
+                "phpc_native_int((int64_t)({value}))"
+            ))),
+            CValue::Float(value) => Ok(self.materialize_native_scalar_value_handle(&format!(
+                "phpc_native_float((double)({value}))"
+            ))),
+            CValue::String(value) => {
+                Ok(self.materialize_native_string_value_handle(value, failure_cleanup))
+            }
+            CValue::StringExpr(_) => Err(self.unsupported(span, rejection)),
+        }
+    }
+
+    fn materialize_native_scalar_value_handle(
+        &mut self,
+        scalar: &str,
+    ) -> CNativeValueMaterialization {
+        let value = self.next_native_name("debug_value");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_value_from_scalar({scalar});"
+        ));
+        CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        }
+    }
+
+    fn materialize_native_string_value_handle(
+        &mut self,
+        bytes: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let string = self.emit_native_string_handle("debug_string", bytes);
+        let diagnostic = self.next_native_name("debug_value_diagnostic");
+        let value = self.next_native_name("debug_value");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_value_from_string_with_diagnostic({string}, &{diagnostic});"
+        ));
+        let conversion_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({string}); {failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({value}.ptr == NULL) {{ {conversion_error_exit} }}"
+        ));
+        CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![
+                format!("phpc_native_value_free({value});"),
+                format!("phpc_native_string_free({string});"),
+            ],
+        }
+    }
+
+    fn emit_native_value_debug_output(
+        &mut self,
+        value: CNativeValueMaterialization,
+        operation: NativeValueDebugOutputOperation,
+    ) {
+        let diagnostic = self.next_native_name("debug_output_diagnostic");
+        let result = self.next_native_name("debug_output_result");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_debug_output_with_diagnostic({}, {}, false, &{diagnostic});",
+            value.handle,
+            operation.operation_tag()
+        ));
+        let local_cleanup = format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}",
+            value.cleanup_after_use.join(" ")
+        );
+        let error_exit = self.native_error_exit(&local_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.push(format!("phpc_native_value_free({result});"));
+        self.body.extend(value.cleanup_after_use);
     }
 
     fn emit_defined_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
@@ -4692,16 +9083,53 @@ impl CGenerator {
     }
 
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
+        if let Some(superglobal_span) = request_superglobal_consumed_assign_target_span(target)
+            .or_else(|| request_superglobal_consumed_expr_span(expr))
+        {
+            return Err(self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
         match target {
             AssignTarget::Variable { name, .. } => {
+                if self.uses_native_string_helpers {
+                    if let Expr::Array { items, span } = expr {
+                        let handle = self.emit_array_literal(items, *span)?;
+                        self.variables.remove(name);
+                        self.symbol_table_variables.remove(name);
+                        self.array_variables.insert(name.clone(), handle);
+                        return Ok(());
+                    }
+                }
                 let value = self.emit_expr(expr)?;
+                self.array_variables.remove(name);
+                if self.uses_native_string_helpers {
+                    if self.emit_native_symbol_table_variable_copy(name, expr)? {
+                        self.symbol_table_variables.insert(name.clone());
+                    } else if self.emit_native_symbol_table_write(name, &value)? {
+                        self.symbol_table_variables.insert(name.clone());
+                    } else {
+                        self.symbol_table_variables.remove(name);
+                    }
+                }
                 self.variables.insert(name.clone(), value);
                 Ok(())
             }
             AssignTarget::List { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION))
             }
-            AssignTarget::ArrayIndex { span, .. } => {
+            AssignTarget::ArrayIndex { name, index, span } => {
+                if self.uses_native_string_helpers {
+                    if let Some(handle) = self.array_variables.get(name).cloned() {
+                        if let Some(index) = index {
+                            self.emit_array_write_key_value(&handle, index, expr)?;
+                            return Ok(());
+                        }
+
+                        self.emit_array_append_value(&handle, expr)?;
+                        return Ok(());
+                    }
+                }
+
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             AssignTarget::NestedArrayIndex { span, .. }
@@ -4732,6 +9160,60 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
         }
+    }
+
+    fn emit_unset_variable(&mut self, name: &str, span: Span) -> CompileResult<()> {
+        if !self.uses_native_string_helpers {
+            return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION));
+        }
+        if is_request_superglobal_name(name) {
+            return Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
+        if self.symbol_table_variables.contains(name) {
+            self.emit_native_symbol_table_unset(name);
+        }
+        self.symbol_table_variables.remove(name);
+        self.variables.remove(name);
+        self.array_variables.remove(name);
+        Ok(())
+    }
+
+    fn emit_unset_many(&mut self, targets: &[UnsetTarget], span: Span) -> CompileResult<()> {
+        if targets
+            .iter()
+            .any(is_object_property_array_access_unset_target)
+        {
+            return Err(self.unsupported(span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+        }
+
+        for target in targets {
+            match target {
+                UnsetTarget::Variable { name, span } => self.emit_unset_variable(name, *span)?,
+                UnsetTarget::ArrayIndex { span, .. }
+                | UnsetTarget::NestedArrayIndex { span, .. } => {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                }
+                UnsetTarget::ObjectProperty { span, .. }
+                | UnsetTarget::DynamicObjectProperty { span, .. }
+                | UnsetTarget::NonDirectObjectProperty { span, .. }
+                | UnsetTarget::NonDirectDynamicObjectProperty { span, .. }
+                | UnsetTarget::StaticProperty { span, .. }
+                | UnsetTarget::SelfStaticProperty { span, .. }
+                | UnsetTarget::ParentStaticProperty { span, .. }
+                | UnsetTarget::LateStaticProperty { span, .. } => {
+                    return Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION));
+                }
+                UnsetTarget::ObjectPropertyArrayIndex { .. }
+                | UnsetTarget::DynamicObjectPropertyArrayIndex { .. }
+                | UnsetTarget::NonDirectObjectPropertyArrayIndex { .. }
+                | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { .. } => {
+                    return Err(self.unsupported(span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn emit_binary(
@@ -6561,13 +11043,352 @@ impl CGenerator {
         Ok(())
     }
 
-    fn emit_native_string_helper_echo(&mut self, value: &str) {
+    fn emit_array_literal(&mut self, items: &[ArrayItem], span: Span) -> CompileResult<String> {
+        let handle = self.next_native_name("array");
+        self.body.push(format!(
+            "phpc_NativeArrayHandle {handle} = phpc_native_array_empty();"
+        ));
+        self.array_cleanup_handles.push(handle.clone());
+
+        for item in items {
+            if item.by_reference {
+                return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
+            }
+            if let Some(key) = &item.key {
+                self.emit_array_write_key_value(&handle, key, &item.value)?;
+            } else {
+                self.emit_array_append_value(&handle, &item.value)?;
+            }
+        }
+
+        Ok(handle)
+    }
+
+    fn emit_array_write_key_value(
+        &mut self,
+        handle: &str,
+        key: &Expr,
+        value: &Expr,
+    ) -> CompileResult<()> {
+        let value_span = value.span();
+        let value = self.emit_expr(value)?;
+        let value = self.materialize_native_array_c_value_handle(&value, value_span, "")?;
+        let value_cleanup = c_cleanup_sequence(&value.cleanup_after_use);
+        let key = self.materialize_native_array_key(key, &value_cleanup)?;
+        let diagnostic = self.next_native_name("array_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+
+        let local_cleanup = format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}",
+            c_cleanup_sequence(&key.cleanup_after_use),
+            c_cleanup_sequence(&value.cleanup_after_use)
+        );
+        let write_error_exit = self.native_error_exit(&local_cleanup);
+        self.body.push(format!(
+            "if (!phpc_native_array_insert_key_value_with_diagnostic({handle}, {}, {}, &{diagnostic})) {{ {write_error_exit} }}",
+            key.result, value.handle
+        ));
+        self.body.extend(key.cleanup_after_use);
+        self.body.extend(value.cleanup_after_use);
+        Ok(())
+    }
+
+    fn materialize_native_array_key(
+        &mut self,
+        key: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeArrayKeyMaterialization> {
+        let key_value = self.emit_expr(key)?;
+        let key_value =
+            self.materialize_native_array_c_value_handle(&key_value, key.span(), failure_cleanup)?;
+        let result = self.next_native_name("array_key");
+        self.body.push(format!(
+            "phpc_NativeArrayKeyMaterializationResult {result} = phpc_native_value_to_array_key({});",
+            key_value.handle
+        ));
+        self.body.extend(key_value.cleanup_after_use);
+        Ok(CNativeArrayKeyMaterialization {
+            result: result.clone(),
+            cleanup_after_use: vec![format!(
+                "phpc_native_array_key_materialization_result_free({result});"
+            )],
+        })
+    }
+
+    fn emit_array_append_value(&mut self, handle: &str, value: &Expr) -> CompileResult<()> {
+        let value_span = value.span();
+        let value = self.emit_expr(value)?;
+        let value = self.materialize_native_array_c_value_handle(&value, value_span, "")?;
+        let local_cleanup = c_cleanup_sequence(&value.cleanup_after_use);
+        let append_error_exit = self.native_error_exit(&local_cleanup);
+        self.body.push(format!(
+            "if (!phpc_native_array_append_value({handle}, {})) {{ {append_error_exit} }}",
+            value.handle
+        ));
+        self.body.extend(value.cleanup_after_use);
+        Ok(())
+    }
+
+    fn emit_array_index_echo(&mut self, expr: &Expr) -> CompileResult<bool> {
+        let Expr::Index {
+            target,
+            index,
+            span: _,
+        } = expr
+        else {
+            return Ok(false);
+        };
+
+        let Expr::Variable(name, _) = target.as_ref() else {
+            return Ok(false);
+        };
+
+        let Some(handle) = self.array_variables.get(name).cloned() else {
+            return Ok(false);
+        };
+
+        let key = self.materialize_native_array_key(index.as_ref(), "")?;
+        let diagnostic = self.next_native_name("array_read_diagnostic");
+        let read = self.next_native_name("array_read");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {read} = phpc_native_array_read_key_with_diagnostic({handle}, {}, &{diagnostic});",
+            key.result
+        ));
+        let read_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}",
+            c_cleanup_sequence(&key.cleanup_after_use)
+        ));
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ {read_error_exit} }}"
+        ));
+        self.body.extend(key.cleanup_after_use);
+        self.body
+            .push(format!("phpc_native_value_echo_stdout({read});"));
+        self.body.push(format!("phpc_native_value_free({read});"));
+        Ok(true)
+    }
+
+    fn try_emit_native_symbol_table_echo(&mut self, expr: &Expr) -> CompileResult<bool> {
+        if !self.uses_native_string_helpers {
+            return Ok(false);
+        }
+
+        let Expr::Variable(name, span) = expr else {
+            return Ok(false);
+        };
+        if is_request_superglobal_name(name) {
+            return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+        if self.symbol_table_variables.contains(name) {
+            self.emit_native_symbol_table_value_stdout(name);
+            return Ok(true);
+        }
+        if !self.variables.contains_key(name) {
+            return Err(self.unsupported(*span, ASSEMBLY_VARIABLE_READ_REJECTION));
+        }
+
+        Ok(false)
+    }
+
+    fn ensure_native_symbol_table(&mut self) -> &'static str {
+        self.uses_native_symbol_table_helpers = true;
+        if !self.emitted_native_symbol_table {
+            self.body.push(
+                "phpc_NativeSymbolTableHandle phpc_symbols = phpc_native_symbol_table_new();"
+                    .to_string(),
+            );
+            self.emitted_native_symbol_table = true;
+        }
+        "phpc_symbols"
+    }
+
+    fn emit_native_symbol_table_variable_copy(
+        &mut self,
+        target_name: &str,
+        expr: &Expr,
+    ) -> CompileResult<bool> {
+        let Expr::Variable(source_name, span) = expr else {
+            return Ok(false);
+        };
+        if is_request_superglobal_name(source_name) {
+            return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+        if !self.symbol_table_variables.contains(source_name) {
+            return Ok(false);
+        }
+
+        let table = self.ensure_native_symbol_table();
+        let index = self.next_native_temp;
+        self.next_native_temp += 1;
+        let source_data = self.emit_native_symbol_name_data(source_name);
+        self.body.push(format!(
+            "phpc_NativeLinkedValue value_{index} = phpc_native_symbol_table_read({table}, {source_data}, {});",
+            source_name.len()
+        ));
+
+        let target_data = self.emit_native_symbol_name_data(target_name);
+        self.body.push(format!(
+            "phpc_native_symbol_table_write({table}, {target_data}, {}, value_{index});",
+            target_name.len()
+        ));
+
+        Ok(true)
+    }
+
+    fn emit_native_symbol_table_write(
+        &mut self,
+        name: &str,
+        value: &CValue,
+    ) -> CompileResult<bool> {
+        match value {
+            CValue::Bool(value) => {
+                self.emit_native_symbol_table_scalar_write(
+                    name,
+                    &format!(
+                        "phpc_native_linked_value_from_bool({})",
+                        if *value { 1 } else { 0 }
+                    ),
+                );
+                return Ok(true);
+            }
+            CValue::BoolExpr(value) => {
+                self.emit_native_symbol_table_scalar_write(
+                    name,
+                    &format!("phpc_native_linked_value_from_bool(({value}) ? 1 : 0)"),
+                );
+                return Ok(true);
+            }
+            CValue::Int(value) => {
+                self.emit_native_symbol_table_scalar_write(
+                    name,
+                    &format!("phpc_native_linked_value_from_int((long long)({value}))"),
+                );
+                return Ok(true);
+            }
+            CValue::String(value) => self.emit_native_symbol_table_string_write(name, value),
+            _ => Ok(false),
+        }
+    }
+
+    fn emit_native_symbol_table_scalar_write(&mut self, name: &str, linked_value: &str) {
+        let table = self.ensure_native_symbol_table();
+        let name_data = self.emit_native_symbol_name_data(name);
+        self.body.push(format!(
+            "phpc_native_symbol_table_write({table}, {name_data}, {}, {linked_value});",
+            name.len()
+        ));
+    }
+
+    fn emit_native_symbol_table_string_write(
+        &mut self,
+        name: &str,
+        value: &str,
+    ) -> CompileResult<bool> {
+        let table = self.ensure_native_symbol_table();
+        let index = self.next_native_temp;
+        self.next_native_temp += 1;
+        let value_data = self.emit_static_bytes(value.as_bytes());
+        let name_data = self.emit_native_symbol_name_data(name);
+
+        self.body.push(format!(
+            "phpc_NativeStringHandle string_{index} = phpc_native_string_from_bytes({value_data}, {});",
+            value.len()
+        ));
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle diagnostic_{index} = {{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_NativeValueHandle value_{index} = phpc_native_value_from_string_with_diagnostic(string_{index}, &diagnostic_{index});"
+        ));
+        self.body.push(format!(
+            "if (value_{index}.ptr == NULL) {{ phpc_native_diagnostic_message_stderr(diagnostic_{index}); phpc_native_diagnostic_free(diagnostic_{index}); }} else {{ phpc_native_symbol_table_write({table}, {name_data}, {}, phpc_native_linked_value_from_runtime_value(value_{index})); }}",
+            name.len()
+        ));
+        self.body
+            .push(format!("phpc_native_string_free(string_{index});"));
+
+        Ok(true)
+    }
+
+    fn emit_native_symbol_table_value_stdout(&mut self, name: &str) {
+        let table = self.ensure_native_symbol_table();
+        let index = self.next_native_temp;
+        self.next_native_temp += 1;
+        let name_data = self.emit_native_symbol_name_data(name);
+
+        self.body.push(format!(
+            "phpc_NativeLinkedValue value_{index} = phpc_native_symbol_table_read({table}, {name_data}, {});",
+            name.len()
+        ));
+        self.body.push(format!(
+            "phpc_native_linked_value_echo_stdout(value_{index});"
+        ));
+    }
+
+    fn emit_native_symbol_table_isset_expr(&mut self, name: &str) -> String {
+        let table = self.ensure_native_symbol_table();
+        let name_data = self.emit_native_symbol_name_data(name);
+        format!(
+            "phpc_native_symbol_table_isset({table}, {name_data}, {})",
+            name.len()
+        )
+    }
+
+    fn emit_native_symbol_table_unset(&mut self, name: &str) {
+        let table = self.ensure_native_symbol_table();
+        let name_data = self.emit_native_symbol_name_data(name);
+        self.body.push(format!(
+            "phpc_native_symbol_table_unset({table}, {name_data}, {});",
+            name.len()
+        ));
+    }
+
+    fn emit_native_symbol_name_data(&mut self, name: &str) -> String {
         let index = self.next_static_data;
         self.next_static_data += 1;
-        let bytes = c_byte_array(value.as_bytes());
+        let bytes = c_byte_array(name.as_bytes());
+        let data = format!("phpc_native_symbol_name_{index}");
+        self.static_data.push(format!(
+            "static const uint8_t {data}[] = {{{bytes}}}; /* {} */",
+            c_string(name)
+        ));
+        data
+    }
+
+    fn emit_static_bytes(&mut self, bytes: &[u8]) -> String {
+        let index = self.next_static_data;
+        self.next_static_data += 1;
         let data = format!("phpc_native_bytes_{index}");
-        self.static_data
-            .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
+        self.static_data.push(format!(
+            "static const uint8_t {data}[] = {{{}}};",
+            c_byte_array(bytes)
+        ));
+        data
+    }
+
+    fn emit_native_string_handle(&mut self, prefix: &str, value: &str) -> String {
+        let handle = self.next_native_name(prefix);
+        let data = self.emit_static_bytes(value.as_bytes());
+        self.body.push(format!(
+            "phpc_NativeStringHandle {handle} = phpc_native_string_from_bytes({data}, {});",
+            value.len()
+        ));
+        handle
+    }
+
+    fn next_native_name(&mut self, prefix: &str) -> String {
+        let index = self.next_native_temp;
+        self.next_native_temp += 1;
+        format!("{prefix}_{index}")
+    }
+
+    fn emit_native_string_helper_echo(&mut self, value: &str) {
+        let index = self.next_native_temp;
+        self.next_native_temp += 1;
+        let data = self.emit_static_bytes(value.as_bytes());
         self.body.push(format!(
             "phpc_NativeStringHandle string_{index} = phpc_native_string_from_bytes({data}, {});",
             value.len()
@@ -6585,6 +11406,23 @@ impl CGenerator {
             .push(format!("phpc_native_value_free(value_{index});"));
         self.body
             .push(format!("phpc_native_string_free(string_{index});"));
+    }
+
+    fn native_error_exit(&self, local_cleanup: &str) -> String {
+        format!("{local_cleanup}{}return 1;", self.native_program_cleanup())
+    }
+
+    fn native_program_cleanup(&self) -> String {
+        let mut cleanup = String::new();
+        for handle in self.array_cleanup_handles.iter().rev() {
+            cleanup.push_str("phpc_native_array_free(");
+            cleanup.push_str(handle);
+            cleanup.push_str("); ");
+        }
+        if self.emitted_native_symbol_table {
+            cleanup.push_str("phpc_native_symbol_table_free(phpc_symbols); ");
+        }
+        cleanup
     }
 
     fn unsupported(&self, span: Span, message: impl Into<String>) -> Diagnostic {
@@ -7069,6 +11907,10 @@ fn is_global_constant_builtin(name: &str) -> bool {
         || name.eq_ignore_ascii_case("defined")
 }
 
+fn is_value_debug_output_builtin(name: &str) -> bool {
+    name.eq_ignore_ascii_case("var_dump") || name.eq_ignore_ascii_case("print_r")
+}
+
 fn is_object_metadata_builtin(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -7352,321 +12194,336 @@ fn is_supported_native_constant_name(name: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
+const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
+    "define",
+    "strlen",
+    "strtolower",
+    "trim",
+    "ltrim",
+    "rtrim",
+    "strcasecmp",
+    "str_contains",
+    "str_starts_with",
+    "str_ends_with",
+    "ctype_alnum",
+    "ctype_alpha",
+    "ctype_cntrl",
+    "ctype_digit",
+    "ctype_graph",
+    "ctype_lower",
+    "ctype_print",
+    "ctype_punct",
+    "ctype_space",
+    "ctype_upper",
+    "ctype_xdigit",
+    "strpos",
+    "substr",
+    "substr_count",
+    "str_replace",
+    "preg_match",
+    "preg_replace",
+    "preg_split",
+    "preg_replace_callback",
+    "compact",
+    "error_reporting",
+    "ignore_user_abort",
+    "php_sapi_name",
+    "sprintf",
+    "vsprintf",
+    "call_user_func",
+    "call_user_func_array",
+    "implode",
+    "basename",
+    "dirname",
+    "abs",
+    "version_compare",
+    "microtime",
+    "date_default_timezone_set",
+    "ini_get",
+    "ini_set",
+    "get_include_path",
+    "set_include_path",
+    "min",
+    "rand",
+    "uniqid",
+    "hash_hmac",
+    "count",
+    "constant",
+    "defined",
+    "array_key_exists",
+    "array_values",
+    "array_key_first",
+    "array_key_last",
+    "current",
+    "array_is_list",
+    "array_keys",
+    "array_reverse",
+    "array_slice",
+    "array_chunk",
+    "array_pad",
+    "array_merge",
+    "array_replace",
+    "array_flip",
+    "array_change_key_case",
+    "array_column",
+    "array_fill_keys",
+    "array_combine",
+    "array_intersect_key",
+    "array_diff_key",
+    "array_diff",
+    "array_intersect",
+    "array_unique",
+    "array_count_values",
+    "array_sum",
+    "array_product",
+    "array_reduce",
+    "array_filter",
+    "array_map",
+    "ksort",
+    "array_unshift",
+    "array_pop",
+    "next",
+    "in_array",
+    "array_search",
+    "gettype",
+    "is_null",
+    "is_bool",
+    "is_int",
+    "is_integer",
+    "is_long",
+    "is_float",
+    "is_double",
+    "is_string",
+    "is_array",
+    "is_scalar",
+    "is_numeric",
+    "is_countable",
+    "is_iterable",
+    "is_callable",
+    "function_exists",
+    "extension_loaded",
+    "class_alias",
+    "mysqli_connect",
+    "mysqli_real_connect",
+    "mysqli_get_server_info",
+    "mysqli_get_server_version",
+    "mysqli_get_host_info",
+    "mysqli_get_client_info",
+    "mysqli_get_client_version",
+    "mysqli_get_proto_info",
+    "mysqli_thread_id",
+    "mysqli_kill",
+    "mysqli_change_user",
+    "mysqli_refresh",
+    "mysqli_get_charset",
+    "mysqli_character_set_name",
+    "mysqli_field_count",
+    "mysqli_close",
+    "mysqli_options",
+    "mysqli_set_opt",
+    "mysqli_ssl_set",
+    "mysqli_connect_errno",
+    "mysqli_connect_error",
+    "mysqli_error_list",
+    "mysqli_get_connection_stats",
+    "mysqli_get_links_stats",
+    "mysqli_get_client_stats",
+    "mysqli_thread_safe",
+    "mysqli_stmt_init",
+    "mysqli_prepare",
+    "mysqli_stmt_prepare",
+    "mysqli_stmt_param_count",
+    "mysqli_stmt_get_warnings",
+    "mysqli_stmt_error_list",
+    "mysqli_stmt_bind_param",
+    "mysqli_stmt_bind_result",
+    "mysqli_stmt_execute",
+    "mysqli_execute",
+    "mysqli_stmt_get_result",
+    "mysqli_stmt_close",
+    "mysqli_stmt_errno",
+    "mysqli_stmt_error",
+    "mysqli_stmt_affected_rows",
+    "mysqli_stmt_store_result",
+    "mysqli_stmt_num_rows",
+    "mysqli_stmt_fetch",
+    "mysqli_stmt_result_metadata",
+    "mysqli_stmt_field_count",
+    "mysqli_stmt_free_result",
+    "mysqli_stmt_data_seek",
+    "mysqli_stmt_attr_get",
+    "mysqli_stmt_attr_set",
+    "mysqli_stmt_send_long_data",
+    "mysqli_stmt_reset",
+    "mysqli_stmt_more_results",
+    "mysqli_stmt_next_result",
+    "mysqli_stmt_sqlstate",
+    "mysqli_stmt_warning_count",
+    "mysqli_stmt_insert_id",
+    "mysqli_execute_query",
+    "mysqli_dump_debug_info",
+    "mysqli_debug",
+    "mysqli_stat",
+    "mysqli_autocommit",
+    "mysqli_begin_transaction",
+    "mysqli_commit",
+    "mysqli_rollback",
+    "mysqli_savepoint",
+    "mysqli_release_savepoint",
+    "mysqli_set_charset",
+    "mysqli_query",
+    "mysqli_real_query",
+    "mysqli_multi_query",
+    "mysqli_errno",
+    "mysqli_error",
+    "mysqli_sqlstate",
+    "mysqli_warning_count",
+    "mysqli_info",
+    "mysqli_get_warnings",
+    "mysqli_affected_rows",
+    "mysqli_insert_id",
+    "mysqli_ping",
+    "mysqli_select_db",
+    "mysqli_real_escape_string",
+    "mysqli_escape_string",
+    "mysqli_fetch_object",
+    "mysqli_fetch_assoc",
+    "mysqli_fetch_row",
+    "mysqli_fetch_array",
+    "mysqli_fetch_all",
+    "mysqli_fetch_column",
+    "mysqli_fetch_field",
+    "mysqli_fetch_fields",
+    "mysqli_fetch_field_direct",
+    "mysqli_num_fields",
+    "mysqli_num_rows",
+    "mysqli_fetch_lengths",
+    "mysqli_data_seek",
+    "mysqli_field_seek",
+    "mysqli_field_tell",
+    "mysqli_free_result",
+    "mysqli_more_results",
+    "mysqli_next_result",
+    "mysqli_store_result",
+    "mysqli_use_result",
+    "mysqli_reap_async_query",
+    "mysqli_poll",
+    "mysqli_report",
+    "mysqli_init",
+    "is_uploaded_file",
+    "move_uploaded_file",
+    "file_exists",
+    "file_get_contents",
+    "fopen",
+    "stream_context_create",
+    "stream_context_get_options",
+    "stream_context_get_params",
+    "stream_context_get_default",
+    "stream_context_set_default",
+    "stream_context_set_option",
+    "stream_context_set_params",
+    "fwrite",
+    "fread",
+    "rewind",
+    "stream_get_contents",
+    "feof",
+    "ftell",
+    "fseek",
+    "fstat",
+    "stream_get_meta_data",
+    "fclose",
+    "opendir",
+    "readdir",
+    "rewinddir",
+    "closedir",
+    "filesize",
+    "filemtime",
+    "realpath",
+    "realpath_cache_get",
+    "realpath_cache_size",
+    "getcwd",
+    "is_dir",
+    "is_file",
+    "is_readable",
+    "is_writable",
+    "is_link",
+    "clearstatcache",
+    "register_shutdown_function",
+    "set_error_handler",
+    "restore_error_handler",
+    "ob_start",
+    "ob_get_level",
+    "ob_get_contents",
+    "ob_get_length",
+    "ob_list_handlers",
+    "ob_get_status",
+    "ob_get_clean",
+    "ob_get_flush",
+    "ob_clean",
+    "ob_flush",
+    "ob_end_clean",
+    "ob_end_flush",
+    "header",
+    "header_remove",
+    "headers_list",
+    "headers_sent",
+    "http_response_code",
+    "setcookie",
+    "setrawcookie",
+    "session_start",
+    "session_status",
+    "session_cache_limiter",
+    "session_cache_expire",
+    "session_id",
+    "session_write_close",
+    "assert",
+    "get_class",
+    "is_object",
+    "get_debug_type",
+    "class_exists",
+    "interface_exists",
+    "trait_exists",
+    "enum_exists",
+    "get_declared_classes",
+    "get_declared_interfaces",
+    "get_declared_traits",
+    "class_implements",
+    "class_uses",
+    "class_parents",
+    "get_called_class",
+    "spl_object_id",
+    "spl_object_hash",
+    "spl_autoload",
+    "spl_autoload_register",
+    "spl_autoload_functions",
+    "spl_autoload_extensions",
+    "spl_autoload_unregister",
+    "spl_autoload_call",
+    "property_exists",
+    "method_exists",
+    "get_class_methods",
+    "get_class_vars",
+    "get_object_vars",
+    "get_mangled_object_vars",
+    "is_a",
+    "is_subclass_of",
+    "get_parent_class",
+    "var_dump",
+    "print_r",
+];
+
 fn is_native_known_function_name(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "define"
-            | "strlen"
-            | "strtolower"
-            | "trim"
-            | "ltrim"
-            | "rtrim"
-            | "strcasecmp"
-            | "str_contains"
-            | "str_starts_with"
-            | "str_ends_with"
-            | "strpos"
-            | "substr"
-            | "substr_count"
-            | "str_replace"
-            | "preg_match"
-            | "preg_replace"
-            | "preg_split"
-            | "preg_replace_callback"
-            | "compact"
-            | "error_reporting"
-            | "ignore_user_abort"
-            | "php_sapi_name"
-            | "sprintf"
-            | "vsprintf"
-            | "call_user_func"
-            | "call_user_func_array"
-            | "implode"
-            | "basename"
-            | "dirname"
-            | "abs"
-            | "version_compare"
-            | "microtime"
-            | "date_default_timezone_set"
-            | "ini_get"
-            | "ini_set"
-            | "get_include_path"
-            | "set_include_path"
-            | "min"
-            | "rand"
-            | "uniqid"
-            | "hash_hmac"
-            | "count"
-            | "constant"
-            | "defined"
-            | "array_key_exists"
-            | "array_values"
-            | "array_key_first"
-            | "array_key_last"
-            | "current"
-            | "array_is_list"
-            | "array_keys"
-            | "array_reverse"
-            | "array_slice"
-            | "array_chunk"
-            | "array_pad"
-            | "array_merge"
-            | "array_replace"
-            | "array_flip"
-            | "array_change_key_case"
-            | "array_column"
-            | "array_fill_keys"
-            | "array_combine"
-            | "array_intersect_key"
-            | "array_diff_key"
-            | "array_diff"
-            | "array_intersect"
-            | "array_unique"
-            | "array_count_values"
-            | "array_sum"
-            | "array_product"
-            | "array_reduce"
-            | "array_filter"
-            | "array_map"
-            | "ksort"
-            | "array_unshift"
-            | "array_pop"
-            | "next"
-            | "in_array"
-            | "array_search"
-            | "gettype"
-            | "is_null"
-            | "is_bool"
-            | "is_int"
-            | "is_integer"
-            | "is_long"
-            | "is_float"
-            | "is_double"
-            | "is_string"
-            | "is_array"
-            | "is_scalar"
-            | "is_numeric"
-            | "is_countable"
-            | "is_iterable"
-            | "is_callable"
-            | "function_exists"
-            | "extension_loaded"
-            | "class_alias"
-            | "mysqli_connect"
-            | "mysqli_real_connect"
-            | "mysqli_get_server_info"
-            | "mysqli_get_server_version"
-            | "mysqli_get_host_info"
-            | "mysqli_get_client_info"
-            | "mysqli_get_client_version"
-            | "mysqli_get_proto_info"
-            | "mysqli_thread_id"
-            | "mysqli_kill"
-            | "mysqli_change_user"
-            | "mysqli_refresh"
-            | "mysqli_get_charset"
-            | "mysqli_character_set_name"
-            | "mysqli_field_count"
-            | "mysqli_close"
-            | "mysqli_options"
-            | "mysqli_set_opt"
-            | "mysqli_ssl_set"
-            | "mysqli_connect_errno"
-            | "mysqli_connect_error"
-            | "mysqli_error_list"
-            | "mysqli_get_connection_stats"
-            | "mysqli_get_links_stats"
-            | "mysqli_get_client_stats"
-            | "mysqli_thread_safe"
-            | "mysqli_stmt_init"
-            | "mysqli_prepare"
-            | "mysqli_stmt_prepare"
-            | "mysqli_stmt_param_count"
-            | "mysqli_stmt_get_warnings"
-            | "mysqli_stmt_error_list"
-            | "mysqli_stmt_bind_param"
-            | "mysqli_stmt_bind_result"
-            | "mysqli_stmt_execute"
-            | "mysqli_execute"
-            | "mysqli_stmt_get_result"
-            | "mysqli_stmt_close"
-            | "mysqli_stmt_errno"
-            | "mysqli_stmt_error"
-            | "mysqli_stmt_affected_rows"
-            | "mysqli_stmt_store_result"
-            | "mysqli_stmt_num_rows"
-            | "mysqli_stmt_fetch"
-            | "mysqli_stmt_result_metadata"
-            | "mysqli_stmt_field_count"
-            | "mysqli_stmt_free_result"
-            | "mysqli_stmt_data_seek"
-            | "mysqli_stmt_attr_get"
-            | "mysqli_stmt_attr_set"
-            | "mysqli_stmt_send_long_data"
-            | "mysqli_stmt_reset"
-            | "mysqli_stmt_more_results"
-            | "mysqli_stmt_next_result"
-            | "mysqli_stmt_sqlstate"
-            | "mysqli_stmt_warning_count"
-            | "mysqli_stmt_insert_id"
-            | "mysqli_execute_query"
-            | "mysqli_dump_debug_info"
-            | "mysqli_debug"
-            | "mysqli_stat"
-            | "mysqli_autocommit"
-            | "mysqli_begin_transaction"
-            | "mysqli_commit"
-            | "mysqli_rollback"
-            | "mysqli_savepoint"
-            | "mysqli_release_savepoint"
-            | "mysqli_set_charset"
-            | "mysqli_query"
-            | "mysqli_real_query"
-            | "mysqli_multi_query"
-            | "mysqli_errno"
-            | "mysqli_error"
-            | "mysqli_sqlstate"
-            | "mysqli_warning_count"
-            | "mysqli_info"
-            | "mysqli_get_warnings"
-            | "mysqli_affected_rows"
-            | "mysqli_insert_id"
-            | "mysqli_ping"
-            | "mysqli_select_db"
-            | "mysqli_real_escape_string"
-            | "mysqli_escape_string"
-            | "mysqli_fetch_object"
-            | "mysqli_fetch_assoc"
-            | "mysqli_fetch_row"
-            | "mysqli_fetch_array"
-            | "mysqli_fetch_all"
-            | "mysqli_fetch_column"
-            | "mysqli_fetch_field"
-            | "mysqli_fetch_fields"
-            | "mysqli_fetch_field_direct"
-            | "mysqli_num_fields"
-            | "mysqli_num_rows"
-            | "mysqli_fetch_lengths"
-            | "mysqli_data_seek"
-            | "mysqli_field_seek"
-            | "mysqli_field_tell"
-            | "mysqli_free_result"
-            | "mysqli_more_results"
-            | "mysqli_next_result"
-            | "mysqli_store_result"
-            | "mysqli_use_result"
-            | "mysqli_reap_async_query"
-            | "mysqli_poll"
-            | "mysqli_report"
-            | "mysqli_init"
-            | "is_uploaded_file"
-            | "move_uploaded_file"
-            | "file_exists"
-            | "file_get_contents"
-            | "fopen"
-            | "stream_context_create"
-            | "stream_context_get_options"
-            | "stream_context_get_params"
-            | "stream_context_get_default"
-            | "stream_context_set_default"
-            | "stream_context_set_option"
-            | "stream_context_set_params"
-            | "fwrite"
-            | "fread"
-            | "rewind"
-            | "stream_get_contents"
-            | "feof"
-            | "ftell"
-            | "fseek"
-            | "fstat"
-            | "stream_get_meta_data"
-            | "fclose"
-            | "opendir"
-            | "readdir"
-            | "rewinddir"
-            | "closedir"
-            | "filesize"
-            | "filemtime"
-            | "realpath"
-            | "realpath_cache_get"
-            | "realpath_cache_size"
-            | "getcwd"
-            | "is_dir"
-            | "is_file"
-            | "is_readable"
-            | "is_writable"
-            | "is_link"
-            | "clearstatcache"
-            | "register_shutdown_function"
-            | "set_error_handler"
-            | "restore_error_handler"
-            | "ob_start"
-            | "ob_get_level"
-            | "ob_get_contents"
-            | "ob_get_length"
-            | "ob_list_handlers"
-            | "ob_get_status"
-            | "ob_get_clean"
-            | "ob_get_flush"
-            | "ob_clean"
-            | "ob_flush"
-            | "ob_end_clean"
-            | "ob_end_flush"
-            | "header"
-            | "header_remove"
-            | "headers_list"
-            | "headers_sent"
-            | "http_response_code"
-            | "setcookie"
-            | "setrawcookie"
-            | "session_start"
-            | "session_status"
-            | "session_cache_limiter"
-            | "session_cache_expire"
-            | "session_id"
-            | "session_write_close"
-            | "assert"
-            | "get_class"
-            | "is_object"
-            | "get_debug_type"
-            | "class_exists"
-            | "interface_exists"
-            | "trait_exists"
-            | "enum_exists"
-            | "get_declared_classes"
-            | "get_declared_interfaces"
-            | "get_declared_traits"
-            | "class_implements"
-            | "class_uses"
-            | "class_parents"
-            | "get_called_class"
-            | "spl_object_id"
-            | "spl_object_hash"
-            | "spl_autoload"
-            | "spl_autoload_register"
-            | "spl_autoload_functions"
-            | "spl_autoload_extensions"
-            | "spl_autoload_unregister"
-            | "spl_autoload_call"
-            | "property_exists"
-            | "method_exists"
-            | "get_class_methods"
-            | "get_class_vars"
-            | "get_object_vars"
-            | "get_mangled_object_vars"
-            | "is_a"
-            | "is_subclass_of"
-            | "get_parent_class"
-            | "var_dump"
-            | "print_r"
-    )
+    NATIVE_KNOWN_FUNCTION_NAMES
+        .iter()
+        .any(|candidate| candidate.eq_ignore_ascii_case(name))
 }
 
+const COMPAT_LOADED_EXTENSION_NAMES: &[&str] = &["json", "hash", "pdo", "pdo_mysql"];
+
 fn is_compat_loaded_extension_name(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "json" | "hash" | "pdo" | "pdo_mysql"
-    )
+    COMPAT_LOADED_EXTENSION_NAMES
+        .iter()
+        .any(|candidate| candidate.eq_ignore_ascii_case(name))
 }
 
 fn known_strings_have_uniform_numeric_result(values: &KnownString) -> Option<bool> {
@@ -7736,6 +12593,7 @@ fn llvm_gettype_name(value: &IrValue) -> &'static str {
         IrValue::Int(_) => "integer",
         IrValue::Float(_) => "double",
         IrValue::String(_) | IrValue::StringPtr(_) => "string",
+        IrValue::NativeExpression { fallback, .. } => llvm_gettype_name(fallback),
     }
 }
 
@@ -7746,6 +12604,7 @@ fn llvm_debug_type_name(value: &IrValue) -> &'static str {
         IrValue::Int(_) => "int",
         IrValue::Float(_) => "float",
         IrValue::String(_) | IrValue::StringPtr(_) => "string",
+        IrValue::NativeExpression { fallback, .. } => llvm_debug_type_name(fallback),
     }
 }
 
@@ -7774,5 +12633,893 @@ fn format_float_literal(value: f64) -> String {
         format!("{value:.1}")
     } else {
         value.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn local_state(values: &[(&str, i32)]) -> HashMap<String, i32> {
+        values
+            .iter()
+            .map(|(name, value)| ((*name).to_string(), *value))
+            .collect()
+    }
+
+    fn live_handles(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    fn span(line: usize, column: usize) -> Span {
+        Span::new(line, column)
+    }
+
+    fn merged_branch_result(outcome: NativeBranchMergeOutcome) -> NativeBranchMergeResult {
+        let NativeBranchMergeOutcome::Merged(result) = outcome else {
+            panic!("expected successful branch merge");
+        };
+        result
+    }
+
+    fn empty_branch_local_cleanup_plan(
+        control_join: NativeBranchEffectJoin,
+    ) -> NativeBranchLocalCleanupPlan {
+        NativeBranchLocalCleanupPlan {
+            control_join,
+            entry_live_locals: Vec::new(),
+            then_live_locals: Vec::new(),
+            else_live_locals: Vec::new(),
+            stable_live_locals: Vec::new(),
+            divergent_live_locals: Vec::new(),
+            then_only_locals: Vec::new(),
+            else_only_locals: Vec::new(),
+        }
+    }
+
+    fn native_value_effect_with_cleanup_tail(
+        handle: &str,
+        tail_actions: Vec<NativeTerminationCleanupAction<String>>,
+    ) -> NativeTerminationEffect<String> {
+        let mut actions = vec![NativeTerminationCleanupAction::LiveNativeValueHandle(
+            handle.to_string(),
+        )];
+        actions.extend(tail_actions);
+        NativeTerminationEffect {
+            status: NativeTerminationStatus::NativeValueHandle(handle.to_string()),
+            cleanup_stack: NativeTerminationCleanupStack::from_actions(actions),
+        }
+    }
+
+    #[test]
+    fn native_branch_effect_join_classifies_all_flow_pairs() {
+        assert_eq!(
+            NativeBranchEffectJoin::from_flows(
+                NativeControlFlowEffect::Continues,
+                NativeControlFlowEffect::Continues,
+            ),
+            NativeBranchEffectJoin::BothContinue
+        );
+        assert_eq!(
+            NativeBranchEffectJoin::from_flows(
+                NativeControlFlowEffect::Terminates,
+                NativeControlFlowEffect::Terminates,
+            ),
+            NativeBranchEffectJoin::BothTerminate
+        );
+        assert_eq!(
+            NativeBranchEffectJoin::from_flows(
+                NativeControlFlowEffect::Continues,
+                NativeControlFlowEffect::Terminates,
+            ),
+            NativeBranchEffectJoin::ThenContinues
+        );
+        assert_eq!(
+            NativeBranchEffectJoin::from_flows(
+                NativeControlFlowEffect::Terminates,
+                NativeControlFlowEffect::Continues,
+            ),
+            NativeBranchEffectJoin::ElseContinues
+        );
+    }
+
+    #[test]
+    fn native_branch_local_cleanup_plan_classifies_branch_state_changes() {
+        let entry = local_state(&[("entry", 1), ("stable", 2), ("changed", 3)]);
+        let then_state = local_state(&[
+            ("stable", 2),
+            ("changed", 4),
+            ("then_only", 5),
+            ("entry", 1),
+        ]);
+        let else_state = local_state(&[
+            ("stable", 2),
+            ("changed", 6),
+            ("else_only", 7),
+            ("entry", 1),
+        ]);
+
+        let plan = NativeBranchLocalCleanupPlan::from_states(
+            NativeBranchEffectJoin::BothContinue,
+            &entry,
+            &then_state,
+            &else_state,
+        );
+
+        assert_eq!(plan.control_join(), NativeBranchEffectJoin::BothContinue);
+        assert_eq!(plan.entry_live_locals, ["changed", "entry", "stable"]);
+        assert_eq!(
+            plan.then_live_locals,
+            ["changed", "entry", "stable", "then_only"]
+        );
+        assert_eq!(
+            plan.else_live_locals,
+            ["changed", "else_only", "entry", "stable"]
+        );
+        assert_eq!(plan.stable_live_locals, ["entry", "stable"]);
+        assert_eq!(
+            plan.divergent_live_locals,
+            ["changed", "else_only", "then_only"]
+        );
+        assert_eq!(plan.then_only_locals, ["then_only"]);
+        assert_eq!(plan.else_only_locals, ["else_only"]);
+        assert!(!plan.has_stable_local_merge());
+    }
+
+    #[test]
+    fn native_branch_local_cleanup_plan_accepts_stable_generic_state() {
+        let entry = local_state(&[("left", 1), ("right", 2)]);
+        let then_state = local_state(&[("left", 1), ("right", 2)]);
+        let else_state = local_state(&[("right", 2), ("left", 1)]);
+
+        let plan = NativeBranchLocalCleanupPlan::from_states(
+            NativeBranchEffectJoin::BothContinue,
+            &entry,
+            &then_state,
+            &else_state,
+        );
+
+        assert_eq!(plan.stable_live_locals, ["left", "right"]);
+        assert!(plan.divergent_live_locals.is_empty());
+        assert!(plan.then_only_locals.is_empty());
+        assert!(plan.else_only_locals.is_empty());
+        assert!(plan.has_stable_local_merge());
+    }
+
+    #[test]
+    fn native_branch_value_fact_ownership_is_join_and_local_phi_driven() {
+        let entry = local_state(&[("code", 1), ("stable", 10)]);
+        let then_state = local_state(&[("code", 2), ("stable", 10)]);
+        let else_state = local_state(&[("code", 3), ("stable", 10)]);
+        let local_phi_plan = NativeBranchLocalCleanupPlan::from_states(
+            NativeBranchEffectJoin::BothContinue,
+            &entry,
+            &then_state,
+            &else_state,
+        );
+        assert_eq!(local_phi_plan.locals_requiring_phi(), &["code".to_string()]);
+        assert!(local_phi_plan.has_local_phi_merge_ownership());
+        assert!(!local_phi_plan.has_stable_local_merge());
+
+        let stable_facts = HashMap::from([("stable:int".to_string(), "[10]".to_string())]);
+        let stable_fact_plan = NativeBranchValueFactCleanupPlan::from_states(
+            NativeBranchEffectJoin::BothContinue,
+            &stable_facts,
+            &stable_facts,
+            &stable_facts,
+        );
+        assert_eq!(
+            stable_fact_plan.merge_ownership(&local_phi_plan),
+            NativeBranchValueFactOwnership::Stable
+        );
+        assert_eq!(
+            branch_value_fact_ownership(None, &local_phi_plan),
+            NativeBranchValueFactOwnership::NoLiveFacts
+        );
+
+        let entry_facts = HashMap::new();
+        let then_code_fact = HashMap::from([("code:int".to_string(), "[2]".to_string())]);
+        let else_code_fact = HashMap::from([("code:int".to_string(), "[3]".to_string())]);
+        let local_phi_fact_plan = NativeBranchValueFactCleanupPlan::from_states(
+            NativeBranchEffectJoin::BothContinue,
+            &entry_facts,
+            &then_code_fact,
+            &else_code_fact,
+        );
+        assert_eq!(
+            local_phi_fact_plan.merge_ownership(&local_phi_plan),
+            NativeBranchValueFactOwnership::LocalPhi
+        );
+        assert!(!local_phi_fact_plan
+            .merge_ownership(&local_phi_plan)
+            .can_merge_without_phi());
+        assert!(local_phi_fact_plan
+            .merge_ownership(&local_phi_plan)
+            .can_merge_with_local_phi());
+
+        let then_other_fact = HashMap::from([("other:int".to_string(), "[2]".to_string())]);
+        let else_other_fact = HashMap::from([("other:int".to_string(), "[3]".to_string())]);
+        let unrelated_fact_plan = NativeBranchValueFactCleanupPlan::from_states(
+            NativeBranchEffectJoin::BothContinue,
+            &entry_facts,
+            &then_other_fact,
+            &else_other_fact,
+        );
+        assert_eq!(
+            unrelated_fact_plan.merge_ownership(&local_phi_plan),
+            NativeBranchValueFactOwnership::Blocked
+        );
+
+        let partial_plan = NativeBranchLocalCleanupPlan::from_states(
+            NativeBranchEffectJoin::ThenContinues,
+            &entry,
+            &entry,
+            &then_state,
+        );
+        assert_eq!(
+            partial_plan.continuing_arm(),
+            Some(NativeContinuingBranchArm::Then)
+        );
+        assert!(!partial_plan.has_stable_local_merge());
+        assert!(!partial_plan.has_local_phi_merge_ownership());
+        let partial_fact_plan = NativeBranchValueFactCleanupPlan::from_states(
+            NativeBranchEffectJoin::ThenContinues,
+            &stable_facts,
+            &stable_facts,
+            &stable_facts,
+        );
+        assert_eq!(
+            partial_fact_plan.control_join(),
+            NativeBranchEffectJoin::ThenContinues
+        );
+        assert_eq!(
+            partial_fact_plan.merge_ownership(&partial_plan),
+            NativeBranchValueFactOwnership::Blocked
+        );
+    }
+
+    #[test]
+    fn native_branch_live_native_value_cleanup_plan_tracks_branch_owned_handles() {
+        let entry_handles = live_handles(&["%entry", "%shared", "%shared"]);
+        let then_handles = live_handles(&["%branch_then", "%shared"]);
+        let else_handles = live_handles(&["%branch_else", "%shared"]);
+
+        let plan = NativeBranchLiveNativeValueCleanupPlan::from_handles(
+            NativeBranchEffectJoin::BothContinue,
+            &entry_handles,
+            &then_handles,
+            &else_handles,
+        );
+
+        assert_eq!(plan.control_join(), NativeBranchEffectJoin::BothContinue);
+        assert_eq!(plan.entry_live_handles, ["%entry", "%shared"]);
+        assert_eq!(plan.then_live_handles, ["%branch_then", "%shared"]);
+        assert_eq!(plan.else_live_handles, ["%branch_else", "%shared"]);
+        assert_eq!(plan.stable_live_handles, ["%shared"]);
+        assert_eq!(
+            plan.divergent_live_handles,
+            ["%branch_else", "%branch_then"]
+        );
+        assert_eq!(plan.then_only_handles, ["%branch_then"]);
+        assert_eq!(plan.else_only_handles, ["%branch_else"]);
+        assert_eq!(
+            plan.merge_ownership(),
+            NativeBranchLiveNativeValueOwnership::Blocked
+        );
+
+        let stable_handles = live_handles(&["%stable_a", "%stable_b"]);
+        let stable_plan = NativeBranchLiveNativeValueCleanupPlan::from_handles(
+            NativeBranchEffectJoin::BothContinue,
+            &stable_handles,
+            &stable_handles,
+            &stable_handles,
+        );
+        assert_eq!(
+            stable_plan.merge_ownership(),
+            NativeBranchLiveNativeValueOwnership::Stable
+        );
+        assert!(stable_plan.merge_ownership().can_merge_without_phi());
+
+        let empty_plan = NativeBranchLiveNativeValueCleanupPlan::from_handles(
+            NativeBranchEffectJoin::ThenContinues,
+            &[],
+            &[],
+            &[],
+        );
+        assert_eq!(
+            empty_plan.merge_ownership(),
+            NativeBranchLiveNativeValueOwnership::NoLiveHandles
+        );
+        assert!(empty_plan
+            .merge_ownership()
+            .allows_non_joining_control_flow());
+    }
+
+    #[test]
+    fn native_termination_cleanup_stack_composes_ordered_cleanup_actions() {
+        let mut cleanup_stack: NativeTerminationCleanupStack<()> =
+            NativeTerminationCleanupStack::from_action(
+                NativeTerminationCleanupAction::OutputBufferStack,
+            );
+
+        cleanup_stack.push_action(NativeTerminationCleanupAction::ShutdownQueue);
+        cleanup_stack.prepend_stack(NativeTerminationCleanupStack::from_actions(vec![
+            NativeTerminationCleanupAction::FunctionFrame,
+            NativeTerminationCleanupAction::GotoScope,
+        ]));
+        cleanup_stack.append_stack(NativeTerminationCleanupStack::from_action(
+            NativeTerminationCleanupAction::DestructorQueue,
+        ));
+
+        assert_eq!(
+            cleanup_stack.actions(),
+            &[
+                NativeTerminationCleanupAction::FunctionFrame,
+                NativeTerminationCleanupAction::GotoScope,
+                NativeTerminationCleanupAction::OutputBufferStack,
+                NativeTerminationCleanupAction::ShutdownQueue,
+                NativeTerminationCleanupAction::DestructorQueue,
+            ]
+        );
+    }
+
+    #[test]
+    fn native_termination_cleanup_boundary_carries_outer_diagnostic_and_cleanup_stack() {
+        let mut boundary = NativeTerminationCleanupBoundary::from_hook_boundary(
+            span(4, 2),
+            NativeTerminationHookBoundary::OutputBuffer,
+        );
+        boundary.append_cleanup_boundary(NativeTerminationCleanupBoundary::from_hook_boundary(
+            span(5, 7),
+            NativeTerminationHookBoundary::Shutdown,
+        ));
+
+        let boundary = boundary
+            .with_outer_hook_boundary(span(2, 1), NativeTerminationHookBoundary::TryFinally);
+
+        assert_eq!(boundary.span(), span(2, 1));
+        assert!(boundary.llvm_message().starts_with(
+            "LLVM termination control-flow lowering rejects exit()/die() in try/catch/finally contexts"
+        ));
+        assert!(boundary.assembly_message().starts_with(
+            "assembly termination control-flow lowering rejects exit()/die() in try/catch/finally contexts"
+        ));
+        assert_eq!(
+            boundary.cleanup_stack.actions(),
+            &[
+                NativeTerminationCleanupAction::FinallyDispatch,
+                NativeTerminationCleanupAction::OutputBufferStack,
+                NativeTerminationCleanupAction::ShutdownQueue,
+            ]
+        );
+    }
+
+    #[test]
+    fn native_termination_cleanup_blocker_accepts_composed_boundaries() {
+        let mut boundary = NativeTerminationCleanupBoundary::from_hook_boundary(
+            span(10, 4),
+            NativeTerminationHookBoundary::OutputBuffer,
+        );
+        boundary.prepend_cleanup_boundary(NativeTerminationCleanupBoundary::from_hook_boundary(
+            span(9, 1),
+            NativeTerminationHookBoundary::FunctionFrame,
+        ));
+
+        let blocker = NativeTerminationCleanupBlocker::from_cleanup_boundary(boundary);
+
+        assert_eq!(blocker.span(), span(10, 4));
+        assert!(blocker.llvm_message().starts_with(
+            "LLVM termination hook lowering rejects exit()/die() with active or queried output buffers"
+        ));
+        assert!(blocker.assembly_message().starts_with(
+            "assembly termination hook lowering rejects exit()/die() with active or queried output buffers"
+        ));
+        assert_eq!(blocker.termination_effect().status_value(), None);
+        assert_eq!(
+            blocker.cleanup_stack().actions(),
+            &[
+                NativeTerminationCleanupAction::FunctionFrame,
+                NativeTerminationCleanupAction::OutputBufferStack,
+            ]
+        );
+    }
+
+    #[test]
+    fn native_c_error_exit_centralizes_program_cleanup() {
+        let mut generator = CGenerator::default();
+        generator.array_cleanup_handles.push("array_0".to_string());
+        generator.array_cleanup_handles.push("array_1".to_string());
+        generator.emitted_native_symbol_table = true;
+
+        assert_eq!(
+            generator.native_error_exit("local_cleanup(); "),
+            "local_cleanup(); phpc_native_array_free(array_1); phpc_native_array_free(array_0); phpc_native_symbol_table_free(phpc_symbols); return 1;"
+        );
+    }
+
+    #[test]
+    fn native_branch_merge_outcome_centralizes_cleanup_blockers() {
+        let entry = local_state(&[("code", 1)]);
+        let mut divergent_then = entry.clone();
+        divergent_then.insert("message".to_string(), 2);
+        let mut divergent_else = entry.clone();
+        divergent_else.insert("message".to_string(), 3);
+
+        let local_outcome = NativeBranchTerminationEffect::from_states(
+            &entry,
+            &divergent_then,
+            &divergent_else,
+            NativeControlFlowEffect::Continues,
+            NativeControlFlowEffect::Continues,
+        )
+        .into_merge_outcome(span(20, 1), true);
+        let NativeBranchMergeOutcome::Blocked(local_blocker) = local_outcome else {
+            panic!("expected local cleanup blocker");
+        };
+        assert_eq!(local_blocker.span(), span(20, 1));
+        assert!(local_blocker.llvm_message().starts_with(
+            "LLVM termination control-flow lowering rejects exit()/die() in branches that may continue"
+        ));
+        assert_eq!(local_blocker.termination_effect().status_value(), None);
+        assert!(matches!(
+            local_blocker.cleanup_stack().actions().get(1),
+            Some(NativeTerminationCleanupAction::BranchBlockLocals(cleanup_plan))
+                if cleanup_plan.divergent_live_locals == ["message"]
+        ));
+
+        let empty_facts: HashMap<String, String> = HashMap::new();
+        let mut then_facts = HashMap::new();
+        then_facts.insert("code:int".to_string(), "[2]".to_string());
+        let mut else_facts = HashMap::new();
+        else_facts.insert("code:int".to_string(), "[3]".to_string());
+
+        let value_outcome = NativeBranchTerminationEffect::from_merge_inputs(
+            &entry,
+            &entry,
+            &entry,
+            &empty_facts,
+            &then_facts,
+            &else_facts,
+            NativeControlFlowEffect::Continues,
+            NativeControlFlowEffect::Continues,
+        )
+        .into_merge_outcome(span(21, 1), true);
+        let NativeBranchMergeOutcome::Blocked(value_blocker) = value_outcome else {
+            panic!("expected value-fact cleanup blocker");
+        };
+        assert!(matches!(
+            value_blocker.cleanup_stack().actions().get(2),
+            Some(NativeTerminationCleanupAction::BranchValueFacts(cleanup_plan))
+                if cleanup_plan.divergent_live_facts == ["code:int"]
+        ));
+
+        let backend_outcome = NativeBranchTerminationEffect::from_states(
+            &entry,
+            &entry,
+            &entry,
+            NativeControlFlowEffect::Continues,
+            NativeControlFlowEffect::Continues,
+        )
+        .into_merge_outcome(span(22, 1), false);
+        assert!(matches!(
+            backend_outcome,
+            NativeBranchMergeOutcome::Blocked(_)
+        ));
+
+        let stable_outcome = NativeBranchTerminationEffect::from_states(
+            &entry,
+            &entry,
+            &entry,
+            NativeControlFlowEffect::Continues,
+            NativeControlFlowEffect::Continues,
+        )
+        .into_merge_outcome(span(23, 1), true);
+        let stable_result = merged_branch_result(stable_outcome);
+        assert_eq!(
+            stable_result.kind(),
+            NativeBranchMergeKind::BothContinueStable
+        );
+        assert_eq!(stable_result.termination_effect().status_value(), None);
+        assert!(matches!(
+            stable_result.cleanup_stack().actions().get(1),
+            Some(NativeTerminationCleanupAction::BranchBlockLocals(cleanup_plan))
+                if cleanup_plan.has_stable_local_merge()
+        ));
+
+        let partial_outcome = NativeBranchTerminationEffect::from_merge_inputs(
+            &entry,
+            &divergent_then,
+            &divergent_else,
+            &empty_facts,
+            &then_facts,
+            &else_facts,
+            NativeControlFlowEffect::Terminates,
+            NativeControlFlowEffect::Continues,
+        )
+        .into_merge_outcome(span(24, 1), false);
+        let partial_result = merged_branch_result(partial_outcome);
+        assert_eq!(
+            partial_result.kind(),
+            NativeBranchMergeKind::ContinueWith(NativeContinuingBranchArm::Else)
+        );
+        assert_eq!(partial_result.termination_effect().status_value(), None);
+        assert!(matches!(
+            partial_result.cleanup_stack().actions().get(1),
+            Some(NativeTerminationCleanupAction::BranchBlockLocals(cleanup_plan))
+                if cleanup_plan.divergent_live_locals == ["message"]
+        ));
+        assert!(matches!(
+            partial_result.cleanup_stack().actions().get(2),
+            Some(NativeTerminationCleanupAction::BranchValueFacts(cleanup_plan))
+                if cleanup_plan.divergent_live_facts == ["code:int"]
+        ));
+
+        let terminated_outcome = NativeBranchTerminationEffect::from_states(
+            &entry,
+            &divergent_then,
+            &divergent_else,
+            NativeControlFlowEffect::Terminates,
+            NativeControlFlowEffect::Terminates,
+        )
+        .into_merge_outcome(span(25, 1), false);
+        let terminated_result = merged_branch_result(terminated_outcome);
+        assert_eq!(
+            terminated_result.kind(),
+            NativeBranchMergeKind::BothTerminate
+        );
+        assert_eq!(terminated_result.termination_effect().status_value(), None);
+        assert!(matches!(
+            terminated_result.cleanup_stack().actions().get(1),
+            Some(NativeTerminationCleanupAction::BranchBlockLocals(cleanup_plan))
+                if cleanup_plan.divergent_live_locals == ["message"]
+        ));
+    }
+
+    #[test]
+    fn branch_live_native_values_block_unowned_branch_merges_and_transfers() {
+        let entry = local_state(&[("code", 1)]);
+        let empty_facts: HashMap<String, String> = HashMap::new();
+        let stable_handles = live_handles(&["%stable"]);
+
+        let stable_outcome =
+            NativeBranchTerminationEffect::from_merge_inputs_with_live_native_values(
+                &entry,
+                &entry,
+                &entry,
+                &empty_facts,
+                &empty_facts,
+                &empty_facts,
+                &stable_handles,
+                &stable_handles,
+                &stable_handles,
+                NativeControlFlowEffect::Continues,
+                NativeControlFlowEffect::Continues,
+            )
+            .into_merge_outcome(span(26, 1), true);
+        let stable_result = merged_branch_result(stable_outcome);
+        assert_eq!(
+            stable_result.kind(),
+            NativeBranchMergeKind::BothContinueStable
+        );
+        assert!(matches!(
+            stable_result.cleanup_stack().actions().get(2),
+            Some(NativeTerminationCleanupAction::BranchLiveNativeValues(cleanup_plan))
+                if cleanup_plan.merge_ownership() == NativeBranchLiveNativeValueOwnership::Stable
+        ));
+
+        let then_handles = live_handles(&["%then_only"]);
+        let divergent_outcome =
+            NativeBranchTerminationEffect::from_merge_inputs_with_live_native_values(
+                &entry,
+                &entry,
+                &entry,
+                &empty_facts,
+                &empty_facts,
+                &empty_facts,
+                &[],
+                &then_handles,
+                &[],
+                NativeControlFlowEffect::Continues,
+                NativeControlFlowEffect::Continues,
+            )
+            .into_merge_outcome(span(27, 1), true);
+        let NativeBranchMergeOutcome::Blocked(divergent_blocker) = divergent_outcome else {
+            panic!("expected branch-owned native value cleanup blocker");
+        };
+        assert!(matches!(
+            divergent_blocker.cleanup_stack().actions().get(2),
+            Some(NativeTerminationCleanupAction::BranchLiveNativeValues(cleanup_plan))
+                if cleanup_plan.then_only_handles == ["%then_only"]
+        ));
+
+        let partial_outcome =
+            NativeBranchTerminationEffect::from_merge_inputs_with_live_native_values(
+                &entry,
+                &entry,
+                &entry,
+                &empty_facts,
+                &empty_facts,
+                &empty_facts,
+                &[],
+                &then_handles,
+                &[],
+                NativeControlFlowEffect::Terminates,
+                NativeControlFlowEffect::Continues,
+            )
+            .into_merge_outcome(span(28, 1), false);
+        assert!(matches!(
+            partial_outcome,
+            NativeBranchMergeOutcome::Blocked(_)
+        ));
+    }
+
+    #[test]
+    fn native_termination_effect_stack_owns_live_native_value_handle() {
+        let effect = NativeTerminationEffect::from_native_value_handle("%value".to_string());
+
+        assert_eq!(effect.status_value().map(String::as_str), Some("%value"));
+        assert_eq!(
+            effect.cleanup_stack().actions(),
+            &[NativeTerminationCleanupAction::LiveNativeValueHandle(
+                "%value".to_string()
+            )]
+        );
+
+        let mut cleanup_effect: NativeTerminationEffect<()> =
+            NativeTerminationEffect::from_cleanup_stack(
+                NativeTerminationCleanupStack::from_action(
+                    NativeTerminationCleanupAction::LoopScope,
+                ),
+            );
+        cleanup_effect.prepend_cleanup_stack(NativeTerminationCleanupStack::from_action(
+            NativeTerminationCleanupAction::FunctionFrame,
+        ));
+        cleanup_effect.append_cleanup_stack(NativeTerminationCleanupStack::from_action(
+            NativeTerminationCleanupAction::ShutdownQueue,
+        ));
+
+        assert_eq!(cleanup_effect.status_value(), None);
+        let cleanup_stack = cleanup_effect.into_cleanup_stack();
+        assert_eq!(
+            cleanup_stack.actions(),
+            &[
+                NativeTerminationCleanupAction::FunctionFrame,
+                NativeTerminationCleanupAction::LoopScope,
+                NativeTerminationCleanupAction::ShutdownQueue,
+            ]
+        );
+    }
+
+    #[test]
+    fn cleanup_stack_execution_plan_centralizes_live_handles_and_blockers() {
+        let live_stack = NativeTerminationCleanupStack::from_actions(vec![
+            NativeTerminationCleanupAction::LiveNativeValueHandle("first".to_string()),
+            NativeTerminationCleanupAction::LiveNativeValueHandle("second".to_string()),
+        ]);
+        let NativeTerminationCleanupStackPlan::Executable(plan) =
+            live_stack.runtime_execution_plan()
+        else {
+            panic!("live native handles should be executable cleanup");
+        };
+        let handles = plan
+            .live_native_value_handles()
+            .iter()
+            .map(|handle| handle.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(handles, ["first", "second"]);
+        assert_eq!(live_stack.unlowered_runtime_cleanup_boundary_kind(), None);
+
+        let branch_stack: NativeTerminationCleanupStack<()> =
+            NativeTerminationCleanupStack::from_branch_cleanup_plans(
+                empty_branch_local_cleanup_plan(NativeBranchEffectJoin::BothContinue),
+                NativeBranchValueFactCleanupPlan::from_states(
+                    NativeBranchEffectJoin::BothContinue,
+                    &HashMap::new(),
+                    &HashMap::new(),
+                    &HashMap::new(),
+                ),
+            );
+        assert_eq!(
+            branch_stack.unlowered_runtime_cleanup_boundary_kind(),
+            Some(NativeTerminationCleanupBoundaryKind::BranchMerge)
+        );
+
+        let live_branch_stack: NativeTerminationCleanupStack<()> =
+            NativeTerminationCleanupStack::from_branch_cleanup_plans_with_live_native_values(
+                empty_branch_local_cleanup_plan(NativeBranchEffectJoin::BothContinue),
+                NativeBranchLiveNativeValueCleanupPlan::from_handles(
+                    NativeBranchEffectJoin::BothContinue,
+                    &live_handles(&["%entry"]),
+                    &live_handles(&["%entry", "%then"]),
+                    &live_handles(&["%entry"]),
+                ),
+                NativeBranchValueFactCleanupPlan::from_states(
+                    NativeBranchEffectJoin::BothContinue,
+                    &HashMap::new(),
+                    &HashMap::new(),
+                    &HashMap::new(),
+                ),
+            );
+        assert_eq!(
+            live_branch_stack
+                .branch_live_native_value_cleanup_plan()
+                .map(NativeBranchLiveNativeValueCleanupPlan::merge_ownership),
+            Some(NativeBranchLiveNativeValueOwnership::Blocked)
+        );
+        assert_eq!(
+            live_branch_stack.unlowered_runtime_cleanup_boundary_kind(),
+            Some(NativeTerminationCleanupBoundaryKind::BranchMerge)
+        );
+
+        let expression_branch_stack: NativeTerminationCleanupStack<()> =
+            NativeTerminationCleanupStack::from_actions(vec![
+                NativeTerminationCleanupAction::DiscardedNativeTemporaries,
+                NativeTerminationCleanupAction::BranchBlockLocals(empty_branch_local_cleanup_plan(
+                    NativeBranchEffectJoin::BothContinue,
+                )),
+            ]);
+        assert_eq!(
+            expression_branch_stack.unlowered_runtime_cleanup_boundary_kind(),
+            Some(NativeTerminationCleanupBoundaryKind::BranchMerge)
+        );
+
+        let hook_cases: Vec<(
+            NativeTerminationCleanupAction<()>,
+            NativeTerminationCleanupBoundaryKind,
+        )> = vec![
+            (
+                NativeTerminationCleanupAction::LoopScope,
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::LoopScope,
+                ),
+            ),
+            (
+                NativeTerminationCleanupAction::SwitchScope,
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::SwitchScope,
+                ),
+            ),
+            (
+                NativeTerminationCleanupAction::GotoScope,
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::GotoScope,
+                ),
+            ),
+            (
+                NativeTerminationCleanupAction::FunctionFrame,
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::FunctionFrame,
+                ),
+            ),
+            (
+                NativeTerminationCleanupAction::ReturnContext,
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::ReturnContext,
+                ),
+            ),
+            (
+                NativeTerminationCleanupAction::FinallyDispatch,
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::TryFinally,
+                ),
+            ),
+            (
+                NativeTerminationCleanupAction::ExceptionUnwind,
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::Exception,
+                ),
+            ),
+            (
+                NativeTerminationCleanupAction::OutputBufferStack,
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::OutputBuffer,
+                ),
+            ),
+            (
+                NativeTerminationCleanupAction::ShutdownQueue,
+                NativeTerminationCleanupBoundaryKind::Hook(NativeTerminationHookBoundary::Shutdown),
+            ),
+            (
+                NativeTerminationCleanupAction::DestructorQueue,
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::Destructor,
+                ),
+            ),
+            (
+                NativeTerminationCleanupAction::DiscardedNativeTemporaries,
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::ExpressionContext,
+                ),
+            ),
+        ];
+        for (action, expected_boundary) in hook_cases {
+            let stack = NativeTerminationCleanupStack::from_action(action);
+            assert_eq!(
+                stack.unlowered_runtime_cleanup_boundary_kind(),
+                Some(expected_boundary)
+            );
+        }
+
+        let goto_after_live_stack = NativeTerminationCleanupStack::from_actions(vec![
+            NativeTerminationCleanupAction::LiveNativeValueHandle("status".to_string()),
+            NativeTerminationCleanupAction::GotoScope,
+        ]);
+        assert_eq!(
+            goto_after_live_stack.unlowered_runtime_cleanup_boundary_kind(),
+            Some(NativeTerminationCleanupBoundaryKind::Hook(
+                NativeTerminationHookBoundary::GotoScope
+            ))
+        );
+    }
+
+    #[test]
+    fn termination_return_plan_centralizes_status_handle_cleanup_and_blockers() {
+        let executable = native_value_effect_with_cleanup_tail(
+            "status",
+            vec![NativeTerminationCleanupAction::LiveNativeValueHandle(
+                "temporary".to_string(),
+            )],
+        );
+        let NativeTerminationReturnPlan::Executable(plan) = executable.runtime_return_plan() else {
+            panic!("live native handles should be executable termination return cleanup");
+        };
+        assert_eq!(plan.status_value().map(String::as_str), Some("status"));
+        let handles = plan
+            .live_native_value_handles()
+            .iter()
+            .map(|handle| handle.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(handles, ["status", "temporary"]);
+
+        let return_cases: Vec<(
+            Vec<NativeTerminationCleanupAction<String>>,
+            NativeTerminationCleanupBoundaryKind,
+        )> = vec![
+            (
+                vec![
+                    NativeTerminationCleanupAction::DiscardedNativeTemporaries,
+                    NativeTerminationCleanupAction::BranchBlockLocals(
+                        empty_branch_local_cleanup_plan(NativeBranchEffectJoin::BothContinue),
+                    ),
+                ],
+                NativeTerminationCleanupBoundaryKind::BranchMerge,
+            ),
+            (
+                vec![NativeTerminationCleanupAction::LoopScope],
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::LoopScope,
+                ),
+            ),
+            (
+                vec![NativeTerminationCleanupAction::ReturnContext],
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::ReturnContext,
+                ),
+            ),
+            (
+                vec![NativeTerminationCleanupAction::ExceptionUnwind],
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::Exception,
+                ),
+            ),
+            (
+                vec![
+                    NativeTerminationCleanupAction::OutputBufferStack,
+                    NativeTerminationCleanupAction::ShutdownQueue,
+                    NativeTerminationCleanupAction::DestructorQueue,
+                ],
+                NativeTerminationCleanupBoundaryKind::Hook(
+                    NativeTerminationHookBoundary::OutputBuffer,
+                ),
+            ),
+        ];
+        for (tail_actions, expected_boundary) in return_cases {
+            let effect = native_value_effect_with_cleanup_tail("status", tail_actions);
+            let NativeTerminationReturnPlan::Blocked(boundary) = effect.runtime_return_plan()
+            else {
+                panic!("cleanup blocker should be resolved before backend emission");
+            };
+            assert_eq!(boundary, expected_boundary);
+        }
     }
 }

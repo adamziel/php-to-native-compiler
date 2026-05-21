@@ -1,7 +1,7 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, object property unset, static property unset, non-local unset operands, and mixed multiple-operand unset until native read-modify-write ordering, null-aware mutation, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 
 #[test]
 fn direct_variable_assignment_expressions_return_assigned_values() {

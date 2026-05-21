@@ -103,6 +103,38 @@ fn emit_ir_rejects_dynamic_calls_before_lowering_callee_or_arguments() {
 }
 
 #[test]
+fn emit_ir_routes_text_membership_consumers_through_native_value_boundary() {
+    let source = r#"<?php
+$function = true ? "strlen" : "trim";
+$ctype = true ? "ctype_alpha" : "ctype_xdigit";
+$callable = true ? "substr" : "dirname";
+$extension = true ? "json" : "PDO";
+echo function_exists($function) ? "1" : "0";
+echo function_exists($ctype) ? "1" : "0";
+echo is_callable($callable) ? "1" : "0";
+echo extension_loaded($extension) ? "1" : "0";
+"#;
+    let ir = emit_ir_source(source).unwrap();
+
+    assert!(ir.contains("@phpc_text_membership_candidates_"));
+    assert!(
+        ir.matches("call i1 @phpc_native_value_text_membership_with_diagnostic")
+            .count()
+            >= 4
+    );
+    assert!(ir.contains("ctype_alpha"));
+    assert!(ir.contains("ctype_xdigit"));
+    assert!(ir.contains("i8 4"));
+    assert!(ir.contains("i8 6"));
+    assert!(ir.contains("@phpc_native_symbol_table_write"));
+    assert!(ir.contains("@phpc_native_symbol_table_read"));
+    assert!(ir.contains("@phpc_native_diagnostic_message_stderr"));
+    assert!(ir.contains("@phpc_native_diagnostic_free"));
+
+    emit_asm_source(source).unwrap();
+}
+
+#[test]
 fn emit_asm_rejects_function_calls_before_backend_execution() {
     for source in [
         "<?php\necho label(\"abc\");\nfunction label($value) { return $value; }\n",

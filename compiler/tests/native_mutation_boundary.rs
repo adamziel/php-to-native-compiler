@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, object property unset, static property unset, non-local unset operands, and mixed multiple-operand unset until native read-modify-write ordering, null-aware mutation, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 
 #[test]
@@ -88,15 +88,40 @@ fn emit_ir_rejects_mutation_forms_with_specific_boundary() {
         "<?php\n$value = 1;\necho ($value += 2);\n",
         "<?php\n$value = null;\necho ($value ??= 2);\n",
         "<?php\n$value = 1;\necho ++$value;\n",
-        "<?php\n$value = 1;\nunset($value);\n",
         "<?php\nunset(Box::$cache);\n",
-        "<?php\n$left = 1;\n$right = 2;\nunset($left, $right);\n",
+        "<?php\n$left = 1;\nunset($left, $items[0]);\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_MUTATION_REJECTION);
     }
+}
+
+#[test]
+fn emit_ir_lowers_direct_local_unset_forms_through_symbol_table() {
+    let single = emit_ir_source("<?php\n$value = 1;\nunset($value);\n").unwrap();
+    assert_eq!(
+        single
+            .matches("call i1 @phpc_native_symbol_table_unset")
+            .count(),
+        1,
+        "{single}"
+    );
+
+    let multiple =
+        emit_ir_source("<?php\n$left = 1;\n$right = 2;\nunset($left, $right);\n").unwrap();
+    assert_eq!(
+        multiple
+            .matches("call i1 @phpc_native_symbol_table_unset")
+            .count(),
+        2,
+        "{multiple}"
+    );
+    assert!(
+        !multiple.contains("LLVM mutation lowering rejects"),
+        "{multiple}"
+    );
 }
 
 #[test]

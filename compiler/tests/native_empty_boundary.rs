@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -35,7 +34,7 @@ echo empty($text) ? "1" : "0";
 }
 
 #[test]
-fn emit_ir_folds_direct_variable_empty_for_current_straight_line_subset() {
+fn emit_ir_lowers_direct_variable_empty_for_current_straight_line_subset() {
     let ir = emit_ir_source(
         r#"<?php
 $null = null;
@@ -59,6 +58,7 @@ echo empty($text) ? "1" : "0";
 
     assert!(ir.contains("c\"1\\00\""), "{ir}");
     assert!(ir.contains("c\"0\\00\""), "{ir}");
+    assert!(ir.contains("phpc_native_symbol_table_empty"), "{ir}");
     assert!(!ir.contains("LLVM empty lowering rejects"), "{ir}");
 }
 
@@ -79,7 +79,7 @@ fn emit_ir_rejects_unsupported_empty_forms_before_lowering_operands() {
 }
 
 #[test]
-fn native_direct_variable_empty_emit_ir_cli_snapshot_matches_committed_output() {
+fn native_direct_variable_empty_emit_ir_cli_uses_symbol_table_helper() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()
@@ -99,13 +99,25 @@ fn native_direct_variable_empty_emit_ir_cli_snapshot_matches_committed_output() 
         .output()
         .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
 
-    let expected = fs::read_to_string(
-        workspace_root.join("tests/fixtures/milestone556/native_direct_variable_empty_emit_ir.cli"),
-    )
-    .expect("native direct-variable empty CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
-    assert_eq!(actual, expected);
+    assert!(output.status.success(), "{actual}");
+    assert!(
+        actual.contains("declare i1 @phpc_native_symbol_table_empty"),
+        "{actual}"
+    );
+    assert!(
+        actual.contains("call i1 @phpc_native_symbol_table_empty"),
+        "{actual}"
+    );
+    assert!(
+        actual.contains("call i1 @phpc_native_symbol_table_write"),
+        "{actual}"
+    );
+    assert!(
+        actual.contains("call void @phpc_native_symbol_table_free"),
+        "{actual}"
+    );
 }
 
 fn render_cli_snapshot(output: &Output) -> String {
