@@ -205,6 +205,28 @@ pub struct NativeArrayHandle {
     ptr: *mut NativeArray,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeArrayEntrySnapshotHandle {
+    ptr: *mut NativeArrayEntrySnapshot,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeArrayKeyTag {
+    Invalid = 0,
+    Int = 1,
+    String = 2,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeArrayKeyMetadata {
+    tag: NativeArrayKeyTag,
+    int_value: i64,
+    string_len: usize,
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeArrayKeyMaterializationTag {
@@ -315,13 +337,28 @@ struct NativeArray {
 }
 
 #[derive(Debug)]
+struct NativeArrayEntrySnapshot {
+    entries: Vec<NativeArrayEntrySnapshotEntry>,
+}
+
+#[derive(Debug)]
+struct NativeArrayEntrySnapshotEntry {
+    key: ArrayKey,
+    value: Value,
+}
+
+#[derive(Debug)]
 struct NativeSymbolTable {
     values: HashMap<String, Value>,
 }
 
 enum NativeObject {}
 enum NativeResource {}
-enum NativeReference {}
+
+#[derive(Debug)]
+struct NativeReference {
+    cell: PhpReferenceCell,
+}
 
 #[derive(Debug)]
 struct NativeRequestState {
@@ -945,6 +982,44 @@ impl NativeComparisonBranchResult {
     }
 }
 
+impl NativeArrayKeyMetadata {
+    pub const fn invalid() -> Self {
+        Self {
+            tag: NativeArrayKeyTag::Invalid,
+            int_value: 0,
+            string_len: 0,
+        }
+    }
+
+    pub const fn int(value: i64) -> Self {
+        Self {
+            tag: NativeArrayKeyTag::Int,
+            int_value: value,
+            string_len: 0,
+        }
+    }
+
+    pub const fn string(len: usize) -> Self {
+        Self {
+            tag: NativeArrayKeyTag::String,
+            int_value: 0,
+            string_len: len,
+        }
+    }
+
+    pub const fn tag(&self) -> NativeArrayKeyTag {
+        self.tag
+    }
+
+    pub const fn int_value(&self) -> i64 {
+        self.int_value
+    }
+
+    pub const fn string_len(&self) -> usize {
+        self.string_len
+    }
+}
+
 impl NativeArrayHandle {
     pub const fn null() -> Self {
         Self {
@@ -979,6 +1054,28 @@ impl NativeArrayHandle {
     }
 }
 
+impl NativeArrayEntrySnapshotHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn from_entries(entries: Vec<NativeArrayEntrySnapshotEntry>) -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeArrayEntrySnapshot { entries })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeArrayEntrySnapshot> {
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
 impl NativeObjectHandle {
     pub const fn null() -> Self {
         Self {
@@ -1010,8 +1107,18 @@ impl NativeReferenceHandle {
         }
     }
 
+    fn from_cell(cell: PhpReferenceCell) -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeReference { cell })),
+        }
+    }
+
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeReference> {
+        unsafe { self.ptr.as_ref() }
     }
 }
 
@@ -1401,6 +1508,166 @@ pub unsafe extern "C" fn phpc_native_array_read_key_with_diagnostic(
 
 /// # Safety
 ///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. The returned snapshot owns clones of the source
+/// array's ordered keys and current entry values, and must be freed
+/// independently with `phpc_native_array_entry_snapshot_free`. Ownership of
+/// `handle` remains with the caller. Null handles return a null snapshot.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_entry_snapshot(
+    handle: NativeArrayHandle,
+) -> NativeArrayEntrySnapshotHandle {
+    unsafe { handle.as_ref() }
+        .map(|array| {
+            NativeArrayEntrySnapshotHandle::from_entries(
+                array
+                    .value
+                    .entries()
+                    .iter()
+                    .map(|entry| NativeArrayEntrySnapshotEntry {
+                        key: entry.key.clone(),
+                        value: entry.value_cloned(),
+                    })
+                    .collect(),
+            )
+        })
+        .unwrap_or_else(NativeArrayEntrySnapshotHandle::null)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_array_entry_snapshot_is_null(
+    handle: NativeArrayEntrySnapshotHandle,
+) -> bool {
+    handle.is_null()
+}
+
+/// # Safety
+///
+/// `handle` must be null or an entry snapshot handle previously returned by the
+/// runtime ABI and not yet freed. Null snapshots return 0.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_entry_snapshot_len(
+    handle: NativeArrayEntrySnapshotHandle,
+) -> usize {
+    unsafe { handle.as_ref() }
+        .map(|snapshot| snapshot.entries.len())
+        .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `handle` must be null or an entry snapshot handle previously returned by the
+/// runtime ABI and not yet freed. Invalid indexes and null snapshots return
+/// `NativeArrayKeyTag::Invalid`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_entry_snapshot_key_at(
+    handle: NativeArrayEntrySnapshotHandle,
+    index: usize,
+) -> NativeArrayKeyMetadata {
+    let Some(entry) = (unsafe { handle.as_ref() }).and_then(|snapshot| snapshot.entries.get(index))
+    else {
+        return NativeArrayKeyMetadata::invalid();
+    };
+
+    native_array_key_metadata(&entry.key)
+}
+
+/// # Safety
+///
+/// `handle` must be null or an entry snapshot handle previously returned by the
+/// runtime ABI and not yet freed. The returned string handle owns a clone of
+/// the key bytes and must be freed independently with
+/// `phpc_native_string_free`. Invalid indexes, integer keys, and null
+/// snapshots return a null string handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_entry_snapshot_string_clone_at(
+    handle: NativeArrayEntrySnapshotHandle,
+    index: usize,
+) -> NativeStringHandle {
+    (unsafe { handle.as_ref() })
+        .and_then(|snapshot| snapshot.entries.get(index))
+        .map(|entry| native_array_key_string_clone(&entry.key))
+        .unwrap_or_else(NativeStringHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or an entry snapshot handle previously returned by the
+/// runtime ABI and not yet freed. The returned value handle owns a cloned
+/// materialized copy of the snapshot entry key and must be freed independently
+/// with `phpc_native_value_free`. Integer keys return int values; string keys
+/// return string values with owned bytes. Invalid indexes and null snapshots
+/// return a null value handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_entry_snapshot_key_value_clone_at(
+    handle: NativeArrayEntrySnapshotHandle,
+    index: usize,
+) -> NativeValueHandle {
+    (unsafe { handle.as_ref() })
+        .and_then(|snapshot| snapshot.entries.get(index))
+        .map(|entry| native_array_key_value(&entry.key))
+        .map(NativeValueHandle::from_value)
+        .unwrap_or_else(NativeValueHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or an entry snapshot handle previously returned by the
+/// runtime ABI and not yet freed. The returned reference handle owns a fresh
+/// PHP reference cell seeded with a by-value copy of the snapshot entry key and
+/// must be freed independently with `phpc_native_reference_free`. Integer keys
+/// seed an int value cell; string keys seed a string value cell with owned
+/// bytes. Invalid indexes and null snapshots return a null reference handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_entry_snapshot_key_reference_clone_at(
+    handle: NativeArrayEntrySnapshotHandle,
+    index: usize,
+) -> NativeReferenceHandle {
+    (unsafe { handle.as_ref() })
+        .and_then(|snapshot| snapshot.entries.get(index))
+        .map(|entry| native_array_key_value(&entry.key))
+        .map(native_reference_from_value)
+        .unwrap_or_else(NativeReferenceHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or an entry snapshot handle previously returned by the
+/// runtime ABI and not yet freed. The returned value handle owns a clone of the
+/// snapshot entry value and must be freed independently with
+/// `phpc_native_value_free`. Invalid indexes and null snapshots return a null
+/// value handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_entry_snapshot_value_clone_at(
+    handle: NativeArrayEntrySnapshotHandle,
+    index: usize,
+) -> NativeValueHandle {
+    (unsafe { handle.as_ref() })
+        .and_then(|snapshot| snapshot.entries.get(index))
+        .map(|entry| NativeValueHandle::from_value(entry.value.clone()))
+        .unwrap_or_else(NativeValueHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or an entry snapshot handle previously returned by the
+/// runtime ABI and not yet freed. The returned reference handle owns a fresh
+/// PHP reference cell seeded with a clone of the snapshot entry value and must
+/// be freed independently with `phpc_native_reference_free`. Invalid indexes
+/// and null snapshots return a null reference handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_entry_snapshot_value_reference_clone_at(
+    handle: NativeArrayEntrySnapshotHandle,
+    index: usize,
+) -> NativeReferenceHandle {
+    (unsafe { handle.as_ref() })
+        .and_then(|snapshot| snapshot.entries.get(index))
+        .map(|entry| native_reference_from_value(entry.value.clone()))
+        .unwrap_or_else(NativeReferenceHandle::null)
+}
+
+/// # Safety
+///
 /// `key` must be a materialization result returned by the runtime ABI and not
 /// yet freed.
 #[no_mangle]
@@ -1429,6 +1696,22 @@ pub unsafe extern "C" fn phpc_native_value_operation_result_free(
 /// ABI and not yet freed. Passing any other pointer is undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_array_free(handle: NativeArrayHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+/// # Safety
+///
+/// `handle` must be null or an entry snapshot handle previously returned by the
+/// runtime ABI and not yet freed. Passing any other pointer is undefined
+/// behavior.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_entry_snapshot_free(
+    handle: NativeArrayEntrySnapshotHandle,
+) {
     if handle.ptr.is_null() {
         return;
     }
@@ -1561,6 +1844,56 @@ pub extern "C" fn phpc_native_reference_null() -> NativeReferenceHandle {
 #[no_mangle]
 pub extern "C" fn phpc_native_reference_is_null(handle: NativeReferenceHandle) -> bool {
     handle.is_null()
+}
+
+/// # Safety
+///
+/// `handle` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. The returned value handle owns a clone of the
+/// current reference-cell value and must be freed independently with
+/// `phpc_native_value_free`. Null handles return a null value handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_reference_value_clone(
+    handle: NativeReferenceHandle,
+) -> NativeValueHandle {
+    unsafe { handle.as_ref() }
+        .map(|reference| NativeValueHandle::from_value(reference.cell.value_cloned()))
+        .unwrap_or_else(NativeValueHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. `value` must be null or a value handle
+/// previously returned by the runtime ABI and not yet freed. Null handles are
+/// rejected and leave the reference unchanged. The reference stores a clone of
+/// `value`; ownership of `value` remains with the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_reference_set_value(
+    handle: NativeReferenceHandle,
+    value: NativeValueHandle,
+) -> bool {
+    let (Some(reference), Some(value)) = (unsafe { handle.as_ref() }, unsafe { value.as_ref() })
+    else {
+        return false;
+    };
+
+    reference.cell.set_value(value.clone());
+    true
+}
+
+/// # Safety
+///
+/// `handle` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. Passing any other pointer is undefined
+/// behavior.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_reference_free(handle: NativeReferenceHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(handle.ptr) });
 }
 
 #[no_mangle]
@@ -6310,6 +6643,31 @@ impl ArrayKey {
     }
 }
 
+fn native_array_key_metadata(key: &ArrayKey) -> NativeArrayKeyMetadata {
+    match key {
+        ArrayKey::Int(value) => NativeArrayKeyMetadata::int(*value),
+        ArrayKey::String(value) => NativeArrayKeyMetadata::string(value.len()),
+    }
+}
+
+fn native_array_key_string_clone(key: &ArrayKey) -> NativeStringHandle {
+    match key {
+        ArrayKey::Int(_) => NativeStringHandle::null(),
+        ArrayKey::String(value) => NativeStringHandle::from_vec(value.as_bytes().to_vec()),
+    }
+}
+
+fn native_array_key_value(key: &ArrayKey) -> Value {
+    match key {
+        ArrayKey::Int(value) => Value::Int(*value),
+        ArrayKey::String(value) => Value::String(value.clone()),
+    }
+}
+
+fn native_reference_from_value(value: Value) -> NativeReferenceHandle {
+    NativeReferenceHandle::from_cell(PhpReferenceCell::new(value))
+}
+
 fn native_array_key_from_runtime_value(value: &Value) -> RuntimeResult<ArrayKey> {
     match value {
         Value::Null => Ok(ArrayKey::String(String::new())),
@@ -9638,6 +9996,11 @@ mod tests {
         bytes
     }
 
+    fn native_string_bytes_for_test(handle: NativeStringHandle) -> Vec<u8> {
+        let buffer = unsafe { phpc_native_string_clone_bytes(handle) };
+        native_byte_buffer_to_vec_for_test(buffer)
+    }
+
     fn native_string_conversion_result_for_test(
         result: NativeStringConversionResult,
     ) -> Result<Vec<u8>, String> {
@@ -10902,6 +11265,9 @@ mod tests {
         assert_eq!(NativeScalarTag::Bool as u8, 1);
         assert_eq!(NativeScalarTag::Int as u8, 2);
         assert_eq!(NativeScalarTag::Float as u8, 3);
+        assert_eq!(NativeArrayKeyTag::Invalid as u8, 0);
+        assert_eq!(NativeArrayKeyTag::Int as u8, 1);
+        assert_eq!(NativeArrayKeyTag::String as u8, 2);
     }
 
     #[test]
@@ -10929,6 +11295,10 @@ mod tests {
             std::mem::size_of::<*mut ()>()
         );
         assert_eq!(
+            std::mem::size_of::<NativeArrayEntrySnapshotHandle>(),
+            std::mem::size_of::<*mut ()>()
+        );
+        assert_eq!(
             std::mem::size_of::<NativeObjectHandle>(),
             std::mem::size_of::<*mut ()>()
         );
@@ -10946,17 +11316,20 @@ mod tests {
         );
 
         let array = phpc_native_array_null();
+        let snapshot = NativeArrayEntrySnapshotHandle::null();
         let object = phpc_native_object_null();
         let resource = phpc_native_resource_null();
         let reference = phpc_native_reference_null();
         let request_state = phpc_native_request_state_null();
 
         assert!(array.is_null());
+        assert!(snapshot.is_null());
         assert!(object.is_null());
         assert!(resource.is_null());
         assert!(reference.is_null());
         assert!(request_state.is_null());
         assert!(phpc_native_array_is_null(array));
+        assert!(phpc_native_array_entry_snapshot_is_null(snapshot));
         assert!(phpc_native_object_is_null(object));
         assert!(phpc_native_resource_is_null(resource));
         assert!(phpc_native_reference_is_null(reference));
@@ -11514,6 +11887,214 @@ mod tests {
         unsafe { phpc_native_value_free(stored) };
         unsafe { phpc_native_value_free(invalid_key_handle) };
         unsafe { phpc_native_array_key_materialization_result_free(invalid_key) };
+        unsafe { phpc_native_array_free(array) };
+    }
+
+    #[test]
+    fn native_array_entry_snapshot_preserves_order_and_owns_cloned_entries() {
+        let mut source = PhpArray::new();
+        source.insert(ArrayKey::string("name"), Value::String("first".to_string()));
+        source.insert(ArrayKey::Int(2), Value::Int(20));
+        source.insert(
+            ArrayKey::string("name"),
+            Value::String("updated".to_string()),
+        );
+        source.insert(
+            ArrayKey::string("tail\0key"),
+            Value::String("tail".to_string()),
+        );
+
+        let mut array = NativeArrayHandle::from_array(source);
+        let snapshot = unsafe { phpc_native_array_entry_snapshot(array) };
+        assert!(!phpc_native_array_entry_snapshot_is_null(snapshot));
+        assert_eq!(unsafe { phpc_native_array_entry_snapshot_len(snapshot) }, 3);
+
+        let source = unsafe { array.as_mut() }.expect("array handle remains valid");
+        source.value.insert(
+            ArrayKey::string("name"),
+            Value::String("mutated".to_string()),
+        );
+        source.value.insert(ArrayKey::Int(3), Value::Int(30));
+        unsafe { phpc_native_array_free(array) };
+
+        let key0 = unsafe { phpc_native_array_entry_snapshot_key_at(snapshot, 0) };
+        let key1 = unsafe { phpc_native_array_entry_snapshot_key_at(snapshot, 1) };
+        let key2 = unsafe { phpc_native_array_entry_snapshot_key_at(snapshot, 2) };
+        assert_eq!(key0.tag(), NativeArrayKeyTag::String);
+        assert_eq!(key0.string_len(), "name".len());
+        assert_eq!((key1.tag(), key1.int_value()), (NativeArrayKeyTag::Int, 2));
+        assert_eq!(key2.tag(), NativeArrayKeyTag::String);
+        assert_eq!(key2.string_len(), "tail\0key".len());
+
+        let key0_string = unsafe { phpc_native_array_entry_snapshot_string_clone_at(snapshot, 0) };
+        let key2_string = unsafe { phpc_native_array_entry_snapshot_string_clone_at(snapshot, 2) };
+        assert_eq!(native_string_bytes_for_test(key0_string), b"name");
+        assert_eq!(native_string_bytes_for_test(key2_string), b"tail\0key");
+
+        let key1_value =
+            unsafe { phpc_native_array_entry_snapshot_key_value_clone_at(snapshot, 1) };
+        let value0 = unsafe { phpc_native_array_entry_snapshot_value_clone_at(snapshot, 0) };
+        let value1 = unsafe { phpc_native_array_entry_snapshot_value_clone_at(snapshot, 1) };
+        let value2 = unsafe { phpc_native_array_entry_snapshot_value_clone_at(snapshot, 2) };
+        assert_eq!(unsafe { key1_value.as_ref() }, Some(&Value::Int(2)));
+        assert_eq!(native_value_echo_bytes_for_test(value0), b"updated");
+        assert_eq!(native_value_echo_bytes_for_test(value1), b"20");
+        assert_eq!(native_value_echo_bytes_for_test(value2), b"tail");
+
+        unsafe { phpc_native_value_free(key1_value) };
+        unsafe { phpc_native_value_free(value0) };
+        unsafe { phpc_native_value_free(value1) };
+        unsafe { phpc_native_value_free(value2) };
+        unsafe { phpc_native_string_free(key0_string) };
+        unsafe { phpc_native_string_free(key2_string) };
+        unsafe { phpc_native_array_entry_snapshot_free(snapshot) };
+    }
+
+    #[test]
+    fn native_array_entry_snapshot_reference_clones_seed_fresh_iteration_cells() {
+        let mut source = PhpArray::new();
+        source.insert(ArrayKey::Int(0), Value::Int(7));
+        source.insert(
+            ArrayKey::string("label"),
+            Value::String("value".to_string()),
+        );
+        let array = NativeArrayHandle::from_array(source);
+        let snapshot = unsafe { phpc_native_array_entry_snapshot(array) };
+
+        let first =
+            unsafe { phpc_native_array_entry_snapshot_value_reference_clone_at(snapshot, 0) };
+        let second =
+            unsafe { phpc_native_array_entry_snapshot_value_reference_clone_at(snapshot, 0) };
+        let key_reference =
+            unsafe { phpc_native_array_entry_snapshot_key_reference_clone_at(snapshot, 1) };
+        assert!(!phpc_native_reference_is_null(first));
+        assert!(!phpc_native_reference_is_null(second));
+        assert!(!phpc_native_reference_is_null(key_reference));
+
+        let first_cell = unsafe { first.as_ref() }.expect("first reference exists");
+        let second_cell = unsafe { second.as_ref() }.expect("second reference exists");
+        assert_ne!(first_cell.cell.id(), second_cell.cell.id());
+        assert!(!first_cell.cell.shares_reference_with(&second_cell.cell));
+
+        let changed = NativeValueHandle::from_value(Value::String("changed".to_string()));
+        assert!(unsafe { phpc_native_reference_set_value(first, changed) });
+
+        let first_value = unsafe { phpc_native_reference_value_clone(first) };
+        let second_value = unsafe { phpc_native_reference_value_clone(second) };
+        let snapshot_value =
+            unsafe { phpc_native_array_entry_snapshot_value_clone_at(snapshot, 0) };
+        let source_value = unsafe { phpc_native_array_read_int(array, 0) };
+        let key_value = unsafe { phpc_native_reference_value_clone(key_reference) };
+        assert_eq!(native_value_echo_bytes_for_test(first_value), b"changed");
+        assert_eq!(native_value_echo_bytes_for_test(second_value), b"7");
+        assert_eq!(native_value_echo_bytes_for_test(snapshot_value), b"7");
+        assert_eq!(native_value_echo_bytes_for_test(source_value), b"7");
+        assert_eq!(native_value_echo_bytes_for_test(key_value), b"label");
+
+        unsafe { phpc_native_value_free(changed) };
+        unsafe { phpc_native_value_free(first_value) };
+        unsafe { phpc_native_value_free(second_value) };
+        unsafe { phpc_native_value_free(snapshot_value) };
+        unsafe { phpc_native_value_free(source_value) };
+        unsafe { phpc_native_value_free(key_value) };
+        unsafe { phpc_native_reference_free(first) };
+        unsafe { phpc_native_reference_free(second) };
+        unsafe { phpc_native_reference_free(key_reference) };
+        unsafe { phpc_native_array_entry_snapshot_free(snapshot) };
+        unsafe { phpc_native_array_free(array) };
+    }
+
+    #[test]
+    fn native_array_entry_snapshot_clones_reference_backed_slots_by_value() {
+        let source_reference = PhpReferenceCell::new(Value::String("original".to_string()));
+        let mut source = PhpArray::new();
+        source.insert_slot(
+            ArrayKey::Int(0),
+            ArraySlot::from_reference_cell(source_reference.clone()),
+        );
+        let array = NativeArrayHandle::from_array(source);
+
+        let snapshot = unsafe { phpc_native_array_entry_snapshot(array) };
+        source_reference.set_value(Value::String("changed".to_string()));
+
+        let snapshot_value =
+            unsafe { phpc_native_array_entry_snapshot_value_clone_at(snapshot, 0) };
+        let iteration_reference =
+            unsafe { phpc_native_array_entry_snapshot_value_reference_clone_at(snapshot, 0) };
+        let iteration_value = unsafe { phpc_native_reference_value_clone(iteration_reference) };
+        assert_eq!(
+            native_value_echo_bytes_for_test(snapshot_value),
+            b"original"
+        );
+        assert_eq!(
+            native_value_echo_bytes_for_test(iteration_value),
+            b"original"
+        );
+        assert_eq!(
+            source_reference.value_cloned(),
+            Value::String("changed".to_string())
+        );
+
+        unsafe { phpc_native_value_free(snapshot_value) };
+        unsafe { phpc_native_value_free(iteration_value) };
+        unsafe { phpc_native_reference_free(iteration_reference) };
+        unsafe { phpc_native_array_entry_snapshot_free(snapshot) };
+        unsafe { phpc_native_array_free(array) };
+    }
+
+    #[test]
+    fn native_array_entry_snapshot_null_and_invalid_accesses_are_bounded() {
+        let null_snapshot = unsafe { phpc_native_array_entry_snapshot(NativeArrayHandle::null()) };
+        assert!(phpc_native_array_entry_snapshot_is_null(null_snapshot));
+        assert_eq!(
+            unsafe { phpc_native_array_entry_snapshot_len(null_snapshot) },
+            0
+        );
+        assert_eq!(
+            unsafe { phpc_native_array_entry_snapshot_key_at(null_snapshot, 0) }.tag(),
+            NativeArrayKeyTag::Invalid
+        );
+        assert!(
+            unsafe { phpc_native_array_entry_snapshot_string_clone_at(null_snapshot, 0) }.is_null()
+        );
+        assert!(
+            unsafe { phpc_native_array_entry_snapshot_key_value_clone_at(null_snapshot, 0) }
+                .is_null()
+        );
+        assert!(
+            unsafe { phpc_native_array_entry_snapshot_value_clone_at(null_snapshot, 0) }.is_null()
+        );
+        assert!(unsafe {
+            phpc_native_array_entry_snapshot_key_reference_clone_at(null_snapshot, 0)
+        }
+        .is_null());
+        assert!(unsafe {
+            phpc_native_array_entry_snapshot_value_reference_clone_at(null_snapshot, 0)
+        }
+        .is_null());
+        unsafe { phpc_native_array_entry_snapshot_free(null_snapshot) };
+
+        let array = phpc_native_array_empty();
+        assert!(unsafe { phpc_native_array_append_scalar(array, phpc_native_int(1)) });
+        let snapshot = unsafe { phpc_native_array_entry_snapshot(array) };
+        assert_eq!(
+            unsafe { phpc_native_array_entry_snapshot_key_at(snapshot, 1) }.tag(),
+            NativeArrayKeyTag::Invalid
+        );
+        assert!(
+            unsafe { phpc_native_array_entry_snapshot_value_reference_clone_at(snapshot, 1) }
+                .is_null()
+        );
+        assert!(
+            unsafe { phpc_native_reference_value_clone(NativeReferenceHandle::null()) }.is_null()
+        );
+        let value = NativeValueHandle::from_value(Value::Int(1));
+        assert!(!unsafe { phpc_native_reference_set_value(NativeReferenceHandle::null(), value) });
+
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_reference_free(NativeReferenceHandle::null()) };
+        unsafe { phpc_native_array_entry_snapshot_free(NativeArrayEntrySnapshotHandle::null()) };
+        unsafe { phpc_native_array_entry_snapshot_free(snapshot) };
         unsafe { phpc_native_array_free(array) };
     }
 
