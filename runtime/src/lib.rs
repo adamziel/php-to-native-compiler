@@ -4811,20 +4811,92 @@ pub extern "C" fn phpc_native_reference_compare(
 
 #[no_mangle]
 pub extern "C" fn phpc_native_object_compare(
-    _left: NativeObjectHandle,
+    left: NativeObjectHandle,
     op: u8,
-    _right: NativeObjectHandle,
+    right: NativeObjectHandle,
 ) -> NativeComparisonResult {
-    native_handle_comparison_blocker(op, ComparisonBlocker::NativeObjectHandle)
+    let operation = NativeComparisonOperation::from_opcode(op);
+    phpc_native_object_compare_operation(left, operation, right)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_object_compare_operation(
+    left: NativeObjectHandle,
+    operation: NativeComparisonOperation,
+    right: NativeObjectHandle,
+) -> NativeComparisonResult {
+    phpc_native_object_compare_operation_relation(left, operation, right)
+        .into_native_result(operation)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_object_compare_relation(
+    left: NativeObjectHandle,
+    op: u8,
+    right: NativeObjectHandle,
+) -> NativeComparisonRelationResult {
+    let operation = NativeComparisonOperation::from_opcode(op);
+    phpc_native_object_compare_operation_relation(left, operation, right)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_object_compare_operation_relation(
+    left: NativeObjectHandle,
+    operation: NativeComparisonOperation,
+    right: NativeObjectHandle,
+) -> NativeComparisonRelationResult {
+    native_handle_identity_compare_operation_relation_result(
+        left.ptr.cast(),
+        operation,
+        right.ptr.cast(),
+        "object",
+        ComparisonBlocker::NativeObjectHandle,
+    )
 }
 
 #[no_mangle]
 pub extern "C" fn phpc_native_resource_compare(
-    _left: NativeResourceHandle,
+    left: NativeResourceHandle,
     op: u8,
-    _right: NativeResourceHandle,
+    right: NativeResourceHandle,
 ) -> NativeComparisonResult {
-    native_handle_comparison_blocker(op, ComparisonBlocker::NativeResourceHandle)
+    let operation = NativeComparisonOperation::from_opcode(op);
+    phpc_native_resource_compare_operation(left, operation, right)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_resource_compare_operation(
+    left: NativeResourceHandle,
+    operation: NativeComparisonOperation,
+    right: NativeResourceHandle,
+) -> NativeComparisonResult {
+    phpc_native_resource_compare_operation_relation(left, operation, right)
+        .into_native_result(operation)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_resource_compare_relation(
+    left: NativeResourceHandle,
+    op: u8,
+    right: NativeResourceHandle,
+) -> NativeComparisonRelationResult {
+    let operation = NativeComparisonOperation::from_opcode(op);
+    phpc_native_resource_compare_operation_relation(left, operation, right)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_resource_compare_operation_relation(
+    left: NativeResourceHandle,
+    operation: NativeComparisonOperation,
+    right: NativeResourceHandle,
+) -> NativeComparisonRelationResult {
+    native_handle_identity_compare_operation_relation_result(
+        left.ptr.cast(),
+        operation,
+        right.ptr.cast(),
+        "resource",
+        ComparisonBlocker::NativeResourceHandle,
+    )
 }
 
 fn native_handle_comparison_blocker(op: u8, blocker: ComparisonBlocker) -> NativeComparisonResult {
@@ -4833,6 +4905,50 @@ fn native_handle_comparison_blocker(op: u8, blocker: ComparisonBlocker) -> Nativ
     };
 
     NativeComparisonResult::blocked_comparison(blocker)
+}
+
+fn native_handle_identity_compare_operation_relation_result(
+    left: *mut (),
+    operation: NativeComparisonOperation,
+    right: *mut (),
+    handle_kind: &'static str,
+    loose_blocker: ComparisonBlocker,
+) -> NativeComparisonRelationResult {
+    let op = match operation.php_operation() {
+        Ok(op) => op,
+        Err(NativeComparisonOutcome::Blocked(message)) => {
+            return NativeComparisonRelationResult::blocked(message, operation);
+        }
+        Err(NativeComparisonOutcome::Value(_)) => {
+            unreachable!("invalid comparison operations cannot produce successful outcomes")
+        }
+    };
+
+    if left.is_null() {
+        return NativeComparisonRelationResult::blocked(
+            format!("native comparison failed: left {handle_kind} handle is null"),
+            operation,
+        );
+    }
+    if right.is_null() {
+        return NativeComparisonRelationResult::blocked(
+            format!("native comparison failed: right {handle_kind} handle is null"),
+            operation,
+        );
+    }
+
+    if op
+        .operation_family()
+        .strict_identity_expectation()
+        .is_some()
+    {
+        return NativeComparisonRelationResult::ok(
+            ComparisonRelation::from_identity(left == right),
+            operation,
+        );
+    }
+
+    NativeComparisonRelationResult::blocked(loose_blocker.native_diagnostic_message(), operation)
 }
 
 fn native_comparison_op_from_abi(op: u8) -> Result<PhpComparisonOp, NativeComparisonOutcome> {
@@ -10945,10 +11061,10 @@ impl ComparisonBlocker {
                 family, operation, ..
             } => family.unsupported_comparison_reason(operation),
             Self::NativeObjectHandle => {
-                "native object handle comparisons require shared object identity and property comparison semantics"
+                "native object handle loose comparisons require shared object property comparison semantics"
             }
             Self::NativeResourceHandle => {
-                "native resource handle comparisons require shared resource identity semantics"
+                "native resource handle loose comparisons require shared resource comparison semantics"
             }
             Self::ReferenceDereference => {
                 "reference comparisons require shared reference dereference semantics"
@@ -11562,6 +11678,34 @@ mod tests {
         };
         unsafe { phpc_native_byte_buffer_free(buffer) };
         String::from_utf8(bytes).expect("runtime diagnostics should be valid UTF-8")
+    }
+
+    fn native_object_handle_for_test(raw: usize) -> NativeObjectHandle {
+        NativeObjectHandle {
+            ptr: raw as *mut NativeObject,
+        }
+    }
+
+    fn non_null_object_handle_for_test() -> NativeObjectHandle {
+        native_object_handle_for_test(1)
+    }
+
+    fn other_non_null_object_handle_for_test() -> NativeObjectHandle {
+        native_object_handle_for_test(2)
+    }
+
+    fn native_resource_handle_for_test(raw: usize) -> NativeResourceHandle {
+        NativeResourceHandle {
+            ptr: raw as *mut NativeResource,
+        }
+    }
+
+    fn non_null_resource_handle_for_test() -> NativeResourceHandle {
+        native_resource_handle_for_test(1)
+    }
+
+    fn other_non_null_resource_handle_for_test() -> NativeResourceHandle {
+        native_resource_handle_for_test(2)
     }
 
     fn assert_native_comparison_ok(label: &str, result: NativeComparisonResult, expected: bool) {
@@ -13004,20 +13148,20 @@ mod tests {
         assert_native_comparison_blocked(
             "object handle blocker",
             phpc_native_object_compare(
-                NativeObjectHandle::null(),
+                non_null_object_handle_for_test(),
                 NativeComparisonOp::LooseEq as u8,
-                NativeObjectHandle::null(),
+                other_non_null_object_handle_for_test(),
             ),
-            "native object handle comparisons require shared object identity",
+            "native object handle loose comparisons require shared object property comparison semantics",
         );
         assert_native_comparison_blocked(
             "resource handle blocker",
             phpc_native_resource_compare(
-                NativeResourceHandle::null(),
+                non_null_resource_handle_for_test(),
                 NativeComparisonOp::LooseEq as u8,
-                NativeResourceHandle::null(),
+                other_non_null_resource_handle_for_test(),
             ),
-            "native resource handle comparisons require shared resource identity",
+            "native resource handle loose comparisons require shared resource comparison semantics",
         );
         assert_native_comparison_blocked(
             "reference handle blocker",
@@ -13032,6 +13176,166 @@ mod tests {
         unsafe { phpc_native_array_free(left) };
         unsafe { phpc_native_array_free(same) };
         unsafe { phpc_native_array_free(different) };
+    }
+
+    #[test]
+    fn native_object_resource_handles_use_relation_result_for_strict_identity() {
+        fn assert_relation_ok(
+            label: &str,
+            result: NativeComparisonRelationResult,
+            expected_relation: NativeComparisonRelation,
+        ) {
+            assert_eq!(
+                phpc_native_comparison_relation_result_status(result),
+                NativeComparisonStatus::Ok as u8,
+                "{label} status",
+            );
+            assert_eq!(
+                phpc_native_comparison_relation_result_relation(result),
+                expected_relation as u8,
+                "{label} relation",
+            );
+            assert!(
+                phpc_native_comparison_relation_result_diagnostic(result).is_null(),
+                "{label} diagnostic",
+            );
+        }
+
+        let strict_eq =
+            phpc_native_comparison_operation_from_opcode(NativeComparisonOp::StrictEq as u8);
+        let strict_ne =
+            phpc_native_comparison_operation_from_opcode(NativeComparisonOp::StrictNe as u8);
+
+        for (label, left, right, expected_relation, expected_eq, expected_ne) in [
+            (
+                "object same handle",
+                non_null_object_handle_for_test(),
+                non_null_object_handle_for_test(),
+                NativeComparisonRelation::Equal,
+                true,
+                false,
+            ),
+            (
+                "object different handles",
+                non_null_object_handle_for_test(),
+                other_non_null_object_handle_for_test(),
+                NativeComparisonRelation::Different,
+                false,
+                true,
+            ),
+        ] {
+            let relation = phpc_native_object_compare_operation_relation(left, strict_eq, right);
+            assert_relation_ok(label, relation, expected_relation);
+
+            assert_native_comparison_ok(
+                label,
+                phpc_native_object_compare_operation(left, strict_eq, right),
+                expected_eq,
+            );
+
+            let decision = unsafe {
+                phpc_native_comparison_relation_result_decision_or_report_stderr_and_free(
+                    phpc_native_object_compare_operation_relation(left, strict_ne, right),
+                    strict_ne,
+                )
+            };
+            assert_eq!(
+                phpc_native_comparison_branch_decision_exit_code(decision),
+                0,
+                "{label} decision exit",
+            );
+            assert_eq!(
+                phpc_native_comparison_branch_decision_is_true(decision),
+                expected_ne,
+                "{label} decision value",
+            );
+        }
+
+        for (label, left, right, expected_relation, expected_eq, expected_ne) in [
+            (
+                "resource same handle",
+                non_null_resource_handle_for_test(),
+                non_null_resource_handle_for_test(),
+                NativeComparisonRelation::Equal,
+                true,
+                false,
+            ),
+            (
+                "resource different handles",
+                non_null_resource_handle_for_test(),
+                other_non_null_resource_handle_for_test(),
+                NativeComparisonRelation::Different,
+                false,
+                true,
+            ),
+        ] {
+            let relation = phpc_native_resource_compare_relation(
+                left,
+                NativeComparisonOp::StrictEq as u8,
+                right,
+            );
+            assert_relation_ok(label, relation, expected_relation);
+
+            assert_native_comparison_ok(
+                label,
+                phpc_native_resource_compare(left, NativeComparisonOp::StrictEq as u8, right),
+                expected_eq,
+            );
+
+            let decision = unsafe {
+                phpc_native_comparison_relation_result_decision_or_report_stderr_and_free(
+                    phpc_native_resource_compare_operation_relation(left, strict_ne, right),
+                    strict_ne,
+                )
+            };
+            assert_eq!(
+                phpc_native_comparison_branch_decision_exit_code(decision),
+                0,
+                "{label} decision exit",
+            );
+            assert_eq!(
+                phpc_native_comparison_branch_decision_is_true(decision),
+                expected_ne,
+                "{label} decision value",
+            );
+        }
+
+        assert_native_comparison_blocked(
+            "object loose comparison blocker",
+            phpc_native_object_compare(
+                non_null_object_handle_for_test(),
+                NativeComparisonOp::LooseEq as u8,
+                other_non_null_object_handle_for_test(),
+            ),
+            "native object handle loose comparisons require shared object property comparison semantics",
+        );
+        assert_native_comparison_blocked(
+            "resource loose comparison blocker",
+            phpc_native_resource_compare(
+                non_null_resource_handle_for_test(),
+                NativeComparisonOp::LooseGt as u8,
+                other_non_null_resource_handle_for_test(),
+            ),
+            "native resource handle loose comparisons require shared resource comparison semantics",
+        );
+        assert_native_comparison_blocked(
+            "object null strict blocker",
+            phpc_native_object_compare(
+                NativeObjectHandle::null(),
+                NativeComparisonOp::StrictEq as u8,
+                non_null_object_handle_for_test(),
+            ),
+            "left object handle is null",
+        );
+        assert_native_comparison_blocked(
+            "resource null strict blocker",
+            phpc_native_resource_compare(
+                non_null_resource_handle_for_test(),
+                NativeComparisonOp::StrictNe as u8,
+                NativeResourceHandle::null(),
+            ),
+            "right resource handle is null",
+        );
     }
 
     #[test]
