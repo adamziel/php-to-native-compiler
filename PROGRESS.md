@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 21:41 CEST
+Updated: 2026-05-21 21:50 CEST
 Evaluation marker: 20260521T194119Z
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local work is candidate material until selected, gated, committed, and pushed.
@@ -10,7 +10,7 @@ This is a high-level supervisor dashboard. Percentages are candid engineering es
 Estimated progress toward a broadly usable generalized PHP native compiler: **29%**
 
 ```
-Generalized runtime/ABI foundations      [##############------] 71%
+Generalized runtime/ABI foundations      [##############------] 72%
 Compiler/backend consumers               [#############-------] 66%
 Executable generalized PHP semantics     [#######-------------] 33%
 Arrays, references, COW, lvalues         [####----------------] 21%
@@ -21,9 +21,9 @@ Broad integrated verification            [####----------------] 21%
 
 ## Current Primary State
 
-- Primary semantic HEAD at this review: `a9823290 native: route array appends through diagnostic ABI`.
+- Primary semantic HEAD at this review: `09f97b8f runtime: track comparison blocker operand sides`.
 - Primary worktree status at live check: clean and synced with `origin/master`.
-- Latest integrated progress is semantic product work, not only metadata: generated-C array literal append lowering now uses a diagnostic-carrying runtime ABI.
+- Latest integrated progress is semantic product work, not only metadata: comparison blockers now carry operand side, value family, and operation-family context through the shared runtime path.
 - Resource caveat: `/dev/shm` was around 7.5-7.6G free during this review; broad primary gates should continue using disk-backed targets until headroom improves.
 
 ## Grand Roadmap Position
@@ -52,7 +52,7 @@ The product is still far from full generalized PHP. The largest missing regions 
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, byte buffers | 47% | 76% | Primary has shared value string-form semantics, numeric-string classification, selected generated-C string builtin consumers, and comparison byte materialization. Lanes add byte-source/view/result boundaries, tokenizer/parser/string-result execution, and interpreter output byte sinks. |
 | Call operation cleanup and ownership | 37% | 59% | Primary routes many call-result contexts through shared blockers. Lanes add callable-signature, sequence, direct-special-form preflight, and recovery contracts, but real frames, binding, by-ref args/returns, dynamic calls, and return ownership remain mostly non-executable. |
-| Comparison and conversion semantics | 54% | 68% | Primary has reusable comparison operation validation, branch/free/decision ABIs, direct operand-decision consumers, array-handle comparison consumers, and compare/cast/type-name value-result consumers. Loose array/object/resource/reference comparison, warning order, and LLVM parity remain open. |
+| Comparison and conversion semantics | 55% | 68% | Primary has reusable comparison operation validation, branch/free/decision ABIs, direct operand-decision consumers, array-handle comparison consumers, compare/cast/type-name value-result consumers, and operand-side/value-family/operation-aware comparison blockers. Loose array/object/resource/reference execution, warning order, and LLVM parity remain open. |
 | Arrays, lvalues, references, COW | 21% | 69% | Primary has array-key materialization, array value-operation result ABI, array-entry snapshots, array-handle comparisons, and diagnostic array append consumers. Lanes have stronger RMW, `??=`, owner-slot, foreach, reference-operation, and generated-C lvalue candidates; full executable lvalues/references/COW are not integrated. |
 | Symbols, globals, request state | 24% | 53% | Primary has symbol ABI helpers, request/superglobal snapshot ABI, and `defined()` interpolation routed through expression-result boundaries. Lanes add slot transition contracts, scalar linked symbol-table execution, and request-state blocker/presence consolidation. Mutable globals/superglobals and repeated-call state remain early. |
 | Objects, properties, methods | 10% | 43% | Lane-local object/class/property blockers and operation plans are improving. Primary still has little broad executable object/property/method behavior. |
@@ -62,6 +62,8 @@ The product is still far from full generalized PHP. The largest missing regions 
 
 ## Recent Primary-Integrated Work
 
+- `09f97b8f runtime: track comparison blocker operand sides`
+  - Replaces coarse array/object/resource comparison blockers with operand-side, value-family, and operation-family-aware blockers across loose comparison families. Focused runtime comparison blocker tests, runtime comparison suite, native-link comparison tests, package check, rustfmt, and diff checks passed. This improves generalized diagnostics/blocker routing across comparison families; it is still not loose array/object/resource/reference comparison execution.
 - `a9823290 native: route array appends through diagnostic ABI`
   - Adds a diagnostic-carrying native array append ABI and routes generated-C array literal appends through it. Runtime/source/linked executable/full `native_link`/`native_array`/cargo-check/rustfmt/diff gates passed. Remaining blockers include spreads, by-reference items, references/COW, exact diagnostics, nontrivial cleanup, and LLVM parity.
 - `edbb031b native: route comparison operands to decision ABI`
@@ -90,7 +92,7 @@ The project remains boundary-heavy. More result/blocker vocabulary without immed
 
 ## Near-Term Steering
 
-1. Treat `a9823290` as the latest integrated semantic baseline.
+1. Treat `09f97b8f` as the latest integrated semantic baseline.
 2. Prefer small executable generated-C/LLVM consumers of existing ABI surfaces over more standalone vocabulary.
 3. Strong next candidates: narrow array lvalue/reference operation consumers, LLVM parity for comparison or array append diagnostic boundaries, diagnostic-result producers feeding real generated-C reads/offsets, narrow binary string-result execution, or request-state consumers that replace real backend fallbacks.
 4. Avoid whole-lane merges; several lanes contain broad, conflict-prone, or non-executable contract work.
