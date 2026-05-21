@@ -2945,9 +2945,6 @@ impl LlvmGenerator {
         if args.len() != 1 {
             return Err(self.unsupported(span, LLVM_GLOBAL_CONSTANT_REJECTION));
         }
-        if matches!(args[0], Expr::InterpolatedString { .. }) {
-            return Err(self.unsupported(span, LLVM_GLOBAL_CONSTANT_REJECTION));
-        }
 
         let value = self.emit_expr(&args[0])?;
         self.defined_result_for_value(&value)
@@ -6881,9 +6878,6 @@ impl CGenerator {
         }
 
         if args.len() != 1 {
-            return Err(self.unsupported(span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION));
-        }
-        if matches!(args[0], Expr::InterpolatedString { .. }) {
             return Err(self.unsupported(span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION));
         }
 

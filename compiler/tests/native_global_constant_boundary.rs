@@ -7,6 +7,7 @@ use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
+const LLVM_INTERPOLATED_STRING_REJECTION: &str = "LLVM interpolated-string lowering rejects double-quoted string interpolation until native interpolation part evaluation, PHP-shaped string conversion, array/object lookup, __toString dispatch, runtime string allocation, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded interpolation behavior";
 
 #[test]
 fn phpc_run_still_handles_current_global_constant_subset() {
@@ -208,7 +209,7 @@ echo defined($name);
 }
 
 #[test]
-fn emit_ir_rejects_interpolated_defined_names_until_native_constant_tables_exist() {
+fn emit_ir_routes_interpolated_defined_names_through_expression_result_boundary() {
     let error = emit_ir_source(
         r#"<?php
 $constant = "CRYPTO_AUTH_BYTES";
@@ -219,12 +220,12 @@ echo defined("SODIUM_$constant");
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
+    assert_eq!(error.column, 14);
+    assert_eq!(error.message, LLVM_INTERPOLATED_STRING_REJECTION);
 }
 
 #[test]
-fn emit_asm_rejects_interpolated_defined_names_before_backend_execution() {
+fn emit_asm_routes_interpolated_defined_names_through_expression_result_boundary() {
     let error = emit_asm_source(
         r#"<?php
 $constant = "CRYPTO_AUTH_BYTES";
@@ -235,12 +236,12 @@ echo defined("SODIUM_$constant");
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
+    assert_eq!(error.column, 14);
+    assert_eq!(error.message, LLVM_INTERPOLATED_STRING_REJECTION);
 }
 
 #[test]
-fn emit_ir_rejects_braced_interpolated_defined_names_until_native_constant_tables_exist() {
+fn emit_ir_routes_braced_interpolated_defined_names_through_expression_result_boundary() {
     let error = emit_ir_source(
         r#"<?php
 $constant = "CRYPTO_AUTH_BYTES";
@@ -251,12 +252,12 @@ echo defined("SODIUM_{$constant}");
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
+    assert_eq!(error.column, 14);
+    assert_eq!(error.message, LLVM_INTERPOLATED_STRING_REJECTION);
 }
 
 #[test]
-fn emit_asm_rejects_braced_interpolated_defined_names_before_backend_execution() {
+fn emit_asm_routes_braced_interpolated_defined_names_through_expression_result_boundary() {
     let error = emit_asm_source(
         r#"<?php
 $constant = "CRYPTO_AUTH_BYTES";
@@ -267,8 +268,8 @@ echo defined("SODIUM_{$constant}");
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
+    assert_eq!(error.column, 14);
+    assert_eq!(error.message, LLVM_INTERPOLATED_STRING_REJECTION);
 }
 
 #[test]
