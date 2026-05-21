@@ -196,6 +196,17 @@ const NATIVE_VALUE_CAST_INT: u8 = 1;
 const NATIVE_VALUE_CAST_BOOL: u8 = 2;
 const NATIVE_VALUE_CAST_FLOAT: u8 = 3;
 const NATIVE_VALUE_CAST_ARRAY: u8 = 4;
+const NATIVE_VALUE_TYPE_IS_NULL: u8 = 0;
+const NATIVE_VALUE_TYPE_IS_BOOL: u8 = 1;
+const NATIVE_VALUE_TYPE_IS_INT: u8 = 2;
+const NATIVE_VALUE_TYPE_IS_FLOAT: u8 = 3;
+const NATIVE_VALUE_TYPE_IS_STRING: u8 = 4;
+const NATIVE_VALUE_TYPE_IS_ARRAY: u8 = 5;
+const NATIVE_VALUE_TYPE_IS_SCALAR: u8 = 6;
+const NATIVE_VALUE_TYPE_IS_NUMERIC: u8 = 7;
+const NATIVE_VALUE_TYPE_IS_COUNTABLE: u8 = 8;
+const NATIVE_VALUE_TYPE_IS_ITERABLE: u8 = 9;
+const NATIVE_VALUE_TYPE_IS_OBJECT: u8 = 10;
 const NATIVE_VALUE_TYPE_NAME_GETTYPE: u8 = 0;
 const NATIVE_VALUE_TYPE_NAME_DEBUG: u8 = 1;
 
@@ -10459,6 +10470,38 @@ fn native_value_cast_blocker(value: &Value, op: u8) -> Option<String> {
 /// # Safety
 ///
 /// `value` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. Null handles are treated as PHP null. `predicate` is
+/// a native value type-predicate tag for PHP `is_*` builtin families.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_type_predicate(
+    value: NativeValueHandle,
+    predicate: u8,
+) -> bool {
+    let null_value = Value::Null;
+    let value = unsafe { value.as_ref() }.unwrap_or(&null_value);
+    native_value_type_predicate(value, predicate).unwrap_or(false)
+}
+
+fn native_value_type_predicate(value: &Value, predicate: u8) -> Option<bool> {
+    match predicate {
+        NATIVE_VALUE_TYPE_IS_NULL => Some(matches!(value, Value::Null)),
+        NATIVE_VALUE_TYPE_IS_BOOL => Some(matches!(value, Value::Bool(_))),
+        NATIVE_VALUE_TYPE_IS_INT => Some(matches!(value, Value::Int(_))),
+        NATIVE_VALUE_TYPE_IS_FLOAT => Some(matches!(value, Value::Float(_))),
+        NATIVE_VALUE_TYPE_IS_STRING => Some(matches!(value, Value::String(_))),
+        NATIVE_VALUE_TYPE_IS_ARRAY => Some(matches!(value, Value::Array(_))),
+        NATIVE_VALUE_TYPE_IS_SCALAR => Some(value.is_scalar()),
+        NATIVE_VALUE_TYPE_IS_NUMERIC => Some(value.is_numeric()),
+        NATIVE_VALUE_TYPE_IS_COUNTABLE => Some(value.is_countable()),
+        NATIVE_VALUE_TYPE_IS_ITERABLE => Some(value.is_iterable()),
+        NATIVE_VALUE_TYPE_IS_OBJECT => Some(matches!(value, Value::Object(_) | Value::Closure(_))),
+        _ => None,
+    }
+}
+
+/// # Safety
+///
+/// `value` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. Null handles are treated as PHP null. The result
 /// carries either an owned PHP string value handle or a diagnostic explaining
 /// the unsupported semantic family.
@@ -11537,6 +11580,70 @@ mod tests {
         unsafe { phpc_native_value_free(smaller_value) };
         unsafe { phpc_native_value_free(numeric_string) };
         unsafe { phpc_native_value_free(int_value) };
+    }
+
+    #[test]
+    fn native_value_type_predicate_classifies_value_families() {
+        let bool_value = phpc_native_value_from_scalar(phpc_native_bool(true));
+        let int_value = phpc_native_value_from_scalar(phpc_native_int(7));
+        let float_value = phpc_native_value_from_scalar(phpc_native_float(2.5));
+        let numeric_string = NativeValueHandle::from_value(Value::String("42".to_string()));
+        let text_string = NativeValueHandle::from_value(Value::String("forty-two".to_string()));
+        let mut array = PhpArray::new();
+        array.insert(ArrayKey::Int(0), Value::String("slot".to_string()));
+        let array_value = NativeValueHandle::from_value(Value::Array(array));
+        let resource_value = NativeValueHandle::from_value(Value::Resource(9));
+        let closure_value =
+            NativeValueHandle::from_value(Value::Closure(PhpClosure::new(1, false, Vec::new())));
+
+        assert!(unsafe {
+            phpc_native_value_type_predicate(NativeValueHandle::null(), NATIVE_VALUE_TYPE_IS_NULL)
+        });
+        assert!(unsafe { phpc_native_value_type_predicate(bool_value, NATIVE_VALUE_TYPE_IS_BOOL) });
+        assert!(unsafe { phpc_native_value_type_predicate(int_value, NATIVE_VALUE_TYPE_IS_INT) });
+        assert!(unsafe {
+            phpc_native_value_type_predicate(float_value, NATIVE_VALUE_TYPE_IS_FLOAT)
+        });
+        assert!(unsafe {
+            phpc_native_value_type_predicate(numeric_string, NATIVE_VALUE_TYPE_IS_STRING)
+        });
+        assert!(unsafe {
+            phpc_native_value_type_predicate(array_value, NATIVE_VALUE_TYPE_IS_ARRAY)
+        });
+        assert!(unsafe {
+            phpc_native_value_type_predicate(int_value, NATIVE_VALUE_TYPE_IS_SCALAR)
+        });
+        assert!(unsafe {
+            phpc_native_value_type_predicate(numeric_string, NATIVE_VALUE_TYPE_IS_NUMERIC)
+        });
+        assert!(!unsafe {
+            phpc_native_value_type_predicate(text_string, NATIVE_VALUE_TYPE_IS_NUMERIC)
+        });
+        assert!(unsafe {
+            phpc_native_value_type_predicate(array_value, NATIVE_VALUE_TYPE_IS_COUNTABLE)
+        });
+        assert!(unsafe {
+            phpc_native_value_type_predicate(array_value, NATIVE_VALUE_TYPE_IS_ITERABLE)
+        });
+        assert!(unsafe {
+            phpc_native_value_type_predicate(closure_value, NATIVE_VALUE_TYPE_IS_OBJECT)
+        });
+        assert!(!unsafe {
+            phpc_native_value_type_predicate(resource_value, NATIVE_VALUE_TYPE_IS_OBJECT)
+        });
+        assert!(!unsafe {
+            phpc_native_value_type_predicate(int_value, NATIVE_VALUE_TYPE_IS_ARRAY)
+        });
+        assert!(!unsafe { phpc_native_value_type_predicate(int_value, u8::MAX) });
+
+        unsafe { phpc_native_value_free(closure_value) };
+        unsafe { phpc_native_value_free(resource_value) };
+        unsafe { phpc_native_value_free(array_value) };
+        unsafe { phpc_native_value_free(text_string) };
+        unsafe { phpc_native_value_free(numeric_string) };
+        unsafe { phpc_native_value_free(float_value) };
+        unsafe { phpc_native_value_free(int_value) };
+        unsafe { phpc_native_value_free(bool_value) };
     }
 
     #[test]

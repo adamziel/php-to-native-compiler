@@ -728,6 +728,23 @@ fn native_value_type_name_tag(name: &str) -> Option<&'static str> {
     }
 }
 
+fn native_value_type_predicate_tag(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "is_null" => Some("PHPC_NATIVE_VALUE_TYPE_IS_NULL"),
+        "is_bool" => Some("PHPC_NATIVE_VALUE_TYPE_IS_BOOL"),
+        "is_int" | "is_integer" | "is_long" => Some("PHPC_NATIVE_VALUE_TYPE_IS_INT"),
+        "is_float" | "is_double" => Some("PHPC_NATIVE_VALUE_TYPE_IS_FLOAT"),
+        "is_string" => Some("PHPC_NATIVE_VALUE_TYPE_IS_STRING"),
+        "is_array" => Some("PHPC_NATIVE_VALUE_TYPE_IS_ARRAY"),
+        "is_scalar" => Some("PHPC_NATIVE_VALUE_TYPE_IS_SCALAR"),
+        "is_numeric" => Some("PHPC_NATIVE_VALUE_TYPE_IS_NUMERIC"),
+        "is_countable" => Some("PHPC_NATIVE_VALUE_TYPE_IS_COUNTABLE"),
+        "is_iterable" => Some("PHPC_NATIVE_VALUE_TYPE_IS_ITERABLE"),
+        "is_object" => Some("PHPC_NATIVE_VALUE_TYPE_IS_OBJECT"),
+        _ => None,
+    }
+}
+
 fn native_value_result_expr_call_operation(
     expr: &Expr,
     blocker: NativeCallBlocker,
@@ -5994,6 +6011,17 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_VALUE_CAST_BOOL 2\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_CAST_FLOAT 3\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_CAST_ARRAY 4\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_NULL 0\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_BOOL 1\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_INT 2\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_FLOAT 3\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_STRING 4\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_ARRAY 5\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_SCALAR 6\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_NUMERIC 7\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_COUNTABLE 8\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_ITERABLE 9\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_OBJECT 10\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_GETTYPE 0\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_DEBUG 1\n");
             }
@@ -6032,6 +6060,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_bitwise_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic(phpc_NativeValueHandle value, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_type_name_result(phpc_NativeValueHandle value, uint8_t kind);\n");
+                output.push_str("extern bool phpc_native_value_type_predicate(phpc_NativeValueHandle value, uint8_t predicate);\n");
                 output.push_str("extern bool phpc_native_array_insert_key_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_array_read_key_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_array_key_materialization_result_free(phpc_NativeArrayKeyMaterializationResult key);\n");
@@ -7157,6 +7186,14 @@ impl CGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<CValue> {
+        if args.len() == 1 {
+            if let Some(predicate_tag) = native_value_type_predicate_tag(name) {
+                if let Some(value) = self.try_materialize_native_value_result_expr(&args[0], "")? {
+                    return Ok(self.emit_native_value_type_predicate(value, predicate_tag));
+                }
+            }
+        }
+
         if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
             return Err(self.unsupported_call_operation(operation));
         }
@@ -10137,6 +10174,21 @@ impl CGenerator {
                 ));
             },
         )
+    }
+
+    fn emit_native_value_type_predicate(
+        &mut self,
+        value: CNativeValueMaterialization,
+        predicate_tag: &str,
+    ) -> CValue {
+        self.uses_native_array_helpers = true;
+        let value_handle = value.handle.clone();
+        let result = self.next_native_name("native_value_type_predicate");
+        self.body.push(format!(
+            "bool {result} = phpc_native_value_type_predicate({value_handle}, {predicate_tag});"
+        ));
+        self.body.extend(value.cleanup_after_use);
+        CValue::BoolExpr(result)
     }
 
     fn emit_native_value_result_handle(

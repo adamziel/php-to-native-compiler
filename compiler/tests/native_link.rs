@@ -1243,6 +1243,8 @@ const NATIVE_VALUE_BITWISE_SOURCE: &str = "<?php\n$a = [];\n$a[\"and\"] = \"B\" 
 
 const NATIVE_VALUE_COMPARE_CAST_TYPE_NAME_SOURCE: &str = "<?php\n$a = [];\n$a[(int)\"5\"] = (string)((2 + 3) > 4);\n$a[(int)(3 <= 2)] = get_debug_type((string)123);\n$a[(float)\"3\"] = gettype((float)\"3.5\");\necho $a[5], \"|\", $a[0], \"|\", $a[3];\n";
 
+const NATIVE_VALUE_TYPE_PREDICATE_SOURCE: &str = "<?php\necho is_int(\"6\" + 1), \"|\";\necho is_float(\"7\" / 2), \"|\";\necho is_string((string)(2 + 3)), \"|\";\necho is_bool((2 + 3) > 4), \"|\";\necho is_array((array)\"x\"), \"|\";\necho is_scalar(gettype((float)\"3.5\")), \"|\";\necho is_numeric((string)(2 + 3)), \"|\";\necho is_countable((array)null), \"|\";\necho is_iterable((array)\"x\"), \"|\";\necho is_null((array)null), \"|\";\necho is_object((array)\"x\");\n";
+
 const NATIVE_VALUE_CAST_ECHO_SOURCE: &str = "<?php\necho (int)\"5.9\", \"|\";\necho (float)\"3.5\", \"|\";\necho (string)(2 + 3), \"|\";\necho (bool)\"0\", \"|\";\necho gettype((string)123);\n";
 
 const NATIVE_VALUE_OPERATION_ECHO_SOURCE: &str = "<?php\n$left = \"6\";\n$right = 2;\necho -$left, \"|\";\necho $left + $right, \"|\";\necho $left / $right, \"|\";\necho \"A\" . \"\0B\", \"|\";\necho \"B\" & \"A\", \"|\";\necho 8 << \"1\";\n";
@@ -1615,6 +1617,96 @@ fn emit_exe_links_and_runs_native_compare_cast_type_name_result_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"1|string|double");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn native_executable_c_source_routes_type_predicates_through_value_result_abi() {
+    let program = parse(NATIVE_VALUE_TYPE_PREDICATE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains(
+            "extern bool phpc_native_value_type_predicate(phpc_NativeValueHandle value, uint8_t predicate);"
+        ),
+        "{source}"
+    );
+
+    for tag in [
+        "PHPC_NATIVE_VALUE_TYPE_IS_NULL",
+        "PHPC_NATIVE_VALUE_TYPE_IS_BOOL",
+        "PHPC_NATIVE_VALUE_TYPE_IS_INT",
+        "PHPC_NATIVE_VALUE_TYPE_IS_FLOAT",
+        "PHPC_NATIVE_VALUE_TYPE_IS_STRING",
+        "PHPC_NATIVE_VALUE_TYPE_IS_ARRAY",
+        "PHPC_NATIVE_VALUE_TYPE_IS_SCALAR",
+        "PHPC_NATIVE_VALUE_TYPE_IS_NUMERIC",
+        "PHPC_NATIVE_VALUE_TYPE_IS_COUNTABLE",
+        "PHPC_NATIVE_VALUE_TYPE_IS_ITERABLE",
+        "PHPC_NATIVE_VALUE_TYPE_IS_OBJECT",
+    ] {
+        assert!(source.contains(tag), "{tag}\n\n{source}");
+    }
+
+    assert_eq!(
+        source
+            .matches(" = phpc_native_value_type_predicate(")
+            .count(),
+        11,
+        "{source}"
+    );
+    assert!(
+        source.contains(" = phpc_native_value_binary_result(")
+            && source.contains(" = phpc_native_value_compare_result(")
+            && source.contains(" = phpc_native_value_cast_operation_with_diagnostic(")
+            && source.contains(" = phpc_native_value_type_name_result("),
+        "type predicates should consume existing value-result operation, comparison, cast, and type-name materialization:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_type_predicate_value_result_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php =
+        native_link_output_path("native_type_predicate_value_result").with_extension("php");
+    fs::write(&temp_php, NATIVE_VALUE_TYPE_PREDICATE_SOURCE)
+        .expect("write native type-predicate value-result fixture");
+    let output_path = native_link_output_path("native_type_predicate_value_result");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1|1|1|1|1|1|1|1|1||");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
