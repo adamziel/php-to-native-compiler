@@ -538,6 +538,16 @@ fn native_statement_operand_call_operation(stmt: &Stmt) -> Option<NativeCallOper
         Stmt::ReferenceAssign { target, source, .. } => {
             native_reference_assignment_call_operation(target, source)
         }
+        Stmt::UnsetArrayIndex { index, .. } => native_lvalue_operand_call_result_operation(index),
+        Stmt::UnsetNestedArrayIndex { indices, .. } => {
+            native_expr_list_call_result_operation(indices)
+        }
+        Stmt::UnsetDynamicObjectProperty { property, .. } => {
+            native_lvalue_operand_call_result_operation(property)
+        }
+        Stmt::UnsetMany { targets, .. } => {
+            targets.iter().find_map(native_unset_target_call_operation)
+        }
         Stmt::Namespace { .. }
         | Stmt::Use { .. }
         | Stmt::Echo { .. }
@@ -551,15 +561,11 @@ fn native_statement_operand_call_operation(stmt: &Stmt) -> Option<NativeCallOper
         | Stmt::Enum(_)
         | Stmt::Class(_)
         | Stmt::UnsetVariable { .. }
-        | Stmt::UnsetArrayIndex { .. }
-        | Stmt::UnsetNestedArrayIndex { .. }
         | Stmt::UnsetObjectProperty { .. }
-        | Stmt::UnsetDynamicObjectProperty { .. }
         | Stmt::UnsetStaticProperty { .. }
         | Stmt::UnsetSelfStaticProperty { .. }
         | Stmt::UnsetParentStaticProperty { .. }
         | Stmt::UnsetLateStaticProperty { .. }
-        | Stmt::UnsetMany { .. }
         | Stmt::Return { value: None, .. }
         | Stmt::Try { .. }
         | Stmt::Break { .. }
@@ -2279,29 +2285,16 @@ impl LlvmGenerator {
             Stmt::UnsetObjectProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
-            Stmt::UnsetDynamicObjectProperty { property, span, .. } => {
-                if let Some(operation) = native_lvalue_operand_call_result_operation(property) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
+            Stmt::UnsetDynamicObjectProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
-            Stmt::UnsetArrayIndex { index, span, .. } => {
-                if let Some(operation) = native_lvalue_operand_call_result_operation(index) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
+            Stmt::UnsetArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            Stmt::UnsetNestedArrayIndex { indices, span, .. } => {
-                if let Some(operation) = native_expr_list_call_result_operation(indices) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
+            Stmt::UnsetNestedArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             Stmt::UnsetMany { targets, span } => {
-                if let Some(operation) = targets.iter().find_map(native_unset_target_call_operation)
-                {
-                    return Err(self.unsupported_call_operation(operation));
-                }
                 if targets
                     .iter()
                     .any(is_object_property_array_access_unset_target)
@@ -5630,29 +5623,16 @@ impl CGenerator {
             Stmt::UnsetObjectProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Stmt::UnsetDynamicObjectProperty { property, span, .. } => {
-                if let Some(operation) = native_lvalue_operand_call_result_operation(property) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
+            Stmt::UnsetDynamicObjectProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Stmt::UnsetArrayIndex { index, span, .. } => {
-                if let Some(operation) = native_lvalue_operand_call_result_operation(index) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
+            Stmt::UnsetArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Stmt::UnsetNestedArrayIndex { indices, span, .. } => {
-                if let Some(operation) = native_expr_list_call_result_operation(indices) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
+            Stmt::UnsetNestedArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             Stmt::UnsetMany { targets, span } => {
-                if let Some(operation) = targets.iter().find_map(native_unset_target_call_operation)
-                {
-                    return Err(self.unsupported_call_operation(operation));
-                }
                 if targets
                     .iter()
                     .any(is_object_property_array_access_unset_target)
@@ -10453,6 +10433,93 @@ mod tests {
 
         assert_eq!(
             native_unset_target_call_operation(&UnsetTarget::ArrayIndex {
+                name: "items".to_string(),
+                index: Expr::String("plain".to_string(), span),
+                span,
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn native_statement_operand_call_operation_classifies_unset_lvalue_cleanup() {
+        let span = test_span();
+
+        for (stmt, operation) in [
+            (
+                Stmt::UnsetArrayIndex {
+                    name: "items".to_string(),
+                    index: Expr::Call {
+                        name: "key_name".to_string(),
+                        args: vec![Expr::Int(1, span)],
+                        span,
+                    },
+                    span,
+                },
+                NativeCallOperation::direct_named_value(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                Stmt::UnsetNestedArrayIndex {
+                    name: "items".to_string(),
+                    indices: vec![Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("key_factory")),
+                        args: vec![Expr::String("slot".to_string(), span)],
+                        span,
+                    }],
+                    span,
+                },
+                NativeCallOperation::dynamic_value_with_blocker(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                Stmt::UnsetDynamicObjectProperty {
+                    object: "box".to_string(),
+                    property: Expr::MethodCall {
+                        target: Box::new(test_variable_expr("namer")),
+                        method: "property".to_string(),
+                        args: vec![Expr::Bool(true, span)],
+                        span,
+                    },
+                    span,
+                },
+                NativeCallOperation::method_value_with_blocker(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                Stmt::UnsetMany {
+                    targets: vec![UnsetTarget::DynamicObjectPropertyArrayIndex {
+                        object: "box".to_string(),
+                        property: Expr::New {
+                            class_name: crate::ast::NewClassName::Named("Key".to_string()),
+                            args: vec![Expr::Int(2, span)],
+                            span,
+                        },
+                        indices: vec![Expr::Int(0, span)],
+                        span,
+                    }],
+                    span,
+                },
+                NativeCallOperation::constructor_value(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+        ] {
+            assert_eq!(
+                native_statement_operand_call_operation(&stmt),
+                Some(operation)
+            );
+        }
+
+        assert_eq!(
+            native_statement_operand_call_operation(&Stmt::UnsetArrayIndex {
                 name: "items".to_string(),
                 index: Expr::String("plain".to_string(), span),
                 span,
