@@ -324,6 +324,64 @@ impl NativeCallOperation {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum NativeCallDiagnosticSubject<'a> {
+    Operation(NativeCallOperation),
+    CallRoot(&'a Expr),
+    FunctionFrame(&'a FunctionDecl),
+    ReturnStatement(Span),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NativeCallDiagnostics {
+    backend: NativeCallBackend,
+}
+
+impl NativeCallDiagnosticSubject<'_> {
+    fn operation(self) -> NativeCallOperation {
+        match self {
+            Self::Operation(operation) => operation,
+            Self::CallRoot(expr) => native_call_root_operation(expr)
+                .expect("native call diagnostic root must be a call expression"),
+            Self::FunctionFrame(function) => NativeCallOperation::function_frame(
+                function.span,
+                native_function_frame_blocker(function),
+            ),
+            Self::ReturnStatement(span) => NativeCallOperation::return_value(span),
+        }
+    }
+}
+
+impl NativeCallDiagnostics {
+    fn new(backend: NativeCallBackend) -> Self {
+        Self { backend }
+    }
+
+    fn operation(self, operation: NativeCallOperation) -> Diagnostic {
+        self.subject(NativeCallDiagnosticSubject::Operation(operation))
+    }
+
+    fn direct_call(self, span: Span, blocker: NativeCallBlocker) -> Diagnostic {
+        self.operation(NativeCallOperation::direct_named_value(span, blocker))
+    }
+
+    fn call_root(self, expr: &Expr) -> Diagnostic {
+        self.subject(NativeCallDiagnosticSubject::CallRoot(expr))
+    }
+
+    fn function_frame(self, function: &FunctionDecl) -> Diagnostic {
+        self.subject(NativeCallDiagnosticSubject::FunctionFrame(function))
+    }
+
+    fn return_statement(self, span: Span) -> Diagnostic {
+        self.subject(NativeCallDiagnosticSubject::ReturnStatement(span))
+    }
+
+    fn subject(self, subject: NativeCallDiagnosticSubject<'_>) -> Diagnostic {
+        native_call_operation_diagnostic(self.backend, subject.operation())
+    }
+}
+
 fn native_function_frame_blocker(function: &FunctionDecl) -> NativeCallBlocker {
     native_callable_frame_blocker(&function.params, function.returns_by_reference)
 }
@@ -1353,6 +1411,21 @@ fn native_value_call_operation_for_expr(expr: &Expr) -> Option<NativeCallOperati
     })
 }
 
+fn native_call_root_operation(expr: &Expr) -> Option<NativeCallOperation> {
+    match expr {
+        Expr::Closure {
+            params,
+            returns_by_reference,
+            span,
+            ..
+        } => Some(NativeCallOperation::closure_frame(
+            *span,
+            native_closure_frame_blocker(params, *returns_by_reference),
+        )),
+        _ => native_value_call_operation_for_expr(expr),
+    }
+}
+
 fn native_call_args_for_expr(expr: &Expr) -> &[Expr] {
     match expr {
         Expr::MethodCall { args, .. }
@@ -1388,6 +1461,18 @@ fn native_call_blocker_message(
         }
         NativeCallCallee::ClosureFrame => native_closure_frame_blocker_message(backend, operation),
     }
+}
+
+fn native_call_operation_diagnostic(
+    backend: NativeCallBackend,
+    operation: NativeCallOperation,
+) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Codegen,
+        operation.span.line,
+        operation.span.column,
+        native_call_blocker_message(backend, operation),
+    )
 }
 
 fn native_direct_call_blocker_message(
@@ -2470,12 +2555,7 @@ impl LlvmGenerator {
                 if let Some(span) = find_static_local_span(&function.body) {
                     return Err(self.unsupported(span, LLVM_STATIC_LOCAL_REJECTION));
                 }
-                Err(
-                    self.unsupported_call_operation(NativeCallOperation::function_frame(
-                        function.span,
-                        native_function_frame_blocker(function),
-                    )),
-                )
+                Err(self.native_call_diagnostics().function_frame(function))
             }
             Stmt::Interface(interface) => {
                 Err(self.unsupported(interface.span, LLVM_INTERFACE_REJECTION))
@@ -2539,7 +2619,7 @@ impl LlvmGenerator {
             Stmt::Throw { span, .. } => Err(self.unsupported(*span, LLVM_EXCEPTION_REJECTION)),
             Stmt::Try { span, .. } => Err(self.unsupported(*span, LLVM_TRY_BLOCK_REJECTION)),
             Stmt::Return { span, .. } => {
-                Err(self.unsupported_call_operation(NativeCallOperation::return_value(*span)))
+                Err(self.native_call_diagnostics().return_statement(*span))
             }
             Stmt::Global { span, .. } => {
                 Err(self.unsupported(*span, LLVM_GLOBAL_DECLARATION_REJECTION))
@@ -2761,17 +2841,7 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(*span, LLVM_INSTANCEOF_REJECTION))
             }
-            Expr::Closure {
-                params,
-                returns_by_reference,
-                span,
-                ..
-            } => Err(
-                self.unsupported_call_operation(NativeCallOperation::closure_frame(
-                    *span,
-                    native_closure_frame_blocker(params, *returns_by_reference),
-                )),
-            ),
+            Expr::Closure { .. } => Err(self.native_call_diagnostics().call_root(expr)),
             Expr::New { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Clone { span, .. } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
@@ -5413,15 +5483,16 @@ impl LlvmGenerator {
         name
     }
 
+    fn native_call_diagnostics(&self) -> NativeCallDiagnostics {
+        NativeCallDiagnostics::new(NativeCallBackend::Llvm)
+    }
+
     fn unsupported_call_operation(&self, operation: NativeCallOperation) -> Diagnostic {
-        self.unsupported(
-            operation.span,
-            native_call_blocker_message(NativeCallBackend::Llvm, operation),
-        )
+        self.native_call_diagnostics().operation(operation)
     }
 
     fn unsupported_direct_call(&self, span: Span, blocker: NativeCallBlocker) -> Diagnostic {
-        self.unsupported_call_operation(NativeCallOperation::direct_named_value(span, blocker))
+        self.native_call_diagnostics().direct_call(span, blocker)
     }
 
     fn unsupported_direct_named_call(
@@ -5501,10 +5572,7 @@ impl LlvmGenerator {
     }
 
     fn unsupported_value_call(&self, expr: &Expr) -> Diagnostic {
-        self.unsupported_call_operation(
-            native_value_call_operation_for_expr(expr)
-                .expect("native value-call blocker called for a call expression"),
-        )
+        self.native_call_diagnostics().call_root(expr)
     }
 
     fn unsupported(&self, span: Span, message: impl Into<String>) -> Diagnostic {
@@ -5985,7 +6053,12 @@ impl CGenerator {
                             ));
                         }
                     };
-                    self.emit_echo(value, expr.span())?;
+                    if let Err(error) = self.emit_echo(value, expr.span()) {
+                        return Err(self.unsupported_unemitted_statement_operands_or_original(
+                            &exprs[index + 1..],
+                            error,
+                        ));
+                    }
                 }
                 Ok(())
             }
@@ -6026,12 +6099,7 @@ impl CGenerator {
                 if let Some(span) = find_static_local_span(&function.body) {
                     return Err(self.unsupported(span, ASSEMBLY_STATIC_LOCAL_REJECTION));
                 }
-                Err(
-                    self.unsupported_call_operation(NativeCallOperation::function_frame(
-                        function.span,
-                        native_function_frame_blocker(function),
-                    )),
-                )
+                Err(self.native_call_diagnostics().function_frame(function))
             }
             Stmt::Interface(interface) => {
                 Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION))
@@ -6097,7 +6165,7 @@ impl CGenerator {
             Stmt::Throw { span, .. } => Err(self.unsupported(*span, ASSEMBLY_EXCEPTION_REJECTION)),
             Stmt::Try { span, .. } => Err(self.unsupported(*span, ASSEMBLY_TRY_BLOCK_REJECTION)),
             Stmt::Return { span, .. } => {
-                Err(self.unsupported_call_operation(NativeCallOperation::return_value(*span)))
+                Err(self.native_call_diagnostics().return_statement(*span))
             }
             Stmt::Global { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_DECLARATION_REJECTION))
@@ -6306,17 +6374,7 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_INSTANCEOF_REJECTION))
             }
-            Expr::Closure {
-                params,
-                returns_by_reference,
-                span,
-                ..
-            } => Err(
-                self.unsupported_call_operation(NativeCallOperation::closure_frame(
-                    *span,
-                    native_closure_frame_blocker(params, *returns_by_reference),
-                )),
-            ),
+            Expr::Closure { .. } => Err(self.native_call_diagnostics().call_root(expr)),
             Expr::New { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Clone { span, .. } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
@@ -10035,15 +10093,16 @@ impl CGenerator {
             .push(format!("phpc_native_string_free(string_{index});"));
     }
 
+    fn native_call_diagnostics(&self) -> NativeCallDiagnostics {
+        NativeCallDiagnostics::new(NativeCallBackend::Assembly)
+    }
+
     fn unsupported_call_operation(&self, operation: NativeCallOperation) -> Diagnostic {
-        self.unsupported(
-            operation.span,
-            native_call_blocker_message(NativeCallBackend::Assembly, operation),
-        )
+        self.native_call_diagnostics().operation(operation)
     }
 
     fn unsupported_direct_call(&self, span: Span, blocker: NativeCallBlocker) -> Diagnostic {
-        self.unsupported_call_operation(NativeCallOperation::direct_named_value(span, blocker))
+        self.native_call_diagnostics().direct_call(span, blocker)
     }
 
     fn unsupported_direct_named_call(
@@ -10123,10 +10182,7 @@ impl CGenerator {
     }
 
     fn unsupported_value_call(&self, expr: &Expr) -> Diagnostic {
-        self.unsupported_call_operation(
-            native_value_call_operation_for_expr(expr)
-                .expect("native value-call blocker called for a call expression"),
-        )
+        self.native_call_diagnostics().call_root(expr)
     }
 
     fn unsupported(&self, span: Span, message: impl Into<String>) -> Diagnostic {
@@ -12748,6 +12804,111 @@ echo " 10" < "zeta";
                 span,
                 NativeCallBlocker::StatementOperandEvaluationCleanup,
             ))
+        );
+    }
+
+    #[test]
+    fn native_call_diagnostics_centralizes_backend_recovery_across_call_families() {
+        let span = test_span();
+        let function_frame = test_function(Vec::new(), false);
+        let by_ref_function_frame = test_function(vec![test_param(true, false)], false);
+        let closure_expr = test_closure_expr(Vec::new(), false);
+
+        for (diagnostics, expr, expected) in [
+            (
+                NativeCallDiagnostics::new(NativeCallBackend::Llvm),
+                Expr::Call {
+                    name: "produce".to_string(),
+                    args: Vec::new(),
+                    span,
+                },
+                LLVM_FUNCTION_CALL_REJECTION,
+            ),
+            (
+                NativeCallDiagnostics::new(NativeCallBackend::Assembly),
+                Expr::DynamicCall {
+                    callee: Box::new(test_variable_expr("produce")),
+                    args: vec![Expr::String("value".to_string(), span)],
+                    span,
+                },
+                ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+            ),
+            (
+                NativeCallDiagnostics::new(NativeCallBackend::Llvm),
+                Expr::StaticMethodCall {
+                    class_name: "Box".to_string(),
+                    method: "produce".to_string(),
+                    args: vec![Expr::Bool(true, span)],
+                    span,
+                },
+                LLVM_METHOD_CALL_REJECTION,
+            ),
+            (
+                NativeCallDiagnostics::new(NativeCallBackend::Assembly),
+                Expr::New {
+                    class_name: crate::ast::NewClassName::Named("Value".to_string()),
+                    args: vec![Expr::Int(1, span)],
+                    span,
+                },
+                ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+            ),
+            (
+                NativeCallDiagnostics::new(NativeCallBackend::Llvm),
+                closure_expr.clone(),
+                LLVM_CLOSURE_REJECTION,
+            ),
+        ] {
+            let diagnostic = diagnostics.call_root(&expr);
+
+            assert_eq!(diagnostic.phase, Phase::Codegen);
+            assert_eq!(diagnostic.line, span.line);
+            assert_eq!(diagnostic.column, span.column);
+            assert_eq!(diagnostic.message, expected);
+        }
+
+        for (diagnostics, subject, expected) in [
+            (
+                NativeCallDiagnostics::new(NativeCallBackend::Llvm),
+                NativeCallDiagnosticSubject::FunctionFrame(&function_frame),
+                LLVM_FUNCTION_DECLARATION_REJECTION,
+            ),
+            (
+                NativeCallDiagnostics::new(NativeCallBackend::Assembly),
+                NativeCallDiagnosticSubject::FunctionFrame(&by_ref_function_frame),
+                ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
+            ),
+            (
+                NativeCallDiagnostics::new(NativeCallBackend::Llvm),
+                NativeCallDiagnosticSubject::ReturnStatement(span),
+                LLVM_FUNCTION_DECLARATION_REJECTION,
+            ),
+            (
+                NativeCallDiagnostics::new(NativeCallBackend::Assembly),
+                NativeCallDiagnosticSubject::Operation(NativeCallOperation::reference_result(
+                    span,
+                    NativeCallCallee::MethodDispatch,
+                )),
+                ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
+            ),
+            (
+                NativeCallDiagnostics::new(NativeCallBackend::Llvm),
+                NativeCallDiagnosticSubject::CallRoot(&closure_expr),
+                LLVM_CLOSURE_REJECTION,
+            ),
+        ] {
+            let diagnostic = diagnostics.subject(subject);
+
+            assert_eq!(diagnostic.phase, Phase::Codegen);
+            assert_eq!(diagnostic.line, span.line);
+            assert_eq!(diagnostic.column, span.column);
+            assert_eq!(diagnostic.message, expected);
+        }
+
+        assert_eq!(
+            NativeCallDiagnostics::new(NativeCallBackend::Assembly)
+                .direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics)
+                .message,
+            ASSEMBLY_FUNCTION_CALL_REJECTION
         );
     }
 
