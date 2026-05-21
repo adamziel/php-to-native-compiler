@@ -5817,6 +5817,9 @@ impl CGenerator {
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_scalar(phpc_NativeScalarValue value);\n");
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_string_bytes(const uint8_t *ptr, size_t len);\n");
             output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_comparison_operand_compare_operation_branch_and_free(phpc_NativeComparisonOperand left, phpc_NativeComparisonOperation operation, phpc_NativeComparisonOperand right);\n");
+            if self.uses_native_array_helpers {
+                output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_array_compare_branch(phpc_NativeArrayHandle left, uint8_t op, phpc_NativeArrayHandle right);\n");
+            }
             output.push_str("extern int phpc_native_comparison_branch_result_exit_code(phpc_NativeComparisonBranchResult result);\n");
             output.push_str("extern bool phpc_native_comparison_branch_result_is_true(phpc_NativeComparisonBranchResult result);\n\n");
         }
@@ -7446,7 +7449,11 @@ impl CGenerator {
         right: CValue,
         span: Span,
     ) -> CompileResult<CValue> {
-        if self.uses_native_string_helpers {
+        let compares_array_handles = matches!(
+            (&left, &right),
+            (CValue::ArrayHandle(_), CValue::ArrayHandle(_))
+        );
+        if self.uses_native_string_helpers || compares_array_handles {
             return self.emit_native_runtime_comparison(left, op, right, span);
         }
 
@@ -7643,21 +7650,61 @@ impl CGenerator {
             return Err(self.unsupported(span, assembly_comparison_rejection()));
         };
 
+        match (left, right) {
+            (CValue::ArrayHandle(left), CValue::ArrayHandle(right)) => {
+                Ok(self.emit_native_array_handle_comparison(left, op, right))
+            }
+            (CValue::ArrayHandle(_), _) | (_, CValue::ArrayHandle(_)) => {
+                Err(self.unsupported(span, assembly_comparison_rejection()))
+            }
+            (left, right) => {
+                self.uses_native_comparison_helpers = true;
+                let comparison_index = self.next_native_temp;
+                self.next_native_temp += 1;
+                let left = self.emit_native_comparison_operand(left, span)?;
+                let right = self.emit_native_comparison_operand(right, span)?;
+                let comparison_operation = format!("comparison_operation_{comparison_index}");
+                let comparison_branch = format!("comparison_branch_{comparison_index}");
+
+                self.body.push(format!(
+                    "phpc_NativeComparisonOperation {comparison_operation} = phpc_native_comparison_operation_from_opcode({});",
+                    native_comparison_c_uint8_argument(op)
+                ));
+                self.body.push(format!(
+                    "phpc_NativeComparisonBranchResult {comparison_branch} = phpc_native_comparison_operand_compare_operation_branch_and_free({}, {comparison_operation}, {});",
+                    left.operand, right.operand
+                ));
+                let comparison_exit_code = format!("comparison_exit_code_{comparison_index}");
+                self.body.push(format!(
+                    "int {comparison_exit_code} = phpc_native_comparison_branch_result_exit_code({comparison_branch});"
+                ));
+                self.body
+                    .push(format!("if ({comparison_exit_code} != 0) {{"));
+                self.body.push(format!("  return {comparison_exit_code};"));
+                self.body.push("}".to_string());
+
+                Ok(CValue::BoolExpr(format!(
+                    "phpc_native_comparison_branch_result_is_true({comparison_branch})"
+                )))
+            }
+        }
+    }
+
+    fn emit_native_array_handle_comparison(
+        &mut self,
+        left: String,
+        op: NativeComparisonOp,
+        right: String,
+    ) -> CValue {
+        self.uses_native_array_helpers = true;
         self.uses_native_comparison_helpers = true;
         let comparison_index = self.next_native_temp;
         self.next_native_temp += 1;
-        let left = self.emit_native_comparison_operand(left, span)?;
-        let right = self.emit_native_comparison_operand(right, span)?;
-        let comparison_operation = format!("comparison_operation_{comparison_index}");
-        let comparison_branch = format!("comparison_branch_{comparison_index}");
+        let comparison_branch = format!("array_comparison_branch_{comparison_index}");
 
         self.body.push(format!(
-            "phpc_NativeComparisonOperation {comparison_operation} = phpc_native_comparison_operation_from_opcode({});",
+            "phpc_NativeComparisonBranchResult {comparison_branch} = phpc_native_array_compare_branch({left}, {}, {right});",
             native_comparison_c_uint8_argument(op)
-        ));
-        self.body.push(format!(
-            "phpc_NativeComparisonBranchResult {comparison_branch} = phpc_native_comparison_operand_compare_operation_branch_and_free({}, {comparison_operation}, {});",
-            left.operand, right.operand
         ));
         let comparison_exit_code = format!("comparison_exit_code_{comparison_index}");
         self.body.push(format!(
@@ -7665,12 +7712,12 @@ impl CGenerator {
         ));
         self.body
             .push(format!("if ({comparison_exit_code} != 0) {{"));
-        self.body.push(format!("  return {comparison_exit_code};"));
+        self.body.push(format!("  {}", self.native_error_exit("")));
         self.body.push("}".to_string());
 
-        Ok(CValue::BoolExpr(format!(
+        CValue::BoolExpr(format!(
             "phpc_native_comparison_branch_result_is_true({comparison_branch})"
-        )))
+        ))
     }
 
     fn emit_native_comparison_operand(
@@ -8378,6 +8425,12 @@ impl CGenerator {
                 }
                 let left = c_string_operand(CValue::String(left));
                 return self.emit_string_comparison(left, op, right, span);
+            }
+            (CValue::ArrayHandle(left), CValue::ArrayHandle(right)) => {
+                let Some(op) = native_comparison_op_for_binary_op(op) else {
+                    return Err(self.unsupported(span, assembly_comparison_rejection()));
+                };
+                return Ok(self.emit_native_array_handle_comparison(left, op, right));
             }
             (CValue::Float(left), CValue::Float(right)) => {
                 if let (Ok(left_literal), Ok(right_literal)) =

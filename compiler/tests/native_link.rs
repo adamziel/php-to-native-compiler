@@ -388,6 +388,96 @@ echo 1 !== "1";
     );
 }
 
+const ARRAY_HANDLE_COMPARISON_SOURCE: &str = "<?php\n$left = [1, \"two\" => 2];\n$right = [1, \"two\" => 2];\necho ($left === $right), \"\\n\";\necho ([1, \"two\" => 2] !== [1, \"two\" => 3]), \"\\n\";\necho ([1] == [1]), \"\\n\";\necho ([2] > [1]), \"\\n\";\n";
+
+#[test]
+fn native_executable_c_source_routes_array_handle_comparisons_through_runtime_branch() {
+    let program = parse(ARRAY_HANDLE_COMPARISON_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(source.contains("phpc_NativeArrayHandle"), "{source}");
+    assert!(
+        source
+            .contains("extern phpc_NativeComparisonBranchResult phpc_native_array_compare_branch"),
+        "generated C should declare the shared array comparison branch ABI:\n{source}"
+    );
+    assert_eq!(
+        source.matches(" = phpc_native_array_compare_branch(").count(),
+        4,
+        "strict, loose-equality, and ordering array comparisons should share the array branch ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_comparison_branch_result_exit_code")
+            && source.contains("phpc_native_comparison_branch_result_is_true"),
+        "array comparison results should use the common branch accessors:\n{source}"
+    );
+    assert!(
+        !source.contains(" = phpc_native_comparison_operand_compare_operation_branch_and_free("),
+        "array handles should not pass through scalar/string comparison operands:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_array_compare_branch_and_free("),
+        "generated C should keep array handle ownership with the existing cleanup list:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_free(array_"),
+        "array comparison should preserve existing generated-C array cleanup:\n{source}"
+    );
+}
+
+const ARRAY_HANDLE_STRICT_COMPARISON_SOURCE: &str = "<?php\n$left = [1, \"two\" => 2];\n$right = [1, \"two\" => 2];\n$different = [1, \"two\" => 3];\necho ($left === $right), \"\\n\";\necho ([1, \"two\" => 2] !== $different), \"\\n\";\n";
+
+#[test]
+fn emit_exe_links_and_runs_array_handle_strict_comparison_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php = native_link_output_path("array_handle_strict_comparison").with_extension("php");
+    fs::write(&temp_php, ARRAY_HANDLE_STRICT_COMPARISON_SOURCE)
+        .expect("write native array-handle comparison fixture");
+    let output_path = native_link_output_path("array_handle_strict_comparison");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native array comparison executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native array comparison executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "native array comparison executable failed"
+    );
+    assert_eq!(run.stdout, b"1\n1\n");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
+}
+
 const DYNAMIC_BINARY_STRING_COMPARISON_SOURCE: &str = r#"<?php
 $flag = 1 < 2;
 $left = $flag ? "2\x00z" : "10\x00w";
