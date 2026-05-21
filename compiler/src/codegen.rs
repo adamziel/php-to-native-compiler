@@ -8,9 +8,9 @@ use crate::ast::{
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
-    classify_php_numeric_string, is_php_truthy_string, NativeComparisonOp,
-    NativeFilesystemPathOperation, NativeIntConversionOperation, NativeStringDistanceOperation,
-    NativeStringIntOperation, NativeStringPredicate,
+    classify_php_numeric_string, is_php_truthy_string, php_strings_use_numeric_comparison,
+    NativeComparisonOp, NativeFilesystemPathOperation, NativeIntConversionOperation,
+    NativeStringDistanceOperation, NativeStringIntOperation, NativeStringPredicate,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -4765,9 +4765,7 @@ impl LlvmGenerator {
             let right_values = self
                 .known_string_values(&right)
                 .ok_or_else(|| self.unsupported(span, llvm_comparison_rejection()))?;
-            if !known_strings_are_safe_for_native_comparison(&left_values)
-                || !known_strings_are_safe_for_native_comparison(&right_values)
-            {
+            if !known_string_pairs_are_safe_for_native_comparison(&left_values, &right_values) {
                 return Err(self.unsupported(span, llvm_comparison_rejection()));
             }
             string_comparison_result_for_known_values(&left_values, op, &right_values)
@@ -9089,9 +9087,7 @@ impl CGenerator {
             let right_values = self
                 .known_string_values(&right)
                 .ok_or_else(|| self.unsupported(span, assembly_comparison_rejection()))?;
-            if !known_strings_are_safe_for_native_comparison(&left_values)
-                || !known_strings_are_safe_for_native_comparison(&right_values)
-            {
+            if !known_string_pairs_are_safe_for_native_comparison(&left_values, &right_values) {
                 return Err(self.unsupported(span, assembly_comparison_rejection()));
             }
             string_comparison_result_for_known_values(&left_values, op, &right_values)
@@ -10335,16 +10331,32 @@ fn c_string_comparison_operator(op: BinaryOp) -> Option<&'static str> {
     })
 }
 
-fn known_strings_are_safe_for_native_comparison(values: &KnownString) -> bool {
-    values.values().iter().all(|value| {
-        value.bytes().all(|byte| byte.is_ascii() && byte != 0)
-            && !string_looks_numeric_for_native_comparison(value)
-    })
+fn known_string_pairs_are_safe_for_native_comparison(
+    left_values: &KnownString,
+    right_values: &KnownString,
+) -> bool {
+    known_string_values_have_native_comparison_safe_bytes(left_values)
+        && known_string_values_have_native_comparison_safe_bytes(right_values)
+        && known_string_pairs_use_binary_comparison(left_values, right_values)
 }
 
-fn string_looks_numeric_for_native_comparison(value: &str) -> bool {
-    let first = value.bytes().find(|byte| !byte.is_ascii_whitespace());
-    matches!(first, Some(b'+' | b'-' | b'.' | b'0'..=b'9'))
+fn known_string_values_have_native_comparison_safe_bytes(values: &KnownString) -> bool {
+    values
+        .values()
+        .iter()
+        .all(|value| value.bytes().all(|byte| byte.is_ascii() && byte != 0))
+}
+
+fn known_string_pairs_use_binary_comparison(
+    left_values: &KnownString,
+    right_values: &KnownString,
+) -> bool {
+    left_values.values().iter().all(|left| {
+        right_values
+            .values()
+            .iter()
+            .all(|right| !php_strings_use_numeric_comparison(left, right))
+    })
 }
 
 fn string_comparison_result_for_known_values(
@@ -10381,9 +10393,7 @@ fn static_safe_string_comparison_result(
 ) -> Option<bool> {
     let left_values = left_values?;
     let right_values = right_values?;
-    if !known_strings_are_safe_for_native_comparison(&left_values)
-        || !known_strings_are_safe_for_native_comparison(&right_values)
-    {
+    if !known_string_pairs_are_safe_for_native_comparison(&left_values, &right_values) {
         return None;
     }
     string_comparison_result_for_known_values(&left_values, op, &right_values)

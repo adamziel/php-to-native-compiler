@@ -903,15 +903,39 @@ echo null >= null;
 fn emit_ir_rejects_numeric_string_comparison_operands() {
     for source in [
         "<?php\necho \"10\" < \"2\";\n",
-        "<?php\necho \" 10\" < \"zeta\";\n",
-        "<?php\necho \"-2\" < \"zeta\";\n",
-        "<?php\necho \".5\" < \"zeta\";\n",
+        "<?php\necho \" 10\" < \"2\";\n",
+        "<?php\necho \"-2\" < \".5\";\n",
+        "<?php\necho \".5\" < \"5.\";\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_COMPARISON_REJECTION);
     }
+}
+
+#[test]
+fn emit_ir_lowers_string_pairs_when_shared_classifier_selects_binary_comparison() {
+    let ir = emit_ir_source(
+        r#"<?php
+$sum = 1 + 2;
+$flag = $sum === 3;
+$left = $flag ? "10" : "8foo";
+$right = $flag ? "zeta" : "+foo";
+
+echo $left < $right, "\n";
+echo ".name" != "-word", "\n";
+echo " 10" < "zeta";
+"#,
+    )
+    .unwrap();
+
+    assert!(ir.contains("declare i32 @strcmp(ptr, ptr)"), "{ir}");
+    assert!(
+        ir.contains("call i32 @strcmp"),
+        "numeric-vs-nonnumeric, leading-numeric, and sign/dot-prefixed nonnumeric string pairs should lower through binary string comparison:\n{ir}"
+    );
+    assert!(ir.contains("c\"1\\00\""), "{ir}");
 }
 
 #[test]

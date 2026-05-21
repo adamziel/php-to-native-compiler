@@ -10611,9 +10611,14 @@ fn compare_numbers(left: Number, right: Number) -> Option<Ordering> {
 }
 
 fn compare_php_strings(left: &str, right: &str) -> Option<Ordering> {
-    match (parse_numeric_string(left), parse_numeric_string(right)) {
-        (Some(left), Some(right)) => compare_numbers(left, right),
-        _ => compare_binary_strings(left, right),
+    if php_strings_use_numeric_comparison(left, right) {
+        let left =
+            parse_numeric_string(left).expect("numeric comparison classifier requires left number");
+        let right = parse_numeric_string(right)
+            .expect("numeric comparison classifier requires right number");
+        compare_numbers(left, right)
+    } else {
+        compare_binary_strings(left, right)
     }
 }
 
@@ -10677,6 +10682,11 @@ pub fn classify_php_numeric_string(value: &str) -> PhpNumericStringClassificatio
         return PhpNumericStringClassification::LeadingNumeric;
     }
     classify_well_formed_php_numeric_string(trimmed)
+}
+
+pub fn php_strings_use_numeric_comparison(left: &str, right: &str) -> bool {
+    classify_php_numeric_string(left).is_numeric()
+        && classify_php_numeric_string(right).is_numeric()
 }
 
 fn classify_well_formed_php_numeric_string(value: &str) -> PhpNumericStringClassification {
@@ -15352,6 +15362,32 @@ mod tests {
         assert!(!Value::Bool(true).is_numeric());
         assert!(!Value::Null.is_numeric());
         assert!(!Value::Array(PhpArray::new()).is_numeric());
+    }
+
+    #[test]
+    fn string_pair_numeric_comparison_classifier_feeds_runtime_comparison() {
+        for (left, right, uses_numeric, op, expected) in [
+            ("10", "2", true, Comparison::Lt, false),
+            (" 10", "2", true, Comparison::Gt, true),
+            (".5", "5.", true, Comparison::Lt, true),
+            ("10", "zeta", false, Comparison::Lt, true),
+            ("8foo", "2", false, Comparison::Gt, true),
+            (".5m", "5.", false, Comparison::Lt, true),
+            ("+foo", "-word", false, Comparison::Lt, true),
+        ] {
+            assert_eq!(
+                php_strings_use_numeric_comparison(left, right),
+                uses_numeric,
+                "numeric comparison classifier for {left:?} and {right:?}",
+            );
+            assert_eq!(
+                Value::String(left.to_string())
+                    .php_cmp_checked(&Value::String(right.to_string()), op)
+                    .unwrap(),
+                expected,
+                "runtime string comparison for {left:?} and {right:?}",
+            );
+        }
     }
 
     #[test]
