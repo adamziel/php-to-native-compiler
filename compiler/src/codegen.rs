@@ -1910,8 +1910,8 @@ impl LlvmGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("defined") => {
                 self.emit_defined_call(args, *span)
             }
-            Expr::Call { name, span, .. } if is_global_constant_builtin(name) => {
-                Err(self.unsupported(*span, LLVM_GLOBAL_CONSTANT_REJECTION))
+            Expr::Call { name, args, span } if is_global_constant_builtin(name) => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_GLOBAL_CONSTANT_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("isset") => {
                 self.emit_isset_call(args, *span)
@@ -2213,6 +2213,10 @@ impl LlvmGenerator {
     }
 
     fn emit_defined_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         if args.len() != 1 {
             return Err(self.unsupported(span, LLVM_GLOBAL_CONSTANT_REJECTION));
         }
@@ -4580,6 +4584,17 @@ impl LlvmGenerator {
         self.unsupported_call_operation(NativeCallOperation::direct_named_value(span, blocker))
     }
 
+    fn unsupported_direct_named_call(
+        &self,
+        args: &[Expr],
+        span: Span,
+        fallback: &'static str,
+    ) -> Diagnostic {
+        native_direct_call_argument_result_operation(args, span)
+            .map(|operation| self.unsupported_call_operation(operation))
+            .unwrap_or_else(|| self.unsupported(span, fallback))
+    }
+
     fn unsupported_value_call(&self, expr: &Expr) -> Diagnostic {
         self.unsupported_call_operation(
             native_value_call_operation_for_expr(expr)
@@ -5132,9 +5147,9 @@ impl CGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("defined") => {
                 self.emit_defined_call(args, *span)
             }
-            Expr::Call { name, span, .. } if is_global_constant_builtin(name) => {
-                Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
-            }
+            Expr::Call { name, args, span } if is_global_constant_builtin(name) => Err(
+                self.unsupported_direct_named_call(args, *span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION)
+            ),
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("isset") => {
                 self.emit_isset_call(args, *span)
             }
@@ -5435,6 +5450,10 @@ impl CGenerator {
     }
 
     fn emit_defined_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         if args.len() != 1 {
             return Err(self.unsupported(span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION));
         }
@@ -7745,6 +7764,17 @@ impl CGenerator {
 
     fn unsupported_direct_call(&self, span: Span, blocker: NativeCallBlocker) -> Diagnostic {
         self.unsupported_call_operation(NativeCallOperation::direct_named_value(span, blocker))
+    }
+
+    fn unsupported_direct_named_call(
+        &self,
+        args: &[Expr],
+        span: Span,
+        fallback: &'static str,
+    ) -> Diagnostic {
+        native_direct_call_argument_result_operation(args, span)
+            .map(|operation| self.unsupported_call_operation(operation))
+            .unwrap_or_else(|| self.unsupported(span, fallback))
     }
 
     fn unsupported_value_call(&self, expr: &Expr) -> Diagnostic {

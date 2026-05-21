@@ -138,6 +138,49 @@ fn native_executable_c_source_routes_supported_direct_call_argument_results_thro
 }
 
 #[test]
+fn emit_ir_routes_constant_table_call_argument_results_through_call_boundary() {
+    for (source, line, column) in [
+        ("<?php\necho defined(strlen(\"abc\"));\n", 2, 6),
+        (
+            "<?php\n$resolver = \"constant_name\";\necho constant($resolver());\n",
+            3,
+            6,
+        ),
+        ("<?php\ndefine($box->name(), \"value\");\n", 2, 1),
+        ("<?php\ndefine(\"APP\", new ValueName());\n", 2, 1),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_constant_table_call_argument_results_through_call_boundary() {
+    for (source, line, column) in [
+        ("<?php\necho defined(strlen(\"abc\"));\n", 2, 6),
+        (
+            "<?php\n$resolver = \"constant_name\";\necho constant($resolver());\n",
+            3,
+            6,
+        ),
+        ("<?php\ndefine($box->name(), \"value\");\n", 2, 1),
+        ("<?php\ndefine(\"APP\", new ValueName());\n", 2, 1),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, ASSEMBLY_FUNCTION_CALL_REJECTION);
+    }
+}
+
+#[test]
 fn emit_ir_rejects_direct_calls_before_lowering_arguments() {
     for source in [
         "<?php\necho label([]);\nfunction label($value) { return $value; }\n",
