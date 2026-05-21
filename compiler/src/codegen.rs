@@ -5473,7 +5473,11 @@ impl CGenerator {
         output.push_str("#include <stdio.h>\n\n");
         if self.uses_native_runtime_helpers() {
             output.push_str("#include <stddef.h>\n");
-            output.push_str("#include <stdint.h>\n\n");
+            output.push_str("#include <stdint.h>\n");
+            if self.uses_native_comparison_helpers {
+                output.push_str("#include <stdbool.h>\n");
+            }
+            output.push('\n');
             if self.uses_native_comparison_helpers {
                 output.push_str(
                     "typedef struct { uint8_t tag; uint8_t bool_value; int64_t int_value; double float_value; } phpc_NativeScalarValue;\n",
@@ -5502,9 +5506,8 @@ impl CGenerator {
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_scalar(phpc_NativeScalarValue value);\n");
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string_bytes_with_diagnostic(const uint8_t *ptr, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_value_compare_branch_and_free(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
-            output.push_str("extern uint8_t phpc_native_comparison_branch_result_status(phpc_NativeComparisonBranchResult result);\n");
-            output.push_str("extern uint8_t phpc_native_comparison_branch_result_value(phpc_NativeComparisonBranchResult result);\n");
-            output.push_str("extern size_t phpc_native_comparison_branch_result_diagnostic_len(phpc_NativeComparisonBranchResult result);\n\n");
+            output.push_str("extern bool phpc_native_comparison_branch_result_is_true(phpc_NativeComparisonBranchResult result);\n");
+            output.push_str("extern int phpc_native_comparison_branch_result_exit_code(phpc_NativeComparisonBranchResult result);\n\n");
         }
         if self.uses_strcmp {
             output.push_str("#include <string.h>\n\n");
@@ -6879,14 +6882,17 @@ impl CGenerator {
             native_comparison_c_uint8_argument(op),
             right.value_handle
         ));
+        let comparison_exit_code = format!("comparison_exit_code_{comparison_index}");
         self.body.push(format!(
-            "if (phpc_native_comparison_branch_result_status({comparison_branch}) != 0) {{"
+            "int {comparison_exit_code} = phpc_native_comparison_branch_result_exit_code({comparison_branch});"
         ));
-        self.body.push("  return 1;".to_string());
+        self.body
+            .push(format!("if ({comparison_exit_code} != 0) {{"));
+        self.body.push(format!("  return {comparison_exit_code};"));
         self.body.push("}".to_string());
 
         Ok(CValue::BoolExpr(format!(
-            "(phpc_native_comparison_branch_result_value({comparison_branch}) != 0)"
+            "phpc_native_comparison_branch_result_is_true({comparison_branch})"
         )))
     }
 

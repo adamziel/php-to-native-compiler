@@ -29,12 +29,14 @@ echo 2 <= "2", "\n";
 echo "10" > 2, "\n";
 echo "alpha" >= "alpha", "\n";
 echo 2 === 2, "\n";
+echo null == false, "\n";
 echo 1 !== "1";
 "#,
     )
     .unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
 
+    assert!(source.contains("#include <stdbool.h>"), "{source}");
     assert!(source.contains("phpc_native_value_from_scalar"), "{source}");
     assert!(
         source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
@@ -49,16 +51,24 @@ echo 1 !== "1";
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_branch_result_status"),
-        "generated C should use the branch-result status accessor:\n{source}"
+        source.contains("phpc_native_comparison_branch_result_exit_code"),
+        "generated C should route blocked branch decisions through the exit-code accessor:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_branch_result_value"),
-        "generated C should use the branch-result value accessor:\n{source}"
+        source.contains("phpc_native_comparison_branch_result_is_true"),
+        "generated C should route branch truth consumption through the truth accessor:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_branch_result_diagnostic_len"),
-        "generated C should declare the diagnostic-length accessor with the comparison ABI:\n{source}"
+        !source.contains("phpc_native_comparison_branch_result_status"),
+        "generated C should not open-code branch status handling:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_branch_result_value"),
+        "generated C should not open-code branch value handling:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_branch_result_diagnostic_len"),
+        "generated C should not need diagnostic-length access after branch ABI reporting:\n{source}"
     );
     assert!(
         !source.contains(".status != 0"),

@@ -417,11 +417,27 @@ impl NativeComparisonBranchResult {
     }
 
     pub fn value(&self) -> bool {
-        self.status() == NativeComparisonStatus::Ok as u8 && self.value != 0
+        self.is_true()
     }
 
     pub fn diagnostic_len(&self) -> usize {
         self.diagnostic_len
+    }
+
+    pub fn is_blocked(&self) -> bool {
+        self.status() == NativeComparisonStatus::Blocked as u8
+    }
+
+    pub fn is_true(&self) -> bool {
+        !self.is_blocked() && self.value != 0
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        if self.is_blocked() {
+            1
+        } else {
+            0
+        }
     }
 }
 
@@ -1223,10 +1239,24 @@ pub extern "C" fn phpc_native_comparison_branch_result_value(
 }
 
 #[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_result_is_true(
+    result: NativeComparisonBranchResult,
+) -> bool {
+    result.is_true()
+}
+
+#[no_mangle]
 pub extern "C" fn phpc_native_comparison_branch_result_diagnostic_len(
     result: NativeComparisonBranchResult,
 ) -> usize {
     result.diagnostic_len()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_result_exit_code(
+    result: NativeComparisonBranchResult,
+) -> i32 {
+    result.exit_code()
 }
 
 /// # Safety
@@ -7227,8 +7257,32 @@ mod tests {
             NativeComparisonStatus::Ok as u8
         );
         assert_eq!(phpc_native_comparison_branch_result_value(success), 1);
+        assert!(phpc_native_comparison_branch_result_is_true(success));
         assert_eq!(
             phpc_native_comparison_branch_result_diagnostic_len(success),
+            0
+        );
+        assert_eq!(phpc_native_comparison_branch_result_exit_code(success), 0);
+
+        let false_success = unsafe {
+            phpc_native_value_compare_branch_and_free(
+                phpc_native_value_from_scalar(phpc_native_int(2)),
+                NativeComparisonOp::LooseGt as u8,
+                phpc_native_value_from_scalar(phpc_native_int(10)),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_result_status(false_success),
+            NativeComparisonStatus::Ok as u8
+        );
+        assert_eq!(phpc_native_comparison_branch_result_value(false_success), 0);
+        assert!(!phpc_native_comparison_branch_result_is_true(false_success));
+        assert_eq!(
+            phpc_native_comparison_branch_result_diagnostic_len(false_success),
+            0
+        );
+        assert_eq!(
+            phpc_native_comparison_branch_result_exit_code(false_success),
             0
         );
 
@@ -7244,7 +7298,9 @@ mod tests {
             NativeComparisonStatus::Blocked as u8
         );
         assert_eq!(phpc_native_comparison_branch_result_value(blocked), 0);
+        assert!(!phpc_native_comparison_branch_result_is_true(blocked));
         assert!(phpc_native_comparison_branch_result_diagnostic_len(blocked) > 0);
+        assert_eq!(phpc_native_comparison_branch_result_exit_code(blocked), 1);
 
         let malformed = NativeComparisonBranchResult {
             status: 99,
@@ -7256,10 +7312,12 @@ mod tests {
             NativeComparisonStatus::Blocked as u8
         );
         assert_eq!(phpc_native_comparison_branch_result_value(malformed), 0);
+        assert!(!phpc_native_comparison_branch_result_is_true(malformed));
         assert_eq!(
             phpc_native_comparison_branch_result_diagnostic_len(malformed),
             11
         );
+        assert_eq!(phpc_native_comparison_branch_result_exit_code(malformed), 1);
     }
 
     #[test]
