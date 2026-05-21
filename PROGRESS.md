@@ -1,24 +1,29 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 15:03 CEST
+Updated: 2026-05-21 15:05 CEST
+Evaluation marker: 20260521T125958Z
 
-This file is a high-level roadmap and status digest for the native PHP compiler effort. Percentages are candid engineering estimates, not test-suite completion metrics. They separate work that is integrated in `master` from broader lane-local work that still needs review, integration, and gates.
+This file is a high-level roadmap and status digest for the native PHP compiler effort. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means it is committed on `master`; lane-local candidate work is useful source material but is not counted as product capability until selected, gated, committed, and pushed.
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **18%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **19%**
 
 ```
-Generalized runtime/ABI foundations      [##########----------] 52%
-Compiler/backend consumers               [######--------------] 32%
+Generalized runtime/ABI foundations      [###########---------] 55%
+Compiler/backend consumers               [#######-------------] 33%
 Executable generalized PHP semantics     [###-----------------] 16%
-Arrays, references, COW, lvalues         [##------------------] 10%
+Arrays, references, COW, lvalues         [##------------------] 11%
 Objects, properties, methods             [##------------------] 10%
-Diagnostics/control-flow composition     [###-----------------] 15%
-Broad integrated verification            [##------------------] 10%
+Diagnostics/control-flow composition     [###-----------------] 16%
+Broad integrated verification            [##------------------] 11%
 ```
 
-## Roadmap
+## Grand Roadmap Position
+
+The leading edge is runtime/ABI and compiler-boundary convergence. The bottleneck remains executable PHP semantics: turning shared result/blocker surfaces into real native behavior across calls, conversions, arrays, references, objects, diagnostics, cleanup, and composition tests.
+
+## Primary-Integrated Roadmap
 
 - [x] Establish supervised parallel implementation lanes and primary integration gate.
 - [x] Add shared runtime ABI surfaces for symbols, string boundaries, comparison results, diagnostic severity, and selected conversion helpers.
@@ -34,25 +39,40 @@ Broad integrated verification            [##------------------] 10%
 - [ ] Implement object/class/property semantics including dynamic names, visibility/magic hooks, stdClass behavior, property offsets, diagnostics, and references/COW.
 - [ ] Implement generalized diagnostics, conversion/comparison semantics, control-flow cleanup, loops/switch/break/continue/goto/finally blockers, and broad composition tests.
 
+## Active Roadmap Estimates
+
+| Active item | Primary-integrated estimate | Lane-local candidate maturity | Current read |
+| --- | ---: | ---: | --- |
+| String conversion and byte-buffer results | 30% | 55% | Result/free ABI is integrated; production backend consumption and exact PHP diagnostics remain blocked. |
+| Call operation cleanup and ownership | 24% | 45% | Many call-result contexts route through shared blockers; actual frames, binding, by-ref args, variadics, callbacks, and returns are not native-executable yet. |
+| Comparison/conversion semantics | 28% | 50% | Comparison ABI and known numeric-string classification are integrated; dynamic operands and diagnostics need broader execution. |
+| Arrays, lvalues, references, COW | 11% | 40% | Strong lane-local generated-C/result-boundary work exists; current uncommitted primary/test diffs are not counted yet. |
+| Symbols, globals, request state | 20% | 35% | Symbol-table ABI helpers are integrated; full request/global/superglobal behavior is still early. |
+| Objects, properties, methods | 10% | 30% | Mostly lane-local carriers/blockers; little primary executable behavior. |
+| Diagnostics and control-flow cleanup | 16% | 35% | Severity tags and selected blockers are integrated; exact warning/recovery order and structured cleanup are not broad yet. |
+| Broad composition verification | 11% | 25% | Focused gates are good; broad PHP composition coverage remains limited. |
+
 ## Recent Integrated Primary Work
 
 Recent pushed primary commits show useful movement from lane-local artifacts into `master`:
 
+- `1aab675e runtime: expose native string conversion results`
+  - Adds `NativeStringConversionResult`, runtime value/reference string-conversion entrypoints, result cleanup, and ABI probe coverage. This is a generalized runtime/ABI surface; broad production consumption is still pending.
 - `1c7b0495 codegen: reuse runtime numeric string semantics`
   - Exposes the runtime PHP numeric-string classifier and makes LLVM/generated-C known-value `is_numeric()` lowering use the shared runtime semantics.
-- `1aab675e runtime: expose native string conversion results`
-  - Adds a generalized runtime/ABI string-conversion result/free boundary for value/reference conversion success and blockers, with compiler ABI probes and focused scalar echo coverage.
 - `6c1b8eaa native: consume comparison branch accessors`
   - Adds runtime accessors for comparison branch results and makes generated C consume status/value through the ABI boundary.
 - `9be386f1 native: route value operands through call boundary`
   - Routes call results inside unsupported value-expression operands through the shared native call-operation boundary.
 - Prior recent batches integrated value/lvalue/call argument call-boundary consumers, comparison ABI, diagnostic severity ABI, symbol-table ABI helpers, scalar string boundaries, and runtime symbol table ABI.
 
-## Current Work In Flight
+## Current Primary State
 
-The primary worktree is currently clean and synced with `origin/master` at `baf5d73e`; the latest semantic compiler/runtime commit is `1aab675e`. The latest string-conversion slice is counted as integrated because it was tested, committed, and pushed.
+Primary git is synced with `origin/master` at `452b6a85 docs: clarify progress head`. The latest semantic compiler/runtime commit is `1aab675e`. Current uncommitted implementation diffs are present in `compiler/src/codegen.rs`, `compiler/tests/native_function_call_boundary.rs`, and `compiler/tests/native_mutation_boundary.rs`; those are not counted as integrated until gated, committed, and pushed.
 
-Lane-local workers are also producing candidate work in these areas:
+## Lane-Local Candidate Work
+
+Lane-local workers are producing candidate work in these areas:
 
 - binary-safe string/value operation boundaries;
 - array lvalue/read-modify-write/value-result contracts;
@@ -69,7 +89,7 @@ Lane-local work is useful source material, but it is not product capability unti
 
 The direction is right: the project is moving away from exact-shape lowering and toward reusable semantic-family boundaries. The primary integration loop is now landing real slices instead of only accumulating lane-local patches.
 
-The biggest limitation is that much of the work is still infrastructure or shared blockers. Routing failures through the right generalized boundary is necessary, but it is not the same as executing broad PHP semantics. The next highest-value work is to convert landed ABI/result surfaces into actual generalized compiler/backend behavior with composition tests.
+The biggest limitation is still that much of the work is infrastructure or shared blockers. Routing failures through the right generalized boundary is necessary, but it is not the same as executing broad PHP semantics. The next highest-value work is to convert landed ABI/result surfaces into actual generalized compiler/backend behavior with composition tests.
 
 ## Near-Term Steering
 
@@ -77,4 +97,4 @@ The biggest limitation is that much of the work is still infrastructure or share
 2. Prefer executable compiler/generated-C/LLVM consumers of already-landed ABI surfaces over more standalone vocabulary.
 3. Reject fixture-shaped or one-source-shape production paths, even if they make tests pass.
 4. Review large `compiler/src/codegen.rs` diffs skeptically before letting them harden.
-5. Keep `/dev/shm` above the restart threshold by reclaiming inactive target dirs only after checking active cargo/rustc/linker users.
+5. Treat `/dev/shm` below roughly 10-12 GiB free as a warning zone for primary gates; reclaim inactive target dirs only after checking active cargo/rustc/linker/phpc users.
