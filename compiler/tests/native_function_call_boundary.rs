@@ -558,6 +558,61 @@ fn native_executable_c_source_routes_value_operand_call_results_through_call_bou
 }
 
 #[test]
+fn emit_ir_routes_exit_construct_arguments_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\nexit(missing_status());\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"status\";\ndie($call());\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nexit($status->code());\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\ndie(new ExitStatus());\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_exit_construct_arguments_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\nexit(missing_status());\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"status\";\ndie($call());\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nexit($status->code());\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\ndie(new ExitStatus());\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
 fn emit_ir_routes_statement_operand_call_results_through_call_boundary() {
     for (source, expected) in [
         (

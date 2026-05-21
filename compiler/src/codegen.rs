@@ -2661,8 +2661,8 @@ impl LlvmGenerator {
                     .cloned()
                     .ok_or_else(|| self.unsupported(*span, LLVM_VARIABLE_READ_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_exit_construct_name(name) => {
-                Err(self.unsupported(*span, LLVM_TERMINATION_REJECTION))
+            Expr::Call { name, args, span } if is_exit_construct_name(name) => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_TERMINATION_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("defined") => {
                 self.emit_defined_call(args, *span)
@@ -6206,8 +6206,8 @@ impl CGenerator {
                     .cloned()
                     .ok_or_else(|| self.unsupported(*span, ASSEMBLY_VARIABLE_READ_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_exit_construct_name(name) => {
-                Err(self.unsupported(*span, ASSEMBLY_TERMINATION_REJECTION))
+            Expr::Call { name, args, span } if is_exit_construct_name(name) => {
+                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_TERMINATION_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("defined") => {
                 self.emit_defined_call(args, *span)
