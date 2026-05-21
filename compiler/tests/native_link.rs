@@ -298,8 +298,13 @@ echo 1 !== "1";
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_operand_from_string_bytes"),
+        source.contains("phpc_native_string_from_bytes")
+            && source.contains("phpc_native_comparison_operand_from_string_and_free"),
         "{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_operand_from_string_bytes"),
+        "generated C should consume string comparison operands through owned string handles, not the raw-byte operand ABI:\n{source}"
     );
     assert!(
         source.contains("phpc_native_comparison_operation_from_opcode"),
@@ -545,8 +550,13 @@ fn native_executable_c_source_tracks_dynamic_string_operand_lengths() {
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains("phpc_native_comparison_operand_from_string_bytes((const uint8_t *)("),
-        "dynamic string comparison operands should materialize through pointer-plus-length value construction:\n{source}"
+        source.contains("phpc_native_string_from_bytes((const uint8_t *)(")
+            && source.contains("phpc_native_comparison_operand_from_string_and_free"),
+        "dynamic string comparison operands should materialize through length-aware owned string handles:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_operand_from_string_bytes"),
+        "dynamic string comparison operands should not bypass the string-handle comparison operand ABI:\n{source}"
     );
     assert!(
         source.contains("phpc_native_comparison_operation_from_opcode")

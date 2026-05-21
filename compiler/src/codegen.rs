@@ -5925,7 +5925,7 @@ impl CGenerator {
         if self.uses_native_comparison_helpers {
             output.push_str("extern phpc_NativeComparisonOperation phpc_native_comparison_operation_from_opcode(uint8_t opcode);\n");
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_scalar(phpc_NativeScalarValue value);\n");
-            output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_string_bytes(const uint8_t *ptr, size_t len);\n");
+            output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_string_and_free(phpc_NativeStringHandle string);\n");
             output.push_str("extern phpc_NativeComparisonBranchDecision phpc_native_comparison_operand_compare_operation_decision_and_free(phpc_NativeComparisonOperand left, phpc_NativeComparisonOperation operation, phpc_NativeComparisonOperand right);\n");
             if self.uses_native_array_comparison_helpers {
                 output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_array_compare_branch(phpc_NativeArrayHandle left, uint8_t op, phpc_NativeArrayHandle right);\n");
@@ -7934,6 +7934,7 @@ impl CGenerator {
                 Ok(NativeCComparisonOperand { operand })
             }
             CValue::String(value) => {
+                let string = format!("comparison_string_{index}");
                 let (bytes, byte_len) = if value.is_empty() {
                     ("NULL".to_string(), "0".to_string())
                 } else {
@@ -7944,14 +7945,21 @@ impl CGenerator {
                     (data, value.len().to_string())
                 };
                 self.body.push(format!(
-                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_string_bytes({bytes}, {byte_len});"
+                    "phpc_NativeStringHandle {string} = phpc_native_string_from_bytes({bytes}, {byte_len});"
+                ));
+                self.body.push(format!(
+                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_string_and_free({string});"
                 ));
                 Ok(NativeCComparisonOperand { operand })
             }
             CValue::StringExpr(value) => {
                 let byte_len = self.native_comparison_string_expr_len_operand(&value, span)?;
+                let string = format!("comparison_string_{index}");
                 self.body.push(format!(
-                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_string_bytes((const uint8_t *)({value}), {byte_len});"
+                    "phpc_NativeStringHandle {string} = phpc_native_string_from_bytes((const uint8_t *)({value}), {byte_len});"
+                ));
+                self.body.push(format!(
+                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_string_and_free({string});"
                 ));
                 Ok(NativeCComparisonOperand { operand })
             }
