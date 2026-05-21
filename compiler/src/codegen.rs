@@ -6009,8 +6009,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_array_compare_branch(phpc_NativeArrayHandle left, uint8_t op, phpc_NativeArrayHandle right);\n");
                 output.push_str("extern phpc_NativeComparisonBranchDecision phpc_native_comparison_branch_decision_from_result(phpc_NativeComparisonBranchResult result);\n");
             }
-            output.push_str("extern int phpc_native_comparison_branch_decision_exit_code(phpc_NativeComparisonBranchDecision decision);\n");
-            output.push_str("extern uint8_t phpc_native_comparison_branch_decision_status(phpc_NativeComparisonBranchDecision decision);\n");
+            output.push_str("extern int phpc_native_comparison_branch_decision_abort_code(phpc_NativeComparisonBranchDecision decision);\n");
             output.push_str("extern bool phpc_native_comparison_branch_decision_is_true(phpc_NativeComparisonBranchDecision decision);\n\n");
         }
         if self.uses_strcmp {
@@ -7899,16 +7898,13 @@ impl CGenerator {
                     "phpc_NativeComparisonBranchDecision {comparison_decision} = phpc_native_comparison_operand_compare_operation_decision_and_free({}, {comparison_operation}, {});",
                     left.operand, right.operand
                 ));
-                let comparison_exit_code = self.emit_native_comparison_decision_exit_code(
+                let comparison_abort_code = self.emit_native_comparison_decision_abort_code(
                     comparison_index,
                     &comparison_decision,
                 );
-                let comparison_status = self
-                    .emit_native_comparison_decision_status(comparison_index, &comparison_decision);
-                self.body.push(format!(
-                    "if ({comparison_status} != PHPC_NATIVE_COMPARISON_STATUS_OK) {{"
-                ));
-                self.body.push(format!("  return {comparison_exit_code};"));
+                self.body
+                    .push(format!("if ({comparison_abort_code} != 0) {{"));
+                self.body.push(format!("  return {comparison_abort_code};"));
                 self.body.push("}".to_string());
 
                 Ok(CValue::ComparisonDecision(comparison_decision))
@@ -7925,33 +7921,21 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeComparisonBranchDecision {comparison_decision} = phpc_native_comparison_branch_decision_from_result({comparison_branch});"
         ));
-        let comparison_exit_code =
-            self.emit_native_comparison_decision_exit_code(comparison_index, &comparison_decision);
-        (comparison_decision, comparison_exit_code)
+        let comparison_abort_code =
+            self.emit_native_comparison_decision_abort_code(comparison_index, &comparison_decision);
+        (comparison_decision, comparison_abort_code)
     }
 
-    fn emit_native_comparison_decision_exit_code(
+    fn emit_native_comparison_decision_abort_code(
         &mut self,
         comparison_index: usize,
         comparison_decision: &str,
     ) -> String {
-        let comparison_exit_code = format!("comparison_exit_code_{comparison_index}");
+        let comparison_abort_code = format!("comparison_abort_code_{comparison_index}");
         self.body.push(format!(
-            "int {comparison_exit_code} = phpc_native_comparison_branch_decision_exit_code({comparison_decision});"
+            "int {comparison_abort_code} = phpc_native_comparison_branch_decision_abort_code({comparison_decision});"
         ));
-        comparison_exit_code
-    }
-
-    fn emit_native_comparison_decision_status(
-        &mut self,
-        comparison_index: usize,
-        comparison_decision: &str,
-    ) -> String {
-        let comparison_status = format!("comparison_status_{comparison_index}");
-        self.body.push(format!(
-            "uint8_t {comparison_status} = phpc_native_comparison_branch_decision_status({comparison_decision});"
-        ));
-        comparison_status
+        comparison_abort_code
     }
 
     fn emit_native_array_handle_comparison(
@@ -7971,16 +7955,13 @@ impl CGenerator {
             "phpc_NativeComparisonBranchResult {comparison_branch} = phpc_native_array_compare_branch({left}, {}, {right});",
             native_comparison_c_uint8_argument(op)
         ));
-        let (comparison_decision, comparison_exit_code) =
+        let (comparison_decision, comparison_abort_code) =
             self.emit_native_comparison_branch_decision(comparison_index, &comparison_branch);
-        let comparison_status =
-            self.emit_native_comparison_decision_status(comparison_index, &comparison_decision);
-        self.body.push(format!(
-            "if ({comparison_status} != PHPC_NATIVE_COMPARISON_STATUS_OK) {{"
-        ));
+        self.body
+            .push(format!("if ({comparison_abort_code} != 0) {{"));
         self.body.push(format!(
             "  {}",
-            self.native_error_exit_with_code("", &comparison_exit_code)
+            self.native_error_exit_with_code("", &comparison_abort_code)
         ));
         self.body.push("}".to_string());
 

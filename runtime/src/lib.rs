@@ -1139,6 +1139,18 @@ impl NativeComparisonBranchDecision {
         self.exit_code
     }
 
+    pub fn is_blocked(&self) -> bool {
+        self.status() == NativeComparisonStatus::Blocked as u8
+    }
+
+    pub fn abort_code(&self) -> c_int {
+        if self.is_blocked() {
+            self.exit_code()
+        } else {
+            0
+        }
+    }
+
     pub fn is_true(&self) -> bool {
         self.exit_code == 0 && self.value != 0
     }
@@ -4367,6 +4379,20 @@ pub extern "C" fn phpc_native_comparison_branch_decision_status(
     decision: NativeComparisonBranchDecision,
 ) -> u8 {
     decision.status()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_decision_is_blocked(
+    decision: NativeComparisonBranchDecision,
+) -> bool {
+    decision.is_blocked()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_decision_abort_code(
+    decision: NativeComparisonBranchDecision,
+) -> c_int {
+    decision.abort_code()
 }
 
 #[no_mangle]
@@ -12038,13 +12064,24 @@ mod tests {
             } else {
                 NativeComparisonStatus::Blocked as u8
             };
+            let expected_blocked = expected_status == NativeComparisonStatus::Blocked as u8;
             assert_eq!(
                 phpc_native_comparison_branch_decision_status(decision),
                 expected_status,
                 "{label}"
             );
             assert_eq!(
+                phpc_native_comparison_branch_decision_is_blocked(decision),
+                expected_blocked,
+                "{label}"
+            );
+            assert_eq!(
                 phpc_native_comparison_branch_decision_exit_code(decision),
+                expected_exit,
+                "{label}"
+            );
+            assert_eq!(
+                phpc_native_comparison_branch_decision_abort_code(decision),
                 expected_exit,
                 "{label}"
             );
@@ -12054,6 +12091,21 @@ mod tests {
                 "{label}"
             );
         }
+
+        let malformed_decision = NativeComparisonBranchDecision {
+            exit_code: 7,
+            value: 1,
+        };
+        assert!(phpc_native_comparison_branch_decision_is_blocked(
+            malformed_decision
+        ));
+        assert_eq!(
+            phpc_native_comparison_branch_decision_abort_code(malformed_decision),
+            7
+        );
+        assert!(!phpc_native_comparison_branch_decision_is_true(
+            malformed_decision
+        ));
     }
 
     #[test]
