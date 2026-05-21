@@ -1,7 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 16:43 CEST
-Evaluation marker: 20260521T144357Z
+Updated: 2026-05-21 16:44 CEST
+Evaluation marker: 20260521T143958Z
+Final refresh: 20260521T144417Z
 
 This is a high-level roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local work is candidate material only until selected, gated, committed, and pushed.
 
@@ -11,7 +12,7 @@ Estimated progress toward a broadly usable generalized PHP native compiler: **20
 
 ```
 Generalized runtime/ABI foundations      [############--------] 59%
-Compiler/backend consumers               [#########-----------] 47%
+Compiler/backend consumers               [##########----------] 48%
 Executable generalized PHP semantics     [####----------------] 19%
 Arrays, references, COW, lvalues         [##------------------] 12%
 Objects, properties, methods             [##------------------] 10%
@@ -21,9 +22,9 @@ Broad integrated verification            [###-----------------] 13%
 
 ## Current Primary State
 
-- Current primary HEAD: `c0ee80ae codegen: route echo operand calls through shared boundary`.
+- Latest pushed primary commit observed before this evaluator update: `a88a5179 docs: update progress after echo call boundary`.
 - Latest integrated semantic compiler/runtime commit: `c0ee80ae codegen: route echo operand calls through shared boundary`.
-- Current uncommitted primary candidate work: none.
+- Product-code state at final evaluator refresh: clean and synced with `origin/master`; only this `PROGRESS.md` evaluator update is dirty for the wrapper to commit.
 - Latest integrated read: skipped later `echo` operands now route through the shared call-operation boundary after an earlier unsupported echo operand fails.
 
 ## Grand Roadmap Position
@@ -55,7 +56,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 | Active item | Primary-integrated estimate | Lane-local candidate maturity | Current read |
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, and byte-buffer results | 34% | 60% | Primary has string-conversion result/free ABI, comparison byte materialization, runtime-shared string truthiness, generated-C tracked dynamic string lengths, and runtime numeric-string classification. Lanes have broader binary-safe string-result, debug-output, regex, concat/interpolation, and array-transform consumers. Exact diagnostics and full backend parity remain limited. |
-| Call operation cleanup and ownership | 36% | 55% | Primary routes many call-result contexts through shared blockers across LLVM IR and generated C, including value operands in unary/binary/comparison/concat families and skipped later `echo` operands. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
+| Call operation cleanup and ownership | 37% | 55% | Primary routes many call-result contexts through shared blockers across LLVM IR and generated C, including value operands in unary/binary/comparison/concat families and skipped later `echo` operands. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
 | Comparison/conversion semantics | 37% | 56% | Primary has comparison ABI consumers, canonical branch-result predicates/exit-code consumers, centralized comparison operand materialization failure handling, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness. Lane conversion-source/pair work is promising but still candidate material. |
 | Arrays, lvalues, references, COW | 12% | 47% | Lane-local generated-C owner-slot/value-root/RMW/reference-cell work is strong, especially undefined/null/false value-root routing, but primary still lacks full executable array lvalue, foreach, reference/COW, and ArrayAccess behavior. |
 | Symbols, globals, request state | 21% | 41% | Primary has symbol-table ABI helpers; lanes have expression-result consumers, frame-slot plans, request-state contracts, and stored call-result symbol boundaries. Full request/global/superglobal behavior and exact diagnostics remain early. |
