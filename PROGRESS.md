@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
 Updated: 2026-05-21 17:36 CEST
-Evaluation marker: 20260521T143958Z
-Final refresh: 20260521T151050Z
+Evaluation marker: 20260521T153122Z
+Final refresh: 20260521T153249Z
 
 This is a high-level roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local work is candidate material only until selected, gated, committed, and pushed.
 
@@ -22,9 +22,9 @@ Broad integrated verification            [###-----------------] 13%
 
 ## Current Primary State
 
-- Latest pushed primary commit observed before this update: `851d540f native: route string-int builtins through conversion`.
+- Latest pushed primary commit observed before this evaluator update: `fbf731a5 docs: update progress after string-int conversion`.
 - Latest integrated semantic compiler/runtime commit: `851d540f native: route string-int builtins through conversion`.
-- Product-code state at progress refresh: `master` is at `origin/master`; this `PROGRESS.md` update is being handled separately from the pushed code/test slice.
+- Product-code state at evaluator refresh: `master` is at `origin/master` with product code clean before this evaluator's `PROGRESS.md` marker update; this update is being handled separately from implementation work.
 - Latest integrated read: generated-C `ord()` and `crc32()` for lowerable operands now consume native value materialization plus a runtime string-int operation ABI over PHP value-to-string bytes, with executable coverage for embedded-NUL strings, scalar conversion, null conversion, and CRC32 integer results. The prior generated-C `strlen()` and string-predicate value-to-string consumers remain integrated.
 - Latest pushed integration-lane candidate: `4b7da81c native: consume array key materialization in generated C` on `lane/native-integration-batch`. It is not primary capability until merged, but it gates a generated-C/native-executable consumer of the shared array-key materialization ABI with executable coverage for variable string, integer, numeric-string, null, and embedded-NUL binary string keys.
 
