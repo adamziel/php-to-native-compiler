@@ -3810,6 +3810,40 @@ pub unsafe extern "C" fn phpc_native_comparison_operand_compare_operation_branch
     unsafe { phpc_native_comparison_result_branch_or_report_stderr_and_free(result) }
 }
 
+/// # Safety
+///
+/// `left` and `right` follow the same operand ownership contract as
+/// `phpc_native_comparison_operand_compare_branch_and_free`. The helper
+/// consumes both operands, reports blocked diagnostics to stderr, and returns
+/// the canonical branch decision for comparison condition consumers.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_operand_compare_decision_and_free(
+    left: NativeComparisonOperand,
+    op: u8,
+    right: NativeComparisonOperand,
+) -> NativeComparisonBranchDecision {
+    let operation = NativeComparisonOperation::from_opcode(op);
+    unsafe {
+        phpc_native_comparison_operand_compare_operation_decision_and_free(left, operation, right)
+    }
+}
+
+/// # Safety
+///
+/// `left` and `right` follow the same operand ownership contract as
+/// `phpc_native_comparison_operand_compare_operation_branch_and_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_operand_compare_operation_decision_and_free(
+    left: NativeComparisonOperand,
+    operation: NativeComparisonOperation,
+    right: NativeComparisonOperand,
+) -> NativeComparisonBranchDecision {
+    let result = unsafe {
+        phpc_native_comparison_operand_compare_operation_and_free(left, operation, right)
+    };
+    unsafe { native_comparison_branch_decision_from_owned_result(result) }
+}
+
 unsafe fn native_comparison_operand_result_with_materialization_operation_and_free(
     left: NativeComparisonOperand,
     operation: NativeComparisonOperation,
@@ -3900,6 +3934,13 @@ pub extern "C" fn phpc_native_comparison_branch_decision_from_result(
     result: NativeComparisonBranchResult,
 ) -> NativeComparisonBranchDecision {
     NativeComparisonBranchDecision::from_branch_result(result)
+}
+
+unsafe fn native_comparison_branch_decision_from_owned_result(
+    result: NativeComparisonResult,
+) -> NativeComparisonBranchDecision {
+    let branch = unsafe { phpc_native_comparison_result_branch_or_report_stderr_and_free(result) };
+    phpc_native_comparison_branch_decision_from_result(branch)
 }
 
 #[no_mangle]
@@ -13482,6 +13523,115 @@ mod tests {
             },
             "unsupported comparison opcode 250",
         );
+    }
+
+    #[test]
+    fn native_comparison_operand_decision_consumes_owned_operands_across_families() {
+        let order_decision = unsafe {
+            phpc_native_comparison_operand_compare_operation_decision_and_free(
+                phpc_native_comparison_operand_from_string_bytes(b"10".as_ptr(), b"10".len()),
+                phpc_native_comparison_operation_from_opcode(NativeComparisonOp::LooseGt as u8),
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(2)),
+            )
+        };
+
+        let equality_decision = unsafe {
+            phpc_native_comparison_operand_compare_decision_and_free(
+                phpc_native_comparison_operand_from_scalar(phpc_native_null()),
+                NativeComparisonOp::LooseEq as u8,
+                phpc_native_comparison_operand_from_scalar(phpc_native_bool(false)),
+            )
+        };
+
+        let identity_decision = unsafe {
+            phpc_native_comparison_operand_compare_operation_decision_and_free(
+                phpc_native_comparison_operand_from_string_bytes(b"10".as_ptr(), b"10".len()),
+                phpc_native_comparison_operation_from_opcode(NativeComparisonOp::StrictNe as u8),
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(10)),
+            )
+        };
+
+        let array_blocker_decision = unsafe {
+            phpc_native_comparison_operand_compare_operation_decision_and_free(
+                NativeComparisonOperand::from_parts(
+                    NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                    NativeDiagnosticHandle::null(),
+                ),
+                phpc_native_comparison_operation_from_opcode(NativeComparisonOp::LooseEq as u8),
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+            )
+        };
+
+        let materialization_blocker_decision = unsafe {
+            phpc_native_comparison_operand_compare_operation_decision_and_free(
+                NativeComparisonOperand::from_parts(
+                    NativeValueHandle::null(),
+                    NativeDiagnosticHandle::from_message(
+                        "native value conversion failed: synthetic comparison operand",
+                    ),
+                ),
+                phpc_native_comparison_operation_from_opcode(NativeComparisonOp::LooseLt as u8),
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+            )
+        };
+
+        let invalid_opcode_decision = unsafe {
+            phpc_native_comparison_operand_compare_operation_decision_and_free(
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                phpc_native_comparison_operation_from_opcode(99),
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(2)),
+            )
+        };
+
+        for (label, decision, expected_true, expected_exit) in [
+            (
+                "numeric-string loose ordering operand decision",
+                order_decision,
+                true,
+                0,
+            ),
+            (
+                "null loose equality operand decision",
+                equality_decision,
+                true,
+                0,
+            ),
+            (
+                "strict identity operand decision",
+                identity_decision,
+                true,
+                0,
+            ),
+            (
+                "array blocker operand decision",
+                array_blocker_decision,
+                false,
+                1,
+            ),
+            (
+                "materialization blocker operand decision",
+                materialization_blocker_decision,
+                false,
+                1,
+            ),
+            (
+                "invalid opcode operand decision",
+                invalid_opcode_decision,
+                false,
+                1,
+            ),
+        ] {
+            assert_eq!(
+                phpc_native_comparison_branch_decision_exit_code(decision),
+                expected_exit,
+                "{label}"
+            );
+            assert_eq!(
+                phpc_native_comparison_branch_decision_is_true(decision),
+                expected_true,
+                "{label}"
+            );
+        }
     }
 
     #[test]

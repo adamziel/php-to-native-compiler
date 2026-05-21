@@ -5731,6 +5731,7 @@ struct CGenerator {
     uses_strcmp: bool,
     uses_native_string_helpers: bool,
     uses_native_comparison_helpers: bool,
+    uses_native_array_comparison_helpers: bool,
     uses_native_array_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
@@ -5826,7 +5827,9 @@ impl CGenerator {
             if self.uses_native_comparison_helpers {
                 output.push_str("typedef struct { uint8_t opcode; uint8_t valid; } phpc_NativeComparisonOperation;\n");
                 output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeComparisonOperand;\n");
-                output.push_str("typedef struct { uint8_t status; uint8_t value; size_t diagnostic_len; } phpc_NativeComparisonBranchResult;\n");
+                if self.uses_native_array_comparison_helpers {
+                    output.push_str("typedef struct { uint8_t status; uint8_t value; size_t diagnostic_len; } phpc_NativeComparisonBranchResult;\n");
+                }
                 output.push_str("typedef struct { int exit_code; uint8_t value; } phpc_NativeComparisonBranchDecision;\n");
             }
             if self.uses_native_array_helpers {
@@ -5906,11 +5909,11 @@ impl CGenerator {
             output.push_str("extern phpc_NativeComparisonOperation phpc_native_comparison_operation_from_opcode(uint8_t opcode);\n");
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_scalar(phpc_NativeScalarValue value);\n");
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_string_bytes(const uint8_t *ptr, size_t len);\n");
-            output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_comparison_operand_compare_operation_branch_and_free(phpc_NativeComparisonOperand left, phpc_NativeComparisonOperation operation, phpc_NativeComparisonOperand right);\n");
-            if self.uses_native_array_helpers {
+            output.push_str("extern phpc_NativeComparisonBranchDecision phpc_native_comparison_operand_compare_operation_decision_and_free(phpc_NativeComparisonOperand left, phpc_NativeComparisonOperation operation, phpc_NativeComparisonOperand right);\n");
+            if self.uses_native_array_comparison_helpers {
                 output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_array_compare_branch(phpc_NativeArrayHandle left, uint8_t op, phpc_NativeArrayHandle right);\n");
+                output.push_str("extern phpc_NativeComparisonBranchDecision phpc_native_comparison_branch_decision_from_result(phpc_NativeComparisonBranchResult result);\n");
             }
-            output.push_str("extern phpc_NativeComparisonBranchDecision phpc_native_comparison_branch_decision_from_result(phpc_NativeComparisonBranchResult result);\n");
             output.push_str("extern int phpc_native_comparison_branch_decision_exit_code(phpc_NativeComparisonBranchDecision decision);\n");
             output.push_str("extern bool phpc_native_comparison_branch_decision_is_true(phpc_NativeComparisonBranchDecision decision);\n\n");
         }
@@ -7752,18 +7755,20 @@ impl CGenerator {
                 let left = self.emit_native_comparison_operand(left, span)?;
                 let right = self.emit_native_comparison_operand(right, span)?;
                 let comparison_operation = format!("comparison_operation_{comparison_index}");
-                let comparison_branch = format!("comparison_branch_{comparison_index}");
+                let comparison_decision = format!("comparison_decision_{comparison_index}");
 
                 self.body.push(format!(
                     "phpc_NativeComparisonOperation {comparison_operation} = phpc_native_comparison_operation_from_opcode({});",
                     native_comparison_c_uint8_argument(op)
                 ));
                 self.body.push(format!(
-                    "phpc_NativeComparisonBranchResult {comparison_branch} = phpc_native_comparison_operand_compare_operation_branch_and_free({}, {comparison_operation}, {});",
+                    "phpc_NativeComparisonBranchDecision {comparison_decision} = phpc_native_comparison_operand_compare_operation_decision_and_free({}, {comparison_operation}, {});",
                     left.operand, right.operand
                 ));
-                let (comparison_decision, comparison_exit_code) = self
-                    .emit_native_comparison_branch_decision(comparison_index, &comparison_branch);
+                let comparison_exit_code = self.emit_native_comparison_decision_exit_code(
+                    comparison_index,
+                    &comparison_decision,
+                );
                 self.body
                     .push(format!("if ({comparison_exit_code} != 0) {{"));
                 self.body.push(format!("  return {comparison_exit_code};"));
@@ -7785,11 +7790,21 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeComparisonBranchDecision {comparison_decision} = phpc_native_comparison_branch_decision_from_result({comparison_branch});"
         ));
+        let comparison_exit_code =
+            self.emit_native_comparison_decision_exit_code(comparison_index, &comparison_decision);
+        (comparison_decision, comparison_exit_code)
+    }
+
+    fn emit_native_comparison_decision_exit_code(
+        &mut self,
+        comparison_index: usize,
+        comparison_decision: &str,
+    ) -> String {
         let comparison_exit_code = format!("comparison_exit_code_{comparison_index}");
         self.body.push(format!(
             "int {comparison_exit_code} = phpc_native_comparison_branch_decision_exit_code({comparison_decision});"
         ));
-        (comparison_decision, comparison_exit_code)
+        comparison_exit_code
     }
 
     fn emit_native_array_handle_comparison(
@@ -7800,6 +7815,7 @@ impl CGenerator {
     ) -> CValue {
         self.uses_native_array_helpers = true;
         self.uses_native_comparison_helpers = true;
+        self.uses_native_array_comparison_helpers = true;
         let comparison_index = self.next_native_temp;
         self.next_native_temp += 1;
         let comparison_branch = format!("array_comparison_branch_{comparison_index}");

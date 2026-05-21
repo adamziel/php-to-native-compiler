@@ -306,7 +306,7 @@ echo 1 !== "1";
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free"),
+        source.contains("phpc_native_comparison_operand_compare_operation_decision_and_free"),
         "{source}"
     );
     assert!(
@@ -315,16 +315,16 @@ echo 1 !== "1";
     );
     assert!(source.contains("phpc_NativeComparisonOperand"), "{source}");
     assert!(
-        source.contains("phpc_NativeComparisonBranchResult"),
-        "{source}"
+        !source.contains("phpc_NativeComparisonBranchResult"),
+        "scalar/string comparison branches should not expose intermediate branch-result storage:\n{source}"
     );
     assert!(
         source.contains("phpc_NativeComparisonBranchDecision"),
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_branch_decision_from_result"),
-        "generated C should route branch results through the runtime branch-decision ABI:\n{source}"
+        !source.contains("phpc_native_comparison_branch_decision_from_result"),
+        "scalar/string comparisons should consume operands through the direct decision ABI:\n{source}"
     );
     assert!(
         source.contains("phpc_native_comparison_branch_decision_exit_code"),
@@ -336,7 +336,11 @@ echo 1 !== "1";
     );
     assert!(
         !source.contains("phpc_NativeComparisonResult"),
-        "generated C should consume comparison operands directly through the branch-result ABI:\n{source}"
+        "generated C should consume comparison operands directly through the decision ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free"),
+        "scalar/string comparisons should not materialize an intermediate branch result:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_value_materialization_failure_exit_code"),
@@ -525,8 +529,9 @@ fn native_executable_c_source_tracks_dynamic_string_operand_lengths() {
     );
     assert!(
         source.contains("phpc_native_comparison_operation_from_opcode")
-            && source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free"),
-        "dynamic string operands should feed the shared comparison operand/result ABI:\n{source}"
+            && source
+                .contains("phpc_native_comparison_operand_compare_operation_decision_and_free"),
+        "dynamic string operands should feed the shared comparison operand-decision ABI:\n{source}"
     );
     assert!(
         !source.contains("strlen((const char *)("),

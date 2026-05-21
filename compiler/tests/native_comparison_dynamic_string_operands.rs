@@ -35,10 +35,14 @@ fn native_executable_c_source_materializes_known_length_string_expr_comparisons(
     );
     assert!(
         source.contains("phpc_native_comparison_operation_from_opcode")
-            && source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free")
-            && source.contains("phpc_native_comparison_branch_decision_from_result")
+            && source.contains("phpc_native_comparison_operand_compare_operation_decision_and_free")
             && source.contains("phpc_native_comparison_branch_decision_is_true"),
-        "dynamic string comparison operands should feed the shared comparison branch-decision ABI:\n{source}"
+        "dynamic string comparison operands should feed the shared comparison operand-decision ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free")
+            && !source.contains("phpc_native_comparison_branch_decision_from_result"),
+        "dynamic string comparison operands should not materialize intermediate branch results:\n{source}"
     );
     assert!(
         !source.contains("comparison_string_handle_"),
@@ -73,10 +77,14 @@ fn native_executable_c_source_materializes_mixed_length_string_expr_comparisons(
     );
     assert!(
         source.contains("phpc_native_comparison_operation_from_opcode")
-            && source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free")
-            && source.contains("phpc_native_comparison_branch_decision_from_result")
+            && source.contains("phpc_native_comparison_operand_compare_operation_decision_and_free")
             && source.contains("phpc_native_comparison_branch_decision_is_true"),
-        "mixed-length dynamic string comparison operands should feed the shared comparison branch-decision ABI:\n{source}"
+        "mixed-length dynamic string comparison operands should feed the shared comparison operand-decision ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free")
+            && !source.contains("phpc_native_comparison_branch_decision_from_result"),
+        "mixed-length dynamic string comparison operands should not materialize intermediate branch results:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_value_compare_branch_and_free"),
