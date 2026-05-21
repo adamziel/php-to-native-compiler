@@ -7,7 +7,7 @@ use crate::ast::{
     ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
-use php_runtime::NativeComparisonOp;
+use php_runtime::{is_php_numeric_string, NativeComparisonOp};
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
 const MAX_KNOWN_FLOAT_VALUES: usize = 4;
@@ -2735,7 +2735,7 @@ impl LlvmGenerator {
         match value {
             IrValue::Int(_) | IrValue::Float(_) => Some(true),
             IrValue::Null | IrValue::Bool(_) | IrValue::BoolExpr(_) => Some(false),
-            IrValue::String(value) => Some(is_php_numeric_string_literal(value)),
+            IrValue::String(value) => Some(is_php_numeric_string(value)),
             IrValue::StringPtr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_numeric_result(&values)
@@ -6077,7 +6077,7 @@ impl CGenerator {
         match value {
             CValue::Int(_) | CValue::Float(_) => Some(true),
             CValue::Null | CValue::Bool(_) | CValue::BoolExpr(_) => Some(false),
-            CValue::String(value) => Some(is_php_numeric_string_literal(value)),
+            CValue::String(value) => Some(is_php_numeric_string(value)),
             CValue::StringExpr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_numeric_result(&values)
@@ -9341,7 +9341,7 @@ fn is_compat_loaded_extension_name(name: &str) -> bool {
 fn known_strings_have_uniform_numeric_result(values: &KnownString) -> Option<bool> {
     let mut result = None;
     for value in values.values() {
-        let current = is_php_numeric_string_literal(value);
+        let current = is_php_numeric_string(value);
         if let Some(previous) = result {
             if previous != current {
                 return None;
@@ -9351,51 +9351,6 @@ fn known_strings_have_uniform_numeric_result(values: &KnownString) -> Option<boo
         }
     }
     result
-}
-
-fn is_php_numeric_string_literal(value: &str) -> bool {
-    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
-    !trimmed.is_empty() && is_well_formed_php_numeric_string(trimmed)
-}
-
-fn is_well_formed_php_numeric_string(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    let mut index = 0;
-
-    if matches!(bytes.get(index), Some(b'+' | b'-')) {
-        index += 1;
-    }
-
-    let digits_before_decimal = consume_ascii_digits(bytes, &mut index);
-    if matches!(bytes.get(index), Some(b'.')) {
-        index += 1;
-        let digits_after_decimal = consume_ascii_digits(bytes, &mut index);
-        if digits_before_decimal == 0 && digits_after_decimal == 0 {
-            return false;
-        }
-    } else if digits_before_decimal == 0 {
-        return false;
-    }
-
-    if matches!(bytes.get(index), Some(b'e' | b'E')) {
-        index += 1;
-        if matches!(bytes.get(index), Some(b'+' | b'-')) {
-            index += 1;
-        }
-        if consume_ascii_digits(bytes, &mut index) == 0 {
-            return false;
-        }
-    }
-
-    index == bytes.len()
-}
-
-fn consume_ascii_digits(bytes: &[u8], index: &mut usize) -> usize {
-    let start = *index;
-    while matches!(bytes.get(*index), Some(b'0'..=b'9')) {
-        *index += 1;
-    }
-    *index - start
 }
 
 fn llvm_gettype_name(value: &IrValue) -> &'static str {

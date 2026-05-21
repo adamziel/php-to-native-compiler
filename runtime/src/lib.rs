@@ -6645,6 +6645,11 @@ fn parse_numeric_string(value: &str) -> Option<Number> {
     trimmed.parse::<f64>().ok().map(Number::Float)
 }
 
+pub fn is_php_numeric_string(value: &str) -> bool {
+    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
+    !trimmed.is_empty() && is_well_formed_numeric_string(trimmed)
+}
+
 fn is_well_formed_numeric_string(value: &str) -> bool {
     let bytes = value.as_bytes();
     let mut index = 0;
@@ -7983,15 +7988,17 @@ mod tests {
     fn is_numeric_matches_current_numeric_scalar_subset() {
         assert!(Value::Int(7).is_numeric());
         assert!(Value::Float(3.5).is_numeric());
-        assert!(Value::String(" 42 ".to_string()).is_numeric());
-        assert!(Value::String("-.5".to_string()).is_numeric());
-        assert!(Value::String("5.".to_string()).is_numeric());
-        assert!(Value::String("8e2".to_string()).is_numeric());
 
-        assert!(!Value::String(String::new()).is_numeric());
-        assert!(!Value::String(" ".to_string()).is_numeric());
-        assert!(!Value::String("8foo".to_string()).is_numeric());
-        assert!(!Value::String("0x10".to_string()).is_numeric());
+        for value in [" 42 ", "-.5", "5.", "8e2"] {
+            assert!(is_php_numeric_string(value));
+            assert!(Value::String(value.to_string()).is_numeric());
+        }
+
+        for value in ["", " ", "8foo", "0x10"] {
+            assert!(!is_php_numeric_string(value));
+            assert!(!Value::String(value.to_string()).is_numeric());
+        }
+
         assert!(!Value::Bool(true).is_numeric());
         assert!(!Value::Null.is_numeric());
         assert!(!Value::Array(PhpArray::new()).is_numeric());
