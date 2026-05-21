@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 16:44 CEST
+Updated: 2026-05-21 16:57 CEST
 Evaluation marker: 20260521T143958Z
-Final refresh: 20260521T144417Z
+Final refresh: 20260521T145719Z
 
 This is a high-level roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local work is candidate material only until selected, gated, committed, and pushed.
 
@@ -22,10 +22,10 @@ Broad integrated verification            [###-----------------] 13%
 
 ## Current Primary State
 
-- Latest pushed primary commit observed before this evaluator update: `a88a5179 docs: update progress after echo call boundary`.
-- Latest integrated semantic compiler/runtime commit: `c0ee80ae codegen: route echo operand calls through shared boundary`.
-- Product-code state at final evaluator refresh: clean and synced with `origin/master`; only this `PROGRESS.md` evaluator update is dirty for the wrapper to commit.
-- Latest integrated read: skipped later `echo` operands now route through the shared call-operation boundary after an earlier unsupported echo operand fails.
+- Latest pushed primary commit observed before this update: `ca029eb4 runtime: share comparison operation families`.
+- Latest integrated semantic compiler/runtime commit: `ca029eb4 runtime: share comparison operation families`.
+- Product-code state at progress refresh: clean and synced with `origin/master`; only this `PROGRESS.md` update is dirty for the wrapper to commit.
+- Latest integrated read: runtime comparison operation/value-family dispatch now feeds existing runtime and native comparison consumers, replacing duplicated production comparison dispatch. This is shared infrastructure, not full array/object/resource comparison execution.
 
 ## Grand Roadmap Position
 
@@ -41,6 +41,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 - [x] Consume comparison branch-result ABI from generated C instead of direct struct-field reads.
 - [x] Materialize generated-C comparison string operands through a runtime byte-boundary with diagnostic results.
 - [x] Centralize generated-C comparison operand materialization failures behind a runtime-owned exit-code/report/free ABI.
+- [x] Share runtime comparison operation/value-family dispatch across existing runtime and native comparison consumers.
 - [x] Reuse runtime PHP string truthiness semantics in runtime values plus LLVM/generated-C known-string consumers.
 - [x] Track generated-C dynamic string byte lengths so mixed-length and embedded-NUL comparison operands can consume the runtime comparison ABI.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
@@ -57,7 +58,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, and byte-buffer results | 34% | 60% | Primary has string-conversion result/free ABI, comparison byte materialization, runtime-shared string truthiness, generated-C tracked dynamic string lengths, and runtime numeric-string classification. Lanes have broader binary-safe string-result, debug-output, regex, concat/interpolation, and array-transform consumers. Exact diagnostics and full backend parity remain limited. |
 | Call operation cleanup and ownership | 37% | 55% | Primary routes many call-result contexts through shared blockers across LLVM IR and generated C, including value operands in unary/binary/comparison/concat families and skipped later `echo` operands. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
-| Comparison/conversion semantics | 37% | 56% | Primary has comparison ABI consumers, canonical branch-result predicates/exit-code consumers, centralized comparison operand materialization failure handling, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness. Lane conversion-source/pair work is promising but still candidate material. |
+| Comparison/conversion semantics | 37% | 56% | Primary has comparison ABI consumers, runtime comparison operation/value-family sharing for loose equality/order and strict identity, canonical branch-result predicates/exit-code consumers, centralized comparison operand materialization failure handling, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness. Lane conversion-source/pair work is promising but still candidate material. |
 | Arrays, lvalues, references, COW | 12% | 47% | Lane-local generated-C owner-slot/value-root/RMW/reference-cell work is strong, especially undefined/null/false value-root routing, but primary still lacks full executable array lvalue, foreach, reference/COW, and ArrayAccess behavior. |
 | Symbols, globals, request state | 21% | 41% | Primary has symbol-table ABI helpers; lanes have expression-result consumers, frame-slot plans, request-state contracts, and stored call-result symbol boundaries. Full request/global/superglobal behavior and exact diagnostics remain early. |
 | Objects, properties, methods | 10% | 35% | Lane-local object/property receiver and operation blockers are more coherent, but primary has little broad executable object/property/method behavior beyond bounded blocker and seed paths. |
@@ -68,6 +69,8 @@ The project is moving from scattered backend rejection paths toward shared seman
 
 Recent pushed primary commits show useful movement from lane-local artifacts into `master`:
 
+- `ca029eb4 runtime: share comparison operation families`
+  - Shares runtime comparison dispatch through operation families and scalar/array/object/resource value families, replacing duplicated production comparison blocker and strict-identity dispatch for existing runtime and native-value comparison consumers.
 - `c0ee80ae codegen: route echo operand calls through shared boundary`
   - Routes later `echo` statement-list operands skipped after an earlier blocked operand through the shared native call-operation boundary in LLVM IR and generated-C lowering.
 - `dce9e75a codegen: route value operand calls through shared boundary`
