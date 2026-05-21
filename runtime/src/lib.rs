@@ -13249,6 +13249,7 @@ mod tests {
             unsafe { array_value.as_ref() },
             Some(Value::Array(array)) if array.len() == 1
         ));
+        unsafe { phpc_native_array_free(array) };
 
         let array_int = unsafe {
             phpc_native_value_cast_operation_with_diagnostic(
@@ -13266,7 +13267,6 @@ mod tests {
         unsafe { phpc_native_value_free(second) };
         unsafe { phpc_native_value_free(first) };
         unsafe { phpc_native_value_free(array_value) };
-        unsafe { phpc_native_array_free(array) };
     }
 
     #[test]

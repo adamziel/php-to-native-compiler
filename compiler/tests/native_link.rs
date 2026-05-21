@@ -1612,6 +1612,27 @@ fn native_executable_c_source_routes_array_handles_through_value_operand_boundar
         source.matches(" = phpc_native_value_from_array(").count() >= 6,
         "array handles used as array values, casts, cast builtins, and type-name operands should share one value materialization boundary:\n{source}"
     );
+    let immediate_array_value_frees = source
+        .lines()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .filter(|lines| {
+            let Some(array_handle) = lines[0]
+                .trim()
+                .split(" = phpc_native_value_from_array(")
+                .nth(1)
+                .and_then(|suffix| suffix.strip_suffix(");"))
+            else {
+                return false;
+            };
+            let expected = format!("phpc_native_array_free({array_handle});");
+            lines[1].trim() == expected.as_str()
+        })
+        .count();
+    assert!(
+        immediate_array_value_frees >= 6,
+        "temporary array literals cloned into value handles should release the source array immediately:\n{source}"
+    );
     assert!(
         source
             .matches(" = phpc_native_value_cast_operation_with_diagnostic(")

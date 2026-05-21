@@ -9749,6 +9749,10 @@ impl CGenerator {
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<CNativeValueMaterialization> {
+        if let Expr::Array { items, span } = expr {
+            return self.materialize_native_array_literal_value_handle(items, *span);
+        }
+
         if let Some(value) = self.try_materialize_native_value_result_expr(expr, failure_cleanup)? {
             return Ok(value);
         }
@@ -9769,11 +9773,43 @@ impl CGenerator {
         })
     }
 
+    fn materialize_native_array_literal_value_handle(
+        &mut self,
+        items: &[ArrayItem],
+        span: Span,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let array = self.emit_array_literal(items, span)?;
+        let handle = self.next_native_name("array_value");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {handle} = phpc_native_value_from_array({array});"
+        ));
+        self.release_native_array_cleanup_handle(&array);
+        self.body.push(format!("phpc_native_array_free({array});"));
+        Ok(CNativeValueMaterialization {
+            handle: handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+        })
+    }
+
+    fn release_native_array_cleanup_handle(&mut self, handle: &str) {
+        if let Some(index) = self
+            .array_cleanup_handles
+            .iter()
+            .rposition(|cleanup_handle| cleanup_handle == handle)
+        {
+            self.array_cleanup_handles.remove(index);
+        }
+    }
+
     fn materialize_native_value_result_operand(
         &mut self,
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<CNativeValueMaterialization> {
+        if let Expr::Array { items, span } = expr {
+            return self.materialize_native_array_literal_value_handle(items, *span);
+        }
+
         if let Some(value) = self.try_materialize_native_value_result_expr(expr, failure_cleanup)? {
             return Ok(value);
         }
