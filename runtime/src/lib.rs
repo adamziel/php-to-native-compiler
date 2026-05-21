@@ -595,6 +595,20 @@ trait PhpStringByteSource {
     fn write_string_bytes_to<W: Write>(&self, writer: &mut W) -> Option<io::Result<usize>> {
         self.string_byte_view().map(|bytes| bytes.write_to(writer))
     }
+
+    /// # Safety
+    ///
+    /// `buffer` must either be null or point to at least `capacity` writable
+    /// bytes. The function returns the full byte length required by the source,
+    /// even when the supplied buffer is smaller.
+    unsafe fn write_string_bytes_to_raw_buffer(
+        &self,
+        buffer: *mut u8,
+        capacity: usize,
+    ) -> Option<usize> {
+        self.string_byte_view()
+            .map(|bytes| unsafe { bytes.write_to_raw_buffer(buffer, capacity) })
+    }
 }
 
 impl<'a> PhpStringByteView<'a> {
@@ -617,6 +631,28 @@ impl<'a> PhpStringByteView<'a> {
     fn write_to<W: Write>(self, writer: &mut W) -> io::Result<usize> {
         writer.write_all(self.bytes)?;
         Ok(self.bytes.len())
+    }
+
+    /// # Safety
+    ///
+    /// `buffer` must either be null or point to at least `capacity` writable
+    /// bytes. The function returns the full byte length required by this view,
+    /// even when the supplied buffer is smaller.
+    unsafe fn write_to_raw_buffer(self, buffer: *mut u8, capacity: usize) -> usize {
+        let required = self.bytes.len();
+        if buffer.is_null() || capacity == 0 {
+            return required;
+        }
+
+        let written = required.min(capacity);
+        unsafe { ptr::copy_nonoverlapping(self.bytes.as_ptr(), buffer, written) };
+        required
+    }
+}
+
+impl PhpStringByteSource for str {
+    fn string_byte_view(&self) -> Option<PhpStringByteView<'_>> {
+        Some(PhpStringByteView::from_slice(self.as_bytes()))
     }
 }
 
@@ -2398,16 +2434,12 @@ pub unsafe extern "C" fn phpc_native_scalar_echo_write(
     capacity: usize,
 ) -> usize {
     let output = value.echo_string();
-    let bytes = output.as_bytes();
-    let required = bytes.len();
-
-    if buffer.is_null() || capacity == 0 {
-        return required;
+    unsafe {
+        output
+            .as_str()
+            .write_string_bytes_to_raw_buffer(buffer, capacity)
     }
-
-    let written = required.min(capacity);
-    ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, written);
-    required
+    .unwrap_or(0)
 }
 
 #[no_mangle]
@@ -13761,8 +13793,19 @@ mod tests {
 
     #[test]
     fn php_string_byte_sources_share_native_buffer_materialization() {
-        fn assert_source<S: PhpStringByteSource>(source: &S, expected: &[u8]) {
+        fn assert_source<S: PhpStringByteSource + ?Sized>(source: &S, expected: &[u8]) {
             assert_eq!(source.string_bytes(), Some(expected));
+
+            let view = source
+                .string_byte_view()
+                .expect("source should expose a byte view");
+            let mut view_buffer = [0_u8; 4];
+            let view_required =
+                unsafe { view.write_to_raw_buffer(view_buffer.as_mut_ptr(), view_buffer.len()) };
+            let view_copied = expected.len().min(view_buffer.len());
+            assert_eq!(view_required, expected.len());
+            assert_eq!(&view_buffer[..view_copied], &expected[..view_copied]);
+            assert!(view_buffer[view_copied..].iter().all(|byte| *byte == 0));
 
             let mut written = Vec::new();
             assert_eq!(
@@ -13773,6 +13816,21 @@ mod tests {
                 expected.len()
             );
             assert_eq!(written, expected);
+
+            let mut raw_buffer = [0_u8; 4];
+            let raw_required = unsafe {
+                source
+                    .write_string_bytes_to_raw_buffer(raw_buffer.as_mut_ptr(), raw_buffer.len())
+                    .expect("source should write raw buffers")
+            };
+            let raw_copied = expected.len().min(raw_buffer.len());
+            assert_eq!(raw_required, expected.len());
+            assert_eq!(&raw_buffer[..raw_copied], &expected[..raw_copied]);
+            assert!(raw_buffer[raw_copied..].iter().all(|byte| *byte == 0));
+            assert_eq!(
+                unsafe { source.write_string_bytes_to_raw_buffer(ptr::null_mut(), 0) },
+                Some(expected.len())
+            );
 
             let buffer = source
                 .string_clone_native_byte_buffer()
@@ -13799,6 +13857,7 @@ mod tests {
             },
             b"diagnostic bytes",
         );
+        assert_source("borrowed scalar text", b"borrowed scalar text");
         assert_source(&ArrayKey::String("array-key".to_string()), b"array-key");
         assert_source(
             &ArrayColumnKey::String("column-key".to_string()),
@@ -13814,6 +13873,10 @@ mod tests {
             .string_clone_native_handle()
             .is_none());
         assert!(Value::Int(7).string_bytes().is_none());
+        assert_eq!(
+            unsafe { Value::Int(7).write_string_bytes_to_raw_buffer(ptr::null_mut(), 0) },
+            None
+        );
 
         let handle = NativeStringHandle::from_vec(b"abi\0string".to_vec());
         assert_eq!(native_string_bytes_for_test(handle), b"abi\0string");
