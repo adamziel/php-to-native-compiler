@@ -101,9 +101,13 @@ pub enum NativeStringPredicate {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeStringIntOperation {
+    CaseCompare = 0,
+    SubstrCount = 1,
     Ordinal = 5,
     Crc32 = 6,
 }
+
+const NATIVE_STRING_INT_HAS_LENGTH: u8 = 1;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1427,21 +1431,25 @@ unsafe fn native_value_string_predicate(
 /// by the runtime ABI and not yet freed. `diagnostic` may be null; when
 /// non-null, it must point to writable storage for one `NativeDiagnosticHandle`.
 /// On failure the helper stores a diagnostic handle that the caller owns and
-/// must release with `phpc_native_diagnostic_free`. Operation `5` returns
+/// must release with `phpc_native_diagnostic_free`. Operation `0` returns
+/// `strcasecmp(subject, operand)` as -1, 0, or 1; operation `1` returns
+/// `substr_count(subject, operand[, offset[, length]])`; operation `5` returns
 /// `ord(subject)`; operation `6` returns `crc32(subject)`.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_value_string_int_operation_with_diagnostic(
     subject: NativeValueHandle,
-    _operand: NativeValueHandle,
-    _offset: i64,
-    _length: i64,
+    operand: NativeValueHandle,
+    offset: i64,
+    length: i64,
     flags: u8,
     operation: u8,
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> i64 {
     unsafe { native_clear_diagnostic_slot(diagnostic) };
 
-    match unsafe { native_value_string_int_operation(subject, flags, operation) } {
+    match unsafe {
+        native_value_string_int_operation(subject, operand, offset, length, flags, operation)
+    } {
         Ok(value) => value,
         Err(error) => {
             if !diagnostic.is_null() {
@@ -1454,21 +1462,50 @@ pub unsafe extern "C" fn phpc_native_value_string_int_operation_with_diagnostic(
 
 unsafe fn native_value_string_int_operation(
     subject: NativeValueHandle,
+    operand: NativeValueHandle,
+    offset: i64,
+    length: i64,
     flags: u8,
     operation: u8,
 ) -> RuntimeResult<i64> {
-    if flags != 0 {
+    if flags & !NATIVE_STRING_INT_HAS_LENGTH != 0 {
         return Err(RuntimeError::invalid_string_conversion(
-            "native string int operation failed: ord/crc32 do not accept length flags",
+            "native string int operation failed: unsupported operation flags",
         ));
     }
 
     match operation {
+        value if value == NativeStringIntOperation::CaseCompare as u8 => {
+            if flags != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native string int operation failed: strcasecmp does not accept length flags",
+                ));
+            }
+            let left = unsafe { native_value_to_string_bytes(subject) }?;
+            let right = unsafe { native_value_to_string_bytes(operand) }?;
+            Ok(ascii_case_insensitive_compare_bytes(&left, &right))
+        }
+        value if value == NativeStringIntOperation::SubstrCount as u8 => {
+            let haystack = unsafe { native_value_to_string_bytes(subject) }?;
+            let needle = unsafe { native_value_to_string_bytes(operand) }?;
+            let length = (flags & NATIVE_STRING_INT_HAS_LENGTH != 0).then_some(length);
+            php_substr_count_bytes(&haystack, &needle, offset, length)
+        }
         value if value == NativeStringIntOperation::Ordinal as u8 => {
+            if flags != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native string int operation failed: ord/crc32 do not accept length flags",
+                ));
+            }
             let subject = unsafe { native_value_to_string_bytes(subject) }?;
             php_ord_bytes(&subject)
         }
         value if value == NativeStringIntOperation::Crc32 as u8 => {
+            if flags != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native string int operation failed: ord/crc32 do not accept length flags",
+                ));
+            }
             let subject = unsafe { native_value_to_string_bytes(subject) }?;
             Ok(php_crc32_bytes(&subject))
         }
@@ -1484,6 +1521,77 @@ fn php_ord_bytes(bytes: &[u8]) -> RuntimeResult<i64> {
             "native string int operation failed: ord requires a non-empty string",
         )
     })
+}
+
+fn ascii_case_insensitive_compare_bytes(left: &[u8], right: &[u8]) -> i64 {
+    for (left, right) in left.iter().zip(right.iter()) {
+        let left = left.to_ascii_lowercase();
+        let right = right.to_ascii_lowercase();
+        match left.cmp(&right) {
+            Ordering::Less => return -1,
+            Ordering::Greater => return 1,
+            Ordering::Equal => {}
+        }
+    }
+
+    match left.len().cmp(&right.len()) {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
+    }
+}
+
+fn php_substr_count_bytes(
+    haystack: &[u8],
+    needle: &[u8],
+    offset: i64,
+    length: Option<i64>,
+) -> RuntimeResult<i64> {
+    if needle.is_empty() {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string int operation failed: empty needles are not supported",
+        ));
+    }
+
+    let haystack_len = i64::try_from(haystack.len()).unwrap_or(i64::MAX);
+    let start = if offset >= 0 {
+        offset
+    } else {
+        haystack_len.saturating_add(offset)
+    };
+    if start < 0 || start > haystack_len {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string int operation failed: offset must be within the haystack bounds",
+        ));
+    }
+
+    let end = match length {
+        Some(length) if length >= 0 => start.saturating_add(length),
+        Some(length) => haystack_len.saturating_add(length),
+        None => haystack_len,
+    };
+    if end < start || end > haystack_len {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string int operation failed: length must keep the searched slice within the haystack bounds",
+        ));
+    }
+
+    let haystack = &haystack[start as usize..end as usize];
+    if needle.len() > haystack.len() {
+        return Ok(0);
+    }
+
+    let mut count = 0_i64;
+    let mut cursor = 0_usize;
+    while cursor <= haystack.len().saturating_sub(needle.len()) {
+        if &haystack[cursor..cursor + needle.len()] == needle {
+            count += 1;
+            cursor += needle.len();
+        } else {
+            cursor += 1;
+        }
+    }
+    Ok(count)
 }
 
 fn php_crc32_bytes(bytes: &[u8]) -> i64 {
@@ -9613,7 +9721,11 @@ mod tests {
     #[test]
     fn native_string_int_operations_reuse_value_to_string_boundary() {
         let payload = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
+        let folded = NativeValueHandle::from_value(Value::String("a\0b".to_string()));
+        let repeated = NativeValueHandle::from_value(Value::String("A\0BA\0B".to_string()));
+        let needle = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
         let scalar = phpc_native_value_from_scalar(phpc_native_int(42042));
+        let scalar_needle = phpc_native_value_from_scalar(phpc_native_int(42));
         let null_value = phpc_native_value_from_scalar(phpc_native_null());
         let checksum_subject =
             NativeValueHandle::from_value(Value::String("123456789".to_string()));
@@ -9689,6 +9801,48 @@ mod tests {
         assert_eq!(null_checksum, 0);
         assert!(diagnostic.is_null());
 
+        let case_compare = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                payload,
+                folded,
+                0,
+                0,
+                0,
+                NativeStringIntOperation::CaseCompare as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(case_compare, 0);
+        assert!(diagnostic.is_null());
+
+        let repeated_count = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                repeated,
+                needle,
+                0,
+                6,
+                NATIVE_STRING_INT_HAS_LENGTH,
+                NativeStringIntOperation::SubstrCount as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(repeated_count, 2);
+        assert!(diagnostic.is_null());
+
+        let scalar_count = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                scalar,
+                scalar_needle,
+                0,
+                0,
+                0,
+                NativeStringIntOperation::SubstrCount as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(scalar_count, 2);
+        assert!(diagnostic.is_null());
+
         let empty = NativeValueHandle::from_value(Value::String(String::new()));
         let empty_ordinal = unsafe {
             phpc_native_value_string_int_operation_with_diagnostic(
@@ -9747,7 +9901,11 @@ mod tests {
         unsafe { phpc_native_value_free(empty) };
         unsafe { phpc_native_value_free(checksum_subject) };
         unsafe { phpc_native_value_free(null_value) };
+        unsafe { phpc_native_value_free(scalar_needle) };
         unsafe { phpc_native_value_free(scalar) };
+        unsafe { phpc_native_value_free(needle) };
+        unsafe { phpc_native_value_free(repeated) };
+        unsafe { phpc_native_value_free(folded) };
         unsafe { phpc_native_value_free(payload) };
     }
 

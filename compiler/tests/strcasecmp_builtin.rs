@@ -2,7 +2,7 @@ use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
 
-const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lowering rejects strcasecmp(), substr_count(), ord(), and crc32() until native PHP string conversion, byte-preserving argument/result ownership, warning recovery, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable string-int operands through the shared runtime contract";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -91,5 +91,5 @@ fn emit_ir_rejects_strcasecmp_until_native_runtime_call_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
-    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    assert_eq!(error.message, LLVM_STRING_INT_OPERATION_REJECTION);
 }

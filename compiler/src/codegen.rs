@@ -21,8 +21,8 @@ const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects 
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects str_starts_with(), str_ends_with(), and str_contains() until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native predicate diagnostics exist; generated-native C routes lowerable predicate operands through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
-const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lowering rejects ord() and crc32() until native PHP string conversion, byte-preserving result ownership, warning recovery, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable string-int operands through the shared runtime contract";
-const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int builtin lowering rejects ord() and crc32() forms outside the reusable native string-int operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
+const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lowering rejects strcasecmp(), substr_count(), ord(), and crc32() until native PHP string conversion, byte-preserving argument/result ownership, warning recovery, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable string-int operands through the shared runtime contract";
+const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int builtin lowering rejects strcasecmp(), substr_count(), ord(), and crc32() forms outside the reusable native string-int operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_STRING_DISTANCE_OPERATION_REJECTION: &str = "LLVM string-distance builtin lowering rejects levenshtein() and similar_text() until native PHP value-to-string byte conversion, optional cost conversion, references/copy-on-write, by-reference percent output, and exact native diagnostics exist; generated-native C routes lowerable string-distance operands through the shared runtime contract";
 const ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION: &str = "assembly string-distance builtin lowering rejects levenshtein() and similar_text() forms outside the reusable native string-distance operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_BASENAME_REJECTION: &str = "LLVM basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
@@ -6351,7 +6351,7 @@ impl CGenerator {
             return Err(self.unsupported_call_operation(call_operation));
         }
 
-        if args.len() != 1 || !self.uses_native_string_helpers {
+        if !self.uses_native_string_helpers {
             return Err(self.unsupported_direct_named_call(
                 args,
                 span,
@@ -6359,26 +6359,81 @@ impl CGenerator {
             ));
         }
 
-        let subject = self.emit_value_operand_expr(&args[0])?;
+        let (subject_arg, operand_arg, offset_arg, length_arg, has_length) = match operation {
+            NativeStringIntOperation::CaseCompare if args.len() == 2 => {
+                (&args[0], Some(&args[1]), None, None, false)
+            }
+            NativeStringIntOperation::SubstrCount if (2..=4).contains(&args.len()) => (
+                &args[0],
+                Some(&args[1]),
+                args.get(2),
+                args.get(3),
+                args.get(3).is_some(),
+            ),
+            NativeStringIntOperation::Ordinal | NativeStringIntOperation::Crc32
+                if args.len() == 1 =>
+            {
+                (&args[0], None, None, None, false)
+            }
+            _ => {
+                return Err(self.unsupported_direct_named_call(
+                    args,
+                    span,
+                    ASSEMBLY_STRING_INT_OPERATION_REJECTION,
+                ))
+            }
+        };
+
+        let subject = self.emit_value_operand_expr(subject_arg)?;
         let subject = self
             .emit_native_value_for_cvalue(subject, span)
             .map_err(|_| self.unsupported(span, ASSEMBLY_STRING_INT_OPERATION_REJECTION))?;
+        let operand = if let Some(expr) = operand_arg {
+            let value = self.emit_value_operand_expr(expr)?;
+            self.emit_native_value_for_cvalue(value, span)
+                .map_err(|_| self.unsupported(span, ASSEMBLY_STRING_INT_OPERATION_REJECTION))?
+        } else {
+            "(phpc_NativeValueHandle){0}".to_string()
+        };
+        let offset = self.emit_optional_string_int_operand(offset_arg, span, "0")?;
+        let length = self.emit_optional_string_int_operand(length_arg, span, "0")?;
         let result = format!("string_int_result_{}", self.next_native_temp);
         self.next_native_temp += 1;
         let diagnostic = format!("string_int_diagnostic_{}", self.next_native_temp);
         self.next_native_temp += 1;
+        let flags = u8::from(has_length);
 
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "long long {result} = (long long)phpc_native_value_string_int_operation_with_diagnostic({subject}, (phpc_NativeValueHandle){{0}}, 0, 0, 0, {}, &{diagnostic});",
+            "long long {result} = (long long)phpc_native_value_string_int_operation_with_diagnostic({subject}, {operand}, (int64_t)({offset}), (int64_t)({length}), {flags}, {}, &{diagnostic});",
             operation as u8
         ));
         self.emit_report_native_diagnostic(&diagnostic);
+        if operand_arg.is_some() {
+            self.body
+                .push(format!("phpc_native_value_free({operand});"));
+        }
         self.body
             .push(format!("phpc_native_value_free({subject});"));
 
         Ok(CValue::Int(result))
+    }
+
+    fn emit_optional_string_int_operand(
+        &mut self,
+        expr: Option<&Expr>,
+        span: Span,
+        default: &str,
+    ) -> CompileResult<String> {
+        let Some(expr) = expr else {
+            return Ok(default.to_string());
+        };
+
+        match self.emit_expr(expr)? {
+            CValue::Int(value) => Ok(value),
+            _ => Err(self.unsupported(span, ASSEMBLY_STRING_INT_OPERATION_REJECTION)),
+        }
     }
 
     fn emit_string_distance_operation_call(
@@ -9976,6 +10031,8 @@ fn native_string_predicate_for_name(name: &str) -> Option<NativeStringPredicate>
 
 fn native_string_int_operation_for_name(name: &str) -> Option<NativeStringIntOperation> {
     match name.to_ascii_lowercase().as_str() {
+        "strcasecmp" => Some(NativeStringIntOperation::CaseCompare),
+        "substr_count" => Some(NativeStringIntOperation::SubstrCount),
         "ord" => Some(NativeStringIntOperation::Ordinal),
         "crc32" => Some(NativeStringIntOperation::Crc32),
         _ => None,
