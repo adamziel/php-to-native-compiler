@@ -638,6 +638,28 @@ fn native_value_binary_op_tag(op: BinaryOp) -> Option<&'static str> {
     }
 }
 
+fn native_value_bitwise_binary_op_tag(op: BinaryOp) -> Option<&'static str> {
+    match op {
+        BinaryOp::BitwiseAnd => Some("PHPC_NATIVE_VALUE_BITWISE_AND"),
+        BinaryOp::BitwiseOr => Some("PHPC_NATIVE_VALUE_BITWISE_OR"),
+        BinaryOp::BitwiseXor => Some("PHPC_NATIVE_VALUE_BITWISE_XOR"),
+        BinaryOp::ShiftLeft => Some("PHPC_NATIVE_VALUE_BITWISE_SHIFT_LEFT"),
+        BinaryOp::ShiftRight => Some("PHPC_NATIVE_VALUE_BITWISE_SHIFT_RIGHT"),
+        _ => None,
+    }
+}
+
+fn native_value_bitwise_binary_result_prefix(op: BinaryOp) -> Option<&'static str> {
+    match op {
+        BinaryOp::BitwiseAnd => Some("native_value_bitwise_and"),
+        BinaryOp::BitwiseOr => Some("native_value_bitwise_or"),
+        BinaryOp::BitwiseXor => Some("native_value_bitwise_xor"),
+        BinaryOp::ShiftLeft => Some("native_value_shift_left"),
+        BinaryOp::ShiftRight => Some("native_value_shift_right"),
+        _ => None,
+    }
+}
+
 fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
     match op {
         BinaryOp::Eq => Some("PHPC_NATIVE_VALUE_COMPARISON_EQ"),
@@ -5942,6 +5964,12 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_VALUE_BINARY_BITWISE_XOR 8\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_BINARY_SHIFT_LEFT 9\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_BINARY_SHIFT_RIGHT 10\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BITWISE_AND 0\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BITWISE_OR 1\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BITWISE_XOR 2\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BITWISE_NOT 3\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BITWISE_SHIFT_LEFT 4\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_BITWISE_SHIFT_RIGHT 5\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_EQ 0\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_NE 1\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_LT 2\n");
@@ -5988,6 +6016,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_unary_result(phpc_NativeValueHandle value, uint8_t op);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_binary_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_compare_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_bitwise_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic(phpc_NativeValueHandle value, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_type_name_result(phpc_NativeValueHandle value, uint8_t kind);\n");
                 output.push_str("extern bool phpc_native_array_insert_key_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -9806,6 +9835,20 @@ impl CGenerator {
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
         match expr {
             Expr::Unary { op, expr, .. } => {
+                if matches!(op, UnaryOp::BitwiseNot) {
+                    let value =
+                        self.materialize_native_value_result_operand(expr, failure_cleanup)?;
+                    return Ok(Some(
+                        self.emit_native_value_bitwise_operation_result_handle(
+                            value,
+                            None,
+                            "PHPC_NATIVE_VALUE_BITWISE_NOT",
+                            "native_value_bitwise_not",
+                            failure_cleanup,
+                        ),
+                    ));
+                }
+
                 let Some(op_tag) = native_value_unary_op_tag(*op) else {
                     return Ok(None);
                 };
@@ -9819,6 +9862,30 @@ impl CGenerator {
             Expr::Binary {
                 left, op, right, ..
             } => {
+                if let (Some(op_tag), Some(result_prefix)) = (
+                    native_value_bitwise_binary_op_tag(*op),
+                    native_value_bitwise_binary_result_prefix(*op),
+                ) {
+                    let left_value =
+                        self.materialize_native_value_result_operand(left, failure_cleanup)?;
+                    let right_failure_cleanup = format!(
+                        "{}{}",
+                        c_cleanup_sequence(&left_value.cleanup_after_use),
+                        failure_cleanup
+                    );
+                    let right_value = self
+                        .materialize_native_value_result_operand(right, &right_failure_cleanup)?;
+                    return Ok(Some(
+                        self.emit_native_value_bitwise_operation_result_handle(
+                            left_value,
+                            Some(right_value),
+                            op_tag,
+                            result_prefix,
+                            failure_cleanup,
+                        ),
+                    ));
+                }
+
                 if let Some(op_tag) = native_value_binary_op_tag(*op) {
                     let left_value =
                         self.materialize_native_value_result_operand(left, failure_cleanup)?;
@@ -9960,6 +10027,49 @@ impl CGenerator {
                 ));
             },
         )
+    }
+
+    fn emit_native_value_bitwise_operation_result_handle(
+        &mut self,
+        subject: CNativeValueMaterialization,
+        operand: Option<CNativeValueMaterialization>,
+        op_tag: &str,
+        result_prefix: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        self.uses_native_array_helpers = true;
+
+        let subject_handle = subject.handle.clone();
+        let (operand_handle, operand_cleanup) = match operand {
+            Some(operand) => (operand.handle.clone(), operand.cleanup_after_use),
+            None => ("(phpc_NativeValueHandle){0}".to_string(), Vec::new()),
+        };
+        let mut cleanup_after_use = operand_cleanup;
+        cleanup_after_use.extend(subject.cleanup_after_use);
+
+        let diagnostic = self.next_native_name("value_bitwise_diagnostic");
+        let result = self.next_native_name(result_prefix);
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_bitwise_operation_with_diagnostic({subject_handle}, {operand_handle}, {op_tag}, &{diagnostic});"
+        ));
+        let cleanup = format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}",
+            c_cleanup_sequence(&cleanup_after_use),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(cleanup_after_use);
+
+        CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }
     }
 
     fn emit_native_value_cast_operation_result_handle(

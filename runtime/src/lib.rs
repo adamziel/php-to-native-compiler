@@ -179,6 +179,12 @@ const NATIVE_VALUE_BINARY_BITWISE_OR: u8 = 7;
 const NATIVE_VALUE_BINARY_BITWISE_XOR: u8 = 8;
 const NATIVE_VALUE_BINARY_SHIFT_LEFT: u8 = 9;
 const NATIVE_VALUE_BINARY_SHIFT_RIGHT: u8 = 10;
+const NATIVE_VALUE_BITWISE_AND: u8 = 0;
+const NATIVE_VALUE_BITWISE_OR: u8 = 1;
+const NATIVE_VALUE_BITWISE_XOR: u8 = 2;
+const NATIVE_VALUE_BITWISE_NOT: u8 = 3;
+const NATIVE_VALUE_BITWISE_SHIFT_LEFT: u8 = 4;
+const NATIVE_VALUE_BITWISE_SHIFT_RIGHT: u8 = 5;
 const NATIVE_VALUE_COMPARISON_EQ: u8 = 0;
 const NATIVE_VALUE_COMPARISON_NE: u8 = 1;
 const NATIVE_VALUE_COMPARISON_LT: u8 = 2;
@@ -10052,6 +10058,83 @@ fn native_value_binary_blocker(left: &Value, right: &Value) -> Option<String> {
     ))
 }
 
+fn native_value_bitwise_arithmetic_op(operation: u8) -> Option<ArithmeticOp> {
+    match operation {
+        NATIVE_VALUE_BITWISE_AND => Some(ArithmeticOp::BitwiseAnd),
+        NATIVE_VALUE_BITWISE_OR => Some(ArithmeticOp::BitwiseOr),
+        NATIVE_VALUE_BITWISE_XOR => Some(ArithmeticOp::BitwiseXor),
+        NATIVE_VALUE_BITWISE_NOT => Some(ArithmeticOp::BitwiseNot),
+        NATIVE_VALUE_BITWISE_SHIFT_LEFT => Some(ArithmeticOp::ShiftLeft),
+        NATIVE_VALUE_BITWISE_SHIFT_RIGHT => Some(ArithmeticOp::ShiftRight),
+        _ => None,
+    }
+}
+
+/// # Safety
+///
+/// `subject` and `operand` must be null or value handles previously returned
+/// by the runtime ABI and not yet freed. `operation` is a native value bitwise
+/// tag: `0` for `&`, `1` for `|`, `2` for `^`, `3` for unary `~` over
+/// `subject`, `4` for `<<`, and `5` for `>>`. On failure the helper stores a
+/// diagnostic handle that the caller owns and must release with
+/// `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_bitwise_operation_with_diagnostic(
+    subject: NativeValueHandle,
+    operand: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_bitwise_operation_value(subject, operand, operation) } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+unsafe fn native_value_bitwise_operation_value(
+    subject: NativeValueHandle,
+    operand: NativeValueHandle,
+    operation: u8,
+) -> RuntimeResult<Value> {
+    let arithmetic_op = native_value_bitwise_arithmetic_op(operation).ok_or_else(|| {
+        RuntimeError::unsupported_call(
+            "native value bitwise operation",
+            "unsupported operation tag",
+        )
+    })?;
+    let subject = (unsafe { subject.as_ref() }).ok_or_else(|| {
+        RuntimeError::invalid_arithmetic(arithmetic_op, "subject value handle is null")
+    })?;
+
+    match operation {
+        NATIVE_VALUE_BITWISE_NOT => subject.php_bitwise_not(),
+        NATIVE_VALUE_BITWISE_AND
+        | NATIVE_VALUE_BITWISE_OR
+        | NATIVE_VALUE_BITWISE_XOR
+        | NATIVE_VALUE_BITWISE_SHIFT_LEFT
+        | NATIVE_VALUE_BITWISE_SHIFT_RIGHT => {
+            let operand = (unsafe { operand.as_ref() }).ok_or_else(|| {
+                RuntimeError::invalid_arithmetic(arithmetic_op, "operand value handle is null")
+            })?;
+            match operation {
+                NATIVE_VALUE_BITWISE_AND => subject.php_bitwise_and(operand),
+                NATIVE_VALUE_BITWISE_OR => subject.php_bitwise_or(operand),
+                NATIVE_VALUE_BITWISE_XOR => subject.php_bitwise_xor(operand),
+                NATIVE_VALUE_BITWISE_SHIFT_LEFT => subject.php_shift_left(operand),
+                NATIVE_VALUE_BITWISE_SHIFT_RIGHT => subject.php_shift_right(operand),
+                NATIVE_VALUE_BITWISE_NOT => unreachable!("unary operation handled above"),
+                _ => unreachable!("unsupported operation tags are rejected above"),
+            }
+        }
+        _ => unreachable!("unsupported operation tags are rejected above"),
+    }
+}
+
 /// # Safety
 ///
 /// `left` and `right` must be null or value handles previously returned by the
@@ -11227,6 +11310,95 @@ mod tests {
         unsafe { phpc_native_value_free(divisor) };
         unsafe { phpc_native_value_free(string_number) };
         unsafe { phpc_native_value_free(int_value) };
+    }
+
+    #[test]
+    fn native_value_bitwise_operation_reuses_string_and_int_boundaries() {
+        fn bitwise_result(
+            subject: NativeValueHandle,
+            operand: NativeValueHandle,
+            operation: u8,
+        ) -> Result<NativeValueHandle, String> {
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_bitwise_operation_with_diagnostic(
+                    subject,
+                    operand,
+                    operation,
+                    &mut diagnostic,
+                )
+            };
+            if diagnostic.is_null() {
+                assert!(!result.is_null());
+                Ok(result)
+            } else {
+                let message = native_diagnostic_message_for_test(diagnostic);
+                unsafe { phpc_native_diagnostic_free(diagnostic) };
+                assert!(result.is_null());
+                Err(message)
+            }
+        }
+
+        let left = NativeValueHandle::from_value(Value::String("B".to_string()));
+        let right = NativeValueHandle::from_value(Value::String("A".to_string()));
+        let zero_byte = NativeValueHandle::from_value(Value::String("\0".to_string()));
+
+        let and_value =
+            bitwise_result(left, right, NATIVE_VALUE_BITWISE_AND).expect("string & succeeds");
+        assert_eq!(native_value_echo_bytes_for_test(and_value), b"@");
+        unsafe { phpc_native_value_free(and_value) };
+
+        let or_value =
+            bitwise_result(right, zero_byte, NATIVE_VALUE_BITWISE_OR).expect("string | succeeds");
+        assert_eq!(native_value_echo_bytes_for_test(or_value), b"A");
+        unsafe { phpc_native_value_free(or_value) };
+
+        let xor_value =
+            bitwise_result(right, zero_byte, NATIVE_VALUE_BITWISE_XOR).expect("string ^ succeeds");
+        assert_eq!(native_value_echo_bytes_for_test(xor_value), b"A");
+        unsafe { phpc_native_value_free(xor_value) };
+
+        let int_subject = NativeValueHandle::from_value(Value::Int(8));
+        let shift_count = NativeValueHandle::from_value(Value::String("1".to_string()));
+        let shifted = bitwise_result(int_subject, shift_count, NATIVE_VALUE_BITWISE_SHIFT_LEFT)
+            .expect("shift through string count succeeds");
+        assert_eq!(native_value_echo_bytes_for_test(shifted), b"16");
+        unsafe { phpc_native_value_free(shifted) };
+
+        let not_subject = NativeValueHandle::from_value(Value::Int(5));
+        let not_value = bitwise_result(
+            not_subject,
+            NativeValueHandle::null(),
+            NATIVE_VALUE_BITWISE_NOT,
+        )
+        .expect("integer ~ succeeds");
+        assert_eq!(native_value_echo_bytes_for_test(not_value), b"-6");
+        unsafe { phpc_native_value_free(not_value) };
+
+        let array_subject = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let int_operand = NativeValueHandle::from_value(Value::Int(1));
+        let error = bitwise_result(array_subject, int_operand, NATIVE_VALUE_BITWISE_AND)
+            .expect_err("arrays remain blocked at the shared bitwise boundary");
+        assert!(
+            error.contains("arrays cannot be used with bitwise operators"),
+            "{error}"
+        );
+
+        let invalid_tag = bitwise_result(not_subject, int_operand, 255)
+            .expect_err("invalid operation tags stay diagnostic-bearing");
+        assert!(
+            invalid_tag.contains("unsupported operation tag"),
+            "{invalid_tag}"
+        );
+
+        unsafe { phpc_native_value_free(int_operand) };
+        unsafe { phpc_native_value_free(array_subject) };
+        unsafe { phpc_native_value_free(not_subject) };
+        unsafe { phpc_native_value_free(shift_count) };
+        unsafe { phpc_native_value_free(int_subject) };
+        unsafe { phpc_native_value_free(zero_byte) };
+        unsafe { phpc_native_value_free(right) };
+        unsafe { phpc_native_value_free(left) };
     }
 
     #[test]

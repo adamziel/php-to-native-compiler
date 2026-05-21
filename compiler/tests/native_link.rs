@@ -1239,6 +1239,8 @@ const NATIVE_ARRAY_APPEND_SOURCE: &str = "<?php\n$a = [1, \"two\", (string)(2 + 
 
 const NATIVE_VALUE_OPERATION_ARRAY_SOURCE: &str = "<?php\n$a = [];\n$a[\"s\" . \"lot\"] = (2 + 3) * (5 - 1);\n$a[(1 << 2) + 1] = \"fi\" . \"ve\";\n$a[\"neg\"] = -(\"6\" - 2);\necho $a[\"slot\"], \"|\", $a[5], \"|\", $a[\"neg\"];\n";
 
+const NATIVE_VALUE_BITWISE_SOURCE: &str = "<?php\n$a = [];\n$a[\"and\"] = \"B\" & \"A\";\n$a[\"or\"] = \"A\" | \"\0\";\n$a[\"xor\"] = \"A\" ^ \"\0\";\n$a[\"not\"] = ~5;\n$a[\"left\"] = 8 << \"1\";\n$a[\"right\"] = 8 >> 1;\necho $a[\"and\"], \"|\", $a[\"or\"], \"|\", $a[\"xor\"], \"|\", $a[\"not\"], \"|\", $a[\"left\"], \"|\", $a[\"right\"];\n";
+
 const NATIVE_VALUE_COMPARE_CAST_TYPE_NAME_SOURCE: &str = "<?php\n$a = [];\n$a[(int)\"5\"] = (string)((2 + 3) > 4);\n$a[(int)(3 <= 2)] = get_debug_type((string)123);\n$a[(float)\"3\"] = gettype((float)\"3.5\");\necho $a[5], \"|\", $a[0], \"|\", $a[3];\n";
 
 const NATIVE_VALUE_CAST_ECHO_SOURCE: &str = "<?php\necho (int)\"5.9\", \"|\";\necho (float)\"3.5\", \"|\";\necho (string)(2 + 3), \"|\";\necho (bool)\"0\", \"|\";\necho gettype((string)123);\n";
@@ -1261,6 +1263,12 @@ fn native_executable_c_source_routes_array_key_and_value_expressions_through_val
         "{source}"
     );
     assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_bitwise_operation_with_diagnostic"
+        ),
+        "{source}"
+    );
+    assert!(
         source.contains("extern phpc_NativeValueOperationResult phpc_native_value_unary_result"),
         "{source}"
     );
@@ -1275,10 +1283,18 @@ fn native_executable_c_source_routes_array_key_and_value_expressions_through_val
         assert!(source.contains(op), "{op}\n\n{source}");
     }
     assert!(
+        source.contains("PHPC_NATIVE_VALUE_BITWISE_SHIFT_LEFT"),
+        "{source}"
+    );
+    assert!(
         source
             .matches(" = phpc_native_value_binary_result(")
             .count()
             >= 6,
+        "{source}"
+    );
+    assert!(
+        source.contains(" = phpc_native_value_bitwise_operation_with_diagnostic("),
         "{source}"
     );
     assert!(
@@ -1293,6 +1309,49 @@ fn native_executable_c_source_routes_array_key_and_value_expressions_through_val
         source.contains("phpc_native_value_to_array_key")
             && source.contains("phpc_native_array_insert_key_value_with_diagnostic"),
         "value operation results should feed the existing array key/value boundaries:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_bitwise_values_through_shared_value_boundary() {
+    let program = parse(NATIVE_VALUE_BITWISE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_bitwise_operation_with_diagnostic"
+        ),
+        "{source}"
+    );
+    for op in [
+        "PHPC_NATIVE_VALUE_BITWISE_AND",
+        "PHPC_NATIVE_VALUE_BITWISE_OR",
+        "PHPC_NATIVE_VALUE_BITWISE_XOR",
+        "PHPC_NATIVE_VALUE_BITWISE_NOT",
+        "PHPC_NATIVE_VALUE_BITWISE_SHIFT_LEFT",
+        "PHPC_NATIVE_VALUE_BITWISE_SHIFT_RIGHT",
+    ] {
+        assert!(source.contains(op), "{op}\n\n{source}");
+    }
+    assert_eq!(
+        source
+            .matches(" = phpc_native_value_bitwise_operation_with_diagnostic(")
+            .count(),
+        6,
+        "{source}"
+    );
+    assert!(
+        !source.contains(" = phpc_native_value_binary_result("),
+        "{source}"
+    );
+    assert!(
+        !source.contains(" = phpc_native_value_unary_result("),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_insert_key_value_with_diagnostic")
+            && source.contains("phpc_native_array_read_key_with_diagnostic"),
+        "bitwise values should compose through array write/read boundaries:\n{source}"
     );
 }
 
@@ -1319,6 +1378,51 @@ fn native_executable_c_source_routes_array_appends_through_diagnostic_boundary()
             && source.contains("phpc_native_diagnostic_message_stderr(array_append_diagnostic_"),
         "append diagnostics should be reported through the shared diagnostic boundary:\n{source}"
     );
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_bitwise_value_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php = native_link_output_path("native_bitwise_value_boundary").with_extension("php");
+    fs::write(&temp_php, NATIVE_VALUE_BITWISE_SOURCE)
+        .expect("write native bitwise value boundary fixture");
+    let output_path = native_link_output_path("native_bitwise_value_boundary");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"@|A|A|-6|16|4");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
 }
 
 #[test]
