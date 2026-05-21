@@ -11038,6 +11038,10 @@ enum ComparisonBlocker {
         family: ComparisonValueFamily,
         operation: ComparisonOperationFamily,
     },
+    RecursiveArrayComparison {
+        side: ComparisonOperandSide,
+        operation: ComparisonOperationFamily,
+    },
     NativeObjectHandle,
     NativeResourceHandle,
     ReferenceDereference,
@@ -11060,6 +11064,9 @@ impl ComparisonBlocker {
             Self::UnsupportedValueFamily {
                 family, operation, ..
             } => family.unsupported_comparison_reason(operation),
+            Self::RecursiveArrayComparison { .. } => {
+                "recursive array comparisons are not implemented"
+            }
             Self::NativeObjectHandle => {
                 "native object handle loose comparisons require shared object property comparison semantics"
             }
@@ -11083,6 +11090,7 @@ impl ComparisonBlocker {
     fn value_family(self) -> Option<ComparisonValueFamily> {
         match self {
             Self::UnsupportedValueFamily { family, .. } => Some(family),
+            Self::RecursiveArrayComparison { .. } => Some(ComparisonValueFamily::Array),
             Self::NativeObjectHandle | Self::NativeResourceHandle | Self::ReferenceDereference => {
                 None
             }
@@ -11220,13 +11228,12 @@ impl ComparisonValueFamily {
 
         match self {
             Self::Scalar => None,
-            Self::Array | Self::Object | Self::Resource => {
-                Some(ComparisonBlocker::UnsupportedValueFamily {
-                    side,
-                    family: self,
-                    operation,
-                })
-            }
+            Self::Array => Some(ComparisonBlocker::RecursiveArrayComparison { side, operation }),
+            Self::Object | Self::Resource => Some(ComparisonBlocker::UnsupportedValueFamily {
+                side,
+                family: self,
+                operation,
+            }),
         }
     }
 
@@ -11236,7 +11243,7 @@ impl ComparisonValueFamily {
                 Self::Array,
                 ComparisonOperationFamily::LooseEquality(_)
                 | ComparisonOperationFamily::LooseOrdering(_),
-            ) => "array comparisons are not implemented",
+            ) => "recursive array comparisons are not implemented",
             (
                 Self::Object,
                 ComparisonOperationFamily::LooseEquality(_)
@@ -12377,15 +12384,27 @@ mod tests {
 
             for op in loose_ops {
                 let operation = op.operation_family();
-                let left_blocker = ComparisonBlocker::UnsupportedValueFamily {
-                    side: ComparisonOperandSide::Left,
-                    family,
-                    operation,
+                let left_blocker = match family {
+                    ComparisonValueFamily::Array => ComparisonBlocker::RecursiveArrayComparison {
+                        side: ComparisonOperandSide::Left,
+                        operation,
+                    },
+                    _ => ComparisonBlocker::UnsupportedValueFamily {
+                        side: ComparisonOperandSide::Left,
+                        family,
+                        operation,
+                    },
                 };
-                let right_blocker = ComparisonBlocker::UnsupportedValueFamily {
-                    side: ComparisonOperandSide::Right,
-                    family,
-                    operation,
+                let right_blocker = match family {
+                    ComparisonValueFamily::Array => ComparisonBlocker::RecursiveArrayComparison {
+                        side: ComparisonOperandSide::Right,
+                        operation,
+                    },
+                    _ => ComparisonBlocker::UnsupportedValueFamily {
+                        side: ComparisonOperandSide::Right,
+                        family,
+                        operation,
+                    },
                 };
 
                 assert_eq!(
@@ -12539,7 +12558,7 @@ mod tests {
                 NativeComparisonOp::LooseEq,
                 Value::Int(1),
             ),
-            "array comparisons are not implemented",
+            "recursive array comparisons are not implemented",
         );
 
         assert_native_comparison_blocked(
@@ -12610,7 +12629,7 @@ mod tests {
                     NativeValueHandle::from_value(Value::Int(1)),
                 )
             },
-            "array comparisons are not implemented",
+            "recursive array comparisons are not implemented",
         );
     }
 
@@ -13142,7 +13161,7 @@ mod tests {
         assert_native_comparison_blocked(
             "array loose blocker",
             unsafe { phpc_native_array_compare(left, NativeComparisonOp::LooseEq as u8, same) },
-            "array comparisons are not implemented",
+            "recursive array comparisons are not implemented",
         );
 
         assert_native_comparison_blocked(
@@ -13176,6 +13195,132 @@ mod tests {
         unsafe { phpc_native_array_free(left) };
         unsafe { phpc_native_array_free(same) };
         unsafe { phpc_native_array_free(different) };
+    }
+
+    #[test]
+    fn native_recursive_array_comparison_blocker_feeds_consumers_across_families() {
+        fn value_operand(value: Value) -> NativeComparisonOperand {
+            NativeComparisonOperand::from_parts(
+                NativeValueHandle::from_value(value),
+                NativeDiagnosticHandle::null(),
+            )
+        }
+
+        let expected_message = "recursive array comparisons are not implemented";
+
+        for (label, left, op, right, expected_side) in [
+            (
+                "left array loose equality",
+                Value::Array(PhpArray::new()),
+                PhpComparisonOp::LooseEq,
+                Value::Int(1),
+                ComparisonOperandSide::Left,
+            ),
+            (
+                "right array loose ordering",
+                Value::String("needle".to_string()),
+                PhpComparisonOp::LooseGt,
+                Value::Array(PhpArray::new()),
+                ComparisonOperandSide::Right,
+            ),
+        ] {
+            let operation = op.operation_family();
+            assert_eq!(
+                comparison_blocker_for_family(&left, &right, operation),
+                Some(ComparisonBlocker::RecursiveArrayComparison {
+                    side: expected_side,
+                    operation,
+                }),
+                "{label}"
+            );
+            assert!(
+                left.php_compare_checked(&right, op)
+                    .unwrap_err()
+                    .message()
+                    .contains(expected_message),
+                "{label}"
+            );
+        }
+
+        assert_native_comparison_blocked(
+            "native value left array blocker",
+            compare_native_values_for_test(
+                Value::Array(PhpArray::new()),
+                NativeComparisonOp::LooseEq,
+                Value::Int(1),
+            ),
+            expected_message,
+        );
+
+        let array_left = phpc_native_array_empty();
+        let array_right = phpc_native_array_empty();
+        assert_native_comparison_blocked(
+            "native array handle loose blocker",
+            unsafe {
+                phpc_native_array_compare(
+                    array_left,
+                    NativeComparisonOp::LooseEq as u8,
+                    array_right,
+                )
+            },
+            expected_message,
+        );
+        unsafe { phpc_native_array_free(array_left) };
+        unsafe { phpc_native_array_free(array_right) };
+
+        let branch = unsafe {
+            phpc_native_array_compare_branch_and_free(
+                phpc_native_array_empty(),
+                NativeComparisonOp::LooseGt as u8,
+                phpc_native_array_empty(),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_result_status(branch),
+            NativeComparisonStatus::Blocked as u8
+        );
+        assert!(!phpc_native_comparison_branch_result_is_true(branch));
+        assert!(
+            phpc_native_comparison_branch_result_diagnostic_len(branch) >= expected_message.len()
+        );
+
+        let operation =
+            phpc_native_comparison_operation_from_opcode(NativeComparisonOp::LooseEq.abi_opcode());
+        let relation = unsafe {
+            phpc_native_comparison_operand_compare_operation_relation_and_free(
+                value_operand(Value::Array(PhpArray::new())),
+                operation,
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_relation_result_status(relation),
+            NativeComparisonStatus::Blocked as u8
+        );
+        assert!(phpc_native_comparison_relation_result_is_blocked(relation));
+        let diagnostic = phpc_native_comparison_relation_result_diagnostic(relation);
+        assert!(native_diagnostic_message_for_test(diagnostic).contains(expected_message));
+        unsafe { phpc_native_comparison_relation_result_free(relation) };
+
+        let decision = unsafe {
+            phpc_native_comparison_relation_result_decision_or_report_stderr_and_free(
+                phpc_native_comparison_operand_compare_operation_relation_and_free(
+                    value_operand(Value::String("right".to_string())),
+                    operation,
+                    value_operand(Value::Array(PhpArray::new())),
+                ),
+                operation,
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_decision_status(decision),
+            NativeComparisonStatus::Blocked as u8
+        );
+        assert_eq!(
+            phpc_native_comparison_branch_decision_exit_code(decision),
+            1
+        );
+        assert!(!phpc_native_comparison_branch_decision_is_true(decision));
     }
 
     #[test]
@@ -15303,7 +15448,7 @@ mod tests {
         );
         assert!(
             phpc_native_comparison_branch_result_diagnostic_len(branch)
-                >= "array comparisons are not implemented".len()
+                >= "recursive array comparisons are not implemented".len()
         );
 
         let invalid_operation_decision = unsafe {
@@ -15466,7 +15611,7 @@ mod tests {
         );
         assert!(
             phpc_native_comparison_branch_result_diagnostic_len(array_branch)
-                >= "array comparisons are not implemented".len()
+                >= "recursive array comparisons are not implemented".len()
         );
 
         let invalid =
@@ -15579,7 +15724,7 @@ mod tests {
         assert!(phpc_native_comparison_relation_result_is_blocked(blocked));
         let diagnostic = phpc_native_comparison_relation_result_diagnostic(blocked);
         assert!(native_diagnostic_message_for_test(diagnostic)
-            .contains("array comparisons are not implemented"));
+            .contains("recursive array comparisons are not implemented"));
         unsafe { phpc_native_comparison_relation_result_free(blocked) };
 
         let invalid_operation = phpc_native_comparison_operation_from_opcode(250);
