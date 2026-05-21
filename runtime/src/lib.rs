@@ -3792,6 +3792,147 @@ pub unsafe extern "C" fn phpc_native_value_compare_branch_and_free(
 
 /// # Safety
 ///
+/// `left` and `right` must be null or value handles previously returned by the
+/// runtime ABI and not yet freed. `left_diagnostic` and `right_diagnostic` must
+/// be null or diagnostic handles produced while materializing those operands
+/// and not yet freed. The helper consumes each diagnostic handle and each
+/// unique non-null value handle. The returned diagnostic handle follows the
+/// same ownership contract as `phpc_native_value_compare`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_compare_with_materialization_and_free(
+    left: NativeValueHandle,
+    left_diagnostic: NativeDiagnosticHandle,
+    op: u8,
+    right: NativeValueHandle,
+    right_diagnostic: NativeDiagnosticHandle,
+) -> NativeComparisonResult {
+    unsafe {
+        phpc_native_value_compare_operation_with_materialization_and_free(
+            left,
+            left_diagnostic,
+            NativeComparisonOperation::from_opcode(op),
+            right,
+            right_diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// The value and diagnostic handles follow the same ownership contract as
+/// `phpc_native_value_compare_with_materialization_and_free`. `operation`
+/// should be produced by `phpc_native_comparison_operation_from_opcode`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_compare_operation_with_materialization_and_free(
+    left: NativeValueHandle,
+    left_diagnostic: NativeDiagnosticHandle,
+    operation: NativeComparisonOperation,
+    right: NativeValueHandle,
+    right_diagnostic: NativeDiagnosticHandle,
+) -> NativeComparisonResult {
+    unsafe {
+        phpc_native_comparison_operand_compare_operation_and_free(
+            NativeComparisonOperand::from_parts(left, left_diagnostic),
+            operation,
+            NativeComparisonOperand::from_parts(right, right_diagnostic),
+        )
+    }
+}
+
+/// # Safety
+///
+/// The value and diagnostic handles follow the same ownership contract as
+/// `phpc_native_value_compare_with_materialization_and_free`. The helper
+/// reports blocked diagnostics to stderr and returns the canonical branch
+/// result.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_compare_branch_with_materialization_and_free(
+    left: NativeValueHandle,
+    left_diagnostic: NativeDiagnosticHandle,
+    op: u8,
+    right: NativeValueHandle,
+    right_diagnostic: NativeDiagnosticHandle,
+) -> NativeComparisonBranchResult {
+    unsafe {
+        phpc_native_value_compare_operation_branch_with_materialization_and_free(
+            left,
+            left_diagnostic,
+            NativeComparisonOperation::from_opcode(op),
+            right,
+            right_diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// The value and diagnostic handles follow the same ownership contract as
+/// `phpc_native_value_compare_branch_with_materialization_and_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_compare_operation_branch_with_materialization_and_free(
+    left: NativeValueHandle,
+    left_diagnostic: NativeDiagnosticHandle,
+    operation: NativeComparisonOperation,
+    right: NativeValueHandle,
+    right_diagnostic: NativeDiagnosticHandle,
+) -> NativeComparisonBranchResult {
+    unsafe {
+        phpc_native_comparison_operand_compare_operation_branch_and_free(
+            NativeComparisonOperand::from_parts(left, left_diagnostic),
+            operation,
+            NativeComparisonOperand::from_parts(right, right_diagnostic),
+        )
+    }
+}
+
+/// # Safety
+///
+/// The value and diagnostic handles follow the same ownership contract as
+/// `phpc_native_value_compare_with_materialization_and_free`. The helper
+/// reports blocked diagnostics to stderr and returns the canonical branch
+/// decision for comparison condition consumers.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_compare_decision_with_materialization_and_free(
+    left: NativeValueHandle,
+    left_diagnostic: NativeDiagnosticHandle,
+    op: u8,
+    right: NativeValueHandle,
+    right_diagnostic: NativeDiagnosticHandle,
+) -> NativeComparisonBranchDecision {
+    unsafe {
+        phpc_native_value_compare_operation_decision_with_materialization_and_free(
+            left,
+            left_diagnostic,
+            NativeComparisonOperation::from_opcode(op),
+            right,
+            right_diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// The value and diagnostic handles follow the same ownership contract as
+/// `phpc_native_value_compare_decision_with_materialization_and_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_compare_operation_decision_with_materialization_and_free(
+    left: NativeValueHandle,
+    left_diagnostic: NativeDiagnosticHandle,
+    operation: NativeComparisonOperation,
+    right: NativeValueHandle,
+    right_diagnostic: NativeDiagnosticHandle,
+) -> NativeComparisonBranchDecision {
+    unsafe {
+        phpc_native_comparison_operand_compare_operation_decision_and_free(
+            NativeComparisonOperand::from_parts(left, left_diagnostic),
+            operation,
+            NativeComparisonOperand::from_parts(right, right_diagnostic),
+        )
+    }
+}
+
+/// # Safety
+///
 /// `left` and `right` must be operands produced by the runtime ABI or operands
 /// assembled from value/diagnostic handles that obey the same ownership
 /// contract. The helper consumes both operands.
@@ -13502,6 +13643,171 @@ mod tests {
 
             unsafe { phpc_native_value_free(value) };
         }
+    }
+
+    #[test]
+    fn native_materialized_comparison_value_pairs_reuse_operand_contract_across_families() {
+        fn materialized_bytes(bytes: &[u8]) -> (NativeValueHandle, NativeDiagnosticHandle) {
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let ptr = if bytes.is_empty() {
+                ptr::null()
+            } else {
+                bytes.as_ptr()
+            };
+            let value = unsafe {
+                phpc_native_value_from_string_bytes_with_diagnostic(
+                    ptr,
+                    bytes.len(),
+                    &mut diagnostic,
+                )
+            };
+            (value, diagnostic)
+        }
+
+        for (label, left_bytes, op, right, expected) in [
+            (
+                "materialized result numeric-string ordering",
+                &b"10"[..],
+                NativeComparisonOp::LooseGt,
+                phpc_native_int(2),
+                true,
+            ),
+            (
+                "materialized result strict non-identity",
+                &b"2"[..],
+                NativeComparisonOp::StrictNe,
+                phpc_native_int(2),
+                true,
+            ),
+            (
+                "materialized result null loose equality",
+                &b""[..],
+                NativeComparisonOp::LooseEq,
+                phpc_native_null(),
+                true,
+            ),
+        ] {
+            let (left, left_diagnostic) = materialized_bytes(left_bytes);
+            assert_native_comparison_ok(
+                label,
+                unsafe {
+                    phpc_native_value_compare_with_materialization_and_free(
+                        left,
+                        left_diagnostic,
+                        op.abi_opcode(),
+                        phpc_native_value_from_scalar(right),
+                        NativeDiagnosticHandle::null(),
+                    )
+                },
+                expected,
+            );
+
+            let (left, left_diagnostic) = materialized_bytes(left_bytes);
+            assert_native_comparison_ok(
+                label,
+                unsafe {
+                    phpc_native_value_compare_operation_with_materialization_and_free(
+                        left,
+                        left_diagnostic,
+                        phpc_native_comparison_operation_from_opcode(op.abi_opcode()),
+                        phpc_native_value_from_scalar(right),
+                        NativeDiagnosticHandle::null(),
+                    )
+                },
+                expected,
+            );
+        }
+
+        let branch = unsafe {
+            phpc_native_value_compare_branch_with_materialization_and_free(
+                NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                NativeDiagnosticHandle::null(),
+                NativeComparisonOp::LooseEq.abi_opcode(),
+                phpc_native_value_from_scalar(phpc_native_int(1)),
+                NativeDiagnosticHandle::null(),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_result_status(branch),
+            NativeComparisonStatus::Blocked as u8
+        );
+        assert_eq!(phpc_native_comparison_branch_result_exit_code(branch), 1);
+        assert!(
+            !phpc_native_comparison_branch_result_is_true(branch),
+            "array blocker should not produce a truthy materialized branch"
+        );
+        assert!(
+            phpc_native_comparison_branch_result_diagnostic_len(branch)
+                >= "array comparisons are not implemented".len()
+        );
+
+        let invalid_operation_decision = unsafe {
+            phpc_native_value_compare_decision_with_materialization_and_free(
+                phpc_native_value_from_scalar(phpc_native_int(1)),
+                NativeDiagnosticHandle::null(),
+                99,
+                phpc_native_value_from_scalar(phpc_native_int(1)),
+                NativeDiagnosticHandle::null(),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_decision_exit_code(invalid_operation_decision),
+            1
+        );
+        assert!(!phpc_native_comparison_branch_decision_is_true(
+            invalid_operation_decision
+        ));
+
+        let mut failed_left_diagnostic = NativeDiagnosticHandle::null();
+        let failed_left = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
+                ptr::null(),
+                4,
+                &mut failed_left_diagnostic,
+            )
+        };
+        assert_native_comparison_blocked(
+            "left materialization failure result",
+            unsafe {
+                phpc_native_value_compare_with_materialization_and_free(
+                    failed_left,
+                    failed_left_diagnostic,
+                    NativeComparisonOp::LooseEq.abi_opcode(),
+                    phpc_native_value_from_scalar(phpc_native_int(1)),
+                    NativeDiagnosticHandle::null(),
+                )
+            },
+            "string bytes pointer is null",
+        );
+
+        let invalid_bytes = [0xff, b'p'];
+        let mut failed_right_diagnostic = NativeDiagnosticHandle::null();
+        let failed_right = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
+                invalid_bytes.as_ptr(),
+                invalid_bytes.len(),
+                &mut failed_right_diagnostic,
+            )
+        };
+        let failed_right_decision = unsafe {
+            phpc_native_value_compare_operation_decision_with_materialization_and_free(
+                phpc_native_value_from_scalar(phpc_native_int(1)),
+                NativeDiagnosticHandle::null(),
+                phpc_native_comparison_operation_from_opcode(
+                    NativeComparisonOp::StrictNe.abi_opcode(),
+                ),
+                failed_right,
+                failed_right_diagnostic,
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_decision_exit_code(failed_right_decision),
+            1
+        );
+        assert!(
+            !phpc_native_comparison_branch_decision_is_true(failed_right_decision),
+            "right materialization blocker should not produce a truthy decision"
+        );
     }
 
     #[test]
