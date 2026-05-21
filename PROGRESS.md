@@ -71,7 +71,7 @@ Recent pushed primary commits show useful movement from lane-local artifacts int
 
 ## Current Primary State
 
-Primary git is synced with `origin/master` at `90bed817 docs: update progress after call boundary`. The latest semantic compiler/runtime commit is `869bc280 native: route reference-source call operands`. The primary worktree was clean immediately after that progress update.
+Primary git is synced with `origin/master`. The latest semantic compiler/runtime commit is `869bc280 native: route reference-source call operands`; later `PROGRESS.md` commits are reporting-only. The primary worktree was clean immediately after that progress update.
 
 ## Lane-Local Candidate Work
 
