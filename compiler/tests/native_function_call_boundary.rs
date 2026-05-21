@@ -138,6 +138,58 @@ fn native_executable_c_source_routes_supported_direct_call_argument_results_thro
 }
 
 #[test]
+fn emit_ir_routes_unsupported_direct_call_argument_results_through_call_boundary() {
+    for (source, line, column) in [
+        ("<?php\necho str_starts_with(missing(), \"x\");\n", 2, 6),
+        (
+            "<?php\n$factory = \"make_path\";\necho basename($factory(), \".php\");\n",
+            3,
+            6,
+        ),
+        ("<?php\necho file_get_contents(new PathName());\n", 2, 6),
+        ("<?php\necho fopen($box->path(), \"r\");\n", 2, 6),
+        ("<?php\necho header(make_header());\n", 2, 6),
+        ("<?php\necho ob_start(callback_factory());\n", 2, 6),
+        ("<?php\necho array_map(callback_factory(), []);\n", 2, 6),
+        ("<?php\necho get_object_vars(new Box());\n", 2, 6),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_unsupported_direct_call_argument_results_through_call_boundary(
+) {
+    for (source, line, column) in [
+        ("<?php\necho str_starts_with(missing(), \"x\");\n", 2, 6),
+        (
+            "<?php\n$factory = \"make_path\";\necho basename($factory(), \".php\");\n",
+            3,
+            6,
+        ),
+        ("<?php\necho file_get_contents(new PathName());\n", 2, 6),
+        ("<?php\necho fopen($box->path(), \"r\");\n", 2, 6),
+        ("<?php\necho header(make_header());\n", 2, 6),
+        ("<?php\necho ob_start(callback_factory());\n", 2, 6),
+        ("<?php\necho array_map(callback_factory(), []);\n", 2, 6),
+        ("<?php\necho get_object_vars(new Box());\n", 2, 6),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, ASSEMBLY_FUNCTION_CALL_REJECTION);
+    }
+}
+
+#[test]
 fn emit_ir_routes_constant_table_call_argument_results_through_call_boundary() {
     for (source, line, column) in [
         ("<?php\necho defined(strlen(\"abc\"));\n", 2, 6),

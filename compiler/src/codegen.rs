@@ -1922,41 +1922,45 @@ impl LlvmGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("strlen") => {
                 self.emit_strlen_call(args, *span)
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("str_starts_with") => {
-                Err(self.unsupported(*span, LLVM_STR_STARTS_WITH_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("str_starts_with") => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_STR_STARTS_WITH_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("str_ends_with") => {
-                Err(self.unsupported(*span, LLVM_STR_ENDS_WITH_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("str_ends_with") => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_STR_ENDS_WITH_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("basename") => {
-                Err(self.unsupported(*span, LLVM_BASENAME_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_BASENAME_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("file_get_contents") => {
-                Err(self.unsupported(*span, LLVM_FILE_GET_CONTENTS_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("file_get_contents") => {
+                Err(self.unsupported_direct_named_call(
+                    args,
+                    *span,
+                    LLVM_FILE_GET_CONTENTS_REJECTION,
+                ))
             }
-            Expr::Call { name, span, .. } if is_stream_resource_builtin(name) => {
-                Err(self.unsupported(*span, LLVM_STREAM_RESOURCE_REJECTION))
+            Expr::Call { name, args, span } if is_stream_resource_builtin(name) => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_STREAM_RESOURCE_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("getcwd") => {
-                Err(self.unsupported(*span, LLVM_GETCWD_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("getcwd") => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_GETCWD_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("realpath") => {
-                Err(self.unsupported(*span, LLVM_REALPATH_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("realpath") => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_REALPATH_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("is_writable") => {
-                Err(self.unsupported(*span, LLVM_IS_WRITABLE_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("is_writable") => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_IS_WRITABLE_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("clearstatcache") => {
-                Err(self.unsupported(*span, LLVM_CLEARSTATCACHE_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("clearstatcache") => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_CLEARSTATCACHE_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_header_state_builtin(name) => {
-                Err(self.unsupported(*span, LLVM_HEADER_STATE_REJECTION))
+            Expr::Call { name, args, span } if is_header_state_builtin(name) => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_HEADER_STATE_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_session_state_builtin(name) => {
-                Err(self.unsupported(*span, LLVM_SESSION_STATE_REJECTION))
+            Expr::Call { name, args, span } if is_session_state_builtin(name) => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_SESSION_STATE_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_output_buffer_builtin(name) => {
-                Err(self.unsupported(*span, LLVM_OUTPUT_BUFFER_REJECTION))
+            Expr::Call { name, args, span } if is_output_buffer_builtin(name) => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_OUTPUT_BUFFER_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
@@ -1967,11 +1971,11 @@ impl LlvmGenerator {
             Expr::Call { name, args, span } if is_native_type_introspection_builtin(name) => {
                 self.emit_native_type_introspection_call(name, args, *span)
             }
-            Expr::Call { name, span, .. } if is_object_metadata_builtin(name) => {
-                Err(self.unsupported(*span, LLVM_OBJECT_METADATA_REJECTION))
+            Expr::Call { name, args, span } if is_object_metadata_builtin(name) => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_OBJECT_METADATA_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_array_builtin(name) => {
-                Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
+            Expr::Call { name, args, span } if is_array_builtin(name) => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_ARRAY_REJECTION))
             }
             Expr::DynamicCall { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Call { .. } => Err(self.unsupported_value_call(expr)),
@@ -5159,42 +5163,46 @@ impl CGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("strlen") => {
                 self.emit_strlen_call(args, *span)
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("str_starts_with") => {
-                Err(self.unsupported(*span, ASSEMBLY_STR_STARTS_WITH_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("str_starts_with") => Err(
+                self.unsupported_direct_named_call(args, *span, ASSEMBLY_STR_STARTS_WITH_REJECTION),
+            ),
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("str_ends_with") => Err(
+                self.unsupported_direct_named_call(args, *span, ASSEMBLY_STR_ENDS_WITH_REJECTION),
+            ),
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
+                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_BASENAME_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("str_ends_with") => {
-                Err(self.unsupported(*span, ASSEMBLY_STR_ENDS_WITH_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("file_get_contents") => {
+                Err(self.unsupported_direct_named_call(
+                    args,
+                    *span,
+                    ASSEMBLY_FILE_GET_CONTENTS_REJECTION,
+                ))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("basename") => {
-                Err(self.unsupported(*span, ASSEMBLY_BASENAME_REJECTION))
+            Expr::Call { name, args, span } if is_stream_resource_builtin(name) => Err(
+                self.unsupported_direct_named_call(args, *span, ASSEMBLY_STREAM_RESOURCE_REJECTION)
+            ),
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("getcwd") => {
+                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_GETCWD_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("file_get_contents") => {
-                Err(self.unsupported(*span, ASSEMBLY_FILE_GET_CONTENTS_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("realpath") => {
+                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_REALPATH_REJECTION))
             }
-            Expr::Call { name, span, .. } if is_stream_resource_builtin(name) => {
-                Err(self.unsupported(*span, ASSEMBLY_STREAM_RESOURCE_REJECTION))
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("is_writable") => {
+                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_IS_WRITABLE_REJECTION))
             }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("getcwd") => {
-                Err(self.unsupported(*span, ASSEMBLY_GETCWD_REJECTION))
-            }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("realpath") => {
-                Err(self.unsupported(*span, ASSEMBLY_REALPATH_REJECTION))
-            }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("is_writable") => {
-                Err(self.unsupported(*span, ASSEMBLY_IS_WRITABLE_REJECTION))
-            }
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("clearstatcache") => {
-                Err(self.unsupported(*span, ASSEMBLY_CLEARSTATCACHE_REJECTION))
-            }
-            Expr::Call { name, span, .. } if is_header_state_builtin(name) => {
-                Err(self.unsupported(*span, ASSEMBLY_HEADER_STATE_REJECTION))
-            }
-            Expr::Call { name, span, .. } if is_session_state_builtin(name) => {
-                Err(self.unsupported(*span, ASSEMBLY_SESSION_STATE_REJECTION))
-            }
-            Expr::Call { name, span, .. } if is_output_buffer_builtin(name) => {
-                Err(self.unsupported(*span, ASSEMBLY_OUTPUT_BUFFER_REJECTION))
-            }
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("clearstatcache") => Err(
+                self.unsupported_direct_named_call(args, *span, ASSEMBLY_CLEARSTATCACHE_REJECTION),
+            ),
+            Expr::Call { name, args, span } if is_header_state_builtin(name) => Err(
+                self.unsupported_direct_named_call(args, *span, ASSEMBLY_HEADER_STATE_REJECTION)
+            ),
+            Expr::Call { name, args, span } if is_session_state_builtin(name) => Err(
+                self.unsupported_direct_named_call(args, *span, ASSEMBLY_SESSION_STATE_REJECTION)
+            ),
+            Expr::Call { name, args, span } if is_output_buffer_builtin(name) => Err(
+                self.unsupported_direct_named_call(args, *span, ASSEMBLY_OUTPUT_BUFFER_REJECTION)
+            ),
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
             }
@@ -5204,11 +5212,11 @@ impl CGenerator {
             Expr::Call { name, args, span } if is_native_type_introspection_builtin(name) => {
                 self.emit_native_type_introspection_call(name, args, *span)
             }
-            Expr::Call { name, span, .. } if is_object_metadata_builtin(name) => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_METADATA_REJECTION))
-            }
-            Expr::Call { name, span, .. } if is_array_builtin(name) => {
-                Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
+            Expr::Call { name, args, span } if is_object_metadata_builtin(name) => Err(
+                self.unsupported_direct_named_call(args, *span, ASSEMBLY_OBJECT_METADATA_REJECTION)
+            ),
+            Expr::Call { name, args, span } if is_array_builtin(name) => {
+                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_ARRAY_REJECTION))
             }
             Expr::DynamicCall { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Call { .. } => Err(self.unsupported_value_call(expr)),
