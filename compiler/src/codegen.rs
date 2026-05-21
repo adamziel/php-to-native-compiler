@@ -8,8 +8,8 @@ use crate::ast::{
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
-    is_php_numeric_string, is_php_truthy_string, NativeComparisonOp, NativeStringDistanceOperation,
-    NativeStringIntOperation, NativeStringPredicate,
+    classify_php_numeric_string, is_php_truthy_string, NativeComparisonOp,
+    NativeStringDistanceOperation, NativeStringIntOperation, NativeStringPredicate,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -3061,7 +3061,7 @@ impl LlvmGenerator {
         match value {
             IrValue::Int(_) | IrValue::Float(_) => Some(true),
             IrValue::Null | IrValue::Bool(_) | IrValue::BoolExpr(_) => Some(false),
-            IrValue::String(value) => Some(is_php_numeric_string(value)),
+            IrValue::String(value) => Some(classify_php_numeric_string(value).is_numeric()),
             IrValue::StringPtr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_numeric_result(&values)
@@ -6732,7 +6732,7 @@ impl CGenerator {
             CValue::Null | CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ArrayHandle(_) => {
                 Some(false)
             }
-            CValue::String(value) => Some(is_php_numeric_string(value)),
+            CValue::String(value) => Some(classify_php_numeric_string(value).is_numeric()),
             CValue::StringExpr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_numeric_result(&values)
@@ -10448,7 +10448,7 @@ fn is_compat_loaded_extension_name(name: &str) -> bool {
 fn known_strings_have_uniform_numeric_result(values: &KnownString) -> Option<bool> {
     let mut result = None;
     for value in values.values() {
-        let current = is_php_numeric_string(value);
+        let current = classify_php_numeric_string(value).is_numeric();
         if let Some(previous) = result {
             if previous != current {
                 return None;

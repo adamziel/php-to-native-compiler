@@ -23,7 +23,10 @@ $values = [
     "8e2",
     "",
     " ",
+    "foo8",
     "8foo",
+    ".5m",
+    "1e",
     "0x10",
     true,
     null,
@@ -40,7 +43,7 @@ echo $call("10.5") ? "1" : "0", $call("text") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "11111111100000000\n10");
+    assert_eq!(execution.stdout, "11111111100000000000\n10");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -56,7 +59,10 @@ echo is_numeric("5.") ? "1" : "0";
 echo is_numeric("8e2") ? "1" : "0";
 echo is_numeric("") ? "1" : "0";
 echo is_numeric(" ") ? "1" : "0";
+echo is_numeric("foo8") ? "1" : "0";
 echo is_numeric("8foo") ? "1" : "0";
+echo is_numeric(".5m") ? "1" : "0";
+echo is_numeric("1e") ? "1" : "0";
 echo is_numeric("0x10") ? "1" : "0";
 echo is_numeric(true) ? "1" : "0";
 echo is_numeric(null) ? "1" : "0";
@@ -65,7 +71,7 @@ echo is_numeric(null) ? "1" : "0";
     .unwrap();
 
     assert_eq!(ir.matches("c\"1\\00\"").count(), 6, "{ir}");
-    assert_eq!(ir.matches("c\"0\\00\"").count(), 6, "{ir}");
+    assert_eq!(ir.matches("c\"0\\00\"").count(), 9, "{ir}");
     assert!(!ir.contains("is_numeric"), "{ir}");
 }
 

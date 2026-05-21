@@ -7584,34 +7584,67 @@ fn compare_binary_strings(left: &str, right: &str) -> Option<Ordering> {
 }
 
 fn parse_numeric_string(value: &str) -> Option<Number> {
-    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
-    if trimmed.is_empty() || !is_well_formed_numeric_string(trimmed) {
-        return None;
+    match classify_php_numeric_string(value) {
+        PhpNumericStringClassification::Integer(value) => Some(Number::Int(value)),
+        PhpNumericStringClassification::Float(value) => Some(Number::Float(value)),
+        PhpNumericStringClassification::LeadingNumeric
+        | PhpNumericStringClassification::NonNumeric => None,
     }
+}
 
-    let has_float_syntax = trimmed
-        .bytes()
-        .any(|byte| matches!(byte, b'.' | b'e' | b'E'));
-    if !has_float_syntax {
-        if let Ok(parsed) = trimmed.parse::<i64>() {
-            return Some(Number::Int(parsed));
-        }
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PhpNumericStringClassification {
+    Integer(i64),
+    Float(f64),
+    LeadingNumeric,
+    NonNumeric,
+}
+
+impl PhpNumericStringClassification {
+    pub fn is_numeric(self) -> bool {
+        matches!(self, Self::Integer(_) | Self::Float(_))
     }
-
-    trimmed.parse::<f64>().ok().map(Number::Float)
 }
 
 pub fn is_php_numeric_string(value: &str) -> bool {
-    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
-    !trimmed.is_empty() && is_well_formed_numeric_string(trimmed)
+    classify_php_numeric_string(value).is_numeric()
 }
 
 pub fn is_php_truthy_string(value: &str) -> bool {
     !value.is_empty() && value != "0"
 }
 
-fn is_well_formed_numeric_string(value: &str) -> bool {
+pub fn classify_php_numeric_string(value: &str) -> PhpNumericStringClassification {
+    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
+    let Some(prefix_len) = php_numeric_string_prefix_len(trimmed) else {
+        return PhpNumericStringClassification::NonNumeric;
+    };
+    if prefix_len != trimmed.len() {
+        return PhpNumericStringClassification::LeadingNumeric;
+    }
+    classify_well_formed_php_numeric_string(trimmed)
+}
+
+fn classify_well_formed_php_numeric_string(value: &str) -> PhpNumericStringClassification {
+    let has_float_syntax = value.bytes().any(|byte| matches!(byte, b'.' | b'e' | b'E'));
+    if !has_float_syntax {
+        if let Ok(parsed) = value.parse::<i64>() {
+            return PhpNumericStringClassification::Integer(parsed);
+        }
+    }
+
+    value
+        .parse::<f64>()
+        .map(PhpNumericStringClassification::Float)
+        .unwrap_or(PhpNumericStringClassification::NonNumeric)
+}
+
+fn php_numeric_string_prefix_len(value: &str) -> Option<usize> {
     let bytes = value.as_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+
     let mut index = 0;
 
     if matches!(bytes.get(index), Some(b'+' | b'-')) {
@@ -7623,23 +7656,26 @@ fn is_well_formed_numeric_string(value: &str) -> bool {
         index += 1;
         let digits_after_decimal = consume_ascii_digits(bytes, &mut index);
         if digits_before_decimal == 0 && digits_after_decimal == 0 {
-            return false;
+            return None;
         }
     } else if digits_before_decimal == 0 {
-        return false;
+        return None;
     }
 
     if matches!(bytes.get(index), Some(b'e' | b'E')) {
-        index += 1;
-        if matches!(bytes.get(index), Some(b'+' | b'-')) {
-            index += 1;
+        let exponent_start = index;
+        let mut exponent_index = index + 1;
+        if matches!(bytes.get(exponent_index), Some(b'+' | b'-')) {
+            exponent_index += 1;
         }
-        if consume_ascii_digits(bytes, &mut index) == 0 {
-            return false;
+        if consume_ascii_digits(bytes, &mut exponent_index) > 0 {
+            index = exponent_index;
+        } else {
+            return Some(exponent_start);
         }
     }
 
-    index == bytes.len()
+    Some(index)
 }
 
 fn consume_ascii_digits(bytes: &[u8], index: &mut usize) -> usize {
@@ -10163,12 +10199,29 @@ mod tests {
         assert!(Value::Int(7).is_numeric());
         assert!(Value::Float(3.5).is_numeric());
 
-        for value in [" 42 ", "-.5", "5.", "8e2"] {
+        let numeric_cases = [
+            (" 42 ", PhpNumericStringClassification::Integer(42)),
+            ("-.5", PhpNumericStringClassification::Float(-0.5)),
+            ("5.", PhpNumericStringClassification::Float(5.0)),
+            ("8e2", PhpNumericStringClassification::Float(800.0)),
+        ];
+        for (value, classification) in numeric_cases {
+            assert_eq!(classify_php_numeric_string(value), classification);
             assert!(is_php_numeric_string(value));
             assert!(Value::String(value.to_string()).is_numeric());
         }
 
-        for value in ["", " ", "8foo", "0x10"] {
+        let blocker_cases = [
+            ("", PhpNumericStringClassification::NonNumeric),
+            (" ", PhpNumericStringClassification::NonNumeric),
+            ("foo8", PhpNumericStringClassification::NonNumeric),
+            ("8foo", PhpNumericStringClassification::LeadingNumeric),
+            (".5m", PhpNumericStringClassification::LeadingNumeric),
+            ("1e", PhpNumericStringClassification::LeadingNumeric),
+            ("0x10", PhpNumericStringClassification::LeadingNumeric),
+        ];
+        for (value, classification) in blocker_cases {
+            assert_eq!(classify_php_numeric_string(value), classification);
             assert!(!is_php_numeric_string(value));
             assert!(!Value::String(value.to_string()).is_numeric());
         }
