@@ -1091,6 +1091,27 @@ pub unsafe extern "C" fn phpc_native_value_compare_branch_and_free(
     unsafe { phpc_native_comparison_result_branch_or_report_stderr_and_free(result) }
 }
 
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_result_status(
+    result: NativeComparisonBranchResult,
+) -> u8 {
+    result.status()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_result_value(
+    result: NativeComparisonBranchResult,
+) -> u8 {
+    u8::from(result.value())
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_branch_result_diagnostic_len(
+    result: NativeComparisonBranchResult,
+) -> usize {
+    result.diagnostic_len()
+}
+
 /// # Safety
 ///
 /// `left` and `right` must be null or array handles previously returned by the
@@ -7034,6 +7055,55 @@ mod tests {
             assert!(!branch.value(), "{label}");
             assert!(branch.diagnostic_len() > 0, "{label}");
         }
+    }
+
+    #[test]
+    fn native_comparison_branch_result_accessors_cover_owned_success_and_blockers() {
+        let success = unsafe {
+            phpc_native_value_compare_branch_and_free(
+                phpc_native_value_from_scalar(phpc_native_int(2)),
+                NativeComparisonOp::LooseLt as u8,
+                phpc_native_value_from_scalar(phpc_native_int(10)),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_result_status(success),
+            NativeComparisonStatus::Ok as u8
+        );
+        assert_eq!(phpc_native_comparison_branch_result_value(success), 1);
+        assert_eq!(
+            phpc_native_comparison_branch_result_diagnostic_len(success),
+            0
+        );
+
+        let blocked = unsafe {
+            phpc_native_value_compare_branch_and_free(
+                NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                NativeComparisonOp::LooseEq as u8,
+                phpc_native_value_from_scalar(phpc_native_int(1)),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_result_status(blocked),
+            NativeComparisonStatus::Blocked as u8
+        );
+        assert_eq!(phpc_native_comparison_branch_result_value(blocked), 0);
+        assert!(phpc_native_comparison_branch_result_diagnostic_len(blocked) > 0);
+
+        let malformed = NativeComparisonBranchResult {
+            status: 99,
+            value: 7,
+            diagnostic_len: 11,
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_result_status(malformed),
+            NativeComparisonStatus::Blocked as u8
+        );
+        assert_eq!(phpc_native_comparison_branch_result_value(malformed), 0);
+        assert_eq!(
+            phpc_native_comparison_branch_result_diagnostic_len(malformed),
+            11
+        );
     }
 
     #[test]

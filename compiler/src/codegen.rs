@@ -5265,7 +5265,10 @@ impl CGenerator {
         if self.uses_native_comparison_helpers {
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_scalar(phpc_NativeScalarValue value);\n");
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string(phpc_NativeStringHandle string);\n");
-            output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_value_compare_branch_and_free(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n\n");
+            output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_value_compare_branch_and_free(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
+            output.push_str("extern uint8_t phpc_native_comparison_branch_result_status(phpc_NativeComparisonBranchResult result);\n");
+            output.push_str("extern uint8_t phpc_native_comparison_branch_result_value(phpc_NativeComparisonBranchResult result);\n");
+            output.push_str("extern size_t phpc_native_comparison_branch_result_diagnostic_len(phpc_NativeComparisonBranchResult result);\n\n");
         }
         if self.uses_strcmp {
             output.push_str("#include <string.h>\n\n");
@@ -6643,8 +6646,9 @@ impl CGenerator {
             native_comparison_c_uint8_argument(op),
             right.value_handle
         ));
-        self.body
-            .push(format!("if ({comparison_branch}.status != 0) {{"));
+        self.body.push(format!(
+            "if (phpc_native_comparison_branch_result_status({comparison_branch}) != 0) {{"
+        ));
         for line in self.native_comparison_operand_cleanup_lines(&right) {
             self.body.push(format!("  {line}"));
         }
@@ -6661,7 +6665,7 @@ impl CGenerator {
         }
 
         Ok(CValue::BoolExpr(format!(
-            "({comparison_branch}.value != 0)"
+            "(phpc_native_comparison_branch_result_value({comparison_branch}) != 0)"
         )))
     }
 

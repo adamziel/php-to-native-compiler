@@ -46,6 +46,26 @@ echo 1 !== "1";
         "{source}"
     );
     assert!(
+        source.contains("phpc_native_comparison_branch_result_status"),
+        "generated C should use the branch-result status accessor:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_comparison_branch_result_value"),
+        "generated C should use the branch-result value accessor:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_comparison_branch_result_diagnostic_len"),
+        "generated C should declare the diagnostic-length accessor with the comparison ABI:\n{source}"
+    );
+    assert!(
+        !source.contains(".status != 0"),
+        "generated C should not inspect branch status fields directly:\n{source}"
+    );
+    assert!(
+        !source.contains(".value != 0"),
+        "generated C should not inspect branch value fields directly:\n{source}"
+    );
+    assert!(
         !source.contains("phpc_native_value_compare_and_free("),
         "generated C should consume owned comparison values through the branch-returning boundary:\n{source}"
     );
