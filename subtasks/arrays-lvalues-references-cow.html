@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arrays, lvalues, references, COW - PHP Native Compiler Progress</title>
+  <link rel="stylesheet" href="../assets/site.css">
+  <script defer src="../assets/site.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">PHP Native Compiler Progress</a>
+    <nav><a href="https://github.com/adamziel/php-to-native-compiler/blob/master/PROGRESS.md">PROGRESS.md</a><a href="https://github.com/adamziel/php-to-native-compiler">Repository</a><a href="../source/progress.html">Source Snapshot</a></nav>
+  </header>
+  <main><section class="source"><p><a href="../index.html#roadmap">Back to dashboard</a></p><span class="eyebrow">Sub-task report</span><h1>Arrays, lvalues, references, COW</h1><div class="meta"><div class="metric"><span>Primary-integrated</span><strong>24%</strong><progress max="100" value="24">24%</progress></div><div class="metric"><span>Lane-local candidate maturity</span><strong>78%</strong><progress max="100" value="78">78%</progress></div><div class="metric"><span>Status class</span><strong>Early primary path</strong></div></div><h2>Current Read</h2><p>Primary has array-key materialization, array value-operation result ABI, array-entry snapshots, array-handle comparisons, diagnostic append consumers, native array handles as owned value operands, and cloned-literal source cleanup. Lane-local owner/value/reference operation wrappers, null-coalescing value operands, foreach/reference paths, and generated-C lvalue candidates are much stronger; full executable lvalues/references/COW are not integrated.</p><h2>Related Source Documents</h2><ul><li><a href="../source/cow-coverage-matrix.html">cow-coverage-matrix</a></li>
+<li><a href="../source/progress.html">progress</a></li>
+<li><a href="../source/next-tasks.html">next-tasks</a></li></ul><h2>Related Lane Pages</h2><ul><li><a href="../lanes/phpc-lane-callback-containers.html">phpc-lane-callback-containers</a> <span class="note">lane/cow-callback-containers-20260520141814 @ d2f015c9</span></li>
+<li><a href="../lanes/phpc-lane-dynamic-holders.html">phpc-lane-dynamic-holders</a> <span class="note">lane/cow-dynamic-holders-20260520141814 @ d2f015c9</span></li>
+<li><a href="../lanes/phpc-lane-native-array-linked-exec.html">phpc-lane-native-array-linked-exec</a> <span class="note">lane/native-array-linked-exec @ 8af5fb29</span></li>
+<li><a href="../lanes/phpc-lane-native-array-lowering.html">phpc-lane-native-array-lowering</a> <span class="note">lane/native-array-lowering @ 8af5fb29</span></li>
+<li><a href="../lanes/phpc-lane-native-array-lowering-impl.html">phpc-lane-native-array-lowering-impl</a> <span class="note">lane/native-array-lowering-impl @ 8af5fb29</span></li>
+<li><a href="../lanes/phpc-lane-native-array-value-runtime.html">phpc-lane-native-array-value-runtime</a> <span class="note">lane/native-array-value-runtime @ 8af5fb29</span></li>
+<li><a href="../lanes/phpc-lane-native-reference-cell-runtime.html">phpc-lane-native-reference-cell-runtime</a> <span class="note">lane/native-reference-cell-runtime @ 8af5fb29</span></li>
+<li><a href="../lanes/phpc-lane-runtime-handles.html">phpc-lane-runtime-handles</a> <span class="note">lane/cow-runtime-handles-20260520141814 @ d2f015c9</span></li></ul><details open><summary>Canonical active-estimate row</summary><p>Primary has array-key materialization, array value-operation result ABI, array-entry snapshots, array-handle comparisons, diagnostic append consumers, native array handles as owned value operands, and cloned-literal source cleanup. Lane-local owner/value/reference operation wrappers, null-coalescing value operands, foreach/reference paths, and generated-C lvalue candidates are much stronger; full executable lvalues/references/COW are not integrated.</p></details></section></main>
+  <footer><span>Generated 2026-05-21T23:38:13.270Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+</body>
+</html>

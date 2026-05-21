@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Next Tasks Excerpt - PHP Native Compiler Progress</title>
+  <link rel="stylesheet" href="../assets/site.css">
+  <script defer src="../assets/site.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">PHP Native Compiler Progress</a>
+    <nav><a href="https://github.com/adamziel/php-to-native-compiler/blob/master/PROGRESS.md">PROGRESS.md</a><a href="https://github.com/adamziel/php-to-native-compiler">Repository</a><a href="../source/progress.html">Source Snapshot</a></nav>
+  </header>
+  <main><section class="source"><p><a href="../index.html">Back to dashboard</a> | <a href="https://github.com/adamziel/php-to-native-compiler/blob/master/docs/NEXT_TASKS.md">Open on GitHub</a></p><span class="eyebrow">Source document</span><h1>Next Tasks Excerpt</h1><h2 id="next-tasks">Next Tasks</h2>
+<p>Use this as the queue for repeated Codex work. Take one unchecked task at a time unless a task explicitly depends on another. Mark a task checked only after code, tests, CLI coverage, documentation, and unsupported edge cases are all handled.</p>
+<h3 id="active-cow-frontier">Active COW Frontier</h3>
+<ul>
+<li>[x] Lane 2117-C through 2120-C: execute mixed nested <code>ArrayAccess</code></li>
+<p>observation/unset chains for direct roots, visible property-held roots, magic <code>__get()</code> roots, and by-reference <code>offsetGet()</code> array returns.</p>
+<li>[x] Lane 2121-C through 2125-C: preserve reference-cell fallbacks when</li>
+<p>covered whole-container unsets/overwrites detach aliases with live reference leaves.</p>
+<li>[x] Lane 2126-C through 2128-C: import covered non-public object-property</li>
+<p>leaf aliases into method scope so private/protected property unsets detach caller aliases instead of leaving stale roots.</p>
+<li>[x] Lane 2129-C through 2133-C: promote value-position array-literal</li>
+<p>reference elements inside supported magic/<code>ArrayAccess</code> bodies to real object-property reference cells, covering direct/helper <code>offsetGet()</code> and <code>__get()</code> return arrays plus helper-based magic payload storage.</p>
+<li>[x] Lane 2134-C through 2138-C: execute covered magic/<code>ArrayAccess</code></li>
+<p>side-effecting method bodies with caller-scope alias transfer, so <code>__set()</code>, <code>__isset()</code>, <code>offsetSet()</code>, <code>offsetUnset()</code>, and <code>offsetExists()</code> property overwrites detach stale caller aliases while preserving nested reference leaves.</p>
+<li>[x] Lane 2139-C through 2143-C: use source-aware execution for immediate</li>
+<p>by-value <code>offsetGet()</code>/<code>__get()</code> overloaded nested writes and reference assignments, so supported non-exact bodies preserve selected reference-backed leaves in the detached returned copy.</p>
+<li>[x] Lane 2144-C through 2147-C: carry copied-source metadata into supported</li>
+<p>property-held and magic-returned <code>ArrayAccess::offsetSet()</code> keyed storage bodies, including non-direct and dynamic holder roots.</p>
+<li>[x] Lane 2148-C through 2151-C: add a detached object-property path ledger</li>
+<p>that propagates supported helper/callback method-body overwrites back to caller aliases for <code>ArrayAccess::offsetSet()</code> and magic <code>__set()</code>.</p>
+<li>[x] Lane 2152-C through 2156-C: rehydrate method-local copied buckets when</li>
+<p>supported by-value <code>ArrayAccess::offsetGet()</code> and magic <code>__get()</code> bodies overwrite their backing object-property arrays directly, through helpers, or through direct <code>call_user_func([$this, ...])</code> callbacks.</p>
+<li>[x] Lane 2157-C through 2161-C: bind <code>$this</code> and class/called-class context</li>
+<p>into non-static closures created inside supported magic/<code>ArrayAccess</code> method bodies, covering direct closure calls, closure-valued <code>call_user_func()</code>, positional <code>call_user_func_array()</code>, and setter storage of copied-source payloads through a bound closure.</p>
+<li>[x] Lane 2162-C through 2166-C: route nested append and suffix append</li>
+<p>assignment through source-aware copied-source rehydration for direct <code>ArrayAccess</code> targets, visible magic <code>__get()</code>/object-property-held <code>ArrayAccess</code> RHS values, plain nested arrays, and string-keyed <code>$GLOBALS</code> paths.</p>
+<li>[x] Lane 2167-C through 2171-C: let supported magic/<code>ArrayAccess</code></li>
+<p>method-body expression assignments to non-direct holder object-property arrays reach the general object-property array COW propagation path, covering keyed, dynamic-keyed, append-suffix, dynamic append-suffix, and direct dynamic-property append copied-source stores.</p>
+<li>[x] Lane 2172-C through 2178-C: route supported dynamic array-callable and</li>
+<p><code>ReflectionMethod::invoke()</code>/<code>invokeArgs()</code> method-body calls through source-aware invocation paths, including copied-source propagation for <code>ArrayAccess::offsetSet()</code>, by-value <code>ArrayAccess::offsetGet()</code> returns, indexed callback containers, magic <code>__set()</code> payload storage, magic <code>__get()</code> reflection returns, and reflection-dispatched setter helpers.</p>
+<li>[x] Lane 2179-C through 2183-C: promote direct alias variables passed to</li>
+<p>by-reference parameters to real reference cells before call-frame binding, avoiding stale path writeback after another by-reference parameter replaces the parent array, and route supported object-property array writes through <code>ArrayAccess</code> objects stored inside those arrays for keyed, dynamic-property, append, magic <code>__set()</code>, and <code>ArrayAccess::offsetSet()</code> method-body shapes.</p>
+<li>[x] Lane 2184-C through 2188-C: route supported local/global array value</li>
+<p>paths through concrete contained <code>ArrayAccess</code> objects before falling back to the generic nested array writer, covering magic <code>__set()</code> local-copy keyed and append stores, <code>ArrayAccess::offsetSet()</code> local-copy stores, <code>$GLOBALS</code> array-container stores, and direct <code>$GLOBALS</code> <code>ArrayAccess</code> append stores with copied-source propagation.</p>
+<li>[x] Lane 2189-C through 2195-C: route by-value overloaded arrays through</li>
+<p>concrete inner <code>ArrayAccess</code> objects for keyed, append, magic <code>__get()</code>, and covered reference-source paths, and preserve copied-source provenance when supported <code>offsetGet()</code>/<code>__get()</code> bodies delegate through <code>__call()</code>.</p>
+<li>[x] Lane 2196-C through 2200-C: carry copied-source provenance through</li>
+<p><code>call_user_func_array()</code> argument arrays stored behind visible object-property holders inside supported magic/<code>ArrayAccess</code> method bodies, covering direct, dynamic, and nested holder-property roots plus reference-return source-leaf promotion and by-value callback returns.</p>
+<li>[x] Lane 2201-C through 2205-C: extend stored <code>call_user_func_array()</code></li>
+<p>copied-source and reference-return handling to non-direct holder expressions inside supported magic/<code>ArrayAccess</code> method bodies, covering method-returned holders, dynamic non-direct holder properties, nested holder-array roots, and non-direct property-held array callables while preserving unchanged local copied-array provenance across holder helper calls.</p>
+<li>[x] Lane 2206-C through 2210-C: carry the already-evaluated stored argument</li>
+<p>array value alongside recovered <code>call_user_func_array()</code> roots, so side-effecting helper calls, dynamic property names, and index-key expressions execute once like PHP while source-aware reference-return callbacks still promote the original selected source leaf.</p>
+<li>[x] Lane 2211-C through 2214-C: sync dirty object-property copied-source</li>
+<p>metadata from supported helper method scopes back to callers when shared holder objects unset or recreate stored <code>call_user_func_array()</code> argument containers, covering named, dynamic, nested, magic <code>__get()</code>, and public <code>ArrayAccess::offsetGet()</code> paths while preserving source-leaf promotion.</p>
+<li>[x] Lane 2215-C through 2218-C: carry by-value copied-array source metadata</li>
+<p>into supported reference-returning helper methods used as values, including direct and array-callable <code>call_user_func()</code> holder helpers inside visible <code>__get()</code> and public <code>ArrayAccess::offsetGet()</code> bodies, and sync their dirty shared holder copied-source metadata back to the caller.</p>
+<li>[x] Lane 2219-C through 2222-C: route supported direct, dynamic, and</li>
+<p><code>call_user_func()</code> closure helper invocation through source-aware copied-array argument handling when closure helpers mutate shared holder <code>call_user_func_array()</code> argument containers inside visible <code>__get()</code> and public <code>ArrayAccess::offsetGet()</code> bodies.</p>
+<li>[x] Lane 2223-C through 2226-C: route supported</li>
+<p><code>ReflectionFunction::invoke()</code> and <code>invokeArgs()</code> closure helper dispatch through source-aware copied-array argument handling for visible <code>__get()</code> and public <code>ArrayAccess::offsetGet()</code> shared-holder argument-container rebuilds.</p>
+<li>[x] Lane 2227-C through 2232-C: cover broader</li>
+<p><code>call_user_func_array()</code> callback containers and method-local argument containers inside visible <code>__get()</code> and public <code>ArrayAccess::offsetGet()</code>. Callback expressions may be produced by supported helper calls or reference-returning holder helpers that recreate shared holder args, and direct caller-cell by-reference helper parameters now sync portable array-literal copied-source paths back to local <code>$args</code> containers.</p>
+<li>[x] Lane 2233-C through 2236-C: rehydrate copied-source reference leaves for</li>
+<p>direct returned array literals from supported helpers, covering visible <code>__get()</code> and public <code>ArrayAccess::offsetGet()</code> callers that index direct helper results and reflected user-function <code>ReflectionFunction::invoke()</code> / <code>invokeArgs()</code> results.</p>
+<li>[x] Lane 2237-C through 2240-C: broaden helper-produced</li>
+<p><code>call_user_func_array()</code> argument-container identity and dynamic method dispatch, covering helper-returned argument arrays, fresh helper-returned holder objects with materialized reference-cell slots, visible <code>__get()</code>, public <code>ArrayAccess::offsetSet()</code>, and <code>$this-&gt;{$method}($bucket)</code> source-aware calls.</p>
+<li>[x] Lane 2241-C through 2244-C: promote covered whole-array reference</li>
+<p>identity for non-empty object-property array-offset roots passed to by-reference helpers inside visible <code>__get()</code> and public <code>ArrayAccess::offsetGet()</code>, including dynamic method helper dispatch and a copied-local no-over-promotion guard.</p>
+<li>[x] Lane 2245-C through 2248-C: preserve reference-backed leaves in</li>
+<p>by-value copied object-property buckets returned after local mutation or helper delegation, covering normal methods, visible <code>__get()</code>, public <code>ArrayAccess::offsetGet()</code>, and a plain-leaf detach guard.</p>
+<li>[x] Lane 2249-C through 2253-C: promote explicit method-local aliases to</li>
+<p>terminal copied object-property reference leaves across supported normal methods, visible <code>__get()</code>, public <code>ArrayAccess::offsetGet()</code>, helper bodies, and dynamic helper dispatch while preserving bucket-reuse and parent-detach guards.</p>
+<li>[x] Lane 2254-C through 2257-C: materialize named public dynamic</li>
+<p><code>stdClass</code> slots and preserve selected copied-bucket reference leaves through fresh helper-returned <code>stdClass</code> holders used by visible <code>__get()</code>, public <code>ArrayAccess::offsetGet()</code>, and public <code>ArrayAccess::offsetSet()</code> bodies.</p>
+<li>[x] Lane 2258-C through 2261-C: sync dirty array-literal copied-source</li>
+<p>paths back to object-property by-reference helper targets, covering visible <code>__get()</code>, public <code>ArrayAccess::offsetGet()</code>, public <code>ArrayAccess::offsetSet()</code>, and a whole-array value-copy no-over-promotion guard.</p>
+<li>[x] Lane 2262-C through 2266-C: let unsupported static magic <code>__get()</code></li>
+<p>backing-root proofs fall through to the executed reference-return path for computed/repeated/constant keys and append writes, and track simple <code>ArrayAccess::offsetSet()</code> value aliases when recovering copied-source backing targets.</p>
+<li>[x] Lane 2267-C through 2270-C: preserve copied-source COW metadata for</li>
+<p><code>call_user_func_array()</code> argument arrays stored behind direct and object-property <code>ArrayAccess</code> holders with statically proven public <code>offsetGet()</code> backing buckets, including nested by-value parameter source paths, whole-array assignment propagation, reference-return mirror promotion, visible <code>__get()</code>, public <code>ArrayAccess::offsetGet()</code>, and a whole-copy guard.</p>
+<li>[x] Lane 2271-C through 2275-C: accept syntax-only <code>mixed</code> metadata for</li>
+<p>general supported functions and common PHP 8 magic/<code>ArrayAccess</code> method signatures on the supported dispatch paths, proving typed side-effecting <code>offsetGet()</code> / <code>__get()</code> / <code>__call()</code> COW reads and typed <code>offsetSet()</code> / <code>__set()</code> copied-source stores against system PHP without claiming general type enforcement.</p>
+<li>[x] Lane 2276-C through 2280-C: preserve copied-source metadata for whole</li>
+<p>object-property array locals that cross supported helper calls before visible <code>__get()</code> or public <code>ArrayAccess::offsetGet()</code> returns, covering by-reference and by-value helpers plus a plain-leaf no-over-promotion guard.</p>
+<li>[x] Lane 2281-C through 2284-C: detach stale copied-source caller aliases</li>
+<p>when supported visible <code>__get()</code>, public <code>ArrayAccess::offsetGet()</code>, direct <code>__call()</code>, and public <code>ArrayAccess::offsetSet()</code> bodies replace tracked object-property parent buckets after copying or storing copied buckets.</p>
+<li>[x] Lane 2285-C: move plain PHP array slot cloning to shared runtime value</li>
+<p>cells with detach-on-write, while preserving shared <code>PhpReferenceCell</code> behavior for reference-backed slots and proving plain/reference COW parity through ordinary arrays and visible <code>__get()</code> copied-bucket returns.</p>
+<li>[x] Lane 2286-C: move nested array-offset lvalue path operations into</li>
+<p><code>PhpArray</code> runtime methods and make <code>SymbolTable</code> alias helpers delegate materialization, reads, checked/value/reference writes, and appends through those slot-level COW operations.</p>
+<li>[x] Lane 2287-C: preserve whole-array reference identity across by-value</li>
+<p>helper passthrough, helper-returned wrapper literals, and supported reference-return magic <code>__get()</code> / <code>ArrayAccess::offsetGet()</code> bodies by promoting proven array-valued alias groups to real reference cells and writing those cells back to caller aliases, while keeping plain nested by-value copies detached.</p>
+<li>[x] Lane 2288-C: preserve direct copied-local reference returns in supported</li>
+<p>magic <code>__get()</code> and public <code>ArrayAccess::offsetGet()</code> bodies, covering <code>$copy = $this-&gt;store; return $copy[$name];</code> and <code>$copy = $this-&gt;store[$name]; return $copy;</code> with source-backed descendant references plus no-alias detached-copy guards.</p>
+<li>[x] Lane 2289-C: preserve runtime-cell copy sources for by-value reads from</li>
+<p>covered reference-return user functions and methods, including direct method returns, method-local aliases, global function returns, <code>call_user_func()</code> array method callbacks, and zero-argument <code>call_user_func_array()</code> function callbacks, while leaving plain descendants detached.</p>
+<li>[x] Lane 2290-C: keep copied-source provenance for supported</li>
+<p>magic/<code>ArrayAccess</code> method-local copies across later nested writes to the source container, and feed executed by-value copied-array metadata into reference-return callees.</p>
+<li>[x] Lane 2291-C: route mixed by-reference/by-value helper calls through</li>
+<p>executed <code>Value + ArrayCopySource</code> metadata for supported magic/ArrayAccess copied-array arguments instead of static post-evaluation source recovery.</p>
+<li>[x] Lane 2292-C: preserve stored <code>call_user_func_array()</code> argument arrays</li>
+<p>that mix by-reference visible object-property slots with by-value copied arrays from supported magic <code>__get()</code> or public <code>ArrayAccess::offsetGet()</code> bodies.</p>
+<li>[x] Lane 2293-C: preserve copied-source metadata through</li>
+<p>expression-position array literals and assigned <code>array_values(array(...))</code> wrapper arrays for supported visible <code>__get()</code> and public <code>ArrayAccess::offsetGet()</code> copied-array returns.</p>
+<li>[x] Lane 2294-C: generalize literal-array transform copied-source remapping</li>
+<p>to assigned <code>array_merge(array(...), ...)</code> wrappers, including integer-key reindexing and string-key overwrite guards.</p>
+<li>[x] Lane 2295-C: carry expression-position</li>
+<p><code>array_merge(array($copy), ...)</code> and <code>array_values(array($copy))</code> literal-transform argument-container copied-source metadata into <code>call_user_func_array()</code> string user-function and public object array-callable user-method setup, preserving selected reference-backed leaves for supported magic <code>__get()</code> and public <code>ArrayAccess::offsetGet()</code> copied buckets.</p>
+<li>[x] Lane 2296-C: carry those literal-transform argument-container</li>
+<p>copied-source bindings into covered reference-return <code>call_user_func_array()</code> string, closure, and public object array-callable callbacks, so selected returned leaves can promote the original reference-backed source.</p>
+<li>[x] Lane 2298-C: preserve returned copy-source metadata for by-value reads</li>
+<p>from reference-return closure callbacks reached through <code>call_user_func()</code> and positional <code>call_user_func_array()</code>, keeping selected reference-backed object-property leaves shared while plain leaves detach.</p>
+<li>[x] Lane 2299-C: route reference-return <code>call_user_func_array()</code> string and</li>
+<p>public object array-callable callbacks with by-reference parameters through the source-aware value-copy argument-container path before strict reference slot fallback, so supported <code>array_merge(array($copy))</code> containers preserve copied-source bindings and selected returned leaves promote back to the original reference-backed source.</p>
+<li>[ ] Next COW gap, hard-first: keep extending the general</li>
+<p>value/container identity model by extracting root resolution into a runtime-backed alias/lvalue handle under <code>SymbolTable</code>, then migrating <code>Value + ArrayCopySource</code> propagation, helper/callback containers, and dynamic holder writeback away from stale path provenance. Known next probes should target whole-array identity through untracked containers, side-effecting helper/callback containers, dynamic holders that still cannot expose either a materialized reference cell or a concrete writeback root. Initial static/global/object-property root resolution now has a <code>RuntimeAliasLvalueHandle</code>, and runtime-cell copied-source alias rehydration/overlay plus helper/callback copied-source alias mirror/import setup now consume those handles directly. Reference-return path promotion, existing-cell lookup, return-cell rehydration, alias mirroring, and helper/callee array-copy-source alias writeback plus copied-source mirror-path promotion now consume handles too. Copied-source reference-cell scanning and copied-source value reads now also prefer runtime lvalue handles before bounded fallback reads, and object-property invalidation/detached-path checks plus dirty copied-source detection now match runtime-cell copied sources through those handles. Static copied-source portability across call scopes and alias-group copied-source recovery also consult dirty copied-source metadata before dropping a source, and reference-promotion writes now preserve dirty-only static copied-source metadata while rewriting the static root. Object-property alias syncs preserve the same dirty-only metadata while rewriting static alias groups, and reference-binding metadata sync treats dirty-only local metadata as a still-present imported source before removing caller metadata. Runtime-cell handle discovery now includes initialized public object properties sharing the same reference cell without requiring pre-seeded array-offset alias metadata. Descendant mirror-path promotion now consume handles too. Runtime-cell handle discovery now includes initialized public object properties sharing the same reference cell without requiring pre-seeded array-offset alias metadata, and object-property overwrite invalidation/rehydration now recognizes runtime-cell sources that share an initialized property reference cell, including non-public holder properties when the runtime cell is already reachable; dirty copied-source matching also recognizes equivalent runtime-cell and visible object-property roots for covered return/promotion decisions; detached-path writeback guards recognize runtime-cell sources when the recorded detached leaf still shares the same reference cell. Direct object-property compound assignment whole-property and nested property-array writes now use the same bounded rehydrate/invalidate boundary, as do direct dynamic-property whole assignments once the property expression resolves to the tracked holder property. Descendant caller metadata. Direct by-reference argument setup also imports dirty-only static copied-source metadata as a source-aware binding and carries the dirty marker into the callee frame. Closure capture source recovery and prebound closure local import preserve the same dirty-only metadata through supported closure call frames. Reference-binding source-list recovery also consults dirty-only static copied-source metadata for plain caller-cell bindings. Runtime-cell handle discovery now includes initialized public object properties sharing the same reference cell without requiring pre-seeded array-offset alias metadata. Descendant property, whole-property unsets, nested object-property array unsets, and object-property array-offset reference assignments. Descendant Assignment-expression result source recovery and direct value-expression source recovery now use the same clean-or-dirty lookup, and nested-write parent-replacement checks treat dirty-only copied-source metadata as live before deciding whether to retain the source record. Unchanged-source snapshots around holder evaluation and detached object-property source rehydration now also enumerate clean-or-dirty copied-source entries. Runtime-cell handle discovery now includes initialized public object properties sharing the same reference cell without requiring pre-seeded array-offset alias metadata. Descendant property, whole-property unsets, nested object-property array unsets, and object-property array-offset reference assignments. Dynamic and non-direct object-property compound targets also resolve onto those same whole-property and nested property-array writeback places after evaluating the holder/property once. Descendant writes to a source container no longer erase whole-copy provenance for supported magic/<code>ArrayAccess</code> method-local copies, and reference-return calls plus mixed by-reference/by-value helpers now keep executed by-value argument copy-source metadata, including stored callback argument arrays with by-reference visible object-property slots and expression literal / supported <code>array_values()</code>/<code>array_merge()</code> wrappers. This task stays open until broader dynamic holder writeback and untracked container propagation consume handles directly. Integration checks should include the <code>milestone2294/magic_array_merge_integer_reindex_cow.php</code> fixture so handle-backed remapping preserves the selected right-hand copied source after integer-key reindexing while leaving the left-hand source detached. Current four-lane integration risk is concentrated in shared docs and nearby focused unit-test insertions: runtime handle reads/scans, dynamic RuntimeCell object-property overwrite matching, and callback <code>call_user_func_array()</code> literal-transform imports touch mostly disjoint interpreter helper blocks, but their progress/support/next-task bullets must be reconciled without dropping unsupported-gap wording.</p>
+<li>[ ] Remaining hard gaps: arbitrary unsupported magic/<code>ArrayAccess</code> method</li>
+<p>syntax, untracked dynamic containers that cannot expose a concrete bucket/object, broader callback containers, full whole-array reference identity, exact PHP diagnostics/Throwable objects, and native reference/string COW lowering.</p>
+</ul>
+<h3 id="milestone-2-value-model-and-runtime">Milestone 2: Value Model and Runtime</h3>
+<ul>
+<li>[x] Add structured runtime errors with stable messages and tests for at</li>
+<p>least undefined variables, arity mismatches, unsupported calls, and invalid arithmetic.</p>
+<li>[x] Complete scalar arithmetic coercion coverage for <code>Null</code>, <code>Bool</code>, numeric</li>
+<p>strings, non-numeric strings, <code>Int</code>, and <code>Float</code>; add fixture tests and document the remaining gaps from PHP's full coercion rules.</p>
+<li>[x] Add a scalar comparison behavior matrix for equality and relational</li>
+<p>operators across implemented value types, with runtime tests and fixture CLI coverage.</p>
+<li>[x] Complete optional system PHP comparison mode for the fixture runner,</li>
+<p>including docs, progress notes, and gating so the suite still passes when <code>php</code> is not installed.</p>
+<li>[x] Add explicit CLI exercises for representative runtime errors and record</li>
+<p>their stdout, stderr, and exit behavior.</p>
+</ul>
+<h3 id="milestone-3-arrays">Milestone 3: Arrays</h3>
+<ul>
+<li>[x] Implement an ordered PHP array value in <code>php_runtime</code> with int/string key</li>
+<p>normalization tests.</p>
+<li>[x] Parse and interpret short array literals <code>[]</code> and <code>[key =&gt; value]</code> for the</li>
+<p>supported scalar expression subset.</p>
+<li>[x] Implement array append, indexed reads, and indexed writes in the</li>
+<p>interpreter with fixture CLI coverage.</p>
+<li>[x] Document unsupported array behavior, including references, nested</li>
+<p>copy-on-write containers, destructuring, spread, and complex key coercions.</p>
+<li>[x] Add a small native-codegen rejection test proving arrays fail with an</li>
+<p>explicit codegen error until lowering exists.</p>
+</ul>
+<h3 id="milestone-4-functions-and-scopes">Milestone 4: Functions and Scopes</h3>
+<ul>
+<li>[x] Separate local and global scope behavior for user functions, with tests</li>
+<p>for shadowing and unsupported <code>global</code>.</p>
+<li>[x] Add recursion coverage and a documented runtime guard for runaway calls.</li>
+<li>[x] Implement default parameters for user functions with parser, runtime, and</li>
+<p>fixture coverage.</p>
+<li>[x] Add the first small builtin function set with documented signatures,</li>
+<p>errors, tests, and CLI examples.</p>
+<li>[x] Document unsupported function features: variadics, references, closures,</li>
+<p>named arguments, strict types, and dynamic-call gaps outside the current string-name lookup subset.</p>
+</ul>
+<h3 id="milestone-5-dynamic-php">Milestone 5+: Dynamic PHP</h3>
+<ul>
+<li>[x] Introduce a materialized symbol table path for future variable variables</li>
+<p>without changing current static variable behavior.</p>
+<li>[x] Design include/require resolution rules and add explicit unsupported</li>
+<p>diagnostics before implementing execution.</p>
+<li>[x] Add runtime lookup infrastructure for dynamic function calls and keep</li>
+<p>unresolved calls as explicit runtime errors.</p>
+<li>[x] Define the <code>eval</code> fallback boundary: parser entry point, caller scope</li>
+<p>behavior, diagnostics, and unsupported cases.</p>
+<li>[x] Sketch the minimal object/class metadata model before adding syntax.</li>
+<li>[x] Parse class declarations into a metadata registry while keeping object</li>
+<p>instantiation and member access unsupported.</p>
+<li>[x] Add a minimal object value/instantiation boundary for <code>new ClassName()</code></li>
+<p>while keeping property access and method dispatch unsupported.</p>
+<li>[x] Add public instance property reads and writes for the current object value</li>
+<p>model while keeping method dispatch, constructors, and visibility enforcement unsupported.</p>
+<li>[x] Add <code>isset($object-&gt;publicProperty)</code> support for public instance</li>
+<p>properties while keeping array offsets, dynamic property names, non-public visibility enforcement, and method dispatch unsupported.</p>
+<li>[x] Add explicit parse diagnostics for unsupported static property, static</li>
+<p>method, and class constant syntax such as <code>ClassName::$prop</code>, <code>ClassName::method()</code>, and <code>ClassName::CONST</code> before implementing static member storage or dispatch.</p>
+<li>[x] Add explicit parse diagnostics for unsupported namespace and <code>use</code></li>
+<p>declaration syntax before namespace-aware name resolution or imports exist.</p>
+<li>[x] Add explicit parse diagnostics for unsupported namespace-qualified</li>
+<p>function and class names such as <code>App\fn()</code> and <code>new App\Box()</code> before namespace-aware name resolution exists.</p>
+</ul>
+<h3 id="syntax-boundaries">Syntax Boundaries</h3>
+<ul>
+<li>[x] Add explicit parse diagnostics for unsupported long <code>array(...)</code> syntax</li>
+<p>before implementing long array literals.</p>
+<li>[x] Add explicit parse diagnostics for unsupported <code>unset(...)</code> syntax before</li>
+<p>implementing unset.</p>
+<li>[x] Add explicit parse diagnostics for unsupported <code>foreach</code> syntax before</li>
+<p>implementing iteration.</p>
+<li>[x] Add explicit parse diagnostics for unsupported <code>for</code> syntax before</li>
+<p>implementing C-style loops.</p>
+<li>[x] Add explicit parse diagnostics for unsupported <code>do ... while</code> syntax</li>
+<p>before implementing do-while loops.</p>
+<li>[x] Add explicit parse diagnostics for unsupported <code>switch</code> syntax before</li>
+<p>implementing switch/case control flow.</p>
+<li>[x] Add explicit parse diagnostics for unsupported <code>break</code>/<code>continue</code> syntax</li>
+<p>before implementing loop-control execution.</p>
+</ul>
+<h3 id="milestone-6-loop-control-execution">Milestone 6: Loop-Control Execution</h3>
+<ul>
+<li>[x] Implement <code>break;</code> execution for innermost <code>while</code> loops with parser,</li>
+<p>interpreter, fixture, CLI snapshot, documentation, and explicit native-codegen rejection coverage where lowering remains unsupported.</p>
+<li>[x] Implement <code>continue;</code> execution for innermost <code>while</code> loops with parser,</li>
+<p>interpreter, fixture, CLI snapshot, documentation, and explicit native-codegen rejection coverage where lowering remains unsupported.</p>
+</ul>
+<h3 id="milestone-7-builtin-and-array-refinements">Milestone 7: Builtin and Array Refinements</h3>
+<ul>
+<li>[x] Implement direct <code>isset($array[$key])</code> support for array offset operands,</li>
+<p>with tests for existing keys, null values, missing keys, undefined arrays, and non-array targets while keeping complex lvalues explicitly unsupported.</p>
+<li>[x] Implement <code>array_key_exists($key, $array)</code> for the current ordered array</li>
+<p>value model, including null-value contrast against <code>isset</code>, invalid key and non-array diagnostics, fixture CLI coverage, and docs for unsupported key coercions.</p>
+<li>[x] Implement <code>empty(...)</code> for direct variables and direct array offsets over</li>
+<p>the current scalar/array value model, including undefined, missing, <code>null</code>,</p>
+</ul>
+<p class="note">Showing the first 450 lines of 21,379 total lines. Open the GitHub source link for the complete document.</p></section></main>
+  <footer><span>Generated 2026-05-21T23:38:13.270Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+</body>
+</html>

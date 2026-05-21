@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>phpc-lane-native-object-property-runtime - PHP Native Compiler Progress</title>
+  <link rel="stylesheet" href="../assets/site.css">
+  <script defer src="../assets/site.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">PHP Native Compiler Progress</a>
+    <nav><a href="https://github.com/adamziel/php-to-native-compiler/blob/master/PROGRESS.md">PROGRESS.md</a><a href="https://github.com/adamziel/php-to-native-compiler">Repository</a><a href="../source/progress.html">Source Snapshot</a></nav>
+  </header>
+  <main><section class="source"><p><a href="../index.html#lanes">Back to lane table</a></p><span class="eyebrow">Lane-local report</span><h1>phpc-lane-native-object-property-runtime</h1><div class="meta"><div class="metric"><span>Branch</span><strong>lane/native-object-property-runtime</strong></div><div class="metric"><span>Head</span><strong><code>8af5fb29</code></strong></div><div class="metric"><span>Latest log date</span><strong>2026-05-21</strong></div></div><p class="note">Generated from the latest dated section of the lane progress log. Lane-local work is candidate material until selected, gated, committed, and pushed to the primary branch.</p><h2>Recent Lane Notes</h2><h3 id="2026-05-21">2026-05-21</h3>
+<p>Implemented:</p>
+<ul>
+<li>Added an owned native object public property-name snapshot runtime ABI. The</li>
+<p>new snapshot handle clones initialized public property names in insertion order, exposes length, borrowed name-at-index, owned name-clone, and free helpers, and stays independent after object mutation or object free. Focused <code>php_runtime native_object</code> tests cover mixed property writes, overwrite order preservation, unset removing names from later snapshots, snapshot independence, cloned name ownership after snapshot free, and null/invalid index behavior. Native compiler lowering remains intentionally unchanged.</p>
+</ul>
+<ul>
+<li>Extended the native object public string-property runtime ABI to accept</li>
+<p>generic <code>NativeValueHandle</code> writes for scalar-backed null, bool, int, and UTF-8 string values. A new <code>phpc_native_value_from_scalar</code> helper creates owned value handles from <code>NativeScalarValue</code>, while object-property writes continue cloning input handles and reads return owned clones. Focused <code>php_runtime native_object</code> tests cover int/bool/null/string write/read, cross-type overwrite, read handles surviving object free, unset after generic values, and explicit null-vs-missing read behavior. Native compiler lowering for object-property operations remains intentionally unsupported.</p>
+</ul>
+<ul>
+<li>Added the first bounded linked native executable path:</li>
+<p><code>phpc compile &lt;input.php&gt; --emit-exe &lt;output&gt;</code> now emits C for the current straight-line native subset, builds <code>php_runtime</code> as a static library, links with <code>cc</code>, and writes an executable. Direct compile-time string output on this path routes through <code>phpc_native_string_from_bytes</code>, <code>phpc_native_value_from_string_with_diagnostic</code>, and <code>phpc_native_value_echo_stdout</code> rather than direct <code>printf</code>. <code>phpc_native_value_echo_stdout</code> now flushes stdout after successful writes so C-linked native executables expose runtime-owned output before exit. Focused tests prove the generated C helper calls and execute a linked binary against <code>tests/fixtures/milestone2300/native_link_runtime_helper.php</code>. This is not a broad native support claim: dynamic string-pointer helper lowering remains LLVM-IR-only, and arrays, objects, functions, references, request/session/stream/header state, exceptions, includes, and broad PHP coercions remain unsupported or bounded by existing native diagnostics.</p>
+</ul>
+<ul>
+<li>Extended the native array runtime ABI beyond empty/len/free. Native array</li>
+<p>handles can now append scalar values, append clones of existing <code>NativeValueHandle</code> values, and read integer-keyed slots as new runtime-owned value handles. The deterministic native runtime IR probe declares <code>phpc_native_array_append_scalar</code>, <code>phpc_native_array_append_value</code>, and <code>phpc_native_array_read_int</code>, with a probe function that appends, reads, echoes, and frees the handles. Generated PHP array literals still reject in native lowering; this is ABI groundwork for future array lowering, not broad native array support.</p>
+</ul></section></main>
+  <footer><span>Generated 2026-05-21T23:38:13.270Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+</body>
+</html>
