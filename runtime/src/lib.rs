@@ -170,6 +170,13 @@ pub struct NativeComparisonResult {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeComparisonOperand {
+    value: NativeValueHandle,
+    diagnostic: NativeDiagnosticHandle,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeComparisonBranchResult {
     status: u8,
     value: u8,
@@ -510,6 +517,14 @@ impl NativeComparisonResult {
         }
     }
 
+    fn blocked_with_diagnostic(diagnostic: NativeDiagnosticHandle) -> Self {
+        Self {
+            status: NativeComparisonStatus::Blocked as u8,
+            value: 0,
+            diagnostic,
+        }
+    }
+
     pub fn status(&self) -> u8 {
         if self.is_ok() {
             NativeComparisonStatus::Ok as u8
@@ -544,6 +559,20 @@ impl NativeComparisonResult {
 
     pub fn is_ok(&self) -> bool {
         self.status == NativeComparisonStatus::Ok as u8
+    }
+}
+
+impl NativeComparisonOperand {
+    pub const fn from_parts(value: NativeValueHandle, diagnostic: NativeDiagnosticHandle) -> Self {
+        Self { value, diagnostic }
+    }
+
+    pub const fn value(&self) -> NativeValueHandle {
+        self.value
+    }
+
+    pub const fn diagnostic(&self) -> NativeDiagnosticHandle {
+        self.diagnostic
     }
 }
 
@@ -779,6 +808,16 @@ pub extern "C" fn phpc_native_float(value: f64) -> NativeScalarValue {
 #[no_mangle]
 pub extern "C" fn phpc_native_value_from_scalar(value: NativeScalarValue) -> NativeValueHandle {
     NativeValueHandle::from_value(value.to_value())
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_operand_from_scalar(
+    value: NativeScalarValue,
+) -> NativeComparisonOperand {
+    NativeComparisonOperand::from_parts(
+        phpc_native_value_from_scalar(value),
+        NativeDiagnosticHandle::null(),
+    )
 }
 
 #[no_mangle]
@@ -1341,6 +1380,36 @@ unsafe fn native_value_handle_from_string_result(
             NativeValueHandle::null()
         }
     }
+}
+
+/// # Safety
+///
+/// `bytes` follows the same pointer/length contract as
+/// `phpc_native_value_from_string_bytes_with_diagnostic`. The returned operand
+/// owns both handles and must be passed to a comparison operand consumer.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_operand_from_string_bytes(
+    bytes: *const u8,
+    len: usize,
+) -> NativeComparisonOperand {
+    let mut diagnostic = NativeDiagnosticHandle::null();
+    let value =
+        unsafe { phpc_native_value_from_string_bytes_with_diagnostic(bytes, len, &mut diagnostic) };
+    NativeComparisonOperand::from_parts(value, diagnostic)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_operand_value(
+    operand: NativeComparisonOperand,
+) -> NativeValueHandle {
+    operand.value()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_operand_diagnostic(
+    operand: NativeComparisonOperand,
+) -> NativeDiagnosticHandle {
+    operand.diagnostic()
 }
 
 /// # Safety
@@ -2303,6 +2372,85 @@ pub unsafe extern "C" fn phpc_native_value_compare_branch_and_free(
         unsafe { phpc_native_value_free(right) };
     }
     outcome.into_branch_result()
+}
+
+/// # Safety
+///
+/// `left` and `right` must be operands produced by the runtime ABI or operands
+/// assembled from value/diagnostic handles that obey the same ownership
+/// contract. The helper consumes both operands.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_operand_compare_and_free(
+    left: NativeComparisonOperand,
+    op: u8,
+    right: NativeComparisonOperand,
+) -> NativeComparisonResult {
+    unsafe { native_comparison_operand_result_with_materialization_and_free(left, op, right) }
+}
+
+/// # Safety
+///
+/// `left` and `right` follow the same operand ownership contract as
+/// `phpc_native_comparison_operand_compare_and_free`. The helper consumes both
+/// operands, reports blocked diagnostics to stderr, and returns the canonical
+/// branch result.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_operand_compare_branch_and_free(
+    left: NativeComparisonOperand,
+    op: u8,
+    right: NativeComparisonOperand,
+) -> NativeComparisonBranchResult {
+    let result = unsafe { phpc_native_comparison_operand_compare_and_free(left, op, right) };
+    unsafe { phpc_native_comparison_result_branch_or_report_stderr_and_free(result) }
+}
+
+unsafe fn native_comparison_operand_result_with_materialization_and_free(
+    left: NativeComparisonOperand,
+    op: u8,
+    right: NativeComparisonOperand,
+) -> NativeComparisonResult {
+    if let Some(result) = unsafe { native_comparison_operand_materialization_failure_result(left) }
+    {
+        unsafe { phpc_native_diagnostic_free(right.diagnostic()) };
+        unsafe { native_free_unique_value_handles(left.value(), right.value()) };
+        return result;
+    }
+
+    if let Some(result) = unsafe { native_comparison_operand_materialization_failure_result(right) }
+    {
+        unsafe { native_free_unique_value_handles(left.value(), right.value()) };
+        return result;
+    }
+
+    let outcome = unsafe { native_value_compare_outcome(left.value(), op, right.value()) };
+    unsafe { native_free_unique_value_handles(left.value(), right.value()) };
+    outcome.into_native_result()
+}
+
+unsafe fn native_comparison_operand_materialization_failure_result(
+    operand: NativeComparisonOperand,
+) -> Option<NativeComparisonResult> {
+    if !operand.value().is_null() {
+        unsafe { phpc_native_diagnostic_free(operand.diagnostic()) };
+        return None;
+    }
+
+    if operand.diagnostic().is_null() {
+        return Some(NativeComparisonResult::blocked(
+            "native comparison failed: operand materialization returned null without diagnostic",
+        ));
+    }
+
+    Some(NativeComparisonResult::blocked_with_diagnostic(
+        operand.diagnostic(),
+    ))
+}
+
+unsafe fn native_free_unique_value_handles(left: NativeValueHandle, right: NativeValueHandle) {
+    unsafe { phpc_native_value_free(left) };
+    if left.ptr != right.ptr {
+        unsafe { phpc_native_value_free(right) };
+    }
 }
 
 #[no_mangle]
@@ -10198,6 +10346,117 @@ mod tests {
 
             unsafe { phpc_native_value_free(value) };
         }
+    }
+
+    #[test]
+    fn native_comparison_operand_contract_centralizes_materialization_across_families() {
+        for (label, left, op, right, expected) in [
+            (
+                "scalar loose equality",
+                phpc_native_null(),
+                NativeComparisonOp::LooseEq,
+                phpc_native_bool(false),
+                true,
+            ),
+            (
+                "scalar loose ordering",
+                phpc_native_int(2),
+                NativeComparisonOp::LooseLt,
+                phpc_native_int(10),
+                true,
+            ),
+            (
+                "scalar strict non-identity",
+                phpc_native_bool(true),
+                NativeComparisonOp::StrictNe,
+                phpc_native_int(1),
+                true,
+            ),
+        ] {
+            let branch = unsafe {
+                phpc_native_comparison_operand_compare_branch_and_free(
+                    phpc_native_comparison_operand_from_scalar(left),
+                    op as u8,
+                    phpc_native_comparison_operand_from_scalar(right),
+                )
+            };
+            assert_eq!(
+                phpc_native_comparison_branch_result_status(branch),
+                NativeComparisonStatus::Ok as u8,
+                "{label}"
+            );
+            assert_eq!(
+                phpc_native_comparison_branch_result_value(branch),
+                u8::from(expected),
+                "{label}"
+            );
+            assert_eq!(
+                phpc_native_comparison_branch_result_is_true(branch),
+                expected,
+                "{label}"
+            );
+            assert_eq!(phpc_native_comparison_branch_result_exit_code(branch), 0);
+            assert_eq!(
+                phpc_native_comparison_branch_result_diagnostic_len(branch),
+                0
+            );
+        }
+
+        let numeric_string = unsafe {
+            phpc_native_comparison_operand_from_string_bytes(b"10".as_ptr(), b"10".len())
+        };
+        assert!(!phpc_native_comparison_operand_value(numeric_string).is_null());
+        assert!(phpc_native_comparison_operand_diagnostic(numeric_string).is_null());
+        assert_native_comparison_ok(
+            "numeric string operand comparison",
+            unsafe {
+                phpc_native_comparison_operand_compare_and_free(
+                    numeric_string,
+                    NativeComparisonOp::LooseGt as u8,
+                    phpc_native_comparison_operand_from_scalar(phpc_native_int(2)),
+                )
+            },
+            true,
+        );
+
+        let array_branch = unsafe {
+            phpc_native_comparison_operand_compare_branch_and_free(
+                NativeComparisonOperand::from_parts(
+                    NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                    NativeDiagnosticHandle::null(),
+                ),
+                NativeComparisonOp::LooseEq as u8,
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_result_status(array_branch),
+            NativeComparisonStatus::Blocked as u8
+        );
+        assert_eq!(
+            phpc_native_comparison_branch_result_exit_code(array_branch),
+            1
+        );
+        assert!(
+            phpc_native_comparison_branch_result_diagnostic_len(array_branch)
+                >= "array comparisons are not implemented".len()
+        );
+
+        let invalid =
+            unsafe { phpc_native_comparison_operand_from_string_bytes(std::ptr::null(), 4) };
+        assert!(phpc_native_comparison_operand_value(invalid).is_null());
+        assert!(!phpc_native_comparison_operand_diagnostic(invalid).is_null());
+        assert_native_comparison_blocked(
+            "invalid string operand materialization",
+            unsafe {
+                phpc_native_comparison_operand_compare_and_free(
+                    invalid,
+                    NativeComparisonOp::StrictEq as u8,
+                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                )
+            },
+            "string bytes pointer is null",
+        );
     }
 
     #[test]

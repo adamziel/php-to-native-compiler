@@ -5638,8 +5638,7 @@ enum CValue {
 }
 
 struct NativeCComparisonOperand {
-    value_handle: String,
-    diagnostic_handle: Option<String>,
+    operand: String,
 }
 
 struct CNativeArrayKeyMaterialization {
@@ -5714,7 +5713,8 @@ impl CGenerator {
                 output.push_str("typedef struct { phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeStringConversionResult;\n");
             }
             if self.uses_native_comparison_helpers {
-                output.push_str("typedef struct { uint8_t status; uint8_t value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeComparisonResult;\n");
+                output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeComparisonOperand;\n");
+                output.push_str("typedef struct { uint8_t status; uint8_t value; size_t diagnostic_len; } phpc_NativeComparisonBranchResult;\n");
             }
             if self.uses_native_array_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeArrayHandle;\n");
@@ -5774,10 +5774,11 @@ impl CGenerator {
             }
         }
         if self.uses_native_comparison_helpers {
-            output.push_str("extern int phpc_native_value_materialization_failure_exit_code(phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle diagnostic);\n");
-            output.push_str("extern phpc_NativeComparisonResult phpc_native_value_compare_and_free(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
-            output.push_str("extern bool phpc_native_comparison_result_is_true(phpc_NativeComparisonResult result);\n");
-            output.push_str("extern int phpc_native_comparison_result_report_stderr_exit_code_and_free(phpc_NativeComparisonResult result);\n\n");
+            output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_scalar(phpc_NativeScalarValue value);\n");
+            output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_string_bytes(const uint8_t *ptr, size_t len);\n");
+            output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_comparison_operand_compare_branch_and_free(phpc_NativeComparisonOperand left, uint8_t op, phpc_NativeComparisonOperand right);\n");
+            output.push_str("extern int phpc_native_comparison_branch_result_exit_code(phpc_NativeComparisonBranchResult result);\n");
+            output.push_str("extern bool phpc_native_comparison_branch_result_is_true(phpc_NativeComparisonBranchResult result);\n\n");
         }
         if self.uses_strcmp {
             output.push_str("#include <string.h>\n\n");
@@ -7607,29 +7608,26 @@ impl CGenerator {
         self.next_native_temp += 1;
         let left = self.emit_native_comparison_operand(left, span)?;
         let right = self.emit_native_comparison_operand(right, span)?;
-        self.emit_native_comparison_operand_materialization_checks([&left, &right]);
-        let comparison_result = format!("comparison_result_{comparison_index}");
+        let comparison_branch = format!("comparison_branch_{comparison_index}");
 
         self.body.push(format!(
-            "phpc_NativeComparisonResult {comparison_result} = phpc_native_value_compare_and_free({}, {}, {});",
-            left.value_handle,
+            "phpc_NativeComparisonBranchResult {comparison_branch} = phpc_native_comparison_operand_compare_branch_and_free({}, {}, {});",
+            left.operand,
             native_comparison_c_uint8_argument(op),
-            right.value_handle
-        ));
-        let comparison_truth = format!("comparison_truth_{comparison_index}");
-        self.body.push(format!(
-            "bool {comparison_truth} = phpc_native_comparison_result_is_true({comparison_result});"
+            right.operand
         ));
         let comparison_exit_code = format!("comparison_exit_code_{comparison_index}");
         self.body.push(format!(
-            "int {comparison_exit_code} = phpc_native_comparison_result_report_stderr_exit_code_and_free({comparison_result});"
+            "int {comparison_exit_code} = phpc_native_comparison_branch_result_exit_code({comparison_branch});"
         ));
         self.body
             .push(format!("if ({comparison_exit_code} != 0) {{"));
         self.body.push(format!("  return {comparison_exit_code};"));
         self.body.push("}".to_string());
 
-        Ok(CValue::BoolExpr(comparison_truth))
+        Ok(CValue::BoolExpr(format!(
+            "phpc_native_comparison_branch_result_is_true({comparison_branch})"
+        )))
     }
 
     fn emit_native_comparison_operand(
@@ -7639,57 +7637,41 @@ impl CGenerator {
     ) -> CompileResult<NativeCComparisonOperand> {
         let index = self.next_native_temp;
         self.next_native_temp += 1;
-        let value_handle = format!("comparison_value_handle_{index}");
+        let operand = format!("comparison_operand_{index}");
 
         match value {
             CValue::Null => {
                 self.body.push(format!(
-                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{0}});"
+                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_scalar((phpc_NativeScalarValue){{0}});"
                 ));
-                Ok(NativeCComparisonOperand {
-                    value_handle,
-                    diagnostic_handle: None,
-                })
+                Ok(NativeCComparisonOperand { operand })
             }
             CValue::Bool(value) => {
                 let bool_value = u8::from(value);
                 self.body.push(format!(
-                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{1, {bool_value}, 0, 0.0}});"
+                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_scalar((phpc_NativeScalarValue){{1, {bool_value}, 0, 0.0}});"
                 ));
-                Ok(NativeCComparisonOperand {
-                    value_handle,
-                    diagnostic_handle: None,
-                })
+                Ok(NativeCComparisonOperand { operand })
             }
             CValue::BoolExpr(value) => {
                 self.body.push(format!(
-                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{1, (uint8_t)(({value}) != 0), 0, 0.0}});"
+                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_scalar((phpc_NativeScalarValue){{1, (uint8_t)(({value}) != 0), 0, 0.0}});"
                 ));
-                Ok(NativeCComparisonOperand {
-                    value_handle,
-                    diagnostic_handle: None,
-                })
+                Ok(NativeCComparisonOperand { operand })
             }
             CValue::Int(value) => {
                 self.body.push(format!(
-                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{2, 0, (int64_t)({value}), 0.0}});"
+                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_scalar((phpc_NativeScalarValue){{2, 0, (int64_t)({value}), 0.0}});"
                 ));
-                Ok(NativeCComparisonOperand {
-                    value_handle,
-                    diagnostic_handle: None,
-                })
+                Ok(NativeCComparisonOperand { operand })
             }
             CValue::Float(value) => {
                 self.body.push(format!(
-                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{3, 0, 0, (double)({value})}});"
+                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_scalar((phpc_NativeScalarValue){{3, 0, 0, (double)({value})}});"
                 ));
-                Ok(NativeCComparisonOperand {
-                    value_handle,
-                    diagnostic_handle: None,
-                })
+                Ok(NativeCComparisonOperand { operand })
             }
             CValue::String(value) => {
-                let diagnostic_handle = format!("comparison_diagnostic_handle_{index}");
                 let (bytes, byte_len) = if value.is_empty() {
                     ("NULL".to_string(), "0".to_string())
                 } else {
@@ -7700,29 +7682,16 @@ impl CGenerator {
                     (data, value.len().to_string())
                 };
                 self.body.push(format!(
-                    "phpc_NativeDiagnosticHandle {diagnostic_handle} = {{0}};"
+                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_string_bytes({bytes}, {byte_len});"
                 ));
-                self.body.push(format!(
-                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_string_bytes_with_diagnostic({bytes}, {byte_len}, &{diagnostic_handle});"
-                ));
-                Ok(NativeCComparisonOperand {
-                    value_handle,
-                    diagnostic_handle: Some(diagnostic_handle),
-                })
+                Ok(NativeCComparisonOperand { operand })
             }
             CValue::StringExpr(value) => {
                 let byte_len = self.native_comparison_string_expr_len_operand(&value, span)?;
-                let diagnostic_handle = format!("comparison_diagnostic_handle_{index}");
                 self.body.push(format!(
-                    "phpc_NativeDiagnosticHandle {diagnostic_handle} = {{0}};"
+                    "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_string_bytes((const uint8_t *)({value}), {byte_len});"
                 ));
-                self.body.push(format!(
-                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_string_bytes_with_diagnostic((const uint8_t *)({value}), {byte_len}, &{diagnostic_handle});"
-                ));
-                Ok(NativeCComparisonOperand {
-                    value_handle,
-                    diagnostic_handle: Some(diagnostic_handle),
-                })
+                Ok(NativeCComparisonOperand { operand })
             }
             CValue::ArrayHandle(_) => Err(self.unsupported(span, assembly_comparison_rejection())),
         }
@@ -7858,45 +7827,6 @@ impl CGenerator {
         }
 
         Err(self.unsupported(span, assembly_comparison_rejection()))
-    }
-
-    fn emit_native_comparison_operand_materialization_checks<const N: usize>(
-        &mut self,
-        operands: [&NativeCComparisonOperand; N],
-    ) {
-        for operand in operands.iter() {
-            let Some(diagnostic_handle) = &operand.diagnostic_handle else {
-                continue;
-            };
-
-            let materialization_exit_code = format!(
-                "comparison_materialization_exit_code_{}",
-                self.next_native_temp
-            );
-            self.next_native_temp += 1;
-            self.body.push(format!(
-                "int {materialization_exit_code} = phpc_native_value_materialization_failure_exit_code({}, {diagnostic_handle});",
-                operand.value_handle
-            ));
-            self.body
-                .push(format!("if ({materialization_exit_code} != 0) {{"));
-            for cleanup_operand in operands.iter().rev() {
-                if let Some(cleanup_diagnostic_handle) = &cleanup_operand.diagnostic_handle {
-                    if cleanup_diagnostic_handle != diagnostic_handle {
-                        self.body.push(format!(
-                            "  phpc_native_diagnostic_free({cleanup_diagnostic_handle});"
-                        ));
-                    }
-                }
-                self.body.push(format!(
-                    "  phpc_native_value_free({});",
-                    cleanup_operand.value_handle
-                ));
-            }
-            self.body
-                .push(format!("  return {materialization_exit_code};"));
-            self.body.push("}".to_string());
-        }
     }
 
     fn checked_static_integer_arithmetic(
