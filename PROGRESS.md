@@ -1,30 +1,30 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 01:07 CEST
-Evaluation marker: 20260521T230752Z-plus-f6c5b0fe
+Updated: 2026-05-22 01:20 CEST
+Evaluation marker: 20260521T232000Z-plus-81b46b66
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local work is candidate material until selected, gated, committed, and pushed.
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **33%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **34%**
 
 ```
-Generalized runtime/ABI foundations      [################----] 81%
-Compiler/backend consumers               [################----] 79%
-Executable generalized PHP semantics     [#########-----------] 44%
+Generalized runtime/ABI foundations      [################----] 82%
+Compiler/backend consumers               [################----] 80%
+Executable generalized PHP semantics     [#########-----------] 45%
 Arrays, references, COW, lvalues         [#####---------------] 24%
 Objects, properties, methods             [##------------------] 10%
 Diagnostics/control-flow composition     [####----------------] 21%
-Broad integrated verification            [#######-------------] 34%
+Broad integrated verification            [#######-------------] 35%
 ```
 
 ## Current Primary State
 
-- Product HEAD before this progress update: `f6c5b0fe codegen: echo scalars through value ABI`.
-- Latest committed semantic baseline: `f6c5b0fe codegen: echo scalars through value ABI`.
-- Latest semantic batch routes generated-native C scalar `echo`/`print` output through `phpc_native_value_from_scalar(...)` plus `phpc_native_value_echo_stdout(...)` for null, bool, int, and float value families.
-- Resource note: live `/dev/shm` is healthy at about 15G free and `/home` has about 247G free, but dashboard history shows repeated dips near the dispatcher floor during build waves. Broad primary gates should stay isolated, single-job, and resource-aware.
+- Product HEAD before this progress update: `81b46b66 codegen: route comparisons through relation result`.
+- Latest committed semantic baseline: `81b46b66 codegen: route comparisons through relation result`.
+- Latest semantic batch adds a shared native comparison relation-result ABI and routes runtime-linked generated-C comparison branch consumers through relation results before decision/reporting, replacing the older direct decision call path.
+- Resource note: live `/dev/shm` is under pressure at about 6.7G free. The largest target dir is active under `impl-native-error-diagnostic-semantics`, so broad primary gates should remain isolated, single-job, and resource-aware until that build wave settles.
 
 ## Grand Roadmap Position
 
@@ -53,16 +53,18 @@ The product is still far from full generalized PHP. The largest missing regions 
 | --- | ---: | ---: | --- |
 | String conversion, truthiness, byte buffers | 54% | 82% | Primary has shared value string-form semantics, numeric-string classification, selected generated-C string builtin consumers, cast/type-name echo value-result consumers, scalar value-cast generated-C consumers, scalar-to-native-value echo/print output, comparison byte materialization, shared runtime string-byte source/materialization, and shared raw-buffer writes. Lane-local formatter/stdout work is stronger but not integrated. |
 | Call operation cleanup and ownership | 42% | 66% | Primary routes many call-result contexts and shared backend call diagnostics through common call-boundary contracts. Lane-local work is mostly blocker/diagnostic cleanup; the latest reference-assignment pass explicitly adds no executable call behavior. Real frames, binding, by-ref args/returns, dynamic calls, and return execution remain mostly non-executable. |
-| Comparison and conversion semantics | 65% | 77% | Primary has reusable comparison operation validation, branch/free/decision/status/abort ABIs, generated-C abort-code guards, string-handle operands, numeric-string pair classification, comparison decision rematerialization, array-handle comparison consumers, scalar casts, bitwise/shift ABI consumers, value-operation echo, and type-predicate consumers. Lane-local relation-result generated-C comparison consumption is promising but not integrated. |
+| Comparison and conversion semantics | 68% | 78% | Primary has reusable comparison operation validation, relation-result/result/branch/free/decision/status/abort ABIs, generated-C relation-result branch consumers, generated-C abort-code guards, string-handle operands, numeric-string pair classification, comparison decision rematerialization, array-handle comparison consumers, scalar casts, bitwise/shift ABI consumers, value-operation echo, and type-predicate consumers. Recursive array/object/resource/reference comparison semantics and broad backend parity remain open. |
 | Arrays, lvalues, references, COW | 24% | 78% | Primary has array-key materialization, array value-operation result ABI, array-entry snapshots, array-handle comparisons, diagnostic append consumers, native array handles as owned value operands, and cloned-literal source cleanup. Lane-local owner/value/reference operation wrappers, null-coalescing value operands, foreach/reference paths, and generated-C lvalue candidates are much stronger; full executable lvalues/references/COW are not integrated. |
 | Symbols, globals, request state | 24% | 58% | Primary has symbol ABI helpers, request/superglobal snapshot ABI, and `defined()` interpolation routed through expression-result boundaries. Lane-local request assignment expression work preserves derived request-native values, but mutable globals/superglobals and repeated-call state remain early. |
 | Objects, properties, methods | 10% | 46% | Lane-local object/class/property blockers and operation plans continue improving. Primary still has little broad executable object/property/method behavior. |
 | Diagnostics and control-flow cleanup | 21% | 64% | Primary has selected severity/blocker surfaces, diagnostic array append behavior, centralized call diagnostic subjects, call-boundary cleanup routing, and comparison branch abort handling. Lane-local diagnostic result carriers and control-flow rejection boundaries are broader, but most control-flow remains blocker or non-emitting model work. |
 | Filesystem/path builtins and request state | 18% | 43% | Primary centralizes filesystem/path/request blockers and snapshots, and routes `realpath_cache_get()`/`realpath_cache_size()` through the shared filesystem path/cache operation ABI. Real stream/stat/cache/current-directory/request mutation behavior is not implemented. |
-| Broad composition verification | 34% | 42% | Focused runtime/native-link gates cover the newest comparison, value-operation, scalar echo, bitwise, type-predicate, array-value, string-byte, and diagnostic paths. Broad differential PHP composition coverage remains thin, and broad `phpc --tests` still has known pre-existing gaps. |
+| Broad composition verification | 35% | 43% | Focused runtime/native-link gates cover the newest comparison relation-result path, value-operation, scalar echo, bitwise, type-predicate, array-value, string-byte, and diagnostic paths. Broad differential PHP composition coverage remains thin, and broad `phpc --tests` still has known pre-existing gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `81b46b66 codegen: route comparisons through relation result`
+  - Adds `NativeComparisonRelationResult` and runtime helpers for owned operand comparison relation results, then routes runtime-linked generated-C comparison branch consumers through relation-result-to-decision/reporting helpers instead of the older direct decision ABI. Gates included focused runtime relation-result coverage, generated-C source assertions, dynamic string operand source coverage, native-link comparison subset, full `native_link`, `php_runtime native_comparison`, `phpc --lib comparison`, `php_runtime comparison`, package check, rustfmt check, and diff checks. This strengthens comparison result composition and backend consumer discipline, but recursive array/object/resource/reference comparisons, exact diagnostics, LLVM parity, and broad expression storage remain open.
 - `f6c5b0fe codegen: echo scalars through value ABI`
   - Routes generated-native C scalar `echo`/`print` output for null, bool, int, and float values through `phpc_native_value_from_scalar(...)` and `phpc_native_value_echo_stdout(...)` instead of backend-local C `printf` scalar formatting. Gates included source-level generated-C assertions, a linked executable scalar output program, runtime scalar-to-value echo coverage, full `native_link`, runtime `native_value_`, `cargo check -q -p phpc -p php_runtime`, rustfmt checks, and diff checks. This is a narrow generated-C consumer of an existing value ABI; LLVM scalar stdout, arbitrary value storage, references/COW, object/resource formatting, exact diagnostics, and nontrivial cleanup remain open.
 - `efeaf043 codegen: route type predicates through value ABI`
@@ -86,7 +88,7 @@ The product is still far from full generalized PHP. The largest missing regions 
 - String/conversion candidates: formatter-tag stdout/raw-buffer/text-byte ABIs, scalar-to-native-value formatter consumers, byte-source/view/result boundaries, interpreter byte-output sinks, string offset warning blockers, and broader binary-safe string surfaces.
 - Termination/control-flow candidates: statement-level native `exit`/`die` value ABI in LLVM and generated C, plus broader recursive CFG/effect/cleanup blocker work for loops/switch/goto/break/continue.
 - Symbol/request/call candidates: request-derived assignment expression consumers, expression-result sequence consumers, root slot transition contracts, scalar linked symbol-table execution, callable operation/preflight/source contracts, and call cleanup/diagnostic families.
-- Object/diagnostic/comparison candidates: object-property operation plans, class-policy/object receiver blockers, diagnostic result carriers and sinks, comparison relation-result consumers, and relation-result ABI materialization.
+- Object/diagnostic/comparison candidates: object-property operation plans, class-policy/object receiver blockers, diagnostic result carriers and sinks, comparison relation-result public-consumer cleanup, and LLVM/generated-C comparison parity work.
 
 Lane-local work is useful source material, but it is not product capability until selected into a small primary batch, gated, committed, and pushed.
 
@@ -98,9 +100,9 @@ The project remains boundary-heavy. More result/blocker vocabulary without immed
 
 ## Near-Term Steering
 
-1. Treat `f6c5b0fe` as the latest integrated semantic baseline.
+1. Treat `81b46b66` as the latest integrated semantic baseline.
 2. Prefer small executable generated-C/LLVM consumers of existing ABI surfaces over more standalone vocabulary.
-3. Strong next candidates: isolate one narrow array-lvalue consumer from `impl-array-linked-exec`; integrate the statement-level `exit`/`die` value ABI slice if it stays dependency-minimal; consume the lane-local comparison relation-result ABI in primary; or route the generic formatter stdout boundary through a real backend path after the scalar echo value consumer.
+3. Strong next candidates: isolate one narrow array-lvalue consumer from `impl-array-linked-exec` or `impl-native-integration-batch`; integrate the statement-level `exit`/`die` value ABI slice if it stays dependency-minimal; pursue LLVM/generated-C parity for already-landed comparison relation-result behavior; or route the generic formatter stdout boundary through a real backend path after the scalar echo value consumer.
 4. Avoid whole-lane merges. Several lanes contain broad, conflict-prone, or non-executable contract work.
 5. Require call/control-flow/object candidates to emit/link something real or remove a duplicated production blocker before they receive primary integration time.
 6. Keep resource checks explicit before broad gates; `/dev/shm` is healthy at this review but volatile under build waves, and isolated target directories remain preferred to avoid target-dir races.
