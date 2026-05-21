@@ -1145,6 +1145,8 @@ const NATIVE_VALUE_CAST_ECHO_SOURCE: &str = "<?php\necho (int)\"5.9\", \"|\";\ne
 
 const NATIVE_VALUE_CAST_BUILTIN_SOURCE: &str = "<?php\n$a = [];\n$a[strval(5)] = floatval(\"3.5\");\n$a[\"truth\"] = doubleval(\"2.5\");\necho strval(\"A\"), \"|\", boolval(\"0\"), \"|\", floatval(\" -12.8 \"), \"|\", doubleval(\"2.5\"), \"|\", $a[\"5\"], \"|\", $a[\"truth\"];\n";
 
+const NATIVE_ARRAY_VALUE_OPERAND_SOURCE: &str = "<?php\n$a = [];\n$a[\"nested\"] = [1, 2];\necho (int)[1], \"|\", (int)[], \"|\", (float)[0], \"|\", boolval([0]), \"|\", gettype([1]);\n";
+
 #[test]
 fn native_executable_c_source_routes_array_key_and_value_expressions_through_value_result_abi() {
     let program = parse(NATIVE_VALUE_OPERATION_ARRAY_SOURCE).unwrap();
@@ -1499,6 +1501,39 @@ fn native_executable_c_source_routes_scalar_cast_builtins_through_value_cast_con
 }
 
 #[test]
+fn native_executable_c_source_routes_array_handles_through_value_operand_boundary() {
+    let program = parse(NATIVE_ARRAY_VALUE_OPERAND_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_from_array(phpc_NativeArrayHandle array);"
+        ),
+        "{source}"
+    );
+    assert!(
+        source.matches(" = phpc_native_value_from_array(").count() >= 6,
+        "array handles used as array values, casts, cast builtins, and type-name operands should share one value materialization boundary:\n{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_cast_operation_with_diagnostic(")
+            .count()
+            >= 4,
+        "{source}"
+    );
+    assert!(
+        source.contains(" = phpc_native_value_type_name_result("),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_insert_key_value_with_diagnostic(")
+            && source.contains("phpc_native_array_append_value_with_diagnostic("),
+        "nested array values should compose with keyed insert and append boundaries:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_native_cast_echo_value_result_program() {
     if !has_cc() {
         return;
@@ -1537,6 +1572,52 @@ fn emit_exe_links_and_runs_native_cast_echo_value_result_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"5|3.5|5||string");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_array_value_operand_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php =
+        native_link_output_path("native_array_value_operand_boundary").with_extension("php");
+    fs::write(&temp_php, NATIVE_ARRAY_VALUE_OPERAND_SOURCE)
+        .expect("write native array value operand fixture");
+    let output_path = native_link_output_path("native_array_value_operand_boundary");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1|0|1|1|array");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

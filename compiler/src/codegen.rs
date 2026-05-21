@@ -5989,6 +5989,7 @@ impl CGenerator {
             );
             if self.uses_native_array_helpers {
                 output.push_str("extern phpc_NativeArrayHandle phpc_native_array_empty(void);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_array(phpc_NativeArrayHandle array);\n");
                 output.push_str("extern bool phpc_native_array_append_value(phpc_NativeArrayHandle array, phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_array_append_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key(phpc_NativeValueHandle value);\n");
@@ -8108,8 +8109,11 @@ impl CGenerator {
                 ));
                 self.emit_report_native_diagnostic(&diagnostic_handle);
             }
-            CValue::ArrayHandle(_) => {
-                return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
+            CValue::ArrayHandle(handle) => {
+                self.uses_native_array_helpers = true;
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_array({handle});"
+                ));
             }
         }
 
@@ -9693,16 +9697,11 @@ impl CGenerator {
         value: CValue,
         span: Span,
     ) -> CompileResult<CNativeValueMaterialization> {
-        match value {
-            CValue::ArrayHandle(_) => Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
-            value => {
-                let handle = self.emit_native_value_for_cvalue(value, span)?;
-                Ok(CNativeValueMaterialization {
-                    handle: handle.clone(),
-                    cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
-                })
-            }
-        }
+        let handle = self.emit_native_value_for_cvalue(value, span)?;
+        Ok(CNativeValueMaterialization {
+            handle: handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+        })
     }
 
     fn materialize_native_value_result_operand(

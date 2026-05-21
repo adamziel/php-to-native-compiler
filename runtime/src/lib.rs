@@ -1376,6 +1376,20 @@ pub extern "C" fn phpc_native_array_is_null(handle: NativeArrayHandle) -> bool {
 /// # Safety
 ///
 /// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. The returned value handle owns a clone of the PHP
+/// array value; ownership of `handle` remains with the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_from_array(
+    handle: NativeArrayHandle,
+) -> NativeValueHandle {
+    unsafe { handle.as_ref() }
+        .map(|array| NativeValueHandle::from_value(Value::Array(array.value.clone())))
+        .unwrap_or_else(NativeValueHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or an array handle previously returned by the runtime
 /// ABI and not yet freed.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_array_len(handle: NativeArrayHandle) -> usize {
@@ -13026,6 +13040,53 @@ mod tests {
             "invalid array access: native array append failed: value handle is null"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_array_free(array) };
+    }
+
+    #[test]
+    fn native_array_handles_materialize_owned_value_handles() {
+        let array = phpc_native_array_empty();
+        let first = NativeValueHandle::from_value(Value::Int(1));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(unsafe {
+            phpc_native_array_append_value_with_diagnostic(array, first, &mut diagnostic)
+        });
+        assert!(diagnostic.is_null());
+
+        let array_value = unsafe { phpc_native_value_from_array(array) };
+        assert!(matches!(
+            unsafe { array_value.as_ref() },
+            Some(Value::Array(array)) if array.len() == 1 && array.get(0) == Some(&Value::Int(1))
+        ));
+
+        let second = NativeValueHandle::from_value(Value::String("later".to_string()));
+        assert!(unsafe {
+            phpc_native_array_append_value_with_diagnostic(array, second, &mut diagnostic)
+        });
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { phpc_native_array_len(array) }, 2);
+        assert!(matches!(
+            unsafe { array_value.as_ref() },
+            Some(Value::Array(array)) if array.len() == 1
+        ));
+
+        let array_int = unsafe {
+            phpc_native_value_cast_operation_with_diagnostic(
+                array_value,
+                NativeValueCastOperation::Int as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(array_int), b"1");
+
+        assert!(unsafe { phpc_native_value_from_array(NativeArrayHandle::null()) }.is_null());
+
+        unsafe { phpc_native_value_free(array_int) };
+        unsafe { phpc_native_value_free(second) };
+        unsafe { phpc_native_value_free(first) };
+        unsafe { phpc_native_value_free(array_value) };
         unsafe { phpc_native_array_free(array) };
     }
 
