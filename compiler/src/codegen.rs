@@ -5751,6 +5751,7 @@ impl CGenerator {
                 output.push_str("typedef struct { phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeStringConversionResult;\n");
             }
             if self.uses_native_comparison_helpers {
+                output.push_str("typedef struct { uint8_t opcode; uint8_t valid; } phpc_NativeComparisonOperation;\n");
                 output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeComparisonOperand;\n");
                 output.push_str("typedef struct { uint8_t status; uint8_t value; size_t diagnostic_len; } phpc_NativeComparisonBranchResult;\n");
             }
@@ -5812,9 +5813,10 @@ impl CGenerator {
             }
         }
         if self.uses_native_comparison_helpers {
+            output.push_str("extern phpc_NativeComparisonOperation phpc_native_comparison_operation_from_opcode(uint8_t opcode);\n");
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_scalar(phpc_NativeScalarValue value);\n");
             output.push_str("extern phpc_NativeComparisonOperand phpc_native_comparison_operand_from_string_bytes(const uint8_t *ptr, size_t len);\n");
-            output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_comparison_operand_compare_branch_and_free(phpc_NativeComparisonOperand left, uint8_t op, phpc_NativeComparisonOperand right);\n");
+            output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_comparison_operand_compare_operation_branch_and_free(phpc_NativeComparisonOperand left, phpc_NativeComparisonOperation operation, phpc_NativeComparisonOperand right);\n");
             output.push_str("extern int phpc_native_comparison_branch_result_exit_code(phpc_NativeComparisonBranchResult result);\n");
             output.push_str("extern bool phpc_native_comparison_branch_result_is_true(phpc_NativeComparisonBranchResult result);\n\n");
         }
@@ -7646,13 +7648,16 @@ impl CGenerator {
         self.next_native_temp += 1;
         let left = self.emit_native_comparison_operand(left, span)?;
         let right = self.emit_native_comparison_operand(right, span)?;
+        let comparison_operation = format!("comparison_operation_{comparison_index}");
         let comparison_branch = format!("comparison_branch_{comparison_index}");
 
         self.body.push(format!(
-            "phpc_NativeComparisonBranchResult {comparison_branch} = phpc_native_comparison_operand_compare_branch_and_free({}, {}, {});",
-            left.operand,
-            native_comparison_c_uint8_argument(op),
-            right.operand
+            "phpc_NativeComparisonOperation {comparison_operation} = phpc_native_comparison_operation_from_opcode({});",
+            native_comparison_c_uint8_argument(op)
+        ));
+        self.body.push(format!(
+            "phpc_NativeComparisonBranchResult {comparison_branch} = phpc_native_comparison_operand_compare_operation_branch_and_free({}, {comparison_operation}, {});",
+            left.operand, right.operand
         ));
         let comparison_exit_code = format!("comparison_exit_code_{comparison_index}");
         self.body.push(format!(

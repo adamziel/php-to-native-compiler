@@ -302,7 +302,15 @@ echo 1 !== "1";
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_operand_compare_branch_and_free"),
+        source.contains("phpc_native_comparison_operation_from_opcode"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_NativeComparisonOperation"),
         "{source}"
     );
     assert!(source.contains("phpc_NativeComparisonOperand"), "{source}");
@@ -400,7 +408,8 @@ fn native_executable_c_source_tracks_dynamic_string_operand_lengths() {
         "dynamic string comparison operands should materialize through pointer-plus-length value construction:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_operand_compare_branch_and_free"),
+        source.contains("phpc_native_comparison_operation_from_opcode")
+            && source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free"),
         "dynamic string operands should feed the shared comparison operand/result ABI:\n{source}"
     );
     assert!(

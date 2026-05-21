@@ -92,6 +92,22 @@ pub enum NativeComparisonOp {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeComparisonOperationFamily {
+    Invalid = 0,
+    LooseEquality = 1,
+    LooseOrdering = 2,
+    StrictIdentity = 3,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeComparisonOperation {
+    opcode: u8,
+    valid: u8,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeStringPredicate {
     StartsWith = 0,
     EndsWith = 1,
@@ -763,6 +779,105 @@ impl NativeComparisonResult {
 
     pub fn is_ok(&self) -> bool {
         self.status == NativeComparisonStatus::Ok as u8
+    }
+}
+
+impl NativeComparisonOp {
+    pub const ALL: [Self; 8] = [
+        Self::LooseEq,
+        Self::LooseNe,
+        Self::LooseLt,
+        Self::LooseLe,
+        Self::LooseGt,
+        Self::LooseGe,
+        Self::StrictEq,
+        Self::StrictNe,
+    ];
+
+    pub const fn abi_opcode(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_abi(op: u8) -> Option<Self> {
+        Some(match op {
+            value if value == Self::LooseEq.abi_opcode() => Self::LooseEq,
+            value if value == Self::LooseNe.abi_opcode() => Self::LooseNe,
+            value if value == Self::LooseLt.abi_opcode() => Self::LooseLt,
+            value if value == Self::LooseLe.abi_opcode() => Self::LooseLe,
+            value if value == Self::LooseGt.abi_opcode() => Self::LooseGt,
+            value if value == Self::LooseGe.abi_opcode() => Self::LooseGe,
+            value if value == Self::StrictEq.abi_opcode() => Self::StrictEq,
+            value if value == Self::StrictNe.abi_opcode() => Self::StrictNe,
+            _ => return None,
+        })
+    }
+
+    fn php_operation(self) -> PhpComparisonOp {
+        match self {
+            Self::LooseEq => PhpComparisonOp::LooseEq,
+            Self::LooseNe => PhpComparisonOp::LooseNe,
+            Self::LooseLt => PhpComparisonOp::LooseLt,
+            Self::LooseLe => PhpComparisonOp::LooseLe,
+            Self::LooseGt => PhpComparisonOp::LooseGt,
+            Self::LooseGe => PhpComparisonOp::LooseGe,
+            Self::StrictEq => PhpComparisonOp::StrictEq,
+            Self::StrictNe => PhpComparisonOp::StrictNe,
+        }
+    }
+}
+
+impl NativeComparisonOperationFamily {
+    pub const fn abi_tag(self) -> u8 {
+        self as u8
+    }
+
+    fn from_operation_family(family: ComparisonOperationFamily) -> Self {
+        match family {
+            ComparisonOperationFamily::LooseEquality(_) => Self::LooseEquality,
+            ComparisonOperationFamily::LooseOrdering(_) => Self::LooseOrdering,
+            ComparisonOperationFamily::StrictIdentity { .. } => Self::StrictIdentity,
+        }
+    }
+}
+
+impl NativeComparisonOperation {
+    pub fn from_opcode(opcode: u8) -> Self {
+        Self {
+            opcode,
+            valid: u8::from(NativeComparisonOp::from_abi(opcode).is_some()),
+        }
+    }
+
+    pub const fn opcode(&self) -> u8 {
+        self.opcode
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.native_op().is_some()
+    }
+
+    pub fn family(&self) -> NativeComparisonOperationFamily {
+        self.native_op()
+            .map(|op| {
+                NativeComparisonOperationFamily::from_operation_family(
+                    op.php_operation().operation_family(),
+                )
+            })
+            .unwrap_or(NativeComparisonOperationFamily::Invalid)
+    }
+
+    fn native_op(&self) -> Option<NativeComparisonOp> {
+        if self.valid == 0 {
+            return None;
+        }
+
+        NativeComparisonOp::from_abi(self.opcode)
+    }
+
+    fn php_operation(self) -> Result<PhpComparisonOp, NativeComparisonOutcome> {
+        self.native_op()
+            .map(NativeComparisonOp::php_operation)
+            .ok_or_else(|| NativeComparisonOutcome::blocked_unsupported_opcode(self.opcode))
     }
 }
 
@@ -1927,6 +2042,34 @@ pub extern "C" fn phpc_native_comparison_operand_diagnostic(
     operand: NativeComparisonOperand,
 ) -> NativeDiagnosticHandle {
     operand.diagnostic()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_operation_from_opcode(
+    opcode: u8,
+) -> NativeComparisonOperation {
+    NativeComparisonOperation::from_opcode(opcode)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_operation_opcode(
+    operation: NativeComparisonOperation,
+) -> u8 {
+    operation.opcode()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_operation_is_valid(
+    operation: NativeComparisonOperation,
+) -> bool {
+    operation.is_valid()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_comparison_operation_family(
+    operation: NativeComparisonOperation,
+) -> u8 {
+    operation.family().abi_tag()
 }
 
 /// # Safety
@@ -3129,7 +3272,8 @@ pub extern "C" fn phpc_native_scalar_compare(
     op: u8,
     right: NativeScalarValue,
 ) -> NativeComparisonResult {
-    let op = match native_comparison_op_from_abi(op) {
+    let operation = NativeComparisonOperation::from_opcode(op);
+    let op = match operation.php_operation() {
         Ok(op) => op,
         Err(outcome) => return outcome.into_native_result(),
     };
@@ -3160,7 +3304,16 @@ unsafe fn native_value_compare_outcome(
     op: u8,
     right: NativeValueHandle,
 ) -> NativeComparisonOutcome {
-    let op = match native_comparison_op_from_abi(op) {
+    let operation = NativeComparisonOperation::from_opcode(op);
+    native_value_compare_operation_outcome(left, operation, right)
+}
+
+unsafe fn native_value_compare_operation_outcome(
+    left: NativeValueHandle,
+    operation: NativeComparisonOperation,
+    right: NativeValueHandle,
+) -> NativeComparisonOutcome {
+    let op = match operation.php_operation() {
         Ok(op) => op,
         Err(outcome) => return outcome,
     };
@@ -3225,7 +3378,30 @@ pub unsafe extern "C" fn phpc_native_comparison_operand_compare_and_free(
     op: u8,
     right: NativeComparisonOperand,
 ) -> NativeComparisonResult {
-    unsafe { native_comparison_operand_result_with_materialization_and_free(left, op, right) }
+    let operation = NativeComparisonOperation::from_opcode(op);
+    unsafe {
+        native_comparison_operand_result_with_materialization_operation_and_free(
+            left, operation, right,
+        )
+    }
+}
+
+/// # Safety
+///
+/// `left` and `right` follow the same operand ownership contract as
+/// `phpc_native_comparison_operand_compare_and_free`. `operation` should be
+/// produced by `phpc_native_comparison_operation_from_opcode`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_operand_compare_operation_and_free(
+    left: NativeComparisonOperand,
+    operation: NativeComparisonOperation,
+    right: NativeComparisonOperand,
+) -> NativeComparisonResult {
+    unsafe {
+        native_comparison_operand_result_with_materialization_operation_and_free(
+            left, operation, right,
+        )
+    }
 }
 
 /// # Safety
@@ -3240,13 +3416,33 @@ pub unsafe extern "C" fn phpc_native_comparison_operand_compare_branch_and_free(
     op: u8,
     right: NativeComparisonOperand,
 ) -> NativeComparisonBranchResult {
-    let result = unsafe { phpc_native_comparison_operand_compare_and_free(left, op, right) };
+    let operation = NativeComparisonOperation::from_opcode(op);
+    let result = unsafe {
+        phpc_native_comparison_operand_compare_operation_and_free(left, operation, right)
+    };
     unsafe { phpc_native_comparison_result_branch_or_report_stderr_and_free(result) }
 }
 
-unsafe fn native_comparison_operand_result_with_materialization_and_free(
+/// # Safety
+///
+/// `left` and `right` follow the same operand ownership contract as
+/// `phpc_native_comparison_operand_compare_branch_and_free`. `operation`
+/// should be produced by `phpc_native_comparison_operation_from_opcode`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_comparison_operand_compare_operation_branch_and_free(
     left: NativeComparisonOperand,
-    op: u8,
+    operation: NativeComparisonOperation,
+    right: NativeComparisonOperand,
+) -> NativeComparisonBranchResult {
+    let result = unsafe {
+        phpc_native_comparison_operand_compare_operation_and_free(left, operation, right)
+    };
+    unsafe { phpc_native_comparison_result_branch_or_report_stderr_and_free(result) }
+}
+
+unsafe fn native_comparison_operand_result_with_materialization_operation_and_free(
+    left: NativeComparisonOperand,
+    operation: NativeComparisonOperation,
     right: NativeComparisonOperand,
 ) -> NativeComparisonResult {
     if let Some(result) = unsafe { native_comparison_operand_materialization_failure_result(left) }
@@ -3262,7 +3458,8 @@ unsafe fn native_comparison_operand_result_with_materialization_and_free(
         return result;
     }
 
-    let outcome = unsafe { native_value_compare_outcome(left.value(), op, right.value()) };
+    let outcome =
+        unsafe { native_value_compare_operation_outcome(left.value(), operation, right.value()) };
     unsafe { native_free_unique_value_handles(left.value(), right.value()) };
     outcome.into_native_result()
 }
@@ -3455,8 +3652,7 @@ fn native_handle_comparison_blocker(op: u8, blocker: ComparisonBlocker) -> Nativ
 }
 
 fn native_comparison_op_from_abi(op: u8) -> Result<PhpComparisonOp, NativeComparisonOutcome> {
-    PhpComparisonOp::from_native_abi(op)
-        .ok_or_else(|| NativeComparisonOutcome::blocked_unsupported_opcode(op))
+    NativeComparisonOperation::from_opcode(op).php_operation()
 }
 
 fn native_comparison_branch_result_from_blocked_message(
@@ -9107,20 +9303,6 @@ impl ComparisonValueFamily {
 }
 
 impl PhpComparisonOp {
-    fn from_native_abi(op: u8) -> Option<Self> {
-        Some(match op {
-            value if value == NativeComparisonOp::LooseEq as u8 => Self::LooseEq,
-            value if value == NativeComparisonOp::LooseNe as u8 => Self::LooseNe,
-            value if value == NativeComparisonOp::LooseLt as u8 => Self::LooseLt,
-            value if value == NativeComparisonOp::LooseLe as u8 => Self::LooseLe,
-            value if value == NativeComparisonOp::LooseGt as u8 => Self::LooseGt,
-            value if value == NativeComparisonOp::LooseGe as u8 => Self::LooseGe,
-            value if value == NativeComparisonOp::StrictEq as u8 => Self::StrictEq,
-            value if value == NativeComparisonOp::StrictNe as u8 => Self::StrictNe,
-            _ => return None,
-        })
-    }
-
     fn operation_family(self) -> ComparisonOperationFamily {
         match self {
             Self::LooseEq => ComparisonOperationFamily::LooseEquality(Comparison::Eq),
@@ -11985,6 +12167,103 @@ mod tests {
                 )
             },
             "string bytes pointer is null",
+        );
+    }
+
+    #[test]
+    fn native_comparison_operation_abi_feeds_operand_result_and_branch_consumers() {
+        let loose_eq =
+            phpc_native_comparison_operation_from_opcode(NativeComparisonOp::LooseEq.abi_opcode());
+        assert_eq!(
+            phpc_native_comparison_operation_opcode(loose_eq),
+            NativeComparisonOp::LooseEq.abi_opcode()
+        );
+        assert!(phpc_native_comparison_operation_is_valid(loose_eq));
+        assert_eq!(
+            phpc_native_comparison_operation_family(loose_eq),
+            NativeComparisonOperationFamily::LooseEquality.abi_tag()
+        );
+
+        let loose_gt =
+            phpc_native_comparison_operation_from_opcode(NativeComparisonOp::LooseGt.abi_opcode());
+        assert_eq!(
+            phpc_native_comparison_operation_family(loose_gt),
+            NativeComparisonOperationFamily::LooseOrdering.abi_tag()
+        );
+
+        let strict_ne =
+            phpc_native_comparison_operation_from_opcode(NativeComparisonOp::StrictNe.abi_opcode());
+        assert_eq!(
+            phpc_native_comparison_operation_family(strict_ne),
+            NativeComparisonOperationFamily::StrictIdentity.abi_tag()
+        );
+
+        let loose_branch = unsafe {
+            phpc_native_comparison_operand_compare_operation_branch_and_free(
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                loose_eq,
+                phpc_native_comparison_operand_from_string_bytes(b"1".as_ptr(), b"1".len()),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_result_status(loose_branch),
+            NativeComparisonStatus::Ok as u8
+        );
+        assert!(phpc_native_comparison_branch_result_is_true(loose_branch));
+        assert_eq!(
+            phpc_native_comparison_branch_result_diagnostic_len(loose_branch),
+            0
+        );
+
+        let ordering_branch = unsafe {
+            phpc_native_comparison_operand_compare_operation_branch_and_free(
+                phpc_native_comparison_operand_from_string_bytes(b"10".as_ptr(), b"10".len()),
+                loose_gt,
+                phpc_native_comparison_operand_from_scalar(phpc_native_int(2)),
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_result_status(ordering_branch),
+            NativeComparisonStatus::Ok as u8
+        );
+        assert!(phpc_native_comparison_branch_result_is_true(
+            ordering_branch
+        ));
+
+        assert_native_comparison_ok(
+            "operation result strict non-identity",
+            unsafe {
+                phpc_native_comparison_operand_compare_operation_and_free(
+                    phpc_native_comparison_operand_from_string_bytes(b"1".as_ptr(), b"1".len()),
+                    strict_ne,
+                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                )
+            },
+            true,
+        );
+
+        let invalid_operation = phpc_native_comparison_operation_from_opcode(250);
+        assert_eq!(
+            phpc_native_comparison_operation_opcode(invalid_operation),
+            250
+        );
+        assert!(!phpc_native_comparison_operation_is_valid(
+            invalid_operation
+        ));
+        assert_eq!(
+            phpc_native_comparison_operation_family(invalid_operation),
+            NativeComparisonOperationFamily::Invalid.abi_tag()
+        );
+        assert_native_comparison_blocked(
+            "operation result invalid opcode",
+            unsafe {
+                phpc_native_comparison_operand_compare_operation_and_free(
+                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                    invalid_operation,
+                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                )
+            },
+            "unsupported comparison opcode 250",
         );
     }
 
