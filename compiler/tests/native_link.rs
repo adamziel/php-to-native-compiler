@@ -43,6 +43,10 @@ echo 1 !== "1";
         "{source}"
     );
     assert!(
+        source.contains("phpc_native_value_materialization_failure_exit_code"),
+        "generated C should route comparison operand materialization failures through the runtime ABI:\n{source}"
+    );
+    assert!(
         source.contains("phpc_native_value_compare_branch_and_free"),
         "{source}"
     );
@@ -93,6 +97,10 @@ echo 1 !== "1";
     assert!(
         !source.contains("phpc_native_comparison_result_branch_or_report_stderr_and_free"),
         "generated C should not compose result branch consumption outside the owned branch boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("if (comparison_value_handle_"),
+        "generated C should not open-code comparison operand handle null checks:\n{source}"
     );
     assert!(
         !source.contains("((1) =="),

@@ -5505,6 +5505,7 @@ impl CGenerator {
         if self.uses_native_comparison_helpers {
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_scalar(phpc_NativeScalarValue value);\n");
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string_bytes_with_diagnostic(const uint8_t *ptr, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            output.push_str("extern int phpc_native_value_materialization_failure_exit_code(phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern phpc_NativeComparisonBranchResult phpc_native_value_compare_branch_and_free(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
             output.push_str("extern bool phpc_native_comparison_branch_result_is_true(phpc_NativeComparisonBranchResult result);\n");
             output.push_str("extern int phpc_native_comparison_branch_result_exit_code(phpc_NativeComparisonBranchResult result);\n\n");
@@ -7025,17 +7026,17 @@ impl CGenerator {
                 continue;
             };
 
-            self.body
-                .push(format!("if ({}.ptr == NULL) {{", operand.value_handle));
-            self.body
-                .push(format!("  if ({diagnostic_handle}.ptr != NULL) {{"));
+            let materialization_exit_code = format!(
+                "comparison_materialization_exit_code_{}",
+                self.next_native_temp
+            );
+            self.next_native_temp += 1;
             self.body.push(format!(
-                "    phpc_native_diagnostic_message_stderr({diagnostic_handle});"
+                "int {materialization_exit_code} = phpc_native_value_materialization_failure_exit_code({}, {diagnostic_handle});",
+                operand.value_handle
             ));
-            self.body.push("  }".to_string());
-            self.body.push(format!(
-                "  phpc_native_diagnostic_free({diagnostic_handle});"
-            ));
+            self.body
+                .push(format!("if ({materialization_exit_code} != 0) {{"));
             for cleanup_operand in operands.iter().rev() {
                 if let Some(cleanup_diagnostic_handle) = &cleanup_operand.diagnostic_handle {
                     if cleanup_diagnostic_handle != diagnostic_handle {
@@ -7049,7 +7050,8 @@ impl CGenerator {
                     cleanup_operand.value_handle
                 ));
             }
-            self.body.push("  return 1;".to_string());
+            self.body
+                .push(format!("  return {materialization_exit_code};"));
             self.body.push("}".to_string());
         }
     }

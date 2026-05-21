@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::{self, Write};
+use std::os::raw::c_int;
 use std::ptr;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering as AtomicOrdering};
@@ -1034,6 +1035,27 @@ unsafe fn native_value_handle_from_string_result(
             NativeValueHandle::null()
         }
     }
+}
+
+/// # Safety
+///
+/// `value` must be null or a value handle returned by the runtime ABI.
+/// `diagnostic` must be null or a diagnostic handle returned by the runtime ABI
+/// and not yet freed. When `value` is null, the helper writes the diagnostic to
+/// stderr, frees it, and returns the process exit code for materialization
+/// failure. Non-null values leave ownership unchanged and return success.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_materialization_failure_exit_code(
+    value: NativeValueHandle,
+    diagnostic: NativeDiagnosticHandle,
+) -> c_int {
+    if !value.is_null() {
+        return 0;
+    }
+
+    unsafe { phpc_native_diagnostic_message_stderr(diagnostic) };
+    unsafe { phpc_native_diagnostic_free(diagnostic) };
+    1
 }
 
 unsafe fn native_clear_diagnostic_slot(diagnostic: *mut NativeDiagnosticHandle) {
@@ -8063,6 +8085,79 @@ mod tests {
         unsafe { phpc_native_byte_buffer_free(message) };
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(invalid_value) };
+    }
+
+    #[test]
+    fn native_value_materialization_failure_exit_code_feeds_comparison_operands() {
+        for (label, bytes, op, right, expected) in [
+            (
+                "numeric byte-string ordering materialization",
+                &b"10"[..],
+                NativeComparisonOp::LooseGt,
+                phpc_native_int(2),
+                true,
+            ),
+            (
+                "strict byte-string/int materialization",
+                &b"2"[..],
+                NativeComparisonOp::StrictNe,
+                phpc_native_int(2),
+                true,
+            ),
+            (
+                "empty byte-string null materialization",
+                &b""[..],
+                NativeComparisonOp::LooseEq,
+                phpc_native_null(),
+                true,
+            ),
+        ] {
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let left = unsafe {
+                phpc_native_value_from_string_bytes_with_diagnostic(
+                    bytes.as_ptr(),
+                    bytes.len(),
+                    &mut diagnostic,
+                )
+            };
+
+            assert_eq!(
+                unsafe { phpc_native_value_materialization_failure_exit_code(left, diagnostic) },
+                0,
+                "{label}"
+            );
+
+            let right = phpc_native_value_from_scalar(right);
+            let result = unsafe { phpc_native_value_compare(left, op as u8, right) };
+            assert_native_comparison_ok(label, result, expected);
+
+            unsafe { phpc_native_value_free(right) };
+            unsafe { phpc_native_value_free(left) };
+        }
+
+        let invalid_bytes = [0xff, b'p'];
+        for (label, bytes, len) in [
+            ("null pointer with nonzero length", ptr::null(), 4),
+            (
+                "invalid UTF-8 bytes",
+                invalid_bytes.as_ptr(),
+                invalid_bytes.len(),
+            ),
+        ] {
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let value = unsafe {
+                phpc_native_value_from_string_bytes_with_diagnostic(bytes, len, &mut diagnostic)
+            };
+
+            assert!(value.is_null(), "{label}");
+            assert_eq!(
+                unsafe { phpc_native_value_materialization_failure_exit_code(value, diagnostic) },
+                1,
+                "{label}"
+            );
+
+            unsafe { phpc_native_value_free(value) };
+        }
     }
 
     #[test]
