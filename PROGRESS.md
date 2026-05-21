@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 19:53 CEST
-Evaluation marker: 20260521T175300Z
-Final refresh: 20260521T175300Z
+Updated: 2026-05-21 20:01 CEST
+Evaluation marker: 20260521T180100Z
+Final refresh: 20260521T180100Z
 
 This is a distilled roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local and dirty-worktree work is candidate material until selected, gated, committed, and pushed.
 
@@ -11,7 +11,7 @@ This is a distilled roadmap for a supervisor who needs the current momentum quic
 Estimated progress toward a broadly usable generalized PHP native compiler: **24%**
 
 ```
-Generalized runtime/ABI foundations      [#############-------] 67%
+Generalized runtime/ABI foundations      [##############------] 68%
 Compiler/backend consumers               [############--------] 60%
 Executable generalized PHP semantics     [#####---------------] 27%
 Arrays, references, COW, lvalues         [####----------------] 18%
@@ -22,10 +22,10 @@ Broad integrated verification            [###-----------------] 15%
 
 ## Current Primary State
 
-- Primary semantic HEAD before this progress update: `150e3733 native: add array compare branch/free ABI`.
-- Latest primary-integrated semantic commit: `150e3733 native: add array compare branch/free ABI`.
-- Product-code state at this refresh: generalized array comparison branch/free runtime ABI committed and pushed; this `PROGRESS.md` update is separate management metadata and not counted as compiler semantic progress.
-- Resource caveat: `/dev/shm` recovered to about 21G free after active-process-aware cleanup, then active lane builds resumed.
+- Primary semantic HEAD before this progress update: `a93f3bb5 runtime: centralize value string semantics`.
+- Latest primary-integrated semantic commit: `a93f3bb5 runtime: centralize value string semantics`.
+- Product-code state at this refresh: generalized full-value string-form runtime boundary committed and pushed; this `PROGRESS.md` update is separate management metadata and not counted as compiler semantic progress.
+- Resource caveat: `/dev/shm` is healthy at about 16G free after active-process-aware cleanup and active lane builds.
 
 ## Grand Roadmap Position
 
@@ -47,6 +47,7 @@ The project has moved from scattered backend rejection paths toward reusable run
 - [x] Route generated-C filesystem path/state builtins through a shared operation-tagged runtime boundary and centralized blocker/result surface.
 - [x] Add a generalized request-state/superglobal value snapshot ABI with bag/key coercion status, operation results, cleanup, and pointer-width ABI probes.
 - [x] Add branch/free runtime ABI helpers for array comparison results so array comparison diagnostics, branch results, and handle cleanup share the same comparison outcome contract.
+- [x] Centralize full-value PHP string-form semantics for runtime echo/scalar/native conversion consumers.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
 - [ ] Generalize value/result ownership across returns, call args, conditions, branch joins, discarded temporaries, stdout, and cleanup.
 - [ ] Implement full array lvalue/RMW semantics, writable roots, foreach/by-ref foreach, ArrayAccess/object/resource offsets, and COW/reference behavior.
@@ -59,7 +60,7 @@ The project has moved from scattered backend rejection paths toward reusable run
 
 | Active item | Primary-integrated estimate | Candidate maturity | Current read |
 | --- | ---: | ---: | --- |
-| String conversion, truthiness, and byte-buffer results | 45% | 68% | Primary has string-conversion result/free ABI, generated-C `strlen()`, string predicates, `ord()`/`crc32()`, `strcasecmp()`, `substr_count()`, `levenshtein()`, two-argument `similar_text()`, comparison byte materialization, string truthiness, dynamic string lengths, numeric-string classification, and shared runtime value-to-int conversion for selected generated-C operands. Lane-local work now includes more executable string-result surfaces such as byte-preserving `wordwrap()`, but exact diagnostics, object/resource/Stringable parity, non-UTF-8 policy, LLVM parity, and full warning/recovery parity remain limited. |
+| String conversion, truthiness, and byte-buffer results | 47% | 69% | Primary has string-conversion result/free ABI, generated-C `strlen()`, string predicates, `ord()`/`crc32()`, `strcasecmp()`, `substr_count()`, `levenshtein()`, two-argument `similar_text()`, comparison byte materialization, string truthiness, dynamic string lengths, numeric-string classification, shared runtime value-to-int conversion for selected generated-C operands, and a centralized full-value string-form analyzer feeding echo/scalar/native string consumers. Lane-local work now includes more executable string-result surfaces such as byte-preserving `wordwrap()`, but exact diagnostics, object/resource/Stringable parity, non-UTF-8 policy, LLVM parity, and full warning/recovery parity remain limited. |
 | Call operation cleanup and ownership | 37% | 56% | Primary routes many call-result contexts through shared blockers. Lanes centralize call cleanup/access/diagnostic families. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
 | Comparison/conversion semantics | 44% | 61% | Primary has comparison ABI consumers, centralized outcomes, arithmetic conversion sharing, report/free/exit sinks, byte materialization, comparison operand materialization with owned diagnostics, numeric-string classification, string truthiness, native value-to-int conversion for selected generated-C consumers, and array comparison branch/free runtime ABI helpers. Leading-numeric recovery, warning ordering, dynamic native `is_numeric()` lowering, generated-C array comparison consumers, and broader conversion-source/pair work are still candidate or blocked material. |
 | Arrays, lvalues, references, COW | 18% | 57% | Primary consumes runtime array-key materialization for keyed writes, keyed assignments, indexed echo reads, a runtime value-operation result ABI for generated-C array key/value consumers, and now shared array comparison result/branch/free runtime helpers. Lanes still have stronger RMW/update-result, `??=`, direct-owner, value-root, reference-cell, path-preflight, foreach/result, and generated-C lvalue candidates. Primary still lacks full executable array lvalues, foreach, nested writes, references/COW, ArrayAccess, generated-C array comparison consumers, and exact warnings. |
@@ -71,6 +72,8 @@ The project has moved from scattered backend rejection paths toward reusable run
 
 ## Recent Primary-Integrated Work
 
+- `a93f3bb5 runtime: centralize value string semantics`
+  - Adds `PhpValueStringSemantics` / `analyze_php_value_string_semantics(&Value)` as a shared runtime string-form boundary for null, booleans, ints, floats, strings, arrays, object/closure display form, and resource display form. Runtime echo, scalar string-byte materialization, checked string conversion, array string-comparison consumers, and native value-to-string conversion results now share that analyzer. Object `__toString`, warning-plus-value recovery, binary/non-UTF-8 string storage, generated-native dynamic consumers, and exact diagnostics remain open.
 - `150e3733 native: add array compare branch/free ABI`
   - Adds array comparison branch/free runtime helpers that reuse the shared comparison outcome contract for result conversion, blocked diagnostics, branch status/value reporting, and owned handle cleanup. This improves array/comparison ABI consistency, but generated-C/LLVM array comparison consumers, full PHP array comparison semantics, references/COW, ArrayAccess, and exact diagnostics remain open.
 - `b05ed08b native: add request-state value snapshot ABI`
@@ -111,9 +114,9 @@ The product is still boundary-heavy. Many changes make unsupported PHP fail thro
 
 ## Near-Term Steering
 
-1. Count `150e3733` as the latest integrated semantic baseline.
+1. Count `a93f3bb5` as the latest integrated semantic baseline.
 2. Keep preferring executable generated-C/LLVM consumers of existing ABI surfaces over pure blocker or diagnostic vocabulary.
-3. Next high-value candidates are generated-C consumers of the request-state snapshot ABI, generated-C consumers of the array comparison branch/free ABI, narrow string-result execution, array RMW/lvalue behavior, or broader differential composition gates around the value-operation path.
+3. Next high-value candidates are generated-C consumers of the value string semantics boundary, generated-C consumers of the request-state snapshot ABI, generated-C consumers of the array comparison branch/free ABI, narrow string-result execution, array RMW/lvalue behavior, or broader differential composition gates around the value-operation path.
 4. Keep filesystem work honest: current primary work centralizes blockers; it does not yet implement real stream/stat/cache/current-directory semantics.
 5. Keep `/dev/shm` above the 10-12G free warning band before primary gates; use disk-backed targets for broad checks when lane builds are active.
 6. Add broader differential composition checks around the families already touched by primary: comparisons, numeric strings, string conversions/results, array keys/RMW, call-result cleanup, and diagnostics.
