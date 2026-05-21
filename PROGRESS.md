@@ -1,20 +1,20 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 17:59 CEST
+Updated: 2026-05-21 18:11 CEST
 Evaluation marker: 20260521T153122Z
-Final refresh: 20260521T155900Z
+Final refresh: 20260521T161100Z
 
 This is a high-level roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local work is candidate material only until selected, gated, committed, and pushed.
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **21%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **22%**
 
 ```
 Generalized runtime/ABI foundations      [############--------] 60%
-Compiler/backend consumers               [##########----------] 52%
-Executable generalized PHP semantics     [####----------------] 22%
-Arrays, references, COW, lvalues         [##------------------] 12%
+Compiler/backend consumers               [###########---------] 54%
+Executable generalized PHP semantics     [#####---------------] 23%
+Arrays, references, COW, lvalues         [###-----------------] 16%
 Objects, properties, methods             [##------------------] 10%
 Diagnostics/control-flow composition     [###-----------------] 17%
 Broad integrated verification            [###-----------------] 13%
@@ -22,11 +22,10 @@ Broad integrated verification            [###-----------------] 13%
 
 ## Current Primary State
 
-- Latest pushed primary semantic commit before this progress update: `d2411a58 runtime: centralize comparison outcomes`.
-- Latest integrated semantic compiler/runtime commit: `d2411a58 runtime: centralize comparison outcomes`.
+- Latest pushed primary semantic commit before this progress update: `65f74970 native: materialize array keys in generated C`.
+- Latest integrated semantic compiler/runtime commit: `65f74970 native: materialize array keys in generated C`.
 - Product-code state at evaluator refresh: `master` is at `origin/master` with product code clean before this `PROGRESS.md` update; this update is being handled separately from implementation work.
-- Latest integrated read: runtime comparison evaluation now feeds shared native result and branch outcomes across scalar, native value, owned value/free, branch/free, array, and runtime value comparison consumers. Generated-C comparisons continue to consume owned runtime comparison results through the report/free/exit sink after capturing comparison truth, so blocked comparison diagnostics and canonical exit codes are handled by the shared comparison result ABI. Prior generated-C `ord()`/`crc32()`, `strlen()`, string-predicate, comparison byte-materialization, dynamic string-length, and string-truthiness consumers remain integrated.
-- Latest pushed integration-lane candidate: `4b7da81c native: consume array key materialization in generated C` on `lane/native-integration-batch`. It is not primary capability until merged, but it gates a generated-C/native-executable consumer of the shared array-key materialization ABI with executable coverage for variable string, integer, numeric-string, null, and embedded-NUL binary string keys.
+- Latest integrated read: generated-C array literals and indexed echo reads now materialize keys through a shared runtime array-key result ABI before keyed insert/read operations. The executable path covers variable string keys, integer keys, numeric-string normalization, null, bool, integral-float, and embedded-NUL string keys, plus keyed assignment updates and cleanup on diagnostics. Prior comparison, string-int, `strlen()`, string-predicate, comparison byte-materialization, dynamic string-length, and string-truthiness consumers remain integrated.
 
 ## Grand Roadmap Position
 
@@ -49,6 +48,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 - [x] Route generated-C `strlen()` over lowerable values through the runtime string conversion result ABI.
 - [x] Route generated-C string predicate builtins over lowerable values through the runtime value-to-string predicate ABI.
 - [x] Route generated-C string-int builtins over lowerable values through the runtime value-to-string integer ABI.
+- [x] Route generated-C array keyed writes and indexed echo reads through runtime array-key materialization.
 - [x] Reuse runtime PHP string truthiness semantics in runtime values plus LLVM/generated-C known-string consumers.
 - [x] Track generated-C dynamic string byte lengths so mixed-length and embedded-NUL comparison operands can consume the runtime comparison ABI.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
@@ -66,7 +66,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 | String conversion, truthiness, and byte-buffer results | 41% | 60% | Primary has string-conversion result/free ABI, generated-C `strlen()` consuming runtime value-to-string byte lengths, generated-C `str_starts_with()`/`str_ends_with()`/`str_contains()` consuming a shared value-to-string predicate ABI for lowerable values, generated-C `ord()`/`crc32()` consuming a shared string-int ABI, comparison byte materialization, runtime-shared string truthiness, generated-C tracked dynamic string lengths, and runtime numeric-string classification. Lanes have broader binary-safe string-result, debug-output, regex, concat/interpolation, and array-transform consumers. Exact diagnostics, non-UTF-8 string storage, and full backend parity remain limited. |
 | Call operation cleanup and ownership | 37% | 55% | Primary routes many call-result contexts through shared blockers across LLVM IR and generated C, including value operands in unary/binary/comparison/concat families and skipped later `echo` operands. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
 | Comparison/conversion semantics | 40% | 56% | Primary has comparison ABI consumers, runtime comparison operation/value-family sharing for loose equality/order and strict identity, centralized comparison evaluation outcomes for native result and branch consumers, shared arithmetic-number operand conversion for `+`, `-`, `*`, and `/`, canonical branch-result predicates/exit-code consumers, generated-C owned comparison-result consumers through the report/free/exit sink, centralized comparison operand materialization failure handling, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness. Lane conversion-source/pair work is promising but still candidate material. |
-| Arrays, lvalues, references, COW | 12% | 50% | Lane-local generated-C owner-slot/value-root/RMW/reference-cell work is strong, especially undefined/null/false value-root routing. `lane/native-integration-batch` now has a pushed candidate that consumes the shared array-key materialization ABI from generated C for keyed literal writes, keyed assignments, and indexed echo reads, with linked executable coverage for variable, integer, numeric-string, null, and binary string keys. Primary still lacks full executable array lvalue, foreach, reference/COW, and ArrayAccess behavior. |
+| Arrays, lvalues, references, COW | 16% | 50% | Primary now consumes runtime array-key materialization from generated C for keyed literal writes, keyed assignments, and indexed echo reads, with linked executable coverage for variable, integer, numeric-string, null, bool, integral-float, and embedded-NUL string keys. Lane-local generated-C owner-slot/value-root/RMW/reference-cell work is still stronger for undefined/null/false value-root routing. Primary still lacks full executable array lvalue, foreach, reference/COW, nested writes, and ArrayAccess behavior. |
 | Symbols, globals, request state | 21% | 41% | Primary has symbol-table ABI helpers; lanes have expression-result consumers, frame-slot plans, request-state contracts, and stored call-result symbol boundaries. Full request/global/superglobal behavior and exact diagnostics remain early. |
 | Objects, properties, methods | 10% | 35% | Lane-local object/property receiver and operation blockers are more coherent, but primary has little broad executable object/property/method behavior beyond bounded blocker and seed paths. |
 | Diagnostics and control-flow cleanup | 17% | 40% | Severity tags and selected blockers are integrated; request diagnostics, diagnostic-result producers/sinks, structured CFG, and termination cleanup lanes are active. Exact warning/recovery order and executable cleanup remain broad blockers. |
@@ -76,6 +76,8 @@ The project is moving from scattered backend rejection paths toward shared seman
 
 Recent pushed primary commits show useful movement from lane-local artifacts into `master`:
 
+- `65f74970 native: materialize array keys in generated C`
+  - Adds a runtime `NativeArrayKeyMaterializationResult` ABI and generated-C consumers for array keyed inserts, keyed assignments, indexed echo reads, diagnostic cleanup, and array handle cleanup across scalar/string/null/bool/integral-float key families.
 - `d2411a58 runtime: centralize comparison outcomes`
   - Routes comparison evaluation through shared semantic outcomes before native result or branch conversion, so scalar, native value, owned value/free, branch/free, array, and runtime value comparison consumers no longer duplicate result/blocker conversion paths.
 - `d0e6ab37 native: consume comparison results through exit sink`
@@ -109,7 +111,6 @@ Recent pushed primary commits show useful movement from lane-local artifacts int
 
 Lane-local workers are producing candidate work in these areas:
 
-- pushed integration-batch candidate `4b7da81c` routing generated-C keyed array writes and reads through shared runtime array-key materialization;
 - additional statement-list and declaration-initializer call-boundary routing;
 - generated-C array value-root, undefined-root, unset/read/probe/foreach, and owner-slot routing;
 - array RMW operation contracts and assignment-expression lvalue contracts;
