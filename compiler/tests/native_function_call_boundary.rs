@@ -503,6 +503,85 @@ fn native_executable_c_source_routes_value_operand_call_results_through_call_bou
 }
 
 #[test]
+fn emit_ir_routes_statement_operand_call_results_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\nif (missing()) { echo 1; }\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nfor ($i = start(); $i < 3; $i++) { }\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"ready\";\nwhile ($call()) { break; }\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nswitch ($box->kind()) { default: break; }\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\nforeach (new Items() as $item) { echo $item; }\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\nrequire path_factory();\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nthrow new Failure();\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_statement_operand_call_results_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\nif (missing()) { echo 1; }\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nfor ($i = start(); $i < 3; $i++) { }\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"ready\";\nwhile ($call()) { break; }\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nswitch ($box->kind()) { default: break; }\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\nforeach (new Items() as $item) { echo $item; }\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\nrequire path_factory();\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\nthrow new Failure();\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
 fn emit_ir_rejects_direct_calls_before_lowering_arguments() {
     for source in [
         "<?php\necho label([]);\nfunction label($value) { return $value; }\n",
@@ -611,7 +690,7 @@ fn emit_ir_routes_call_operation_blockers_across_call_families() {
         ),
         (
             "<?php\nreturn strlen(\"abc\");\n",
-            LLVM_FUNCTION_DECLARATION_REJECTION,
+            LLVM_FUNCTION_CALL_REJECTION,
         ),
         (
             "<?php\n$alias =& missing();\n",
@@ -738,7 +817,7 @@ fn native_executable_c_source_routes_call_operation_blockers_across_call_familie
         ),
         (
             "<?php\nreturn strlen(\"abc\");\n",
-            ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
         ),
         (
             "<?php\n$alias =& missing();\n",

@@ -146,18 +146,33 @@ fn emit_ir_routes_reference_assignment_source_operand_calls_through_call_boundar
 }
 
 #[test]
-fn emit_ir_rejects_mutation_before_lowering_nested_operands() {
-    for source in [
-        "<?php\n$value = 1;\n$value += missing_call();\n",
-        "<?php\n$value = null;\n$value ??= missing_call();\n",
-        "<?php\necho ($value = missing_call());\n",
-        "<?php\necho ($value += missing_call());\n",
-        "<?php\necho ($value ??= missing_call());\n",
+fn emit_ir_routes_statement_mutation_rhs_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$value = 1;\n$value += missing_call();\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = null;\n$value ??= missing_call();\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\necho ($value = missing_call());\n",
+            LLVM_MUTATION_REJECTION,
+        ),
+        (
+            "<?php\necho ($value += missing_call());\n",
+            LLVM_MUTATION_REJECTION,
+        ),
+        (
+            "<?php\necho ($value ??= missing_call());\n",
+            LLVM_MUTATION_REJECTION,
+        ),
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+        assert_eq!(error.message, expected);
     }
 }
 

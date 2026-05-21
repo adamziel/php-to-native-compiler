@@ -3,7 +3,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::ast::{
-    AssignTarget, BinaryOp, ClassMember, Expr, FunctionDecl, FunctionParam, Program,
+    AssignTarget, BinaryOp, ClassMember, Expr, ForAction, FunctionDecl, FunctionParam, Program,
     ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
@@ -213,6 +213,7 @@ enum NativeCallResult {
 enum NativeCallBlocker {
     DynamicCallableEvaluation,
     ArgumentEvaluationCleanup,
+    StatementOperandEvaluationCleanup,
     ValueOperandEvaluationCleanup,
     LvalueOperandEvaluationCleanup,
     ReturnValueOwnership,
@@ -465,8 +466,121 @@ fn native_lvalue_operand_call_result_operation(expr: &Expr) -> Option<NativeCall
     native_expr_call_result_operation(expr, NativeCallBlocker::LvalueOperandEvaluationCleanup)
 }
 
+fn native_statement_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
+    native_expr_call_result_operation(expr, NativeCallBlocker::StatementOperandEvaluationCleanup)
+}
+
 fn native_value_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
     native_expr_call_result_operation(expr, NativeCallBlocker::ValueOperandEvaluationCleanup)
+}
+
+fn native_statement_assignment_rhs_call_operation(
+    target: &AssignTarget,
+    expr: &Expr,
+) -> Option<NativeCallOperation> {
+    match target {
+        AssignTarget::Variable { .. } => None,
+        _ => native_statement_operand_call_result_operation(expr),
+    }
+}
+
+fn native_statement_operand_call_operation(stmt: &Stmt) -> Option<NativeCallOperation> {
+    match stmt {
+        Stmt::If { condition, .. }
+        | Stmt::While { condition, .. }
+        | Stmt::DoWhile { condition, .. } => {
+            native_statement_operand_call_result_operation(condition)
+        }
+        Stmt::For {
+            initializers,
+            conditions,
+            increments,
+            ..
+        } => native_for_action_list_call_operation(initializers)
+            .or_else(|| {
+                conditions
+                    .iter()
+                    .find_map(native_statement_operand_call_result_operation)
+            })
+            .or_else(|| native_for_action_list_call_operation(increments)),
+        Stmt::Switch { value, cases, .. } => native_statement_operand_call_result_operation(value)
+            .or_else(|| {
+                cases
+                    .iter()
+                    .filter_map(|case| case.condition.as_ref())
+                    .find_map(native_statement_operand_call_result_operation)
+            }),
+        Stmt::Foreach { iterable, .. } => native_statement_operand_call_result_operation(iterable),
+        Stmt::Assign { target, expr, .. } => native_assignment_target_call_operation(target)
+            .or_else(|| native_statement_assignment_rhs_call_operation(target, expr)),
+        Stmt::CompoundAssign { target, expr, .. }
+        | Stmt::NullCoalesceAssign { target, expr, .. } => {
+            native_assignment_target_call_operation(target)
+                .or_else(|| native_statement_operand_call_result_operation(expr))
+        }
+        Stmt::IncrementDecrement { target, .. } => native_assignment_target_call_operation(target),
+        Stmt::ConstDeclaration { declarations, .. } => {
+            declarations.iter().find_map(|declaration| {
+                native_statement_operand_call_result_operation(&declaration.value)
+            })
+        }
+        Stmt::Require { path, .. } | Stmt::Include { path, .. } => {
+            native_statement_operand_call_result_operation(path)
+        }
+        Stmt::Return {
+            value: Some(value), ..
+        } => native_statement_operand_call_result_operation(value),
+        Stmt::Throw { expr, .. } => native_statement_operand_call_result_operation(expr),
+        Stmt::StaticLocal { declarations, .. } => declarations
+            .iter()
+            .filter_map(|declaration| declaration.default.as_ref())
+            .find_map(native_statement_operand_call_result_operation),
+        Stmt::Namespace { .. }
+        | Stmt::Use { .. }
+        | Stmt::Echo { .. }
+        | Stmt::Print { .. }
+        | Stmt::ReferenceAssign { .. }
+        | Stmt::Expr { .. }
+        | Stmt::Goto { .. }
+        | Stmt::Label { .. }
+        | Stmt::Function(_)
+        | Stmt::Interface(_)
+        | Stmt::Trait(_)
+        | Stmt::Enum(_)
+        | Stmt::Class(_)
+        | Stmt::UnsetVariable { .. }
+        | Stmt::UnsetArrayIndex { .. }
+        | Stmt::UnsetNestedArrayIndex { .. }
+        | Stmt::UnsetObjectProperty { .. }
+        | Stmt::UnsetDynamicObjectProperty { .. }
+        | Stmt::UnsetStaticProperty { .. }
+        | Stmt::UnsetSelfStaticProperty { .. }
+        | Stmt::UnsetParentStaticProperty { .. }
+        | Stmt::UnsetLateStaticProperty { .. }
+        | Stmt::UnsetMany { .. }
+        | Stmt::Return { value: None, .. }
+        | Stmt::Try { .. }
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Global { .. } => None,
+    }
+}
+
+fn native_for_action_list_call_operation(actions: &[ForAction]) -> Option<NativeCallOperation> {
+    actions.iter().find_map(native_for_action_call_operation)
+}
+
+fn native_for_action_call_operation(action: &ForAction) -> Option<NativeCallOperation> {
+    match action {
+        ForAction::Assign { target, expr } | ForAction::CompoundAssign { target, expr, .. } => {
+            native_assignment_target_call_operation(target)
+                .or_else(|| native_statement_operand_call_result_operation(expr))
+        }
+        ForAction::IncrementDecrement { target, .. } => {
+            native_assignment_target_call_operation(target)
+        }
+        ForAction::Expr { expr } => native_statement_operand_call_result_operation(expr),
+    }
 }
 
 fn native_comparison_op_for_binary_op(op: BinaryOp) -> Option<NativeComparisonOp> {
@@ -1087,6 +1201,7 @@ fn native_direct_call_blocker_message(
         (
             NativeCallResult::Value,
             NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
@@ -1111,6 +1226,7 @@ fn native_dynamic_call_blocker_message(
             NativeCallResult::Value,
             NativeCallBlocker::DynamicCallableEvaluation
             | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
@@ -1135,6 +1251,7 @@ fn native_method_call_blocker_message(
             NativeCallResult::Value,
             NativeCallBlocker::MethodDispatch
             | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership,
@@ -1158,6 +1275,7 @@ fn native_constructor_call_blocker_message(
             NativeCallResult::Value,
             NativeCallBlocker::ConstructorDispatch
             | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership,
@@ -2057,6 +2175,10 @@ impl LlvmGenerator {
     }
 
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
+        if let Some(operation) = native_statement_operand_call_operation(stmt) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         match stmt {
             Stmt::Namespace { span, .. } | Stmt::Use { span, .. } => {
                 Err(self.unsupported(*span, LLVM_NAMESPACE_REJECTION))
@@ -5397,6 +5519,10 @@ impl CGenerator {
     }
 
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
+        if let Some(operation) = native_statement_operand_call_operation(stmt) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         match stmt {
             Stmt::Namespace { span, .. } | Stmt::Use { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_NAMESPACE_REJECTION))

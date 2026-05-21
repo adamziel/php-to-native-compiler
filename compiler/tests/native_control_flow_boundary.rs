@@ -6,6 +6,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
 #[test]
 fn phpc_run_still_handles_current_control_flow_subset() {
@@ -81,7 +82,7 @@ fn emit_ir_rejects_structured_control_flow_with_specific_boundary() {
 }
 
 #[test]
-fn emit_ir_rejects_control_flow_before_lowering_nested_operands_or_bodies() {
+fn emit_ir_routes_control_flow_operand_calls_through_call_boundary_before_bodies() {
     for source in [
         "<?php\nif (missing_call()) { echo [1]; }\n",
         "<?php\nif (missing_call()): echo [1]; endif;\n",
@@ -93,7 +94,7 @@ fn emit_ir_rejects_control_flow_before_lowering_nested_operands_or_bodies() {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_CONTROL_FLOW_REJECTION);
+        assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
     }
 }
 

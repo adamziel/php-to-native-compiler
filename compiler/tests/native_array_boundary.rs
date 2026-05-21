@@ -7,6 +7,7 @@ use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
 #[test]
 fn phpc_run_still_handles_current_array_subset() {
@@ -54,11 +55,11 @@ fn emit_ir_rejects_array_literals_offsets_iteration_unset_and_builtins() {
 }
 
 #[test]
-fn emit_ir_rejects_array_destructuring_before_rhs_lowering() {
+fn emit_ir_routes_array_destructuring_rhs_calls_through_call_boundary() {
     let error = emit_ir_source("<?php\nlist($first) = missing_call();\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_ARRAY_DESTRUCTURING_REJECTION);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 }
 
 #[test]

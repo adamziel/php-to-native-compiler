@@ -14,6 +14,7 @@ const LLVM_CLASS_NAME_CONSTANT_REJECTION: &str = "LLVM class-name constant lower
 const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 
 #[test]
@@ -150,15 +151,18 @@ fn emit_ir_rejects_constructor_argument_instantiation_before_native_constructor_
 
 #[test]
 fn emit_ir_rejects_clone_expressions_with_specific_boundary() {
-    for source in [
-        "<?php\n$copy = clone $object;\n",
-        "<?php\necho clone $object;\n",
-        "<?php\n$copy = clone missing_object();\n",
+    for (source, expected) in [
+        ("<?php\n$copy = clone $object;\n", LLVM_CLONE_REJECTION),
+        ("<?php\necho clone $object;\n", LLVM_CLONE_REJECTION),
+        (
+            "<?php\n$copy = clone missing_object();\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_CLONE_REJECTION);
+        assert_eq!(error.message, expected);
     }
 }
 
@@ -307,13 +311,13 @@ fn emit_ir_rejects_instanceof_with_specific_boundary() {
 }
 
 #[test]
-fn emit_ir_rejects_instanceof_before_lowering_operands() {
+fn emit_ir_routes_instanceof_operand_calls_through_call_boundary() {
     let error = emit_ir_source("<?php\n$is = missing_value() instanceof Countable;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 7);
-    assert_eq!(error.message, LLVM_INSTANCEOF_REJECTION);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 }
 
 #[test]
