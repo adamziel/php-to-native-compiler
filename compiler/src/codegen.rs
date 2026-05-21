@@ -5890,6 +5890,7 @@ impl CGenerator {
             if self.uses_native_array_helpers {
                 output.push_str("extern phpc_NativeArrayHandle phpc_native_array_empty(void);\n");
                 output.push_str("extern bool phpc_native_array_append_value(phpc_NativeArrayHandle array, phpc_NativeValueHandle value);\n");
+                output.push_str("extern bool phpc_native_array_append_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_unary_result(phpc_NativeValueHandle value, uint8_t op);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_binary_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
@@ -9519,11 +9520,19 @@ impl CGenerator {
     fn emit_array_append_value(&mut self, handle: &str, value: &Expr) -> CompileResult<()> {
         let value = self.materialize_native_array_expr_value_handle(value, "")?;
         let value_cleanup = value.cleanup_after_use;
-        let append_error_exit = self.native_error_exit(&c_cleanup_sequence(&value_cleanup));
+        let diagnostic = self.next_native_name("array_append_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        let append_failure_cleanup = format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); }} {}",
+            c_cleanup_sequence(&value_cleanup)
+        );
+        let append_error_exit = self.native_error_exit(&append_failure_cleanup);
         self.body.push(format!(
-            "if (!phpc_native_array_append_value({handle}, {})) {{ {append_error_exit} }}",
+            "if (!phpc_native_array_append_value_with_diagnostic({handle}, {}, &{diagnostic})) {{ {append_error_exit} }}",
             value.handle
         ));
+        self.emit_report_native_diagnostic(&diagnostic);
         self.body.extend(value_cleanup);
         Ok(())
     }

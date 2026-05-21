@@ -1390,14 +1390,67 @@ pub unsafe extern "C" fn phpc_native_array_append_scalar(
 /// clone of the value; ownership of `value` remains with the caller.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_array_append_value(
-    mut handle: NativeArrayHandle,
+    handle: NativeArrayHandle,
     value: NativeValueHandle,
 ) -> bool {
-    let (Some(array), Some(value)) = (unsafe { handle.as_mut() }, unsafe { value.as_ref() }) else {
+    unsafe { phpc_native_array_append_value_with_diagnostic(handle, value, ptr::null_mut()) }
+}
+
+/// # Safety
+///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. `value` must be null or a value handle previously
+/// returned by the runtime ABI and not yet freed. The appended array slot owns a
+/// clone of the value; ownership of `value` remains with the caller. On failure
+/// the helper stores a diagnostic handle that the caller owns and must release
+/// with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_append_value_with_diagnostic(
+    mut handle: NativeArrayHandle,
+    value: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    if !diagnostic.is_null() {
+        unsafe { *diagnostic = NativeDiagnosticHandle::null() };
+    }
+
+    let Some(array) = (unsafe { handle.as_mut() }) else {
+        if !diagnostic.is_null() {
+            unsafe {
+                *diagnostic = NativeDiagnosticHandle::from_message(
+                    RuntimeError::invalid_array_access(
+                        "native array append failed: array handle is null",
+                    )
+                    .message(),
+                )
+            };
+        }
         return false;
     };
 
-    array.value.append(value.clone()).is_ok()
+    let Some(value) = (unsafe { value.as_ref() }) else {
+        if !diagnostic.is_null() {
+            unsafe {
+                *diagnostic = NativeDiagnosticHandle::from_message(
+                    RuntimeError::invalid_array_access(
+                        "native array append failed: value handle is null",
+                    )
+                    .message(),
+                )
+            };
+        }
+        return false;
+    };
+
+    match array.value.append(value.clone()) {
+        Ok(_) => true,
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            false
+        }
+    }
 }
 
 /// # Safety
@@ -12480,6 +12533,58 @@ mod tests {
 
         unsafe { phpc_native_value_free(read) };
         unsafe { phpc_native_string_free(string) };
+        unsafe { phpc_native_array_free(array) };
+    }
+
+    #[test]
+    fn native_array_append_value_diagnostic_preserves_values_and_reports_boundaries() {
+        let array = phpc_native_array_empty();
+        let bytes = b"A\0B";
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
+                bytes.as_ptr(),
+                bytes.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+
+        assert!(unsafe {
+            phpc_native_array_append_value_with_diagnostic(array, value, &mut diagnostic)
+        });
+        assert!(diagnostic.is_null());
+        unsafe { phpc_native_value_free(value) };
+
+        let read = unsafe { phpc_native_array_read_int(array, 0) };
+        assert_eq!(native_value_echo_bytes_for_test(read), bytes);
+        unsafe { phpc_native_value_free(read) };
+
+        assert!(!unsafe {
+            phpc_native_array_append_value_with_diagnostic(
+                NativeArrayHandle::null(),
+                NativeValueHandle::null(),
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: native array append failed: array handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        assert!(!unsafe {
+            phpc_native_array_append_value_with_diagnostic(
+                array,
+                NativeValueHandle::null(),
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: native array append failed: value handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_array_free(array) };
     }
 

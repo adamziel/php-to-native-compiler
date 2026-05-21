@@ -1096,6 +1096,8 @@ echo (2 === 2) ? 1 : 0;
 
 const GENERALIZED_ARRAY_KEY_SOURCE: &str = "<?php\n$slot = \"slot\";\n$two = 2;\n$numeric = \"3\";\n$nil = null;\n$binary = \"A\0B\";\n$a = [$slot => \"text\", $two => \"two\", $numeric => \"three\", $nil => \"null-key\", $binary => \"bin\0ary\", false => \"false-key\", true => \"true-key\", 4.0 => \"float-key\"];\necho $a[$slot], \"\\n\";\necho $a[2], \"\\n\";\necho $a[\"3\"], \"\\n\";\necho $a[$nil], \"\\n\";\necho $a[$binary], \"\\n\";\necho $a[false], \"\\n\";\necho $a[true], \"\\n\";\necho $a[4.0], \"\\n\";\n$a[$slot] = \"updated\";\n$a[$two] = \"two-updated\";\necho $a[\"slot\"], \"\\n\";\necho $a[2], \"\\n\";\n";
 
+const NATIVE_ARRAY_APPEND_SOURCE: &str = "<?php\n$a = [1, \"two\", (string)(2 + 1), null];\necho $a[0], \"|\", $a[1], \"|\", $a[2], \"|\", $a[3];\n";
+
 const NATIVE_VALUE_OPERATION_ARRAY_SOURCE: &str = "<?php\n$a = [];\n$a[\"s\" . \"lot\"] = (2 + 3) * (5 - 1);\n$a[(1 << 2) + 1] = \"fi\" . \"ve\";\n$a[\"neg\"] = -(\"6\" - 2);\necho $a[\"slot\"], \"|\", $a[5], \"|\", $a[\"neg\"];\n";
 
 const NATIVE_VALUE_COMPARE_CAST_TYPE_NAME_SOURCE: &str = "<?php\n$a = [];\n$a[(int)\"5\"] = (string)((2 + 3) > 4);\n$a[(int)(3 <= 2)] = get_debug_type((string)123);\n$a[(float)\"3\"] = gettype((float)\"3.5\");\necho $a[5], \"|\", $a[0], \"|\", $a[3];\n";
@@ -1147,6 +1149,76 @@ fn native_executable_c_source_routes_array_key_and_value_expressions_through_val
             && source.contains("phpc_native_array_insert_key_value_with_diagnostic"),
         "value operation results should feed the existing array key/value boundaries:\n{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_routes_array_appends_through_diagnostic_boundary() {
+    let program = parse(NATIVE_ARRAY_APPEND_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains(
+            "extern bool phpc_native_array_append_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);"
+        ),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_array_append_value_with_diagnostic(")
+            .count()
+            >= 5,
+        "declaration plus every appended value should use the diagnostic append ABI:\n{source}"
+    );
+    assert!(
+        source.contains("array_append_diagnostic_")
+            && source.contains("phpc_native_diagnostic_message_stderr(array_append_diagnostic_"),
+        "append diagnostics should be reported through the shared diagnostic boundary:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_array_append_diagnostic_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php = native_link_output_path("native_array_append_diagnostic").with_extension("php");
+    fs::write(&temp_php, NATIVE_ARRAY_APPEND_SOURCE)
+        .expect("write native array append diagnostic fixture");
+    let output_path = native_link_output_path("native_array_append_diagnostic");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1|two|3|");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
 }
 
 #[test]
