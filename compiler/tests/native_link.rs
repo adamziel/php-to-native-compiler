@@ -665,6 +665,96 @@ echo (2 === 2) ? 1 : 0;
     let _ = fs::remove_file(&temp_php);
 }
 
+const GENERALIZED_ARRAY_KEY_SOURCE: &str = "<?php\n$slot = \"slot\";\n$two = 2;\n$numeric = \"3\";\n$nil = null;\n$binary = \"A\0B\";\n$a = [$slot => \"text\", $two => \"two\", $numeric => \"three\", $nil => \"null-key\", $binary => \"bin\0ary\", false => \"false-key\", true => \"true-key\", 4.0 => \"float-key\"];\necho $a[$slot], \"\\n\";\necho $a[2], \"\\n\";\necho $a[\"3\"], \"\\n\";\necho $a[$nil], \"\\n\";\necho $a[$binary], \"\\n\";\necho $a[false], \"\\n\";\necho $a[true], \"\\n\";\necho $a[4.0], \"\\n\";\n$a[$slot] = \"updated\";\n$a[$two] = \"two-updated\";\necho $a[\"slot\"], \"\\n\";\necho $a[2], \"\\n\";\n";
+
+#[test]
+fn native_executable_c_source_routes_array_keys_through_runtime_materialization() {
+    let program = parse(GENERALIZED_ARRAY_KEY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_NativeArrayKeyMaterializationResult"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_to_array_key"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_insert_key_value_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_read_key_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_key_materialization_result_free"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_from_scalar")
+            && source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+        "array keys should enter the same native value materialization boundary for scalar and string families:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_array_read_int("),
+        "indexed reads should not bypass generalized key materialization:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_generalized_array_key_materialization_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php =
+        native_link_output_path("generalized_array_key_materialization").with_extension("php");
+    fs::write(&temp_php, GENERALIZED_ARRAY_KEY_SOURCE)
+        .expect("write generalized native array-key fixture");
+    let output_path = native_link_output_path("generalized_array_key_materialization");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile generalized array-key executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run generalized array-key executable: {error}"));
+
+    assert!(run.status.success(), "native array-key executable failed");
+    assert_eq!(
+        run.stdout,
+        b"text\ntwo\nthree\nnull-key\nbin\0ary\nfalse-key\ntrue-key\nfloat-key\nupdated\ntwo-updated\n"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
+}
+
 fn has_cc() -> bool {
     Command::new("cc").arg("--version").output().is_ok()
 }

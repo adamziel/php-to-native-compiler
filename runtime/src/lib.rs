@@ -127,6 +127,23 @@ pub struct NativeArrayHandle {
     ptr: *mut NativeArray,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeArrayKeyMaterializationTag {
+    Int = 0,
+    String = 1,
+    Error = 2,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeArrayKeyMaterializationResult {
+    pub tag: NativeArrayKeyMaterializationTag,
+    pub int_value: i64,
+    pub bytes: NativeByteBuffer,
+    pub diagnostic: NativeDiagnosticHandle,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeObjectHandle {
@@ -335,6 +352,42 @@ impl NativeDiagnosticSeverity {
             3 => Some(Self::Error),
             4 => Some(Self::Blocker),
             _ => None,
+        }
+    }
+}
+
+impl NativeArrayKeyMaterializationResult {
+    fn int(value: i64) -> Self {
+        Self {
+            tag: NativeArrayKeyMaterializationTag::Int,
+            int_value: value,
+            bytes: NativeByteBuffer::empty(),
+            diagnostic: NativeDiagnosticHandle::null(),
+        }
+    }
+
+    fn string(bytes: Vec<u8>) -> Self {
+        Self {
+            tag: NativeArrayKeyMaterializationTag::String,
+            int_value: 0,
+            bytes: NativeByteBuffer::from_vec(bytes),
+            diagnostic: NativeDiagnosticHandle::null(),
+        }
+    }
+
+    fn failure(error: RuntimeError) -> Self {
+        Self {
+            tag: NativeArrayKeyMaterializationTag::Error,
+            int_value: 0,
+            bytes: NativeByteBuffer::empty(),
+            diagnostic: NativeDiagnosticHandle::from_message(error.message()),
+        }
+    }
+
+    fn from_array_key(key: ArrayKey) -> Self {
+        match key {
+            ArrayKey::Int(value) => Self::int(value),
+            ArrayKey::String(value) => Self::string(value.into_bytes()),
         }
     }
 }
@@ -697,6 +750,82 @@ pub unsafe extern "C" fn phpc_native_array_append_value(
 
 /// # Safety
 ///
+/// `value` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. The returned key materialization result must be
+/// released with `phpc_native_array_key_materialization_result_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_to_array_key(
+    value: NativeValueHandle,
+) -> NativeArrayKeyMaterializationResult {
+    let Some(value) = (unsafe { value.as_ref() }) else {
+        return NativeArrayKeyMaterializationResult::failure(RuntimeError::invalid_array_key(
+            "native array key materialization failed: value handle is null",
+        ));
+    };
+
+    native_array_key_from_runtime_value(value)
+        .map(NativeArrayKeyMaterializationResult::from_array_key)
+        .unwrap_or_else(NativeArrayKeyMaterializationResult::failure)
+}
+
+/// # Safety
+///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. `key` must be a result returned by
+/// `phpc_native_value_to_array_key`. `value` must be null or a value handle
+/// previously returned by the runtime ABI and not yet freed. The inserted array
+/// slot owns a clone of the value; ownership of `key` and `value` remains with
+/// the caller. On failure the helper stores a diagnostic handle that the caller
+/// owns and must release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_insert_key_value_with_diagnostic(
+    mut handle: NativeArrayHandle,
+    key: NativeArrayKeyMaterializationResult,
+    value: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let Some(array) = (unsafe { handle.as_mut() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::invalid_array_access(
+                    "native array keyed insert failed: array handle is null",
+                )
+                .message(),
+            )
+        };
+        return false;
+    };
+
+    let Some(value) = (unsafe { value.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::invalid_array_access(
+                    "native array keyed insert failed: value handle is null",
+                )
+                .message(),
+            )
+        };
+        return false;
+    };
+
+    match unsafe { native_array_key_materialization_to_array_key(&key) } {
+        Ok(key) => {
+            array.value.insert(key, value.clone());
+            true
+        }
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
 /// `handle` must be null or an array handle previously returned by the runtime
 /// ABI and not yet freed. The returned value handle owns a clone of the indexed
 /// array slot, or is null when the array handle is null or the key is missing.
@@ -709,6 +838,69 @@ pub unsafe extern "C" fn phpc_native_array_read_int(
         .and_then(|array| array.value.get_cloned(ArrayKey::Int(key)))
         .map(NativeValueHandle::from_value)
         .unwrap_or_else(NativeValueHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. `key` must be a result returned by
+/// `phpc_native_value_to_array_key`. The returned value handle owns a clone of
+/// the indexed array slot. Null handles, invalid keys, and missing keys return
+/// a null value handle and store a diagnostic when `diagnostic` is non-null;
+/// the caller owns that diagnostic and must release it with
+/// `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_read_key_with_diagnostic(
+    handle: NativeArrayHandle,
+    key: NativeArrayKeyMaterializationResult,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let Some(array) = (unsafe { handle.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::invalid_array_access(
+                    "native array read failed: array handle is null",
+                )
+                .message(),
+            )
+        };
+        return NativeValueHandle::null();
+    };
+
+    match unsafe { native_array_key_materialization_to_array_key(&key) } {
+        Ok(key) => array
+            .value
+            .get_cloned(key.clone())
+            .map(NativeValueHandle::from_value)
+            .unwrap_or_else(|| {
+                unsafe {
+                    native_store_diagnostic_message(
+                        diagnostic,
+                        RuntimeError::undefined_array_key(key.diagnostic_key()).message(),
+                    )
+                };
+                NativeValueHandle::null()
+            }),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `key` must be a materialization result returned by the runtime ABI and not
+/// yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_key_materialization_result_free(
+    key: NativeArrayKeyMaterializationResult,
+) {
+    unsafe { phpc_native_byte_buffer_free(key.bytes) };
+    unsafe { phpc_native_diagnostic_free(key.diagnostic) };
 }
 
 /// # Safety
@@ -1070,6 +1262,15 @@ pub unsafe extern "C" fn phpc_native_value_materialization_failure_exit_code(
 unsafe fn native_clear_diagnostic_slot(diagnostic: *mut NativeDiagnosticHandle) {
     if !diagnostic.is_null() {
         unsafe { *diagnostic = NativeDiagnosticHandle::null() };
+    }
+}
+
+unsafe fn native_store_diagnostic_message(
+    diagnostic: *mut NativeDiagnosticHandle,
+    message: impl Into<String>,
+) {
+    if !diagnostic.is_null() {
+        unsafe { *diagnostic = NativeDiagnosticHandle::from_message(message) };
     }
 }
 
@@ -4164,6 +4365,74 @@ impl ArrayKey {
             key => key,
         }
     }
+}
+
+fn native_array_key_from_runtime_value(value: &Value) -> RuntimeResult<ArrayKey> {
+    match value {
+        Value::Null => Ok(ArrayKey::String(String::new())),
+        Value::Bool(false) => Ok(ArrayKey::Int(0)),
+        Value::Bool(true) => Ok(ArrayKey::Int(1)),
+        Value::Int(value) => Ok(ArrayKey::Int(*value)),
+        Value::Float(value)
+            if value.is_finite()
+                && value.fract() == 0.0
+                && *value >= i64::MIN as f64
+                && *value < i64::MAX as f64 =>
+        {
+            Ok(ArrayKey::Int(*value as i64))
+        }
+        Value::Float(_) => Err(RuntimeError::invalid_array_key(
+            "lossy or non-finite float keys are not supported for native array materialization; only null, bool, int, string, and integral finite float keys are implemented",
+        )),
+        Value::String(value) => Ok(ArrayKey::string(value.clone())),
+        other => Err(RuntimeError::invalid_array_key(format!(
+            "{} keys are not supported for native array materialization; only null, bool, int, string, and integral finite float keys are implemented",
+            other.type_name()
+        ))),
+    }
+}
+
+unsafe fn native_array_key_materialization_to_array_key(
+    key: &NativeArrayKeyMaterializationResult,
+) -> RuntimeResult<ArrayKey> {
+    match key.tag {
+        NativeArrayKeyMaterializationTag::Int => Ok(ArrayKey::Int(key.int_value)),
+        NativeArrayKeyMaterializationTag::String => {
+            let bytes = unsafe { native_array_key_materialization_bytes(key.bytes)? };
+            let string = String::from_utf8(bytes).map_err(|_| {
+                RuntimeError::invalid_array_key(
+                    "native array key materialization produced non-UTF-8 key bytes",
+                )
+            })?;
+            Ok(ArrayKey::string(string))
+        }
+        NativeArrayKeyMaterializationTag::Error => Err(RuntimeError::invalid_array_key(
+            unsafe { native_diagnostic_message_for_key_result(key.diagnostic) }
+                .unwrap_or_else(|| "native array key materialization failed".to_string()),
+        )),
+    }
+}
+
+unsafe fn native_array_key_materialization_bytes(
+    bytes: NativeByteBuffer,
+) -> RuntimeResult<Vec<u8>> {
+    if bytes.ptr.is_null() {
+        return if bytes.len == 0 {
+            Ok(Vec::new())
+        } else {
+            Err(RuntimeError::invalid_array_key(
+                "native array key materialization bytes pointer is null",
+            ))
+        };
+    }
+
+    Ok(unsafe { std::slice::from_raw_parts(bytes.ptr, bytes.len) }.to_vec())
+}
+
+unsafe fn native_diagnostic_message_for_key_result(
+    diagnostic: NativeDiagnosticHandle,
+) -> Option<String> {
+    unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.clone())
 }
 
 impl From<i64> for ArrayKey {
@@ -8321,6 +8590,90 @@ mod tests {
 
         unsafe { phpc_native_value_free(read) };
         unsafe { phpc_native_string_free(string) };
+        unsafe { phpc_native_array_free(array) };
+    }
+
+    #[test]
+    fn native_array_key_materialization_drives_keyed_insert_and_read_families() {
+        let array = phpc_native_array_empty();
+        let key_cases = [
+            (Value::String("slot".to_string()), b"text".as_slice()),
+            (Value::Int(2), b"two".as_slice()),
+            (Value::String("3".to_string()), b"three".as_slice()),
+            (Value::Null, b"null-key".as_slice()),
+            (Value::Bool(true), b"true-key".as_slice()),
+            (Value::Float(4.0), b"float-key".as_slice()),
+            (Value::String("A\0B".to_string()), b"binary-key".as_slice()),
+        ];
+
+        for (key_value, stored_bytes) in &key_cases {
+            let key_handle = NativeValueHandle::from_value(key_value.clone());
+            let key = unsafe { phpc_native_value_to_array_key(key_handle) };
+            let stored = NativeValueHandle::from_value(Value::String(
+                String::from_utf8(stored_bytes.to_vec()).expect("test value is UTF-8"),
+            ));
+            let mut diagnostic = NativeDiagnosticHandle::null();
+
+            assert!(unsafe {
+                phpc_native_array_insert_key_value_with_diagnostic(
+                    array,
+                    key,
+                    stored,
+                    &mut diagnostic,
+                )
+            });
+            assert!(diagnostic.is_null());
+
+            unsafe { phpc_native_value_free(stored) };
+            unsafe { phpc_native_value_free(key_handle) };
+            unsafe { phpc_native_array_key_materialization_result_free(key) };
+        }
+
+        for (key_value, expected) in &key_cases {
+            let key_handle = NativeValueHandle::from_value(key_value.clone());
+            let key = unsafe { phpc_native_value_to_array_key(key_handle) };
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let read =
+                unsafe { phpc_native_array_read_key_with_diagnostic(array, key, &mut diagnostic) };
+
+            assert!(diagnostic.is_null());
+            assert_eq!(native_value_echo_bytes_for_test(read), *expected);
+
+            unsafe { phpc_native_value_free(read) };
+            unsafe { phpc_native_value_free(key_handle) };
+            unsafe { phpc_native_array_key_materialization_result_free(key) };
+        }
+
+        let numeric_int_key = NativeValueHandle::from_value(Value::Int(3));
+        let numeric_int_key = unsafe { phpc_native_value_to_array_key(numeric_int_key) };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let numeric_read = unsafe {
+            phpc_native_array_read_key_with_diagnostic(array, numeric_int_key, &mut diagnostic)
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(numeric_read), b"three");
+        unsafe { phpc_native_value_free(numeric_read) };
+        unsafe { phpc_native_array_key_materialization_result_free(numeric_int_key) };
+
+        let invalid_key_handle = NativeValueHandle::from_value(Value::Float(1.5));
+        let invalid_key = unsafe { phpc_native_value_to_array_key(invalid_key_handle) };
+        assert_eq!(invalid_key.tag, NativeArrayKeyMaterializationTag::Error);
+        let stored = NativeValueHandle::from_value(Value::String("bad".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(!unsafe {
+            phpc_native_array_insert_key_value_with_diagnostic(
+                array,
+                invalid_key,
+                stored,
+                &mut diagnostic,
+            )
+        });
+        assert!(native_diagnostic_message_for_test(diagnostic).contains("float keys"));
+
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(stored) };
+        unsafe { phpc_native_value_free(invalid_key_handle) };
+        unsafe { phpc_native_array_key_materialization_result_free(invalid_key) };
         unsafe { phpc_native_array_free(array) };
     }
 

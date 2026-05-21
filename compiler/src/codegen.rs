@@ -3,8 +3,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::ast::{
-    AssignTarget, BinaryOp, ClassMember, Expr, ForAction, FunctionDecl, FunctionParam, Program,
-    ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, ClassMember, Expr, ForAction, FunctionDecl, FunctionParam,
+    Program, ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
@@ -5560,6 +5560,7 @@ struct CGenerator {
     body: Vec<String>,
     static_data: Vec<String>,
     variables: HashMap<String, CValue>,
+    array_cleanup_handles: Vec<String>,
     known_ints: HashMap<String, KnownInt>,
     known_floats: HashMap<String, KnownFloat>,
     known_strings: HashMap<String, KnownString>,
@@ -5568,6 +5569,7 @@ struct CGenerator {
     uses_strcmp: bool,
     uses_native_string_helpers: bool,
     uses_native_comparison_helpers: bool,
+    uses_native_array_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
 }
@@ -5578,6 +5580,7 @@ enum CValue {
     Float(String),
     String(String),
     StringExpr(String),
+    ArrayHandle(String),
     Bool(bool),
     BoolExpr(String),
     Null,
@@ -5588,9 +5591,32 @@ struct NativeCComparisonOperand {
     diagnostic_handle: Option<String>,
 }
 
+struct CNativeArrayKeyMaterialization {
+    result: String,
+    cleanup_after_use: Vec<String>,
+}
+
+fn c_cleanup_sequence(cleanup: &[String]) -> String {
+    if cleanup.is_empty() {
+        String::new()
+    } else {
+        let mut sequence = cleanup.join(" ");
+        sequence.push(' ');
+        sequence
+    }
+}
+
 impl CGenerator {
+    fn next_native_name(&mut self, prefix: &str) -> String {
+        let index = self.next_native_temp;
+        self.next_native_temp += 1;
+        format!("{prefix}_{index}")
+    }
+
     fn uses_native_runtime_helpers(&self) -> bool {
-        self.uses_native_string_helpers || self.uses_native_comparison_helpers
+        self.uses_native_string_helpers
+            || self.uses_native_comparison_helpers
+            || self.uses_native_array_helpers
     }
 
     fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
@@ -5608,11 +5634,14 @@ impl CGenerator {
         if self.uses_native_runtime_helpers() {
             output.push_str("#include <stddef.h>\n");
             output.push_str("#include <stdint.h>\n");
-            if self.uses_native_comparison_helpers {
+            if self.uses_native_comparison_helpers || self.uses_native_array_helpers {
                 output.push_str("#include <stdbool.h>\n");
             }
             output.push('\n');
-            if self.uses_native_string_helpers || self.uses_native_comparison_helpers {
+            if self.uses_native_string_helpers
+                || self.uses_native_comparison_helpers
+                || self.uses_native_array_helpers
+            {
                 output.push_str(
                     "typedef struct { uint8_t tag; uint8_t bool_value; int64_t int_value; double float_value; } phpc_NativeScalarValue;\n",
                 );
@@ -5620,14 +5649,20 @@ impl CGenerator {
             output.push_str("typedef struct { void *ptr; } phpc_NativeStringHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeValueHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeDiagnosticHandle;\n");
-            if self.uses_native_string_helpers {
+            if self.uses_native_string_helpers || self.uses_native_array_helpers {
                 output.push_str(
                     "typedef struct { uint8_t *ptr; size_t len; size_t cap; } phpc_NativeByteBuffer;\n",
                 );
+            }
+            if self.uses_native_string_helpers {
                 output.push_str("typedef struct { phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeStringConversionResult;\n");
             }
             if self.uses_native_comparison_helpers {
                 output.push_str("typedef struct { uint8_t status; uint8_t value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeComparisonResult;\n");
+            }
+            if self.uses_native_array_helpers {
+                output.push_str("typedef struct { void *ptr; } phpc_NativeArrayHandle;\n");
+                output.push_str("typedef struct { uint8_t tag; int64_t int_value; phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeArrayKeyMaterializationResult;\n");
             }
             output.push('\n');
             output.push_str("extern phpc_NativeStringHandle phpc_native_string_from_bytes(const uint8_t *ptr, size_t len);\n");
@@ -5649,6 +5684,17 @@ impl CGenerator {
             output.push_str(
                 "extern void phpc_native_string_free(phpc_NativeStringHandle string);\n\n",
             );
+            if self.uses_native_array_helpers {
+                output.push_str("extern phpc_NativeArrayHandle phpc_native_array_empty(void);\n");
+                output.push_str("extern bool phpc_native_array_append_value(phpc_NativeArrayHandle array, phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key(phpc_NativeValueHandle value);\n");
+                output.push_str("extern bool phpc_native_array_insert_key_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_array_read_key_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern void phpc_native_array_key_materialization_result_free(phpc_NativeArrayKeyMaterializationResult key);\n");
+                output.push_str(
+                    "extern void phpc_native_array_free(phpc_NativeArrayHandle array);\n\n",
+                );
+            }
         }
         if self.uses_native_comparison_helpers {
             output.push_str("extern int phpc_native_value_materialization_failure_exit_code(phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -5672,6 +5718,11 @@ impl CGenerator {
             output.push_str(line);
             output.push('\n');
         }
+        for handle in self.array_cleanup_handles.iter().rev() {
+            output.push_str("  ");
+            output.push_str(&format!("phpc_native_array_free({handle});"));
+            output.push('\n');
+        }
         output.push_str("  return 0;\n");
         output.push_str("}\n");
         Ok(output)
@@ -5688,6 +5739,9 @@ impl CGenerator {
             }
             Stmt::Echo { exprs, .. } => {
                 for (index, expr) in exprs.iter().enumerate() {
+                    if self.try_emit_array_index_echo(expr)? {
+                        continue;
+                    }
                     let value = match self.emit_expr(expr) {
                         Ok(value) => value,
                         Err(error) => {
@@ -5697,13 +5751,13 @@ impl CGenerator {
                             ));
                         }
                     };
-                    self.emit_echo(value)?;
+                    self.emit_echo(value, expr.span())?;
                 }
                 Ok(())
             }
             Stmt::Print { expr, .. } => {
                 let value = self.emit_expr(expr)?;
-                self.emit_echo(value)?;
+                self.emit_echo(value, expr.span())?;
                 Ok(())
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
@@ -5857,9 +5911,14 @@ impl CGenerator {
             | Expr::LateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
-            Expr::Array { span, .. } => {
+            Expr::Array { items, span } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
+                }
+                if self.uses_native_string_helpers {
+                    return self
+                        .emit_array_literal(items, *span)
+                        .map(CValue::ArrayHandle);
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
@@ -6416,7 +6475,7 @@ impl CGenerator {
                 value,
                 CValue::String(_) | CValue::StringExpr(_)
             ))),
-            "is_array" => Ok(CValue::Bool(false)),
+            "is_array" => Ok(CValue::Bool(matches!(value, CValue::ArrayHandle(_)))),
             "is_scalar" => Ok(CValue::Bool(matches!(
                 value,
                 CValue::Bool(_)
@@ -6556,7 +6615,9 @@ impl CGenerator {
     fn is_numeric_result_for_value(&self, value: &CValue) -> Option<bool> {
         match value {
             CValue::Int(_) | CValue::Float(_) => Some(true),
-            CValue::Null | CValue::Bool(_) | CValue::BoolExpr(_) => Some(false),
+            CValue::Null | CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ArrayHandle(_) => {
+                Some(false)
+            }
             CValue::String(value) => Some(is_php_numeric_string(value)),
             CValue::StringExpr(_) => {
                 let values = self.known_string_values_for_value(value)?;
@@ -6624,7 +6685,17 @@ impl CGenerator {
             AssignTarget::List { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION))
             }
-            AssignTarget::ArrayIndex { span, .. } => {
+            AssignTarget::ArrayIndex { name, index, span } => {
+                if self.uses_native_string_helpers {
+                    let Some(index) = index.as_ref() else {
+                        return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                    };
+                    let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned()
+                    else {
+                        return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                    };
+                    return self.emit_array_write_key_value(&handle, index, expr);
+                }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             AssignTarget::NestedArrayIndex { span, .. }
@@ -7238,6 +7309,7 @@ impl CGenerator {
                     diagnostic_handle: Some(diagnostic_handle),
                 })
             }
+            CValue::ArrayHandle(_) => Err(self.unsupported(span, assembly_comparison_rejection())),
         }
     }
 
@@ -7304,6 +7376,9 @@ impl CGenerator {
                     "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_string_bytes_with_diagnostic((const uint8_t *)({value}), {byte_len}, &{diagnostic_handle});"
                 ));
                 self.emit_report_native_diagnostic(&diagnostic_handle);
+            }
+            CValue::ArrayHandle(_) => {
+                return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
             }
         }
 
@@ -8328,6 +8403,7 @@ impl CGenerator {
             CValue::StringExpr(value) => self
                 .known_string_values(value)
                 .and_then(|values| known_string_truthiness(&values)),
+            CValue::ArrayHandle(_) => None,
             CValue::Null => Some(false),
         }
     }
@@ -8562,6 +8638,7 @@ impl CGenerator {
                 }
             }
             CValue::Null => self.emit_expr(if_false),
+            CValue::ArrayHandle(_) => Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION)),
             condition @ CValue::BoolExpr(_) => {
                 let if_false = self.emit_expr(if_false)?;
                 if !matches!(if_false, CValue::Bool(_) | CValue::BoolExpr(_)) {
@@ -8809,6 +8886,7 @@ impl CGenerator {
                 }
             }
             CValue::Null => Ok(CValue::Bool(true)),
+            CValue::ArrayHandle(_) => Err(self.unsupported(span, ASSEMBLY_UNARY_REJECTION)),
         }
     }
 
@@ -8830,7 +8908,157 @@ impl CGenerator {
         KnownFloat::from_values(results)
     }
 
-    fn emit_echo(&mut self, value: CValue) -> CompileResult<()> {
+    fn emit_array_literal(&mut self, items: &[ArrayItem], span: Span) -> CompileResult<String> {
+        self.uses_native_array_helpers = true;
+        let handle = self.next_native_name("array");
+        self.body.push(format!(
+            "phpc_NativeArrayHandle {handle} = phpc_native_array_empty();"
+        ));
+        self.array_cleanup_handles.push(handle.clone());
+
+        for item in items {
+            if item.by_reference {
+                return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
+            }
+            if let Some(key) = &item.key {
+                self.emit_array_write_key_value(&handle, key, &item.value)?;
+            } else {
+                self.emit_array_append_value(&handle, &item.value)?;
+            }
+        }
+
+        Ok(handle)
+    }
+
+    fn emit_array_write_key_value(
+        &mut self,
+        handle: &str,
+        key: &Expr,
+        value: &Expr,
+    ) -> CompileResult<()> {
+        let value_handle = self.emit_native_array_value_for_expr(value)?;
+        let value_cleanup = vec![format!("phpc_native_value_free({value_handle});")];
+        let key = self.materialize_native_array_key(key, &value_cleanup)?;
+        let diagnostic = self.next_native_name("array_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+
+        let local_cleanup = format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}",
+            c_cleanup_sequence(&key.cleanup_after_use),
+            c_cleanup_sequence(&value_cleanup)
+        );
+        let write_error_exit = self.native_error_exit(&local_cleanup);
+        self.body.push(format!(
+            "if (!phpc_native_array_insert_key_value_with_diagnostic({handle}, {}, {value_handle}, &{diagnostic})) {{ {write_error_exit} }}",
+            key.result
+        ));
+        self.body.extend(key.cleanup_after_use);
+        self.body.extend(value_cleanup);
+        Ok(())
+    }
+
+    fn emit_array_append_value(&mut self, handle: &str, value: &Expr) -> CompileResult<()> {
+        let value_handle = self.emit_native_array_value_for_expr(value)?;
+        let value_cleanup = vec![format!("phpc_native_value_free({value_handle});")];
+        let append_error_exit = self.native_error_exit(&c_cleanup_sequence(&value_cleanup));
+        self.body.push(format!(
+            "if (!phpc_native_array_append_value({handle}, {value_handle})) {{ {append_error_exit} }}"
+        ));
+        self.body.extend(value_cleanup);
+        Ok(())
+    }
+
+    fn emit_native_array_value_for_expr(&mut self, expr: &Expr) -> CompileResult<String> {
+        let value = self.emit_expr(expr)?;
+        match value {
+            CValue::ArrayHandle(_) => Err(self.unsupported(expr.span(), ASSEMBLY_ARRAY_REJECTION)),
+            value => self.emit_native_value_for_cvalue(value, expr.span()),
+        }
+    }
+
+    fn materialize_native_array_key(
+        &mut self,
+        key: &Expr,
+        failure_cleanup: &[String],
+    ) -> CompileResult<CNativeArrayKeyMaterialization> {
+        let key_value = self.emit_expr(key)?;
+        let key_value = match key_value {
+            CValue::ArrayHandle(_) => {
+                return Err(self.unsupported(key.span(), ASSEMBLY_ARRAY_REJECTION))
+            }
+            value => self.emit_native_value_for_cvalue(value, key.span())?,
+        };
+        let result = self.next_native_name("array_key");
+        self.body.push(format!(
+            "phpc_NativeArrayKeyMaterializationResult {result} = phpc_native_value_to_array_key({key_value});"
+        ));
+        self.body
+            .push(format!("phpc_native_value_free({key_value});"));
+        if !failure_cleanup.is_empty() {
+            let key_error_exit = self.native_error_exit(&format!(
+                "phpc_native_array_key_materialization_result_free({result}); {}",
+                c_cleanup_sequence(failure_cleanup)
+            ));
+            self.body.push(format!(
+                "if ({result}.tag == 2) {{ phpc_native_diagnostic_message_stderr({result}.diagnostic); {key_error_exit} }}"
+            ));
+        }
+        Ok(CNativeArrayKeyMaterialization {
+            result: result.clone(),
+            cleanup_after_use: vec![format!(
+                "phpc_native_array_key_materialization_result_free({result});"
+            )],
+        })
+    }
+
+    fn try_emit_array_index_echo(&mut self, expr: &Expr) -> CompileResult<bool> {
+        let Expr::Index { target, index, .. } = expr else {
+            return Ok(false);
+        };
+        if !self.uses_native_string_helpers {
+            return Ok(false);
+        }
+
+        let target = self.emit_expr(target)?;
+        let CValue::ArrayHandle(handle) = target else {
+            return Err(self.unsupported(expr.span(), ASSEMBLY_ARRAY_REJECTION));
+        };
+
+        let key = self.materialize_native_array_key(index, &[])?;
+        let diagnostic = self.next_native_name("array_read_diagnostic");
+        let read = self.next_native_name("array_read");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {read} = phpc_native_array_read_key_with_diagnostic({handle}, {}, &{diagnostic});",
+            key.result
+        ));
+        let read_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}",
+            c_cleanup_sequence(&key.cleanup_after_use)
+        ));
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ {read_error_exit} }}"
+        ));
+        self.body.extend(key.cleanup_after_use);
+        self.body
+            .push(format!("phpc_native_value_echo_stdout({read});"));
+        self.body.push(format!("phpc_native_value_free({read});"));
+        Ok(true)
+    }
+
+    fn native_error_exit(&self, local_cleanup: &str) -> String {
+        let mut cleanup = String::new();
+        cleanup.push_str(local_cleanup);
+        for handle in self.array_cleanup_handles.iter().rev() {
+            cleanup.push_str(&format!(" phpc_native_array_free({handle});"));
+        }
+        cleanup.push_str(" return 1;");
+        cleanup
+    }
+
+    fn emit_echo(&mut self, value: CValue, span: Span) -> CompileResult<()> {
         match value {
             CValue::Null | CValue::Bool(false) => {}
             CValue::Bool(true) => self.emit_c_stdout_printf("printf(\"%s\", \"1\");"),
@@ -8857,6 +9085,7 @@ impl CGenerator {
                 }
                 self.emit_c_stdout_printf(format!("printf(\"%s\", {value});"));
             }
+            CValue::ArrayHandle(_) => return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
         }
         Ok(())
     }
@@ -10134,6 +10363,7 @@ fn c_gettype_name(value: &CValue) -> &'static str {
         CValue::Int(_) => "integer",
         CValue::Float(_) => "double",
         CValue::String(_) | CValue::StringExpr(_) => "string",
+        CValue::ArrayHandle(_) => "array",
     }
 }
 
@@ -10144,6 +10374,7 @@ fn c_debug_type_name(value: &CValue) -> &'static str {
         CValue::Int(_) => "int",
         CValue::Float(_) => "float",
         CValue::String(_) | CValue::StringExpr(_) => "string",
+        CValue::ArrayHandle(_) => "array",
     }
 }
 
