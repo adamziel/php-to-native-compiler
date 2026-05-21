@@ -6389,15 +6389,11 @@ impl Value {
     }
 
     pub fn php_cmp_checked(&self, other: &Value, op: Comparison) -> RuntimeResult<bool> {
-        match (self, other) {
-            (Value::Object(_), _) | (_, Value::Object(_)) => Err(
-                RuntimeError::unsupported_comparison("object comparisons are not implemented"),
-            ),
-            (Value::Resource(_), _) | (_, Value::Resource(_)) => Err(
-                RuntimeError::unsupported_comparison("resource comparisons are not implemented"),
-            ),
-            _ => Ok(self.php_cmp(other, op)),
-        }
+        self.php_compare_checked(other, op.into())
+    }
+
+    pub fn php_compare_checked(&self, other: &Value, op: PhpComparisonOp) -> RuntimeResult<bool> {
+        evaluate_php_comparison(self, other, op)
     }
 
     pub fn php_cmp(&self, other: &Value, op: Comparison) -> bool {
@@ -6613,6 +6609,13 @@ pub enum PhpComparisonOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComparisonOperationFamily {
+    LooseEquality(Comparison),
+    LooseOrdering(Comparison),
+    StrictIdentity { expected_identical: bool },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ComparisonBlocker {
     Array,
     Object,
@@ -6662,6 +6665,36 @@ impl ComparisonBlocker {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComparisonValueFamily {
+    Scalar,
+    Array,
+    Object,
+    Resource,
+}
+
+impl ComparisonValueFamily {
+    fn for_value(value: &Value) -> Self {
+        match value {
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+                Self::Scalar
+            }
+            Value::Array(_) => Self::Array,
+            Value::Object(_) | Value::Closure(_) => Self::Object,
+            Value::Resource(_) => Self::Resource,
+        }
+    }
+
+    fn loose_comparison_blocker(self) -> Option<ComparisonBlocker> {
+        match self {
+            Self::Scalar => None,
+            Self::Array => Some(ComparisonBlocker::Array),
+            Self::Object => Some(ComparisonBlocker::Object),
+            Self::Resource => Some(ComparisonBlocker::Resource),
+        }
+    }
+}
+
 impl PhpComparisonOp {
     fn from_native_abi(op: u8) -> Option<Self> {
         Some(match op {
@@ -6677,20 +6710,41 @@ impl PhpComparisonOp {
         })
     }
 
+    fn operation_family(self) -> ComparisonOperationFamily {
+        match self {
+            Self::LooseEq => ComparisonOperationFamily::LooseEquality(Comparison::Eq),
+            Self::LooseNe => ComparisonOperationFamily::LooseEquality(Comparison::Ne),
+            Self::LooseLt => ComparisonOperationFamily::LooseOrdering(Comparison::Lt),
+            Self::LooseLe => ComparisonOperationFamily::LooseOrdering(Comparison::Le),
+            Self::LooseGt => ComparisonOperationFamily::LooseOrdering(Comparison::Gt),
+            Self::LooseGe => ComparisonOperationFamily::LooseOrdering(Comparison::Ge),
+            Self::StrictEq => ComparisonOperationFamily::StrictIdentity {
+                expected_identical: true,
+            },
+            Self::StrictNe => ComparisonOperationFamily::StrictIdentity {
+                expected_identical: false,
+            },
+        }
+    }
+}
+
+impl ComparisonOperationFamily {
     fn loose_comparison(self) -> Option<Comparison> {
         Some(match self {
-            Self::LooseEq => Comparison::Eq,
-            Self::LooseNe => Comparison::Ne,
-            Self::LooseLt => Comparison::Lt,
-            Self::LooseLe => Comparison::Le,
-            Self::LooseGt => Comparison::Gt,
-            Self::LooseGe => Comparison::Ge,
-            Self::StrictEq | Self::StrictNe => return None,
+            Self::LooseEquality(comparison) | Self::LooseOrdering(comparison) => comparison,
+            Self::StrictIdentity { .. } => return None,
         })
     }
 
-    fn is_strict_identity(self) -> bool {
-        matches!(self, Self::StrictEq | Self::StrictNe)
+    fn strict_identity_expectation(self) -> Option<bool> {
+        match self {
+            Self::StrictIdentity { expected_identical } => Some(expected_identical),
+            Self::LooseEquality(_) | Self::LooseOrdering(_) => None,
+        }
+    }
+
+    fn uses_loose_value_semantics(self) -> bool {
+        self.loose_comparison().is_some()
     }
 }
 
@@ -6712,44 +6766,44 @@ fn native_value_compare_checked(
     right: &Value,
     op: PhpComparisonOp,
 ) -> RuntimeResult<bool> {
-    if let Some(blocker) = comparison_blocker(left, right, op) {
+    evaluate_php_comparison(left, right, op)
+}
+
+fn evaluate_php_comparison(
+    left: &Value,
+    right: &Value,
+    op: PhpComparisonOp,
+) -> RuntimeResult<bool> {
+    let family = op.operation_family();
+    if let Some(blocker) = comparison_blocker_for_family(left, right, family) {
         return Err(blocker.runtime_error());
     }
 
-    if op.is_strict_identity() {
+    if let Some(expected_identical) = family.strict_identity_expectation() {
         let identical = left.php_identical_checked(right)?;
-        return Ok(match op {
-            PhpComparisonOp::StrictEq => identical,
-            PhpComparisonOp::StrictNe => !identical,
-            _ => unreachable!("strict identity branch only handles strict comparison ops"),
-        });
+        return Ok(identical == expected_identical);
     }
 
     Ok(left.php_cmp(
         right,
-        op.loose_comparison()
+        family
+            .loose_comparison()
             .expect("non-strict comparison has a loose operator"),
     ))
 }
 
-fn comparison_blocker(
+fn comparison_blocker_for_family(
     left: &Value,
     right: &Value,
-    op: PhpComparisonOp,
+    family: ComparisonOperationFamily,
 ) -> Option<ComparisonBlocker> {
-    if op.is_strict_identity() {
+    if !family.uses_loose_value_semantics() {
         return None;
     }
 
-    match (left, right) {
-        (Value::Array(_), _) | (_, Value::Array(_)) => Some(ComparisonBlocker::Array),
-        (Value::Object(_), _)
-        | (_, Value::Object(_))
-        | (Value::Closure(_), _)
-        | (_, Value::Closure(_)) => Some(ComparisonBlocker::Object),
-        (Value::Resource(_), _) | (_, Value::Resource(_)) => Some(ComparisonBlocker::Resource),
-        _ => None,
-    }
+    ComparisonValueFamily::for_value(left)
+        .loose_comparison_blocker()
+        .or_else(|| ComparisonValueFamily::for_value(right).loose_comparison_blocker())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -7007,6 +7061,182 @@ mod tests {
         assert_eq!(NativeComparisonOp::LooseGe as u8, 5);
         assert_eq!(NativeComparisonOp::StrictEq as u8, 6);
         assert_eq!(NativeComparisonOp::StrictNe as u8, 7);
+    }
+
+    #[test]
+    fn comparison_operation_family_classifies_loose_and_strict_ops() {
+        for (op, expected_family, expected_loose, expected_identity) in [
+            (
+                PhpComparisonOp::LooseEq,
+                ComparisonOperationFamily::LooseEquality(Comparison::Eq),
+                Some(Comparison::Eq),
+                None,
+            ),
+            (
+                PhpComparisonOp::LooseNe,
+                ComparisonOperationFamily::LooseEquality(Comparison::Ne),
+                Some(Comparison::Ne),
+                None,
+            ),
+            (
+                PhpComparisonOp::LooseLt,
+                ComparisonOperationFamily::LooseOrdering(Comparison::Lt),
+                Some(Comparison::Lt),
+                None,
+            ),
+            (
+                PhpComparisonOp::LooseLe,
+                ComparisonOperationFamily::LooseOrdering(Comparison::Le),
+                Some(Comparison::Le),
+                None,
+            ),
+            (
+                PhpComparisonOp::LooseGt,
+                ComparisonOperationFamily::LooseOrdering(Comparison::Gt),
+                Some(Comparison::Gt),
+                None,
+            ),
+            (
+                PhpComparisonOp::LooseGe,
+                ComparisonOperationFamily::LooseOrdering(Comparison::Ge),
+                Some(Comparison::Ge),
+                None,
+            ),
+            (
+                PhpComparisonOp::StrictEq,
+                ComparisonOperationFamily::StrictIdentity {
+                    expected_identical: true,
+                },
+                None,
+                Some(true),
+            ),
+            (
+                PhpComparisonOp::StrictNe,
+                ComparisonOperationFamily::StrictIdentity {
+                    expected_identical: false,
+                },
+                None,
+                Some(false),
+            ),
+        ] {
+            let family = op.operation_family();
+
+            assert_eq!(family, expected_family, "{op:?}");
+            assert_eq!(family.loose_comparison(), expected_loose, "{op:?}");
+            assert_eq!(
+                family.strict_identity_expectation(),
+                expected_identity,
+                "{op:?}"
+            );
+            assert_eq!(
+                family.uses_loose_value_semantics(),
+                expected_loose.is_some(),
+                "{op:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn comparison_value_family_drives_loose_blockers_across_operator_families() {
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let object = Value::Object(PhpObject::from_class(classes.get(class_id).unwrap()));
+        let closure = Value::Closure(PhpClosure::new(17, false, Vec::new()));
+        let loose_ops = [
+            PhpComparisonOp::LooseEq,
+            PhpComparisonOp::LooseNe,
+            PhpComparisonOp::LooseLt,
+            PhpComparisonOp::LooseLe,
+            PhpComparisonOp::LooseGt,
+            PhpComparisonOp::LooseGe,
+        ];
+
+        for (label, value, family, blocker) in [
+            (
+                "array",
+                Value::Array(PhpArray::new()),
+                ComparisonValueFamily::Array,
+                ComparisonBlocker::Array,
+            ),
+            (
+                "object",
+                object,
+                ComparisonValueFamily::Object,
+                ComparisonBlocker::Object,
+            ),
+            (
+                "closure",
+                closure,
+                ComparisonValueFamily::Object,
+                ComparisonBlocker::Object,
+            ),
+            (
+                "resource",
+                Value::Resource(9),
+                ComparisonValueFamily::Resource,
+                ComparisonBlocker::Resource,
+            ),
+        ] {
+            assert_eq!(ComparisonValueFamily::for_value(&value), family, "{label}");
+
+            for op in loose_ops {
+                assert_eq!(
+                    comparison_blocker_for_family(&value, &Value::Int(1), op.operation_family()),
+                    Some(blocker),
+                    "{label} left blocker for {op:?}",
+                );
+                assert_eq!(
+                    comparison_blocker_for_family(
+                        &Value::String("1".to_string()),
+                        &value,
+                        op.operation_family()
+                    ),
+                    Some(blocker),
+                    "{label} right blocker for {op:?}",
+                );
+                assert_eq!(
+                    value
+                        .php_compare_checked(&Value::Int(1), op)
+                        .unwrap_err()
+                        .message(),
+                    blocker.runtime_error().message(),
+                    "{label} runtime blocker for {op:?}",
+                );
+            }
+
+            for op in [PhpComparisonOp::StrictEq, PhpComparisonOp::StrictNe] {
+                assert_eq!(
+                    comparison_blocker_for_family(&value, &Value::Int(1), op.operation_family()),
+                    None,
+                    "{label} strict identity blocker for {op:?}",
+                );
+                value
+                    .php_compare_checked(&Value::Int(1), op)
+                    .expect("strict identity should compare without loose blockers");
+            }
+        }
+
+        for scalar in [
+            Value::Null,
+            Value::Bool(false),
+            Value::Int(1),
+            Value::Float(1.5),
+            Value::String("10".to_string()),
+        ] {
+            assert_eq!(
+                ComparisonValueFamily::for_value(&scalar),
+                ComparisonValueFamily::Scalar
+            );
+            for op in loose_ops {
+                assert_eq!(
+                    comparison_blocker_for_family(&scalar, &Value::Int(2), op.operation_family()),
+                    None
+                );
+                scalar
+                    .php_compare_checked(&Value::Int(2), op)
+                    .expect("scalar loose comparison should remain supported");
+            }
+        }
     }
 
     #[test]
