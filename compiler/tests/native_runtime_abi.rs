@@ -90,6 +90,14 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("%phpc.NativeRequestStateOperationResult = type { %phpc.NativeValueHandle, %phpc.NativeArrayHandle, i8, i8, i8, i8 }"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("%phpc.NativeRequestStateKeyResult = type { %phpc.NativeByteBuffer, i8 }"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)"),
         "{ir}"
     );
@@ -272,9 +280,29 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("declare %phpc.NativeRequestStateHandle @phpc_native_request_state_empty()"),
+        "{ir}"
+    );
+    assert!(
         ir.contains(
             "declare i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle)"
         ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeRequestStateKeyResult @phpc_native_request_state_key_from_scalar(%phpc.NativeScalarValue)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeRequestStateOperationResult @phpc_native_request_state_superglobal_operation(%phpc.NativeRequestStateHandle, i8, ptr, i64, ptr, i64, i8)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare void @phpc_native_request_state_operation_result_free(%phpc.NativeRequestStateOperationResult)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare void @phpc_native_request_state_free(%phpc.NativeRequestStateHandle)"),
         "{ir}"
     );
     assert!(
@@ -323,6 +351,10 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     );
     assert!(
         ir.contains("define i1 @phpc_probe_request_state_handle_null_shape()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_request_state_empty_missing_value()"),
         "{ir}"
     );
     assert!(
@@ -490,6 +522,14 @@ fn scalar_echo_probe_ir_renders_32_bit_usize_helper_signatures() {
         ir.contains("define i1 @phpc_probe_request_state_handle_null_shape()"),
         "{ir}"
     );
+    assert!(
+        ir.contains("declare %phpc.NativeRequestStateOperationResult @phpc_native_request_state_superglobal_operation(%phpc.NativeRequestStateHandle, i8, ptr, i32, ptr, i32, i8)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i32 @phpc_probe_request_state_empty_missing_value()"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -646,6 +686,14 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i1 @phpc_probe_request_state_handle_null_shape()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeRequestStateOperationResult @phpc_native_request_state_superglobal_operation(%phpc.NativeRequestStateHandle, i8, ptr, i64, ptr, i64, i8)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_request_state_empty_missing_value()"),
         "{ir}"
     );
 }

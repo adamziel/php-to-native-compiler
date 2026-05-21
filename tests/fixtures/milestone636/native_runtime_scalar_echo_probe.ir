@@ -11,9 +11,12 @@
 %phpc.NativeResourceHandle = type { ptr }
 %phpc.NativeReferenceHandle = type { ptr }
 %phpc.NativeRequestStateHandle = type { ptr }
+%phpc.NativeRequestStateOperationResult = type { %phpc.NativeValueHandle, %phpc.NativeArrayHandle, i8, i8, i8, i8 }
+%phpc.NativeRequestStateKeyResult = type { %phpc.NativeByteBuffer, i8 }
 @phpc.probe.bytes = private unnamed_addr constant [4 x i8] c"heap"
 @phpc.probe.string = private unnamed_addr constant [7 x i8] c"php\00abi"
 @phpc.probe.invalid = private unnamed_addr constant [1 x i8] c"\FF"
+@phpc.probe.request.bag = private unnamed_addr constant [4 x i8] c"_GET"
 
 declare i64 @phpc_native_scalar_echo_len(%phpc.NativeScalarValue)
 declare i64 @phpc_native_scalar_echo_write(%phpc.NativeScalarValue, ptr, i64)
@@ -58,7 +61,12 @@ declare i1 @phpc_native_resource_is_null(%phpc.NativeResourceHandle)
 declare %phpc.NativeReferenceHandle @phpc_native_reference_null()
 declare i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle)
 declare %phpc.NativeRequestStateHandle @phpc_native_request_state_null()
+declare %phpc.NativeRequestStateHandle @phpc_native_request_state_empty()
 declare i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle)
+declare %phpc.NativeRequestStateKeyResult @phpc_native_request_state_key_from_scalar(%phpc.NativeScalarValue)
+declare %phpc.NativeRequestStateOperationResult @phpc_native_request_state_superglobal_operation(%phpc.NativeRequestStateHandle, i8, ptr, i64, ptr, i64, i8)
+declare void @phpc_native_request_state_operation_result_free(%phpc.NativeRequestStateOperationResult)
+declare void @phpc_native_request_state_free(%phpc.NativeRequestStateHandle)
 
 define i64 @phpc_probe_scalar_echo_len() {
 entry:
@@ -250,4 +258,30 @@ entry:
   %request_state = call %phpc.NativeRequestStateHandle @phpc_native_request_state_null()
   %request_state_is_null = call i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle %request_state)
   ret i1 %request_state_is_null
+}
+
+define i64 @phpc_probe_request_state_empty_missing_value() {
+entry:
+  %request_state = call %phpc.NativeRequestStateHandle @phpc_native_request_state_empty()
+  %key_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
+  %key_scalar = insertvalue %phpc.NativeScalarValue %key_tag, i64 0, 3
+  %key = call %phpc.NativeRequestStateKeyResult @phpc_native_request_state_key_from_scalar(%phpc.NativeScalarValue %key_scalar)
+  %key_buffer = extractvalue %phpc.NativeRequestStateKeyResult %key, 0
+  %key_status = extractvalue %phpc.NativeRequestStateKeyResult %key, 1
+  %key_ptr = extractvalue %phpc.NativeByteBuffer %key_buffer, 0
+  %key_len = extractvalue %phpc.NativeByteBuffer %key_buffer, 1
+  %bag = getelementptr inbounds [4 x i8], ptr @phpc.probe.request.bag, i64 0, i64 0
+  %result = call %phpc.NativeRequestStateOperationResult @phpc_native_request_state_superglobal_operation(%phpc.NativeRequestStateHandle %request_state, i8 1, ptr %bag, i64 4, ptr %key_ptr, i64 %key_len, i8 %key_status)
+  %is_set = extractvalue %phpc.NativeRequestStateOperationResult %result, 2
+  %status = extractvalue %phpc.NativeRequestStateOperationResult %result, 4
+  %exists = extractvalue %phpc.NativeRequestStateOperationResult %result, 5
+  %is_set_len = zext i8 %is_set to i64
+  %status_len = zext i8 %status to i64
+  %exists_len = zext i8 %exists to i64
+  %partial = add i64 %status_len, %exists_len
+  %total = add i64 %partial, %is_set_len
+  call void @phpc_native_request_state_operation_result_free(%phpc.NativeRequestStateOperationResult %result)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %key_buffer)
+  call void @phpc_native_request_state_free(%phpc.NativeRequestStateHandle %request_state)
+  ret i64 %total
 }
