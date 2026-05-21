@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 18:32 CEST
-Evaluation marker: 20260521T163219Z
-Final refresh: 20260521T163219Z
+Updated: 2026-05-21 18:43 CEST
+Evaluation marker: 20260521T164300Z
+Final refresh: 20260521T164300Z
 
 This is a distilled roadmap for a supervisor who needs the current momentum quickly. Percentages are candid engineering estimates, not test-suite completion metrics. Primary-integrated capability means committed on `master`; lane-local and dirty-worktree work is candidate material until selected, gated, committed, and pushed.
 
@@ -12,8 +12,8 @@ Estimated progress toward a broadly usable generalized PHP native compiler: **22
 
 ```
 Generalized runtime/ABI foundations      [############--------] 61%
-Compiler/backend consumers               [###########---------] 55%
-Executable generalized PHP semantics     [#####---------------] 24%
+Compiler/backend consumers               [###########---------] 56%
+Executable generalized PHP semantics     [#####---------------] 25%
 Arrays, references, COW, lvalues         [###-----------------] 16%
 Objects, properties, methods             [##------------------] 10%
 Diagnostics/control-flow composition     [###-----------------] 17%
@@ -22,9 +22,9 @@ Broad integrated verification            [###-----------------] 13%
 
 ## Current Primary State
 
-- Primary semantic HEAD before this progress update: `5d75ac52 runtime: classify numeric strings centrally`.
-- Latest primary-integrated semantic commit: `5d75ac52 runtime: classify numeric strings centrally`.
-- Product-code state at this refresh: semantic numeric-string classification batch committed; this `PROGRESS.md` update is separate management metadata and not counted as compiler semantic progress.
+- Primary semantic HEAD before this progress update: `cafb8dc5 native: extend string-int runtime boundary`.
+- Latest primary-integrated semantic commit: `cafb8dc5 native: extend string-int runtime boundary`.
+- Product-code state at this refresh: semantic string-int runtime/generated-C batch committed and pushed; this `PROGRESS.md` update is separate management metadata and not counted as compiler semantic progress.
 - Dashboard caveat: `state/dashboard.md` lagged live git during this review, so current repo state outranks dashboard text.
 
 ## Grand Roadmap Position
@@ -40,7 +40,7 @@ The project has moved from scattered backend rejection paths toward reusable run
 - [x] Materialize generated-C comparison operands through runtime byte/native-value boundaries and consume comparison results through report/free/exit sinks.
 - [x] Share comparison operation/value-family dispatch, comparison outcomes, string truthiness, and arithmetic-number operand conversion across runtime consumers.
 - [x] Share PHP numeric-string classification across runtime parsing, runtime `is_numeric()`, and compiler `is_numeric()` folding.
-- [x] Route generated-C `strlen()`, string predicates, and string-int builtins over lowerable values through runtime value-to-string ABIs.
+- [x] Route generated-C `strlen()`, string predicates, and string-int builtins over lowerable values through runtime value-to-string ABIs, now including `strcasecmp()` and `substr_count()` on the shared string-int boundary.
 - [x] Route generated-C `levenshtein()` and two-argument `similar_text()` over lowerable values through a runtime string-distance ABI.
 - [x] Route generated-C array keyed writes, keyed assignments, and indexed echo reads through runtime array-key materialization.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
@@ -55,7 +55,7 @@ The project has moved from scattered backend rejection paths toward reusable run
 
 | Active item | Primary-integrated estimate | Candidate maturity | Current read |
 | --- | ---: | ---: | --- |
-| String conversion, truthiness, and byte-buffer results | 43% | 63% | Primary has string-conversion result/free ABI, generated-C `strlen()`, string predicates, `ord()`/`crc32()`, `levenshtein()`, two-argument `similar_text()`, comparison byte materialization, string truthiness, dynamic string lengths, and numeric-string classification. Lanes add broader binary-safe string-result surfaces, but exact diagnostics, object/resource/Stringable parity, non-UTF-8 storage policy, `similar_text()` percent output, and LLVM parity remain limited. |
+| String conversion, truthiness, and byte-buffer results | 44% | 64% | Primary has string-conversion result/free ABI, generated-C `strlen()`, string predicates, `ord()`/`crc32()`, `strcasecmp()`, `substr_count()`, `levenshtein()`, two-argument `similar_text()`, comparison byte materialization, string truthiness, dynamic string lengths, and numeric-string classification. Lanes add broader binary-safe string-result surfaces, but exact diagnostics, object/resource/Stringable parity, non-UTF-8 storage policy, `similar_text()` percent output, non-int `substr_count()` offset/length conversion, and LLVM parity remain limited. |
 | Call operation cleanup and ownership | 37% | 56% | Primary routes many call-result contexts through shared blockers. Lanes centralize call cleanup/access/diagnostic families. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
 | Comparison/conversion semantics | 41% | 58% | Primary has comparison ABI consumers, runtime comparison operation/value-family sharing, centralized outcomes, arithmetic conversion sharing, report/free/exit sinks, byte materialization, numeric-string classification, and string truthiness. Leading-numeric recovery, warning ordering, dynamic native `is_numeric()` lowering, and broader conversion-source/pair work are still candidate or blocked material. |
 | Arrays, lvalues, references, COW | 16% | 53% | Primary now consumes runtime array-key materialization for keyed writes, keyed assignments, and indexed echo reads. Lanes have stronger owner-slot, value-root, RMW, reference-cell, path-preflight, and generated-C value-result candidates. Primary still lacks full executable array lvalues, foreach, nested writes, references/COW, ArrayAccess, and exact warnings. |
@@ -66,6 +66,8 @@ The project has moved from scattered backend rejection paths toward reusable run
 
 ## Recent Primary-Integrated Work
 
+- `cafb8dc5 native: extend string-int runtime boundary`
+  - Extends the shared string-int runtime ABI and generated-C consumers from `ord()`/`crc32()` to lowerable `strcasecmp()` and two-/three-/four-argument `substr_count()`, preserving value-to-string diagnostic handling and keeping LLVM production lowering and exact warning recovery blocked behind generalized contracts.
 - `5d75ac52 runtime: classify numeric strings centrally`
   - Adds shared `PhpNumericStringClassification` / `classify_php_numeric_string()` for integer, float, leading-numeric, and nonnumeric string families, then routes runtime parsing, runtime `is_numeric()`, and compiler `is_numeric()` folding through that boundary.
 - `438ca546 native: route string distance through runtime`
@@ -98,9 +100,9 @@ The product is still boundary-heavy. Many candidate changes make unsupported PHP
 
 ## Near-Term Steering
 
-1. Count `5d75ac52` as the latest integrated semantic baseline.
+1. Count `cafb8dc5` as the latest integrated semantic baseline.
 2. Prefer executable generated-C/LLVM consumers of existing ABI surfaces over pure blocker or diagnostic vocabulary.
-3. Keep numeric-string follow-up focused on generalized leading-numeric recovery, warning ordering, dynamic native `is_numeric()` lowering, binary/non-UTF-8 value policy, and conversion cleanup.
+3. Keep string/conversion follow-up focused on generalized leading-numeric recovery, warning ordering, dynamic native `is_numeric()` lowering, non-int `substr_count()` offset/length conversion, binary/non-UTF-8 value policy, and conversion cleanup.
 4. Consider the lane-local array key/value value-result consumer if it can land as a narrow primary batch without importing broad array-lvalue churn.
 5. Keep `/dev/shm` above the 10-12 GiB free warning band before primary gates; current review saw only 7.8 GiB free.
 6. Refresh the supervisor dashboard after primary movement so steering is not based on stale `master` and dirty-file data.
