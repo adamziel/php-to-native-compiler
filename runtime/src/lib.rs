@@ -105,6 +105,13 @@ pub enum NativeStringIntOperation {
     Crc32 = 6,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeStringDistanceOperation {
+    Levenshtein = 0,
+    SimilarText = 1,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeComparisonResult {
@@ -1492,6 +1499,192 @@ fn php_crc32_bytes(bytes: &[u8]) -> i64 {
         }
     }
     i64::from(!crc)
+}
+
+/// # Safety
+///
+/// `subject` and `operand` must be null or value handles previously returned
+/// by the runtime ABI and not yet freed. `diagnostic` may be null; when
+/// non-null, it must point to writable storage for one `NativeDiagnosticHandle`.
+/// On failure the helper stores a diagnostic handle that the caller owns and
+/// must release with `phpc_native_diagnostic_free`. Operation `0` returns
+/// `levenshtein(subject, operand[, insertion_cost[, replacement_cost[,
+/// deletion_cost]]])`; operation `1` returns `similar_text(subject, operand)`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_string_distance_operation_with_diagnostic(
+    subject: NativeValueHandle,
+    operand: NativeValueHandle,
+    insertion_cost: i64,
+    replacement_cost: i64,
+    deletion_cost: i64,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> i64 {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_string_distance_operation(
+            subject,
+            operand,
+            insertion_cost,
+            replacement_cost,
+            deletion_cost,
+            operation,
+        )
+    } {
+        Ok(value) => value,
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            0
+        }
+    }
+}
+
+unsafe fn native_value_string_distance_operation(
+    subject: NativeValueHandle,
+    operand: NativeValueHandle,
+    insertion_cost: i64,
+    replacement_cost: i64,
+    deletion_cost: i64,
+    operation: u8,
+) -> RuntimeResult<i64> {
+    let left = unsafe { native_value_to_string_bytes(subject) }?;
+    let right = unsafe { native_value_to_string_bytes(operand) }?;
+
+    match operation {
+        value if value == NativeStringDistanceOperation::Levenshtein as u8 => {
+            php_levenshtein_bytes(
+                &left,
+                &right,
+                insertion_cost,
+                replacement_cost,
+                deletion_cost,
+            )
+        }
+        value if value == NativeStringDistanceOperation::SimilarText as u8 => {
+            php_similar_text_bytes(&left, &right)
+        }
+        _ => Err(RuntimeError::invalid_string_conversion(
+            "native string distance operation failed: unsupported operation tag",
+        )),
+    }
+}
+
+fn php_levenshtein_bytes(
+    left: &[u8],
+    right: &[u8],
+    insertion_cost: i64,
+    replacement_cost: i64,
+    deletion_cost: i64,
+) -> RuntimeResult<i64> {
+    let insertion_cost = i128::from(insertion_cost);
+    let replacement_cost = i128::from(replacement_cost);
+    let deletion_cost = i128::from(deletion_cost);
+
+    let mut previous = Vec::with_capacity(right.len() + 1);
+    let mut current = Vec::with_capacity(right.len() + 1);
+    previous.push(0_i128);
+    for index in 1..=right.len() {
+        previous.push(checked_distance_add(
+            previous[index - 1],
+            insertion_cost,
+            "levenshtein",
+        )?);
+    }
+
+    for (left_index, left_byte) in left.iter().enumerate() {
+        current.clear();
+        current.push(checked_distance_mul(
+            i128::try_from(left_index + 1).unwrap_or(i128::MAX),
+            deletion_cost,
+            "levenshtein",
+        )?);
+
+        for (right_index, right_byte) in right.iter().enumerate() {
+            let insert = checked_distance_add(current[right_index], insertion_cost, "levenshtein")?;
+            let delete =
+                checked_distance_add(previous[right_index + 1], deletion_cost, "levenshtein")?;
+            let replace = checked_distance_add(
+                previous[right_index],
+                if left_byte == right_byte {
+                    0
+                } else {
+                    replacement_cost
+                },
+                "levenshtein",
+            )?;
+            current.push(insert.min(delete).min(replace));
+        }
+
+        std::mem::swap(&mut previous, &mut current);
+    }
+
+    distance_to_i64(previous[right.len()], "levenshtein")
+}
+
+fn checked_distance_add(left: i128, right: i128, operation: &str) -> RuntimeResult<i128> {
+    left.checked_add(right).ok_or_else(|| {
+        RuntimeError::invalid_string_conversion(format!(
+            "native string distance operation failed: {operation} distance overflowed"
+        ))
+    })
+}
+
+fn checked_distance_mul(left: i128, right: i128, operation: &str) -> RuntimeResult<i128> {
+    left.checked_mul(right).ok_or_else(|| {
+        RuntimeError::invalid_string_conversion(format!(
+            "native string distance operation failed: {operation} distance overflowed"
+        ))
+    })
+}
+
+fn distance_to_i64(value: i128, operation: &str) -> RuntimeResult<i64> {
+    i64::try_from(value).map_err(|_| {
+        RuntimeError::invalid_string_conversion(format!(
+            "native string distance operation failed: {operation} distance overflowed"
+        ))
+    })
+}
+
+fn php_similar_text_bytes(left: &[u8], right: &[u8]) -> RuntimeResult<i64> {
+    i64::try_from(similar_text_score_bytes(left, right)).map_err(|_| {
+        RuntimeError::invalid_string_conversion(
+            "native string distance operation failed: similar_text score overflowed",
+        )
+    })
+}
+
+fn similar_text_score_bytes(left: &[u8], right: &[u8]) -> usize {
+    let mut max_len = 0;
+    let mut left_pos = 0;
+    let mut right_pos = 0;
+
+    for left_index in 0..left.len() {
+        for right_index in 0..right.len() {
+            let mut len = 0;
+            while left_index + len < left.len()
+                && right_index + len < right.len()
+                && left[left_index + len] == right[right_index + len]
+            {
+                len += 1;
+            }
+            if len > max_len {
+                max_len = len;
+                left_pos = left_index;
+                right_pos = right_index;
+            }
+        }
+    }
+
+    if max_len == 0 {
+        return 0;
+    }
+
+    max_len
+        + similar_text_score_bytes(&left[..left_pos], &right[..right_pos])
+        + similar_text_score_bytes(&left[left_pos + max_len..], &right[right_pos + max_len..])
 }
 
 /// # Safety
@@ -9520,6 +9713,118 @@ mod tests {
         unsafe { phpc_native_value_free(null_value) };
         unsafe { phpc_native_value_free(scalar) };
         unsafe { phpc_native_value_free(payload) };
+    }
+
+    #[test]
+    fn native_string_distance_operations_reuse_value_to_string_boundary() {
+        let left = NativeValueHandle::from_value(Value::String("kitten".to_string()));
+        let right = NativeValueHandle::from_value(Value::String("sitting".to_string()));
+        let binary_left = NativeValueHandle::from_value(Value::String("A\0B\u{ff}".to_string()));
+        let binary_right = NativeValueHandle::from_value(Value::String("A\0C\u{ff}".to_string()));
+        let scalar_left = phpc_native_value_from_scalar(phpc_native_int(42042));
+        let scalar_right = phpc_native_value_from_scalar(phpc_native_int(42));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let distance = unsafe {
+            phpc_native_value_string_distance_operation_with_diagnostic(
+                left,
+                right,
+                1,
+                1,
+                1,
+                NativeStringDistanceOperation::Levenshtein as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(distance, 3);
+        assert!(diagnostic.is_null());
+
+        let weighted_distance = unsafe {
+            phpc_native_value_string_distance_operation_with_diagnostic(
+                binary_left,
+                binary_right,
+                1,
+                2,
+                1,
+                NativeStringDistanceOperation::Levenshtein as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(weighted_distance, 2);
+        assert!(diagnostic.is_null());
+
+        let similarity = unsafe {
+            phpc_native_value_string_distance_operation_with_diagnostic(
+                binary_left,
+                binary_right,
+                1,
+                1,
+                1,
+                NativeStringDistanceOperation::SimilarText as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(similarity, 4);
+        assert!(diagnostic.is_null());
+
+        let scalar_distance = unsafe {
+            phpc_native_value_string_distance_operation_with_diagnostic(
+                scalar_left,
+                scalar_right,
+                1,
+                1,
+                1,
+                NativeStringDistanceOperation::Levenshtein as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(scalar_distance, 3);
+        assert!(diagnostic.is_null());
+
+        let resource = NativeValueHandle::from_value(Value::Resource(7));
+        let failed = unsafe {
+            phpc_native_value_string_distance_operation_with_diagnostic(
+                resource,
+                right,
+                1,
+                1,
+                1,
+                NativeStringDistanceOperation::Levenshtein as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(failed, 0);
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: resource cannot be converted to string"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let unsupported = unsafe {
+            phpc_native_value_string_distance_operation_with_diagnostic(
+                left,
+                right,
+                1,
+                1,
+                1,
+                99,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(unsupported, 0);
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string distance operation failed: unsupported operation tag"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(resource) };
+        unsafe { phpc_native_value_free(scalar_right) };
+        unsafe { phpc_native_value_free(scalar_left) };
+        unsafe { phpc_native_value_free(binary_right) };
+        unsafe { phpc_native_value_free(binary_left) };
+        unsafe { phpc_native_value_free(right) };
+        unsafe { phpc_native_value_free(left) };
     }
 
     #[test]

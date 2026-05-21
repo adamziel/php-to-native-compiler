@@ -8,8 +8,8 @@ use crate::ast::{
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
-    is_php_numeric_string, is_php_truthy_string, NativeComparisonOp, NativeStringIntOperation,
-    NativeStringPredicate,
+    is_php_numeric_string, is_php_truthy_string, NativeComparisonOp, NativeStringDistanceOperation,
+    NativeStringIntOperation, NativeStringPredicate,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -23,6 +23,8 @@ const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering re
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
 const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lowering rejects ord() and crc32() until native PHP string conversion, byte-preserving result ownership, warning recovery, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable string-int operands through the shared runtime contract";
 const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int builtin lowering rejects ord() and crc32() forms outside the reusable native string-int operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
+const LLVM_STRING_DISTANCE_OPERATION_REJECTION: &str = "LLVM string-distance builtin lowering rejects levenshtein() and similar_text() until native PHP value-to-string byte conversion, optional cost conversion, references/copy-on-write, by-reference percent output, and exact native diagnostics exist; generated-native C routes lowerable string-distance operands through the shared runtime contract";
+const ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION: &str = "assembly string-distance builtin lowering rejects levenshtein() and similar_text() forms outside the reusable native string-distance operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_BASENAME_REJECTION: &str = "LLVM basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const ASSEMBLY_BASENAME_REJECTION: &str = "assembly basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads and selected warning-plus-false recovery";
@@ -2537,6 +2539,15 @@ impl LlvmGenerator {
                     args,
                     *span,
                     LLVM_STRING_INT_OPERATION_REJECTION,
+                ))
+            }
+            Expr::Call { name, args, span }
+                if native_string_distance_operation_for_name(name).is_some() =>
+            {
+                Err(self.unsupported_direct_named_call(
+                    args,
+                    *span,
+                    LLVM_STRING_DISTANCE_OPERATION_REJECTION,
                 ))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
@@ -5673,6 +5684,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeStringConversionResult phpc_native_value_to_string_bytes(phpc_NativeValueHandle value);\n");
                 output.push_str("extern _Bool phpc_native_value_string_predicate_with_diagnostic(phpc_NativeValueHandle haystack, phpc_NativeValueHandle needle, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_int_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern int64_t phpc_native_value_string_distance_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t insertion_cost, int64_t replacement_cost, int64_t deletion_cost, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_string_conversion_result_free(phpc_NativeStringConversionResult result);\n");
             }
             output.push_str(
@@ -6020,6 +6032,13 @@ impl CGenerator {
                     .expect("string-int guard should provide operation");
                 self.emit_string_int_operation_call(operation, args, *span)
             }
+            Expr::Call { name, args, span }
+                if native_string_distance_operation_for_name(name).is_some() =>
+            {
+                let operation = native_string_distance_operation_for_name(name)
+                    .expect("string-distance guard should provide operation");
+                self.emit_string_distance_operation_call(operation, args, *span)
+            }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
                 Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_BASENAME_REJECTION))
             }
@@ -6360,6 +6379,101 @@ impl CGenerator {
             .push(format!("phpc_native_value_free({subject});"));
 
         Ok(CValue::Int(result))
+    }
+
+    fn emit_string_distance_operation_call(
+        &mut self,
+        operation: NativeStringDistanceOperation,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<CValue> {
+        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(call_operation));
+        }
+
+        if !self.uses_native_string_helpers {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION,
+            ));
+        }
+
+        let (subject_arg, operand_arg, insertion_cost, replacement_cost, deletion_cost) =
+            match operation {
+                NativeStringDistanceOperation::Levenshtein if (2..=5).contains(&args.len()) => {
+                    let insertion_cost =
+                        self.emit_optional_string_distance_cost(args.get(2), span)?;
+                    let replacement_cost =
+                        self.emit_optional_string_distance_cost(args.get(3), span)?;
+                    let deletion_cost =
+                        self.emit_optional_string_distance_cost(args.get(4), span)?;
+                    (
+                        &args[0],
+                        &args[1],
+                        insertion_cost,
+                        replacement_cost,
+                        deletion_cost,
+                    )
+                }
+                NativeStringDistanceOperation::SimilarText if args.len() == 2 => (
+                    &args[0],
+                    &args[1],
+                    "1".to_string(),
+                    "1".to_string(),
+                    "1".to_string(),
+                ),
+                _ => {
+                    return Err(self.unsupported_direct_named_call(
+                        args,
+                        span,
+                        ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION,
+                    ))
+                }
+            };
+
+        let subject = self.emit_value_operand_expr(subject_arg)?;
+        let operand = self.emit_value_operand_expr(operand_arg)?;
+        let subject = self
+            .emit_native_value_for_cvalue(subject, span)
+            .map_err(|_| self.unsupported(span, ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION))?;
+        let operand = self
+            .emit_native_value_for_cvalue(operand, span)
+            .map_err(|_| self.unsupported(span, ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION))?;
+        let result = self.next_native_name(match operation {
+            NativeStringDistanceOperation::Levenshtein => "levenshtein_result",
+            NativeStringDistanceOperation::SimilarText => "similar_text_result",
+        });
+        let diagnostic = self.next_native_name("string_distance_diagnostic");
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "long long {result} = (long long)phpc_native_value_string_distance_operation_with_diagnostic({subject}, {operand}, (int64_t)({insertion_cost}), (int64_t)({replacement_cost}), (int64_t)({deletion_cost}), {}, &{diagnostic});",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body
+            .push(format!("phpc_native_value_free({operand});"));
+        self.body
+            .push(format!("phpc_native_value_free({subject});"));
+
+        Ok(CValue::Int(result))
+    }
+
+    fn emit_optional_string_distance_cost(
+        &mut self,
+        expr: Option<&Expr>,
+        span: Span,
+    ) -> CompileResult<String> {
+        let Some(expr) = expr else {
+            return Ok("1".to_string());
+        };
+
+        match self.emit_expr(expr)? {
+            CValue::Int(value) => Ok(value),
+            _ => Err(self.unsupported(span, ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION)),
+        }
     }
 
     fn emit_function_exists_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
@@ -9868,6 +9982,14 @@ fn native_string_int_operation_for_name(name: &str) -> Option<NativeStringIntOpe
     }
 }
 
+fn native_string_distance_operation_for_name(name: &str) -> Option<NativeStringDistanceOperation> {
+    match name.to_ascii_lowercase().as_str() {
+        "levenshtein" => Some(NativeStringDistanceOperation::Levenshtein),
+        "similar_text" => Some(NativeStringDistanceOperation::SimilarText),
+        _ => None,
+    }
+}
+
 fn known_strings_have_uniform_byte_length(values: &KnownString) -> Option<usize> {
     let mut result = None;
     for value in values.values() {
@@ -10021,6 +10143,8 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "substr"
             | "substr_count"
             | "str_replace"
+            | "levenshtein"
+            | "similar_text"
             | "preg_match"
             | "preg_replace"
             | "preg_split"

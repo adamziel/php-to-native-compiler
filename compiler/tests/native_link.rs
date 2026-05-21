@@ -145,6 +145,48 @@ fn native_executable_c_source_routes_string_int_builtins_through_runtime_contrac
 }
 
 #[test]
+fn native_executable_c_source_routes_string_distance_builtins_through_runtime_contract() {
+    let program = parse(
+        "<?php\n$left = \"kitten\";\n$right = \"sitting\";\n$insert = 1;\n$replace = 2;\n$delete = 1;\necho levenshtein($left, $right);\necho levenshtein(\"A\0B\", \"A\0C\", $insert, $replace, $delete);\necho similar_text(42042, 42);\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_string_distance_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = (long long)phpc_native_value_string_distance_operation_with_diagnostic(")
+            .count(),
+        3,
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches("phpc_NativeDiagnosticHandle string_distance_diagnostic_")
+            .count(),
+        3,
+        "{source}"
+    );
+    assert!(
+        source.contains(", 0, &string_distance_diagnostic_")
+            && source.contains(", 1, &string_distance_diagnostic_"),
+        "levenshtein and similar_text should share the tagged string-distance ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_from_scalar")
+            && source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+        "scalar and string operands should both enter the native value boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("strlen((const char *)"),
+        "string-distance builtins should use PHP value-to-string byte conversion:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_comparison_families_through_runtime_contract() {
     let program = parse(
         r#"<?php
@@ -482,6 +524,56 @@ fn emit_exe_links_and_runs_string_int_operation_program() {
         String::from_utf8_lossy(&run.stdout),
         "65\n52\n3421780262\n382410329\n0\n"
     );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_string_distance_operation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("string_distance_operation");
+    let source_path = native_link_output_path("string_distance_operation_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(
+        &source_path,
+        "<?php\n$left = \"kitten\";\n$right = \"sitting\";\n$insert = 1;\n$replace = 2;\n$delete = 1;\necho levenshtein($left, $right);\necho \"\\n\";\necho levenshtein(\"A\0B\", \"A\0C\", $insert, $replace, $delete);\necho \"\\n\";\necho similar_text(42042, 42);\necho \"\\n\";\n",
+    )
+    .expect("native string-distance source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native string-distance source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "3\n2\n2\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&output_path);
