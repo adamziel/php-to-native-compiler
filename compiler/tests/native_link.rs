@@ -19,6 +19,51 @@ fn native_executable_c_source_routes_direct_strings_through_runtime_helpers() {
 }
 
 #[test]
+fn native_executable_c_source_routes_comparison_families_through_runtime_contract() {
+    let program = parse(
+        r#"<?php
+echo 1 == "1", "\n";
+echo 1 != "2", "\n";
+echo 2 < "10", "\n";
+echo 2 <= "2", "\n";
+echo "10" > 2, "\n";
+echo "alpha" >= "alpha", "\n";
+echo 2 === 2, "\n";
+echo 1 !== "1";
+"#,
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(source.contains("phpc_native_value_from_scalar"), "{source}");
+    assert!(source.contains("phpc_native_value_from_string"), "{source}");
+    assert!(
+        source.contains("phpc_native_value_compare_branch_and_free"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_NativeComparisonBranchResult"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_compare_and_free("),
+        "generated C should consume owned comparison values through the branch-returning boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_result_branch_or_report_stderr_and_free"),
+        "generated C should not compose result branch consumption outside the owned branch boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_free(comparison_value_handle_"),
+        "generated C should not open-code owned comparison value-handle cleanup:\n{source}"
+    );
+    assert!(
+        !source.contains("((1) =="),
+        "loose equality should not lower as a C scalar comparison:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_direct_string_runtime_helper_program() {
     if !has_cc() {
         return;
@@ -75,6 +120,132 @@ fn emit_exe_links_and_runs_direct_string_runtime_helper_program() {
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_comparison_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php = native_link_output_path("runtime_comparison").with_extension("php");
+    fs::write(
+        &temp_php,
+        r#"<?php
+echo 1 == "1", "\n";
+echo 1 != "2", "\n";
+echo 2 < "10", "\n";
+echo 2 <= "2", "\n";
+echo "10" > 2, "\n";
+echo "alpha" >= "alpha", "\n";
+echo 2 === 2, "\n";
+echo null == false, "\n";
+echo 1 !== "1";
+"#,
+    )
+    .expect("write temporary comparison source");
+    let output_path = native_link_output_path("runtime_comparison");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native comparison executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native comparison executable: {error}"));
+
+    assert!(run.status.success(), "native comparison executable failed");
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "1\n1\n1\n1\n1\n1\n1\n1\n1"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn emit_exe_uses_runtime_comparison_results_as_branch_conditions() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php = native_link_output_path("runtime_comparison_branch").with_extension("php");
+    fs::write(
+        &temp_php,
+        r#"<?php
+echo ("10" > 2) ? 1 : 0, "\n";
+echo (1 != "2") ? 1 : 0, "\n";
+echo (2 < "10") ? 1 : 0, "\n";
+echo (2 <= "2") ? 1 : 0, "\n";
+echo ("alpha" >= "alpha") ? 1 : 0, "\n";
+echo (null == false) ? 1 : 0, "\n";
+echo (1 !== "1") ? 1 : 0, "\n";
+echo (2 === 2) ? 1 : 0;
+"#,
+    )
+    .expect("write temporary comparison branch source");
+    let output_path = native_link_output_path("runtime_comparison_branch");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native comparison branch executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native comparison branch executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "native comparison branch executable failed"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "1\n1\n1\n1\n1\n1\n1\n1"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
 }
 
 fn has_cc() -> bool {

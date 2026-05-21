@@ -578,6 +578,11 @@ pub extern "C" fn phpc_native_float(value: f64) -> NativeScalarValue {
 }
 
 #[no_mangle]
+pub extern "C" fn phpc_native_value_from_scalar(value: NativeScalarValue) -> NativeValueHandle {
+    NativeValueHandle::from_value(value.to_value())
+}
+
+#[no_mangle]
 pub extern "C" fn phpc_native_array_null() -> NativeArrayHandle {
     NativeArrayHandle::null()
 }
@@ -1068,6 +1073,22 @@ pub unsafe extern "C" fn phpc_native_value_compare_and_free(
         unsafe { phpc_native_value_free(right) };
     }
     result
+}
+
+/// # Safety
+///
+/// `left` and `right` must be null or value handles previously returned by the
+/// runtime ABI and not yet freed. The helper consumes each unique non-null value
+/// handle, reports and frees blocked comparison diagnostics, and returns the
+/// canonical branch status/value pair.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_compare_branch_and_free(
+    left: NativeValueHandle,
+    op: u8,
+    right: NativeValueHandle,
+) -> NativeComparisonBranchResult {
+    let result = unsafe { phpc_native_value_compare_and_free(left, op, right) };
+    unsafe { phpc_native_comparison_result_branch_or_report_stderr_and_free(result) }
 }
 
 /// # Safety
@@ -6924,6 +6945,95 @@ mod tests {
             },
             "array comparisons are not implemented",
         );
+    }
+
+    #[test]
+    fn native_value_compare_branch_and_free_consumes_owned_results_across_families() {
+        for (label, branch, expected) in [
+            (
+                "owned loose ordering branch",
+                unsafe {
+                    phpc_native_value_compare_branch_and_free(
+                        phpc_native_value_from_scalar(phpc_native_int(2)),
+                        NativeComparisonOp::LooseLt as u8,
+                        phpc_native_value_from_scalar(phpc_native_int(10)),
+                    )
+                },
+                true,
+            ),
+            (
+                "owned null/bool equality branch",
+                unsafe {
+                    phpc_native_value_compare_branch_and_free(
+                        phpc_native_value_from_scalar(phpc_native_null()),
+                        NativeComparisonOp::LooseEq as u8,
+                        phpc_native_value_from_scalar(phpc_native_bool(false)),
+                    )
+                },
+                true,
+            ),
+            (
+                "owned strict non-identity branch",
+                unsafe {
+                    phpc_native_value_compare_branch_and_free(
+                        phpc_native_value_from_scalar(phpc_native_bool(true)),
+                        NativeComparisonOp::StrictNe as u8,
+                        phpc_native_value_from_scalar(phpc_native_int(1)),
+                    )
+                },
+                true,
+            ),
+            (
+                "owned aliased handle branch",
+                {
+                    let alias = phpc_native_value_from_scalar(phpc_native_int(7));
+                    unsafe {
+                        phpc_native_value_compare_branch_and_free(
+                            alias,
+                            NativeComparisonOp::StrictEq as u8,
+                            alias,
+                        )
+                    }
+                },
+                true,
+            ),
+        ] {
+            assert_eq!(branch.status(), NativeComparisonStatus::Ok as u8, "{label}");
+            assert_eq!(branch.value(), expected, "{label}");
+            assert_eq!(branch.diagnostic_len(), 0, "{label}");
+        }
+
+        for (label, branch) in [
+            ("owned branch array blocker", unsafe {
+                phpc_native_value_compare_branch_and_free(
+                    NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                    NativeComparisonOp::LooseEq as u8,
+                    phpc_native_value_from_scalar(phpc_native_int(1)),
+                )
+            }),
+            ("owned branch invalid opcode blocker", unsafe {
+                phpc_native_value_compare_branch_and_free(
+                    phpc_native_value_from_scalar(phpc_native_int(1)),
+                    99,
+                    phpc_native_value_from_scalar(phpc_native_int(1)),
+                )
+            }),
+            ("owned branch null-handle blocker", unsafe {
+                phpc_native_value_compare_branch_and_free(
+                    NativeValueHandle::null(),
+                    NativeComparisonOp::LooseEq as u8,
+                    phpc_native_value_from_scalar(phpc_native_int(1)),
+                )
+            }),
+        ] {
+            assert_eq!(
+                branch.status(),
+                NativeComparisonStatus::Blocked as u8,
+                "{label}"
+            );
+            assert!(!branch.value(), "{label}");
+            assert!(branch.diagnostic_len() > 0, "{label}");
+        }
     }
 
     #[test]
