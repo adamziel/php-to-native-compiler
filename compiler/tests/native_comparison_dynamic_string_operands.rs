@@ -42,8 +42,14 @@ fn native_executable_c_source_materializes_known_length_string_expr_comparisons(
         "dynamic string comparison operands should not allocate comparison-only string handles:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_compare_branch_and_free"),
-        "dynamic string comparison operands should feed the owned branch comparison ABI:\n{source}"
+        source.contains("phpc_native_value_compare_and_free")
+            && source.contains("phpc_native_comparison_result_is_true")
+            && source.contains("phpc_native_comparison_result_report_stderr_exit_code_and_free"),
+        "dynamic string comparison operands should feed the owned comparison result ABI and sink:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_compare_branch_and_free"),
+        "dynamic string comparison operands should not use the older branch comparison ABI:\n{source}"
     );
     assert!(
         !source.contains("strcmp("),
@@ -57,20 +63,22 @@ fn native_executable_c_source_materializes_mixed_length_string_expr_comparisons(
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains("#include <string.h>"),
-        "mixed-length string expression comparison operands should declare strlen support:\n{source}"
-    );
-    assert!(
-        source.contains("strlen((const char *)("),
-        "mixed-length string expression comparison operands should compute byte length at the shared materialization boundary:\n{source}"
+        !source.contains("strlen((const char *)("),
+        "mixed-length string expression comparison operands should use tracked byte lengths instead of C string length:\n{source}"
     );
     assert!(
         source.contains("phpc_native_value_from_string_bytes_with_diagnostic((const uint8_t *)("),
         "mixed-length dynamic string comparison operands should materialize through the native bytes-to-value ABI:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_compare_branch_and_free"),
-        "mixed-length dynamic string comparison operands should feed the owned branch comparison ABI:\n{source}"
+        source.contains("phpc_native_value_compare_and_free")
+            && source.contains("phpc_native_comparison_result_is_true")
+            && source.contains("phpc_native_comparison_result_report_stderr_exit_code_and_free"),
+        "mixed-length dynamic string comparison operands should feed the owned comparison result ABI and sink:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_compare_branch_and_free"),
+        "mixed-length dynamic string comparison operands should not use the older branch comparison ABI:\n{source}"
     );
     assert!(
         !source.contains("comparison_string_handle_"),
