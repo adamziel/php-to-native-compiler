@@ -284,6 +284,10 @@ echo 2 < "10", "\n";
 echo 2 <= "2", "\n";
 echo "10" > 2, "\n";
 echo "alpha" >= "alpha", "\n";
+echo "10" < "zeta", "\n";
+echo "8foo" > "2", "\n";
+echo ".5m" < "5.", "\n";
+echo "+foo" < "-word", "\n";
 echo 2 === 2, "\n";
 echo null == false, "\n";
 echo 1 !== "1";
@@ -1015,6 +1019,10 @@ echo 2 < "10", "\n";
 echo 2 <= "2", "\n";
 echo "10" > 2, "\n";
 echo "alpha" >= "alpha", "\n";
+echo "10" < "zeta", "\n";
+echo "8foo" > "2", "\n";
+echo ".5m" < "5.", "\n";
+echo "+foo" < "-word", "\n";
 echo 2 === 2, "\n";
 echo null == false, "\n";
 echo 1 !== "1";
@@ -1052,7 +1060,7 @@ echo 1 !== "1";
     assert!(run.status.success(), "native comparison executable failed");
     assert_eq!(
         String::from_utf8_lossy(&run.stdout),
-        "1\n1\n1\n1\n1\n1\n1\n1\n1"
+        "1\n1\n1\n1\n1\n1\n1\n1\n1\n1\n1\n1\n1"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 

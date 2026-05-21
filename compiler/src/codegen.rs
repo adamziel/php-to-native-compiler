@@ -11442,6 +11442,43 @@ mod tests {
         assert_eq!(known_string_truthiness(&mixed_values), None);
     }
 
+    #[test]
+    fn generated_c_string_comparison_safety_uses_shared_pair_classifier() {
+        let binary_program = crate::parse(
+            r#"<?php
+$sum = 1 + 2;
+$flag = $sum === 3;
+$left = $flag ? "10" : "8foo";
+$right = $flag ? "zeta" : "+foo";
+
+echo $left < $right, "\n";
+echo ".name" != "-word", "\n";
+echo " 10" < "zeta";
+"#,
+        )
+        .expect("parse binary string comparison source");
+        let c_source = emit_c_source_for_assembly(&binary_program)
+            .expect("known binary string comparison pairs should lower through C fallback");
+
+        assert!(
+            c_source.contains("strcmp("),
+            "numeric-vs-nonnumeric, leading-numeric, and sign/dot-prefixed nonnumeric pairs should lower through generated-C binary string comparison:\n{c_source}"
+        );
+
+        for source in [
+            "<?php\necho \"10\" < \"2\";\n",
+            "<?php\necho \" 10\" < \"2\";\n",
+            "<?php\necho \"-2\" < \".5\";\n",
+            "<?php\necho \".5\" < \"5.\";\n",
+        ] {
+            let program = crate::parse(source).expect("parse numeric string comparison source");
+            let error = emit_c_source_for_assembly(&program).unwrap_err();
+
+            assert_eq!(error.phase, Phase::Codegen);
+            assert_eq!(error.message, assembly_comparison_rejection());
+        }
+    }
+
     fn test_param(by_reference: bool, is_variadic: bool) -> FunctionParam {
         FunctionParam {
             name: "value".to_string(),
