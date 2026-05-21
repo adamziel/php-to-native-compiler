@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 17:20 CEST
+Updated: 2026-05-21 17:35 CEST
 Evaluation marker: 20260521T143958Z
 Final refresh: 20260521T151050Z
 
@@ -24,8 +24,9 @@ Broad integrated verification            [###-----------------] 13%
 
 - Latest pushed primary commit observed before this update: `0e8c0291 native: route string predicates through conversion`.
 - Latest integrated semantic compiler/runtime commit: `0e8c0291 native: route string predicates through conversion`.
-- Product-code state at progress refresh: clean and synced with `origin/master`; only this `PROGRESS.md` update is dirty for the wrapper to commit.
+- Product-code state at progress refresh: `master` is still at `origin/master`, with pre-existing local product-code dirt in `compiler/src/codegen.rs`, `compiler/tests/native_link.rs`, and `runtime/src/lib.rs`; this `PROGRESS.md` update is being handled separately.
 - Latest integrated read: generated-C `str_starts_with()`, `str_ends_with()`, and `str_contains()` for lowerable operands now consume native value materialization plus the runtime value-to-string predicate boundary, including embedded-NUL strings and scalar conversion. The prior generated-C `strlen()` value-to-string conversion consumer from `dea6899d` remains integrated.
+- Latest pushed integration-lane candidate: `4b7da81c native: consume array key materialization in generated C` on `lane/native-integration-batch`. It is not primary capability until merged, but it gates a generated-C/native-executable consumer of the shared array-key materialization ABI with executable coverage for variable string, integer, numeric-string, null, and embedded-NUL binary string keys.
 
 ## Grand Roadmap Position
 
@@ -62,7 +63,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 | String conversion, truthiness, and byte-buffer results | 38% | 60% | Primary has string-conversion result/free ABI, generated-C `strlen()` consuming runtime value-to-string byte lengths, generated-C `str_starts_with()`/`str_ends_with()`/`str_contains()` consuming a shared value-to-string predicate ABI for lowerable values, comparison byte materialization, runtime-shared string truthiness, generated-C tracked dynamic string lengths, and runtime numeric-string classification. Lanes have broader binary-safe string-result, debug-output, regex, concat/interpolation, and array-transform consumers. Exact diagnostics and full backend parity remain limited. |
 | Call operation cleanup and ownership | 37% | 55% | Primary routes many call-result contexts through shared blockers across LLVM IR and generated C, including value operands in unary/binary/comparison/concat families and skipped later `echo` operands. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
 | Comparison/conversion semantics | 38% | 56% | Primary has comparison ABI consumers, runtime comparison operation/value-family sharing for loose equality/order and strict identity, shared arithmetic-number operand conversion for `+`, `-`, `*`, and `/`, canonical branch-result predicates/exit-code consumers, centralized comparison operand materialization failure handling, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness. Lane conversion-source/pair work is promising but still candidate material. |
-| Arrays, lvalues, references, COW | 12% | 47% | Lane-local generated-C owner-slot/value-root/RMW/reference-cell work is strong, especially undefined/null/false value-root routing, but primary still lacks full executable array lvalue, foreach, reference/COW, and ArrayAccess behavior. |
+| Arrays, lvalues, references, COW | 12% | 50% | Lane-local generated-C owner-slot/value-root/RMW/reference-cell work is strong, especially undefined/null/false value-root routing. `lane/native-integration-batch` now has a pushed candidate that consumes the shared array-key materialization ABI from generated C for keyed literal writes, keyed assignments, and indexed echo reads, with linked executable coverage for variable, integer, numeric-string, null, and binary string keys. Primary still lacks full executable array lvalue, foreach, reference/COW, and ArrayAccess behavior. |
 | Symbols, globals, request state | 21% | 41% | Primary has symbol-table ABI helpers; lanes have expression-result consumers, frame-slot plans, request-state contracts, and stored call-result symbol boundaries. Full request/global/superglobal behavior and exact diagnostics remain early. |
 | Objects, properties, methods | 10% | 35% | Lane-local object/property receiver and operation blockers are more coherent, but primary has little broad executable object/property/method behavior beyond bounded blocker and seed paths. |
 | Diagnostics and control-flow cleanup | 17% | 40% | Severity tags and selected blockers are integrated; request diagnostics, diagnostic-result producers/sinks, structured CFG, and termination cleanup lanes are active. Exact warning/recovery order and executable cleanup remain broad blockers. |
@@ -99,6 +100,7 @@ Recent pushed primary commits show useful movement from lane-local artifacts int
 
 Lane-local workers are producing candidate work in these areas:
 
+- pushed integration-batch candidate `4b7da81c` routing generated-C keyed array writes and reads through shared runtime array-key materialization;
 - additional statement-list and declaration-initializer call-boundary routing;
 - generated-C array value-root, undefined-root, unset/read/probe/foreach, and owner-slot routing;
 - array RMW operation contracts and assignment-expression lvalue contracts;
