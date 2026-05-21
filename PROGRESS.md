@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 17:35 CEST
+Updated: 2026-05-21 17:36 CEST
 Evaluation marker: 20260521T143958Z
 Final refresh: 20260521T151050Z
 
@@ -8,12 +8,12 @@ This is a high-level roadmap for a supervisor who needs the current momentum qui
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **20%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **21%**
 
 ```
 Generalized runtime/ABI foundations      [############--------] 60%
-Compiler/backend consumers               [##########----------] 50%
-Executable generalized PHP semantics     [####----------------] 21%
+Compiler/backend consumers               [##########----------] 51%
+Executable generalized PHP semantics     [####----------------] 22%
 Arrays, references, COW, lvalues         [##------------------] 12%
 Objects, properties, methods             [##------------------] 10%
 Diagnostics/control-flow composition     [###-----------------] 17%
@@ -22,10 +22,10 @@ Broad integrated verification            [###-----------------] 13%
 
 ## Current Primary State
 
-- Latest pushed primary commit observed before this update: `0e8c0291 native: route string predicates through conversion`.
-- Latest integrated semantic compiler/runtime commit: `0e8c0291 native: route string predicates through conversion`.
-- Product-code state at progress refresh: `master` is still at `origin/master`, with pre-existing local product-code dirt in `compiler/src/codegen.rs`, `compiler/tests/native_link.rs`, and `runtime/src/lib.rs`; this `PROGRESS.md` update is being handled separately.
-- Latest integrated read: generated-C `str_starts_with()`, `str_ends_with()`, and `str_contains()` for lowerable operands now consume native value materialization plus the runtime value-to-string predicate boundary, including embedded-NUL strings and scalar conversion. The prior generated-C `strlen()` value-to-string conversion consumer from `dea6899d` remains integrated.
+- Latest pushed primary commit observed before this update: `851d540f native: route string-int builtins through conversion`.
+- Latest integrated semantic compiler/runtime commit: `851d540f native: route string-int builtins through conversion`.
+- Product-code state at progress refresh: `master` is at `origin/master`; this `PROGRESS.md` update is being handled separately from the pushed code/test slice.
+- Latest integrated read: generated-C `ord()` and `crc32()` for lowerable operands now consume native value materialization plus a runtime string-int operation ABI over PHP value-to-string bytes, with executable coverage for embedded-NUL strings, scalar conversion, null conversion, and CRC32 integer results. The prior generated-C `strlen()` and string-predicate value-to-string consumers remain integrated.
 - Latest pushed integration-lane candidate: `4b7da81c native: consume array key materialization in generated C` on `lane/native-integration-batch`. It is not primary capability until merged, but it gates a generated-C/native-executable consumer of the shared array-key materialization ABI with executable coverage for variable string, integer, numeric-string, null, and embedded-NUL binary string keys.
 
 ## Grand Roadmap Position
@@ -46,6 +46,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 - [x] Share runtime arithmetic-number operand conversion across `+`, `-`, `*`, and `/` consumers.
 - [x] Route generated-C `strlen()` over lowerable values through the runtime string conversion result ABI.
 - [x] Route generated-C string predicate builtins over lowerable values through the runtime value-to-string predicate ABI.
+- [x] Route generated-C string-int builtins over lowerable values through the runtime value-to-string integer ABI.
 - [x] Reuse runtime PHP string truthiness semantics in runtime values plus LLVM/generated-C known-string consumers.
 - [x] Track generated-C dynamic string byte lengths so mixed-length and embedded-NUL comparison operands can consume the runtime comparison ABI.
 - [ ] Replace selected shared blockers with real generalized execution for one semantic family at a time.
@@ -60,7 +61,7 @@ The project is moving from scattered backend rejection paths toward shared seman
 
 | Active item | Primary-integrated estimate | Lane-local candidate maturity | Current read |
 | --- | ---: | ---: | --- |
-| String conversion, truthiness, and byte-buffer results | 38% | 60% | Primary has string-conversion result/free ABI, generated-C `strlen()` consuming runtime value-to-string byte lengths, generated-C `str_starts_with()`/`str_ends_with()`/`str_contains()` consuming a shared value-to-string predicate ABI for lowerable values, comparison byte materialization, runtime-shared string truthiness, generated-C tracked dynamic string lengths, and runtime numeric-string classification. Lanes have broader binary-safe string-result, debug-output, regex, concat/interpolation, and array-transform consumers. Exact diagnostics and full backend parity remain limited. |
+| String conversion, truthiness, and byte-buffer results | 41% | 60% | Primary has string-conversion result/free ABI, generated-C `strlen()` consuming runtime value-to-string byte lengths, generated-C `str_starts_with()`/`str_ends_with()`/`str_contains()` consuming a shared value-to-string predicate ABI for lowerable values, generated-C `ord()`/`crc32()` consuming a shared string-int ABI, comparison byte materialization, runtime-shared string truthiness, generated-C tracked dynamic string lengths, and runtime numeric-string classification. Lanes have broader binary-safe string-result, debug-output, regex, concat/interpolation, and array-transform consumers. Exact diagnostics, non-UTF-8 string storage, and full backend parity remain limited. |
 | Call operation cleanup and ownership | 37% | 55% | Primary routes many call-result contexts through shared blockers across LLVM IR and generated C, including value operands in unary/binary/comparison/concat families and skipped later `echo` operands. Actual frames, binding, by-ref args/returns, variadics, callbacks, dynamic dispatch, and return ownership remain mostly non-executable. |
 | Comparison/conversion semantics | 38% | 56% | Primary has comparison ABI consumers, runtime comparison operation/value-family sharing for loose equality/order and strict identity, shared arithmetic-number operand conversion for `+`, `-`, `*`, and `/`, canonical branch-result predicates/exit-code consumers, centralized comparison operand materialization failure handling, runtime numeric-string reuse, generated-C string-byte comparison operands with tracked dynamic lengths, and shared string truthiness. Lane conversion-source/pair work is promising but still candidate material. |
 | Arrays, lvalues, references, COW | 12% | 50% | Lane-local generated-C owner-slot/value-root/RMW/reference-cell work is strong, especially undefined/null/false value-root routing. `lane/native-integration-batch` now has a pushed candidate that consumes the shared array-key materialization ABI from generated C for keyed literal writes, keyed assignments, and indexed echo reads, with linked executable coverage for variable, integer, numeric-string, null, and binary string keys. Primary still lacks full executable array lvalue, foreach, reference/COW, and ArrayAccess behavior. |
@@ -73,6 +74,8 @@ The project is moving from scattered backend rejection paths toward shared seman
 
 Recent pushed primary commits show useful movement from lane-local artifacts into `master`:
 
+- `851d540f native: route string-int builtins through conversion`
+  - Routes generated-C `ord()` and `crc32()` for lowerable operands through native value materialization plus a runtime string-int operation ABI over PHP value-to-string bytes, with runtime/source/linked executable coverage for embedded-NUL strings, scalar conversion, null conversion, diagnostics, and CRC32 results.
 - `0e8c0291 native: route string predicates through conversion`
   - Routes generated-C `str_starts_with()`, `str_ends_with()`, and `str_contains()` for lowerable operands through native value materialization plus a runtime value-to-string predicate ABI, with executable coverage for embedded-NUL strings, scalar conversion, empty needles, and false results.
 - `dea6899d native: route strlen through string conversion`
