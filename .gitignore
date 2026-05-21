@@ -1,0 +1,5 @@
+.pages-updater/logs/
+.pages-updater/tmp/
+.pages-updater/updater.lock
+.pages-updater/updater.pid
+.pages-updater/last-status
