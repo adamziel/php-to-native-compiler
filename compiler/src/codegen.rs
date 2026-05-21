@@ -7,7 +7,7 @@ use crate::ast::{
     ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
-use php_runtime::{is_php_numeric_string, NativeComparisonOp};
+use php_runtime::{is_php_numeric_string, is_php_truthy_string, NativeComparisonOp};
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
 const MAX_KNOWN_FLOAT_VALUES: usize = 4;
@@ -4428,7 +4428,7 @@ impl LlvmGenerator {
             IrValue::BoolExpr(_) => None,
             IrValue::Int(value) => known_integer_truthiness(&self.known_integer_values(value)),
             IrValue::Float(value) => known_float_truthiness(&self.known_float_values(value)),
-            IrValue::String(value) => Some(php_string_truthy(value)),
+            IrValue::String(value) => Some(is_php_truthy_string(value)),
             IrValue::StringPtr(value) => self
                 .known_string_values(value)
                 .and_then(|values| known_string_truthiness(&values)),
@@ -4562,7 +4562,7 @@ impl LlvmGenerator {
                 Err(self.unsupported(span, LLVM_CONDITIONAL_REJECTION))
             }
             IrValue::String(value) => {
-                if php_string_truthy(&value) {
+                if is_php_truthy_string(&value) {
                     Ok(if_true)
                 } else {
                     Ok(if_false)
@@ -4658,7 +4658,7 @@ impl LlvmGenerator {
                 }
             }
             IrValue::String(value) => {
-                if php_string_truthy(&value) {
+                if is_php_truthy_string(&value) {
                     Ok(IrValue::String(value))
                 } else {
                     self.emit_expr(if_false)
@@ -4932,7 +4932,7 @@ impl LlvmGenerator {
                 };
                 Ok(IrValue::Bool(!truthy))
             }
-            IrValue::String(value) => Ok(IrValue::Bool(!php_string_truthy(&value))),
+            IrValue::String(value) => Ok(IrValue::Bool(!is_php_truthy_string(&value))),
             IrValue::StringPtr(value) => {
                 let Some(values) = self.known_string_values(&value) else {
                     return Err(self.unsupported(span, LLVM_UNARY_REJECTION));
@@ -7925,7 +7925,7 @@ impl CGenerator {
             CValue::BoolExpr(_) => None,
             CValue::Int(value) => known_integer_truthiness(&self.known_integer_values(value)),
             CValue::Float(value) => known_float_truthiness(&self.known_float_values(value)),
-            CValue::String(value) => Some(php_string_truthy(value)),
+            CValue::String(value) => Some(is_php_truthy_string(value)),
             CValue::StringExpr(value) => self
                 .known_string_values(value)
                 .and_then(|values| known_string_truthiness(&values)),
@@ -8050,7 +8050,7 @@ impl CGenerator {
                 Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION))
             }
             CValue::String(value) => {
-                if php_string_truthy(&value) {
+                if is_php_truthy_string(&value) {
                     Ok(if_true)
                 } else {
                     Ok(if_false)
@@ -8146,7 +8146,7 @@ impl CGenerator {
                 }
             }
             CValue::String(value) => {
-                if php_string_truthy(&value) {
+                if is_php_truthy_string(&value) {
                     Ok(CValue::String(value))
                 } else {
                     self.emit_expr(if_false)
@@ -8389,7 +8389,7 @@ impl CGenerator {
                 };
                 Ok(CValue::Bool(!truthy))
             }
-            CValue::String(value) => Ok(CValue::Bool(!php_string_truthy(&value))),
+            CValue::String(value) => Ok(CValue::Bool(!is_php_truthy_string(&value))),
             CValue::StringExpr(value) => {
                 let Some(values) = self.known_string_values(&value) else {
                     return Err(self.unsupported(span, ASSEMBLY_UNARY_REJECTION));
@@ -8970,10 +8970,6 @@ fn c_string_operand(value: CValue) -> String {
     }
 }
 
-fn php_string_truthy(value: &str) -> bool {
-    !value.is_empty() && value != "0"
-}
-
 fn logical_truthiness_result(left: bool, op: BinaryOp, right: bool) -> CompileResult<bool> {
     Ok(match op {
         BinaryOp::LogicalAnd => left && right,
@@ -8997,7 +8993,12 @@ fn known_float_truthiness(values: &Option<KnownFloat>) -> Option<bool> {
 }
 
 fn known_string_truthiness(values: &KnownString) -> Option<bool> {
-    known_truthiness(values.values().iter().map(|value| php_string_truthy(value)))
+    known_truthiness(
+        values
+            .values()
+            .iter()
+            .map(|value| is_php_truthy_string(value)),
+    )
 }
 
 fn known_truthiness(values: impl IntoIterator<Item = bool>) -> Option<bool> {
@@ -9715,6 +9716,35 @@ mod tests {
 
     fn test_span() -> Span {
         Span::new(1, 1)
+    }
+
+    #[test]
+    fn known_string_truthiness_reuses_runtime_semantics_across_value_families() {
+        for value in ["", "0", "00", "0.0", " ", "false"] {
+            let known = KnownString::one(value.to_string());
+            assert_eq!(
+                known_string_truthiness(&known),
+                Some(is_php_truthy_string(value)),
+                "single known string truthiness for {value:?}",
+            );
+        }
+
+        let falsey_values =
+            KnownString::from_values(["".to_string(), "0".to_string()]).expect("known strings");
+        assert_eq!(known_string_truthiness(&falsey_values), Some(false));
+
+        let truthy_values = KnownString::from_values([
+            "00".to_string(),
+            "0.0".to_string(),
+            " ".to_string(),
+            "false".to_string(),
+        ])
+        .expect("known strings");
+        assert_eq!(known_string_truthiness(&truthy_values), Some(true));
+
+        let mixed_values =
+            KnownString::from_values(["0".to_string(), "00".to_string()]).expect("known strings");
+        assert_eq!(known_string_truthiness(&mixed_values), None);
     }
 
     fn test_param(by_reference: bool, is_variadic: bool) -> FunctionParam {

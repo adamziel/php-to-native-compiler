@@ -6126,7 +6126,7 @@ impl Value {
             Value::Bool(value) => *value,
             Value::Int(value) => *value != 0,
             Value::Float(value) => *value != 0.0,
-            Value::String(value) => !value.is_empty() && value != "0",
+            Value::String(value) => is_php_truthy_string(value),
             Value::Array(value) => !value.is_empty(),
             Value::Object(_) => true,
             Value::Closure(_) => true,
@@ -6777,6 +6777,10 @@ fn parse_numeric_string(value: &str) -> Option<Number> {
 pub fn is_php_numeric_string(value: &str) -> bool {
     let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
     !trimmed.is_empty() && is_well_formed_numeric_string(trimmed)
+}
+
+pub fn is_php_truthy_string(value: &str) -> bool {
+    !value.is_empty() && value != "0"
 }
 
 fn is_well_formed_numeric_string(value: &str) -> bool {
@@ -8280,6 +8284,29 @@ mod tests {
         assert!(!Value::Bool(true).is_numeric());
         assert!(!Value::Null.is_numeric());
         assert!(!Value::Array(PhpArray::new()).is_numeric());
+    }
+
+    #[test]
+    fn string_truthiness_helper_matches_value_truthiness_across_string_families() {
+        for (source, expected) in [
+            ("", false),
+            ("0", false),
+            ("00", true),
+            ("0.0", true),
+            (" ", true),
+            ("false", true),
+        ] {
+            assert_eq!(
+                is_php_truthy_string(source),
+                expected,
+                "public string truthiness helper for {source:?}",
+            );
+            assert_eq!(
+                Value::String(source.to_string()).is_truthy(),
+                expected,
+                "Value::is_truthy string consumer for {source:?}",
+            );
+        }
     }
 
     #[test]
