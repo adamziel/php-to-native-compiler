@@ -535,11 +535,13 @@ fn native_statement_operand_call_operation(stmt: &Stmt) -> Option<NativeCallOper
             .iter()
             .filter_map(|declaration| declaration.default.as_ref())
             .find_map(native_statement_operand_call_result_operation),
+        Stmt::ReferenceAssign { target, source, .. } => {
+            native_reference_assignment_call_operation(target, source)
+        }
         Stmt::Namespace { .. }
         | Stmt::Use { .. }
         | Stmt::Echo { .. }
         | Stmt::Print { .. }
-        | Stmt::ReferenceAssign { .. }
         | Stmt::Expr { .. }
         | Stmt::Goto { .. }
         | Stmt::Label { .. }
@@ -798,6 +800,14 @@ fn native_assign_target_contains_call_result(target: &AssignTarget) -> bool {
 fn native_reference_source_call_operation(source: &ReferenceSource) -> Option<NativeCallOperation> {
     native_reference_source_call_result_operation(source)
         .or_else(|| native_reference_source_lvalue_operand_call_operation(source))
+}
+
+fn native_reference_assignment_call_operation(
+    target: &AssignTarget,
+    source: &ReferenceSource,
+) -> Option<NativeCallOperation> {
+    native_assignment_target_call_operation(target)
+        .or_else(|| native_reference_source_call_operation(source))
 }
 
 fn native_reference_source_call_result_operation(
@@ -2196,8 +2206,13 @@ impl LlvmGenerator {
                 Ok(())
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
-            Stmt::ReferenceAssign { source, span, .. } => {
-                if let Some(operation) = native_reference_source_call_operation(source) {
+            Stmt::ReferenceAssign {
+                target,
+                source,
+                span,
+            } => {
+                if let Some(operation) = native_reference_assignment_call_operation(target, source)
+                {
                     return Err(self.unsupported_call_operation(operation));
                 }
 
@@ -5540,8 +5555,13 @@ impl CGenerator {
                 Ok(())
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
-            Stmt::ReferenceAssign { source, span, .. } => {
-                if let Some(operation) = native_reference_source_call_operation(source) {
+            Stmt::ReferenceAssign {
+                target,
+                source,
+                span,
+            } => {
+                if let Some(operation) = native_reference_assignment_call_operation(target, source)
+                {
                     return Err(self.unsupported_call_operation(operation));
                 }
 
@@ -10004,6 +10024,117 @@ mod tests {
                 span,
             }),
             None
+        );
+    }
+
+    #[test]
+    fn native_reference_assignment_call_operation_classifies_target_lvalue_cleanup() {
+        let span = test_span();
+        let source = ReferenceSource::Variable {
+            name: "value".to_string(),
+            span,
+        };
+
+        for (target, operation) in [
+            (
+                AssignTarget::ArrayIndex {
+                    name: "items".to_string(),
+                    index: Some(Expr::Call {
+                        name: "key_name".to_string(),
+                        args: vec![Expr::String("id".to_string(), span)],
+                        span,
+                    }),
+                    span,
+                },
+                NativeCallOperation::direct_named_value(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                AssignTarget::DynamicObjectPropertyArrayIndex {
+                    object: "box".to_string(),
+                    property: Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("property_name")),
+                        args: vec![Expr::Bool(true, span)],
+                        span,
+                    },
+                    indices: vec![Expr::Int(0, span)],
+                    span,
+                },
+                NativeCallOperation::dynamic_value_with_blocker(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                AssignTarget::DynamicProperty {
+                    object: "box".to_string(),
+                    property: Expr::MethodCall {
+                        target: Box::new(test_variable_expr("names")),
+                        method: "current".to_string(),
+                        args: vec![Expr::Int(2, span)],
+                        span,
+                    },
+                    span,
+                },
+                NativeCallOperation::method_value_with_blocker(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                AssignTarget::NestedArrayIndex {
+                    name: "items".to_string(),
+                    indices: vec![Expr::New {
+                        class_name: crate::ast::NewClassName::Named("Key".to_string()),
+                        args: vec![Expr::Int(3, span)],
+                        span,
+                    }],
+                    span,
+                },
+                NativeCallOperation::constructor_value(
+                    span,
+                    NativeCallBlocker::LvalueOperandEvaluationCleanup,
+                ),
+            ),
+        ] {
+            let stmt = Stmt::ReferenceAssign {
+                target: target.clone(),
+                source: source.clone(),
+                span,
+            };
+
+            assert_eq!(
+                native_reference_assignment_call_operation(&target, &source),
+                Some(operation)
+            );
+            assert_eq!(
+                native_statement_operand_call_operation(&stmt),
+                Some(operation)
+            );
+        }
+
+        let source = ReferenceSource::ArrayIndex {
+            name: "items".to_string(),
+            index: Expr::Call {
+                name: "source_key".to_string(),
+                args: vec![Expr::Int(4, span)],
+                span,
+            },
+            span,
+        };
+        let target = AssignTarget::Variable {
+            name: "alias".to_string(),
+            span,
+        };
+
+        assert_eq!(
+            native_reference_assignment_call_operation(&target, &source),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::LvalueOperandEvaluationCleanup,
+            ))
         );
     }
 

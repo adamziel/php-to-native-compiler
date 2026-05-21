@@ -384,6 +384,61 @@ fn native_executable_c_source_routes_reference_source_lvalue_operand_calls_throu
 }
 
 #[test]
+fn emit_ir_routes_reference_assignment_target_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$items[key_name()] =& $value;\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"key_name\";\n$items[$call()] =& $value;\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$items[$box->key()] =& $value;\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$items[new Key()] =& $value;\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_reference_assignment_target_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$items[key_name()] =& $value;\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"key_name\";\n$items[$call()] =& $value;\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$items[$box->key()] =& $value;\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$items[new Key()] =& $value;\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
 fn emit_ir_routes_value_operand_call_results_through_call_boundary() {
     for (source, expected) in [
         (
