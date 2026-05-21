@@ -10332,8 +10332,18 @@ impl CGenerator {
 
     fn emit_echo(&mut self, value: CValue, span: Span) -> CompileResult<()> {
         match value {
+            CValue::Null if self.uses_native_string_helpers => {
+                self.emit_native_scalar_helper_echo(0, None)
+            }
+            CValue::Bool(value) if self.uses_native_string_helpers => self
+                .emit_native_scalar_helper_echo(1, Some(("bool_value", (value as u8).to_string()))),
             CValue::Null | CValue::Bool(false) => {}
             CValue::Bool(true) => self.emit_c_stdout_printf("printf(\"%s\", \"1\");"),
+            CValue::BoolExpr(value) if self.uses_native_string_helpers => self
+                .emit_native_scalar_helper_echo(
+                    1,
+                    Some(("bool_value", format!("(({value}) ? 1 : 0)"))),
+                ),
             CValue::BoolExpr(value) => {
                 self.emit_c_stdout_printf(format!("if ({value}) {{ printf(\"%s\", \"1\"); }}"))
             }
@@ -10341,7 +10351,13 @@ impl CGenerator {
                 "if ({}) {{ printf(\"%s\", \"1\"); }}",
                 c_comparison_decision_bool_expr(&decision)
             )),
+            CValue::Int(value) if self.uses_native_string_helpers => {
+                self.emit_native_scalar_helper_echo(2, Some(("int_value", value)))
+            }
             CValue::Int(value) => self.emit_c_stdout_printf(format!("printf(\"%lld\", {value});")),
+            CValue::Float(value) if self.uses_native_string_helpers => {
+                self.emit_native_scalar_helper_echo(3, Some(("float_value", value)))
+            }
             CValue::Float(value) => self.emit_c_stdout_printf(format!("printf(\"%g\", {value});")),
             CValue::String(value) => {
                 if self.uses_native_string_helpers {
@@ -10364,6 +10380,24 @@ impl CGenerator {
             CValue::ArrayHandle(_) => return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
         }
         Ok(())
+    }
+
+    fn emit_native_scalar_helper_echo(&mut self, tag: u8, payload: Option<(&str, String)>) {
+        let index = self.next_static_data;
+        self.next_static_data += 1;
+        self.body
+            .push(format!("phpc_NativeScalarValue scalar_{index} = {{0}};"));
+        self.body.push(format!("scalar_{index}.tag = {tag};"));
+        if let Some((field, value)) = payload {
+            self.body.push(format!("scalar_{index}.{field} = {value};"));
+        }
+        self.body.push(format!(
+            "phpc_NativeValueHandle value_{index} = phpc_native_value_from_scalar(scalar_{index});"
+        ));
+        self.body
+            .push(format!("phpc_native_value_echo_stdout(value_{index});"));
+        self.body
+            .push(format!("phpc_native_value_free(value_{index});"));
     }
 
     fn emit_c_stdout_printf(&mut self, line: impl Into<String>) {

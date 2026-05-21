@@ -5,17 +5,93 @@ use std::process::Command;
 use php_compiler::{codegen::emit_native_executable_c_source, parse};
 
 #[test]
-fn native_executable_c_source_routes_direct_strings_through_runtime_helpers() {
-    let program = parse("<?php\necho \"native link\\n\";\n").unwrap();
+fn native_executable_c_source_routes_direct_strings_and_scalars_through_runtime_helpers() {
+    let program = parse(
+        "<?php\necho \"native link\\n\";\nprint \"runtime string\";\necho 42;\nprint true;\necho 1.25;\necho false;\necho null;\n",
+    )
+    .unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(source.contains("phpc_native_string_from_bytes"), "{source}");
+    assert!(source.contains("phpc_native_value_from_scalar"), "{source}");
     assert!(
         source.contains("phpc_native_value_from_string_with_diagnostic"),
         "{source}"
     );
     assert!(source.contains("phpc_native_value_echo_stdout"), "{source}");
+    assert_eq!(
+        source
+            .matches("phpc_native_value_from_scalar(scalar_")
+            .count(),
+        5,
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches("phpc_native_value_echo_stdout(value_")
+            .count(),
+        7,
+        "{source}"
+    );
     assert!(!source.contains("printf(\"%s\", \"native link"), "{source}");
+    assert!(!source.contains("printf(\"%lld\""), "{source}");
+    assert!(!source.contains("printf(\"%g\""), "{source}");
+    assert!(!source.contains("printf(\"%s\", \"1\")"), "{source}");
+}
+
+#[test]
+fn emit_exe_links_and_runs_scalar_runtime_value_echo_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("scalar_runtime_value_echo.php");
+    let output_path = native_link_output_path("scalar_runtime_value_echo");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        "<?php\necho 42;\nprint true;\necho 1.5;\necho false;\necho null;\n",
+    )
+    .expect("write scalar native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native scalar source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"4211.5");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
 }
 
 #[test]

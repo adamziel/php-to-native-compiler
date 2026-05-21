@@ -11160,6 +11160,21 @@ mod tests {
         native_byte_buffer_to_vec_for_test(buffer)
     }
 
+    #[test]
+    fn native_value_from_scalar_feeds_echo_bytes_across_scalar_family() {
+        for (scalar, expected) in [
+            (phpc_native_null(), b"".as_slice()),
+            (phpc_native_bool(false), b"".as_slice()),
+            (phpc_native_bool(true), b"1".as_slice()),
+            (phpc_native_int(-42), b"-42".as_slice()),
+            (phpc_native_float(1.5), b"1.5".as_slice()),
+        ] {
+            let handle = phpc_native_value_from_scalar(scalar);
+            assert_eq!(native_value_echo_bytes_for_test(handle), expected);
+            unsafe { phpc_native_value_free(handle) };
+        }
+    }
+
     fn native_byte_buffer_to_vec_for_test(buffer: NativeByteBuffer) -> Vec<u8> {
         let bytes = if buffer.ptr().is_null() {
             Vec::new()
