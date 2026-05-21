@@ -347,6 +347,14 @@ fn native_call_argument_list_blocker(args: &[Expr]) -> Option<NativeCallBlocker>
         .then_some(NativeCallBlocker::ArgumentEvaluationCleanup)
 }
 
+fn native_direct_call_argument_result_operation(
+    args: &[Expr],
+    span: Span,
+) -> Option<NativeCallOperation> {
+    native_call_argument_list_blocker(args)
+        .map(|blocker| NativeCallOperation::direct_named_value(span, blocker))
+}
+
 fn native_comparison_op_for_binary_op(op: BinaryOp) -> Option<NativeComparisonOp> {
     Some(match op {
         BinaryOp::Eq => NativeComparisonOp::LooseEq,
@@ -2134,6 +2142,10 @@ impl LlvmGenerator {
     }
 
     fn emit_strlen_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         if args.len() != 1 {
             return Err(
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
@@ -2149,6 +2161,10 @@ impl LlvmGenerator {
     }
 
     fn emit_function_exists_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         if args.len() != 1 {
             return Err(
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
@@ -2164,6 +2180,10 @@ impl LlvmGenerator {
     }
 
     fn emit_is_callable_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         if !(1..=2).contains(&args.len()) {
             return Err(
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
@@ -2212,6 +2232,10 @@ impl LlvmGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<IrValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         if is_native_metadata_exists_builtin(name) {
             return self.emit_native_metadata_exists_call(args, span);
         }
@@ -5340,6 +5364,10 @@ impl CGenerator {
     }
 
     fn emit_strlen_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         if args.len() != 1 {
             return Err(
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
@@ -5355,6 +5383,10 @@ impl CGenerator {
     }
 
     fn emit_function_exists_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         if args.len() != 1 {
             return Err(
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
@@ -5370,6 +5402,10 @@ impl CGenerator {
     }
 
     fn emit_is_callable_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         if !(1..=2).contains(&args.len()) {
             return Err(
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
@@ -5418,6 +5454,10 @@ impl CGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<CValue> {
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         if is_native_metadata_exists_builtin(name) {
             return self.emit_native_metadata_exists_call(args, span);
         }
@@ -9459,6 +9499,53 @@ mod tests {
         assert_eq!(
             native_call_argument_list_blocker(&[test_closure_expr(Vec::new(), false)]),
             Some(NativeCallBlocker::ArgumentEvaluationCleanup)
+        );
+    }
+
+    #[test]
+    fn native_direct_call_argument_result_operation_reuses_argument_cleanup_boundary() {
+        let span = test_span();
+
+        for args in [
+            vec![Expr::Call {
+                name: "produce".to_string(),
+                args: vec![Expr::String("value".to_string(), span)],
+                span,
+            }],
+            vec![Expr::Array {
+                items: vec![ArrayItem {
+                    key: Some(Expr::Int(0, span)),
+                    value: Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("producer")),
+                        args: vec![Expr::Bool(true, span)],
+                        span,
+                    },
+                    by_reference: false,
+                }],
+                span,
+            }],
+            vec![test_closure_expr(vec![test_param(false, true)], false)],
+            vec![Expr::New {
+                class_name: crate::ast::NewClassName::DynamicVariable("class".to_string()),
+                args: vec![Expr::Int(1, span)],
+                span,
+            }],
+        ] {
+            assert_eq!(
+                native_direct_call_argument_result_operation(&args, span),
+                Some(NativeCallOperation::direct_named_value(
+                    span,
+                    NativeCallBlocker::ArgumentEvaluationCleanup,
+                ))
+            );
+        }
+
+        assert_eq!(
+            native_direct_call_argument_result_operation(
+                &[Expr::Int(1, span), Expr::String("plain".to_string(), span)],
+                span,
+            ),
+            None
         );
     }
 

@@ -86,6 +86,58 @@ fn emit_ir_rejects_direct_strlen_unsupported_operands() {
 }
 
 #[test]
+fn emit_ir_routes_supported_direct_call_argument_results_through_call_boundary() {
+    for (source, line, column) in [
+        ("<?php\necho strlen(missing());\n", 2, 6),
+        (
+            "<?php\n$factory = \"strlen\";\necho function_exists($factory());\n",
+            3,
+            6,
+        ),
+        (
+            "<?php\necho is_callable(function () { return \"x\"; });\n",
+            2,
+            6,
+        ),
+        ("<?php\necho class_exists(new Box());\n", 2, 6),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_supported_direct_call_argument_results_through_call_boundary()
+{
+    for (source, line, column) in [
+        ("<?php\necho strlen(missing());\n", 2, 6),
+        (
+            "<?php\n$factory = \"strlen\";\necho function_exists($factory());\n",
+            3,
+            6,
+        ),
+        (
+            "<?php\necho is_callable(function () { return \"x\"; });\n",
+            2,
+            6,
+        ),
+        ("<?php\necho class_exists(new Box());\n", 2, 6),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, ASSEMBLY_FUNCTION_CALL_REJECTION);
+    }
+}
+
+#[test]
 fn emit_ir_rejects_direct_calls_before_lowering_arguments() {
     for source in [
         "<?php\necho label([]);\nfunction label($value) { return $value; }\n",
