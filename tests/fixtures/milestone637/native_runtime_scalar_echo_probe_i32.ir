@@ -5,6 +5,7 @@
 %phpc.NativeStringHandle = type { ptr }
 %phpc.NativeValueHandle = type { ptr }
 %phpc.NativeDiagnosticHandle = type { ptr }
+%phpc.NativeStringConversionResult = type { %phpc.NativeByteBuffer, %phpc.NativeDiagnosticHandle }
 %phpc.NativeArrayHandle = type { ptr }
 %phpc.NativeObjectHandle = type { ptr }
 %phpc.NativeResourceHandle = type { ptr }
@@ -26,9 +27,12 @@ declare %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStrin
 declare void @phpc_native_string_free(%phpc.NativeStringHandle)
 declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)
 declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)
+declare %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle)
 declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)
 declare i32 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)
 declare void @phpc_native_value_free(%phpc.NativeValueHandle)
+declare %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle)
+declare void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult)
 declare i32 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)
 declare %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle)
 declare i32 @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)
@@ -167,6 +171,30 @@ cleanup:
   call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
   call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
   ret i32 %result
+}
+
+define i32 @phpc_probe_value_to_string_conversion_result() {
+entry:
+  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, i32 0, i32 0
+  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, i32 7)
+  %value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)
+  %conversion = call %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle %value)
+  %converted_bytes = extractvalue %phpc.NativeStringConversionResult %conversion, 0
+  %len = extractvalue %phpc.NativeByteBuffer %converted_bytes, 1
+  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %conversion)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
+  ret i32 %len
+}
+
+define i32 @phpc_probe_reference_string_conversion_diagnostic() {
+entry:
+  %reference = call %phpc.NativeReferenceHandle @phpc_native_reference_null()
+  %conversion = call %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle %reference)
+  %diagnostic = extractvalue %phpc.NativeStringConversionResult %conversion, 1
+  %len = call i32 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)
+  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %conversion)
+  ret i32 %len
 }
 
 define i1 @phpc_probe_container_handle_null_shapes() {

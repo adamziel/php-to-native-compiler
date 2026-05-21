@@ -53,6 +53,13 @@ pub struct NativeDiagnosticHandle {
     ptr: *mut NativeDiagnostic,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeStringConversionResult {
+    pub bytes: NativeByteBuffer,
+    pub diagnostic: NativeDiagnosticHandle,
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeDiagnosticSeverity {
@@ -273,6 +280,26 @@ impl NativeDiagnosticHandle {
 
     unsafe fn as_ref(&self) -> Option<&NativeDiagnostic> {
         unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl NativeStringConversionResult {
+    fn success(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes: NativeByteBuffer::from_vec(bytes),
+            diagnostic: NativeDiagnosticHandle::null(),
+        }
+    }
+
+    fn failure(error: RuntimeError) -> Self {
+        Self {
+            bytes: NativeByteBuffer::empty(),
+            diagnostic: NativeDiagnosticHandle::from_message(error.message()),
+        }
+    }
+
+    pub fn is_success(&self) -> bool {
+        self.diagnostic.is_null()
     }
 }
 
@@ -990,6 +1017,46 @@ pub unsafe extern "C" fn phpc_native_value_echo_bytes(
         .unwrap_or_else(NativeByteBuffer::empty)
 }
 
+unsafe fn native_value_to_string_bytes(handle: NativeValueHandle) -> RuntimeResult<Vec<u8>> {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native value string conversion failed: value handle is null",
+        ));
+    };
+
+    value.try_echo_string().map(String::into_bytes)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. The returned result owns either string bytes or a
+/// diagnostic handle; release owned fields with
+/// `phpc_native_string_conversion_result_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_to_string_bytes(
+    handle: NativeValueHandle,
+) -> NativeStringConversionResult {
+    match unsafe { native_value_to_string_bytes(handle) } {
+        Ok(bytes) => NativeStringConversionResult::success(bytes),
+        Err(error) => NativeStringConversionResult::failure(error),
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. Native references must be dereferenced to a
+/// value before crossing the value-to-string boundary.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_reference_to_string_bytes(
+    _handle: NativeReferenceHandle,
+) -> NativeStringConversionResult {
+    NativeStringConversionResult::failure(RuntimeError::invalid_string_conversion(
+        "native reference conversion failed: references must be dereferenced before string conversion",
+    ))
+}
+
 /// # Safety
 ///
 /// `handle` must be null or a value handle previously returned by the runtime
@@ -1380,6 +1447,18 @@ pub unsafe extern "C" fn phpc_native_value_free(handle: NativeValueHandle) {
     }
 
     drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+/// # Safety
+///
+/// `result` must be a result returned by the runtime ABI. This releases any
+/// owned byte buffer or diagnostic handle inside the result.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_string_conversion_result_free(
+    result: NativeStringConversionResult,
+) {
+    unsafe { phpc_native_byte_buffer_free(result.bytes) };
+    unsafe { phpc_native_diagnostic_free(result.diagnostic) };
 }
 
 /// # Safety
@@ -6725,6 +6804,24 @@ mod tests {
         bytes
     }
 
+    fn native_string_conversion_result_for_test(
+        result: NativeStringConversionResult,
+    ) -> Result<Vec<u8>, String> {
+        let converted = if result.is_success() {
+            let bytes = if result.bytes.ptr().is_null() {
+                Vec::new()
+            } else {
+                unsafe { std::slice::from_raw_parts(result.bytes.ptr(), result.bytes.len()) }
+                    .to_vec()
+            };
+            Ok(bytes)
+        } else {
+            Err(native_diagnostic_message_for_test(result.diagnostic))
+        };
+        unsafe { phpc_native_string_conversion_result_free(result) };
+        converted
+    }
+
     fn native_diagnostic_message_for_test(handle: NativeDiagnosticHandle) -> String {
         let buffer = unsafe { phpc_native_diagnostic_message_clone_bytes(handle) };
         let bytes = if buffer.ptr().is_null() {
@@ -7780,6 +7877,63 @@ mod tests {
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
+    }
+
+    #[test]
+    fn native_value_string_conversion_result_covers_value_and_blocker_families() {
+        let mut array = PhpArray::new();
+        array.append(Value::String("slot".to_string())).unwrap();
+        let cases = [
+            (Value::Null, b"".as_slice()),
+            (Value::Bool(false), b""),
+            (Value::Bool(true), b"1"),
+            (Value::Int(-42), b"-42"),
+            (Value::Float(1.5), b"1.5"),
+            (Value::String("php\0value".to_string()), b"php\0value"),
+            (Value::Array(array), b"Array"),
+        ];
+
+        for (value, expected) in cases {
+            let handle = NativeValueHandle::from_value(value);
+            let result = unsafe { phpc_native_value_to_string_bytes(handle) };
+            assert_eq!(
+                native_string_conversion_result_for_test(result).unwrap(),
+                expected
+            );
+            unsafe { phpc_native_value_free(handle) };
+        }
+
+        let null_value_result =
+            unsafe { phpc_native_value_to_string_bytes(NativeValueHandle::null()) };
+        assert_eq!(
+            native_string_conversion_result_for_test(null_value_result).unwrap_err(),
+            "invalid string conversion: native value string conversion failed: value handle is null"
+        );
+
+        let resource = NativeValueHandle::from_value(Value::Resource(7));
+        let resource_result = unsafe { phpc_native_value_to_string_bytes(resource) };
+        assert_eq!(
+            native_string_conversion_result_for_test(resource_result).unwrap_err(),
+            "invalid string conversion: resource cannot be converted to string"
+        );
+        unsafe { phpc_native_value_free(resource) };
+
+        let classes = PhpClassTable::with_core_classes();
+        let class = classes.lookup_class("stdClass").unwrap();
+        let object = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(class)));
+        let object_result = unsafe { phpc_native_value_to_string_bytes(object) };
+        assert_eq!(
+            native_string_conversion_result_for_test(object_result).unwrap_err(),
+            "invalid string conversion: object of class stdClass cannot be converted to string"
+        );
+        unsafe { phpc_native_value_free(object) };
+
+        let reference_result =
+            unsafe { phpc_native_reference_to_string_bytes(phpc_native_reference_null()) };
+        assert_eq!(
+            native_string_conversion_result_for_test(reference_result).unwrap_err(),
+            "invalid string conversion: native reference conversion failed: references must be dereferenced before string conversion"
+        );
     }
 
     #[test]

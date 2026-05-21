@@ -64,6 +64,12 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains(
+            "%phpc.NativeStringConversionResult = type { %phpc.NativeByteBuffer, %phpc.NativeDiagnosticHandle }"
+        ),
+        "{ir}"
+    );
+    assert!(
         ir.contains("%phpc.NativeArrayHandle = type { ptr }"),
         "{ir}"
     );
@@ -119,6 +125,12 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     );
     assert!(
         ir.contains(
+            "declare %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
             "declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)"
         ),
         "{ir}"
@@ -129,6 +141,18 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     );
     assert!(
         ir.contains("declare void @phpc_native_value_free(%phpc.NativeValueHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult)"
+        ),
         "{ir}"
     );
     assert!(
@@ -278,6 +302,14 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("define i64 @phpc_probe_value_to_string_conversion_result()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_reference_string_conversion_diagnostic()"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("define i1 @phpc_probe_container_handle_null_shapes()"),
         "{ir}"
     );
@@ -299,6 +331,22 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     );
     assert!(
         ir.contains("call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "call %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %conversion)"
+        ),
         "{ir}"
     );
     assert!(
@@ -415,6 +463,14 @@ fn scalar_echo_probe_ir_renders_32_bit_usize_helper_signatures() {
         "{ir}"
     );
     assert!(
+        ir.contains("define i32 @phpc_probe_value_to_string_conversion_result()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i32 @phpc_probe_reference_string_conversion_diagnostic()"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("phi i32 [ %diagnostic_len, %report_diagnostic ], [ %written, %echo_value ]"),
         "{ir}"
     );
@@ -500,6 +556,16 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains(
+            "declare %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_value_to_string_conversion_result()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
             "declare i64 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)"
         ),
         "{ir}"
@@ -526,6 +592,16 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i64 @phpc_probe_string_to_value_diagnostic_branch()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_reference_string_conversion_diagnostic()"),
         "{ir}"
     );
     assert!(

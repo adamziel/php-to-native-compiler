@@ -1419,6 +1419,7 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "%phpc.NativeStringHandle = type { ptr }",
         "%phpc.NativeValueHandle = type { ptr }",
         "%phpc.NativeDiagnosticHandle = type { ptr }",
+        "%phpc.NativeStringConversionResult = type { %phpc.NativeByteBuffer, %phpc.NativeDiagnosticHandle }",
         "%phpc.NativeArrayHandle = type { ptr }",
         "%phpc.NativeObjectHandle = type { ptr }",
         "%phpc.NativeResourceHandle = type { ptr }",
@@ -1446,9 +1447,12 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "declare void @phpc_native_string_free(%phpc.NativeStringHandle)",
         "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)",
         "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)",
+        "declare %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle)",
         "declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)",
         &format!("declare {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)"),
         "declare void @phpc_native_value_free(%phpc.NativeValueHandle)",
+        "declare %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle)",
+        "declare void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult)",
         &format!(
             "declare {usize_type} @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)"
         ),
@@ -1639,6 +1643,36 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
         "  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)",
         &format!("  ret {usize_type} %result"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_value_to_string_conversion_result() {{"),
+        "entry:",
+        &format!(
+            "  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, {usize_type} 7)"
+        ),
+        "  %value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)",
+        "  %conversion = call %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle %value)",
+        "  %converted_bytes = extractvalue %phpc.NativeStringConversionResult %conversion, 0",
+        &format!("  %len = extractvalue %phpc.NativeByteBuffer %converted_bytes, 1"),
+        "  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %conversion)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)",
+        &format!("  ret {usize_type} %len"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_reference_string_conversion_diagnostic() {{"),
+        "entry:",
+        "  %reference = call %phpc.NativeReferenceHandle @phpc_native_reference_null()",
+        "  %conversion = call %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle %reference)",
+        "  %diagnostic = extractvalue %phpc.NativeStringConversionResult %conversion, 1",
+        &format!(
+            "  %len = call {usize_type} @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)"
+        ),
+        "  call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult %conversion)",
+        &format!("  ret {usize_type} %len"),
         "}",
         "",
         "define i1 @phpc_probe_container_handle_null_shapes() {",
