@@ -55,6 +55,15 @@ pub struct NativeDiagnosticHandle {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeDiagnosticSeverity {
+    Notice = 1,
+    Warning = 2,
+    Error = 3,
+    Blocker = 4,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeComparisonStatus {
     Ok = 0,
     Blocked = 1,
@@ -132,6 +141,7 @@ struct NativeString {
 
 #[derive(Debug)]
 struct NativeDiagnostic {
+    severity: NativeDiagnosticSeverity,
     message: String,
 }
 
@@ -238,8 +248,20 @@ impl NativeDiagnosticHandle {
     }
 
     fn from_message(message: impl Into<String>) -> Self {
+        Self::from_message_with_severity(NativeDiagnosticSeverity::Error, message)
+    }
+
+    fn from_blocker_message(message: impl Into<String>) -> Self {
+        Self::from_message_with_severity(NativeDiagnosticSeverity::Blocker, message)
+    }
+
+    fn from_message_with_severity(
+        severity: NativeDiagnosticSeverity,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             ptr: Box::into_raw(Box::new(NativeDiagnostic {
+                severity,
                 message: message.into(),
             })),
         }
@@ -251,6 +273,26 @@ impl NativeDiagnosticHandle {
 
     unsafe fn as_ref(&self) -> Option<&NativeDiagnostic> {
         unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl NativeDiagnosticSeverity {
+    pub const fn tag(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn mask(self) -> u32 {
+        1_u32 << ((self as u8) - 1)
+    }
+
+    fn from_abi_tag(tag: u8) -> Option<Self> {
+        match tag {
+            1 => Some(Self::Notice),
+            2 => Some(Self::Warning),
+            3 => Some(Self::Error),
+            4 => Some(Self::Blocker),
+            _ => None,
+        }
     }
 }
 
@@ -297,7 +339,7 @@ impl NativeComparisonResult {
         Self {
             status: NativeComparisonStatus::Blocked as u8,
             value: 0,
-            diagnostic: NativeDiagnosticHandle::from_message(message),
+            diagnostic: NativeDiagnosticHandle::from_blocker_message(message),
         }
     }
 
@@ -1207,6 +1249,68 @@ pub unsafe extern "C" fn phpc_native_diagnostic_message_stderr(
         Ok(()) => diagnostic.message.len(),
         Err(_) => 0,
     }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_count(handle: NativeDiagnosticHandle) -> usize {
+    usize::from(unsafe { handle.as_ref() }.is_some())
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_severity_at(
+    handle: NativeDiagnosticHandle,
+    index: usize,
+) -> u8 {
+    if index != 0 {
+        return 0;
+    }
+
+    unsafe { handle.as_ref() }
+        .map(|diagnostic| diagnostic.severity.tag())
+        .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_contains_severity(
+    handle: NativeDiagnosticHandle,
+    severity_tag: u8,
+) -> bool {
+    let Some(severity) = NativeDiagnosticSeverity::from_abi_tag(severity_tag) else {
+        return false;
+    };
+
+    unsafe { handle.as_ref() }
+        .map(|diagnostic| diagnostic.severity == severity)
+        .unwrap_or(false)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_diagnostic_severity_is_known(severity_tag: u8) -> bool {
+    NativeDiagnosticSeverity::from_abi_tag(severity_tag).is_some()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_diagnostic_severity_mask(severity_tag: u8) -> u32 {
+    NativeDiagnosticSeverity::from_abi_tag(severity_tag)
+        .map(NativeDiagnosticSeverity::mask)
+        .unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_diagnostic_error_control_suppression_mask() -> u32 {
+    NativeDiagnosticSeverity::Notice.mask() | NativeDiagnosticSeverity::Warning.mask()
 }
 
 /// # Safety
@@ -7436,6 +7540,21 @@ mod tests {
             unsafe { phpc_native_diagnostic_message_len(diagnostic) },
             "native value conversion failed: string handle is null".len()
         );
+        assert_eq!(unsafe { phpc_native_diagnostic_count(diagnostic) }, 1);
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
+            NativeDiagnosticSeverity::Error.tag()
+        );
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 1) },
+            0
+        );
+        assert!(unsafe {
+            phpc_native_diagnostic_contains_severity(
+                diagnostic,
+                NativeDiagnosticSeverity::Error.tag(),
+            )
+        });
         let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
         let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
         assert_eq!(
@@ -7454,6 +7573,17 @@ mod tests {
             unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
         assert!(invalid_value.is_null());
         assert!(!diagnostic.is_null());
+        assert_eq!(unsafe { phpc_native_diagnostic_count(diagnostic) }, 1);
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
+            NativeDiagnosticSeverity::Error.tag()
+        );
+        assert!(unsafe {
+            phpc_native_diagnostic_contains_severity(
+                diagnostic,
+                NativeDiagnosticSeverity::Error.tag(),
+            )
+        });
         let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
         let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
         assert_eq!(
@@ -7465,6 +7595,74 @@ mod tests {
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
+    }
+
+    #[test]
+    fn native_diagnostic_severity_contract_spans_conversion_and_blockers() {
+        assert_eq!(NativeDiagnosticSeverity::Notice.tag(), 1);
+        assert_eq!(NativeDiagnosticSeverity::Warning.tag(), 2);
+        assert_eq!(NativeDiagnosticSeverity::Error.tag(), 3);
+        assert_eq!(NativeDiagnosticSeverity::Blocker.tag(), 4);
+
+        assert!(phpc_native_diagnostic_severity_is_known(
+            NativeDiagnosticSeverity::Error.tag()
+        ));
+        assert!(phpc_native_diagnostic_severity_is_known(
+            NativeDiagnosticSeverity::Blocker.tag()
+        ));
+        assert!(!phpc_native_diagnostic_severity_is_known(250));
+        assert_eq!(
+            phpc_native_diagnostic_severity_mask(NativeDiagnosticSeverity::Warning.tag()),
+            1_u32 << 1
+        );
+        assert_eq!(phpc_native_diagnostic_severity_mask(250), 0);
+        assert_eq!(
+            phpc_native_diagnostic_error_control_suppression_mask(),
+            phpc_native_diagnostic_severity_mask(NativeDiagnosticSeverity::Notice.tag())
+                | phpc_native_diagnostic_severity_mask(NativeDiagnosticSeverity::Warning.tag())
+        );
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let conversion = unsafe {
+            phpc_native_value_from_string_with_diagnostic(
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(conversion.is_null());
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
+            NativeDiagnosticSeverity::Error.tag()
+        );
+        assert!(unsafe {
+            phpc_native_diagnostic_contains_severity(
+                diagnostic,
+                NativeDiagnosticSeverity::Error.tag(),
+            )
+        });
+        assert!(!unsafe {
+            phpc_native_diagnostic_contains_severity(
+                diagnostic,
+                NativeDiagnosticSeverity::Blocker.tag(),
+            )
+        });
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(conversion) };
+
+        let comparison = phpc_native_scalar_compare(phpc_native_int(1), 99, phpc_native_int(1));
+        let diagnostic = phpc_native_comparison_result_diagnostic(comparison);
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
+            NativeDiagnosticSeverity::Blocker.tag()
+        );
+        assert!(unsafe {
+            phpc_native_diagnostic_contains_severity(
+                diagnostic,
+                NativeDiagnosticSeverity::Blocker.tag(),
+            )
+        });
+        assert!(!unsafe { phpc_native_diagnostic_contains_severity(diagnostic, 250) });
+        unsafe { phpc_native_comparison_result_free(comparison) };
     }
 
     #[test]
@@ -7487,6 +7685,17 @@ mod tests {
         let diagnostic = NativeDiagnosticHandle::null();
 
         assert_eq!(unsafe { phpc_native_diagnostic_message_len(diagnostic) }, 0);
+        assert_eq!(unsafe { phpc_native_diagnostic_count(diagnostic) }, 0);
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
+            0
+        );
+        assert!(!unsafe {
+            phpc_native_diagnostic_contains_severity(
+                diagnostic,
+                NativeDiagnosticSeverity::Error.tag(),
+            )
+        });
         let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
         assert!(message.ptr().is_null());
         assert_eq!(message.len(), 0);

@@ -150,6 +150,34 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("declare i64 @phpc_native_diagnostic_count(%phpc.NativeDiagnosticHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare i8 @phpc_native_diagnostic_severity_at(%phpc.NativeDiagnosticHandle, i64)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare i1 @phpc_native_diagnostic_contains_severity(%phpc.NativeDiagnosticHandle, i8)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i1 @phpc_native_diagnostic_severity_is_known(i8)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i32 @phpc_native_diagnostic_severity_mask(i8)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i32 @phpc_native_diagnostic_error_control_suppression_mask()"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)"),
         "{ir}"
     );
@@ -286,6 +314,36 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains(
+            "call i64 @phpc_native_diagnostic_count(%phpc.NativeDiagnosticHandle %diagnostic)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "call i8 @phpc_native_diagnostic_severity_at(%phpc.NativeDiagnosticHandle %diagnostic, i64 0)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "call i1 @phpc_native_diagnostic_contains_severity(%phpc.NativeDiagnosticHandle %diagnostic, i8 3)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i1 @phpc_native_diagnostic_severity_is_known(i8 %severity)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i32 @phpc_native_diagnostic_severity_mask(i8 %severity)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i32 @phpc_native_diagnostic_error_control_suppression_mask()"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("br i1 %value_failed, label %report_diagnostic, label %echo_value"),
         "{ir}"
     );
@@ -335,6 +393,16 @@ fn scalar_echo_probe_ir_renders_32_bit_usize_helper_signatures() {
     assert!(
         ir.contains(
             "declare i32 @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i32 @phpc_native_diagnostic_count(%phpc.NativeDiagnosticHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare i8 @phpc_native_diagnostic_severity_at(%phpc.NativeDiagnosticHandle, i32)"
         ),
         "{ir}"
     );
@@ -439,6 +507,16 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
     assert!(
         ir.contains(
             "declare i64 @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i64 @phpc_native_diagnostic_count(%phpc.NativeDiagnosticHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare i8 @phpc_native_diagnostic_severity_at(%phpc.NativeDiagnosticHandle, i64)"
         ),
         "{ir}"
     );

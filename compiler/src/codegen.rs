@@ -1032,6 +1032,14 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         &format!(
             "declare {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)"
         ),
+        &format!("declare {usize_type} @phpc_native_diagnostic_count(%phpc.NativeDiagnosticHandle)"),
+        &format!(
+            "declare i8 @phpc_native_diagnostic_severity_at(%phpc.NativeDiagnosticHandle, {usize_type})"
+        ),
+        "declare i1 @phpc_native_diagnostic_contains_severity(%phpc.NativeDiagnosticHandle, i8)",
+        "declare i1 @phpc_native_diagnostic_severity_is_known(i8)",
+        "declare i32 @phpc_native_diagnostic_severity_mask(i8)",
+        "declare i32 @phpc_native_diagnostic_error_control_suppression_mask()",
         "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)",
         "declare %phpc.NativeArrayHandle @phpc_native_array_null()",
         "declare %phpc.NativeArrayHandle @phpc_native_array_empty()",
@@ -1139,6 +1147,16 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         &format!(
             "  %reported = call {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle %diagnostic)"
         ),
+        &format!(
+            "  %diagnostic_count = call {usize_type} @phpc_native_diagnostic_count(%phpc.NativeDiagnosticHandle %diagnostic)"
+        ),
+        &format!(
+            "  %severity = call i8 @phpc_native_diagnostic_severity_at(%phpc.NativeDiagnosticHandle %diagnostic, {usize_type} 0)"
+        ),
+        "  %has_error = call i1 @phpc_native_diagnostic_contains_severity(%phpc.NativeDiagnosticHandle %diagnostic, i8 3)",
+        "  %severity_known = call i1 @phpc_native_diagnostic_severity_is_known(i8 %severity)",
+        "  %severity_mask = call i32 @phpc_native_diagnostic_severity_mask(i8 %severity)",
+        "  %suppression_mask = call i32 @phpc_native_diagnostic_error_control_suppression_mask()",
         "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %message)",
         "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)",
         "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
@@ -1170,6 +1188,16 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         &format!(
             "  %reported = call {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle %diagnostic)"
         ),
+        &format!(
+            "  %diagnostic_count = call {usize_type} @phpc_native_diagnostic_count(%phpc.NativeDiagnosticHandle %diagnostic)"
+        ),
+        &format!(
+            "  %severity = call i8 @phpc_native_diagnostic_severity_at(%phpc.NativeDiagnosticHandle %diagnostic, {usize_type} 0)"
+        ),
+        "  %has_error = call i1 @phpc_native_diagnostic_contains_severity(%phpc.NativeDiagnosticHandle %diagnostic, i8 3)",
+        "  %severity_known = call i1 @phpc_native_diagnostic_severity_is_known(i8 %severity)",
+        "  %severity_mask = call i32 @phpc_native_diagnostic_severity_mask(i8 %severity)",
+        "  %suppression_mask = call i32 @phpc_native_diagnostic_error_control_suppression_mask()",
         "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %message)",
         "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)",
         "  br label %cleanup",
