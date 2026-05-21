@@ -908,6 +908,148 @@ fn native_executable_c_source_routes_call_operation_blockers_across_call_familie
 }
 
 #[test]
+fn emit_ir_routes_unary_and_binary_operand_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$value = -([] + missing());\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$value = -([] + $call());\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = -([] + $box->work());\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = -([] + new Box());\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\n$value = ([] + missing()) + 1;\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$value = ([] + $call()) + 1;\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = ([] + $box->work()) + 1;\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = ([] + new Box()) + 1;\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_unary_and_binary_operand_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$value = -([] + missing());\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$value = -([] + $call());\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = -([] + $box->work());\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = -([] + new Box());\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+        (
+            "<?php\n$value = ([] + missing()) + 1;\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$value = ([] + $call()) + 1;\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = ([] + $box->work()) + 1;\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = ([] + new Box()) + 1;\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn emit_ir_routes_unemitted_binary_right_operand_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$value = [] + missing();\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$value = [] == $call();\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = [] . $box->work();\n",
+            LLVM_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = [] . (new Box());\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_unemitted_binary_right_operand_calls_through_call_boundary() {
+    for (source, expected) in [
+        (
+            "<?php\n$value = [] + missing();\n",
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\n$value = [] == $call();\n",
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = [] . $box->work();\n",
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$value = [] . (new Box());\n",
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
 fn emit_asm_rejects_function_calls_before_backend_execution() {
     for source in [
         "<?php\necho label(\"abc\");\nfunction label($value) { return $value; }\n",

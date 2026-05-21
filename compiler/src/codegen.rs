@@ -474,6 +474,51 @@ fn native_value_operand_call_result_operation(expr: &Expr) -> Option<NativeCallO
     native_expr_call_result_operation(expr, NativeCallBlocker::ValueOperandEvaluationCleanup)
 }
 
+fn native_failed_value_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
+    if native_expr_is_call_operation_root(expr) {
+        None
+    } else {
+        native_value_operand_call_result_operation(expr)
+    }
+}
+
+fn native_unemitted_operand_call_operation(
+    expr: &Expr,
+    nested_blocker: NativeCallBlocker,
+) -> Option<NativeCallOperation> {
+    native_value_call_operation_for_expr(expr)
+        .or_else(|| native_expr_call_result_operation(expr, nested_blocker))
+}
+
+fn native_unemitted_value_operand_call_operation(expr: &Expr) -> Option<NativeCallOperation> {
+    native_unemitted_operand_call_operation(expr, NativeCallBlocker::ValueOperandEvaluationCleanup)
+}
+
+fn native_unemitted_value_operand_list_call_operation(
+    exprs: &[&Expr],
+) -> Option<NativeCallOperation> {
+    exprs
+        .iter()
+        .find_map(|expr| native_unemitted_value_operand_call_operation(expr))
+}
+
+fn native_expr_is_call_operation_root(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Call { .. }
+            | Expr::DynamicCall { .. }
+            | Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. }
+            | Expr::ParentMethodCall { .. }
+            | Expr::StaticMethodCall { .. }
+            | Expr::ObjectStaticMethodCall { .. }
+            | Expr::SelfMethodCall { .. }
+            | Expr::LateStaticMethodCall { .. }
+            | Expr::New { .. }
+            | Expr::Closure { .. }
+    )
+}
+
 fn native_statement_assignment_rhs_call_operation(
     target: &AssignTarget,
     expr: &Expr,
@@ -2541,7 +2586,7 @@ impl LlvmGenerator {
                         ..
                     } = expr.as_ref()
                     {
-                        let value = self.emit_expr(expr)?;
+                        let value = self.emit_value_operand_expr(expr)?;
                         if matches!(value, IrValue::Bool(_) | IrValue::BoolExpr(_)) {
                             return Ok(value);
                         }
@@ -2556,13 +2601,13 @@ impl LlvmGenerator {
                         ..
                     } = expr.as_ref()
                     {
-                        return match self.emit_expr(expr)? {
+                        return match self.emit_value_operand_expr(expr)? {
                             value @ IrValue::Int(_) => Ok(value),
                             _ => Err(self.unsupported(*span, LLVM_BITWISE_REJECTION)),
                         };
                     }
                 }
-                let value = self.emit_expr(expr)?;
+                let value = self.emit_value_operand_expr(expr)?;
                 self.emit_unary(*op, value, *span)
             }
             Expr::ErrorControl { span, .. } => {
@@ -2641,8 +2686,7 @@ impl LlvmGenerator {
                 ) {
                     return self.emit_logical_expr(left, *op, right, *span);
                 }
-                let left = self.emit_expr(left)?;
-                let right = self.emit_expr(right)?;
+                let (left, right) = self.emit_binary_value_operand_exprs(left, right)?;
                 self.emit_binary(left, *op, right, *span)
             }
         }
@@ -3313,11 +3357,14 @@ impl LlvmGenerator {
         let left = match self.emit_expr(left) {
             Ok(value) => value,
             Err(_) => {
-                return Err(self.unsupported_value_operand_or_fallback(
+                let fallback = self.unsupported_value_operand_or_fallback(
                     left,
                     span,
                     llvm_comparison_rejection(),
-                ));
+                );
+                return Err(
+                    self.unsupported_unemitted_value_operands_or_original(&[left, right], fallback)
+                );
             }
         };
         let right = match self.emit_expr(right) {
@@ -3878,7 +3925,14 @@ impl LlvmGenerator {
             };
             return self.emit_empty_string_concat_identity(left, span);
         }
-        let left = self.emit_static_string_concat_operand(left, span)?;
+        let left = match self.emit_static_string_concat_operand(left, span) {
+            Ok(value) => value,
+            Err(error) => {
+                return Err(
+                    self.unsupported_unemitted_value_operands_or_original(&[left, right], error)
+                );
+            }
+        };
         let right = self.emit_static_string_concat_operand(right, span)?;
         Ok(IrValue::String(format!("{left}{right}")))
     }
@@ -5171,6 +5225,30 @@ impl LlvmGenerator {
             .unwrap_or_else(|| self.unsupported(span, fallback))
     }
 
+    fn emit_binary_value_operand_exprs(
+        &mut self,
+        left: &Expr,
+        right: &Expr,
+    ) -> CompileResult<(IrValue, IrValue)> {
+        let left_value = match self.emit_value_operand_expr(left) {
+            Ok(value) => value,
+            Err(error) => {
+                return Err(
+                    self.unsupported_unemitted_value_operands_or_original(&[left, right], error)
+                );
+            }
+        };
+        let right_value = self.emit_value_operand_expr(right)?;
+        Ok((left_value, right_value))
+    }
+
+    fn emit_value_operand_expr(&mut self, expr: &Expr) -> CompileResult<IrValue> {
+        match self.emit_expr(expr) {
+            Ok(value) => Ok(value),
+            Err(error) => Err(self.unsupported_value_operand_or_original(expr, error)),
+        }
+    }
+
     fn unsupported_value_operand_or_fallback(
         &self,
         expr: &Expr,
@@ -5187,7 +5265,17 @@ impl LlvmGenerator {
         expr: &Expr,
         original: Diagnostic,
     ) -> Diagnostic {
-        native_value_operand_call_result_operation(expr)
+        native_failed_value_operand_call_result_operation(expr)
+            .map(|operation| self.unsupported_call_operation(operation))
+            .unwrap_or(original)
+    }
+
+    fn unsupported_unemitted_value_operands_or_original(
+        &self,
+        exprs: &[&Expr],
+        original: Diagnostic,
+    ) -> Diagnostic {
+        native_unemitted_value_operand_list_call_operation(exprs)
             .map(|operation| self.unsupported_call_operation(operation))
             .unwrap_or(original)
     }
@@ -5884,7 +5972,7 @@ impl CGenerator {
                         ..
                     } = expr.as_ref()
                     {
-                        let value = self.emit_expr(expr)?;
+                        let value = self.emit_value_operand_expr(expr)?;
                         if matches!(value, CValue::Bool(_) | CValue::BoolExpr(_)) {
                             return Ok(value);
                         }
@@ -5899,13 +5987,13 @@ impl CGenerator {
                         ..
                     } = expr.as_ref()
                     {
-                        return match self.emit_expr(expr)? {
+                        return match self.emit_value_operand_expr(expr)? {
                             value @ CValue::Int(_) => Ok(value),
                             _ => Err(self.unsupported(*span, ASSEMBLY_BITWISE_REJECTION)),
                         };
                     }
                 }
-                let value = self.emit_expr(expr)?;
+                let value = self.emit_value_operand_expr(expr)?;
                 self.emit_unary(*op, value, *span)
             }
             Expr::ErrorControl { span, .. } => {
@@ -5984,8 +6072,7 @@ impl CGenerator {
                 ) {
                     return self.emit_logical_expr(left, *op, right, *span);
                 }
-                let left = self.emit_expr(left)?;
-                let right = self.emit_expr(right)?;
+                let (left, right) = self.emit_binary_value_operand_exprs(left, right)?;
                 self.emit_binary(left, *op, right, *span)
             }
         }
@@ -6645,11 +6732,14 @@ impl CGenerator {
         let left = match self.emit_expr(left) {
             Ok(value) => value,
             Err(_) => {
-                return Err(self.unsupported_value_operand_or_fallback(
+                let fallback = self.unsupported_value_operand_or_fallback(
                     left,
                     span,
                     assembly_comparison_rejection(),
-                ));
+                );
+                return Err(
+                    self.unsupported_unemitted_value_operands_or_original(&[left, right], fallback)
+                );
             }
         };
         let right = match self.emit_expr(right) {
@@ -7385,7 +7475,14 @@ impl CGenerator {
             };
             return self.emit_empty_string_concat_identity(left, span);
         }
-        let left = self.emit_static_string_concat_operand(left, span)?;
+        let left = match self.emit_static_string_concat_operand(left, span) {
+            Ok(value) => value,
+            Err(error) => {
+                return Err(
+                    self.unsupported_unemitted_value_operands_or_original(&[left, right], error)
+                );
+            }
+        };
         let right = self.emit_static_string_concat_operand(right, span)?;
         Ok(CValue::String(format!("{left}{right}")))
     }
@@ -8556,6 +8653,30 @@ impl CGenerator {
             .unwrap_or_else(|| self.unsupported(span, fallback))
     }
 
+    fn emit_binary_value_operand_exprs(
+        &mut self,
+        left: &Expr,
+        right: &Expr,
+    ) -> CompileResult<(CValue, CValue)> {
+        let left_value = match self.emit_value_operand_expr(left) {
+            Ok(value) => value,
+            Err(error) => {
+                return Err(
+                    self.unsupported_unemitted_value_operands_or_original(&[left, right], error)
+                );
+            }
+        };
+        let right_value = self.emit_value_operand_expr(right)?;
+        Ok((left_value, right_value))
+    }
+
+    fn emit_value_operand_expr(&mut self, expr: &Expr) -> CompileResult<CValue> {
+        match self.emit_expr(expr) {
+            Ok(value) => Ok(value),
+            Err(error) => Err(self.unsupported_value_operand_or_original(expr, error)),
+        }
+    }
+
     fn unsupported_value_operand_or_fallback(
         &self,
         expr: &Expr,
@@ -8572,7 +8693,17 @@ impl CGenerator {
         expr: &Expr,
         original: Diagnostic,
     ) -> Diagnostic {
-        native_value_operand_call_result_operation(expr)
+        native_failed_value_operand_call_result_operation(expr)
+            .map(|operation| self.unsupported_call_operation(operation))
+            .unwrap_or(original)
+    }
+
+    fn unsupported_unemitted_value_operands_or_original(
+        &self,
+        exprs: &[&Expr],
+        original: Diagnostic,
+    ) -> Diagnostic {
+        native_unemitted_value_operand_list_call_operation(exprs)
             .map(|operation| self.unsupported_call_operation(operation))
             .unwrap_or(original)
     }
