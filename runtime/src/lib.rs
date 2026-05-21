@@ -149,6 +149,16 @@ pub enum NativeFilesystemPathOperation {
     ClearStatCache = 11,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeValueCastOperation {
+    String = 0,
+    Int = 1,
+    Bool = 2,
+    Float = 3,
+    Array = 4,
+}
+
 const NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION: u8 = 1;
 const NATIVE_FILESYSTEM_PATH_HAS_OFFSET: u8 = 2;
 const NATIVE_FILESYSTEM_PATH_HAS_LENGTH: u8 = 4;
@@ -9920,6 +9930,41 @@ pub unsafe extern "C" fn phpc_native_value_cast_result(
     }
 }
 
+/// # Safety
+///
+/// `handle` must be a value handle previously returned by the runtime ABI and
+/// not yet freed. `operation` is a `NativeValueCastOperation` tag. The returned
+/// handle owns the cast PHP value. On failure the helper stores a diagnostic
+/// handle that the caller owns and must release with
+/// `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_cast_operation_with_diagnostic(
+    handle: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_cast_operation_value(handle, operation) } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+unsafe fn native_value_cast_operation_value(
+    handle: NativeValueHandle,
+    operation: u8,
+) -> RuntimeResult<Value> {
+    let value = (unsafe { handle.as_ref() }).ok_or_else(|| {
+        RuntimeError::invalid_string_conversion("native value cast failed: value handle is null")
+    })?;
+
+    native_value_cast_value(value, operation)
+}
+
 fn native_value_cast_op_is_supported(op: u8) -> bool {
     matches!(
         op,
@@ -9976,10 +10021,7 @@ fn native_value_int_cast(value: &Value) -> RuntimeResult<i64> {
         Value::Int(value) => Ok(*value),
         Value::Float(value) => native_value_float_to_int(*value, "(int)"),
         Value::String(value) => native_value_string_to_int(value),
-        Value::Array(_) => Err(RuntimeError::unsupported_call(
-            "(int)",
-            "array-to-int cast behavior is not implemented",
-        )),
+        Value::Array(value) => Ok(if value.is_empty() { 0 } else { 1 }),
         Value::Object(_) => Err(RuntimeError::unsupported_call(
             "(int)",
             "object-to-int cast behavior is not implemented",
@@ -10002,10 +10044,7 @@ fn native_value_float_cast(value: &Value) -> RuntimeResult<f64> {
         Value::Int(value) => Ok(*value as f64),
         Value::Float(value) => Ok(*value),
         Value::String(value) => native_value_string_to_float(value),
-        Value::Array(_) => Err(RuntimeError::unsupported_call(
-            "(float)",
-            "array-to-float cast behavior is not implemented",
-        )),
+        Value::Array(value) => Ok(if value.is_empty() { 0.0 } else { 1.0 }),
         Value::Object(_) => Err(RuntimeError::unsupported_call(
             "(float)",
             "object-to-float cast behavior is not implemented",
@@ -10097,9 +10136,6 @@ fn native_value_cast_blocker(value: &Value, op: u8) -> Option<String> {
             "object __toString()/ArrayAccess coercion hooks"
         }
         (NATIVE_VALUE_CAST_STRING, Value::Resource(_)) => "resource-to-string diagnostics",
-        (NATIVE_VALUE_CAST_INT | NATIVE_VALUE_CAST_FLOAT, Value::Array(_)) => {
-            "array numeric cast diagnostics"
-        }
         (NATIVE_VALUE_CAST_INT | NATIVE_VALUE_CAST_FLOAT, Value::Object(_) | Value::Closure(_)) => {
             "object numeric cast hooks"
         }
@@ -11110,6 +11146,113 @@ mod tests {
         unsafe { phpc_native_value_free(smaller_value) };
         unsafe { phpc_native_value_free(numeric_string) };
         unsafe { phpc_native_value_free(int_value) };
+    }
+
+    #[test]
+    fn native_value_cast_operations_reuse_value_result_boundaries() {
+        let numeric = NativeValueHandle::from_value(Value::String(" -12.8 ".to_string()));
+        let falsey = NativeValueHandle::from_value(Value::String("0".to_string()));
+        let text = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
+        let empty_array = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let mut nonempty_array = PhpArray::new();
+        nonempty_array.append(Value::Int(1)).unwrap();
+        let nonempty_array = NativeValueHandle::from_value(Value::Array(nonempty_array));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let string = unsafe {
+            phpc_native_value_cast_operation_with_diagnostic(
+                text,
+                NativeValueCastOperation::String as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(string), b"A\0B");
+
+        let integer = unsafe {
+            phpc_native_value_cast_operation_with_diagnostic(
+                numeric,
+                NativeValueCastOperation::Int as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(integer), b"-12");
+
+        let float = unsafe {
+            phpc_native_value_cast_operation_with_diagnostic(
+                numeric,
+                NativeValueCastOperation::Float as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(float), b"-12.8");
+
+        let boolean = unsafe {
+            phpc_native_value_cast_operation_with_diagnostic(
+                falsey,
+                NativeValueCastOperation::Bool as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(boolean), b"");
+
+        let array = unsafe {
+            phpc_native_value_cast_operation_with_diagnostic(
+                text,
+                NativeValueCastOperation::Array as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { array.as_ref() },
+            Some(Value::Array(array)) if array.entries().len() == 1
+        ));
+
+        let empty_array_int = unsafe {
+            phpc_native_value_cast_operation_with_diagnostic(
+                empty_array,
+                NativeValueCastOperation::Int as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(empty_array_int), b"0");
+
+        let nonempty_array_float = unsafe {
+            phpc_native_value_cast_operation_with_diagnostic(
+                nonempty_array,
+                NativeValueCastOperation::Float as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(nonempty_array_float), b"1");
+
+        let bad_op =
+            unsafe { phpc_native_value_cast_operation_with_diagnostic(text, 255, &mut diagnostic) };
+        assert!(bad_op.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call native value cast: native value cast operation tag 255 is not supported"
+        );
+
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(nonempty_array_float) };
+        unsafe { phpc_native_value_free(empty_array_int) };
+        unsafe { phpc_native_value_free(array) };
+        unsafe { phpc_native_value_free(boolean) };
+        unsafe { phpc_native_value_free(float) };
+        unsafe { phpc_native_value_free(integer) };
+        unsafe { phpc_native_value_free(string) };
+        unsafe { phpc_native_value_free(nonempty_array) };
+        unsafe { phpc_native_value_free(empty_array) };
+        unsafe { phpc_native_value_free(text) };
+        unsafe { phpc_native_value_free(falsey) };
+        unsafe { phpc_native_value_free(numeric) };
     }
 
     #[test]

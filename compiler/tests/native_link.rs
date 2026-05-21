@@ -1143,6 +1143,8 @@ const NATIVE_VALUE_COMPARE_CAST_TYPE_NAME_SOURCE: &str = "<?php\n$a = [];\n$a[(i
 
 const NATIVE_VALUE_CAST_ECHO_SOURCE: &str = "<?php\necho (int)\"5.9\", \"|\";\necho (float)\"3.5\", \"|\";\necho (string)(2 + 3), \"|\";\necho (bool)\"0\", \"|\";\necho gettype((string)123);\n";
 
+const NATIVE_VALUE_CAST_BUILTIN_SOURCE: &str = "<?php\n$a = [];\n$a[strval(5)] = floatval(\"3.5\");\n$a[\"truth\"] = doubleval(\"2.5\");\necho strval(\"A\"), \"|\", boolval(\"0\"), \"|\", floatval(\" -12.8 \"), \"|\", doubleval(\"2.5\"), \"|\", $a[\"5\"], \"|\", $a[\"truth\"];\n";
+
 #[test]
 fn native_executable_c_source_routes_array_key_and_value_expressions_through_value_result_abi() {
     let program = parse(NATIVE_VALUE_OPERATION_ARRAY_SOURCE).unwrap();
@@ -1309,13 +1311,13 @@ fn emit_exe_links_and_runs_native_value_result_array_key_and_value_program() {
 }
 
 #[test]
-fn native_executable_c_source_routes_compare_cast_and_type_name_results_through_value_result_abi() {
+fn native_executable_c_source_routes_compare_cast_and_type_name_results_through_shared_abi() {
     let program = parse(NATIVE_VALUE_COMPARE_CAST_TYPE_NAME_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
 
     for declaration in [
         "extern phpc_NativeValueOperationResult phpc_native_value_compare_result",
-        "extern phpc_NativeValueOperationResult phpc_native_value_cast_result",
+        "extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic",
         "extern phpc_NativeValueOperationResult phpc_native_value_type_name_result",
     ] {
         assert!(source.contains(declaration), "{declaration}\n\n{source}");
@@ -1341,7 +1343,14 @@ fn native_executable_c_source_routes_compare_cast_and_type_name_results_through_
         "{source}"
     );
     assert!(
-        source.matches(" = phpc_native_value_cast_result(").count() >= 6,
+        source
+            .matches(" = phpc_native_value_cast_operation_with_diagnostic(")
+            .count()
+            >= 6,
+        "{source}"
+    );
+    assert!(
+        !source.contains(" = phpc_native_value_cast_result("),
         "{source}"
     );
     assert!(
@@ -1405,12 +1414,14 @@ fn emit_exe_links_and_runs_native_compare_cast_type_name_result_program() {
 }
 
 #[test]
-fn native_executable_c_source_routes_cast_echoes_through_value_result_abi() {
+fn native_executable_c_source_routes_cast_echoes_through_value_cast_operation_abi() {
     let program = parse(NATIVE_VALUE_CAST_ECHO_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains("extern phpc_NativeValueOperationResult phpc_native_value_cast_result"),
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic"
+        ),
         "{source}"
     );
     assert!(
@@ -1419,7 +1430,14 @@ fn native_executable_c_source_routes_cast_echoes_through_value_result_abi() {
         "{source}"
     );
     assert!(
-        source.matches(" = phpc_native_value_cast_result(").count() >= 5,
+        source
+            .matches(" = phpc_native_value_cast_operation_with_diagnostic(")
+            .count()
+            >= 5,
+        "{source}"
+    );
+    assert!(
+        !source.contains(" = phpc_native_value_cast_result("),
         "{source}"
     );
     assert!(
@@ -1440,6 +1458,42 @@ fn native_executable_c_source_routes_cast_echoes_through_value_result_abi() {
     );
     assert!(
         source.contains("phpc_native_value_operation_result_free"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_scalar_cast_builtins_through_value_cast_contract() {
+    let program = parse(NATIVE_VALUE_CAST_BUILTIN_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic"
+        ),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_cast_operation_with_diagnostic(")
+            .count()
+            >= 6,
+        "{source}"
+    );
+    assert!(
+        !source.contains(" = phpc_native_value_cast_result("),
+        "{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_VALUE_CAST_STRING")
+            && source.contains("PHPC_NATIVE_VALUE_CAST_BOOL")
+            && source.contains("PHPC_NATIVE_VALUE_CAST_FLOAT"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_to_array_key")
+            && source.contains("phpc_native_array_insert_key_value_with_diagnostic")
+            && source.contains("phpc_native_value_echo_stdout("),
         "{source}"
     );
 }
@@ -1483,6 +1537,52 @@ fn emit_exe_links_and_runs_native_cast_echo_value_result_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"5|3.5|5||string");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_scalar_cast_builtin_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php =
+        native_link_output_path("native_scalar_cast_builtin_boundary").with_extension("php");
+    fs::write(&temp_php, NATIVE_VALUE_CAST_BUILTIN_SOURCE)
+        .expect("write native scalar-cast builtin fixture");
+    let output_path = native_link_output_path("native_scalar_cast_builtin_boundary");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"A||-12.8|2.5|3.5|2.5");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

@@ -19,6 +19,25 @@ fn scalar_echo_probe_ir_matches_committed_snapshot() {
 }
 
 #[test]
+fn generated_ir_blocks_scalar_cast_builtins_at_shared_value_cast_boundary() {
+    for source in [
+        "<?php\n$payload = \"ABC\";\necho strval($payload);\n",
+        "<?php\necho boolval(\"A\");\n",
+        "<?php\n$payload = \" -12.8 \";\necho floatval($payload);\n",
+        "<?php\n$payload = \"2.5\";\necho doubleval($payload);\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+        assert!(
+            error.message.contains(
+                "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts plus strval(), boolval(), floatval(), and doubleval()"
+            ),
+            "{source}: {}",
+            error.message
+        );
+    }
+}
+
+#[test]
 fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     let ir = native_runtime_scalar_echo_probe_ir();
 

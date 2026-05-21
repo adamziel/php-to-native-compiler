@@ -111,8 +111,8 @@ const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset ope
 const ASSEMBLY_EMPTY_REJECTION: &str = "assembly empty lowering rejects array offset operands, object property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
 const LLVM_ERROR_CONTROL_REJECTION: &str = "LLVM error-control lowering rejects @expr until native diagnostic severity, warning/notice/deprecation suppression, error_reporting() mask interaction, recoverable expression values, and exact native diagnostics exist; phpc run handles current transparent error-control wrapper behavior";
 const ASSEMBLY_ERROR_CONTROL_REJECTION: &str = "assembly error-control lowering rejects @expr until native diagnostic severity, warning/notice/deprecation suppression, error_reporting() mask interaction, recoverable expression values, and exact native diagnostics exist; phpc run handles current transparent error-control wrapper behavior";
-const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts until native PHP scalar conversion, array materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
-const ASSEMBLY_CAST_REJECTION: &str = "assembly cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts until native PHP scalar conversion, array materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
+const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
+const ASSEMBLY_CAST_REJECTION: &str = "assembly cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
 const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 const ASSEMBLY_UNARY_REJECTION: &str = "assembly unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
@@ -530,7 +530,7 @@ fn native_expr_call_result_operation(
 }
 
 fn native_lvalue_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
-    native_expr_call_result_operation(expr, NativeCallBlocker::LvalueOperandEvaluationCleanup)
+    native_value_result_expr_call_operation(expr, NativeCallBlocker::LvalueOperandEvaluationCleanup)
 }
 
 fn native_statement_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
@@ -675,6 +675,15 @@ fn native_value_cast_op_tag(kind: CastKind) -> &'static str {
     }
 }
 
+fn native_value_cast_builtin_op_tag(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "strval" => Some("PHPC_NATIVE_VALUE_CAST_STRING"),
+        "boolval" => Some("PHPC_NATIVE_VALUE_CAST_BOOL"),
+        "floatval" | "doubleval" => Some("PHPC_NATIVE_VALUE_CAST_FLOAT"),
+        _ => None,
+    }
+}
+
 fn native_value_type_name_tag(name: &str) -> Option<&'static str> {
     match name.to_ascii_lowercase().as_str() {
         "gettype" => Some("PHPC_NATIVE_VALUE_TYPE_NAME_GETTYPE"),
@@ -700,6 +709,12 @@ fn native_value_result_expr_call_operation(
                 .or_else(|| native_value_result_expr_call_operation(right, blocker))
         }
         Expr::Cast { expr, .. } => native_value_result_expr_call_operation(expr, blocker),
+        Expr::Call { name, args, span } if native_value_cast_builtin_op_tag(name).is_some() => {
+            let [arg] = args.as_slice() else {
+                return Some(NativeCallOperation::direct_named_value(*span, blocker));
+            };
+            native_value_result_expr_call_operation(arg, blocker)
+        }
         Expr::Call { name, args, span } if native_value_type_name_tag(name).is_some() => {
             let [arg] = args.as_slice() else {
                 return Some(NativeCallOperation::direct_named_value(*span, blocker));
@@ -2758,6 +2773,9 @@ impl LlvmGenerator {
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("strlen") => {
                 self.emit_strlen_call(args, *span)
+            }
+            Expr::Call { name, args, span } if native_value_cast_builtin_op_tag(name).is_some() => {
+                Err(self.unsupported_direct_named_call(args, *span, LLVM_CAST_REJECTION))
             }
             Expr::Call { name, args, span } if native_string_predicate_for_name(name).is_some() => {
                 Err(self.unsupported_direct_named_call(
@@ -5977,7 +5995,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_unary_result(phpc_NativeValueHandle value, uint8_t op);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_binary_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_compare_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
-                output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_cast_result(phpc_NativeValueHandle value, uint8_t op);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic(phpc_NativeValueHandle value, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_type_name_result(phpc_NativeValueHandle value, uint8_t kind);\n");
                 output.push_str("extern bool phpc_native_array_insert_key_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_array_read_key_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -6309,6 +6327,9 @@ impl CGenerator {
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("strlen") => {
                 self.emit_strlen_call(args, *span)
+            }
+            Expr::Call { name, args, span } if native_value_cast_builtin_op_tag(name).is_some() => {
+                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_CAST_REJECTION))
             }
             Expr::Call { name, args, span } if native_string_predicate_for_name(name).is_some() => {
                 let predicate = native_string_predicate_for_name(name)
@@ -9755,25 +9776,38 @@ impl CGenerator {
             }
             Expr::Cast { kind, expr, .. } => {
                 let value = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
-                Ok(Some(self.emit_native_value_cast_result_handle(
+                Ok(Some(self.emit_native_value_cast_operation_result_handle(
                     value,
                     native_value_cast_op_tag(*kind),
                     failure_cleanup,
                 )))
             }
             Expr::Call { name, args, span } => {
-                let Some(type_name_tag) = native_value_type_name_tag(name) else {
-                    return Ok(None);
-                };
-                let [arg] = args.as_slice() else {
-                    return Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION));
-                };
-                let value = self.materialize_native_value_result_operand(arg, failure_cleanup)?;
-                Ok(Some(self.emit_native_value_type_name_result_handle(
-                    value,
-                    type_name_tag,
-                    failure_cleanup,
-                )))
+                if let Some(op_tag) = native_value_cast_builtin_op_tag(name) {
+                    let [arg] = args.as_slice() else {
+                        return Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION));
+                    };
+                    let value =
+                        self.materialize_native_value_result_operand(arg, failure_cleanup)?;
+                    return Ok(Some(self.emit_native_value_cast_operation_result_handle(
+                        value,
+                        op_tag,
+                        failure_cleanup,
+                    )));
+                }
+                if let Some(type_name_tag) = native_value_type_name_tag(name) {
+                    let [arg] = args.as_slice() else {
+                        return Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+                    };
+                    let value =
+                        self.materialize_native_value_result_operand(arg, failure_cleanup)?;
+                    return Ok(Some(self.emit_native_value_type_name_result_handle(
+                        value,
+                        type_name_tag,
+                        failure_cleanup,
+                    )));
+                }
+                Ok(None)
             }
             _ => Ok(None),
         }
@@ -9847,24 +9881,38 @@ impl CGenerator {
         )
     }
 
-    fn emit_native_value_cast_result_handle(
+    fn emit_native_value_cast_operation_result_handle(
         &mut self,
         value: CNativeValueMaterialization,
         op_tag: &str,
         failure_cleanup: &str,
     ) -> CNativeValueMaterialization {
+        self.uses_native_array_helpers = true;
+
         let value_handle = value.handle.clone();
-        self.emit_native_value_result_handle(
-            "native_value_cast_result",
-            "native_value_cast",
-            value.cleanup_after_use,
-            failure_cleanup,
-            |this, result| {
-                this.body.push(format!(
-                    "phpc_NativeValueOperationResult {result} = phpc_native_value_cast_result({value_handle}, {op_tag});"
-                ));
-            },
-        )
+        let diagnostic = self.next_native_name("value_cast_diagnostic");
+        let result = self.next_native_name("native_value_cast");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_cast_operation_with_diagnostic({value_handle}, {op_tag}, &{diagnostic});"
+        ));
+        let cleanup = format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}",
+            c_cleanup_sequence(&value.cleanup_after_use),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(value.cleanup_after_use);
+
+        CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }
     }
 
     fn emit_native_value_type_name_result_handle(
@@ -9963,6 +10011,9 @@ impl CGenerator {
     fn try_emit_native_value_result_echo(&mut self, expr: &Expr) -> CompileResult<bool> {
         let value = match expr {
             Expr::Cast { .. } => self.try_materialize_native_value_result_expr(expr, "")?,
+            Expr::Call { name, .. } if native_value_cast_builtin_op_tag(name).is_some() => {
+                self.try_materialize_native_value_result_expr(expr, "")?
+            }
             Expr::Call { name, .. } if native_value_type_name_tag(name).is_some() => {
                 self.try_materialize_native_value_result_expr(expr, "")?
             }
@@ -12176,6 +12227,37 @@ echo " 10" < "zeta";
             }),
             None
         );
+        assert_eq!(
+            native_assignment_target_call_operation(&AssignTarget::ArrayIndex {
+                name: "items".to_string(),
+                index: Some(Expr::Call {
+                    name: "strval".to_string(),
+                    args: vec![Expr::String("plain".to_string(), span)],
+                    span,
+                }),
+                span,
+            }),
+            None
+        );
+        assert_eq!(
+            native_assignment_target_call_operation(&AssignTarget::ArrayIndex {
+                name: "items".to_string(),
+                index: Some(Expr::Call {
+                    name: "strval".to_string(),
+                    args: vec![Expr::Call {
+                        name: "key_name".to_string(),
+                        args: Vec::new(),
+                        span,
+                    }],
+                    span,
+                }),
+                span,
+            }),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::LvalueOperandEvaluationCleanup,
+            ))
+        );
     }
 
     #[test]
@@ -12485,6 +12567,26 @@ echo " 10" < "zeta";
         assert_eq!(
             native_value_result_expr_call_operation(
                 &type_name_with_nested_call,
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ),
+            Some(NativeCallOperation::direct_named_value(
+                nested_call_span,
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ))
+        );
+
+        let scalar_cast_builtin_with_nested_call = Expr::Call {
+            name: "strval".to_string(),
+            args: vec![Expr::Call {
+                name: "produce".to_string(),
+                args: Vec::new(),
+                span: nested_call_span,
+            }],
+            span,
+        };
+        assert_eq!(
+            native_value_result_expr_call_operation(
+                &scalar_cast_builtin_with_nested_call,
                 NativeCallBlocker::StatementOperandEvaluationCleanup,
             ),
             Some(NativeCallOperation::direct_named_value(
