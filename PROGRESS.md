@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-21 23:18 CEST
-Evaluation marker: 20260521T211800Z
+Updated: 2026-05-21 23:17 CEST
+Evaluation marker: 20260521T211700Z
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local work is candidate material until selected, gated, committed, and pushed.
 
