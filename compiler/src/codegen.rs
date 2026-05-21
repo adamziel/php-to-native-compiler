@@ -8,7 +8,8 @@ use crate::ast::{
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
-    is_php_numeric_string, is_php_truthy_string, NativeComparisonOp, NativeStringPredicate,
+    is_php_numeric_string, is_php_truthy_string, NativeComparisonOp, NativeStringIntOperation,
+    NativeStringPredicate,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -20,6 +21,8 @@ const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects 
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects str_starts_with(), str_ends_with(), and str_contains() until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native predicate diagnostics exist; generated-native C routes lowerable predicate operands through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
+const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lowering rejects ord() and crc32() until native PHP string conversion, byte-preserving result ownership, warning recovery, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable string-int operands through the shared runtime contract";
+const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int builtin lowering rejects ord() and crc32() forms outside the reusable native string-int operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_BASENAME_REJECTION: &str = "LLVM basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const ASSEMBLY_BASENAME_REJECTION: &str = "assembly basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads and selected warning-plus-false recovery";
@@ -2525,6 +2528,15 @@ impl LlvmGenerator {
                     args,
                     *span,
                     LLVM_STRING_PREDICATE_REJECTION,
+                ))
+            }
+            Expr::Call { name, args, span }
+                if native_string_int_operation_for_name(name).is_some() =>
+            {
+                Err(self.unsupported_direct_named_call(
+                    args,
+                    *span,
+                    LLVM_STRING_INT_OPERATION_REJECTION,
                 ))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
@@ -5625,6 +5637,7 @@ impl CGenerator {
             if self.uses_native_string_helpers {
                 output.push_str("extern phpc_NativeStringConversionResult phpc_native_value_to_string_bytes(phpc_NativeValueHandle value);\n");
                 output.push_str("extern _Bool phpc_native_value_string_predicate_with_diagnostic(phpc_NativeValueHandle haystack, phpc_NativeValueHandle needle, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern int64_t phpc_native_value_string_int_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_string_conversion_result_free(phpc_NativeStringConversionResult result);\n");
             }
             output.push_str(
@@ -5941,6 +5954,13 @@ impl CGenerator {
                     .expect("string predicate guard should provide operation");
                 self.emit_string_predicate_call(predicate, args, *span)
             }
+            Expr::Call { name, args, span }
+                if native_string_int_operation_for_name(name).is_some() =>
+            {
+                let operation = native_string_int_operation_for_name(name)
+                    .expect("string-int guard should provide operation");
+                self.emit_string_int_operation_call(operation, args, *span)
+            }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
                 Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_BASENAME_REJECTION))
             }
@@ -6241,6 +6261,46 @@ impl CGenerator {
             .push(format!("phpc_native_value_free({haystack});"));
 
         Ok(CValue::BoolExpr(result))
+    }
+
+    fn emit_string_int_operation_call(
+        &mut self,
+        operation: NativeStringIntOperation,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<CValue> {
+        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(call_operation));
+        }
+
+        if args.len() != 1 || !self.uses_native_string_helpers {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_STRING_INT_OPERATION_REJECTION,
+            ));
+        }
+
+        let subject = self.emit_value_operand_expr(&args[0])?;
+        let subject = self
+            .emit_native_value_for_cvalue(subject, span)
+            .map_err(|_| self.unsupported(span, ASSEMBLY_STRING_INT_OPERATION_REJECTION))?;
+        let result = format!("string_int_result_{}", self.next_native_temp);
+        self.next_native_temp += 1;
+        let diagnostic = format!("string_int_diagnostic_{}", self.next_native_temp);
+        self.next_native_temp += 1;
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "long long {result} = (long long)phpc_native_value_string_int_operation_with_diagnostic({subject}, (phpc_NativeValueHandle){{0}}, 0, 0, 0, {}, &{diagnostic});",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body
+            .push(format!("phpc_native_value_free({subject});"));
+
+        Ok(CValue::Int(result))
     }
 
     fn emit_function_exists_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
@@ -9565,6 +9625,14 @@ fn native_string_predicate_for_name(name: &str) -> Option<NativeStringPredicate>
         "str_starts_with" => Some(NativeStringPredicate::StartsWith),
         "str_ends_with" => Some(NativeStringPredicate::EndsWith),
         "str_contains" => Some(NativeStringPredicate::Contains),
+        _ => None,
+    }
+}
+
+fn native_string_int_operation_for_name(name: &str) -> Option<NativeStringIntOperation> {
+    match name.to_ascii_lowercase().as_str() {
+        "ord" => Some(NativeStringIntOperation::Ordinal),
+        "crc32" => Some(NativeStringIntOperation::Crc32),
         _ => None,
     }
 }

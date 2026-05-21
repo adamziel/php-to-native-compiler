@@ -98,6 +98,13 @@ pub enum NativeStringPredicate {
     Contains = 2,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeStringIntOperation {
+    Ordinal = 5,
+    Crc32 = 6,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeComparisonResult {
@@ -1210,6 +1217,86 @@ unsafe fn native_value_string_predicate(
             "native string predicate failed: unsupported predicate tag",
         )),
     }
+}
+
+/// # Safety
+///
+/// `subject` and `operand` must be null or value handles previously returned
+/// by the runtime ABI and not yet freed. `diagnostic` may be null; when
+/// non-null, it must point to writable storage for one `NativeDiagnosticHandle`.
+/// On failure the helper stores a diagnostic handle that the caller owns and
+/// must release with `phpc_native_diagnostic_free`. Operation `5` returns
+/// `ord(subject)`; operation `6` returns `crc32(subject)`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_string_int_operation_with_diagnostic(
+    subject: NativeValueHandle,
+    _operand: NativeValueHandle,
+    _offset: i64,
+    _length: i64,
+    flags: u8,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> i64 {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_string_int_operation(subject, flags, operation) } {
+        Ok(value) => value,
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            0
+        }
+    }
+}
+
+unsafe fn native_value_string_int_operation(
+    subject: NativeValueHandle,
+    flags: u8,
+    operation: u8,
+) -> RuntimeResult<i64> {
+    if flags != 0 {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string int operation failed: ord/crc32 do not accept length flags",
+        ));
+    }
+
+    match operation {
+        value if value == NativeStringIntOperation::Ordinal as u8 => {
+            let subject = unsafe { native_value_to_string_bytes(subject) }?;
+            php_ord_bytes(&subject)
+        }
+        value if value == NativeStringIntOperation::Crc32 as u8 => {
+            let subject = unsafe { native_value_to_string_bytes(subject) }?;
+            Ok(php_crc32_bytes(&subject))
+        }
+        _ => Err(RuntimeError::invalid_string_conversion(
+            "native string int operation failed: unsupported operation tag",
+        )),
+    }
+}
+
+fn php_ord_bytes(bytes: &[u8]) -> RuntimeResult<i64> {
+    bytes.first().copied().map(i64::from).ok_or_else(|| {
+        RuntimeError::invalid_string_conversion(
+            "native string int operation failed: ord requires a non-empty string",
+        )
+    })
+}
+
+fn php_crc32_bytes(bytes: &[u8]) -> i64 {
+    let mut crc = 0xffff_ffffu32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 == 0 {
+                crc >> 1
+            } else {
+                (crc >> 1) ^ 0xedb8_8320
+            };
+        }
+    }
+    i64::from(!crc)
 }
 
 /// # Safety
@@ -8628,6 +8715,147 @@ mod tests {
         unsafe { phpc_native_value_free(suffix) };
         unsafe { phpc_native_value_free(prefix) };
         unsafe { phpc_native_value_free(haystack) };
+    }
+
+    #[test]
+    fn native_string_int_operations_reuse_value_to_string_boundary() {
+        let payload = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
+        let scalar = phpc_native_value_from_scalar(phpc_native_int(42042));
+        let null_value = phpc_native_value_from_scalar(phpc_native_null());
+        let checksum_subject =
+            NativeValueHandle::from_value(Value::String("123456789".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let ordinal = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                payload,
+                NativeValueHandle::null(),
+                0,
+                0,
+                0,
+                NativeStringIntOperation::Ordinal as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(ordinal, 65);
+        assert!(diagnostic.is_null());
+
+        let scalar_ordinal = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                scalar,
+                NativeValueHandle::null(),
+                0,
+                0,
+                0,
+                NativeStringIntOperation::Ordinal as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(scalar_ordinal, 52);
+        assert!(diagnostic.is_null());
+
+        let checksum = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                checksum_subject,
+                NativeValueHandle::null(),
+                0,
+                0,
+                0,
+                NativeStringIntOperation::Crc32 as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(checksum, 3_421_780_262);
+        assert!(diagnostic.is_null());
+
+        let nul_checksum = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                payload,
+                NativeValueHandle::null(),
+                0,
+                0,
+                0,
+                NativeStringIntOperation::Crc32 as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(nul_checksum, 382_410_329);
+        assert!(diagnostic.is_null());
+
+        let null_checksum = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                null_value,
+                NativeValueHandle::null(),
+                0,
+                0,
+                0,
+                NativeStringIntOperation::Crc32 as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(null_checksum, 0);
+        assert!(diagnostic.is_null());
+
+        let empty = NativeValueHandle::from_value(Value::String(String::new()));
+        let empty_ordinal = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                empty,
+                NativeValueHandle::null(),
+                0,
+                0,
+                0,
+                NativeStringIntOperation::Ordinal as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(empty_ordinal, 0);
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string int operation failed: ord requires a non-empty string"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let flagged = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                payload,
+                NativeValueHandle::null(),
+                0,
+                1,
+                1,
+                NativeStringIntOperation::Crc32 as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(flagged, 0);
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string int operation failed: ord/crc32 do not accept length flags"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let unsupported = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                payload,
+                NativeValueHandle::null(),
+                0,
+                0,
+                0,
+                99,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(unsupported, 0);
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string int operation failed: unsupported operation tag"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(empty) };
+        unsafe { phpc_native_value_free(checksum_subject) };
+        unsafe { phpc_native_value_free(null_value) };
+        unsafe { phpc_native_value_free(scalar) };
+        unsafe { phpc_native_value_free(payload) };
     }
 
     #[test]

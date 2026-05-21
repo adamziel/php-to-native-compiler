@@ -103,6 +103,48 @@ fn native_executable_c_source_routes_string_predicates_through_runtime_contract(
 }
 
 #[test]
+fn native_executable_c_source_routes_string_int_builtins_through_runtime_contract() {
+    let program = parse(
+        "<?php\n$payload = \"A\0B\";\necho ord($payload);\necho ord(42042);\necho crc32(\"123456789\");\necho crc32($payload);\necho crc32(null);\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_string_int_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = (long long)phpc_native_value_string_int_operation_with_diagnostic(")
+            .count(),
+        5,
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches("phpc_NativeDiagnosticHandle string_int_diagnostic_")
+            .count(),
+        5,
+        "{source}"
+    );
+    assert!(
+        source.contains(", 5, &string_int_diagnostic_")
+            && source.contains(", 6, &string_int_diagnostic_"),
+        "ord and crc32 should share the tagged string-int ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_from_scalar")
+            && source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+        "scalar and string operands should both enter the native value boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("strlen((const char *)"),
+        "string-int builtins should use PHP value-to-string byte conversion:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_comparison_families_through_runtime_contract() {
     let program = parse(
         r#"<?php
@@ -378,6 +420,59 @@ fn emit_exe_links_and_runs_string_predicate_conversion_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "11110\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_string_int_operation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("string_int_operation");
+    let source_path = native_link_output_path("string_int_operation_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(
+        &source_path,
+        "<?php\n$payload = \"A\0B\";\necho ord($payload);\necho \"\\n\";\necho ord(42042);\necho \"\\n\";\necho crc32(\"123456789\");\necho \"\\n\";\necho crc32($payload);\necho \"\\n\";\necho crc32(null);\necho \"\\n\";\n",
+    )
+    .expect("native string-int source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native string-int source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "65\n52\n3421780262\n382410329\n0\n"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&output_path);
