@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 18:07 CEST
+Updated: 2026-05-22 18:16 CEST
 Evaluation marker: `20260522T160539Z`
-Primary HEAD: `a6461023 docs: update progress after request path appends`
-Current pushed semantic baseline: `46d0ba88 codegen: route request path appends through state ABI`
+Primary semantic HEAD: `6adf3530 codegen: route undefined root reads through symbol ABI`
+Current pushed semantic baseline: `6adf3530 codegen: route undefined root reads through symbol ABI`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -15,10 +15,10 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 Overall estimated progress: **80%** `[################----]`
 
 This review confirms real integrated movement in the last cycle: primary now
-has generated-C `$GLOBALS[...]` write/unset/append paths and request-superglobal
-root/nested appends routed through shared runtime/compiler ABIs. These are
-generalized path/key-driven slices with focused linked evidence, not
-fixture-shaped recognizers.
+has generated-C `$GLOBALS[...]` write/unset/append paths, request-superglobal
+root/nested appends, and direct unresolved root-variable reads routed through
+shared runtime/compiler ABIs. These are generalized symbol/path/key-driven
+slices with focused linked evidence, not fixture-shaped recognizers.
 
 The work remains bounded. Primary is stronger for selected request-state and
 `$GLOBALS[...]` path operations, but it still does not have complete PHP
@@ -33,10 +33,10 @@ open systems.
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
-| Compiler/backend consumers | 86% | `[#################---]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append paths; uneven across calls, objects, control flow, and LLVM/C parity. |
+| Compiler/backend consumers | 87% | `[#################---]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append paths and direct undefined root reads; uneven across calls, objects, control flow, and LLVM/C parity. |
 | Executable generalized PHP semantics | 72% | `[##############------]` | Improving through executable path consumers, but many real PHP compositions still block. |
 | Arrays, lvalues, references, COW | 73% | `[###############-----]` | Arrays/lvalues advanced; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 73% | `[###############-----]` | Request paths and `$GLOBALS` reads/writes/probes/unsets/appends are stronger; direct root appends, aliases, frames, and self-reference remain incomplete. |
+| Symbols, globals, request state | 74% | `[###############-----]` | Request paths, `$GLOBALS` reads/writes/probes/unsets/appends, and direct undefined root reads are stronger; direct root appends, aliases, frames, and self-reference remain incomplete. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Early; lane candidates exist, but broad executable call/frame semantics are not primary yet. |
 | Objects, properties, methods | 11% | `[##------------------]` | Early; runtime candidates exist, but general compiled object/property/method execution remains missing. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused work, but exact diagnostic ordering and structured cleanup are not generalized. |
@@ -63,6 +63,10 @@ open systems.
 - [x] Compiler-lowered `$GLOBALS[$expr]...[]...` appends through the persistent
   root symbol-table path ABI in generated C, including suffix-key wrapping and
   assignment-expression values.
+- [x] Compiler-lowered direct unresolved root-variable reads through a
+  symbol-table diagnostic ABI in generated C, returning PHP null values while
+  reporting undefined-variable diagnostics across output, assignment/storage,
+  and discarded-read consumers.
 - [ ] Direct no-key `$GLOBALS[]` root append and request-root alias
   reconciliation.
 - [ ] Request append suffix wrapping after the append hole.
@@ -83,6 +87,7 @@ open systems.
 
 Recent semantic commits on primary:
 
+- `6adf3530 codegen: route undefined root reads through symbol ABI`
 - `46d0ba88 codegen: route request path appends through state ABI`
 - `3574e350 codegen: route GLOBALS path appends through ABI`
 - `af1511d3 codegen: route GLOBALS path unsets through ABI`
@@ -99,9 +104,11 @@ Recent semantic commits on primary:
 
 Primary-integrated capability now includes strong selected request-superglobal
 path execution through shared request-state ABIs, including root/nested
-appends, and generated-C `$GLOBALS[...]` read/probe/write/unset/append lowering
-through shared symbol-table path ABIs. The latest request append slice
-intentionally leaves request append suffix wrapping, direct no-key
+appends, generated-C `$GLOBALS[...]` read/probe/write/unset/append lowering
+through shared symbol-table path ABIs, and direct unresolved root-variable reads
+through a diagnostic symbol-table ABI. The latest symbol read slice
+intentionally leaves exact diagnostic ordering through arbitrary control flow,
+concat/arithmetic-specific undefined-read recovery claims, direct no-key
 `$GLOBALS[]`, request-root alias reconciliation, self-reference behavior,
 frames, references/COW, and LLVM/C assembly parity blocked.
 
