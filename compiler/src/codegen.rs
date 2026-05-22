@@ -6009,7 +6009,7 @@ struct CGenerator {
     uses_native_array_comparison_helpers: bool,
     uses_native_array_helpers: bool,
     uses_native_value_string_clone_bytes: bool,
-    uses_native_value_string_offset_write: bool,
+    uses_native_value_offset_mutation: bool,
     next_static_data: usize,
     next_native_temp: usize,
 }
@@ -6437,8 +6437,8 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_offset_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_offset_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern _Bool phpc_native_value_bool_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
-                if self.uses_native_value_string_offset_write {
-                    output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_offset_write_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, phpc_NativeValueHandle replacement, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_value_offset_mutation {
+                    output.push_str("extern phpc_NativeValueHandle phpc_native_value_offset_mutation_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
                 if self.uses_native_value_string_clone_bytes {
                     output.push_str("extern phpc_NativeByteBuffer phpc_native_value_string_clone_bytes(phpc_NativeValueHandle value);\n");
@@ -7255,7 +7255,7 @@ impl CGenerator {
 
         self.uses_native_string_helpers = true;
         self.uses_native_value_string_clone_bytes = true;
-        self.uses_native_value_string_offset_write = true;
+        self.uses_native_value_offset_mutation = true;
 
         let write = self.next_native_name("string_offset_write_value");
         let diagnostic = self.next_native_name("string_offset_write_diagnostic");
@@ -7265,7 +7265,7 @@ impl CGenerator {
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "phpc_NativeValueHandle {write} = phpc_native_value_string_offset_write_with_diagnostic({}, {}, {}, &{diagnostic});",
+            "phpc_NativeValueHandle {write} = phpc_native_value_offset_mutation_operation_with_diagnostic({}, {}, {}, 0, &{diagnostic});",
             subject.handle, offset.handle, replacement.handle
         ));
         self.body.push(format!(

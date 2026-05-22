@@ -165,6 +165,14 @@ pub enum NativeStringOffsetOperation {
     Empty = 2,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeValueOffsetMutationOperation {
+    Write = 0,
+    Append = 1,
+    Unset = 2,
+}
+
 pub const PHP_STRING_OFFSET_TRUNCATED_REPLACEMENT_WARNING: &str =
     "Only the first byte will be assigned to the string offset";
 
@@ -4274,6 +4282,44 @@ pub unsafe extern "C" fn phpc_native_value_string_offset_write_with_diagnostic(
     }
 }
 
+/// # Safety
+///
+/// `subject`, `offset`, and `replacement` must be null or value handles
+/// previously returned by the runtime ABI and not yet freed. `diagnostic` may
+/// be null; when non-null, it must point to writable storage for one
+/// `NativeDiagnosticHandle`. Operation `0` returns a copy of `subject` after
+/// assigning `subject[offset] = replacement`, operation `1` returns a copy
+/// after appending `replacement`, and operation `2` returns a copy after
+/// unsetting `subject[offset]`. Array subjects share the native array-key
+/// conversion boundary. String writes share the existing string-offset write
+/// boundary, including warning-capable replacement truncation; string append
+/// and unset remain centralized blockers.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_offset_mutation_operation_with_diagnostic(
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    replacement: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_offset_mutation_operation_value(subject, offset, replacement, operation)
+    } {
+        Ok((value, warning)) => {
+            if let Some(warning) = warning {
+                unsafe { native_store_diagnostic_message(diagnostic, warning) };
+            }
+            NativeValueHandle::from_value(value)
+        }
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
 unsafe fn native_value_string_offset_operation_value(
     subject: NativeValueHandle,
     offset: NativeValueHandle,
@@ -4328,6 +4374,112 @@ unsafe fn native_value_offset_operation_value(
     }
 
     unsafe { native_value_string_offset_operation_value(subject, offset, operation) }
+}
+
+unsafe fn native_value_offset_mutation_operation_value(
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    replacement: NativeValueHandle,
+    operation: u8,
+) -> RuntimeResult<(Value, Option<&'static str>)> {
+    let Some(value) = (unsafe { subject.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_access(
+            "native value offset mutation failed: subject handle is null",
+        ));
+    };
+
+    if let Value::Array(array) = value {
+        return unsafe {
+            native_array_value_offset_mutation_operation_value(
+                array,
+                offset,
+                replacement,
+                operation,
+            )
+        };
+    }
+
+    unsafe {
+        native_string_value_offset_mutation_operation_value(subject, offset, replacement, operation)
+    }
+}
+
+unsafe fn native_array_value_offset_mutation_operation_value(
+    array: &PhpArray,
+    offset: NativeValueHandle,
+    replacement: NativeValueHandle,
+    operation: u8,
+) -> RuntimeResult<(Value, Option<&'static str>)> {
+    let mut array = array.clone();
+    match operation {
+        tag if tag == NativeValueOffsetMutationOperation::Write as u8 => {
+            let Some(offset) = (unsafe { offset.as_ref() }) else {
+                return Err(RuntimeError::invalid_array_key(
+                    "native value offset mutation failed: write offset handle is null",
+                ));
+            };
+            let value = unsafe { native_value_clone_for_offset_mutation(replacement, "write") }?;
+            array.insert(native_array_key_from_runtime_value(offset)?, value);
+        }
+        tag if tag == NativeValueOffsetMutationOperation::Append as u8 => {
+            let value = unsafe { native_value_clone_for_offset_mutation(replacement, "append") }?;
+            array.append(value)?;
+        }
+        tag if tag == NativeValueOffsetMutationOperation::Unset as u8 => {
+            let Some(offset) = (unsafe { offset.as_ref() }) else {
+                return Err(RuntimeError::invalid_array_key(
+                    "native value offset mutation failed: unset offset handle is null",
+                ));
+            };
+            array.remove(native_array_key_from_runtime_value(offset)?);
+        }
+        _ => {
+            return Err(RuntimeError::invalid_array_access(
+                "native value offset mutation failed: unsupported operation tag",
+            ));
+        }
+    }
+
+    Ok((Value::Array(array), None))
+}
+
+unsafe fn native_string_value_offset_mutation_operation_value(
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    replacement: NativeValueHandle,
+    operation: u8,
+) -> RuntimeResult<(Value, Option<&'static str>)> {
+    match operation {
+        tag if tag == NativeValueOffsetMutationOperation::Write as u8 => {
+            unsafe { native_value_string_offset_write_value(subject, offset, replacement) }
+        }
+        tag if tag == NativeValueOffsetMutationOperation::Append as u8 => {
+            Err(RuntimeError::invalid_array_access(
+                "native value offset mutation failed: string offset append awaits the shared mutable string-offset ABI",
+            ))
+        }
+        tag if tag == NativeValueOffsetMutationOperation::Unset as u8 => {
+            Err(RuntimeError::invalid_array_access(
+                "native value offset mutation failed: string offset unset awaits the shared mutable string-offset ABI",
+            ))
+        }
+        _ => Err(RuntimeError::invalid_array_access(
+            "native value offset mutation failed: unsupported operation tag",
+        )),
+    }
+}
+
+unsafe fn native_value_clone_for_offset_mutation(
+    handle: NativeValueHandle,
+    operation: &'static str,
+) -> RuntimeResult<Value> {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_access(format!(
+            "native value offset mutation failed: {operation} value handle is null"
+        )));
+    };
+
+    Ok(value.clone())
 }
 
 unsafe fn native_array_value_offset_operation_value(
@@ -18452,6 +18604,193 @@ mod tests {
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(offset) };
         unsafe { phpc_native_value_free(subject) };
+    }
+
+    #[test]
+    fn native_value_offset_mutations_reuse_string_array_key_and_value_boundaries() {
+        fn offset_mutation(
+            subject: Value,
+            offset: Option<Value>,
+            replacement: Option<Value>,
+            operation: NativeValueOffsetMutationOperation,
+        ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+            let subject = NativeValueHandle::from_value(subject);
+            let offset = offset
+                .map(NativeValueHandle::from_value)
+                .unwrap_or_else(NativeValueHandle::null);
+            let replacement = replacement
+                .map(NativeValueHandle::from_value)
+                .unwrap_or_else(NativeValueHandle::null);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_offset_mutation_operation_with_diagnostic(
+                    subject,
+                    offset,
+                    replacement,
+                    operation as u8,
+                    &mut diagnostic,
+                )
+            };
+            unsafe { phpc_native_value_free(subject) };
+            unsafe { phpc_native_value_free(offset) };
+            unsafe { phpc_native_value_free(replacement) };
+            (result, diagnostic)
+        }
+
+        fn assert_clean_string_mutation(
+            subject: Value,
+            offset: Value,
+            replacement: Value,
+            expected: &[u8],
+        ) -> NativeValueHandle {
+            let (result, diagnostic) = offset_mutation(
+                subject,
+                Some(offset),
+                Some(replacement),
+                NativeValueOffsetMutationOperation::Write,
+            );
+            assert!(diagnostic.is_null());
+            assert_eq!(native_value_echo_bytes_for_test(result), expected);
+            result
+        }
+
+        let written_string = assert_clean_string_mutation(
+            Value::String("A\0B".to_string()),
+            Value::String("1".to_string()),
+            Value::Bool(true),
+            b"A1B",
+        );
+        unsafe { phpc_native_value_free(written_string) };
+
+        let padded_string = assert_clean_string_mutation(
+            Value::String("ab".to_string()),
+            Value::Int(4),
+            Value::Int(7),
+            b"ab  7",
+        );
+        unsafe { phpc_native_value_free(padded_string) };
+
+        let (warned_string, warning) = offset_mutation(
+            Value::String("abc".to_string()),
+            Some(Value::Int(1)),
+            Some(Value::String("XY".to_string())),
+            NativeValueOffsetMutationOperation::Write,
+        );
+        assert!(!warned_string.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(warned_string), b"aXc");
+        assert_eq!(
+            native_diagnostic_message_for_test(warning),
+            PHP_STRING_OFFSET_TRUNCATED_REPLACEMENT_WARNING
+        );
+        unsafe { phpc_native_value_free(warned_string) };
+        unsafe { phpc_native_diagnostic_free(warning) };
+
+        let mut array = PhpArray::new();
+        array.insert(
+            ArrayKey::String("slot".to_string()),
+            Value::String("old".to_string()),
+        );
+        let (array_written, diagnostic) = offset_mutation(
+            Value::Array(array),
+            Some(Value::String("slot".to_string())),
+            Some(Value::String("new".to_string())),
+            NativeValueOffsetMutationOperation::Write,
+        );
+        assert!(diagnostic.is_null());
+
+        let slot_key = NativeValueHandle::from_value(Value::String("slot".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let read_written = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                array_written,
+                slot_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(read_written), b"new");
+        let written_array_value = unsafe { array_written.as_ref() }
+            .expect("array mutation returned a value")
+            .clone();
+        unsafe { phpc_native_value_free(read_written) };
+        unsafe { phpc_native_value_free(slot_key) };
+        unsafe { phpc_native_value_free(array_written) };
+
+        let (array_appended, mut diagnostic) = offset_mutation(
+            written_array_value,
+            None,
+            Some(Value::Int(8)),
+            NativeValueOffsetMutationOperation::Append,
+        );
+        assert!(diagnostic.is_null());
+        let append_key = NativeValueHandle::from_value(Value::Int(0));
+        let read_appended = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                array_appended,
+                append_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(read_appended), b"8");
+        let appended_array_value = unsafe { array_appended.as_ref() }
+            .expect("array append returned a value")
+            .clone();
+        unsafe { phpc_native_value_free(read_appended) };
+        unsafe { phpc_native_value_free(append_key) };
+        unsafe { phpc_native_value_free(array_appended) };
+
+        let (array_unset, mut diagnostic) = offset_mutation(
+            appended_array_value,
+            Some(Value::String("slot".to_string())),
+            None,
+            NativeValueOffsetMutationOperation::Unset,
+        );
+        assert!(diagnostic.is_null());
+        let slot_key = NativeValueHandle::from_value(Value::String("slot".to_string()));
+        let exists_after_unset = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                array_unset,
+                slot_key,
+                NativeStringOffsetOperation::Isset as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(exists_after_unset), b"");
+        unsafe { phpc_native_value_free(exists_after_unset) };
+        unsafe { phpc_native_value_free(slot_key) };
+        unsafe { phpc_native_value_free(array_unset) };
+
+        let (failed_append, diagnostic) = offset_mutation(
+            Value::String("abc".to_string()),
+            None,
+            Some(Value::String("x".to_string())),
+            NativeValueOffsetMutationOperation::Append,
+        );
+        assert!(failed_append.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: native value offset mutation failed: string offset append awaits the shared mutable string-offset ABI"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(failed_append) };
+
+        let (missing_replacement, diagnostic) = offset_mutation(
+            Value::Array(PhpArray::new()),
+            Some(Value::Int(0)),
+            None,
+            NativeValueOffsetMutationOperation::Write,
+        );
+        assert!(missing_replacement.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: native value offset mutation failed: write value handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(missing_replacement) };
     }
 
     #[test]

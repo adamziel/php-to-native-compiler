@@ -507,12 +507,12 @@ fn native_executable_c_source_routes_string_offset_reads_through_byte_boundary()
 }
 
 #[test]
-fn native_executable_c_source_routes_string_offset_writes_through_byte_boundary() {
+fn native_executable_c_source_routes_string_offset_writes_through_value_offset_mutation_boundary() {
     let program = parse(STRING_OFFSET_WRITE_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains("phpc_native_value_string_offset_write_with_diagnostic"),
+        source.contains("phpc_native_value_offset_mutation_operation_with_diagnostic"),
         "{source}"
     );
     assert!(
@@ -522,10 +522,18 @@ fn native_executable_c_source_routes_string_offset_writes_through_byte_boundary(
     assert!(source.contains("phpc_native_byte_buffer_free"), "{source}");
     assert!(
         source
-            .matches(" = phpc_native_value_string_offset_write_with_diagnostic(")
+            .matches(" = phpc_native_value_offset_mutation_operation_with_diagnostic(")
             .count()
             >= 2,
-        "string-offset writes should share the runtime write boundary:\n{source}"
+        "string-offset writes should share the value-offset mutation boundary:\n{source}"
+    );
+    assert!(
+        source.contains(", 0, &string_offset_write_diagnostic_"),
+        "string-offset writes should use the write operation tag:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_string_offset_write_with_diagnostic"),
+        "generated-C string-offset writes should not keep the string-only write ABI:\n{source}"
     );
     assert!(
         source
