@@ -4213,6 +4213,36 @@ pub unsafe extern "C" fn phpc_native_value_string_offset_operation_with_diagnost
 
 /// # Safety
 ///
+/// `subject` and `offset` must be null or value handles previously returned by
+/// the runtime ABI and not yet freed. `diagnostic` may be null; when non-null,
+/// it must point to writable storage for one `NativeDiagnosticHandle`. On
+/// failure the helper stores a diagnostic handle that the caller owns and must
+/// release with `phpc_native_diagnostic_free`. Operation tags match
+/// `phpc_native_value_string_offset_operation_with_diagnostic`: `0` reads one
+/// offset value, `1` returns `isset(subject[offset])` as an owned PHP bool, and
+/// `2` returns `empty(subject[offset])` as an owned PHP bool. Array subjects use
+/// the shared native array-key conversion boundary; non-array subjects route
+/// through the byte-preserving string-offset boundary.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_offset_operation_with_diagnostic(
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_offset_operation_value(subject, offset, operation) } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
 /// `subject`, `offset`, and `replacement` must be null or value handles
 /// previously returned by the runtime ABI and not yet freed. `diagnostic` may
 /// be null; when non-null, it must point to writable storage for one
@@ -4280,6 +4310,53 @@ unsafe fn native_value_string_offset_write_value(
         )
     })?;
     Ok((value, warning))
+}
+
+unsafe fn native_value_offset_operation_value(
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    operation: u8,
+) -> RuntimeResult<Value> {
+    let Some(value) = (unsafe { subject.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_access(
+            "native value offset operation failed: subject handle is null",
+        ));
+    };
+
+    if let Value::Array(array) = value {
+        return unsafe { native_array_value_offset_operation_value(array, offset, operation) };
+    }
+
+    unsafe { native_value_string_offset_operation_value(subject, offset, operation) }
+}
+
+unsafe fn native_array_value_offset_operation_value(
+    array: &PhpArray,
+    offset: NativeValueHandle,
+    operation: u8,
+) -> RuntimeResult<Value> {
+    let Some(offset) = (unsafe { offset.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_key(
+            "native value offset operation failed: offset handle is null",
+        ));
+    };
+    let key = native_array_key_from_runtime_value(offset)?;
+
+    match NativeStringOffsetOperation::from_tag(operation)? {
+        NativeStringOffsetOperation::Read => array
+            .get_cloned(key.clone())
+            .ok_or_else(|| RuntimeError::undefined_array_key(key.diagnostic_key())),
+        NativeStringOffsetOperation::Isset => Ok(Value::Bool(!matches!(
+            array.get(key),
+            None | Some(Value::Null)
+        ))),
+        NativeStringOffsetOperation::Empty => Ok(Value::Bool(
+            array
+                .get(key)
+                .map(|value| !value.is_truthy())
+                .unwrap_or(true),
+        )),
+    }
 }
 
 unsafe fn native_value_string_offset_read_subject_bytes(
@@ -18034,6 +18111,137 @@ mod tests {
         unsafe { phpc_native_value_free(subject) };
         unsafe { phpc_native_value_free(false_value) };
         unsafe { phpc_native_value_free(true_value) };
+    }
+
+    #[test]
+    fn native_value_offset_operations_dispatch_arrays_and_strings_through_one_boundary() {
+        fn offset_operation(
+            subject: Value,
+            offset: Value,
+            operation: NativeStringOffsetOperation,
+        ) -> NativeValueHandle {
+            let subject = NativeValueHandle::from_value(subject);
+            let offset = NativeValueHandle::from_value(offset);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_offset_operation_with_diagnostic(
+                    subject,
+                    offset,
+                    operation as u8,
+                    &mut diagnostic,
+                )
+            };
+            unsafe { phpc_native_value_free(subject) };
+            unsafe { phpc_native_value_free(offset) };
+            assert!(
+                diagnostic.is_null(),
+                "unexpected value-offset diagnostic: {}",
+                native_diagnostic_message_for_test(diagnostic)
+            );
+            assert!(
+                !result.is_null(),
+                "value-offset operation produced no value"
+            );
+            result
+        }
+
+        fn assert_offset_bool(
+            subject: Value,
+            offset: Value,
+            operation: NativeStringOffsetOperation,
+            expected: bool,
+        ) {
+            let result = offset_operation(subject, offset, operation);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            assert_eq!(
+                unsafe { phpc_native_value_bool_with_diagnostic(result, &mut diagnostic) },
+                expected
+            );
+            assert!(diagnostic.is_null());
+            unsafe { phpc_native_value_free(result) };
+        }
+
+        let mut array = PhpArray::new();
+        array.insert(ArrayKey::string("hit"), Value::String("V".to_string()));
+        array.insert(ArrayKey::string("null"), Value::Null);
+        array.insert(ArrayKey::string("empty"), Value::String(String::new()));
+
+        let read = offset_operation(
+            Value::Array(array.clone()),
+            Value::String("hit".to_string()),
+            NativeStringOffsetOperation::Read,
+        );
+        assert_eq!(native_value_echo_bytes_for_test(read), b"V");
+        unsafe { phpc_native_value_free(read) };
+
+        assert_offset_bool(
+            Value::Array(array.clone()),
+            Value::String("hit".to_string()),
+            NativeStringOffsetOperation::Isset,
+            true,
+        );
+        assert_offset_bool(
+            Value::Array(array.clone()),
+            Value::String("null".to_string()),
+            NativeStringOffsetOperation::Isset,
+            false,
+        );
+        assert_offset_bool(
+            Value::Array(array.clone()),
+            Value::String("missing".to_string()),
+            NativeStringOffsetOperation::Isset,
+            false,
+        );
+        assert_offset_bool(
+            Value::Array(array.clone()),
+            Value::String("empty".to_string()),
+            NativeStringOffsetOperation::Empty,
+            true,
+        );
+        assert_offset_bool(
+            Value::Array(array),
+            Value::String("hit".to_string()),
+            NativeStringOffsetOperation::Empty,
+            false,
+        );
+        assert_offset_bool(
+            Value::String("A0".to_string()),
+            Value::Int(1),
+            NativeStringOffsetOperation::Isset,
+            true,
+        );
+        assert_offset_bool(
+            Value::String("A0".to_string()),
+            Value::Int(0),
+            NativeStringOffsetOperation::Empty,
+            false,
+        );
+        assert_offset_bool(
+            Value::String("A0".to_string()),
+            Value::Int(1),
+            NativeStringOffsetOperation::Empty,
+            true,
+        );
+
+        let subject = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let offset = NativeValueHandle::from_value(Value::String("missing".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let missing = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                subject,
+                offset,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(missing.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "undefined array key \"missing\""
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(offset) };
+        unsafe { phpc_native_value_free(subject) };
     }
 
     #[test]

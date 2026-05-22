@@ -356,6 +356,8 @@ fn native_executable_c_source_routes_unary_string_results_through_runtime_contra
 
 const STRING_OFFSET_ISSET_EMPTY_SOURCE: &str = "<?php\n$selected = \"A0\0B\";\n$offset = \"1\";\necho isset($selected[0], $selected[$offset]) ? 1 : 0;\necho \"|\";\necho empty($selected[$offset]) ? 1 : 0;\necho \"|\";\necho isset($selected[99]) ? 1 : 0;\necho \"|\";\necho empty((\"102\")[1]) ? 1 : 0;\necho \"|\";\necho empty(strrev(\"za\")[1]) ? 1 : 0;\n";
 
+const VALUE_OFFSET_PRESENCE_SOURCE: &str = "<?php\n$items = [\"hit\" => \"V\", \"null\" => null, \"empty\" => \"\"];\n$key = \"hit\";\n$text = \"A0\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[\"null\"]) ? 1 : 0;\necho \"|\";\necho isset($items[\"missing\"]) ? 1 : 0;\necho \"|\";\necho empty($items[\"empty\"]) ? 1 : 0;\necho \"|\";\necho isset($text[1]) ? 1 : 0;\necho \"|\";\necho empty($text[0]) ? 1 : 0;\n";
+
 const STRING_OFFSET_READ_SOURCE: &str = concat!(
     "<?php\n",
     "$selected = \"A",
@@ -393,9 +395,10 @@ const STRING_OFFSET_WRITE_SOURCE: &str = concat!(
 fn native_executable_c_source_routes_string_offset_isset_empty_through_bool_boundary() {
     let program = parse(STRING_OFFSET_ISSET_EMPTY_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
 
     assert!(
-        source.contains("phpc_native_value_string_offset_operation_with_diagnostic"),
+        source.contains("phpc_native_value_offset_operation_with_diagnostic"),
         "{source}"
     );
     assert!(
@@ -403,26 +406,58 @@ fn native_executable_c_source_routes_string_offset_isset_empty_through_bool_boun
         "{source}"
     );
     assert_eq!(
-        source
-            .matches(" = phpc_native_value_string_offset_operation_with_diagnostic(")
+        body.matches(" = phpc_native_value_offset_operation_with_diagnostic(")
             .count(),
         6,
-        "isset/empty offsets should share the runtime string-offset operation boundary:\n{source}"
+        "isset/empty offsets should share the runtime value-offset operation boundary:\n{source}"
     );
     assert_eq!(
-        source
-            .matches(" = phpc_native_value_bool_with_diagnostic(")
+        body.matches(" = phpc_native_value_bool_with_diagnostic(")
             .count(),
         6,
         "offset bool results should pass through the typed native bool boundary:\n{source}"
     );
     assert!(
-        source.contains(", 1, &string_offset_bool_diagnostic_"),
+        body.contains(", 1, &value_offset_bool_diagnostic_"),
         "isset offsets should use the shared operation tag:\n{source}"
     );
     assert!(
-        source.contains(", 2, &string_offset_bool_diagnostic_"),
+        body.contains(", 2, &value_offset_bool_diagnostic_"),
         "empty offsets should use the shared operation tag:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_value_string_offset_operation_with_diagnostic"),
+        "presence paths should not use the string-only offset ABI:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_array_and_string_offset_presence_through_value_boundary() {
+    let program = parse(VALUE_OFFSET_PRESENCE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_offset_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_value_offset_operation_with_diagnostic(")
+            .count()
+            >= 6,
+        "array and string offset presence should use one value-offset ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_from_array"),
+        "array subjects should be materialized through the native value carrier:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_bool_with_diagnostic"),
+        "offset presence results should pass through the native bool boundary:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_value_string_offset_operation_with_diagnostic"),
+        "array/string presence should not dispatch through the string-only offset ABI:\n{source}"
     );
 }
 
@@ -1306,6 +1341,54 @@ fn emit_exe_links_and_runs_string_offset_isset_empty_bool_boundary_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"1|1|0|1|0");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_and_string_offset_presence_value_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("array_string_offset_presence_value_boundary");
+    let source_path =
+        native_link_output_path("array_string_offset_presence_value_boundary_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, VALUE_OFFSET_PRESENCE_SOURCE)
+        .expect("native value-offset presence source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native value-offset presence source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1|1|0|1|1|0");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
@@ -2853,6 +2936,13 @@ fn native_link_output_path(name: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!("phpc-native-link-{name}-{}", std::process::id()));
     path
+}
+
+fn main_body(source: &str) -> &str {
+    source
+        .split_once("int main(void)")
+        .map(|(_, body)| body)
+        .unwrap_or(source)
 }
 
 fn strip_fixture_editor_newline(mut value: String) -> String {
