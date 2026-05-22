@@ -165,6 +165,101 @@ fn native_executable_c_source_routes_by_value_foreach_through_array_lvalue_owner
 }
 
 #[test]
+fn native_executable_c_source_routes_array_pointer_builtins_through_lvalue_owner_results() {
+    let program = parse(
+        "<?php\n$items = [10 => \"first\", 20 => \"second\", 30 => \"third\"];\n$box = [\"nested\" => [\"n1\", \"n2\", \"n3\"]];\necho current($items), \"|\", key($items), \"|\", next($items), \"|\", key($items), \"|\", prev($items), \"|\", end($items), \"|\", reset($items), \"|\", next($box[\"nested\"]), \"|\", end($box[\"nested\"]), \"|\", reset($box[\"nested\"]);\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_pointer_result"),
+        "{source}"
+    );
+    for tag in [
+        "PHPC_NATIVE_ARRAY_LVALUE_POINTER_CURRENT",
+        "PHPC_NATIVE_ARRAY_LVALUE_POINTER_KEY",
+        "PHPC_NATIVE_ARRAY_LVALUE_POINTER_NEXT",
+        "PHPC_NATIVE_ARRAY_LVALUE_POINTER_PREV",
+        "PHPC_NATIVE_ARRAY_LVALUE_POINTER_RESET",
+        "PHPC_NATIVE_ARRAY_LVALUE_POINTER_END",
+    ] {
+        assert!(source.contains(tag), "{source}");
+    }
+    assert!(
+        body.matches("phpc_native_array_lvalue_owner_pointer_result")
+            .count()
+            >= 10,
+        "{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_pointer_lvalue_owner_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("array_pointer_lvalue_owner.php");
+    let output_path = native_link_output_path("array_pointer_lvalue_owner");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        "<?php\n$items = [10 => \"first\", 20 => \"second\", 30 => \"third\"];\n$box = [\"nested\" => [\"n1\", \"n2\", \"n3\"]];\necho current($items), \"|\", key($items), \"|\", next($items), \"|\", key($items), \"|\", prev($items), \"|\", key($items), \"|\", end($items), \"|\", key($items), \"|\", reset($items), \"|\", key($items), \"|\", next($box[\"nested\"]), \"|\", end($box[\"nested\"]), \"|\", reset($box[\"nested\"]);\n",
+    )
+    .expect("write array pointer native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array pointer source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native array pointer executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native array pointer executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"first|10|second|20|first|10|third|30|first|10|n2|n3|n1"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_blocks_foreach_forms_without_symbol_or_reference_storage() {
     for source in [
         "<?php\n$v = \"old\";\n$a = [\"new\"];\nforeach ($a as $v) { echo $v; }\n",

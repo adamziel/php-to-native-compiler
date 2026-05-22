@@ -190,11 +190,59 @@ const NATIVE_ARRAY_LVALUE_INCREMENT: u8 = 0;
 const NATIVE_ARRAY_LVALUE_DECREMENT: u8 = 1;
 const NATIVE_ARRAY_LVALUE_POSITION_PRE: u8 = 0;
 const NATIVE_ARRAY_LVALUE_POSITION_POST: u8 = 1;
+const NATIVE_ARRAY_LVALUE_POINTER_CURRENT: u8 = 0;
+const NATIVE_ARRAY_LVALUE_POINTER_KEY: u8 = 1;
+const NATIVE_ARRAY_LVALUE_POINTER_NEXT: u8 = 2;
+const NATIVE_ARRAY_LVALUE_POINTER_PREV: u8 = 3;
+const NATIVE_ARRAY_LVALUE_POINTER_RESET: u8 = 4;
+const NATIVE_ARRAY_LVALUE_POINTER_END: u8 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum NativeArrayLvaluePathElement {
     Key(ArrayKey),
     Append,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeArrayPointerOperation {
+    Current,
+    Key,
+    Next,
+    Prev,
+    Reset,
+    End,
+}
+
+impl NativeArrayPointerOperation {
+    fn from_tag(operation: u8) -> Result<Self, NativeArrayLvalueResult> {
+        match operation {
+            NATIVE_ARRAY_LVALUE_POINTER_CURRENT => Ok(Self::Current),
+            NATIVE_ARRAY_LVALUE_POINTER_KEY => Ok(Self::Key),
+            NATIVE_ARRAY_LVALUE_POINTER_NEXT => Ok(Self::Next),
+            NATIVE_ARRAY_LVALUE_POINTER_PREV => Ok(Self::Prev),
+            NATIVE_ARRAY_LVALUE_POINTER_RESET => Ok(Self::Reset),
+            NATIVE_ARRAY_LVALUE_POINTER_END => Ok(Self::End),
+            _ => Err(NativeArrayLvalueResult::diagnostic(
+                NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+                format!("array lvalue pointer/cursor operation tag {operation} is not supported"),
+            )),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Current => "current",
+            Self::Key => "key",
+            Self::Next => "next",
+            Self::Prev => "prev",
+            Self::Reset => "reset",
+            Self::End => "end",
+        }
+    }
+
+    fn mutates_owner(self) -> bool {
+        !matches!(self, Self::Current | Self::Key)
+    }
 }
 
 pub const PHP_STRING_OFFSET_TRUNCATED_REPLACEMENT_WARNING: &str =
@@ -5476,6 +5524,52 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
 /// The owner and each key handle inside `segments` must be null or handles
 /// previously returned by the runtime ABI and not yet freed. `segments` must be
 /// null when `segment_count` is zero, or point to `segment_count` initialized
+/// key-only path segments. The returned result owns any value/diagnostic
+/// handles it carries.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_lvalue_owner_pointer_result(
+    mut owner: NativeArrayLvalueOwner,
+    segments: *const NativeArrayPathSegment,
+    segment_count: usize,
+    operation: u8,
+) -> NativeArrayLvalueResult {
+    let operation = match NativeArrayPointerOperation::from_tag(operation) {
+        Ok(operation) => operation,
+        Err(result) => return result,
+    };
+
+    if owner.tag != NATIVE_ARRAY_LVALUE_OWNER_ARRAY {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array lvalue pointer owner is not a native array handle",
+        );
+    }
+
+    let Some(array) = (unsafe { owner.array.as_mut() }) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array lvalue pointer root is not a live native array handle",
+        );
+    };
+    let path = if segment_count == 0 {
+        Vec::new()
+    } else {
+        match unsafe {
+            native_array_lvalue_key_path_from_segments(segments, segment_count, operation.label())
+        } {
+            Ok(path) => path,
+            Err(result) => return result,
+        }
+    };
+
+    native_array_pointer_array_path_result(&mut array.value, &path, operation)
+}
+
+/// # Safety
+///
+/// The owner and each key handle inside `segments` must be null or handles
+/// previously returned by the runtime ABI and not yet freed. `segments` must be
+/// null when `segment_count` is zero, or point to `segment_count` initialized
 /// path segments. The returned value is an owned by-value array snapshot for
 /// foreach iteration.
 #[no_mangle]
@@ -5971,6 +6065,76 @@ fn native_array_lvalue_isset_key_path(
             ),
         )),
     }
+}
+
+fn native_array_pointer_array_path_result(
+    array: &mut PhpArray,
+    path: &[ArrayKey],
+    operation: NativeArrayPointerOperation,
+) -> NativeArrayLvalueResult {
+    let Some((key, rest)) = path.split_first() else {
+        return native_array_pointer_array_result(array, operation);
+    };
+
+    let Some(mut value) = array.get_cloned(key.clone()) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            RuntimeError::undefined_array_key(key.diagnostic_key()).message(),
+        );
+    };
+    let result = native_array_pointer_value_path_result(&mut value, rest, operation);
+    if result.tag == NATIVE_ARRAY_LVALUE_OK && operation.mutates_owner() {
+        array.insert(key.clone(), value);
+    }
+    result
+}
+
+fn native_array_pointer_value_path_result(
+    value: &mut Value,
+    path: &[ArrayKey],
+    operation: NativeArrayPointerOperation,
+) -> NativeArrayLvalueResult {
+    if path.is_empty() {
+        return match value {
+            Value::Array(array) => native_array_pointer_array_result(array, operation),
+            other => native_array_pointer_non_array_result(operation, other),
+        };
+    }
+
+    match value {
+        Value::Array(array) => native_array_pointer_array_path_result(array, path, operation),
+        other => native_array_pointer_non_array_result(operation, other),
+    }
+}
+
+fn native_array_pointer_array_result(
+    array: &mut PhpArray,
+    operation: NativeArrayPointerOperation,
+) -> NativeArrayLvalueResult {
+    match operation {
+        NativeArrayPointerOperation::Current => {
+            NativeArrayLvalueResult::value(array.current_value())
+        }
+        NativeArrayPointerOperation::Key => NativeArrayLvalueResult::value(array.key_value()),
+        NativeArrayPointerOperation::Next => NativeArrayLvalueResult::value(array.next_value()),
+        NativeArrayPointerOperation::Prev => NativeArrayLvalueResult::value(array.prev_value()),
+        NativeArrayPointerOperation::Reset => NativeArrayLvalueResult::value(array.reset_value()),
+        NativeArrayPointerOperation::End => NativeArrayLvalueResult::value(array.end_value()),
+    }
+}
+
+fn native_array_pointer_non_array_result(
+    operation: NativeArrayPointerOperation,
+    value: &Value,
+) -> NativeArrayLvalueResult {
+    NativeArrayLvalueResult::diagnostic(
+        NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+        format!(
+            "unsupported call {}(): argument must be array, got {}",
+            operation.label(),
+            value.type_name()
+        ),
+    )
 }
 
 fn native_array_foreach_iterable_path_result(
@@ -8255,7 +8419,7 @@ pub struct PhpArray {
     entries: Vec<ArrayEntry>,
     next_auto_index: i64,
     auto_index_exhausted: bool,
-    cursor: usize,
+    cursor: isize,
 }
 
 const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
@@ -8683,8 +8847,8 @@ impl PhpArray {
         }
         if self.entries.is_empty() {
             self.cursor = 0;
-        } else if self.cursor >= self.entries.len() {
-            self.cursor = self.entries.len() - 1;
+        } else if self.cursor >= self.entries.len() as isize {
+            self.cursor = self.entries.len() as isize - 1;
         }
 
         entry.into_value()
@@ -8714,10 +8878,23 @@ impl PhpArray {
     }
 
     pub fn current_value(&self) -> Value {
+        let Ok(cursor) = usize::try_from(self.cursor) else {
+            return Value::Bool(false);
+        };
         self.entries
-            .get(self.cursor)
+            .get(cursor)
             .map(|entry| entry.value_cloned())
             .unwrap_or(Value::Bool(false))
+    }
+
+    pub fn key_value(&self) -> Value {
+        let Ok(cursor) = usize::try_from(self.cursor) else {
+            return Value::Null;
+        };
+        self.entries
+            .get(cursor)
+            .map(|entry| array_key_to_value(&entry.key))
+            .unwrap_or(Value::Null)
     }
 
     pub fn next_value(&mut self) -> Value {
@@ -8725,7 +8902,40 @@ impl PhpArray {
             return Value::Bool(false);
         }
 
+        if self.cursor < 0 {
+            return Value::Bool(false);
+        }
         self.cursor = self.cursor.saturating_add(1);
+        self.current_value()
+    }
+
+    pub fn prev_value(&mut self) -> Value {
+        if self.entries.is_empty() {
+            return Value::Bool(false);
+        }
+
+        if self.cursor >= self.entries.len() as isize {
+            return Value::Bool(false);
+        }
+        if self.cursor <= 0 {
+            self.cursor = -1;
+        } else {
+            self.cursor -= 1;
+        }
+        self.current_value()
+    }
+
+    pub fn reset_value(&mut self) -> Value {
+        self.cursor = 0;
+        self.current_value()
+    }
+
+    pub fn end_value(&mut self) -> Value {
+        if self.entries.is_empty() {
+            self.cursor = 0;
+        } else {
+            self.cursor = self.entries.len() as isize - 1;
+        }
         self.current_value()
     }
 
@@ -22106,6 +22316,191 @@ mod tests {
         unsafe { phpc_native_value_free(outer_key) };
         unsafe { phpc_native_value_free(null_direct_key) };
         unsafe { phpc_native_value_free(direct_key) };
+        unsafe { phpc_native_array_free(handle) };
+    }
+
+    #[test]
+    fn native_array_lvalue_pointer_result_routes_cursor_family_and_failures() {
+        let nested_key = NativeValueHandle::from_value(Value::String("nested".to_string()));
+        let scalar_key = NativeValueHandle::from_value(Value::String("scalar".to_string()));
+        let nested_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: nested_key,
+        }];
+        let scalar_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: scalar_key,
+        }];
+
+        let mut nested = PhpArray::new();
+        nested.append(Value::String("first".to_string())).unwrap();
+        nested.append(Value::String("second".to_string())).unwrap();
+        nested.append(Value::String("third".to_string())).unwrap();
+        let mut root = PhpArray::new();
+        root.insert("nested", Value::Array(nested));
+        root.insert("scalar", Value::Int(7));
+
+        let handle = NativeArrayHandle::from_array(root);
+        let owner = phpc_native_array_lvalue_owner_array(handle);
+
+        let root_key = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                ptr::null(),
+                0,
+                NATIVE_ARRAY_LVALUE_POINTER_KEY,
+            )
+        };
+        assert_eq!(root_key.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(root_key.value), b"nested");
+        unsafe { phpc_native_array_lvalue_result_free(root_key) };
+
+        let current = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                nested_path.as_ptr(),
+                nested_path.len(),
+                NATIVE_ARRAY_LVALUE_POINTER_CURRENT,
+            )
+        };
+        assert_eq!(current.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(current.value), b"first");
+        unsafe { phpc_native_array_lvalue_result_free(current) };
+
+        let key = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                nested_path.as_ptr(),
+                nested_path.len(),
+                NATIVE_ARRAY_LVALUE_POINTER_KEY,
+            )
+        };
+        assert_eq!(key.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(key.value), b"0");
+        unsafe { phpc_native_array_lvalue_result_free(key) };
+
+        let next = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                nested_path.as_ptr(),
+                nested_path.len(),
+                NATIVE_ARRAY_LVALUE_POINTER_NEXT,
+            )
+        };
+        assert_eq!(next.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(next.value), b"second");
+        unsafe { phpc_native_array_lvalue_result_free(next) };
+
+        let key_after_next = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                nested_path.as_ptr(),
+                nested_path.len(),
+                NATIVE_ARRAY_LVALUE_POINTER_KEY,
+            )
+        };
+        assert_eq!(native_value_echo_bytes_for_test(key_after_next.value), b"1");
+        unsafe { phpc_native_array_lvalue_result_free(key_after_next) };
+
+        let end = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                nested_path.as_ptr(),
+                nested_path.len(),
+                NATIVE_ARRAY_LVALUE_POINTER_END,
+            )
+        };
+        assert_eq!(native_value_echo_bytes_for_test(end.value), b"third");
+        unsafe { phpc_native_array_lvalue_result_free(end) };
+
+        let prev = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                nested_path.as_ptr(),
+                nested_path.len(),
+                NATIVE_ARRAY_LVALUE_POINTER_PREV,
+            )
+        };
+        assert_eq!(native_value_echo_bytes_for_test(prev.value), b"second");
+        unsafe { phpc_native_array_lvalue_result_free(prev) };
+
+        let reset = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                nested_path.as_ptr(),
+                nested_path.len(),
+                NATIVE_ARRAY_LVALUE_POINTER_RESET,
+            )
+        };
+        assert_eq!(native_value_echo_bytes_for_test(reset.value), b"first");
+        unsafe { phpc_native_array_lvalue_result_free(reset) };
+
+        let before_start = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                nested_path.as_ptr(),
+                nested_path.len(),
+                NATIVE_ARRAY_LVALUE_POINTER_PREV,
+            )
+        };
+        assert_eq!(native_value_echo_bytes_for_test(before_start.value), b"");
+        unsafe { phpc_native_array_lvalue_result_free(before_start) };
+
+        let next_after_before_start = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                nested_path.as_ptr(),
+                nested_path.len(),
+                NATIVE_ARRAY_LVALUE_POINTER_NEXT,
+            )
+        };
+        assert_eq!(
+            native_value_echo_bytes_for_test(next_after_before_start.value),
+            b""
+        );
+        unsafe { phpc_native_array_lvalue_result_free(next_after_before_start) };
+
+        let reset_again = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                nested_path.as_ptr(),
+                nested_path.len(),
+                NATIVE_ARRAY_LVALUE_POINTER_RESET,
+            )
+        };
+        assert_eq!(
+            native_value_echo_bytes_for_test(reset_again.value),
+            b"first"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(reset_again) };
+
+        let scalar_nested = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(
+                owner,
+                scalar_path.as_ptr(),
+                scalar_path.len(),
+                NATIVE_ARRAY_LVALUE_POINTER_KEY,
+            )
+        };
+        assert_eq!(scalar_nested.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert_eq!(
+            native_diagnostic_message_for_test(scalar_nested.diagnostic),
+            "unsupported call key(): argument must be array, got int"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(scalar_nested) };
+
+        let invalid_operation = unsafe {
+            phpc_native_array_lvalue_owner_pointer_result(owner, ptr::null(), 0, u8::MAX)
+        };
+        assert_eq!(invalid_operation.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert_eq!(
+            native_diagnostic_message_for_test(invalid_operation.diagnostic),
+            "array lvalue pointer/cursor operation tag 255 is not supported"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(invalid_operation) };
+
+        unsafe { phpc_native_value_free(scalar_key) };
+        unsafe { phpc_native_value_free(nested_key) };
         unsafe { phpc_native_array_free(handle) };
     }
 
