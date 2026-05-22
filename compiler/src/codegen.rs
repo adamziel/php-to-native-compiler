@@ -156,6 +156,7 @@ const NATIVE_ARRAY_PATH_KEY_TAG: u8 = 0;
 const NATIVE_ARRAY_PATH_APPEND_TAG: u8 = 1;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE_TAG: u8 = 0;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET_TAG: u8 = 1;
+const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ_TAG: u8 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeCallBackend {
@@ -6956,6 +6957,9 @@ impl CGenerator {
                     output.push_str(&format!(
                         "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET {NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET_TAG}\n"
                     ));
+                    output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ {NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ_TAG}\n"
+                    ));
                 }
                 output.push_str("#define PHPC_NATIVE_VALUE_OPERATION_OK 0\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_UNARY_NEGATE 0\n");
@@ -8180,6 +8184,44 @@ impl CGenerator {
         self.body.extend(replacement.cleanup_after_use);
         self.body.extend(path.cleanup_after_use);
         Ok(())
+    }
+
+    fn emit_array_lvalue_read_materialized_for_handle(
+        &mut self,
+        handle: &str,
+        path: CNativeArrayLvaluePath,
+        result_prefix: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let owner = self.next_native_name("array_lvalue_owner");
+        let result = self.next_native_name(result_prefix);
+        let value = self.next_native_name("array_lvalue_read_value");
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
+            path.path, path.len
+        ));
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let cleanup = format!("{path_cleanup}{failure_cleanup}");
+        self.emit_native_array_lvalue_result_check(&result, &cleanup);
+        self.body
+            .push(format!("phpc_NativeValueHandle {value} = {result}.value;"));
+        self.body
+            .push(format!("{result}.value = (phpc_NativeValueHandle){{0}};"));
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.body.extend(path.cleanup_after_use);
+
+        CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        }
     }
 
     fn emit_array_lvalue_append_write_for_handle(
@@ -11974,6 +12016,12 @@ impl CGenerator {
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if let Some(value) =
+            self.try_materialize_nested_array_lvalue_read_expr(expr, failure_cleanup)?
+        {
+            return Ok(Some(value));
+        }
+
         match expr {
             Expr::Unary { op, expr, .. } => {
                 if matches!(op, UnaryOp::BitwiseNot) {
@@ -12157,6 +12205,41 @@ impl CGenerator {
             }
             _ => Ok(None),
         }
+    }
+
+    fn try_materialize_nested_array_lvalue_read_expr(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some((root, indices, span)) = array_index_expr_path(expr) else {
+            return Ok(None);
+        };
+        if indices.len() < 2 {
+            return Ok(None);
+        }
+        if let Some(superglobal_span) = request_superglobal_expr_span(root) {
+            return Err(self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+        if is_object_offset_expr(root) {
+            return Err(self.unsupported(root.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+        }
+
+        let Expr::Variable(name, _) = root else {
+            return Ok(None);
+        };
+        let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+            return Ok(None);
+        };
+
+        let path =
+            self.materialize_native_array_lvalue_key_path(&indices, span, failure_cleanup)?;
+        Ok(Some(self.emit_array_lvalue_read_materialized_for_handle(
+            &handle,
+            path,
+            "array_lvalue_read_result",
+            failure_cleanup,
+        )))
     }
 
     fn try_materialize_native_value_offset_null_coalesce_expr(
@@ -12973,6 +13056,26 @@ fn c_byte_array(bytes: &[u8]) -> String {
         .map(|byte| byte.to_string())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn array_index_expr_path(expr: &Expr) -> Option<(&Expr, Vec<&Expr>, Span)> {
+    let Expr::Index {
+        target,
+        index,
+        span,
+    } = expr
+    else {
+        return None;
+    };
+
+    match target.as_ref() {
+        nested @ Expr::Index { .. } => {
+            let (root, mut indices, _) = array_index_expr_path(nested)?;
+            indices.push(index.as_ref());
+            Some((root, indices, *span))
+        }
+        root => Some((root, vec![index.as_ref()], *span)),
+    }
 }
 
 fn is_comparison_op(op: BinaryOp) -> bool {
