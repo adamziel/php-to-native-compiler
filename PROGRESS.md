@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 11:39 CEST
+Updated: 2026-05-22 11:47 CEST
 Current primary semantic baseline: `4aef9974 runtime: share symbol and request reference slots`
 
 This is a high-level roadmap view. Percentages are candid engineering estimates, not test-suite pass rates. Lane-local work is not counted as product capability until it is integrated into `master`, gated, committed, and pushed.
@@ -22,8 +22,9 @@ Estimated progress toward a broadly usable generalized PHP native compiler: **63
 
 ## Current Primary State
 
-- `master` is pushed and synced with `origin/master` at `4aef9974`.
-- The only expected dirty primary diff is the preserved `runtime/src/lib.rs` append/null-slot cleanup hunk. It is not counted here.
+- `master` is pushed and synced with `origin/master` at `7fcc76ee docs: update progress after reference slots`.
+- The current semantic baseline remains `4aef9974`; `7fcc76ee` is the committed progress-dashboard update on top of it.
+- The expected dirty primary diff is owned by `primary-integrator`: a generalized array pointer/cursor lvalue owner/path slice in `runtime/src/lib.rs`, `compiler/src/codegen.rs`, and `compiler/tests/native_link.rs`. It is not counted here until gated, committed, and pushed.
 - The latest integrated semantic sequence is:
   - `b6e271e6 runtime: snapshot request superglobal storage`
   - `9ca31007 runtime: populate request roots from symbol tables`
