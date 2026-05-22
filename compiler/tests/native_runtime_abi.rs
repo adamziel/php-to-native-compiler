@@ -781,6 +781,18 @@ fn scalar_echo_probe_ir_renders_32_bit_usize_helper_signatures() {
         "{ir}"
     );
     assert!(
+        ir.contains("declare %phpc.NativeValueHandle @phpc_native_request_state_superglobal_snapshot_value(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i1 @phpc_native_request_state_rebuild_request_from_order(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i1 @phpc_native_request_state_rebuild_request_from_policy(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle, %phpc.NativeStringHandle)"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("define i32 @phpc_probe_request_state_empty_missing_value()"),
         "{ir}"
     );
@@ -944,6 +956,18 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("declare %phpc.NativeRequestStateOperationResult @phpc_native_request_state_superglobal_operation(%phpc.NativeRequestStateHandle, i8, ptr, i64, ptr, i64, i8)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeValueHandle @phpc_native_request_state_superglobal_snapshot_value(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i1 @phpc_native_request_state_rebuild_request_from_order(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i1 @phpc_native_request_state_rebuild_request_from_policy(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle, %phpc.NativeStringHandle)"),
         "{ir}"
     );
     assert!(

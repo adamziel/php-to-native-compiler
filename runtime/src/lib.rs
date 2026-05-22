@@ -1660,6 +1660,10 @@ impl NativeRequestStateHandle {
         self.ptr.is_null()
     }
 
+    unsafe fn as_ref(&self) -> Option<&NativeRequestState> {
+        unsafe { self.ptr.as_ref() }
+    }
+
     unsafe fn as_mut(&mut self) -> Option<&mut NativeRequestState> {
         unsafe { self.ptr.as_mut() }
     }
@@ -1704,6 +1708,40 @@ impl NativeRequestState {
             .cloned()
             .unwrap_or_else(PhpArray::new)
     }
+
+    fn rebuild_request_from_order(&mut self, order: &[u8]) -> bool {
+        let mut request = PhpArray::new();
+        for bag in request_population_sources(order) {
+            let Some(source) = self.superglobals.get(&bag) else {
+                continue;
+            };
+            for entry in source.entries() {
+                request.insert(entry.key.clone(), entry.value_cloned());
+            }
+        }
+        self.superglobals
+            .insert(NativeRequestStateBag::Request, request);
+        true
+    }
+}
+
+fn request_population_sources(order: &[u8]) -> impl Iterator<Item = NativeRequestStateBag> + '_ {
+    order.iter().filter_map(|byte| match byte {
+        b'G' | b'g' => Some(NativeRequestStateBag::Get),
+        b'P' | b'p' => Some(NativeRequestStateBag::Post),
+        b'C' | b'c' => Some(NativeRequestStateBag::Cookie),
+        _ => None,
+    })
+}
+
+fn request_population_policy_order<'a>(
+    request_order: Option<&'a NativeString>,
+    variables_order: Option<&'a NativeString>,
+) -> Option<&'a [u8]> {
+    request_order
+        .filter(|order| !order.bytes.is_empty())
+        .or(variables_order)
+        .map(|order| order.bytes.as_slice())
 }
 
 impl NativeSymbolTableHandle {
@@ -2770,6 +2808,75 @@ pub unsafe extern "C" fn phpc_native_request_state_superglobal_array(
         )
     }
     .array
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `bag` must be null or a string handle
+/// previously returned by the runtime ABI and not yet freed. The returned value
+/// handle owns a PHP array snapshot of the selected request superglobal.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_snapshot_value(
+    handle: NativeRequestStateHandle,
+    bag: NativeStringHandle,
+) -> NativeValueHandle {
+    let (Some(request_state), Some(bag)) = (unsafe { handle.as_ref() }, unsafe { bag.as_ref() })
+    else {
+        return NativeValueHandle::null();
+    };
+    let Some(bag) = NativeRequestStateBag::from_abi_bytes(&bag.bytes) else {
+        return NativeValueHandle::null();
+    };
+
+    NativeValueHandle::from_value(Value::Array(request_state.superglobal_array(bag)))
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `order` must be null or a string handle
+/// previously returned by the runtime ABI and not yet freed. The helper rebuilds
+/// `$_REQUEST` from backed `$_GET`, `$_POST`, and `$_COOKIE` tables in the
+/// caller-provided order, with later sources overwriting earlier slots.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_rebuild_request_from_order(
+    mut handle: NativeRequestStateHandle,
+    order: NativeStringHandle,
+) -> bool {
+    let (Some(request_state), Some(order)) =
+        (unsafe { handle.as_mut() }, unsafe { order.as_ref() })
+    else {
+        return false;
+    };
+
+    request_state.rebuild_request_from_order(&order.bytes)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `request_order` and `variables_order` must be
+/// null or string handles previously returned by the runtime ABI and not yet
+/// freed. A non-empty `request_order` selects `$_REQUEST` population order;
+/// otherwise `variables_order` is used, with only G/P/C request sources
+/// contributing request slots.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_rebuild_request_from_policy(
+    mut handle: NativeRequestStateHandle,
+    request_order: NativeStringHandle,
+    variables_order: NativeStringHandle,
+) -> bool {
+    let (Some(request_state), Some(order)) = (
+        unsafe { handle.as_mut() },
+        request_population_policy_order(unsafe { request_order.as_ref() }, unsafe {
+            variables_order.as_ref()
+        }),
+    ) else {
+        return false;
+    };
+
+    request_state.rebuild_request_from_order(order)
 }
 
 /// # Safety
@@ -16591,6 +16698,259 @@ mod tests {
         unsafe { phpc_native_value_free(array_value) };
         unsafe { phpc_native_value_free(text_value) };
         unsafe { phpc_native_value_free(null_value) };
+        unsafe { phpc_native_request_state_free(request_state) };
+    }
+
+    #[test]
+    fn native_request_state_rebuilds_request_and_snapshots_backing_tables() {
+        unsafe fn string_handle(bytes: &[u8]) -> NativeStringHandle {
+            unsafe { phpc_native_string_from_bytes(bytes.as_ptr(), bytes.len()) }
+        }
+
+        unsafe fn insert_string(
+            request_state: NativeRequestStateHandle,
+            bag: &[u8],
+            key: &[u8],
+            value: &str,
+        ) {
+            let value = NativeValueHandle::from_value(Value::String(value.to_string()));
+            assert!(unsafe {
+                phpc_native_request_state_insert_superglobal_value(
+                    request_state,
+                    bag.as_ptr(),
+                    bag.len(),
+                    key.as_ptr(),
+                    key.len(),
+                    value,
+                )
+            });
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        unsafe fn assert_value_echo_and_free(handle: NativeValueHandle, expected: &[u8]) {
+            assert_eq!(native_value_echo_bytes_for_test(handle), expected);
+            unsafe { phpc_native_value_free(handle) };
+        }
+
+        unsafe fn assert_snapshot_slot(snapshot: NativeValueHandle, key: &str, expected: &str) {
+            let Some(Value::Array(array)) = (unsafe { snapshot.as_ref() }) else {
+                panic!("request snapshot should materialize an array value");
+            };
+            assert_eq!(
+                array.get(ArrayKey::string(key)),
+                Some(&Value::String(expected.to_string()))
+            );
+        }
+
+        unsafe fn assert_missing_snapshot_slot(snapshot: NativeValueHandle, key: &str) {
+            let Some(Value::Array(array)) = (unsafe { snapshot.as_ref() }) else {
+                panic!("request snapshot should materialize an array value");
+            };
+            assert_eq!(array.get(ArrayKey::string(key)), None);
+        }
+
+        let request_state = phpc_native_request_state_empty();
+        let get_root = unsafe { string_handle(b"_GET") };
+        let request_root = unsafe { string_handle(b"_REQUEST") };
+        let invalid_root = unsafe { string_handle(b"_NOPE") };
+        let order_gp = unsafe { string_handle(b"GP") };
+        let order_cg = unsafe { string_handle(b"CG") };
+        let order_g = unsafe { string_handle(b"G") };
+        let request_order_pg = unsafe { string_handle(b"PG") };
+        let empty_request_order = unsafe { string_handle(b"") };
+        let variables_order_egpsc = unsafe { string_handle(b"EGPSC") };
+        let variables_order_cg = unsafe { string_handle(b"CG") };
+
+        unsafe { insert_string(request_state, b"_GET", b"id", "get") };
+        unsafe { insert_string(request_state, b"_POST", b"id", "post") };
+        unsafe { insert_string(request_state, b"_COOKIE", b"id", "cookie") };
+        unsafe { insert_string(request_state, b"_COOKIE", b"sid", "cookie-session") };
+        unsafe { insert_string(request_state, b"_REQUEST", b"stale", "stale-request") };
+
+        assert!(unsafe {
+            phpc_native_request_state_rebuild_request_from_order(request_state, order_gp)
+        });
+        unsafe {
+            assert_value_echo_and_free(
+                phpc_native_request_state_superglobal_value(
+                    request_state,
+                    b"_REQUEST".as_ptr(),
+                    b"_REQUEST".len(),
+                    b"id".as_ptr(),
+                    b"id".len(),
+                ),
+                b"post",
+            );
+        }
+
+        let request_snapshot = unsafe {
+            phpc_native_request_state_superglobal_snapshot_value(request_state, request_root)
+        };
+        let get_snapshot = unsafe {
+            phpc_native_request_state_superglobal_snapshot_value(request_state, get_root)
+        };
+        assert!(!request_snapshot.is_null());
+        assert!(!get_snapshot.is_null());
+        unsafe {
+            assert_snapshot_slot(request_snapshot, "id", "post");
+            assert_missing_snapshot_slot(request_snapshot, "sid");
+            assert_missing_snapshot_slot(request_snapshot, "stale");
+            assert_snapshot_slot(get_snapshot, "id", "get");
+        }
+
+        unsafe { insert_string(request_state, b"_POST", b"id", "post-after-snapshot") };
+        unsafe {
+            assert_snapshot_slot(request_snapshot, "id", "post");
+            assert_value_echo_and_free(
+                phpc_native_request_state_superglobal_value(
+                    request_state,
+                    b"_POST".as_ptr(),
+                    b"_POST".len(),
+                    b"id".as_ptr(),
+                    b"id".len(),
+                ),
+                b"post-after-snapshot",
+            );
+        }
+
+        assert!(unsafe {
+            phpc_native_request_state_rebuild_request_from_order(request_state, order_cg)
+        });
+        unsafe {
+            assert_value_echo_and_free(
+                phpc_native_request_state_superglobal_value(
+                    request_state,
+                    b"_REQUEST".as_ptr(),
+                    b"_REQUEST".len(),
+                    b"id".as_ptr(),
+                    b"id".len(),
+                ),
+                b"get",
+            );
+            assert_value_echo_and_free(
+                phpc_native_request_state_superglobal_value(
+                    request_state,
+                    b"_REQUEST".as_ptr(),
+                    b"_REQUEST".len(),
+                    b"sid".as_ptr(),
+                    b"sid".len(),
+                ),
+                b"cookie-session",
+            );
+        }
+
+        assert!(unsafe {
+            phpc_native_request_state_rebuild_request_from_order(request_state, order_g)
+        });
+        let request_after_g = unsafe {
+            phpc_native_request_state_superglobal_snapshot_value(request_state, request_root)
+        };
+        unsafe {
+            assert_snapshot_slot(request_after_g, "id", "get");
+            assert_missing_snapshot_slot(request_after_g, "sid");
+            phpc_native_value_free(request_after_g);
+        }
+
+        assert!(unsafe {
+            phpc_native_request_state_rebuild_request_from_policy(
+                request_state,
+                request_order_pg,
+                variables_order_cg,
+            )
+        });
+        unsafe {
+            assert_value_echo_and_free(
+                phpc_native_request_state_superglobal_value(
+                    request_state,
+                    b"_REQUEST".as_ptr(),
+                    b"_REQUEST".len(),
+                    b"id".as_ptr(),
+                    b"id".len(),
+                ),
+                b"get",
+            );
+        }
+
+        assert!(unsafe {
+            phpc_native_request_state_rebuild_request_from_policy(
+                request_state,
+                empty_request_order,
+                variables_order_egpsc,
+            )
+        });
+        unsafe {
+            assert_value_echo_and_free(
+                phpc_native_request_state_superglobal_value(
+                    request_state,
+                    b"_REQUEST".as_ptr(),
+                    b"_REQUEST".len(),
+                    b"id".as_ptr(),
+                    b"id".len(),
+                ),
+                b"cookie",
+            );
+            assert_value_echo_and_free(
+                phpc_native_request_state_superglobal_value(
+                    request_state,
+                    b"_REQUEST".as_ptr(),
+                    b"_REQUEST".len(),
+                    b"sid".as_ptr(),
+                    b"sid".len(),
+                ),
+                b"cookie-session",
+            );
+        }
+
+        assert!(unsafe {
+            phpc_native_request_state_rebuild_request_from_policy(
+                request_state,
+                NativeStringHandle::null(),
+                variables_order_cg,
+            )
+        });
+        unsafe {
+            assert_value_echo_and_free(
+                phpc_native_request_state_superglobal_value(
+                    request_state,
+                    b"_REQUEST".as_ptr(),
+                    b"_REQUEST".len(),
+                    b"id".as_ptr(),
+                    b"id".len(),
+                ),
+                b"get",
+            );
+        }
+
+        assert!(unsafe {
+            phpc_native_request_state_superglobal_snapshot_value(request_state, invalid_root)
+        }
+        .is_null());
+        assert!(!unsafe {
+            phpc_native_request_state_rebuild_request_from_order(
+                NativeRequestStateHandle::null(),
+                order_g,
+            )
+        });
+        assert!(!unsafe {
+            phpc_native_request_state_rebuild_request_from_policy(
+                request_state,
+                NativeStringHandle::null(),
+                NativeStringHandle::null(),
+            )
+        });
+
+        unsafe { phpc_native_value_free(request_snapshot) };
+        unsafe { phpc_native_value_free(get_snapshot) };
+        unsafe { phpc_native_string_free(get_root) };
+        unsafe { phpc_native_string_free(request_root) };
+        unsafe { phpc_native_string_free(invalid_root) };
+        unsafe { phpc_native_string_free(order_gp) };
+        unsafe { phpc_native_string_free(order_cg) };
+        unsafe { phpc_native_string_free(order_g) };
+        unsafe { phpc_native_string_free(request_order_pg) };
+        unsafe { phpc_native_string_free(empty_request_order) };
+        unsafe { phpc_native_string_free(variables_order_egpsc) };
+        unsafe { phpc_native_string_free(variables_order_cg) };
         unsafe { phpc_native_request_state_free(request_state) };
     }
 
