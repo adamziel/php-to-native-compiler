@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 21:24 CEST
-Evaluation marker: `20260522T183315Z`
+Updated: 2026-05-22 21:33 CEST
+Evaluation marker: `20260522T192635Z`
 Primary management HEAD: this PROGRESS.md update
-Primary semantic HEAD: `596986cf runtime: preserve request root replacement aliases`
-Current pushed semantic baseline: `596986cf runtime: preserve request root replacement aliases`
+Primary semantic HEAD: `6b80fd79 runtime: mutate reference-backed request roots`
+Current pushed semantic baseline: `6b80fd79 runtime: mutate reference-backed request roots`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -47,7 +47,10 @@ across multiple request bags and scalar/dynamic key shapes. Direct
 request-superglobal root assignments now preserve existing request reference
 cells, so scalar, array, and null root replacements stay visible through
 ordinary aliases, request root snapshots, and keyed reads after array
-replacement.
+replacement. Existing generated-C keyed/path request mutations now also write
+through reference-backed request roots when the referenced root value is an
+array, null, or false, so keyed writes, nested writes, unsets, and appends stay
+visible through all request roots sharing that reference cell.
 
 That progress is primary-integrated: it is committed, pushed, focused-gated,
 and tied to executable generated-code behavior. It is not lane-local status
@@ -63,8 +66,8 @@ native-value truthiness for selected boolean consumers, and direct request-root
 replacement through existing reference cells, but it still does not have
 complete PHP global/request/reference/control-flow semantics. Dynamic
 `$GLOBALS[$expr]` request-root alias dispatch, direct no-key `$GLOBALS[]`,
-keyed writes through reference-backed request roots, request append suffix
-wrapping, `$GLOBALS["GLOBALS"]` self-reference behavior, frames, full
+keyed reference binding through reference-backed request roots, request append
+suffix wrapping, `$GLOBALS["GLOBALS"]` self-reference behavior, frames, full
 references/COW, exact diagnostics, object/property semantics, ordered
 short-circuit cleanup, and broader LLVM/C parity remain substantial open
 systems.
@@ -75,9 +78,9 @@ systems.
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
 | Compiler/backend consumers | 95% | `[###################-]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, active root offset-mutation writeback, value-result offset reads, array-query value consumers, static request aliases, direct undefined root reads, generated-C symbol references, request-root and keyed request-slot reference assignment with ordinary symbol paths plus request-to-request aliases, direct request-root replacement through existing reference cells, generated-C native-value strict identity, and LLVM/generated-C native-value truthiness for unary `!` / `xor`; uneven across calls, objects, short-circuit control flow, and broader LLVM/C parity. |
-| Executable generalized PHP semantics | 76% | `[###############-----]` | Improving through executable path/reference/logical consumers, but many real PHP compositions still block. |
-| Arrays, lvalues, references, COW | 79% | `[################----]` | Arrays/lvalues advanced with query/value-result consumers, selected symbol-path references, request-root reference replacement/source/root-alias paths, keyed request-slot references with ordinary symbol paths, and keyed request-to-keyed request aliases; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 85% | `[#################---]` | Request paths/null-coalesce, static `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, direct undefined root reads, ordinary symbol-path reference assignment, request-root reference replacement/source/root-alias paths, keyed request-slot aliases, and direct request-root assignment through existing reference cells are stronger; dynamic aliases, keyed writes through reference-backed roots, direct root appends, frames, nested/path request references, full references, and self-reference remain incomplete. |
+| Executable generalized PHP semantics | 77% | `[###############-----]` | Improving through executable path/reference/logical consumers, but many real PHP compositions still block. |
+| Arrays, lvalues, references, COW | 80% | `[################----]` | Arrays/lvalues advanced with query/value-result consumers, selected symbol-path references, request-root reference replacement/source/root-alias paths, keyed request-slot references with ordinary symbol paths, keyed request-to-keyed request aliases, and value mutations through reference-backed request roots; full references/COW and arbitrary writable roots remain large. |
+| Symbols, globals, request state | 86% | `[#################---]` | Request paths/null-coalesce, static `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, direct undefined root reads, ordinary symbol-path reference assignment, request-root reference replacement/source/root-alias paths, keyed request-slot aliases, direct request-root assignment through existing reference cells, and keyed/path value mutations through reference-backed roots are stronger; dynamic aliases, keyed reference binding through reference-backed roots, direct root appends, frames, nested/path request references, full references, and self-reference remain incomplete. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Early; lane candidates exist, but broad executable call/frame semantics are not primary yet. |
 | Objects, properties, methods | 11% | `[##------------------]` | Early; runtime candidates exist, but general compiled object/property/method execution remains missing. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused work, but exact diagnostic ordering and structured cleanup are not generalized. |
@@ -160,6 +163,10 @@ Done on primary:
   reference cells through the request-state root replacement ABI, including
   scalar, array, and null replacement values, ordinary alias visibility, root
   snapshots, and keyed reads after array replacement.
+- [x] Keyed and nested/path request-superglobal value mutations through
+  reference-backed roots use the shared request-state mutation ABI, including
+  writes, unsets, and appends over array/null/false referenced root values with
+  generated-C executable proof across shared request root aliases.
 - [x] LLVM and generated-C truthiness for owned native value operands through
   `phpc_native_value_is_truthy(...)`, covering unary `!` and
   non-short-circuit `xor` across native value producers while leaving ordered
@@ -168,8 +175,8 @@ Done on primary:
 In progress / candidate integration themes:
 
 - [ ] Request/global alias reconciliation, direct no-key `$GLOBALS[]`, keyed
-  writes through reference-backed request roots, request append suffix wrapping,
-  request-root append alias behavior, and
+  reference binding through reference-backed request roots, request append
+  suffix wrapping, request-root append alias behavior, and
   `$GLOBALS["GLOBALS"]` semantics. Estimate: 55%
   `[###########---------]`.
 - [ ] Generated PHP reference assignment over `$GLOBALS`, object, arbitrary
@@ -198,6 +205,7 @@ Not done:
 
 Recent semantic commits on primary:
 
+- `6b80fd79 runtime: mutate reference-backed request roots`
 - `596986cf runtime: preserve request root replacement aliases`
 - `fa37d429 codegen: route keyed request aliases through state ABI`
 - `029087f0 codegen: route request root aliases through state ABI`
@@ -260,27 +268,37 @@ open.
 Direct request-superglobal root assignments now also write through existing
 request root reference cells, so generated-C root replacement preserves scalar,
 array, and null alias visibility through ordinary symbols, request snapshots,
-and keyed reads after array replacement.
+and keyed reads after array replacement. Keyed and nested/path generated-C
+request mutations now also apply through those reference-backed root cells for
+array/null/false referenced values, covering writes, unsets, and appends
+without adding a new compiler recognizer.
 
 ## Lane-Local And Active Candidate Work
 
 Lane-local candidates, not counted:
 
-- `impl-global-symbols`: ordered short-circuit and broader symbol-derived
-  value-handle truthiness/control-flow contracts remain active candidate
-  material. Unary `!` and non-short-circuit `xor` over native value handles are
-  now primary-integrated.
-- `impl-array-value-runtime`: recent `array_map(null, ...)` identity/zip,
-  value-frame, type-name, and metadata byte-registry work is plausible but
-  conflict-heavy; extract only narrow executable consumers.
-- `impl-native-integration-batch`: value-result offset-read composition and
-  array-query value operations are now primary-integrated; remaining
-  string/list transform candidates need fresh transplant notes before primary
-  use.
-- `impl-native-type-conversion`: stream-resource operation work is large and
-  lane-local; extract one narrow generalized consumer if useful.
-- `impl-native-comparison-semantics`: object/comparison operand candidates may
-  be useful after focused extraction, but object execution remains early.
+- `impl-array-value-runtime`: scalar/string-pointer concat, path/string
+  value-frame builtins, byte formatting/join, type-name, metadata, and
+  `array_map(null, ...)` candidates are plausible but broad and conflict-heavy;
+  extract only narrow executable consumers.
+- `impl-binary-string-runtime`: callable dispatch, stream/data wrapper,
+  stream-filter, file-operation, and object-property continuation candidates
+  remain lane-local despite extensive focused gates.
+- `impl-array-lowering`: same-owner nested reference recovery and nested
+  null-coalescing prepared-slot work is useful, but full reference/COW
+  execution remains open.
+- `impl-native-diagnostics`: dynamic `$GLOBALS[$expr]` known-request-root
+  classification now has lane-local blocker routing, not executable dynamic
+  request-root dispatch.
+- `impl-global-symbols`: include/require caller-scope contracts and
+  reference/COW slot-identity metadata are candidate model work; no executable
+  include/require or full request/global/frame reconciliation is primary yet.
+- `impl-native-type-conversion`: method-call conversion-result blockers plus
+  stream/process/path candidates are large and lane-local; extract one narrow
+  generalized consumer if useful.
+- `impl-native-comparison-semantics`: resource-result comparison blockers and
+  object-property comparison operand candidates may be useful after focused
+  extraction, but object execution remains early.
 - `impl-function-frame-seed` and `impl-native-call-semantics`: call/frame
   contracts are advancing, but broad executable user-function semantics are not
   primary yet.
@@ -291,9 +309,9 @@ Lane-local candidates, not counted:
   `impl-native-control-flow-seed`, and `impl-native-exit-seed`: useful cleanup,
   boundary, and diagnostic work, but much of it still centralizes blockers
   rather than executing broad PHP semantics.
-- `impl-binary-string-runtime`, `impl-array-linked-exec`, and
-  `impl-array-lowering`: active candidate slices exist, but none should count
-  until isolated, reviewed, gated, committed, and pushed on primary.
+- `impl-array-linked-exec`, `impl-link-symbol-vars`, and other specialized
+  lanes have active or completed candidate slices, but none should count until
+  isolated, reviewed, gated, committed, and pushed on primary.
 
 ## Current Steering
 
@@ -303,9 +321,9 @@ The next integration batches should favor small executable slices:
   status or management-only dashboard refreshes.
 - Build directly on the current request/global/reference work: alias
   reconciliation, direct no-key `$GLOBALS[]`, request append suffix wrapping,
-  keyed writes through reference-backed request roots, request-root append
-  alias behavior, `$GLOBALS["GLOBALS"]`, nested/path request references, or one
-  narrow reference/writeback consumer.
+  keyed reference binding through reference-backed request roots, request-root
+  append alias behavior, `$GLOBALS["GLOBALS"]`, nested/path request references,
+  or one narrow reference/writeback consumer.
 - Treat native-value truthiness as landed only for unary `!` and
   non-short-circuit `xor`; do not overclaim ordered `&&` / `||`, branch
   cleanup, diagnostic timing, references/COW, or broad control flow.
@@ -331,15 +349,23 @@ Rejected distractions:
 
 ## Live Notes
 
-Primary dirty-state note: after the reference-backed request-root replacement
-batch, the only remaining dirty file should be the preserved unstaged
-`runtime/src/lib.rs` null-slot increment/decrement hunk. Keep staging surgical.
+Primary dirty-state note: `6b80fd79` integrated the follow-on
+reference-backed request keyed/path mutation work that evaluator verification
+observed at 21:29 CEST. After this management update, the expected remaining
+primary dirty state is still the preserved `runtime/src/lib.rs` null-slot
+increment/decrement hunk; keep staging surgical.
 
 Resource snapshot for this review: `/dev/shm` is usable but still worth
-watching at 22G total, 14G used, 8.0G free, 64% used by `df`. `/home` has
-190G free by `df`; `du -sh /home` timed out during the evaluator run, while
-`du -sh /home/claude/php-to-native-compiler` reported 11G. Use disk targets or
-single-threaded focused gates when tmpfs drops below the dispatcher floor.
+watching at 22G total, 16G used, 6.2G free, 73% used by `df`; `du -sh
+/dev/shm` reports 16G, dominated by an 8.4G array-value lane target. `/home`
+has 459G total, 252G used, 189G free by `df`; `du -sh /home` reports 233G, and
+the product repo reports 11G. Use disk targets or single-threaded focused
+gates when tmpfs drops below the dispatcher floor.
+
+Status-source note: the supervisor dashboard can lag the primary integration
+loop. After this batch, treat `6b80fd79` plus this management update as the
+current primary baseline, and treat lane-local status entries as candidate
+evidence only unless the primary integrator status records a gated commit.
 
 Evaluator cadence: one candid strategy/progress evaluation every 45 minutes,
 feeding advisory steering back to the supervisor. This marker was refreshed
