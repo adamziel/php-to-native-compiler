@@ -1671,6 +1671,34 @@ const DIRECT_SYMBOL_UNSET_SOURCE: &str = concat!(
     "echo $second;\n",
 );
 
+const MIXED_UNSET_TARGETS_SOURCE: &str = concat!(
+    "<?php\n",
+    "$root = \"R\";\n",
+    "$items = [\"drop\" => \"D\", \"keep\" => \"K\", \"nested\" => [\"leaf\" => \"L\", \"stay\" => \"S\"]];\n",
+    "$bag = [\"slot\" => \"B\", \"keep\" => \"G\"];\n",
+    "$drop = \"drop\";\n",
+    "$leaf = \"leaf\";\n",
+    "unset($root, $items[$drop], $items[\"nested\"][$leaf], $GLOBALS[\"bag\"][\"slot\"], $missing);\n",
+    "echo isset($root) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo empty($root) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo isset($items[$drop]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo isset($items[\"keep\"]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo isset($items[\"nested\"][$leaf]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo isset($items[\"nested\"][\"stay\"]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo isset($GLOBALS[\"bag\"][\"slot\"]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo $bag[\"keep\"];\n",
+    "$root = \"N\";\n",
+    "echo \"|\";\n",
+    "echo $root;\n",
+);
+
 const REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
     "<?php\n",
     "$_GET = \"alpha\";\n",
@@ -3745,6 +3773,36 @@ fn native_executable_c_source_routes_direct_symbol_unsets_through_symbol_table_a
     assert!(
         body.contains("phpc_native_symbol_table_set_value_by_path_with_diagnostic"),
         "reassignment after unset should write through the active symbol table:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly mutation lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_sequences_mixed_unset_targets_through_existing_boundaries() {
+    let program = parse(MIXED_UNSET_TARGETS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_symbol_table_unset"),
+        "{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_symbol_table_unset(").count() >= 2,
+        "direct variable operands in mixed unset should use the root-symbol unset ABI:\n{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_value_offset_path_unset_with_diagnostic(")
+            .count()
+            >= 2,
+        "array-offset operands in mixed unset should use the active symbol-table value path unset/writeback boundary:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_symbol_table_unset_value_by_path_with_diagnostic"),
+        "$GLOBALS operands in mixed unset should use the symbol path unset ABI:\n{source}"
     );
     assert!(
         !source.contains("assembly mutation lowering rejects"),
@@ -6886,6 +6944,53 @@ fn emit_exe_links_and_runs_direct_symbol_unset_program() {
         "stderr:\n{}",
         String::from_utf8_lossy(&run.stderr)
     );
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_mixed_unset_targets_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("mixed_unset_targets");
+    let source_path = native_link_output_path("mixed_unset_targets_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, MIXED_UNSET_TARGETS_SOURCE)
+        .expect("native mixed unset targets source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native mixed unset targets source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native mixed unset targets executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"0|1|0|1|0|1|0|G|N");
+    assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);

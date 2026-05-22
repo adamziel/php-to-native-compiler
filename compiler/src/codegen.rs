@@ -10657,27 +10657,6 @@ impl CGenerator {
                 span,
             } => self.emit_unset_nested_array_index(name, indices, *span),
             Stmt::UnsetMany { targets, span } => {
-                if !targets.is_empty()
-                    && targets
-                        .iter()
-                        .all(|target| matches!(target, UnsetTarget::Variable { .. }))
-                {
-                    for target in targets {
-                        let UnsetTarget::Variable { name, span } = target else {
-                            unreachable!("all unset targets are direct variables");
-                        };
-                        if is_request_superglobal_name(name) {
-                            return Err(
-                                self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
-                            );
-                        }
-                        if is_globals_superglobal_name(name) {
-                            return Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION));
-                        }
-                        self.emit_symbol_table_variable_unset(name, *span, "")?;
-                    }
-                    return Ok(());
-                }
                 if targets
                     .iter()
                     .any(is_object_property_array_access_unset_target)
@@ -13794,6 +13773,13 @@ impl CGenerator {
         }
 
         match self.variables.get(name).cloned() {
+            Some(CValue::ArrayHandle(handle)) if self.globals_symbol_table_is_active() => self
+                .emit_value_offset_path_unset_statement(
+                    name,
+                    CValue::ArrayHandle(handle),
+                    std::slice::from_ref(index_expr),
+                    span,
+                ),
             Some(CValue::ArrayHandle(handle)) => {
                 self.emit_array_lvalue_unset_for_handle(&handle, &[index_expr], span)
             }
@@ -13839,6 +13825,13 @@ impl CGenerator {
         }
 
         match self.variables.get(name).cloned() {
+            Some(CValue::ArrayHandle(handle)) if self.globals_symbol_table_is_active() => self
+                .emit_value_offset_path_unset_statement(
+                    name,
+                    CValue::ArrayHandle(handle),
+                    indices,
+                    span,
+                ),
             Some(CValue::ArrayHandle(handle)) => {
                 let indices = indices.iter().collect::<Vec<_>>();
                 self.emit_array_lvalue_unset_for_handle(&handle, &indices, span)
@@ -13860,6 +13853,15 @@ impl CGenerator {
 
         for target in targets {
             match target {
+                UnsetTarget::Variable { name, span } => {
+                    if is_request_superglobal_name(name) {
+                        return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                    }
+                    if is_globals_superglobal_name(name) {
+                        return Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION));
+                    }
+                    self.emit_symbol_table_variable_unset(name, *span, "")?;
+                }
                 UnsetTarget::ArrayIndex { name, index, span } => {
                     self.emit_unset_array_index(name, index, *span)?;
                 }
