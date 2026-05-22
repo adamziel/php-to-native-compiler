@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 21:33 CEST
+Updated: 2026-05-22 21:38 CEST
 Evaluation marker: `20260522T192635Z`
 Primary management HEAD: this PROGRESS.md update
 Primary semantic HEAD: `6b80fd79 runtime: mutate reference-backed request roots`
@@ -61,16 +61,17 @@ The work remains bounded. Primary is stronger for selected request-state,
 value-result offset-read paths, selected ordinary symbol reference assignment
 paths, request-root reference replacement from ordinary symbol paths,
 request-root reference source binding into ordinary symbol paths,
-request-root/request-keyed aliasing, and
-native-value truthiness for selected boolean consumers, and direct request-root
-replacement through existing reference cells, but it still does not have
+request-root/request-keyed aliasing,
+native-value truthiness for selected boolean consumers, direct request-root
+replacement through existing reference cells, and keyed/path mutations through
+reference-backed request root arrays, but it still does not have
 complete PHP global/request/reference/control-flow semantics. Dynamic
 `$GLOBALS[$expr]` request-root alias dispatch, direct no-key `$GLOBALS[]`,
-keyed reference binding through reference-backed request roots, request append
-suffix wrapping, `$GLOBALS["GLOBALS"]` self-reference behavior, frames, full
-references/COW, exact diagnostics, object/property semantics, ordered
-short-circuit cleanup, and broader LLVM/C parity remain substantial open
-systems.
+keyed reference binding through reference-backed request roots, non-array
+request append suffix wrapping, `$GLOBALS["GLOBALS"]` self-reference behavior,
+frames, full references/COW, exact diagnostics, object/property semantics,
+ordered short-circuit cleanup, and broader LLVM/C parity remain substantial
+open systems.
 
 ## Grand Roadmap Position
 
@@ -355,12 +356,11 @@ observed at 21:29 CEST. After this management update, the expected remaining
 primary dirty state is still the preserved `runtime/src/lib.rs` null-slot
 increment/decrement hunk; keep staging surgical.
 
-Resource snapshot for this review: `/dev/shm` is usable but still worth
-watching at 22G total, 16G used, 6.2G free, 73% used by `df`; `du -sh
-/dev/shm` reports 16G, dominated by an 8.4G array-value lane target. `/home`
-has 459G total, 252G used, 189G free by `df`; `du -sh /home` reports 233G, and
-the product repo reports 11G. Use disk targets or single-threaded focused
-gates when tmpfs drops below the dispatcher floor.
+Resource snapshot after supervisor cleanup: `/dev/shm` recovered to 22G
+available, 3% used by `df`, after process-verified inactive lane target
+cleanup. `/home` has 459G total, 252G used, 189G free by `df`. Continue using
+disk targets or single-threaded focused gates when tmpfs drops below the
+dispatcher floor.
 
 Status-source note: the supervisor dashboard can lag the primary integration
 loop. After this batch, treat `6b80fd79` plus this management update as the
