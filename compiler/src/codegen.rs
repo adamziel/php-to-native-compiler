@@ -160,6 +160,7 @@ const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE_TAG: u8 = 0;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET_TAG: u8 = 1;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ_TAG: u8 = 2;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE_TAG: u8 = 3;
+const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET_TAG: u8 = 4;
 const NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT_TAG: u8 = 0;
 const NATIVE_ARRAY_LVALUE_INCREMENT_TAG: u8 = 0;
 const NATIVE_ARRAY_LVALUE_DECREMENT_TAG: u8 = 1;
@@ -7088,6 +7089,9 @@ impl CGenerator {
                         "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE {NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE_TAG}\n"
                     ));
                     output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET {NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET_TAG}\n"
+                    ));
+                    output.push_str(&format!(
                         "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT {NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT_TAG}\n"
                     ));
                     output.push_str(&format!(
@@ -7402,6 +7406,9 @@ impl CGenerator {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
                 if self.emit_array_offset_null_coalesce_assignment(target, expr, *span)? {
+                    return Ok(());
+                }
+                if self.emit_array_lvalue_null_coalesce_assignment(target, expr, *span)? {
                     return Ok(());
                 }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
@@ -7851,6 +7858,12 @@ impl CGenerator {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
                 if let Some(value) = self.materialize_array_offset_null_coalesce_assignment_expr(
+                    target, expr, *span, "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                if let Some(value) = self.materialize_array_lvalue_null_coalesce_assignment_expr(
                     target, expr, *span, "",
                 )? {
                     self.retain_native_value_cleanup_handle(&value.handle);
@@ -8494,6 +8507,206 @@ impl CGenerator {
             handle: handle.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
         }))
+    }
+
+    fn emit_array_lvalue_null_coalesce_assignment(
+        &mut self,
+        target: &AssignTarget,
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let Some((handle, indices, target_span)) =
+            self.native_array_lvalue_key_target_parts(target)
+        else {
+            return Ok(false);
+        };
+
+        let path = self.materialize_native_array_lvalue_key_path(&indices, target_span, "")?;
+        self.emit_array_lvalue_null_coalesce_assignment_for_handle(
+            &handle,
+            path,
+            replacement_expr,
+            span,
+            None,
+            "",
+        )?;
+        Ok(true)
+    }
+
+    fn materialize_array_lvalue_null_coalesce_assignment_expr(
+        &mut self,
+        target: &AssignTarget,
+        replacement_expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some((handle, indices, target_span)) =
+            self.native_array_lvalue_key_target_parts(target)
+        else {
+            return Ok(None);
+        };
+
+        let path =
+            self.materialize_native_array_lvalue_key_path(&indices, target_span, failure_cleanup)?;
+        self.emit_array_lvalue_null_coalesce_assignment_for_handle(
+            &handle,
+            path,
+            replacement_expr,
+            span,
+            Some("array_lvalue_null_coalesce_assign_result"),
+            failure_cleanup,
+        )
+        .map(Some)
+    }
+
+    fn emit_array_lvalue_null_coalesce_assignment_for_handle(
+        &mut self,
+        handle: &str,
+        path: CNativeArrayLvaluePath,
+        replacement_expr: &Expr,
+        _span: Span,
+        result_prefix: Option<&str>,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        if native_conditional_rhs_needs_cleanup_boundary(replacement_expr) {
+            return Err(self.unsupported(replacement_expr.span(), ASSEMBLY_CONDITIONAL_REJECTION));
+        }
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let result = result_prefix.map(|prefix| self.next_native_name(prefix));
+        if let Some(result) = &result {
+            self.body
+                .push(format!("phpc_NativeValueHandle {result} = {{0}};"));
+        }
+
+        let probe_owner = self.next_native_name("array_lvalue_null_coalesce_assign_probe_owner");
+        let probe_result = self.next_native_name("array_lvalue_null_coalesce_assign_probe_result");
+        let probe_value = self.next_native_name("array_lvalue_null_coalesce_assign_probe_value");
+        let bool_diagnostic =
+            self.next_native_name("array_lvalue_null_coalesce_assign_bool_diagnostic");
+        let present = self.next_native_name("array_lvalue_null_coalesce_assign_present");
+
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {probe_owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {probe_result} = phpc_native_array_lvalue_owner_value_operation_result({probe_owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
+            path.path, path.len
+        ));
+        self.emit_native_array_lvalue_result_check(
+            &probe_result,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        );
+        self.body.push(format!(
+            "phpc_NativeValueHandle {probe_value} = {probe_result}.value;"
+        ));
+        self.body.push(format!(
+            "{probe_result}.value = (phpc_NativeValueHandle){{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_native_array_lvalue_result_free({probe_result});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {bool_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "_Bool {present} = phpc_native_value_bool_with_diagnostic({probe_value}, &{bool_diagnostic});"
+        ));
+        let bool_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({bool_diagnostic}); phpc_native_value_free({probe_value}); {path_cleanup}{failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({bool_diagnostic}.ptr != NULL) {{ {bool_error_exit} }}"
+        ));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({bool_diagnostic});"));
+        self.body
+            .push(format!("phpc_native_value_free({probe_value});"));
+
+        if let Some(result) = &result {
+            let read_owner = self.next_native_name("array_lvalue_null_coalesce_assign_read_owner");
+            let read_result =
+                self.next_native_name("array_lvalue_null_coalesce_assign_read_result");
+            let read_value = self.next_native_name("array_lvalue_null_coalesce_assign_read_value");
+            self.body.push(format!("if ({present}) {{"));
+            self.body.push(format!(
+                "phpc_NativeArrayLvalueOwner {read_owner} = phpc_native_array_lvalue_owner_array({handle});"
+            ));
+            self.body.push(format!(
+                "phpc_NativeArrayLvalueResult {read_result} = phpc_native_array_lvalue_owner_value_operation_result({read_owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
+                path.path, path.len
+            ));
+            self.emit_native_array_lvalue_result_check(
+                &read_result,
+                &format!("{path_cleanup}{failure_cleanup}"),
+            );
+            self.body.push(format!(
+                "phpc_NativeValueHandle {read_value} = {read_result}.value;"
+            ));
+            self.body.push(format!(
+                "{read_result}.value = (phpc_NativeValueHandle){{0}};"
+            ));
+            self.body.push(format!(
+                "phpc_native_array_lvalue_result_free({read_result});"
+            ));
+            self.body.push(format!("{result} = {read_value};"));
+            self.body.push("} else {".to_string());
+        } else {
+            self.body.push(format!("if (!{present}) {{"));
+        }
+
+        let replacement_failure_cleanup = format!("{path_cleanup}{failure_cleanup}");
+        let replacement = self.materialize_native_value_result_operand(
+            replacement_expr,
+            &replacement_failure_cleanup,
+        )?;
+        let write_owner = self.next_native_name("array_lvalue_null_coalesce_assign_write_owner");
+        let write_result = self.next_native_name("array_lvalue_null_coalesce_assign_write_result");
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {write_owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {write_result} = phpc_native_array_lvalue_owner_value_operation_result({write_owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
+            path.path, path.len, replacement.handle
+        ));
+        self.emit_native_array_lvalue_result_check(
+            &write_result,
+            &format!(
+                "{}{path_cleanup}{failure_cleanup}",
+                c_cleanup_sequence(&replacement.cleanup_after_use)
+            ),
+        );
+        self.body.push(format!(
+            "phpc_native_array_lvalue_result_free({write_result});"
+        ));
+        if let Some(result) = &result {
+            self.uses_native_value_clone = true;
+            let assigned_result =
+                self.next_native_name("array_lvalue_null_coalesce_assign_assigned_value");
+            self.body.push(format!(
+                "phpc_NativeValueHandle {assigned_result} = phpc_native_value_clone({});",
+                replacement.handle
+            ));
+            self.body.push(format!("{result} = {assigned_result};"));
+        }
+        self.body.extend(replacement.cleanup_after_use);
+        self.body.push("}".to_string());
+        self.body.extend(path.cleanup_after_use);
+
+        Ok(match result {
+            Some(handle) => CNativeValueMaterialization {
+                handle: handle.clone(),
+                cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+            },
+            None => CNativeValueMaterialization {
+                handle: "(phpc_NativeValueHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            },
+        })
     }
 
     fn materialize_native_array_lvalue_key_path(
@@ -13161,6 +13374,17 @@ impl CGenerator {
                     expr,
                     *span,
                     failure_cleanup,
+                )?
+                .map_or_else(
+                    || {
+                        self.materialize_array_lvalue_null_coalesce_assignment_expr(
+                            target,
+                            expr,
+                            *span,
+                            failure_cleanup,
+                        )
+                    },
+                    |value| Ok(Some(value)),
                 ),
             Expr::Index {
                 target,

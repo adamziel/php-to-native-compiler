@@ -2883,13 +2883,13 @@ impl Parser {
                     AssignTarget::Variable { .. }
                     | AssignTarget::List { .. }
                     | AssignTarget::ArrayIndex { index: Some(_), .. }
+                    | AssignTarget::NestedArrayIndex { .. }
                     | AssignTarget::Property { .. }
                     | AssignTarget::StaticProperty { .. }
                     | AssignTarget::SelfStaticProperty { .. }
                     | AssignTarget::ParentStaticProperty { .. }
                     | AssignTarget::LateStaticProperty { .. } => {}
-                    AssignTarget::NestedArrayIndex { .. }
-                    | AssignTarget::NestedArrayAppend { .. }
+                    AssignTarget::NestedArrayAppend { .. }
                     | AssignTarget::ObjectPropertyArrayIndex { .. }
                     | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
                     | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
@@ -4398,18 +4398,23 @@ impl Parser {
     ) -> Result<AssignTarget, &'static str> {
         match expr {
             Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
-            Expr::Index {
-                target,
-                index,
-                span,
-            } => match *target {
-                Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
-                    name,
-                    index: Some(*index),
-                    span,
-                }),
-                _ => Err(unsupported_null_coalescing_assignment_message()),
-            },
+            Expr::Index { .. } => {
+                let (name, mut indices, span) = Self::array_index_path_from_expr(expr)
+                    .ok_or(unsupported_null_coalescing_assignment_message())?;
+                if indices.len() == 1 {
+                    Ok(AssignTarget::ArrayIndex {
+                        name,
+                        index: Some(indices.remove(0)),
+                        span,
+                    })
+                } else {
+                    Ok(AssignTarget::NestedArrayIndex {
+                        name,
+                        indices,
+                        span,
+                    })
+                }
+            }
             Expr::AppendIndex { .. } => Err(unsupported_null_coalescing_assignment_message()),
             Expr::Property {
                 target,
@@ -7502,7 +7507,7 @@ fn unsupported_exponentiation_message() -> &'static str {
 }
 
 fn unsupported_null_coalescing_assignment_message() -> &'static str {
-    "unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented"
+    "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, and direct object-property targets are implemented"
 }
 
 fn unsupported_assignment_expression_message() -> &'static str {

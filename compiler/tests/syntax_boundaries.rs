@@ -1728,7 +1728,7 @@ fn unsupported_null_coalescing_assignment_targets_have_stable_parse_errors() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented"
+            "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, and direct object-property targets are implemented"
         );
     }
 }
@@ -1791,12 +1791,6 @@ fn emit_ir_rejects_nullsafe_object_operator_at_parse_boundary() {
 fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
     let cases = [
         (
-            "<?php\n$items = [];\necho ($items['outer']['inner'] ??= 'value');\n",
-            3,
-            32,
-            "unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented",
-        ),
-        (
             "<?php\n$items = [];\necho ($items[][] = 'value');\n",
             3,
             18,
@@ -1806,7 +1800,7 @@ fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
             "<?php\n$items = [];\necho ($items[] ??= 'value');\n",
             3,
             16,
-            "unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented",
+            "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, and direct object-property targets are implemented",
         ),
         (
             "<?php\n$items = [];\n$value = $items[] = 1;\n",

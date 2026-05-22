@@ -184,6 +184,7 @@ const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE: u8 = 0;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET: u8 = 1;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ: u8 = 2;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE: u8 = 3;
+const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET: u8 = 4;
 const NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT: u8 = 0;
 const NATIVE_ARRAY_LVALUE_INCREMENT: u8 = 0;
 const NATIVE_ARRAY_LVALUE_DECREMENT: u8 = 1;
@@ -4589,10 +4590,10 @@ pub extern "C" fn phpc_native_array_lvalue_owner_array(
 /// The owner and each key handle inside `segments` must be null or handles
 /// previously returned by the runtime ABI and not yet freed. `segments` must be
 /// null when `segment_count` is zero, or point to `segment_count` initialized
-/// path segments. Key and append segments are executable for writes; reads and
-/// unsets remain key-only. Increment/decrement updates accept key paths and
-/// final append segments; append suffix updates remain centralized blockers.
-/// Other families remain centralized blockers.
+/// path segments. Key and append segments are executable for writes; reads,
+/// probes, and unsets remain key-only. Increment/decrement updates accept key
+/// paths and final append segments; append suffix updates remain centralized
+/// blockers. Other families remain centralized blockers.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
     mut owner: NativeArrayLvalueOwner,
@@ -4610,6 +4611,7 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
             | NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET
             | NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ
             | NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE
+            | NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET
     ) {
         return NativeArrayLvalueResult::diagnostic(
             NATIVE_ARRAY_LVALUE_UNSUPPORTED,
@@ -4655,6 +4657,18 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
             };
             match native_array_read_key_path(&array.value, &keys) {
                 Ok(value) => NativeArrayLvalueResult::value(value),
+                Err(result) => result,
+            }
+        }
+        NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET => {
+            let keys = match unsafe {
+                native_array_lvalue_key_path_from_segments(segments, segment_count, "isset")
+            } {
+                Ok(keys) => keys,
+                Err(result) => return result,
+            };
+            match native_array_lvalue_isset_key_path(&array.value, &keys) {
+                Ok(present) => NativeArrayLvalueResult::value(Value::Bool(present)),
                 Err(result) => result,
             }
         }
@@ -5149,6 +5163,46 @@ fn native_array_read_key_path(
             NATIVE_ARRAY_LVALUE_INVALID_ROOT,
             format!(
                 "array lvalue nested read failed: {} intermediate at key {} requires the shared scalar read recovery boundary",
+                other.type_name(),
+                key.diagnostic_key()
+            ),
+        )),
+    }
+}
+
+fn native_array_lvalue_isset_key_path(
+    array: &PhpArray,
+    keys: &[ArrayKey],
+) -> Result<bool, NativeArrayLvalueResult> {
+    let Some((key, rest)) = keys.split_first() else {
+        return Err(NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_KEY,
+            "array lvalue isset path must contain at least one key segment",
+        ));
+    };
+
+    let Some(value) = array.get_cloned(key.clone()) else {
+        return Ok(false);
+    };
+
+    if rest.is_empty() {
+        return Ok(!matches!(value, Value::Null));
+    }
+
+    match value {
+        Value::Array(child) => native_array_lvalue_isset_key_path(&child, rest),
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => Ok(false),
+        Value::String(_) => Err(NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            format!(
+                "array lvalue nested isset failed: string intermediate at key {} requires the shared string-offset presence boundary",
+                key.diagnostic_key()
+            ),
+        )),
+        other => Err(NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            format!(
+                "array lvalue nested isset failed: {} intermediate at key {} requires a generalized offset presence boundary",
                 other.type_name(),
                 key.diagnostic_key()
             ),
@@ -19893,6 +19947,183 @@ mod tests {
         unsafe { phpc_native_value_free(number_key) };
         unsafe { phpc_native_value_free(inner_key) };
         unsafe { phpc_native_value_free(outer_key) };
+        unsafe { phpc_native_value_free(direct_key) };
+        unsafe { phpc_native_array_free(handle) };
+    }
+
+    #[test]
+    fn native_array_lvalue_owner_isset_operation_probes_direct_nested_and_nullish_paths() {
+        fn assert_probe(
+            owner: NativeArrayLvalueOwner,
+            path: &[NativeArrayPathSegment],
+            expected: bool,
+        ) {
+            let result = unsafe {
+                phpc_native_array_lvalue_owner_value_operation_result(
+                    owner,
+                    path.as_ptr(),
+                    path.len(),
+                    NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET,
+                    0,
+                    0,
+                    0,
+                    NativeValueHandle::null(),
+                )
+            };
+            assert_eq!(result.tag, NATIVE_ARRAY_LVALUE_OK);
+            assert!(result.diagnostic.ptr.is_null());
+            assert_eq!(
+                native_value_echo_bytes_for_test(result.value),
+                if expected {
+                    b"1".as_slice()
+                } else {
+                    b"".as_slice()
+                }
+            );
+            unsafe { phpc_native_array_lvalue_result_free(result) };
+        }
+
+        let mut child = PhpArray::new();
+        child.insert("present", Value::String("value".to_string()));
+        child.insert("nullish", Value::Null);
+        child.insert("scalar", Value::Int(12));
+
+        let mut root = PhpArray::new();
+        root.insert("direct", Value::String("root".to_string()));
+        root.insert("null_direct", Value::Null);
+        root.insert("outer", Value::Array(child));
+        root.insert("scalar_parent", Value::Int(5));
+
+        let handle = NativeArrayHandle::from_array(root);
+        let owner = phpc_native_array_lvalue_owner_array(handle);
+        let direct_key = NativeValueHandle::from_value(Value::String("direct".to_string()));
+        let null_direct_key =
+            NativeValueHandle::from_value(Value::String("null_direct".to_string()));
+        let outer_key = NativeValueHandle::from_value(Value::String("outer".to_string()));
+        let present_key = NativeValueHandle::from_value(Value::String("present".to_string()));
+        let nullish_key = NativeValueHandle::from_value(Value::String("nullish".to_string()));
+        let missing_key = NativeValueHandle::from_value(Value::String("missing".to_string()));
+        let scalar_parent_key =
+            NativeValueHandle::from_value(Value::String("scalar_parent".to_string()));
+        let leaf_key = NativeValueHandle::from_value(Value::String("leaf".to_string()));
+
+        assert_probe(
+            owner,
+            &[NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: direct_key,
+            }],
+            true,
+        );
+        assert_probe(
+            owner,
+            &[NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: null_direct_key,
+            }],
+            false,
+        );
+        assert_probe(
+            owner,
+            &[
+                NativeArrayPathSegment {
+                    tag: NATIVE_ARRAY_PATH_KEY,
+                    key: outer_key,
+                },
+                NativeArrayPathSegment {
+                    tag: NATIVE_ARRAY_PATH_KEY,
+                    key: present_key,
+                },
+            ],
+            true,
+        );
+        assert_probe(
+            owner,
+            &[
+                NativeArrayPathSegment {
+                    tag: NATIVE_ARRAY_PATH_KEY,
+                    key: outer_key,
+                },
+                NativeArrayPathSegment {
+                    tag: NATIVE_ARRAY_PATH_KEY,
+                    key: nullish_key,
+                },
+            ],
+            false,
+        );
+        assert_probe(
+            owner,
+            &[
+                NativeArrayPathSegment {
+                    tag: NATIVE_ARRAY_PATH_KEY,
+                    key: outer_key,
+                },
+                NativeArrayPathSegment {
+                    tag: NATIVE_ARRAY_PATH_KEY,
+                    key: missing_key,
+                },
+            ],
+            false,
+        );
+        assert_probe(
+            owner,
+            &[
+                NativeArrayPathSegment {
+                    tag: NATIVE_ARRAY_PATH_KEY,
+                    key: missing_key,
+                },
+                NativeArrayPathSegment {
+                    tag: NATIVE_ARRAY_PATH_KEY,
+                    key: leaf_key,
+                },
+            ],
+            false,
+        );
+        assert_probe(
+            owner,
+            &[
+                NativeArrayPathSegment {
+                    tag: NATIVE_ARRAY_PATH_KEY,
+                    key: scalar_parent_key,
+                },
+                NativeArrayPathSegment {
+                    tag: NATIVE_ARRAY_PATH_KEY,
+                    key: leaf_key,
+                },
+            ],
+            false,
+        );
+
+        let append_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_APPEND,
+            key: NativeValueHandle::null(),
+        }];
+        let append_probe = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                append_path.as_ptr(),
+                append_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET,
+                0,
+                0,
+                0,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(append_probe.tag, NATIVE_ARRAY_LVALUE_INVALID_KEY);
+        assert_eq!(
+            native_diagnostic_message_for_test(append_probe.diagnostic),
+            "array lvalue isset path cannot contain an append segment"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(append_probe) };
+
+        unsafe { phpc_native_value_free(leaf_key) };
+        unsafe { phpc_native_value_free(scalar_parent_key) };
+        unsafe { phpc_native_value_free(missing_key) };
+        unsafe { phpc_native_value_free(nullish_key) };
+        unsafe { phpc_native_value_free(present_key) };
+        unsafe { phpc_native_value_free(outer_key) };
+        unsafe { phpc_native_value_free(null_direct_key) };
         unsafe { phpc_native_value_free(direct_key) };
         unsafe { phpc_native_array_free(handle) };
     }
