@@ -515,7 +515,7 @@ struct NativeArrayEntrySnapshotEntry {
 
 #[derive(Debug)]
 struct NativeSymbolTable {
-    values: HashMap<String, Value>,
+    values: HashMap<String, ArraySlot>,
     insertion_order: Vec<String>,
 }
 
@@ -1689,17 +1689,15 @@ impl NativeRequestState {
         true
     }
 
-    fn superglobal_value(&self, bag: NativeRequestStateBag, key: &[u8]) -> Option<&Value> {
+    fn superglobal_value(&self, bag: NativeRequestStateBag, key: &[u8]) -> Option<Value> {
         let key = request_state_array_key(key)?;
         self.superglobals
             .get(&bag)
-            .and_then(|values| values.get(key))
+            .and_then(|values| values.get_cloned(key))
     }
 
     fn superglobal_runtime_value(&self, bag: NativeRequestStateBag, key: &[u8]) -> Value {
-        self.superglobal_value(bag, key)
-            .cloned()
-            .unwrap_or(Value::Null)
+        self.superglobal_value(bag, key).unwrap_or(Value::Null)
     }
 
     fn superglobal_array(&self, bag: NativeRequestStateBag) -> PhpArray {
@@ -2423,7 +2421,7 @@ pub unsafe extern "C" fn phpc_native_symbol_table_read(
     table
         .values
         .get(&name)
-        .cloned()
+        .map(ArraySlot::value_cloned)
         .map(NativeValueHandle::from_value)
         .unwrap_or_else(NativeValueHandle::null)
 }
@@ -2455,18 +2453,90 @@ pub unsafe extern "C" fn phpc_native_symbol_table_write(
     if !table.values.contains_key(&name) {
         table.insertion_order.push(name.clone());
     }
-    table.values.insert(name, value.clone());
+    table.values.insert(name, ArraySlot::new(value.clone()));
     true
 }
 
 fn native_symbol_table_snapshot_array(table: &NativeSymbolTable) -> PhpArray {
     let mut snapshot = PhpArray::new();
     for name in &table.insertion_order {
-        if let Some(value) = table.values.get(name) {
-            snapshot.insert(name.clone(), value.clone());
+        if let Some(slot) = table.values.get(name) {
+            snapshot.insert(name.clone(), slot.value_cloned());
         }
     }
     snapshot
+}
+
+fn native_symbol_table_slot_mut<'a>(
+    table: &'a mut NativeSymbolTable,
+    name: &str,
+) -> &'a mut ArraySlot {
+    if !table.values.contains_key(name) {
+        table.insertion_order.push(name.to_string());
+        table
+            .values
+            .insert(name.to_string(), ArraySlot::new(Value::Null));
+    }
+    table
+        .values
+        .get_mut(name)
+        .expect("symbol table slot was inserted")
+}
+
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. `name` must either be null with
+/// `name_len == 0`, or point to at least `name_len` readable bytes. The
+/// returned reference handle owns a clone of the slot's reference cell. Missing
+/// slots are created as null references.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_reference_for_slot(
+    mut handle: NativeSymbolTableHandle,
+    name: *const u8,
+    name_len: usize,
+) -> NativeReferenceHandle {
+    let (Some(table), Some(name)) = (unsafe { handle.as_mut() }, unsafe {
+        native_symbol_name_from_bytes(name, name_len)
+    }) else {
+        return NativeReferenceHandle::null();
+    };
+
+    NativeReferenceHandle::from_cell(
+        native_symbol_table_slot_mut(table, &name).promote_to_reference_cell(),
+    )
+}
+
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. `name` must either be null with
+/// `name_len == 0`, or point to at least `name_len` readable bytes. `reference`
+/// must be null or a reference handle previously returned by the runtime ABI
+/// and not yet freed. The symbol-table slot stores the same PHP reference cell;
+/// ownership of `reference` remains with the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_set_reference(
+    mut handle: NativeSymbolTableHandle,
+    name: *const u8,
+    name_len: usize,
+    reference: NativeReferenceHandle,
+) -> bool {
+    let (Some(table), Some(name), Some(reference)) = (
+        unsafe { handle.as_mut() },
+        unsafe { native_symbol_name_from_bytes(name, name_len) },
+        unsafe { reference.as_ref() },
+    ) else {
+        return false;
+    };
+
+    if !table.values.contains_key(&name) {
+        table.insertion_order.push(name.clone());
+    }
+    table
+        .values
+        .insert(name, ArraySlot::from_reference_cell(reference.cell.clone()));
+    true
 }
 
 /// # Safety
@@ -2871,6 +2941,92 @@ pub unsafe extern "C" fn phpc_native_request_state_populate_superglobal_from_sym
     };
 
     request_state.populate_superglobal_from_symbol_table(bag, source)
+}
+
+fn native_request_state_slot_mut<'a>(
+    request_state: &'a mut NativeRequestState,
+    bag: NativeRequestStateBag,
+    key: ArrayKey,
+) -> Option<&'a mut ArraySlot> {
+    let table = request_state
+        .superglobals
+        .entry(bag)
+        .or_insert_with(PhpArray::new);
+    if table.get_slot(key.clone()).is_none() {
+        table.insert(key.clone(), Value::Null);
+    }
+    table.get_slot_mut(key)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `bag` and `name` must be null or string
+/// handles previously returned by the runtime ABI and not yet freed. The
+/// returned reference handle owns a clone of the request slot's reference cell.
+/// Missing slots are created as null references.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_reference_for_slot(
+    mut handle: NativeRequestStateHandle,
+    bag: NativeStringHandle,
+    name: NativeStringHandle,
+) -> NativeReferenceHandle {
+    let (Some(request_state), Some(bag), Some(name)) = (
+        unsafe { handle.as_mut() },
+        unsafe { bag.as_ref() },
+        unsafe { name.as_ref() },
+    ) else {
+        return NativeReferenceHandle::null();
+    };
+    let (Some(bag), Some(key)) = (
+        NativeRequestStateBag::from_abi_bytes(&bag.bytes),
+        request_state_array_key(&name.bytes),
+    ) else {
+        return NativeReferenceHandle::null();
+    };
+
+    native_request_state_slot_mut(request_state, bag, key)
+        .map(ArraySlot::promote_to_reference_cell)
+        .map(NativeReferenceHandle::from_cell)
+        .unwrap_or_else(NativeReferenceHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `bag` and `name` must be null or string
+/// handles previously returned by the runtime ABI and not yet freed.
+/// `reference` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. The request slot stores the same PHP reference
+/// cell; ownership of `reference` remains with the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_set_reference(
+    mut handle: NativeRequestStateHandle,
+    bag: NativeStringHandle,
+    name: NativeStringHandle,
+    reference: NativeReferenceHandle,
+) -> bool {
+    let (Some(request_state), Some(bag), Some(name), Some(reference)) = (
+        unsafe { handle.as_mut() },
+        unsafe { bag.as_ref() },
+        unsafe { name.as_ref() },
+        unsafe { reference.as_ref() },
+    ) else {
+        return false;
+    };
+    let (Some(bag), Some(key)) = (
+        NativeRequestStateBag::from_abi_bytes(&bag.bytes),
+        request_state_array_key(&name.bytes),
+    ) else {
+        return false;
+    };
+
+    request_state
+        .superglobals
+        .entry(bag)
+        .or_insert_with(PhpArray::new)
+        .insert_reference(key, reference.cell.clone());
+    true
 }
 
 /// # Safety
@@ -3543,7 +3699,7 @@ impl<'a> NativeRequestStateOperation<'a> {
         Ok(Self::Bag { request_state, bag })
     }
 
-    fn value(&self) -> Option<&Value> {
+    fn value(&self) -> Option<Value> {
         match self {
             Self::Keyed {
                 request_state,
@@ -17259,6 +17415,233 @@ mod tests {
         unsafe { phpc_native_string_free(request_root) };
         unsafe { phpc_native_string_free(invalid_root) };
         unsafe { phpc_native_string_free(order_cg) };
+        unsafe { phpc_native_request_state_free(request_state) };
+    }
+
+    #[test]
+    fn native_symbol_and_request_reference_slots_share_cells_across_roots() {
+        unsafe fn string_handle(bytes: &[u8]) -> NativeStringHandle {
+            unsafe { phpc_native_string_from_bytes(bytes.as_ptr(), bytes.len()) }
+        }
+
+        unsafe fn value_handle(value: Value) -> NativeValueHandle {
+            NativeValueHandle::from_value(value)
+        }
+
+        unsafe fn write_symbol(table: NativeSymbolTableHandle, name: &[u8], value: Value) {
+            let value = unsafe { value_handle(value) };
+            assert!(unsafe {
+                phpc_native_symbol_table_write(table, name.as_ptr(), name.len(), value)
+            });
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        unsafe fn read_symbol(table: NativeSymbolTableHandle, name: &[u8]) -> NativeValueHandle {
+            unsafe { phpc_native_symbol_table_read(table, name.as_ptr(), name.len()) }
+        }
+
+        unsafe fn assert_value(handle: NativeValueHandle, expected: Value) {
+            assert_eq!(unsafe { handle.as_ref() }, Some(&expected));
+            unsafe { phpc_native_value_free(handle) };
+        }
+
+        unsafe fn set_reference_value(reference: NativeReferenceHandle, value: Value) {
+            let value = unsafe { value_handle(value) };
+            assert!(unsafe { phpc_native_reference_set_value(reference, value) });
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        unsafe fn assert_snapshot_slot(snapshot: NativeValueHandle, key: &str, expected: Value) {
+            let Some(Value::Array(array)) = (unsafe { snapshot.as_ref() }) else {
+                panic!("snapshot should be an array");
+            };
+            assert_eq!(array.get_cloned(ArrayKey::string(key)), Some(expected));
+        }
+
+        let symbols = phpc_native_symbol_table_new();
+        unsafe { write_symbol(symbols, b"root", Value::String("initial".to_string())) };
+
+        let root_reference =
+            unsafe { phpc_native_symbol_table_reference_for_slot(symbols, b"root".as_ptr(), 4) };
+        assert!(!phpc_native_reference_is_null(root_reference));
+        unsafe { set_reference_value(root_reference, Value::String("from-ref".to_string())) };
+        unsafe {
+            assert_value(
+                read_symbol(symbols, b"root"),
+                Value::String("from-ref".to_string()),
+            );
+        }
+
+        assert!(unsafe {
+            phpc_native_symbol_table_set_reference(symbols, b"alias".as_ptr(), 5, root_reference)
+        });
+        unsafe { set_reference_value(root_reference, Value::String("shared".to_string())) };
+        unsafe {
+            assert_value(
+                read_symbol(symbols, b"root"),
+                Value::String("shared".to_string()),
+            );
+            assert_value(
+                read_symbol(symbols, b"alias"),
+                Value::String("shared".to_string()),
+            );
+        }
+
+        let created_reference =
+            unsafe { phpc_native_symbol_table_reference_for_slot(symbols, b"created".as_ptr(), 7) };
+        assert!(!phpc_native_reference_is_null(created_reference));
+        unsafe { set_reference_value(created_reference, Value::Int(42)) };
+        unsafe {
+            assert_value(read_symbol(symbols, b"created"), Value::Int(42));
+        }
+
+        let symbol_snapshot = unsafe { phpc_native_symbol_table_snapshot_value(symbols) };
+        unsafe {
+            assert_snapshot_slot(symbol_snapshot, "root", Value::String("shared".to_string()));
+            assert_snapshot_slot(
+                symbol_snapshot,
+                "alias",
+                Value::String("shared".to_string()),
+            );
+            assert_snapshot_slot(symbol_snapshot, "created", Value::Int(42));
+        }
+        unsafe { set_reference_value(root_reference, Value::String("after-snapshot".to_string())) };
+        unsafe {
+            assert_snapshot_slot(symbol_snapshot, "root", Value::String("shared".to_string()));
+        }
+
+        let request_state = phpc_native_request_state_empty();
+        let get_root = unsafe { string_handle(b"_GET") };
+        let post_root = unsafe { string_handle(b"_POST") };
+        let invalid_root = unsafe { string_handle(b"_NOPE") };
+        let id_name = unsafe { string_handle(b"id") };
+        let alias_name = unsafe { string_handle(b"alias") };
+        let invalid_name = unsafe { string_handle(&[0xff]) };
+
+        let request_reference = unsafe {
+            phpc_native_request_state_superglobal_reference_for_slot(
+                request_state,
+                get_root,
+                id_name,
+            )
+        };
+        assert!(!phpc_native_reference_is_null(request_reference));
+        unsafe {
+            set_reference_value(request_reference, Value::String("request-ref".to_string()));
+            assert_value(
+                phpc_native_request_state_superglobal_value(
+                    request_state,
+                    b"_GET".as_ptr(),
+                    b"_GET".len(),
+                    b"id".as_ptr(),
+                    b"id".len(),
+                ),
+                Value::String("request-ref".to_string()),
+            );
+        }
+
+        assert!(unsafe {
+            phpc_native_request_state_superglobal_set_reference(
+                request_state,
+                post_root,
+                alias_name,
+                root_reference,
+            )
+        });
+        unsafe {
+            set_reference_value(
+                root_reference,
+                Value::String("shared-with-post".to_string()),
+            );
+            assert_value(
+                phpc_native_request_state_superglobal_value(
+                    request_state,
+                    b"_POST".as_ptr(),
+                    b"_POST".len(),
+                    b"alias".as_ptr(),
+                    b"alias".len(),
+                ),
+                Value::String("shared-with-post".to_string()),
+            );
+        }
+
+        let get_snapshot = unsafe {
+            phpc_native_request_state_superglobal_snapshot_value(request_state, get_root)
+        };
+        let post_snapshot = unsafe {
+            phpc_native_request_state_superglobal_snapshot_value(request_state, post_root)
+        };
+        unsafe {
+            assert_snapshot_slot(get_snapshot, "id", Value::String("request-ref".to_string()));
+            assert_snapshot_slot(
+                post_snapshot,
+                "alias",
+                Value::String("shared-with-post".to_string()),
+            );
+        }
+
+        assert!(unsafe {
+            phpc_native_symbol_table_reference_for_slot(
+                NativeSymbolTableHandle::null(),
+                b"root".as_ptr(),
+                4,
+            )
+        }
+        .is_null());
+        assert!(!unsafe {
+            phpc_native_symbol_table_set_reference(
+                NativeSymbolTableHandle::null(),
+                b"root".as_ptr(),
+                4,
+                root_reference,
+            )
+        });
+        assert!(unsafe {
+            phpc_native_request_state_superglobal_reference_for_slot(
+                NativeRequestStateHandle::null(),
+                get_root,
+                id_name,
+            )
+        }
+        .is_null());
+        assert!(unsafe {
+            phpc_native_request_state_superglobal_reference_for_slot(
+                request_state,
+                invalid_root,
+                id_name,
+            )
+        }
+        .is_null());
+        assert!(unsafe {
+            phpc_native_request_state_superglobal_reference_for_slot(
+                request_state,
+                get_root,
+                invalid_name,
+            )
+        }
+        .is_null());
+        assert!(!unsafe {
+            phpc_native_request_state_superglobal_set_reference(
+                request_state,
+                get_root,
+                id_name,
+                NativeReferenceHandle::null(),
+            )
+        });
+
+        unsafe { phpc_native_value_free(symbol_snapshot) };
+        unsafe { phpc_native_value_free(get_snapshot) };
+        unsafe { phpc_native_value_free(post_snapshot) };
+        unsafe { phpc_native_reference_free(root_reference) };
+        unsafe { phpc_native_reference_free(created_reference) };
+        unsafe { phpc_native_reference_free(request_reference) };
+        unsafe { phpc_native_symbol_table_free(symbols) };
+        unsafe { phpc_native_string_free(get_root) };
+        unsafe { phpc_native_string_free(post_root) };
+        unsafe { phpc_native_string_free(invalid_root) };
+        unsafe { phpc_native_string_free(id_name) };
+        unsafe { phpc_native_string_free(alias_name) };
+        unsafe { phpc_native_string_free(invalid_name) };
         unsafe { phpc_native_request_state_free(request_state) };
     }
 
