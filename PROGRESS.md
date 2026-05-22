@@ -1,32 +1,32 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 03:08 CEST
-Evaluation marker: 20260522T010800Z-plus-990ec6a5
+Updated: 2026-05-22 03:16 CEST
+Evaluation marker: 20260522T011600Z-plus-a74194cf
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local work is candidate material until selected, gated, committed, and pushed.
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **39%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **40%**
 
 ```
 Generalized runtime/ABI foundations      [#################---] 86%
-Compiler/backend consumers               [#################---] 84%
+Compiler/backend consumers               [#################---] 85%
 Executable generalized PHP semantics     [##########----------] 50%
 Arrays, references, COW, lvalues         [#####---------------] 24%
 Objects, properties, methods             [##------------------] 11%
-Diagnostics/control-flow composition     [#####---------------] 23%
-Broad integrated verification            [########------------] 39%
+Diagnostics/control-flow composition     [#####---------------] 25%
+Broad integrated verification            [########------------] 40%
 ```
 
 ## Current Primary State
 
-- Current primary HEAD at review: `990ec6a5 runtime: continue string offset writes after warnings`.
-- Latest committed semantic baseline: `990ec6a5 runtime: continue string offset writes after warnings`.
-- Latest semantic batch keeps supported generated-C string-offset assignments running when the runtime emits a non-fatal warning. Multi-byte string replacements now truncate to the first byte, return the written value, surface a warning diagnostic, and let generated C report that diagnostic before consuming the write result.
-- Previous string-offset batches route supported generated-C string-offset assignments through `phpc_native_value_string_offset_write_with_diagnostic(...)`, rematerialize the owned write result through byte-buffer clone/output helpers, and route generated-C `isset($string[$offset])` / `empty($string[$offset])` probes through shared string-offset and bool-result ABIs.
+- Current primary HEAD at review: `a74194cf native: share diagnostic report consumer`.
+- Latest committed semantic baseline: `a74194cf native: share diagnostic report consumer`.
+- Latest semantic batch adds a shared native diagnostic report consumer so backend diagnostic handles are reported and freed through one runtime/helper path instead of duplicated report/free code. Generated LLVM/native-C declarations and consumers now share that boundary, with linked native coverage for array materialization diagnostics.
+- Previous string-offset batches keep supported generated-C string-offset assignments running when the runtime emits a non-fatal warning, route generated-C string-offset assignment through shared write/byte-buffer helpers, and route generated-C `isset($string[$offset])` / `empty($string[$offset])` probes through shared string-offset and bool-result ABIs.
 - Explicit remaining blockers for that family: string-offset reads/unsets/references, nested/append writes, negative offset parity, other exact warning/recovery cases, array/object/ArrayAccess offset behavior, references/COW mutation, arbitrary dynamic byte-buffer subjects, LLVM parity, and C assembly fallback lowering.
-- Resource note: `/dev/shm` is usable for focused gates but still pressured by concurrent lane builds. Current supervisor sample saw about 22G total, 14G used, and 8.9G free. Continue using isolated target dirs and low job counts for primary integration.
+- Resource note: `/dev/shm` is usable for focused gates but can swing sharply under concurrent lane builds. Current supervisor sample saw it recover from below the 6G dispatcher floor to over 20G free after active-process-aware cleanup. Continue using isolated target dirs and low job counts for primary integration.
 
 ## Grand Roadmap Position
 
@@ -59,11 +59,13 @@ The product is still far from full generalized PHP. The largest missing regions 
 | Arrays, lvalues, references, COW | 24% | 82% | Primary has array-key materialization, array value-operation result ABI, array-entry snapshots, array-handle comparisons, append diagnostics, native array handles as owned value operands, cloned-literal cleanup, and selected string-offset bool probes outside array semantics. Lane-local current-read/RMW/null-aware/foreach/reference/lvalue and reference/COW symbol-cell candidates are much stronger; full executable lvalues/references/COW are not integrated. |
 | Symbols, globals, request state | 24% | 67% | Primary has symbol ABI helpers, request/superglobal snapshot ABI, and selected expression-result boundaries. Lane-local reference/COW-aware symbol cells and request-superglobal backing storage are promising, but primary still lacks real generalized locals, frames, globals, imports, request mutation, and reference assignment lowering. |
 | Objects, properties, methods | 11% | 50% | Primary has native object handle strict-identity relation results and loose-comparison blockers through the shared comparison path. Lane-local object/class/property blockers and operation plans continue improving, but executable object/property/method behavior is still largely absent. |
-| Diagnostics and control-flow cleanup | 23% | 68% | Primary has selected severity/blocker surfaces, diagnostic array append behavior, centralized call diagnostics, call-boundary cleanup routing, comparison branch abort handling, string-offset bool diagnostics, and warning-capable string-offset write continuation. Lane-local diagnostic-result and terminating-arm cleanup boundaries are broader, but most loop/switch/goto/finally/exception behavior remains blocker/model work. |
-| Broad composition verification | 39% | 47% | Focused runtime/native-link gates cover the newest string-offset warning continuation, string-offset write path, string-offset bool path, unary string-result executable path, comparison relation-result path, value-operation, scalar echo, print output, bitwise, type-predicate, array-value, string-byte, and diagnostic paths. Broad differential PHP composition coverage remains thin, and exploratory full `native_link` still has two stale unrelated failures. |
+| Diagnostics and control-flow cleanup | 25% | 69% | Primary has selected severity/blocker surfaces, diagnostic array append behavior, a shared native diagnostic report consumer, centralized call diagnostics, call-boundary cleanup routing, comparison branch abort handling, string-offset bool diagnostics, and warning-capable string-offset write continuation. Lane-local diagnostic-result and terminating-arm cleanup boundaries are broader, but most loop/switch/goto/finally/exception behavior remains blocker/model work. |
+| Broad composition verification | 40% | 47% | Focused runtime/native-link gates cover the newest shared diagnostic report consumer, string-offset warning continuation, string-offset write path, string-offset bool path, unary string-result executable path, comparison relation-result path, value-operation, scalar echo, print output, bitwise, type-predicate, array-value, string-byte, and diagnostic paths. Broad differential PHP composition coverage remains thin, and exploratory full `native_link` still has two stale unrelated failures. |
 
 ## Recent Primary-Integrated Work
 
+- `a74194cf native: share diagnostic report consumer`
+  - Adds one shared runtime/backend diagnostic-report consumer so diagnostic handles are reported and freed through a reusable path in runtime and generated backend declarations/consumers. Linked coverage proves the shared reporter is used from generated-native diagnostic paths instead of duplicating report/free handling. This is cleanup/reporting infrastructure, not complete diagnostic semantics: exact warning ordering, lvalue diagnostics, branch/control-flow threading, request/object/callable producers, and LLVM/assembly parity for every diagnostic-producing expression remain open.
 - `990ec6a5 runtime: continue string offset writes after warnings`
   - Extends the generated-C/runtime string-offset write path so warning-capable writes do not collapse into hard failure. Multi-byte replacement strings truncate to the first byte, return the updated value, emit the PHP warning diagnostic, and preserve the existing byte-buffer materialization path. This is still limited to supported string-offset assignment shapes: reads, unsets, references/COW, nested writes, append writes, negative offsets, array/object/ArrayAccess offsets, LLVM parity, and exact diagnostic ordering outside this warning case remain blocked.
 - `6e07d95f codegen: route string offset writes through native ABI`
@@ -96,13 +98,13 @@ Lane-local work is useful source material, but it is not product capability unti
 
 ## Candid Assessment
 
-Recent primary work is directionally sound because it turns shared ABI surfaces into generated-C or runtime consumers and removes duplicated backend-local handling. The newest string-offset warning continuation is a good model: small, executable, runtime-owned, linked, and explicit about remaining blockers.
+Recent primary work is directionally sound because it turns shared ABI surfaces into generated-C or runtime consumers and removes duplicated backend-local handling. The newest diagnostic-report consumer is small and reusable, but it is still infrastructure. The next batches should keep biasing toward executable behavior, not just more result vocabulary.
 
 The project remains boundary-heavy. More result/blocker vocabulary without immediate executable consumers will not move the product much. The next valuable batches should each answer: what PHP behavior now runs that did not run before, what shared runtime materialization path now has real consumers, or what backend-local bypass has been removed?
 
 ## Near-Term Steering
 
-1. Treat `990ec6a5` as the latest integrated semantic baseline; progress-only commits are management artifacts.
+1. Treat `a74194cf` as the latest integrated semantic baseline; progress-only commits are management artifacts.
 2. Prefer small executable generated-C/LLVM/runtime consumers of existing ABI surfaces over more standalone vocabulary.
 3. Strong next candidates: isolate one narrow reference/COW symbol-cell or array-lvalue current-read/RMW primary slice; integrate a conversion-result stdout/string-offset follow-up only if it removes a real backend bypass; or select one control-flow cleanup consumer that emits before a real terminal transfer.
 4. Avoid whole-lane merges. Current lane evidence is broad and conflict-prone even when technically useful.
