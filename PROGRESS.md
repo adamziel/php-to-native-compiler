@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 15:09 CEST
-Evaluation marker: `20260522T130900Z`
-Primary HEAD: `625b98d0 codegen: route request keyed empty through state ABI`
-Current primary semantic baseline: `625b98d0 codegen: route request keyed empty through state ABI`
+Updated: 2026-05-22 15:19 CEST
+Evaluation marker: `20260522T131900Z`
+Primary HEAD: `42934793 runtime: attach source locations to diagnostics`
+Current primary semantic baseline: `42934793 runtime: attach source locations to diagnostics`
 
 Percentages are candid engineering estimates, not test-suite pass rates. Lane-local candidate work and unstaged primary diffs are not counted as product capability until integrated into `master`, gated, committed, and pushed.
 
@@ -11,20 +11,20 @@ Percentages are candid engineering estimates, not test-suite pass rates. Lane-lo
 
 Overall estimated progress toward the current generalized native-compiler roadmap: **74%** `[###############-----]`
 
-Momentum is positive, but the remaining blockers are structural. Primary now has stronger request/symbol storage, generated-C direct request-root assignment, direct request-root snapshots, direct keyed request-superglobal read/write/unset/`isset()`/`empty()` storage, direct request-root value/reference storage, selected generated-C array/lvalue/string/native-value consumers, natural array sort execution through the lvalue sort ABI, and a runtime ABI for nested array reference paths over owned value handles. This is real generalized infrastructure. It is not broad PHP compatibility yet: executable `$GLOBALS`, nested/path superglobal lowering beyond direct keyed slots, generated reference assignment, full references/COW, user calls, objects, structured control flow, and exact diagnostics remain major blockers.
+Momentum is positive, but the remaining blockers are structural. Primary now has stronger request/symbol storage, generated-C direct request-root assignment, direct request-root snapshots, direct keyed request-superglobal read/write/unset/`isset()`/`empty()` storage, direct request-root value/reference storage, selected generated-C array/lvalue/string/native-value consumers, natural array sort execution through the lvalue sort ABI, a runtime ABI for nested array reference paths over owned value handles, and source-location metadata on shared native diagnostic handles. This is real generalized infrastructure. It is not broad PHP compatibility yet: executable `$GLOBALS`, nested/path superglobal lowering beyond direct keyed slots, generated reference assignment, full references/COW, user calls, objects, structured control flow, and exact diagnostic attachment/ordering remain major blockers.
 
 ## Roadmap Position
 
 | Area | Estimate | Bar | Primary-integrated read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | 96% | `[###################-]` | Strong shared surfaces exist for values, arrays, strings, comparisons, diagnostics, symbol tables, request state, request-root direct values/references, reference slots, request/superglobal mutation, nested array reference paths, and array sort result families. |
+| Runtime and ABI foundations | 96% | `[###################-]` | Strong shared surfaces exist for values, arrays, strings, comparisons, diagnostics, diagnostic source locations, symbol tables, request state, request-root direct values/references, reference slots, request/superglobal mutation, nested array reference paths, and array sort result families. |
 | Selected compiler/backend consumers | 76% | `[###############-----]` | Generated-C consumers exist for selected scalar/string/array/lvalue/request-root behavior, including direct request-root assignment, direct keyed request storage, keyed request `empty()`, and lvalue-backed sort families. Symbols, nested/path request storage, calls, objects, references, and control-flow cleanup remain partial or absent. |
 | Executable generalized PHP semantics | 65% | `[#############-------]` | Selected scalar, string, array, lvalue, symbol-runtime, request-runtime, direct request-root value/reference storage, direct root assignment, snapshots, keyed request storage including `empty()`, null-callback array value behavior, and natural sort execution works. Broad PHP programs still hit structural blockers. |
 | Arrays, references, COW, lvalues | 71% | `[##############------]` | Primary has selected array/lvalue execution plus natural sort execution and a runtime nested reference-path ABI. Generated PHP reference assignment, arbitrary roots, owner/value/reference slots, by-reference foreach, and full COW remain open. |
 | Symbols, globals, request state | 53% | `[###########---------]` | Runtime symbol/request roots can snapshot, mutate, store direct scalar/null/object/resource root values, store direct root reference cells, clear stale keyed slots, re-enter keyed storage where safe, and generated C can assign direct request roots plus direct keyed request slots and keyed `empty()` through request-state ABIs. Compiler-level `$GLOBALS`, nested/path superglobal lowering beyond direct keyed slots, request lifetime, and frame propagation are not integrated. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Runtime call contracts and promising lane-local source-call consumers exist, but primary still lacks broad executable user function/method/closure frames and result consumers. |
 | Objects, properties, methods | 11% | `[##------------------]` | Mostly blockers, metadata, and lane-local scaffolds. Real allocation/property/method behavior remains largely absent. |
-| Diagnostics and control-flow cleanup | 28% | `[######--------------]` | Shared diagnostic/status surfaces exist and request missing-key value reads report through request result carriers. Exact ordering, recovery, loops/switch/goto/finally/exceptions, and cleanup stacks are not primary-integrated. |
+| Diagnostics and control-flow cleanup | 29% | `[######--------------]` | Shared diagnostic/status surfaces exist, diagnostics can carry source-location metadata, and request missing-key value reads report through request result carriers. Generated source-span attachment, exact ordering, recovery, loops/switch/goto/finally/exceptions, and cleanup stacks are not primary-integrated. |
 | Broad integrated verification | 75% | `[###############-----]` | Focused gates and linked tests are useful, including request-root snapshots, direct request-root assignments, direct keyed request storage including `empty()`, null-callback array builtins, sort-family lvalues including natural sorts, and runtime reference-path storage-root coverage. Broad differential composition coverage remains thin. |
 
 ## Done / In Progress / Not Done
@@ -45,6 +45,7 @@ Momentum is positive, but the remaining blockers are structural. Primary now has
 - [x] Runtime direct request-superglobal root values, including scalar/null/object/resource roots, stale keyed-slot clearing, keyed write re-entry, and scalar-root write rejection.
 - [x] Runtime direct request-superglobal root references, including shared root reference cells across `_GET`, `_POST`, and `_REQUEST`, stale keyed-slot clearing, snapshot visibility after reference updates, and blocked keyed mutation while the root is reference-backed.
 - [x] Runtime nested array reference-path ABI over owned value handles, with root writeback coverage for direct values, symbol-table values, and request-superglobal slots.
+- [x] Runtime source-location metadata on shared native diagnostic handles, with clone/query ABI coverage across direct, conversion, and request diagnostics.
 - [ ] Compiler-lowered nested/path request-superglobal reads, writes, unsets, assignment-expression values, and `$GLOBALS` request aliases in committed primary.
 - [ ] Generated PHP reference assignment over the path-reference ABI.
 - [ ] Executable PHP-level `$GLOBALS`, request lifetime threading, and frame propagation.
@@ -63,13 +64,14 @@ Recent integrated semantic commits:
 - `7fc1d7ef codegen: route request keyed storage through state ABI`
 - `e3a458bb runtime: execute natural array sorts through lvalue ABI`
 - `625b98d0 codegen: route request keyed empty through state ABI`
+- `42934793 runtime: attach source locations to diagnostics`
 
 Current primary state:
 
-- `master` and `origin/master` are synced at `625b98d0`.
-- This progress update is docs-only on top of semantic baseline `625b98d0`.
+- `master` and `origin/master` are synced at `42934793`.
+- This progress update is docs-only on top of semantic baseline `42934793`.
 - Active dirty implementation state is the preserved unrelated unstaged runtime hunk in `runtime/src/lib.rs`; it is not counted as product progress until gated, committed, and pushed.
-- The latest committed semantic addition is generated-C direct keyed request-superglobal `empty()` through request-state presence/value operations and the shared native value cast/truthiness boundary. Nested/path request operations, `$GLOBALS` reconciliation, request-root reference assignment, LLVM parity, PHP reference assignment, arbitrary writable roots, and full references/COW still need primary compiler consumers.
+- The latest committed semantic addition is runtime source-location metadata on shared native diagnostic handles. Generated PHP source-span attachment, nested/path request operations, `$GLOBALS` reconciliation, request-root reference assignment, LLVM parity, PHP reference assignment, arbitrary writable roots, and full references/COW still need primary compiler consumers.
 
 ## Lane-Local Candidate Work
 
