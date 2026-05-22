@@ -8271,6 +8271,58 @@ impl CGenerator {
         )
     }
 
+    fn emit_value_offset_append_assignment(
+        &mut self,
+        name: &str,
+        subject: CValue,
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        let subject = self.materialize_native_array_c_value_handle(subject, span)?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let replacement =
+            self.materialize_native_value_result_operand(replacement_expr, &subject_cleanup)?;
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_value_offset_mutation = true;
+        self.uses_native_value_clone = true;
+
+        let diagnostic = self.next_native_name("value_offset_append_diagnostic");
+        let append_value = self.next_native_name("value_offset_append_value");
+        let value_to_clone = self.next_native_name("value_offset_append_value_to_clone");
+        let stored_value = self.next_native_name("value_offset_append_stored_value");
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {append_value} = phpc_native_value_offset_mutation_operation_with_diagnostic({}, (phpc_NativeValueHandle){{0}}, {}, {NATIVE_VALUE_OFFSET_MUTATION_APPEND}, &{diagnostic});",
+            subject.handle, replacement.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value_to_clone} = {};",
+            subject.handle
+        ));
+        self.body.push(format!(
+            "if ({append_value}.ptr != NULL) {{ {value_to_clone} = {append_value}; }}"
+        ));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {stored_value} = phpc_native_value_clone({value_to_clone});"
+        ));
+        self.body
+            .push(format!("phpc_native_value_free({append_value});"));
+        self.body.extend(replacement.cleanup_after_use);
+        self.body.extend(subject.cleanup_after_use);
+        self.store_native_value_result_variable(
+            name,
+            CNativeValueMaterialization {
+                handle: stored_value,
+                cleanup_after_use: Vec::new(),
+            },
+        );
+        Ok(())
+    }
+
     fn emit_array_offset_null_coalesce_assignment(
         &mut self,
         target: &AssignTarget,
@@ -10540,6 +10592,9 @@ impl CGenerator {
                             self.emit_string_offset_write_assignment(
                                 name, subject, index, expr, *span,
                             )
+                        }
+                        Some(subject) if index.is_none() => {
+                            self.emit_value_offset_append_assignment(name, subject, expr, *span)
                         }
                         _ => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
                     };
@@ -13512,7 +13567,10 @@ impl CGenerator {
         match expr {
             Expr::Array { .. } => true,
             Expr::Variable(name, _) => {
-                matches!(self.variables.get(name), Some(CValue::ArrayHandle(_)))
+                matches!(
+                    self.variables.get(name),
+                    Some(CValue::ArrayHandle(_) | CValue::NativeValueHandle(_))
+                )
             }
             _ => false,
         }

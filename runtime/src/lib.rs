@@ -199,6 +199,8 @@ enum NativeArrayLvaluePathElement {
 
 pub const PHP_STRING_OFFSET_TRUNCATED_REPLACEMENT_WARNING: &str =
     "Only the first byte will be assigned to the string offset";
+pub const PHP_FALSE_TO_ARRAY_DEPRECATION: &str =
+    "Automatic conversion of false to array is deprecated";
 
 impl NativeStringOffsetOperation {
     fn from_tag(tag: u8) -> RuntimeResult<Self> {
@@ -4420,9 +4422,10 @@ pub unsafe extern "C" fn phpc_native_value_string_offset_write_with_diagnostic(
 /// assigning `subject[offset] = replacement`, operation `1` returns a copy
 /// after appending `replacement`, and operation `2` returns a copy after
 /// unsetting `subject[offset]`. Array subjects share the native array-key
-/// conversion boundary. String writes share the existing string-offset write
-/// boundary, including warning-capable replacement truncation; string append
-/// and unset remain centralized blockers.
+/// conversion boundary. Append also materializes null and false subjects as
+/// arrays through this boundary. String writes share the existing string-offset
+/// write boundary, including warning-capable replacement truncation; string
+/// append and unset remain centralized blockers.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_value_offset_mutation_operation_with_diagnostic(
     subject: NativeValueHandle,
@@ -4529,6 +4532,10 @@ unsafe fn native_value_offset_mutation_operation_value(
         };
     }
 
+    if operation == NativeValueOffsetMutationOperation::Append as u8 {
+        return unsafe { native_value_offset_append_mutation_value(value, replacement) };
+    }
+
     unsafe {
         native_string_value_offset_mutation_operation_value(subject, offset, replacement, operation)
     }
@@ -4571,6 +4578,37 @@ unsafe fn native_array_value_offset_mutation_operation_value(
     }
 
     Ok((Value::Array(array), None))
+}
+
+unsafe fn native_value_offset_append_mutation_value(
+    subject: &Value,
+    replacement: NativeValueHandle,
+) -> RuntimeResult<(Value, Option<&'static str>)> {
+    if matches!(subject, Value::Null | Value::Bool(false)) {
+        let replacement = unsafe { native_value_clone_for_offset_mutation(replacement, "append") }?;
+        let mut array = PhpArray::new();
+        array.append(replacement)?;
+        let diagnostic =
+            matches!(subject, Value::Bool(false)).then_some(PHP_FALSE_TO_ARRAY_DEPRECATION);
+        return Ok((Value::Array(array), diagnostic));
+    }
+
+    if subject.string_byte_view().is_some() {
+        return Err(RuntimeError::invalid_array_access(
+            "native value offset mutation failed: string offset append awaits the shared mutable string-offset ABI",
+        ));
+    }
+
+    if matches!(subject, Value::Bool(true) | Value::Int(_) | Value::Float(_)) {
+        return Err(RuntimeError::invalid_array_access(
+            "cannot use a scalar value as an array",
+        ));
+    }
+
+    Err(RuntimeError::invalid_array_access(format!(
+        "native value offset mutation append blocked for {} subjects pending object/ArrayAccess/resource/reference/COW semantics",
+        subject.type_name()
+    )))
 }
 
 /// # Safety
@@ -19756,6 +19794,87 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(missing_replacement) };
+    }
+
+    #[test]
+    fn native_value_offset_append_converts_null_false_and_blocks_scalars() {
+        fn append_value(
+            subject: Value,
+            replacement: Value,
+        ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+            let subject = NativeValueHandle::from_value(subject);
+            let replacement = NativeValueHandle::from_value(replacement);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_offset_mutation_operation_with_diagnostic(
+                    subject,
+                    NativeValueHandle::null(),
+                    replacement,
+                    NativeValueOffsetMutationOperation::Append as u8,
+                    &mut diagnostic,
+                )
+            };
+            unsafe { phpc_native_value_free(subject) };
+            unsafe { phpc_native_value_free(replacement) };
+            (result, diagnostic)
+        }
+
+        fn read_appended_zero(value: NativeValueHandle) -> Vec<u8> {
+            let offset = NativeValueHandle::from_value(Value::Int(0));
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let read = unsafe {
+                phpc_native_value_offset_operation_with_diagnostic(
+                    value,
+                    offset,
+                    NativeStringOffsetOperation::Read as u8,
+                    &mut diagnostic,
+                )
+            };
+            assert!(diagnostic.is_null());
+            let bytes = native_value_echo_bytes_for_test(read);
+            unsafe { phpc_native_value_free(read) };
+            unsafe { phpc_native_value_free(offset) };
+            bytes
+        }
+
+        let (null_appended, diagnostic) =
+            append_value(Value::Null, Value::String("null-slot".to_string()));
+        assert!(diagnostic.is_null());
+        assert_eq!(read_appended_zero(null_appended), b"null-slot");
+        unsafe { phpc_native_value_free(null_appended) };
+
+        let (false_appended, diagnostic) =
+            append_value(Value::Bool(false), Value::String("false-slot".to_string()));
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            PHP_FALSE_TO_ARRAY_DEPRECATION
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        assert_eq!(read_appended_zero(false_appended), b"false-slot");
+        unsafe { phpc_native_value_free(false_appended) };
+
+        for subject in [Value::Bool(true), Value::Int(4), Value::Float(2.5)] {
+            let (failed, diagnostic) = append_value(subject, Value::String("x".to_string()));
+            assert!(failed.is_null());
+            assert_eq!(
+                native_diagnostic_message_for_test(diagnostic),
+                "invalid array access: cannot use a scalar value as an array"
+            );
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+            unsafe { phpc_native_value_free(failed) };
+        }
+
+        let (string_failed, diagnostic) = append_value(
+            Value::String("abc".to_string()),
+            Value::String("x".to_string()),
+        );
+        assert!(string_failed.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: native value offset mutation failed: string offset append awaits the shared mutable string-offset ABI"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(string_failed) };
     }
 
     #[test]
