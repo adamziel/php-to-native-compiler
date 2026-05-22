@@ -6728,6 +6728,9 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             Expr::Index { target, span, .. } => {
+                if self.is_string_offset_subject_expr(target) {
+                    return self.emit_string_offset_read_expr(expr);
+                }
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -7172,6 +7175,53 @@ impl CGenerator {
         self.body.push(format!("phpc_native_value_free({result});"));
 
         Ok(Some(CValue::BoolExpr(bool_result)))
+    }
+
+    fn emit_string_offset_read_expr(&mut self, expr: &Expr) -> CompileResult<CValue> {
+        let Expr::Index { target, index, .. } = expr else {
+            unreachable!("string offset reads are emitted from index expressions")
+        };
+
+        let subject = self.materialize_native_value_result_operand(target, "")?;
+        let offset_failure_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let offset =
+            self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?;
+        let mut operand_cleanup = offset.cleanup_after_use;
+        operand_cleanup.extend(subject.cleanup_after_use);
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_value_string_clone_bytes = true;
+        let read = self.next_native_name("string_offset_read_value");
+        let diagnostic = self.next_native_name("string_offset_read_diagnostic");
+        let buffer = self.next_native_name("string_offset_read_buffer");
+        let bytes = self.next_native_name("string_offset_read_bytes");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {read} = phpc_native_value_string_offset_operation_with_diagnostic({}, {}, {}, &{diagnostic});",
+            subject.handle,
+            offset.handle,
+            NativeStringOffsetOperation::Read as u8
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let read_error_exit = self.native_error_exit(&format!(
+            "phpc_native_value_free({read}); {}",
+            c_cleanup_sequence(&operand_cleanup)
+        ));
+        self.body
+            .push(format!("if ({read}.ptr == NULL) {{ {read_error_exit} }}"));
+        self.body.push(format!(
+            "phpc_NativeByteBuffer {buffer} = phpc_native_value_string_clone_bytes({read});"
+        ));
+        self.body
+            .push(format!("const uint8_t *{bytes} = {buffer}.ptr;"));
+        self.body.push(format!("phpc_native_value_free({read});"));
+        self.body.extend(operand_cleanup);
+        self.known_string_lengths
+            .insert(bytes.clone(), format!("{buffer}.len"));
+        self.owned_native_byte_buffers.push(buffer);
+
+        Ok(CValue::StringExpr(bytes))
     }
 
     fn is_string_offset_subject_expr(&self, expr: &Expr) -> bool {
@@ -11121,6 +11171,9 @@ impl CGenerator {
         let Expr::Index { target, index, .. } = expr else {
             return Ok(false);
         };
+        if self.is_string_offset_subject_expr(target) {
+            return Ok(false);
+        }
         if !self.uses_native_string_helpers {
             return Ok(false);
         }

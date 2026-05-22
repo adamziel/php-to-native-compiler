@@ -157,6 +157,7 @@ pub enum NativeStringResultOperation {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeStringOffsetOperation {
+    Read = 0,
     Isset = 1,
     Empty = 2,
 }
@@ -167,6 +168,7 @@ pub const PHP_STRING_OFFSET_TRUNCATED_REPLACEMENT_WARNING: &str =
 impl NativeStringOffsetOperation {
     fn from_tag(tag: u8) -> RuntimeResult<Self> {
         match tag {
+            tag if tag == Self::Read as u8 => Ok(Self::Read),
             tag if tag == Self::Isset as u8 => Ok(Self::Isset),
             tag if tag == Self::Empty as u8 => Ok(Self::Empty),
             _ => Err(RuntimeError::invalid_string_conversion(
@@ -4118,7 +4120,8 @@ unsafe fn native_value_bool_result(handle: NativeValueHandle) -> RuntimeResult<b
 /// the runtime ABI and not yet freed. `diagnostic` may be null; when non-null,
 /// it must point to writable storage for one `NativeDiagnosticHandle`. On
 /// failure the helper stores a diagnostic handle that the caller owns and must
-/// release with `phpc_native_diagnostic_free`. Operation tag `1` returns
+/// release with `phpc_native_diagnostic_free`. Operation tag `0` returns
+/// `subject[offset]` as an owned PHP string, tag `1` returns
 /// `isset(subject[offset])` as an owned PHP bool, and tag `2` returns
 /// `empty(subject[offset])` as an owned PHP bool.
 #[no_mangle]
@@ -4178,6 +4181,12 @@ unsafe fn native_value_string_offset_operation_value(
     operation: u8,
 ) -> RuntimeResult<Value> {
     let operation = NativeStringOffsetOperation::from_tag(operation)?;
+    if matches!(operation, NativeStringOffsetOperation::Read) {
+        let bytes = unsafe { native_value_string_offset_read_subject_bytes(subject) }?;
+        let offset = unsafe { native_string_offset_index_from_value(offset) }?;
+        return php_string_offset_read_value(&bytes, offset);
+    }
+
     let bytes = unsafe { native_value_string_offset_subject_bytes(subject) }?;
     let offset = unsafe { native_string_offset_index_from_value(offset) }?;
     Ok(Value::Bool(php_string_offset_bool_operation(
@@ -4202,6 +4211,36 @@ unsafe fn native_value_string_offset_write_value(
         )
     })?;
     Ok((value, warning))
+}
+
+unsafe fn native_value_string_offset_read_subject_bytes(
+    handle: NativeValueHandle,
+) -> RuntimeResult<Vec<u8>> {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string offset read failed: subject handle is null",
+        ));
+    };
+
+    match value {
+        Value::String(value) => Ok(value.as_bytes().to_vec()),
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {
+            Err(RuntimeError::unsupported_call(
+                "native string offset read",
+                format!(
+                    "{} subjects require PHP value-offset warning semantics before generated native reads",
+                    value.type_name()
+                ),
+            ))
+        }
+        Value::Array(_)
+        | Value::Object(_)
+        | Value::Closure(_)
+        | Value::Resource(_) => Err(RuntimeError::invalid_string_conversion(format!(
+            "native string offset read failed: {} subjects are not supported; only string byte subjects are implemented",
+            value.type_name()
+        ))),
+    }
 }
 
 unsafe fn native_value_string_offset_subject_bytes(
@@ -4328,12 +4367,33 @@ fn php_string_offset_bool_operation(
     operation: NativeStringOffsetOperation,
 ) -> bool {
     match operation {
+        NativeStringOffsetOperation::Read => {
+            unreachable!("string offset read is handled by php_string_offset_read_value")
+        }
         NativeStringOffsetOperation::Isset => bytes.get(offset).is_some(),
         NativeStringOffsetOperation::Empty => match bytes.get(offset) {
             Some(b'0') | None => true,
             Some(_) => false,
         },
     }
+}
+
+fn php_string_offset_read_value(bytes: &[u8], offset: usize) -> RuntimeResult<Value> {
+    let Some(byte) = bytes.get(offset) else {
+        return Err(RuntimeError::invalid_string_conversion(format!(
+            "native string offset read failed: offset {offset} is outside string length {}",
+            bytes.len()
+        )));
+    };
+
+    String::from_utf8(vec![*byte])
+        .map(Value::String)
+        .map_err(|_| {
+            RuntimeError::unsupported_call(
+                "native string offset read",
+                "byte strings with invalid UTF-8 require the binary string value boundary",
+            )
+        })
 }
 
 pub fn php_string_offset_write(
@@ -17845,6 +17905,77 @@ mod tests {
         unsafe { phpc_native_value_free(subject) };
         unsafe { phpc_native_value_free(false_value) };
         unsafe { phpc_native_value_free(true_value) };
+    }
+
+    #[test]
+    fn native_string_offset_reads_share_value_key_and_byte_boundaries() {
+        fn offset_read(
+            subject: Value,
+            offset: Value,
+        ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+            let subject = NativeValueHandle::from_value(subject);
+            let offset = NativeValueHandle::from_value(offset);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_string_offset_operation_with_diagnostic(
+                    subject,
+                    offset,
+                    NativeStringOffsetOperation::Read as u8,
+                    &mut diagnostic,
+                )
+            };
+            unsafe { phpc_native_value_free(subject) };
+            unsafe { phpc_native_value_free(offset) };
+            (result, diagnostic)
+        }
+
+        fn assert_read(subject: Value, offset: Value, expected: &[u8]) {
+            let (result, diagnostic) = offset_read(subject, offset);
+            assert!(
+                diagnostic.is_null(),
+                "unexpected string-offset read diagnostic: {}",
+                native_diagnostic_message_for_test(diagnostic)
+            );
+            assert_eq!(native_value_echo_bytes_for_test(result), expected);
+            assert_eq!(
+                native_byte_buffer_to_vec_for_test(unsafe {
+                    phpc_native_value_string_clone_bytes(result)
+                }),
+                expected
+            );
+            unsafe { phpc_native_value_free(result) };
+        }
+
+        fn assert_diagnostic(subject: Value, offset: Value, expected: &str) {
+            let (result, diagnostic) = offset_read(subject, offset);
+            assert!(result.is_null());
+            assert_eq!(native_diagnostic_message_for_test(diagnostic), expected);
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+        }
+
+        assert_read(Value::String("A\0B".to_string()), Value::Int(0), b"A");
+        assert_read(
+            Value::String("A\0B".to_string()),
+            Value::String("1".to_string()),
+            b"\0",
+        );
+        assert_read(Value::String("A0B".to_string()), Value::Bool(true), b"0");
+
+        assert_diagnostic(
+            Value::String("abc".to_string()),
+            Value::Int(99),
+            "invalid string conversion: native string offset read failed: offset 99 is outside string length 3",
+        );
+        assert_diagnostic(
+            Value::Int(907),
+            Value::Int(1),
+            "unsupported call native string offset read: int subjects require PHP value-offset warning semantics before generated native reads",
+        );
+        assert_diagnostic(
+            Value::String("abc".to_string()),
+            Value::String("missing".to_string()),
+            "invalid string conversion: native string offset operation failed: offset must be an integer string",
+        );
     }
 
     #[test]
