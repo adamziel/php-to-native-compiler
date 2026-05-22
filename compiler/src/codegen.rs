@@ -7496,6 +7496,7 @@ impl CGenerator {
                 );
                 output.push_str("extern bool phpc_native_symbol_table_write(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_symbol_table_set_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_symbol_table_unset_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_symbol_table_read_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_isset_value_by_path(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count);\n");
                 output.push_str("extern bool phpc_native_symbol_table_empty_value_by_path(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count);\n");
@@ -7985,6 +7986,36 @@ impl CGenerator {
         )?;
         self.emit_globals_symbol_path_write_from_materialized(path, value, span, failure_cleanup)?;
         Ok(result_value)
+    }
+
+    fn emit_globals_symbol_path_unset(
+        &mut self,
+        indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let path = self.materialize_globals_symbol_path_keys(indices, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let table =
+            self.ensure_globals_symbol_table(&format!("{path_cleanup}{failure_cleanup}"), span)?;
+        let diagnostic = self.next_native_name("globals_symbol_path_unset_diagnostic");
+        let unset = self.next_native_name("globals_symbol_path_unset");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {unset} = phpc_native_symbol_table_unset_value_by_path_with_diagnostic({table}, {}, {}, &{diagnostic});",
+            path.handles, path.len
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let unset_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_free({diagnostic}); {path_cleanup}{failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if (!{unset}) {{ {unset_error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(path.cleanup_after_use);
+        Ok(())
     }
 
     fn globals_symbol_table_is_active(&self) -> bool {
@@ -11804,6 +11835,9 @@ impl CGenerator {
         if is_request_superglobal_name(name) {
             return self.emit_request_superglobal_keyed_unset(name, index_expr, "");
         }
+        if is_globals_superglobal_name(name) {
+            return self.emit_globals_symbol_path_unset(&[index_expr], span, "");
+        }
 
         if !self.uses_native_string_helpers {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
@@ -11834,6 +11868,10 @@ impl CGenerator {
     ) -> CompileResult<()> {
         if is_request_superglobal_name(name) {
             return self.emit_request_superglobal_path_unset(name, indices, "");
+        }
+        if is_globals_superglobal_name(name) {
+            let indices = indices.iter().collect::<Vec<_>>();
+            return self.emit_globals_symbol_path_unset(&indices, span, "");
         }
 
         if !self.uses_native_string_helpers {

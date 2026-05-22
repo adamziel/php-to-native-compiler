@@ -3008,6 +3008,37 @@ fn native_symbol_table_set_nested_value_by_path(
     Ok(())
 }
 
+fn native_symbol_table_unset_value_by_path(
+    table: &mut NativeSymbolTable,
+    name: &str,
+    keys: &[ArrayKey],
+) -> RuntimeResult<()> {
+    if keys.is_empty() {
+        table.values.remove(name);
+        table.insertion_order.retain(|ordered| ordered != name);
+        return Ok(());
+    }
+
+    let Some(slot) = table.values.get_mut(name) else {
+        return Ok(());
+    };
+
+    let mut root = match slot.value_cloned() {
+        Value::Array(array) => array,
+        Value::Null | Value::Bool(false) => return Ok(()),
+        other => {
+            return Err(RuntimeError::invalid_array_access(format!(
+                "symbol table path unset failed: cannot unset array path on {}",
+                other.type_name()
+            )));
+        }
+    };
+
+    native_php_array_unset_path(&mut root, keys)?;
+    slot.set_value(Value::Array(root));
+    Ok(())
+}
+
 enum NativeSymbolTableNestedRead {
     Value(Value),
     MissingRoot,
@@ -3420,6 +3451,52 @@ pub unsafe extern "C" fn phpc_native_symbol_table_set_value_by_path_with_diagnos
     }
 
     match native_symbol_table_set_nested_value_by_path(table, &name, &keys, value.clone()) {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. `keys` must be null when `key_count` is zero,
+/// or point to `key_count` initialized value handles previously returned by
+/// the runtime ABI and not yet freed. The first key selects the root
+/// symbol-table slot and remaining keys select nested array offsets. Missing
+/// roots/keys and null/false parents are no-ops; scalar/object/resource parents
+/// fail with a diagnostic owned by the caller when `diagnostic` is non-null.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_unset_value_by_path_with_diagnostic(
+    mut handle: NativeSymbolTableHandle,
+    keys: *const NativeValueHandle,
+    key_count: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let Some(table) = (unsafe { handle.as_mut() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "symbol table path unset failed: symbol table handle is null",
+            )
+        };
+        return false;
+    };
+    let (name, keys) = match unsafe {
+        native_symbol_table_value_path_from_handles(keys, key_count, "symbol table path unset")
+    } {
+        Ok(path) => path,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            return false;
+        }
+    };
+
+    match native_symbol_table_unset_value_by_path(table, &name, &keys) {
         Ok(()) => true,
         Err(error) => {
             unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
@@ -22834,6 +22911,276 @@ mod tests {
         .expect("invalid root key should reject path materialization");
         assert!(invalid_root.contains("array keys are not supported"));
 
+        unsafe { phpc_native_symbol_table_free(table) };
+    }
+
+    #[test]
+    fn native_symbol_table_root_paths_unset_dynamic_keys() {
+        unsafe fn value_handle(value: Value) -> NativeValueHandle {
+            NativeValueHandle::from_value(value)
+        }
+
+        unsafe fn key_handles(values: Vec<Value>) -> Vec<NativeValueHandle> {
+            values
+                .into_iter()
+                .map(NativeValueHandle::from_value)
+                .collect()
+        }
+
+        unsafe fn free_handles(handles: Vec<NativeValueHandle>) {
+            for handle in handles {
+                unsafe { phpc_native_value_free(handle) };
+            }
+        }
+
+        unsafe fn set_path(
+            table: NativeSymbolTableHandle,
+            key_values: Vec<Value>,
+            value: Value,
+        ) -> Option<String> {
+            let keys = unsafe { key_handles(key_values) };
+            let value = unsafe { value_handle(value) };
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let succeeded = unsafe {
+                phpc_native_symbol_table_set_value_by_path_with_diagnostic(
+                    table,
+                    keys.as_ptr(),
+                    keys.len(),
+                    value,
+                    &mut diagnostic,
+                )
+            };
+            unsafe { free_handles(keys) };
+            unsafe { phpc_native_value_free(value) };
+
+            if succeeded {
+                assert!(diagnostic.is_null());
+                None
+            } else {
+                assert!(!diagnostic.is_null());
+                let message = native_diagnostic_message_for_test(diagnostic);
+                unsafe { phpc_native_diagnostic_free(diagnostic) };
+                Some(message)
+            }
+        }
+
+        unsafe fn unset_path(
+            table: NativeSymbolTableHandle,
+            key_values: Vec<Value>,
+        ) -> Option<String> {
+            let keys = unsafe { key_handles(key_values) };
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let succeeded = unsafe {
+                phpc_native_symbol_table_unset_value_by_path_with_diagnostic(
+                    table,
+                    keys.as_ptr(),
+                    keys.len(),
+                    &mut diagnostic,
+                )
+            };
+            unsafe { free_handles(keys) };
+
+            if succeeded {
+                assert!(diagnostic.is_null());
+                None
+            } else {
+                assert!(!diagnostic.is_null());
+                let message = native_diagnostic_message_for_test(diagnostic);
+                unsafe { phpc_native_diagnostic_free(diagnostic) };
+                Some(message)
+            }
+        }
+
+        unsafe fn isset_path(table: NativeSymbolTableHandle, key_values: Vec<Value>) -> bool {
+            let keys = unsafe { key_handles(key_values) };
+            let isset = unsafe {
+                phpc_native_symbol_table_isset_value_by_path(table, keys.as_ptr(), keys.len())
+            };
+            unsafe { free_handles(keys) };
+            isset
+        }
+
+        unsafe fn read_path(table: NativeSymbolTableHandle, key_values: Vec<Value>) -> Value {
+            let keys = unsafe { key_handles(key_values) };
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let value = unsafe {
+                phpc_native_symbol_table_read_value_by_path_with_diagnostic(
+                    table,
+                    keys.as_ptr(),
+                    keys.len(),
+                    &mut diagnostic,
+                )
+            };
+            unsafe { free_handles(keys) };
+            assert!(diagnostic.is_null());
+            let read = unsafe { value.as_ref() }
+                .expect("symbol path read should produce a value")
+                .clone();
+            unsafe { phpc_native_value_free(value) };
+            read
+        }
+
+        let table = phpc_native_symbol_table_new();
+
+        assert!(unsafe {
+            set_path(
+                table,
+                vec![Value::String("alpha".to_string())],
+                Value::String("A".to_string()),
+            )
+        }
+        .is_none());
+        assert!(unsafe { unset_path(table, vec![Value::String("alpha".to_string())]) }.is_none());
+        assert!(!unsafe { isset_path(table, vec![Value::String("alpha".to_string())]) });
+
+        assert!(unsafe {
+            set_path(
+                table,
+                vec![
+                    Value::String("bag".to_string()),
+                    Value::String("slot".to_string()),
+                ],
+                Value::String("B".to_string()),
+            )
+        }
+        .is_none());
+        assert!(unsafe {
+            set_path(
+                table,
+                vec![
+                    Value::String("bag".to_string()),
+                    Value::String("keep".to_string()),
+                ],
+                Value::String("K".to_string()),
+            )
+        }
+        .is_none());
+        assert!(unsafe {
+            unset_path(
+                table,
+                vec![
+                    Value::String("bag".to_string()),
+                    Value::String("slot".to_string()),
+                ],
+            )
+        }
+        .is_none());
+        assert!(!unsafe {
+            isset_path(
+                table,
+                vec![
+                    Value::String("bag".to_string()),
+                    Value::String("slot".to_string()),
+                ],
+            )
+        });
+        assert_eq!(
+            unsafe {
+                read_path(
+                    table,
+                    vec![
+                        Value::String("bag".to_string()),
+                        Value::String("keep".to_string()),
+                    ],
+                )
+            },
+            Value::String("K".to_string())
+        );
+
+        assert!(unsafe {
+            unset_path(
+                table,
+                vec![
+                    Value::String("missing".to_string()),
+                    Value::String("slot".to_string()),
+                ],
+            )
+        }
+        .is_none());
+        assert!(unsafe {
+            set_path(
+                table,
+                vec![Value::String("nullable".to_string())],
+                Value::Null,
+            )
+        }
+        .is_none());
+        assert!(unsafe {
+            unset_path(
+                table,
+                vec![
+                    Value::String("nullable".to_string()),
+                    Value::String("slot".to_string()),
+                ],
+            )
+        }
+        .is_none());
+
+        let mut reference_array = PhpArray::new();
+        reference_array.insert("slot", Value::String("ref-slot".to_string()));
+        reference_array.insert("keep", Value::String("ref-keep".to_string()));
+        let reference = unsafe {
+            phpc_native_symbol_table_reference_for_slot(table, b"ref".as_ptr(), b"ref".len())
+        };
+        let reference_value = unsafe { value_handle(Value::Array(reference_array)) };
+        assert!(unsafe { phpc_native_reference_set_value(reference, reference_value) });
+        unsafe { phpc_native_value_free(reference_value) };
+        assert!(unsafe {
+            unset_path(
+                table,
+                vec![
+                    Value::String("ref".to_string()),
+                    Value::String("slot".to_string()),
+                ],
+            )
+        }
+        .is_none());
+        assert_eq!(
+            unsafe {
+                read_path(
+                    table,
+                    vec![
+                        Value::String("ref".to_string()),
+                        Value::String("keep".to_string()),
+                    ],
+                )
+            },
+            Value::String("ref-keep".to_string())
+        );
+
+        assert!(unsafe {
+            set_path(
+                table,
+                vec![Value::String("scalar".to_string())],
+                Value::Int(7),
+            )
+        }
+        .is_none());
+        let scalar_message = unsafe {
+            unset_path(
+                table,
+                vec![
+                    Value::String("scalar".to_string()),
+                    Value::String("child".to_string()),
+                ],
+            )
+        }
+        .expect("scalar root should reject nested unsets");
+        assert!(scalar_message.contains("cannot unset array path on int"));
+
+        let invalid_root = unsafe {
+            unset_path(
+                table,
+                vec![
+                    Value::Array(PhpArray::new()),
+                    Value::String("child".to_string()),
+                ],
+            )
+        }
+        .expect("invalid root key should reject path materialization");
+        assert!(invalid_root.contains("array keys are not supported"));
+
+        unsafe { phpc_native_reference_free(reference) };
         unsafe { phpc_native_symbol_table_free(table) };
     }
 
