@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 19:55 CEST
+Updated: 2026-05-22 20:13 CEST
 Evaluation marker: `20260522T174352Z`
-Primary management HEAD: current progress commit `docs: update progress after array query ABI`
-Primary semantic HEAD: `72c3b2d5 codegen: route array query builtins through value ABI`
-Current pushed semantic baseline: `72c3b2d5 codegen: route array query builtins through value ABI`
+Primary management HEAD: current progress commit `docs: update progress after symbol reference ABI`
+Primary semantic HEAD: `49b8ad8a codegen: route symbol references through path ABI`
+Current pushed semantic baseline: `49b8ad8a codegen: route symbol references through path ABI`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -29,7 +29,10 @@ array-query builtins now consume that native-value infrastructure through one
 shared runtime ABI for filtered `array_keys()`, `in_array()`, `array_search()`,
 `array_flip()`, `array_count_values()`, `array_sum()`, `array_product()`,
 `array_fill_keys()`, and `array_combine()`, with linked executable proof that
-array-valued query results compose through offset reads.
+array-valued query results compose through offset reads. Generated-C reference
+assignments over ordinary symbol roots and symbol-rooted array paths now use a
+shared symbol-table path-reference ABI, covering direct aliases, dynamic nested
+keys, source appends, target appends, and path-write composition.
 
 That progress is primary-integrated: it is committed, pushed, focused-gated,
 and tied to executable generated-code behavior. It is not lane-local status
@@ -37,22 +40,23 @@ work and not fixture-shaped expected-output patching.
 
 The work remains bounded. Primary is stronger for selected request-state,
 `$GLOBALS[...]`, symbol-table, native-value comparison, active symbol writeback,
-and value-result offset-read paths, but it still does not have complete PHP
+value-result offset-read paths, and selected ordinary symbol reference
+assignment paths, but it still does not have complete PHP
 global/request/reference semantics. Dynamic `$GLOBALS[$expr]` request-root
 alias dispatch, direct no-key `$GLOBALS[]`, request append suffix wrapping,
-`$GLOBALS["GLOBALS"]` self-reference behavior, frames, references, COW, exact
-diagnostics, object/property semantics, broad control-flow cleanup, and LLVM/C
-parity remain substantial open systems.
+`$GLOBALS["GLOBALS"]` self-reference behavior, frames, full references/COW,
+exact diagnostics, object/property semantics, broad control-flow cleanup, and
+LLVM/C parity remain substantial open systems.
 
 ## Grand Roadmap Position
 
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
-| Compiler/backend consumers | 93% | `[###################-]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, active root offset-mutation writeback, value-result offset reads, array-query value consumers, static request aliases, direct undefined root reads, and generated-C native-value strict identity; uneven across calls, objects, control flow, and LLVM/C parity. |
-| Executable generalized PHP semantics | 74% | `[###############-----]` | Improving through executable path consumers, but many real PHP compositions still block. |
-| Arrays, lvalues, references, COW | 74% | `[###############-----]` | Arrays/lvalues advanced with query/value-result consumers; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 78% | `[################----]` | Request paths/null-coalesce, static `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, and direct undefined root reads are stronger; dynamic aliases, direct root appends, frames, references, and self-reference remain incomplete. |
+| Compiler/backend consumers | 94% | `[###################-]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, active root offset-mutation writeback, value-result offset reads, array-query value consumers, static request aliases, direct undefined root reads, generated-C symbol references, and generated-C native-value strict identity; uneven across calls, objects, control flow, and LLVM/C parity. |
+| Executable generalized PHP semantics | 75% | `[###############-----]` | Improving through executable path/reference consumers, but many real PHP compositions still block. |
+| Arrays, lvalues, references, COW | 75% | `[###############-----]` | Arrays/lvalues advanced with query/value-result consumers and selected symbol-path references; full references/COW and arbitrary writable roots remain large. |
+| Symbols, globals, request state | 79% | `[################----]` | Request paths/null-coalesce, static `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, direct undefined root reads, and ordinary symbol-path reference assignment are stronger; dynamic aliases, direct root appends, frames, full references, and self-reference remain incomplete. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Early; lane candidates exist, but broad executable call/frame semantics are not primary yet. |
 | Objects, properties, methods | 11% | `[##------------------]` | Early; runtime candidates exist, but general compiled object/property/method execution remains missing. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused work, but exact diagnostic ordering and structured cleanup are not generalized. |
@@ -103,6 +107,11 @@ Done on primary:
   `array_search()`, `array_flip()`, `array_count_values()`, `array_sum()`,
   `array_product()`, `array_fill_keys()`, and `array_combine()` with
   value-offset composition for array-valued results.
+- [x] Generated-C reference assignment over ordinary symbol roots and
+  symbol-rooted array paths through a shared path-reference ABI, including
+  direct aliases, dynamic nested keys, source append references, target append
+  binding, path-write composition, and cleanup of materialized keys/reference
+  handles.
 
 In progress / candidate integration themes:
 
@@ -110,8 +119,9 @@ In progress / candidate integration themes:
   append suffix wrapping, request-root write/append alias behavior, and
   `$GLOBALS["GLOBALS"]` semantics. Estimate: 55%
   `[###########---------]`.
-- [ ] Generated PHP reference assignment over proven array/request/symbol
-  reference boundaries. Estimate: 35% `[#######-------------]`.
+- [ ] Generated PHP reference assignment over request, `$GLOBALS`, object,
+  arbitrary owner/value/reference-slot, frame, and COW-aware boundaries.
+  Estimate: 45% `[#########-----------]`.
 - [ ] Narrow call/frame consumers that execute real PHP-visible behavior rather
   than only centralizing blockers. Estimate: 25% `[#####---------------]`.
 - [ ] Object/property/method executable semantics beyond lane-local runtime
@@ -135,6 +145,7 @@ Not done:
 
 Recent semantic commits on primary:
 
+- `49b8ad8a codegen: route symbol references through path ABI`
 - `72c3b2d5 codegen: route array query builtins through value ABI`
 - `87e27b6b codegen: route value-result offset reads through ABI`
 - `a6afb405 codegen: sync active root offset mutations through symbol ABI`
@@ -166,7 +177,9 @@ value-offset mutation writeback into the persistent symbol table; and
 value-result offset reads over existing native value-result producers. It now
 also includes generated-C array-query builtins routed through a shared
 native-value query ABI with executable offset-read composition for their
-array-valued results.
+array-valued results, plus ordinary symbol-root reference assignments routed
+through a shared path-reference ABI with executable direct, nested, source
+append, and target append coverage.
 
 ## Lane-Local And Active Candidate Work
 
