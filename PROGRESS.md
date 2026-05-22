@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 07:55 CEST
-Evaluation marker: 20260522T055555Z-primary-e96e35fe
+Updated: 2026-05-22 08:10 CEST
+Evaluation marker: 20260522T061000Z-primary-bce89074
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local and uncommitted primary work are candidate material until selected, gated, committed, and pushed.
 
@@ -21,8 +21,9 @@ Broad integrated verification            [###########---------] 55%
 
 ## Current Primary State
 
-- Current primary HEAD at review: `e96e35fe codegen: route array increment updates through lvalue ABI`.
+- Current primary HEAD at review: `bce89074 tests: restore native link shared-boundary gate`.
 - Latest committed semantic compiler/runtime baseline: `e96e35fe codegen: route array increment updates through lvalue ABI`.
+- Latest primary batch was test-gate maintenance, not a new production semantic slice. It restored the broad `native_link` sweep to 90 passing tests by replacing stale exact generated-C shape expectations with shared value-result/value-offset boundary checks, and by recording conditional-dependent dynamic binary-string comparison behind the existing shared conditional-lowering blocker until generalized truthiness, branch side-effect ordering, cleanup, and state merging are implemented.
 - Latest integrated semantic batch adds an operation-labeled array-lvalue update family for generated-C direct array-offset increment/decrement over tracked native array owners. Runtime/source/linked gates cover statement and expression forms, pre/post result selection, increment/decrement tags, dynamic keys, int and float slots, nested runtime paths, and array-key result consumers while keeping missing-slot recovery, string/unsupported slot semantics, nested/parser-blocked generated-C targets, arbitrary roots, references/COW, and owner-slot writeback blocked.
 - Previous semantic batch routes generated-C direct array-offset compound assignment statements and expression values through the existing array-owner lvalue read/write ABI and native value binary ABI. It covers dynamic keys, multiple compound operators, expression-result output, direct-variable storage, and array-key/value consumers while keeping nested/parser-blocked compound targets, arbitrary roots, references/COW, and owner-slot writeback blocked.
 - Previous semantic batch routes generated-C direct array-offset `??=` statements and expression values through the existing value-offset isset/read/mutation ABIs, preserving lazy RHS evaluation and assigned/existing result values while keeping broader conditional cleanup/state merging blocked.
@@ -67,6 +68,8 @@ The compiler is still not close to full generalized PHP semantics. The major unf
 
 ## Recent Primary-Integrated Work
 
+- `bce89074 tests: restore native link shared-boundary gate`
+  - Maintenance only: restores broad `native_link` regression value with current shared-boundary expectations and conditional-lowering blocker coverage. It does not change production compiler/runtime semantics and does not move the semantic completion estimates.
 - `e96e35fe codegen: route array increment updates through lvalue ABI`
   - Adds an operation-labeled update family to the array-owner lvalue path/result ABI and routes generated-C direct array-offset increment/decrement statements and expression values over tracked native array owners through that shared runtime boundary. Source and linked executable gates cover dynamic keys, pre/post expression results, increment/decrement operation tags, int/float slots, and array-key result consumers while missing-slot recovery, string/unsupported slot semantics, nested/parser-blocked targets, arbitrary roots, references/COW, and exact owner-slot writeback remain blocked.
 - `946301d0 codegen: route array compound assignments through lvalue ABI`
