@@ -1850,6 +1850,28 @@ const REQUEST_SUPERGLOBAL_REFERENCE_BACKED_KEYED_MUTATION_SOURCE: &str = concat!
     "echo $_POST[\"items\"][0];\n",
 );
 
+const REQUEST_SUPERGLOBAL_REFERENCE_BACKED_KEYED_REFERENCE_SOURCE: &str = concat!(
+    "<?php\n",
+    "$bag = [\"seed\" => \"old\"];\n",
+    "$_GET =& $bag;\n",
+    "$source = \"A\";\n",
+    "$_GET[\"name\"] =& $source;\n",
+    "$source = \"B\";\n",
+    "echo $bag[\"name\"];\n",
+    "echo \"|\";\n",
+    "$alias =& $_GET[\"seed\"];\n",
+    "$alias = \"S\";\n",
+    "echo $bag[\"seed\"];\n",
+    "echo \"|\";\n",
+    "$_POST =& $_GET;\n",
+    "$target = \"C\";\n",
+    "$_POST[\"other\"] =& $target;\n",
+    "$target = \"D\";\n",
+    "echo $_GET[\"other\"];\n",
+    "echo \"|\";\n",
+    "echo $bag[\"other\"];\n",
+);
+
 const REQUEST_SUPERGLOBAL_KEYED_STORAGE_SOURCE: &str = concat!(
     "<?php\n",
     "$key = \"name\";\n",
@@ -7705,6 +7727,59 @@ fn emit_exe_links_and_runs_reference_backed_request_keyed_mutation_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"array|Ada|B|0|tail");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_reference_backed_request_keyed_reference_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("request_reference_backed_keyed_reference");
+    let source_path =
+        native_link_output_path("request_reference_backed_keyed_reference_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(
+        &source_path,
+        REQUEST_SUPERGLOBAL_REFERENCE_BACKED_KEYED_REFERENCE_SOURCE,
+    )
+    .expect("native reference-backed request keyed reference source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path.to_str().expect(
+                "native reference-backed request keyed reference source path is valid UTF-8",
+            ),
+            "--emit-exe",
+            output_path.to_str().expect(
+                "native reference-backed request keyed reference executable path is valid UTF-8",
+            ),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native reference-backed request keyed reference executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native reference-backed request keyed reference executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"B|S|D|D");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

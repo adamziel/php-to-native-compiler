@@ -4639,14 +4639,10 @@ pub unsafe extern "C" fn phpc_native_request_state_superglobal_keyed_reference_o
             request_state,
             bag,
             key,
-        }) => native_request_state_slot_mut(request_state, bag, key)
-            .map(ArraySlot::promote_to_reference_cell)
+        }) => request_state
+            .reference_superglobal_path(bag, std::slice::from_ref(&key))
             .map(NativeRequestStateReferenceResult::ok)
-            .unwrap_or_else(|| {
-                NativeRequestStateReferenceResult::unsupported(
-                    NativeRequestStateOperationStatus::UnsupportedKeyedValue,
-                )
-            }),
+            .unwrap_or_else(NativeRequestStateReferenceResult::unsupported),
         Ok(_) => NativeRequestStateReferenceResult::unsupported(
             NativeRequestStateOperationStatus::InvalidAbi,
         ),
@@ -4687,22 +4683,21 @@ pub unsafe extern "C" fn phpc_native_request_state_superglobal_keyed_reference_b
             request_state,
             bag,
             key,
-        }) => {
-            if let Err(status) = request_state.prepare_superglobal_keyed_write(bag) {
-                return NativeRequestStateOperationResult::unsupported(status);
-            }
-            let is_set = !matches!(reference.cell.value_cloned(), Value::Null);
-            request_state
-                .superglobals
-                .entry(bag)
-                .or_insert_with(PhpArray::new)
-                .insert_reference(key, reference.cell.clone());
-            NativeRequestStateOperationResult::presence(
-                is_set,
-                true,
-                NativeRequestStateOperationStatus::Ok,
+        }) => request_state
+            .bind_superglobal_path_reference(
+                bag,
+                std::slice::from_ref(&key),
+                reference.cell.clone(),
             )
-        }
+            .map(|_| {
+                let is_set = !matches!(reference.cell.value_cloned(), Value::Null);
+                NativeRequestStateOperationResult::presence(
+                    is_set,
+                    true,
+                    NativeRequestStateOperationStatus::Ok,
+                )
+            })
+            .unwrap_or_else(NativeRequestStateOperationResult::unsupported),
         Ok(_) => NativeRequestStateOperationResult::unsupported(
             NativeRequestStateOperationStatus::InvalidAbi,
         ),
@@ -22332,10 +22327,23 @@ mod tests {
             NativeValueHandle::from_value(value)
         }
 
+        unsafe fn string_handle(bytes: &[u8]) -> NativeStringHandle {
+            unsafe { phpc_native_string_from_bytes(bytes.as_ptr(), bytes.len()) }
+        }
+
         unsafe fn set_reference_value(reference: NativeReferenceHandle, value: Value) {
             let value = unsafe { value_handle(value) };
             assert!(unsafe { phpc_native_reference_set_value(reference, value) });
             unsafe { phpc_native_value_free(value) };
+        }
+
+        unsafe fn reference_value(reference: NativeReferenceHandle) -> Value {
+            let value = unsafe { phpc_native_reference_value_clone(reference) };
+            let cloned = unsafe { value.as_ref() }
+                .expect("reference value clones should return a value")
+                .clone();
+            unsafe { phpc_native_value_free(value) };
+            cloned
         }
 
         unsafe fn assert_request_value(
@@ -22429,6 +22437,78 @@ mod tests {
                 Value::String("shared".to_string()),
             );
             phpc_native_request_state_operation_result_free(bind);
+        }
+
+        let cookie_root = unsafe { string_handle(b"_COOKIE") };
+        let mut backing = PhpArray::new();
+        backing.insert("seed", Value::String("old".to_string()));
+        let root_reference = native_reference_from_value(Value::Array(backing));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let replaced = unsafe {
+            phpc_native_request_state_superglobal_replace_reference_with_diagnostic(
+                request_state,
+                cookie_root,
+                root_reference,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(replaced);
+
+        let target_reference = native_reference_from_value(Value::String("initial".to_string()));
+        let root_bind = unsafe {
+            phpc_native_request_state_superglobal_keyed_reference_bind_operation(
+                request_state,
+                b"_COOKIE".as_ptr(),
+                b"_COOKIE".len(),
+                b"alias".as_ptr(),
+                b"alias".len(),
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+                target_reference,
+            )
+        };
+        assert_eq!(root_bind.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+        unsafe {
+            set_reference_value(target_reference, Value::String("bound".to_string()));
+            assert_request_value(
+                request_state,
+                b"_COOKIE",
+                b"alias",
+                Value::String("bound".to_string()),
+            );
+        }
+        let Value::Array(root_snapshot) = (unsafe { reference_value(root_reference) }) else {
+            panic!("reference-backed request root should remain an array after keyed bind");
+        };
+        assert_eq!(
+            root_snapshot.get_cloned("alias"),
+            Some(Value::String("bound".to_string()))
+        );
+
+        let root_source = unsafe {
+            phpc_native_request_state_superglobal_keyed_reference_operation(
+                request_state,
+                b"_COOKIE".as_ptr(),
+                b"_COOKIE".len(),
+                b"seed".as_ptr(),
+                b"seed".len(),
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+            )
+        };
+        assert_eq!(root_source.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+        unsafe {
+            set_reference_value(root_source.reference, Value::String("changed".to_string()));
+            assert_request_value(
+                request_state,
+                b"_COOKIE",
+                b"seed",
+                Value::String("changed".to_string()),
+            );
+            phpc_native_request_state_operation_result_free(root_bind);
+            phpc_native_request_state_reference_result_free(root_source);
+            phpc_native_reference_free(target_reference);
+            phpc_native_reference_free(root_reference);
+            phpc_native_string_free(cookie_root);
         }
 
         let bad_key = unsafe {
