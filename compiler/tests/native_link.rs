@@ -1291,6 +1291,8 @@ const GLOBALS_REQUEST_ALIAS_SOURCE: &str = concat!(
 
 const NATIVE_VALUE_VARIABLE_STORAGE_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$key = \"first\";\n$slot = $items[$key];\n$copy = $slot;\necho $slot, \"|\", $copy, \"|\";\n$upper = strtoupper($copy);\necho $upper, \"|\";\n$fallback = $items[\"missing\"] ?? \"m\";\necho $fallback, \"|\";\n$cast = (string) 42;\necho $cast, \"|\";\n$items[] = $upper;\necho $items[1];\n";
 
+const ACTIVE_SYMBOL_ROOT_OFFSET_MUTATION_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$box = null;\n$path = null;\n$trigger = $items[\"missing\"] ?? \"m\";\n$items[] = strtoupper($items[\"first\"]);\n$items[\"first\"] = \"r\";\n$box[] = \"B\";\n$path[\"outer\"][] = \"P\";\necho $trigger, \"|\", $items[1], \"|\", $items[\"first\"], \"|\", $items[0], \"|\", $box[0], \"|\", isset($path[\"outer\"]) ? 1 : 0;\n";
+
 const VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inner = \"inner\";\n$items = [\"keep\" => \"A\", \"drop\" => \"B\", 2 => \"C\", $outer => [$inner => \"N\", \"stay\" => \"S\"]];\n$key = \"drop\";\nunset($items[$key]);\nunset($items[2]);\nunset($items[99]);\nunset($items[$outer][$inner]);\necho isset($items[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[2]) ? 1 : 0;\necho \"|\";\necho isset($items[$outer][$inner]) ? 1 : 0;\necho \"|\";\n$items[$key] = \"D\";\necho $items[$key];\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_MULTI_UNSET_SOURCE: &str = "<?php\n$left = [\"keep\" => \"L\", \"drop\" => \"D\", 2 => \"I\"];\n$right = [0 => \"R0\", \"drop\" => \"RD\"];\n$key = \"drop\";\nunset($left[$key], $right[0], $left[2], $right[\"missing\"]);\necho isset($left[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($left[$key]) ? 1 : 0;\necho \"|\";\necho empty($right[0]) ? 1 : 0;\necho \"|\";\necho empty($left[2]) ? 1 : 0;\necho \"|\";\necho isset($right[\"drop\"]) ? 1 : 0;\n";
@@ -2895,6 +2897,32 @@ fn native_executable_c_source_stores_native_value_results_in_direct_variables() 
     assert!(
         !body.contains("phpc_native_array_read_key_with_diagnostic("),
         "stored array offset reads should not reintroduce the array-read bypass:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_writes_root_offset_mutations_to_active_symbol_table() {
+    let program = parse(ACTIVE_SYMBOL_ROOT_OFFSET_MUTATION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_value_offset_mutation_operation_with_diagnostic"),
+        "direct root offset mutations should still use the shared value-offset mutation ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_offset_path_append_with_diagnostic"),
+        "path appends should still use the shared value-offset path append ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_set_value_by_path_with_diagnostic")
+            .count()
+            >= 5,
+        "active symbol-table root mutations should write their root value back through the symbol path ABI:\n{source}"
+    );
+    assert!(
+        !body.contains("undefined array key 1"),
+        "source generation should not encode the stale read diagnostic:\n{source}"
     );
 }
 
@@ -5788,6 +5816,53 @@ fn emit_exe_links_and_runs_native_value_variable_storage_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"q|q|Q|m|42|Q");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_active_symbol_root_offset_mutation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("active_symbol_root_offset_mutation");
+    let source_path = native_link_output_path("active_symbol_root_offset_mutation_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, ACTIVE_SYMBOL_ROOT_OFFSET_MUTATION_SOURCE)
+        .expect("native active symbol root offset mutation source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native active symbol root offset mutation source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"m|Q|r|seed|B|1");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

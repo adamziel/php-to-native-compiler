@@ -8312,6 +8312,29 @@ impl CGenerator {
             .insert(name.to_string(), CValue::NativeValueHandle(value.handle));
     }
 
+    fn emit_active_symbol_table_root_value_write(
+        &mut self,
+        name: &str,
+        value: &str,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        if !self.globals_symbol_table_is_active() || is_globals_superglobal_name(name) {
+            return Ok(());
+        }
+
+        let path = self.materialize_static_globals_symbol_path_key(name, span, failure_cleanup)?;
+        self.emit_globals_symbol_path_write_from_materialized(
+            path,
+            CNativeValueMaterialization {
+                handle: value.to_string(),
+                cleanup_after_use: Vec::new(),
+            },
+            span,
+            failure_cleanup,
+        )
+    }
+
     fn ensure_native_request_state_handle(&mut self) -> String {
         self.uses_native_request_state_helpers = true;
         if let Some(handle) = &self.native_request_state_handle {
@@ -10692,6 +10715,17 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeValueHandle {stored_value} = phpc_native_value_clone({value_to_clone});"
         ));
+        let store_failure_cleanup = format!(
+            "phpc_native_value_free({stored_value}); phpc_native_value_free({append_value}); {}{}",
+            c_cleanup_sequence(&replacement.cleanup_after_use),
+            c_cleanup_sequence(&subject.cleanup_after_use)
+        );
+        self.emit_active_symbol_table_root_value_write(
+            name,
+            &stored_value,
+            span,
+            &store_failure_cleanup,
+        )?;
         self.body
             .push(format!("phpc_native_value_free({append_value});"));
         self.body.extend(replacement.cleanup_after_use);
@@ -10750,6 +10784,18 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeValueHandle {stored_value} = phpc_native_value_clone({value_to_clone});"
         ));
+        let store_failure_cleanup = format!(
+            "phpc_native_value_free({stored_value}); phpc_native_value_free({write_value}); {}{}{}",
+            c_cleanup_sequence(&replacement.cleanup_after_use),
+            c_cleanup_sequence(&offset.cleanup_after_use),
+            c_cleanup_sequence(&subject.cleanup_after_use)
+        );
+        self.emit_active_symbol_table_root_value_write(
+            name,
+            &stored_value,
+            span,
+            &store_failure_cleanup,
+        )?;
         self.body
             .push(format!("phpc_native_value_free({write_value});"));
         self.body.extend(replacement.cleanup_after_use);
@@ -10795,6 +10841,7 @@ impl CGenerator {
             offsets_ptr,
             offsets_len,
             replacement,
+            span,
         )
     }
 
@@ -10806,6 +10853,7 @@ impl CGenerator {
         offsets_ptr: String,
         offsets_len: usize,
         replacement: CNativeValueMaterialization,
+        span: Span,
     ) -> CompileResult<()> {
         self.uses_native_string_helpers = true;
         self.uses_native_value_offset_mutation = true;
@@ -10834,6 +10882,22 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeValueHandle {stored_value} = phpc_native_value_clone({value_to_clone});"
         ));
+        let offset_cleanup_steps = offset_values
+            .iter()
+            .flat_map(|offset| offset.cleanup_after_use.clone())
+            .collect::<Vec<_>>();
+        let store_failure_cleanup = format!(
+            "phpc_native_value_free({stored_value}); phpc_native_value_free({path_value}); {}{}{}",
+            c_cleanup_sequence(&replacement.cleanup_after_use),
+            c_cleanup_sequence(&offset_cleanup_steps),
+            c_cleanup_sequence(&subject.cleanup_after_use)
+        );
+        self.emit_active_symbol_table_root_value_write(
+            name,
+            &stored_value,
+            span,
+            &store_failure_cleanup,
+        )?;
         self.body
             .push(format!("phpc_native_value_free({path_value});"));
         self.body.extend(replacement.cleanup_after_use);
@@ -10885,6 +10949,7 @@ impl CGenerator {
             offsets_ptr,
             offsets_len,
             replacement,
+            span,
         )?;
         Ok(replacement_value)
     }
@@ -10931,6 +10996,7 @@ impl CGenerator {
             suffix_offsets_ptr,
             suffix_offsets_len,
             replacement,
+            span,
         )
     }
 
@@ -10944,6 +11010,7 @@ impl CGenerator {
         suffix_offsets_ptr: String,
         suffix_offsets_len: usize,
         replacement: CNativeValueMaterialization,
+        span: Span,
     ) -> CompileResult<()> {
         self.uses_native_string_helpers = true;
         self.uses_native_value_offset_mutation = true;
@@ -10972,6 +11039,22 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeValueHandle {stored_value} = phpc_native_value_clone({value_to_clone});"
         ));
+        let offset_cleanup_steps = offset_values
+            .iter()
+            .flat_map(|offset| offset.cleanup_after_use.clone())
+            .collect::<Vec<_>>();
+        let store_failure_cleanup = format!(
+            "phpc_native_value_free({stored_value}); phpc_native_value_free({path_value}); {}{}{}",
+            c_cleanup_sequence(&replacement.cleanup_after_use),
+            c_cleanup_sequence(&offset_cleanup_steps),
+            c_cleanup_sequence(&subject.cleanup_after_use)
+        );
+        self.emit_active_symbol_table_root_value_write(
+            name,
+            &stored_value,
+            span,
+            &store_failure_cleanup,
+        )?;
         self.body
             .push(format!("phpc_native_value_free({path_value});"));
         self.body.extend(replacement.cleanup_after_use);
@@ -11038,6 +11121,7 @@ impl CGenerator {
             suffix_offsets_ptr,
             suffix_offsets_len,
             replacement,
+            span,
         )?;
         Ok(replacement_value)
     }
@@ -11081,6 +11165,21 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeValueHandle {stored_value} = phpc_native_value_clone({value_to_clone});"
         ));
+        let offset_cleanup_steps = offset_values
+            .iter()
+            .flat_map(|offset| offset.cleanup_after_use.clone())
+            .collect::<Vec<_>>();
+        let store_failure_cleanup = format!(
+            "phpc_native_value_free({stored_value}); phpc_native_value_free({path_value}); {}{}",
+            c_cleanup_sequence(&offset_cleanup_steps),
+            c_cleanup_sequence(&subject.cleanup_after_use)
+        );
+        self.emit_active_symbol_table_root_value_write(
+            name,
+            &stored_value,
+            span,
+            &store_failure_cleanup,
+        )?;
         self.body
             .push(format!("phpc_native_value_free({path_value});"));
         for offset in offset_values {
@@ -12520,6 +12619,7 @@ impl CGenerator {
             replacement,
             operation,
             temp_prefix,
+            span,
         )
     }
 
@@ -12577,6 +12677,7 @@ impl CGenerator {
             replacement,
             operation,
             temp_prefix,
+            span,
         )?;
         Ok(Some(replacement_value))
     }
@@ -12931,6 +13032,7 @@ impl CGenerator {
         replacement: CNativeValueMaterialization,
         operation: u8,
         temp_prefix: &str,
+        span: Span,
     ) -> CompileResult<()> {
         self.uses_native_string_helpers = true;
         self.uses_native_array_helpers = true;
@@ -12967,6 +13069,14 @@ impl CGenerator {
         ));
         self.body
             .push(format!("if ({array}.ptr == NULL) {{ {array_error_exit} }}"));
+        self.emit_active_symbol_table_root_value_write(
+            name,
+            &mutation,
+            span,
+            &format!(
+                "phpc_native_array_free({array}); phpc_native_value_free({mutation}); {mutation_failure_cleanup}"
+            ),
+        )?;
         self.body
             .push(format!("phpc_native_value_free({mutation});"));
         self.body.extend(replacement.cleanup_after_use);
