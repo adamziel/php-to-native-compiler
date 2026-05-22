@@ -2165,6 +2165,20 @@ impl NativeRequestState {
             .insert(bag, ArraySlot::from_reference_cell(reference));
     }
 
+    fn superglobal_root_reference(&mut self, bag: NativeRequestStateBag) -> PhpReferenceCell {
+        if !self.root_values.contains_key(&bag) {
+            let snapshot = self.superglobal_array(bag);
+            self.superglobals.remove(&bag);
+            self.root_values
+                .insert(bag, ArraySlot::new(Value::Array(snapshot)));
+        }
+
+        self.root_values
+            .get_mut(&bag)
+            .expect("request root reference slot was just initialized")
+            .promote_to_reference_cell()
+    }
+
     fn prepare_superglobal_keyed_write(
         &mut self,
         bag: NativeRequestStateBag,
@@ -4642,6 +4656,31 @@ pub unsafe extern "C" fn phpc_native_request_state_superglobal_replace_reference
 
     request_state.replace_superglobal_reference(bag, reference.cell.clone());
     true
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `bag` must be null or a string handle
+/// previously returned by the runtime ABI and not yet freed. The returned
+/// reference handle owns a clone of the selected request root's reference cell.
+/// Table-backed request roots are first promoted to direct root cells containing
+/// an array snapshot so later writes through the returned reference are visible
+/// through root snapshots and root-path reads.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_reference_for_root(
+    mut handle: NativeRequestStateHandle,
+    bag: NativeStringHandle,
+) -> NativeReferenceHandle {
+    let (Some(request_state), Some(bag)) = (unsafe { handle.as_mut() }, unsafe { bag.as_ref() })
+    else {
+        return NativeReferenceHandle::null();
+    };
+    let Some(bag) = NativeRequestStateBag::from_abi_bytes(&bag.bytes) else {
+        return NativeReferenceHandle::null();
+    };
+
+    NativeReferenceHandle::from_cell(request_state.superglobal_root_reference(bag))
 }
 
 /// # Safety
@@ -21105,6 +21144,148 @@ mod tests {
         unsafe { phpc_native_string_free(request_root) };
         unsafe { phpc_native_string_free(post_root) };
         unsafe { phpc_native_string_free(get_root) };
+        unsafe { phpc_native_request_state_free(request_state) };
+    }
+
+    #[test]
+    fn native_request_state_root_references_promote_tables_and_reuse_cells() {
+        unsafe fn string_handle(bytes: &[u8]) -> NativeStringHandle {
+            unsafe { phpc_native_string_from_bytes(bytes.as_ptr(), bytes.len()) }
+        }
+
+        unsafe fn value_handle(value: Value) -> NativeValueHandle {
+            NativeValueHandle::from_value(value)
+        }
+
+        unsafe fn insert_value(
+            request_state: NativeRequestStateHandle,
+            bag: &[u8],
+            key: &[u8],
+            value: Value,
+        ) {
+            let value = unsafe { value_handle(value) };
+            assert!(unsafe {
+                phpc_native_request_state_insert_superglobal_value(
+                    request_state,
+                    bag.as_ptr(),
+                    bag.len(),
+                    key.as_ptr(),
+                    key.len(),
+                    value,
+                )
+            });
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        unsafe fn snapshot_value(
+            request_state: NativeRequestStateHandle,
+            root: NativeStringHandle,
+        ) -> Value {
+            let snapshot = unsafe {
+                phpc_native_request_state_superglobal_snapshot_value(request_state, root)
+            };
+            let value = unsafe { snapshot.as_ref() }
+                .expect("request root snapshots should return a value")
+                .clone();
+            unsafe { phpc_native_value_free(snapshot) };
+            value
+        }
+
+        unsafe fn set_reference_value(reference: NativeReferenceHandle, value: Value) {
+            let value = unsafe { value_handle(value) };
+            assert!(unsafe { phpc_native_reference_set_value(reference, value) });
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        unsafe fn assert_reference_value(reference: NativeReferenceHandle, expected: Value) {
+            let value = unsafe { phpc_native_reference_value_clone(reference) };
+            assert_eq!(unsafe { value.as_ref() }, Some(&expected));
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        fn keyed_array(key: &str, value: &str) -> Value {
+            let mut array = PhpArray::new();
+            array.insert(ArrayKey::string(key), Value::String(value.to_string()));
+            Value::Array(array)
+        }
+
+        let request_state = phpc_native_request_state_empty();
+        let cases = [
+            (b"_GET".as_slice(), "get"),
+            (b"_POST".as_slice(), "post"),
+            (b"_REQUEST".as_slice(), "request"),
+        ];
+
+        for (bag, prefix) in cases {
+            let root = unsafe { string_handle(bag) };
+            unsafe {
+                insert_value(
+                    request_state,
+                    bag,
+                    b"id",
+                    Value::String(format!("{prefix}-seed")),
+                );
+            }
+
+            let reference = unsafe {
+                phpc_native_request_state_superglobal_reference_for_root(request_state, root)
+            };
+            assert!(!phpc_native_reference_is_null(reference));
+            assert_eq!(
+                unsafe { snapshot_value(request_state, root) },
+                keyed_array("id", &format!("{prefix}-seed"))
+            );
+
+            unsafe {
+                set_reference_value(reference, keyed_array("id", &format!("{prefix}-shared")));
+            }
+            let keyed_read = unsafe {
+                request_state_operation_for_test(
+                    request_state,
+                    PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                    bag,
+                    Some(b"id"),
+                )
+            };
+            assert_eq!(keyed_read.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+            assert_eq!(
+                unsafe { keyed_read.value.as_ref() },
+                Some(&Value::String(format!("{prefix}-shared")))
+            );
+            unsafe { phpc_native_request_state_operation_result_free(keyed_read) };
+
+            let second_reference = unsafe {
+                phpc_native_request_state_superglobal_reference_for_root(request_state, root)
+            };
+            assert!(!phpc_native_reference_is_null(second_reference));
+            unsafe {
+                set_reference_value(second_reference, Value::String(format!("{prefix}-scalar")));
+                assert_reference_value(reference, Value::String(format!("{prefix}-scalar")));
+            }
+            assert_eq!(
+                unsafe { snapshot_value(request_state, root) },
+                Value::String(format!("{prefix}-scalar"))
+            );
+
+            unsafe { phpc_native_reference_free(second_reference) };
+            unsafe { phpc_native_reference_free(reference) };
+            unsafe { phpc_native_string_free(root) };
+        }
+
+        let invalid_root = unsafe { string_handle(b"_NOPE") };
+        assert!(unsafe {
+            phpc_native_request_state_superglobal_reference_for_root(request_state, invalid_root)
+        }
+        .is_null());
+        assert!(unsafe {
+            phpc_native_request_state_superglobal_reference_for_root(
+                NativeRequestStateHandle::null(),
+                invalid_root,
+            )
+        }
+        .is_null());
+
+        unsafe { phpc_native_string_free(invalid_root) };
         unsafe { phpc_native_request_state_free(request_state) };
     }
 

@@ -2158,6 +2158,15 @@ fn request_superglobal_root_assign_target_name(target: &AssignTarget) -> Option<
     }
 }
 
+fn request_superglobal_root_reference_source_name(source: &ReferenceSource) -> Option<&str> {
+    match source {
+        ReferenceSource::Variable { name, .. } if is_request_superglobal_name(name) => {
+            Some(name.as_str())
+        }
+        _ => None,
+    }
+}
+
 fn request_superglobal_expr_span(expr: &Expr) -> Option<Span> {
     match expr {
         Expr::Variable(name, span) if is_request_superglobal_name(name) => Some(*span),
@@ -7651,6 +7660,7 @@ impl CGenerator {
                 output.push_str("extern _Bool phpc_native_request_state_superglobal_replace_value_with_diagnostic(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 if self.uses_native_array_lvalue_helpers || self.uses_native_symbol_table_helpers {
                     output.push_str("extern _Bool phpc_native_request_state_superglobal_replace_reference_with_diagnostic(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    output.push_str("extern phpc_NativeReferenceHandle phpc_native_request_state_superglobal_reference_for_root(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag);\n");
                 }
                 output.push_str(
                     "extern void phpc_native_request_state_free(phpc_NativeRequestStateHandle request_state);\n",
@@ -8314,6 +8324,57 @@ impl CGenerator {
         self.body.push(format!("phpc_native_string_free({bag});"));
         self.body
             .push(format!("phpc_native_reference_free({source_ref});"));
+        Ok(true)
+    }
+
+    fn emit_request_superglobal_root_reference_source_assignment(
+        &mut self,
+        target: &AssignTarget,
+        source: &ReferenceSource,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some(request_root) = request_superglobal_root_reference_source_name(source) else {
+            return Ok(false);
+        };
+        let Some(target_path) = self.c_reference_path_for_assign_target(target) else {
+            return Ok(false);
+        };
+        self.reject_unsupported_symbol_reference_path_root(&target_path, span)?;
+
+        let table = self.ensure_globals_symbol_table(failure_cleanup, span)?;
+        let request_state = self.ensure_native_request_state_handle();
+        let bag = self.emit_request_superglobal_bag_handle(request_root);
+        let source_ref = self.next_native_name("request_root_source_reference");
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {source_ref} = phpc_native_request_state_superglobal_reference_for_root({request_state}, {bag});"
+        ));
+        let source_error_exit = self.native_error_exit(&format!(
+            "phpc_native_string_free({bag}); {failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({source_ref}.ptr == NULL) {{ {source_error_exit} }}"
+        ));
+        self.body.push(format!("phpc_native_string_free({bag});"));
+
+        let target_failure_cleanup =
+            format!("phpc_native_reference_free({source_ref}); {failure_cleanup}");
+        let target = self.materialize_c_reference_path(target_path, &target_failure_cleanup)?;
+        let target_cleanup = c_cleanup_sequence(&target.cleanup_after_use);
+        let target_append = if target.append { "true" } else { "false" };
+        let bound = self.next_native_name("request_root_source_bound");
+        self.body.push(format!(
+            "bool {bound} = phpc_native_symbol_table_bind_reference_path({table}, {}, {}, {}, {}, {target_append}, {source_ref});",
+            target.name_bytes, target.name_len, target.keys, target.key_count
+        ));
+        let bind_error_exit = self.native_error_exit(&format!(
+            "phpc_native_reference_free({source_ref}); {target_cleanup}{failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if (!{bound}) {{ {bind_error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_reference_free({source_ref});"));
+        self.body.extend(target.cleanup_after_use);
         Ok(true)
     }
 
@@ -9925,6 +9986,12 @@ impl CGenerator {
                 if self
                     .emit_request_superglobal_root_reference_assignment(target, source, *span, "")?
                 {
+                    return Ok(());
+                }
+
+                if self.emit_request_superglobal_root_reference_source_assignment(
+                    target, source, *span, "",
+                )? {
                     return Ok(());
                 }
 
