@@ -1,30 +1,31 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 08:10 CEST
-Evaluation marker: 20260522T061000Z-primary-bce89074
+Updated: 2026-05-22 08:17 CEST
+Evaluation marker: 20260522T061700Z-primary-802665ee
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local and uncommitted primary work are candidate material until selected, gated, committed, and pushed.
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **57%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **58%**
 
 ```
 Generalized runtime/ABI foundations      [##################--] 89%
 Compiler/backend consumers               [###################-] 96%
 Executable generalized PHP semantics     [##############------] 70%
-Arrays, references, COW, lvalues         [##########----------] 49%
+Arrays, references, COW, lvalues         [##########----------] 51%
 Objects, properties, methods             [##------------------] 11%
 Diagnostics/control-flow composition     [#####---------------] 26%
-Broad integrated verification            [###########---------] 55%
+Broad integrated verification            [###########---------] 56%
 ```
 
 ## Current Primary State
 
-- Current primary HEAD at review: `bce89074 tests: restore native link shared-boundary gate`.
-- Latest committed semantic compiler/runtime baseline: `e96e35fe codegen: route array increment updates through lvalue ABI`.
-- Latest primary batch was test-gate maintenance, not a new production semantic slice. It restored the broad `native_link` sweep to 90 passing tests by replacing stale exact generated-C shape expectations with shared value-result/value-offset boundary checks, and by recording conditional-dependent dynamic binary-string comparison behind the existing shared conditional-lowering blocker until generalized truthiness, branch side-effect ordering, cleanup, and state merging are implemented.
-- Latest integrated semantic batch adds an operation-labeled array-lvalue update family for generated-C direct array-offset increment/decrement over tracked native array owners. Runtime/source/linked gates cover statement and expression forms, pre/post result selection, increment/decrement tags, dynamic keys, int and float slots, nested runtime paths, and array-key result consumers while keeping missing-slot recovery, string/unsupported slot semantics, nested/parser-blocked generated-C targets, arbitrary roots, references/COW, and owner-slot writeback blocked.
+- Current primary HEAD at review: `802665ee codegen: route nested array RMW through lvalue ABI`.
+- Latest committed semantic compiler/runtime baseline: `802665ee codegen: route nested array RMW through lvalue ABI`.
+- Latest integrated semantic batch admits nested array-index compound assignment and increment/decrement targets in the parser and routes generated-C nested array RMW paths over tracked native array owners through the existing owner/path lvalue ABI. The batch extends the owner/path helper from one key to key paths, keeps direct RMW on the existing direct-owner path, and proves nested compound/pre/post increment/decrement source plus linked execution while still blocking missing-slot recovery, unsupported slot semantics, arbitrary roots, references/COW, owner-slot materialization, object/ArrayAccess/resource offsets, and LLVM/C assembly parity.
+- Previous primary batch was test-gate maintenance, not a production semantic slice. It restored the broad `native_link` sweep to 90 passing tests by replacing stale exact generated-C shape expectations with shared value-result/value-offset boundary checks, and by recording conditional-dependent dynamic binary-string comparison behind the existing shared conditional-lowering blocker until generalized truthiness, branch side-effect ordering, cleanup, and state merging are implemented.
+- Previous semantic batch adds an operation-labeled array-lvalue update family for generated-C direct array-offset increment/decrement over tracked native array owners. Runtime/source/linked gates cover statement and expression forms, pre/post result selection, increment/decrement tags, dynamic keys, int and float slots, nested runtime paths, and array-key result consumers while keeping missing-slot recovery, string/unsupported slot semantics, nested/parser-blocked generated-C targets, arbitrary roots, references/COW, and owner-slot writeback blocked.
 - Previous semantic batch routes generated-C direct array-offset compound assignment statements and expression values through the existing array-owner lvalue read/write ABI and native value binary ABI. It covers dynamic keys, multiple compound operators, expression-result output, direct-variable storage, and array-key/value consumers while keeping nested/parser-blocked compound targets, arbitrary roots, references/COW, and owner-slot writeback blocked.
 - Previous semantic batch routes generated-C direct array-offset `??=` statements and expression values through the existing value-offset isset/read/mutation ABIs, preserving lazy RHS evaluation and assigned/existing result values while keeping broader conditional cleanup/state merging blocked.
 - Previous semantic batch makes generated-C array reads recover missing direct keys and nested scalar/missing lvalue paths through owned null native values plus shared diagnostics, so the value-offset and array-lvalue result carriers can continue into output, storage, copy, and probe consumers.
@@ -36,7 +37,7 @@ Broad integrated verification            [###########---------] 55%
 
 ## Grand Roadmap Position
 
-The project is making its best progress when shared runtime/ABI contracts gain real backend consumers. The value-offset and array-lvalue families now form a meaningful executable spine for selected generated-C array/string offset reads, presence, writes, unsets, appends, assignment-expression values, direct `??=`, direct compound assignment, direct increment/decrement, nested writes/appends, nested assignment-expression values, nested reads, and selected missing/scalar read recovery, with LLVM parity for string-offset reads/probes.
+The project is making its best progress when shared runtime/ABI contracts gain real backend consumers. The value-offset and array-lvalue families now form a meaningful executable spine for selected generated-C array/string offset reads, presence, writes, unsets, appends, assignment-expression values, direct `??=`, direct compound assignment, direct increment/decrement, nested compound assignment, nested increment/decrement, nested writes/appends, nested assignment-expression values, nested reads, and selected missing/scalar read recovery, with LLVM parity for string-offset reads/probes.
 
 The compiler is still not close to full generalized PHP semantics. The major unfinished regions are full executable lvalues/writeback, references/COW, symbol environments, mutable globals/superglobals, functions/method frames, by-ref calls/returns, object/property/method behavior, include/require, exceptions/finally, exact diagnostics, and cleanup across real control flow.
 
@@ -44,7 +45,7 @@ The compiler is still not close to full generalized PHP semantics. The major unf
 
 - [x] Supervised parallel lanes and a primary integration gate are established.
 - [x] Shared runtime ABI surfaces exist for strings, byte buffers, comparisons, numeric-string classification, selected conversions, array key/value operations, value-offset read/presence/mutation operations, diagnostics, branch decisions, native value output, type predicates, bitwise/shift operations, array snapshots, and selected array-owner lvalue operations.
-- [x] Primary has selected LLVM/generated-C consumers for primitive arithmetic, unary string-result builtins, string-int builtins, generated-C array/string offset presence/read/write/append/null-coalesce slices, generated-C direct array-offset `??=`, compound-assignment, and increment/decrement statements/expression values, generated-C array-owner lvalue unset paths, generated-C nested array-owner keyed write/append statement paths, generated-C nested array-owner assignment-expression values and reads, selected generated-C array read recovery, LLVM string-offset reads/probes, scalar output, type predicates, bitwise/shift, comparison relation results, casts/type-name output, and focused diagnostic paths.
+- [x] Primary has selected LLVM/generated-C consumers for primitive arithmetic, unary string-result builtins, string-int builtins, generated-C array/string offset presence/read/write/append/null-coalesce slices, generated-C direct array-offset `??=`, compound-assignment, and increment/decrement statements/expression values, generated-C nested array-owner compound-assignment and increment/decrement paths, generated-C array-owner lvalue unset paths, generated-C nested array-owner keyed write/append statement paths, generated-C nested array-owner assignment-expression values and reads, selected generated-C array read recovery, LLVM string-offset reads/probes, scalar output, type predicates, bitwise/shift, comparison relation results, casts/type-name output, and focused diagnostic paths.
 - [x] Selected generated-C direct-variable storage and cleanup for owned native value-result handles is integrated for already-lowerable value-result families.
 - [ ] In progress: array lvalue/RMW/reference/COW work. Primary has useful foundations and selected direct consumers; lane-local and uncommitted primary candidates are broader than integrated capability.
 - [ ] In progress: symbol/request/global value-flow and request-state work. Primary has surfaces, not full mutable PHP symbol behavior.
@@ -60,14 +61,16 @@ The compiler is still not close to full generalized PHP semantics. The major unf
 | String conversion, truthiness, byte buffers | 79% | 88% | Primary has strong selected string/value surfaces, generated-C and LLVM string-offset consumers, string-int consumers, stdout/materialization paths, and byte-buffer helpers. Lane-local formatter/binary string work is broader but not fully integrated. |
 | Call operation cleanup and ownership | 43% | 68% | Primary has common call diagnostics and selected cleanup routing. Real frames, binding, return semantics, by-ref calls, and dynamic dispatch remain mostly missing. |
 | Comparison and conversion semantics | 75% | 84% | Primary has shared comparison/conversion surfaces and selected backend consumers. Dynamic arithmetic, warning parity, recursive arrays, object/resource/reference comparisons, and full backend parity remain open. |
-| Arrays, lvalues, references, COW | 49% | 87% | Primary has selected generated-C value-offset read/presence/mutation/null-coalesce execution, direct array-offset `??=`, compound-assignment, and increment/decrement statements/expression values, direct/nested array-owner lvalue unset paths, nested array-owner keyed write and append statement paths, nested array-owner assignment-expression values, nested array-owner reads, missing-key and scalar-intermediate read recovery for selected carriers, owned native value-result variable storage, plus LLVM string-offset parity. Nested/arbitrary-root `??=`, nested compound/RMW, missing-slot RMW recovery, references, COW, object/ArrayAccess/resource offsets, and LLVM array-offset parity remain open. |
+| Arrays, lvalues, references, COW | 51% | 88% | Primary has selected generated-C value-offset read/presence/mutation/null-coalesce execution, direct array-offset `??=`, compound-assignment, and increment/decrement statements/expression values, nested array-owner compound-assignment and increment/decrement paths, direct/nested array-owner lvalue unset paths, nested array-owner keyed write and append statement paths, nested array-owner assignment-expression values, nested array-owner reads, missing-key and scalar-intermediate read recovery for selected carriers, owned native value-result variable storage, plus LLVM string-offset parity. Nested/arbitrary-root `??=`, missing-slot RMW recovery, references, COW, object/ArrayAccess/resource offsets, and LLVM array-offset parity remain open. |
 | Symbols, globals, request state | 25% | 69% | Primary can persist selected owned native value-result handles in generated-C direct variables with clone/overwrite cleanup. Lane-local storage-root and symbol work is broader. Real generalized locals, frames, imports, globals, superglobals, undefined slots, mutation, and reference assignment lowering are not integrated. |
 | Objects, properties, methods | 11% | 51% | Primary has strict-identity/object comparison blockers and plans. Lane-local declared-property and property-operation carriers exist, but executable object allocation/property/method behavior is largely absent. |
 | Diagnostics and control-flow cleanup | 26% | 71% | Primary has selected diagnostic/reporting and cleanup paths, including recoverable array-read diagnostics that can continue through owned native values. Lane-local callable-shape, terminal, and cleanup models are broader. Full warning ordering, recovery, terminal cleanup, loop/switch/goto/finally/exception behavior, and broad composition remain missing. |
-| Broad composition verification | 55% | 51% | Focused runtime/native-link/native-runtime-ABI gates cover recent slices, including read recovery through output, storage/copy, and probe consumers. Broad PHP differential coverage is still thin. |
+| Broad composition verification | 56% | 51% | Focused runtime/native-link/native-runtime-ABI gates cover recent slices, including nested RMW source/link behavior and read recovery through output, storage/copy, and probe consumers. Broad PHP differential coverage is still thin. |
 
 ## Recent Primary-Integrated Work
 
+- `802665ee codegen: route nested array RMW through lvalue ABI`
+  - Admits nested array-index RMW assignment targets in the parser and routes generated-C nested compound assignment plus pre/post increment/decrement over tracked native array owners through the shared array-owner path/update/read/write boundaries. Focused and full `native_link` gates passed, including 92 broad native-link tests after the slice.
 - `bce89074 tests: restore native link shared-boundary gate`
   - Maintenance only: restores broad `native_link` regression value with current shared-boundary expectations and conditional-lowering blocker coverage. It does not change production compiler/runtime semantics and does not move the semantic completion estimates.
 - `e96e35fe codegen: route array increment updates through lvalue ABI`
