@@ -225,6 +225,7 @@ const NATIVE_VALUE_ARRAY_QUERY_SUM: u8 = 5;
 const NATIVE_VALUE_ARRAY_QUERY_PRODUCT: u8 = 6;
 const NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS: u8 = 7;
 const NATIVE_VALUE_ARRAY_QUERY_COMBINE: u8 = 8;
+const NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE: u8 = 9;
 const NATIVE_ARRAY_QUERY_STRICT: u8 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -284,6 +285,7 @@ enum NativeValueArrayQueryOperation {
     Product,
     FillKeys,
     Combine,
+    ChangeKeyCase,
 }
 
 impl NativeArrayPointerOperation {
@@ -485,6 +487,7 @@ impl NativeValueArrayQueryOperation {
             NATIVE_VALUE_ARRAY_QUERY_PRODUCT => Ok(Self::Product),
             NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS => Ok(Self::FillKeys),
             NATIVE_VALUE_ARRAY_QUERY_COMBINE => Ok(Self::Combine),
+            NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE => Ok(Self::ChangeKeyCase),
             _ => Err(RuntimeError::invalid_array_access(
                 "native value array query operation failed: unsupported operation tag",
             )),
@@ -502,6 +505,7 @@ impl NativeValueArrayQueryOperation {
             Self::Product => "array_product()",
             Self::FillKeys => "array_fill_keys()",
             Self::Combine => "array_combine()",
+            Self::ChangeKeyCase => "array_change_key_case()",
         }
     }
 
@@ -510,6 +514,10 @@ impl NativeValueArrayQueryOperation {
             self,
             Self::KeysMatching | Self::Contains | Self::Search | Self::FillKeys | Self::Combine
         )
+    }
+
+    fn accepts_optional_operand(self) -> bool {
+        matches!(self, Self::ChangeKeyCase)
     }
 
     fn accepts_flags(self) -> bool {
@@ -8978,6 +8986,13 @@ unsafe fn native_value_array_query_operation_value(
                 operation.callable()
             ))
         })?)
+    } else if operation.accepts_optional_operand() && !operand.is_null() {
+        Some((unsafe { operand.as_ref() }).ok_or_else(|| {
+            RuntimeError::invalid_array_access(format!(
+                "native value array query operation failed: {} operand value handle is null",
+                operation.callable()
+            ))
+        })?)
     } else {
         None
     };
@@ -9030,6 +9045,22 @@ unsafe fn native_value_array_query_operation_value(
                 ));
             };
             Ok(Value::Array(array.combined_with(values)?))
+        }
+        NativeValueArrayQueryOperation::ChangeKeyCase => {
+            let case = match operand {
+                Some(Value::Int(case)) => ArrayKeyCase::from_flag(*case),
+                Some(other) => {
+                    return Err(RuntimeError::unsupported_call(
+                        "array_change_key_case()",
+                        format!(
+                            "case flag must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ))
+                }
+                None => ArrayKeyCase::Lower,
+            };
+            Ok(Value::Array(array.keys_with_ascii_case(case)))
         }
     }
 }
@@ -32245,6 +32276,77 @@ mod tests {
         assert!(diagnostic.is_null());
         assert_eq!(native_value_echo_bytes_for_test(flipped_a), b"0");
 
+        let mut case_array = PhpArray::new();
+        case_array.insert("Name", Value::String("Ada".to_string()));
+        case_array.insert("MiXeD", Value::String("mixed".to_string()));
+        case_array.insert(7, Value::String("seven".to_string()));
+        let case_handle = NativeValueHandle::from_value(Value::Array(case_array));
+        let changed_lower = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                case_handle,
+                NativeValueHandle::null(),
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let lower_name_key = NativeValueHandle::from_value(Value::String("name".to_string()));
+        let changed_lower_name = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                changed_lower,
+                lower_name_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(changed_lower_name), b"Ada");
+
+        let upper_case_flag = phpc_native_value_from_scalar(phpc_native_int(1));
+        let changed_upper = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                case_handle,
+                upper_case_flag,
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let upper_mixed_key = NativeValueHandle::from_value(Value::String("MIXED".to_string()));
+        let changed_upper_mixed = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                changed_upper,
+                upper_mixed_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            native_value_echo_bytes_for_test(changed_upper_mixed),
+            b"mixed"
+        );
+
+        let bad_case_flag = phpc_native_value_from_scalar(phpc_native_bool(true));
+        let failed_key_case = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                case_handle,
+                bad_case_flag,
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE,
+                &mut diagnostic,
+            )
+        };
+        assert!(failed_key_case.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call array_change_key_case(): case flag must be int in the current subset, got bool"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
         let mut counted_array = PhpArray::new();
         counted_array
             .append(Value::String("a".to_string()))
@@ -32476,6 +32578,16 @@ mod tests {
         unsafe { phpc_native_value_free(counted_a) };
         unsafe { phpc_native_value_free(counted) };
         unsafe { phpc_native_value_free(counted_handle) };
+        unsafe { phpc_native_value_free(failed_key_case) };
+        unsafe { phpc_native_value_free(bad_case_flag) };
+        unsafe { phpc_native_value_free(changed_upper_mixed) };
+        unsafe { phpc_native_value_free(upper_mixed_key) };
+        unsafe { phpc_native_value_free(changed_upper) };
+        unsafe { phpc_native_value_free(upper_case_flag) };
+        unsafe { phpc_native_value_free(changed_lower_name) };
+        unsafe { phpc_native_value_free(lower_name_key) };
+        unsafe { phpc_native_value_free(changed_lower) };
+        unsafe { phpc_native_value_free(case_handle) };
         unsafe { phpc_native_value_free(flipped_a) };
         unsafe { phpc_native_value_free(a_key) };
         unsafe { phpc_native_value_free(flipped) };

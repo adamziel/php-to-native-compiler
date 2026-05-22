@@ -807,6 +807,7 @@ enum NativeValueArrayQueryBuiltin {
     Product,
     FillKeys,
     Combine,
+    ChangeKeyCase,
 }
 
 impl NativeArraySortBuiltin {
@@ -860,6 +861,7 @@ impl NativeValueArrayQueryBuiltin {
             Self::Product => "PHPC_NATIVE_VALUE_ARRAY_QUERY_PRODUCT",
             Self::FillKeys => "PHPC_NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS",
             Self::Combine => "PHPC_NATIVE_VALUE_ARRAY_QUERY_COMBINE",
+            Self::ChangeKeyCase => "PHPC_NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE",
         }
     }
 }
@@ -925,6 +927,9 @@ fn native_value_array_query_builtin(
         "array_product" if args.len() == 1 => Some(NativeValueArrayQueryBuiltin::Product),
         "array_fill_keys" if args.len() == 2 => Some(NativeValueArrayQueryBuiltin::FillKeys),
         "array_combine" if args.len() == 2 => Some(NativeValueArrayQueryBuiltin::Combine),
+        "array_change_key_case" if (1..=2).contains(&args.len()) => {
+            Some(NativeValueArrayQueryBuiltin::ChangeKeyCase)
+        }
         _ => None,
     }
 }
@@ -7754,6 +7759,7 @@ impl CGenerator {
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_PRODUCT 6\n");
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS 7\n");
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_COMBINE 8\n");
+                    output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE 9\n");
                     output.push_str("#define PHPC_NATIVE_ARRAY_QUERY_STRICT 1\n");
                 }
                 output.push_str("#define PHPC_NATIVE_VALUE_OPERATION_OK 0\n");
@@ -14889,6 +14895,31 @@ impl CGenerator {
                     failure_cleanup,
                 )
             }
+            NativeValueArrayQueryBuiltin::ChangeKeyCase => match args {
+                [subject] => {
+                    let subject =
+                        self.materialize_native_value_result_operand(subject, failure_cleanup)?;
+                    let cleanup_after_use = subject.cleanup_after_use.clone();
+                    Ok(self.emit_native_value_array_query_operation_handle(
+                        builtin,
+                        subject,
+                        None,
+                        "0".to_string(),
+                        cleanup_after_use,
+                        failure_cleanup,
+                    ))
+                }
+                [subject, operand] => self
+                    .materialize_native_value_array_query_subject_operand_expr(
+                        builtin,
+                        subject,
+                        operand,
+                        None,
+                        span,
+                        failure_cleanup,
+                    ),
+                _ => Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
+            },
         }
     }
 

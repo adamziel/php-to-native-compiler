@@ -407,6 +407,41 @@ fn native_executable_c_source_routes_array_query_family_through_shared_value_ope
 }
 
 #[test]
+fn native_executable_c_source_routes_array_change_key_case_through_array_query_operation() {
+    let program = parse(
+        "<?php\n$items = [\"Name\" => \"Ada\", \"MiXeD\" => \"mixed\", 7 => \"seven\"];\necho array_change_key_case($items)[\"name\"], \"|\", array_change_key_case($items, 1)[\"MIXED\"], \"|\", array_change_key_case($items, -1)[7];\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_array_query_operation_with_diagnostic"
+        ),
+        "{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE"),
+        "{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_value_array_query_operation_with_diagnostic(")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(native_value_array_query"),
+        "owned key-case query results must be cleaned:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_value_result_offset_reads_through_shared_boundary() {
     let program = parse(
         "<?php\necho array_map(null, [\"L\", \"M\"])[1];\necho \"|\";\necho ((array) \"Q\")[0];\necho \"|\";\necho ((array) \"NO\")[0][1];\necho \"|\";\necho (\"A\" . \"B\")[1];\n",
@@ -769,6 +804,63 @@ fn emit_exe_links_and_runs_array_query_family_through_shared_value_operation() {
         String::from_utf8_lossy(&run.stdout),
         "zero,string_zero|1|empty|01|2,1|6|6|v,v|1,2"
     );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_change_key_case_through_array_query_operation() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("array_change_key_case_query_operation.php");
+    let output_path = native_link_output_path("array_change_key_case_query_operation");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        "<?php\n$items = [\"Name\" => \"Ada\", \"MiXeD\" => \"mixed\", 7 => \"seven\"];\necho array_change_key_case($items)[\"name\"], \"|\", array_change_key_case($items, 1)[\"MIXED\"], \"|\", array_change_key_case($items, -1)[7];\n",
+    )
+    .expect("write array_change_key_case native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array_change_key_case source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native array_change_key_case executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native array_change_key_case executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "Ada|mixed|seven");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
