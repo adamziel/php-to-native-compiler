@@ -1,10 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 00:21 CEST
-Evaluation marker: `20260522T215411Z` (request append-reference primary slice)
-Primary management baseline before this update: `be79ee1c docs: correct progress after GLOBALS root append rejection`
-Primary semantic baseline: `2edd49ab runtime: append request reference slots`
-Prior evaluator marker: `20260522T210338Z`
+Updated: 2026-05-23 00:44 CEST
+Evaluation marker: `20260522T224455Z` (periodic evaluator)
+Primary management baseline before this update: `38e98ad0 codegen: route array column queries`
+Primary semantic baseline: `38e98ad0 codegen: route array column queries`
+Prior evaluator marker: `20260522T210338Z`; scheduled marker
+`20260522T215411Z` produced a stale report and did not land a dashboard commit.
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -15,12 +16,14 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 
 Overall estimated progress: **84%** `[#################---]`
 
-Primary landed semantic commit `2edd49ab`, adding a request-state append
-reference ABI and generated-C consumers for request-superglobal append
-reference targets and append-reference sources against ordinary symbol
-references. `$_GET[] =& $source`, `$alias =& $_POST[]`, and nested dynamic
-parent paths now execute through shared request-state reference cells instead
-of falling through to the request-superglobal reference blocker.
+Primary is synced at `38e98ad0`, which routes generated-native
+`array_column($rows, $column[, $index])` through a generalized native value
+array-query operand-list boundary. The preceding primary batch `795c60b3`
+routes generated-native `array_change_key_case(...)` through the same array
+query family. These two commits convert existing runtime array-query semantics
+into generated-C execution with linked proof; they improve backend consumer
+coverage without materially changing the largest remaining call/object/control
+flow risks.
 
 The latest integrated baseline includes generated-C request/reference/global
 symbol progress, direct and mixed symbol-root unsets, request append suffix
@@ -32,28 +35,39 @@ dispatch. It also includes ordinary static `$GLOBALS[...]` symbol-path
 reference targets/sources through a shared value-path reference ABI, dynamic
 `$GLOBALS[$expr]` root/path reference source/target dispatch for non-append
 paths, keyed request references through reference-backed request roots, and
-PHP-fatal direct no-key `$GLOBALS[]` rejection. The previously counted direct
-no-key `$GLOBALS[]` value append slice from `aad22967` is superseded by
-`59f83295` and is not counted as completed capability.
+PHP-fatal direct no-key `$GLOBALS[]` rejection, request append reference slots,
+and generated-native array-query routing for `array_change_key_case(...)` and
+`array_column(...)`. The previously counted direct no-key `$GLOBALS[]` value
+append slice from `aad22967` is superseded by `59f83295` and is not counted as
+completed capability.
 
 The preserved `runtime/src/lib.rs` null-slot increment/decrement hunk remains
 unintegrated and is not counted.
 
 ## Current Primary State
 
-- Primary `master...origin/master`: ahead of `origin/master` at semantic head
-  `2edd49ab` before this management update.
-- Latest semantic commit: `2edd49ab runtime: append request reference slots`.
-- Current product diff at final verification before this management update:
-  this `PROGRESS.md` update; the preserved runtime null-slot hunk was parked
-  during the semantic commit and remains unintegrated.
-- Resource note from this batch: focused gates used fresh
-  `/tmp/phpc-target-primary-integrator.*` targets with `chmod 700`,
-  `umask 0022`, `CARGO_INCREMENTAL=0`, and `CARGO_BUILD_JOBS=1`, removed
-  after each run.
+- Primary `master` and `origin/master`: synced at
+  `38e98ad08faa395c517ad9ca308266de40abf5f8`.
+- Latest semantic commit: `38e98ad0 codegen: route array column queries`.
+- Current product diff at evaluation time: this `PROGRESS.md` update plus the
+  preserved unstaged `runtime/src/lib.rs` null-slot increment/decrement hunk.
+  The runtime hunk remains unintegrated and is not counted.
+- Resource note from this review: `/dev/shm` has about 7.5G available out of
+  22G; `/home` has about 171G available out of 459G. Headroom is serviceable
+  but still too thin for broad concurrent test waves.
 
 ## Recent Primary-Integrated Progress
 
+- `38e98ad0`: generated-native `array_column($rows, $column[, $index])` now
+  uses `phpc_native_value_array_query_operation_with_operands_and_diagnostic(...)`,
+  a reusable operand-list query ABI for native value array consumers needing
+  multiple operands. Focused gates included runtime operand-list proof,
+  `native_link array_column`, adjacent array-query/native-link gates,
+  `cargo check -q -p php_runtime -p phpc`, rustfmt checks, and diff checks.
+- `795c60b3`: generated-native `array_change_key_case($array[, $flag])` now
+  routes through the shared native value array-query operation, including
+  default lower-case behavior, integer upper-case flags, owned result cleanup,
+  diagnostics, and linked executable proof.
 - `2edd49ab`: request-superglobal append reference targets and append-reference
   sources now route through
   `phpc_native_request_state_superglobal_path_reference_append_operation(...)`
@@ -131,14 +145,14 @@ backend parity.
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 97% | `[###################-]` | Strong value, array, symbol-table, request-state, comparison, truthiness, and reference ABIs. |
-| Compiler/backend consumers | 95% | `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbol, value, array, lvalue, and reference consumers; uneven across calls, objects, control flow, and LLVM/C parity. |
-| Executable generalized PHP semantics | 81% | `[################----]` | Improving through linked executable gates, but still selected islands rather than a complete PHP execution model. |
-| Arrays, lvalues, references, COW | 85% | `[#################---]` | Stronger arrays/lvalues and selected reference paths, including ordinary and dynamic non-append `$GLOBALS` references, keyed/path request references, and request append reference slots; full references/COW and arbitrary writable roots remain large. |
+| Compiler/backend consumers | 96% | `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbol, value, array-query, lvalue, and reference consumers; still uneven across calls, objects, control flow, and LLVM/C parity. |
+| Executable generalized PHP semantics | 82% | `[################----]` | Improving through linked executable gates and array-query consumers, but still selected islands rather than a complete PHP execution model. |
+| Arrays, lvalues, references, COW | 86% | `[#################---]` | Stronger arrays/lvalues, selected reference paths, and generated-native array query consumers; full references/COW and arbitrary writable roots remain large. |
 | Symbols, globals, request state | 96% | `[###################-]` | Request paths, `$GLOBALS` static/self aliases, ordinary `$GLOBALS` symbol references, dynamic root assignment/read/probe dispatch, dynamic non-append `$GLOBALS` references, symbol paths, direct/mixed root unsets, selected request references, request append reference slots, and PHP-fatal direct no-key `$GLOBALS[]` rejection are strong; broader request/global reconciliation remains open. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Lane candidates exist, but broad executable call/frame semantics are not primary. |
 | Objects, properties, methods | 11% | `[##------------------]` | Mostly lane-local/runtime candidate work; primary still lacks general compiled object/property/method execution. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused diagnostics exist; exact ordering and structured cleanup are not generalized. |
-| Broad integrated verification | 82% | `[################----]` | Focused gates are strong; cross-feature/backend-composition coverage is still thin. |
+| Broad integrated verification | 83% | `[#################---]` | Focused gates are strong and recent array-query adjacent gates help; cross-feature/backend-composition coverage is still thin. |
 
 ## Done / In Progress / Not Done
 
@@ -177,7 +191,9 @@ Done on primary:
   request roots, reusing the path-reference helper so source and target keyed
   aliases update the shared root array.
 - [x] Generated-C array-query/value-offset consumers, active-root offset
-  writeback, and by-value `foreach` body array-lvalue unsets.
+  writeback, generated-native `array_change_key_case(...)` and
+  `array_column(...)` consumers, and by-value `foreach` body array-lvalue
+  unsets.
 - [x] Focused executable linked gates for the newest primary semantic slices.
 
 In progress or candidate only:
@@ -190,7 +206,7 @@ In progress or candidate only:
   is now covered by fatal rejection. Estimate: 67% `[#############-------]`.
 - [ ] General generated PHP reference assignment over objects, arbitrary
   owner/value/reference slots, frames, append request slots, and COW-aware
-  boundaries. Estimate: 60% `[############--------]`.
+  boundaries. Estimate: 61% `[############--------]`.
 - [ ] Narrow real call/frame execution beyond helper/blocker routing.
   Estimate: 25% `[#####---------------]`.
 - [ ] Object/property/method executable semantics beyond lane-local candidates.
@@ -225,22 +241,32 @@ Not done:
 - `impl-symbol-integrator`: broad cleanup/rejection centralization across
   legacy call/unary/switch/foreach/reference producer paths.
 - `impl-array-linked-exec` and related lanes: additional array, binary string,
-  reference, and cleanup candidates that still need primary narrowing.
+  reference, COW, nested lvalue, and cleanup candidates that still need primary
+  narrowing.
+- `impl-array-value-runtime`: callable-target value-frame blockers, byte-aware
+  object property lookup, and runtime array/value query expansion. Useful, but
+  broad and still lane-local.
+- `impl-function-frame-seed`, `impl-native-call-semantics`,
+  `impl-native-object-seed`, `impl-native-object-property-runtime`, and
+  diagnostics/control-flow lanes continue to produce candidate frame, object,
+  property, diagnostic, and cleanup boundaries that are not primary-integrated.
 
 These are useful signals, but they remain lane-local until narrowed and landed
 on primary with focused executable proof.
 
 ## Current Steering Bias
 
-Keep primary integration on compact structural consumers. After `59f83295`,
-ordinary static `$GLOBALS[...]` symbol-path references, dynamic non-append
-`$GLOBALS[$expr]` reference dispatch, keyed request references through
-reference-backed request roots, and direct no-key `$GLOBALS[]` fatal rejection
-should be treated as done for non-repeat purposes. Do not extend direct no-key
-`$GLOBALS[]` value/reference append forms. The highest-value request/global
-work now is broader dynamic nested aliases, request append/reference forms, and
-request/global alias reconciliation.
+Keep primary integration on compact structural consumers. After `38e98ad0` and
+`795c60b3`, another nearby array builtin is valuable only if it unlocks a
+shared execution boundary used by more than one PHP construct. After
+`59f83295`, direct no-key `$GLOBALS[]` value/reference append remains a fatal
+path, not a capability to extend. Ordinary static `$GLOBALS[...]` symbol-path
+references, dynamic non-append `$GLOBALS[$expr]` reference dispatch, keyed
+request references through reference-backed request roots, request append
+reference slots, and direct no-key `$GLOBALS[]` fatal rejection should all be
+treated as non-repeat guarded.
 
-The low-percentage areas are calls, objects, and control flow. A narrow primary
-slice there is valuable only if it executes real PHP behavior with linked proof;
-more standalone blocker vocabulary should be deprioritized.
+The next highest-value primary work is either request/global alias
+reconciliation, a compact reference/COW owner-slot slice, or a narrow executable
+slice in calls/frames, objects/properties, or structured cleanup and diagnostic
+ordering. More standalone blocker vocabulary should be deprioritized.
