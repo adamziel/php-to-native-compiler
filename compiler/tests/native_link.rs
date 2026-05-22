@@ -543,7 +543,7 @@ const ARRAY_LVALUE_COMPOUND_ASSIGNMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n
 
 const ARRAY_LVALUE_INCREMENT_DECREMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n$float = \"float\";\n$items = [$key => 4, $float => 1.5, \"other\" => 9];\n$items[$key]++;\necho ++$items[$key], \"|\", $items[$key]--, \"|\", $items[$key], \"|\";\n$oldFloat = $items[$float]--;\necho $oldFloat, \"|\", $items[$float], \"|\";\n$out = [];\n$out[++$items[$key]] = $items[$key]--;\necho $out[6], \"|\", $items[$key];\n";
 
-const ARRAY_LVALUE_INCREMENT_DECREMENT_MISSING_SOURCE: &str = "<?php\n$key = \"missing\";\n$leaf = \"leaf\";\n$items = [\"outer\" => []];\n$post = $items[$key]++;\n$pre = ++$items[\"outer\"][$leaf];\n$items[\"down\"]--;\necho $post, \"|\", $items[$key], \"|\", $pre, \"|\", $items[\"outer\"][$leaf], \"|\", empty($items[\"down\"]) ? 1 : 0;\n";
+const ARRAY_LVALUE_INCREMENT_DECREMENT_MISSING_SOURCE: &str = "<?php\n$key = \"missing\";\n$leaf = \"leaf\";\n$items = [\"nil\" => null, \"outer\" => [\"null_leaf\" => null]];\n$post = $items[$key]++;\n$pre = ++$items[\"outer\"][$leaf];\n$items[\"down\"]--;\n$nullPost = $items[\"nil\"]++;\n$nullPre = ++$items[\"outer\"][\"null_leaf\"];\necho $post, \"|\", $items[$key], \"|\", $pre, \"|\", $items[\"outer\"][$leaf], \"|\", empty($items[\"down\"]) ? 1 : 0, \"|\", $nullPost, \"|\", $items[\"nil\"], \"|\", $nullPre, \"|\", $items[\"outer\"][\"null_leaf\"];\n";
 
 const ARRAY_LVALUE_APPEND_INCREMENT_DECREMENT_SOURCE: &str = "<?php\n$outer = \"outer\";\n$items = [$outer => []];\n$items[]++;\necho $items[0], \"|\";\necho ++$items[], \"|\", $items[1], \"|\";\n$post = $items[$outer][]++;\necho $post, \"|\", $items[$outer][0], \"|\";\n$old = $items[]++;\necho $old, \"|\", $items[2];\n";
 
@@ -2759,7 +2759,7 @@ fn emit_exe_links_and_runs_array_lvalue_increment_decrement_missing_slot_recover
         .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
 
     assert!(run.status.success(), "native executable failed");
-    assert_eq!(run.stdout, b"|1|1|1|1");
+    assert_eq!(run.stdout, b"|1|1|1|1||1|1|1");
     let stderr = String::from_utf8_lossy(&run.stderr);
     assert!(
         stderr.contains("undefined array key \"missing\""),
@@ -2767,6 +2767,8 @@ fn emit_exe_links_and_runs_array_lvalue_increment_decrement_missing_slot_recover
     );
     assert!(stderr.contains("undefined array key \"leaf\""), "{stderr}");
     assert!(stderr.contains("undefined array key \"down\""), "{stderr}");
+    assert!(!stderr.contains("nil"), "{stderr}");
+    assert!(!stderr.contains("null_leaf"), "{stderr}");
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
