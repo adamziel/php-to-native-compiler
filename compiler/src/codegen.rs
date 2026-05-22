@@ -97,7 +97,7 @@ const ASSEMBLY_ENUM_REJECTION: &str = "assembly enum lowering rejects enum decla
 const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const ASSEMBLY_NAMESPACE_REJECTION: &str = "assembly namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
-const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects arrays, array literals, array indexing, unsupported array assignment forms, foreach array iteration, unsupported array offset unset forms, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; generated-native C routes lowerable direct array offset writes, appends, and unsets through the value-offset mutation ABI";
+const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects unsupported arrays, unsupported array indexing forms, unsupported array assignment forms, unsupported foreach array iteration forms, unsupported array offset unset forms, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; generated-native C routes lowerable direct array offset writes, appends, unsets, and by-value foreach over tracked native array owners through shared native ABIs";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
@@ -7210,6 +7210,10 @@ impl CGenerator {
                 if self.uses_native_array_lvalue_helpers {
                     output.push_str("extern phpc_NativeArrayLvalueOwner phpc_native_array_lvalue_owner_array(phpc_NativeArrayHandle array);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_value_operation_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t family, uint8_t operation, uint8_t op, uint8_t position, phpc_NativeValueHandle value);\n");
+                    output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_foreach_iterable_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count);\n");
+                    output.push_str("extern size_t phpc_native_array_foreach_iterable_len(phpc_NativeValueHandle iterable);\n");
+                    output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_foreach_iterable_key_result(phpc_NativeValueHandle iterable, size_t index);\n");
+                    output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_foreach_iterable_value_result(phpc_NativeValueHandle iterable, size_t index);\n");
                     output.push_str("extern void phpc_native_array_lvalue_result_free(phpc_NativeArrayLvalueResult result);\n");
                 }
                 output.push_str(
@@ -7477,7 +7481,21 @@ impl CGenerator {
             | Stmt::Continue { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_CONTROL_FLOW_REJECTION))
             }
-            Stmt::Foreach { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
+            Stmt::Foreach {
+                iterable,
+                key,
+                value,
+                by_reference,
+                body,
+                span,
+            } => self.emit_native_array_foreach_statement(
+                iterable,
+                key.as_deref(),
+                value,
+                *by_reference,
+                body,
+                *span,
+            ),
             Stmt::UnsetVariable { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
@@ -8598,6 +8616,219 @@ impl CGenerator {
             .push(format!("phpc_native_array_lvalue_result_free({result});"));
         self.body.extend(path.cleanup_after_use);
         Ok(())
+    }
+
+    fn emit_native_array_foreach_statement(
+        &mut self,
+        iterable: &Expr,
+        key: Option<&str>,
+        value: &str,
+        by_reference: bool,
+        body: &[Stmt],
+        span: Span,
+    ) -> CompileResult<()> {
+        if by_reference {
+            return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
+        }
+        if key == Some(value) {
+            return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
+        }
+        if key
+            .map(|name| self.native_foreach_symbol_target_has_prior_storage(name))
+            .unwrap_or(false)
+            || self.native_foreach_symbol_target_has_prior_storage(value)
+        {
+            return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
+        }
+        if native_foreach_body_may_mutate_storage(body) {
+            return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION));
+        }
+
+        let foreach_iterable = self.materialize_native_array_foreach_iterable(iterable, span)?;
+        let iterable_handle = foreach_iterable.handle.clone();
+        let len = self.next_native_name("array_foreach_len");
+        let index = self.next_native_name("array_foreach_index");
+
+        self.retain_native_value_cleanup_handle(&iterable_handle);
+        self.body.push(format!(
+            "size_t {len} = phpc_native_array_foreach_iterable_len({iterable_handle});"
+        ));
+        self.body.push(format!(
+            "for (size_t {index} = 0; {index} < {len}; ++{index}) {{"
+        ));
+
+        let key_handle = if let Some(key) = key {
+            let key_handle =
+                self.emit_native_array_foreach_cursor_value(&iterable_handle, &index, "key");
+            self.retain_native_value_cleanup_handle(&key_handle);
+            self.variables.insert(
+                key.to_string(),
+                CValue::NativeValueHandle(key_handle.clone()),
+            );
+            Some((key.to_string(), key_handle))
+        } else {
+            None
+        };
+        let value_handle =
+            self.emit_native_array_foreach_cursor_value(&iterable_handle, &index, "value");
+        self.retain_native_value_cleanup_handle(&value_handle);
+        self.variables.insert(
+            value.to_string(),
+            CValue::NativeValueHandle(value_handle.clone()),
+        );
+
+        for statement in body {
+            self.emit_statement(statement)?;
+        }
+
+        self.variables.remove(value);
+        self.release_native_value_cleanup_handle(&value_handle);
+        self.body
+            .push(format!("phpc_native_value_free({value_handle});"));
+        if let Some((key, key_handle)) = key_handle {
+            self.variables.remove(&key);
+            self.release_native_value_cleanup_handle(&key_handle);
+            self.body
+                .push(format!("phpc_native_value_free({key_handle});"));
+        }
+        self.body.push("}".to_string());
+        self.release_native_value_cleanup_handle(&iterable_handle);
+        self.body.extend(foreach_iterable.cleanup_after_use);
+        Ok(())
+    }
+
+    fn materialize_native_array_foreach_iterable(
+        &mut self,
+        iterable: &Expr,
+        span: Span,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        if let Some((handle, indices, lvalue_span)) =
+            self.native_array_foreach_lvalue_parts(iterable)
+        {
+            return self.materialize_native_array_foreach_iterable_for_handle(
+                &handle,
+                &indices,
+                lvalue_span,
+                Vec::new(),
+            );
+        }
+
+        if let Expr::Array { items, span } = iterable {
+            let handle = self.emit_array_literal(items, *span)?;
+            self.release_native_array_cleanup_handle(&handle);
+            return self.materialize_native_array_foreach_iterable_for_handle(
+                &handle,
+                &[],
+                *span,
+                vec![format!("phpc_native_array_free({handle});")],
+            );
+        }
+
+        Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION))
+    }
+
+    fn materialize_native_array_foreach_iterable_for_handle(
+        &mut self,
+        handle: &str,
+        indices: &[&Expr],
+        span: Span,
+        owner_cleanup_after_use: Vec<String>,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let (path_arg, path_len, mut path_cleanup) = if indices.is_empty() {
+            ("NULL".to_string(), 0, Vec::new())
+        } else {
+            let path = self.materialize_native_array_lvalue_key_path(
+                indices,
+                span,
+                &c_cleanup_sequence(&owner_cleanup_after_use),
+            )?;
+            (path.path, path.len, path.cleanup_after_use)
+        };
+
+        let owner = self.next_native_name("array_foreach_owner");
+        let result = self.next_native_name("array_foreach_iterable_result");
+        let value = self.next_native_name("array_foreach_iterable");
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_foreach_iterable_result({owner}, {path_arg}, {path_len});"
+        ));
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&path_cleanup),
+            c_cleanup_sequence(&owner_cleanup_after_use)
+        );
+        self.emit_native_array_lvalue_result_check(&result, &cleanup);
+        self.body
+            .push(format!("phpc_NativeValueHandle {value} = {result}.value;"));
+        self.body
+            .push(format!("{result}.value = (phpc_NativeValueHandle){{0}};"));
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.body.append(&mut path_cleanup);
+        self.body.extend(owner_cleanup_after_use);
+
+        Ok(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        })
+    }
+
+    fn native_array_foreach_lvalue_parts<'a>(
+        &self,
+        iterable: &'a Expr,
+    ) -> Option<(String, Vec<&'a Expr>, Span)> {
+        match iterable {
+            Expr::Variable(name, span) => match self.variables.get(name) {
+                Some(CValue::ArrayHandle(handle)) => Some((handle.clone(), Vec::new(), *span)),
+                _ => None,
+            },
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => {
+                let (handle, mut indices, _) = self.native_array_foreach_lvalue_parts(target)?;
+                indices.push(index);
+                Some((handle, indices, *span))
+            }
+            _ => None,
+        }
+    }
+
+    fn emit_native_array_foreach_cursor_value(
+        &mut self,
+        iterable: &str,
+        index: &str,
+        cursor: &str,
+    ) -> String {
+        let helper = match cursor {
+            "key" => "phpc_native_array_foreach_iterable_key_result",
+            _ => "phpc_native_array_foreach_iterable_value_result",
+        };
+        let result = self.next_native_name(&format!("array_foreach_{cursor}_result"));
+        let cursor_value = self.next_native_name(&format!("array_foreach_{cursor}_value"));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = {helper}({iterable}, {index});"
+        ));
+        self.emit_native_array_lvalue_result_check(&result, "");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {cursor_value} = {result}.value;"
+        ));
+        self.body
+            .push(format!("{result}.value = (phpc_NativeValueHandle){{0}};"));
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        cursor_value
+    }
+
+    fn native_foreach_symbol_target_has_prior_storage(&self, name: &str) -> bool {
+        self.variables.contains_key(name)
     }
 
     fn emit_array_lvalue_write_for_handle(
@@ -13780,6 +14011,120 @@ fn array_index_expr_path(expr: &Expr) -> Option<(&Expr, Vec<&Expr>, Span)> {
             Some((root, indices, *span))
         }
         root => Some((root, vec![index.as_ref()], *span)),
+    }
+}
+
+fn native_foreach_body_may_mutate_storage(body: &[Stmt]) -> bool {
+    body.iter().any(native_foreach_stmt_may_mutate_storage)
+}
+
+fn native_foreach_stmt_may_mutate_storage(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Echo { exprs, .. } => exprs.iter().any(native_foreach_expr_may_mutate_storage),
+        Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } => {
+            native_foreach_expr_may_mutate_storage(expr)
+        }
+        _ => true,
+    }
+}
+
+fn native_foreach_expr_may_mutate_storage(expr: &Expr) -> bool {
+    match expr {
+        Expr::Assign { .. }
+        | Expr::CompoundAssign { .. }
+        | Expr::NullCoalesceAssign { .. }
+        | Expr::IncrementDecrement { .. }
+        | Expr::Closure { .. } => true,
+        Expr::Array { items, .. } => items.iter().any(|item| {
+            item.key
+                .as_ref()
+                .is_some_and(native_foreach_expr_may_mutate_storage)
+                || native_foreach_expr_may_mutate_storage(&item.value)
+        }),
+        Expr::Index { target, index, .. } => {
+            native_foreach_expr_may_mutate_storage(target)
+                || native_foreach_expr_may_mutate_storage(index)
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::InstanceOf { expr: target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => native_foreach_expr_may_mutate_storage(target),
+        Expr::DynamicProperty {
+            target, property, ..
+        } => {
+            native_foreach_expr_may_mutate_storage(target)
+                || native_foreach_expr_may_mutate_storage(property)
+        }
+        Expr::MethodCall { target, args, .. }
+        | Expr::DynamicMethodCall { target, args, .. }
+        | Expr::ObjectStaticMethodCall { target, args, .. } => {
+            native_foreach_expr_may_mutate_storage(target)
+                || args.iter().any(native_foreach_expr_may_mutate_storage)
+        }
+        Expr::DynamicCall { callee, args, .. } => {
+            native_foreach_expr_may_mutate_storage(callee)
+                || args.iter().any(native_foreach_expr_may_mutate_storage)
+        }
+        Expr::Call { args, .. }
+        | Expr::ParentMethodCall { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. }
+        | Expr::New { args, .. } => args.iter().any(native_foreach_expr_may_mutate_storage),
+        Expr::Binary { left, right, .. } => {
+            native_foreach_expr_may_mutate_storage(left)
+                || native_foreach_expr_may_mutate_storage(right)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            native_foreach_expr_may_mutate_storage(condition)
+                || native_foreach_expr_may_mutate_storage(if_true)
+                || native_foreach_expr_may_mutate_storage(if_false)
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => {
+            native_foreach_expr_may_mutate_storage(condition)
+                || native_foreach_expr_may_mutate_storage(if_false)
+        }
+        Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::InterpolatedString { .. }
+        | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. } => false,
     }
 }
 

@@ -126,6 +126,117 @@ fn emit_exe_links_and_runs_scalar_runtime_value_echo_program() {
 }
 
 #[test]
+fn native_executable_c_source_routes_by_value_foreach_through_array_lvalue_owner() {
+    let program = parse(
+        "<?php\n$a = [\"x\" => \"ab\", \"y\" => \"cd\"];\nforeach ($a as $k => $v) { echo $k, \"=\", strtoupper($v), \";\"; }\n$b = [];\n$b[\"nested\"][\"n\"] = \"ef\";\nforeach ($b[\"nested\"] as $nk => $nv) { print $nk; print \"=\"; print strtoupper($nv); print \";\"; }\nforeach ([\"lit\" => \"gh\"] as $lk => $lv) { echo $lk, \"=\", strtoupper($lv), \";\"; }\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_foreach_iterable_result"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_array"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_array_foreach_iterable_key_result")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_array_foreach_iterable_value_result")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_string_result_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_blocks_foreach_forms_without_symbol_or_reference_storage() {
+    for source in [
+        "<?php\n$v = \"old\";\n$a = [\"new\"];\nforeach ($a as $v) { echo $v; }\n",
+        "<?php\n$a = [\"new\"];\nforeach ($a as &$v) { echo $v; }\n",
+        "<?php\n$a = [\"new\"];\nforeach ($a as $v) { $seen = $v; }\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+        assert!(
+            error.message.contains("assembly array lowering")
+                || error.message.contains("assembly mutation lowering"),
+            "{error:?}"
+        );
+    }
+}
+
+#[test]
+fn emit_exe_links_and_runs_by_value_foreach_array_lvalue_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("array_foreach_lvalue.php");
+    let output_path = native_link_output_path("array_foreach_lvalue");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        "<?php\n$a = [\"x\" => \"ab\", \"y\" => \"cd\"];\nforeach ($a as $k => $v) { echo $k, \"=\", strtoupper($v), \";\"; }\n$b = [];\n$b[\"nested\"][\"n\"] = \"ef\";\nforeach ($b[\"nested\"] as $nk => $nv) { print $nk; print \"=\"; print strtoupper($nv); print \";\"; }\nforeach ([\"lit\" => \"gh\"] as $lk => $lv) { echo $lk, \"=\", strtoupper($lv), \";\"; }\n",
+    )
+    .expect("write foreach native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native foreach source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native foreach executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native foreach executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"x=AB;y=CD;n=EF;lit=GH;");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_routes_strlen_through_string_conversion_result() {
     let program = parse(
         "<?php\n$payload = \"A\0B\";\necho strlen(42);\necho strlen(false);\necho strlen(null);\necho strlen($payload);\n",

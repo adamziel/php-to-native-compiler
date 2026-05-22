@@ -4694,10 +4694,123 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
     }
 }
 
+/// # Safety
+///
+/// The owner and each key handle inside `segments` must be null or handles
+/// previously returned by the runtime ABI and not yet freed. `segments` must be
+/// null when `segment_count` is zero, or point to `segment_count` initialized
+/// path segments. The returned value is an owned by-value array snapshot for
+/// foreach iteration.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_lvalue_owner_foreach_iterable_result(
+    owner: NativeArrayLvalueOwner,
+    segments: *const NativeArrayPathSegment,
+    segment_count: usize,
+) -> NativeArrayLvalueResult {
+    if owner.tag != NATIVE_ARRAY_LVALUE_OWNER_ARRAY {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array foreach iterable owner is not a native array handle",
+        );
+    }
+
+    let Some(array) = (unsafe { owner.array.as_ref() }) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array foreach iterable root is not a live native array handle",
+        );
+    };
+    let path =
+        match unsafe { native_array_lvalue_optional_path_from_segments(segments, segment_count) } {
+            Ok(path) => path,
+            Err(result) => return result,
+        };
+
+    native_array_foreach_iterable_path_result(&array.value, &path)
+}
+
+/// # Safety
+///
+/// `iterable` must be null or a value handle returned by the runtime ABI and
+/// not yet freed. Non-array and null handles have length zero so generated C can
+/// route diagnostics through the iterable result boundary before looping.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_foreach_iterable_len(
+    iterable: NativeValueHandle,
+) -> usize {
+    match unsafe { iterable.as_ref() } {
+        Some(Value::Array(array)) => array.len(),
+        _ => 0,
+    }
+}
+
+/// # Safety
+///
+/// `iterable` must be a live value handle carrying an array snapshot returned by
+/// `phpc_native_array_lvalue_owner_foreach_iterable_result`. The returned result
+/// owns a clone of the PHP key for `index`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_foreach_iterable_key_result(
+    iterable: NativeValueHandle,
+    index: usize,
+) -> NativeArrayLvalueResult {
+    let Some(Value::Array(array)) = (unsafe { iterable.as_ref() }) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array foreach key read received a non-array iterable handle",
+        );
+    };
+    let Some(entry) = array.entries().get(index) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_KEY,
+            format!("array foreach key index {index} is out of range"),
+        );
+    };
+
+    NativeArrayLvalueResult::value(array_key_to_value(&entry.key))
+}
+
+/// # Safety
+///
+/// `iterable` must be a live value handle carrying an array snapshot returned by
+/// `phpc_native_array_lvalue_owner_foreach_iterable_result`. The returned result
+/// owns a clone of the PHP value for `index`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_foreach_iterable_value_result(
+    iterable: NativeValueHandle,
+    index: usize,
+) -> NativeArrayLvalueResult {
+    let Some(Value::Array(array)) = (unsafe { iterable.as_ref() }) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array foreach value read received a non-array iterable handle",
+        );
+    };
+    let Some(entry) = array.entries().get(index) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_KEY,
+            format!("array foreach value index {index} is out of range"),
+        );
+    };
+
+    NativeArrayLvalueResult::value(entry.value_cloned())
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_array_lvalue_result_free(result: NativeArrayLvalueResult) {
     unsafe { phpc_native_value_free(result.value) };
     unsafe { phpc_native_diagnostic_free(result.diagnostic) };
+}
+
+unsafe fn native_array_lvalue_optional_path_from_segments(
+    segments: *const NativeArrayPathSegment,
+    segment_count: usize,
+) -> Result<Vec<NativeArrayLvaluePathElement>, NativeArrayLvalueResult> {
+    if segment_count == 0 {
+        return Ok(Vec::new());
+    }
+
+    unsafe { native_array_lvalue_path_from_segments(segments, segment_count) }
 }
 
 unsafe fn native_array_lvalue_key_path_from_segments(
@@ -4985,6 +5098,72 @@ fn native_array_read_key_path(
                 "array lvalue nested read failed: {} intermediate at key {} requires the shared scalar read recovery boundary",
                 other.type_name(),
                 key.diagnostic_key()
+            ),
+        )),
+    }
+}
+
+fn native_array_foreach_iterable_path_result(
+    array: &PhpArray,
+    path: &[NativeArrayLvaluePathElement],
+) -> NativeArrayLvalueResult {
+    if path.is_empty() {
+        return NativeArrayLvalueResult::value(Value::Array(array.clone()));
+    }
+
+    match native_array_foreach_iterable_path_value(array, path) {
+        Ok(Some(value)) => native_value_foreach_iterable_value_result(value),
+        Ok(None) => NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            RuntimeError::invalid_foreach("missing array lvalue iterable").message(),
+        ),
+        Err(result) => result,
+    }
+}
+
+fn native_value_foreach_iterable_value_result(value: Value) -> NativeArrayLvalueResult {
+    match value {
+        Value::Array(_) => NativeArrayLvalueResult::value(value),
+        other => NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            RuntimeError::invalid_foreach(format!(
+                "cannot iterate {} array lvalue iterable",
+                other.type_name()
+            ))
+            .message(),
+        ),
+    }
+}
+
+fn native_array_foreach_iterable_path_value(
+    array: &PhpArray,
+    path: &[NativeArrayLvaluePathElement],
+) -> Result<Option<Value>, NativeArrayLvalueResult> {
+    let Some((segment, rest)) = path.split_first() else {
+        return Ok(Some(Value::Array(array.clone())));
+    };
+
+    let NativeArrayLvaluePathElement::Key(key) = segment else {
+        return Err(NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_KEY,
+            "array foreach iterable path cannot contain append segments",
+        ));
+    };
+
+    let Some(value) = array.get_cloned(key.clone()) else {
+        return Ok(None);
+    };
+    if rest.is_empty() {
+        return Ok(Some(value));
+    }
+
+    match value {
+        Value::Array(child) => native_array_foreach_iterable_path_value(&child, rest),
+        other => Err(NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            format!(
+                "cannot iterate nested foreach offset on {}",
+                other.type_name()
             ),
         )),
     }
@@ -19662,6 +19841,120 @@ mod tests {
         unsafe { phpc_native_value_free(inner_key) };
         unsafe { phpc_native_value_free(outer_key) };
         unsafe { phpc_native_value_free(direct_key) };
+        unsafe { phpc_native_array_free(handle) };
+    }
+
+    #[test]
+    fn native_array_lvalue_owner_foreach_iterable_snapshots_keys_values_and_paths() {
+        fn assert_entry(
+            iterable: NativeValueHandle,
+            index: usize,
+            expected_key: &[u8],
+            expected_value: &[u8],
+        ) {
+            let key = unsafe { phpc_native_array_foreach_iterable_key_result(iterable, index) };
+            assert_eq!(key.tag, NATIVE_ARRAY_LVALUE_OK);
+            assert_eq!(native_value_echo_bytes_for_test(key.value), expected_key);
+            unsafe { phpc_native_array_lvalue_result_free(key) };
+
+            let value = unsafe { phpc_native_array_foreach_iterable_value_result(iterable, index) };
+            assert_eq!(value.tag, NATIVE_ARRAY_LVALUE_OK);
+            assert_eq!(
+                native_value_echo_bytes_for_test(value.value),
+                expected_value
+            );
+            unsafe { phpc_native_array_lvalue_result_free(value) };
+        }
+
+        let mut nested = PhpArray::new();
+        nested.insert(ArrayKey::string("inner"), Value::String("slot".to_string()));
+        let mut root = PhpArray::new();
+        root.insert(ArrayKey::Int(0), Value::Int(10));
+        root.insert(ArrayKey::string("named"), Value::Int(20));
+        root.insert(ArrayKey::string("items"), Value::Array(nested));
+
+        let handle = NativeArrayHandle::from_array(root);
+        let owner = phpc_native_array_lvalue_owner_array(handle);
+        let iterable = unsafe {
+            phpc_native_array_lvalue_owner_foreach_iterable_result(owner, std::ptr::null(), 0)
+        };
+        assert_eq!(iterable.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(
+            unsafe { phpc_native_array_foreach_iterable_len(iterable.value) },
+            3
+        );
+        assert_entry(iterable.value, 0, b"0", b"10");
+        assert_entry(iterable.value, 1, b"named", b"20");
+
+        let items_key = NativeValueHandle::from_value(Value::String("items".to_string()));
+        let items_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: items_key,
+        }];
+        let nested_iterable = unsafe {
+            phpc_native_array_lvalue_owner_foreach_iterable_result(
+                owner,
+                items_path.as_ptr(),
+                items_path.len(),
+            )
+        };
+        assert_eq!(nested_iterable.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(
+            unsafe { phpc_native_array_foreach_iterable_len(nested_iterable.value) },
+            1
+        );
+        assert_entry(nested_iterable.value, 0, b"inner", b"slot");
+
+        let missing_key = NativeValueHandle::from_value(Value::String("missing".to_string()));
+        let missing_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: missing_key,
+        }];
+        let missing = unsafe {
+            phpc_native_array_lvalue_owner_foreach_iterable_result(
+                owner,
+                missing_path.as_ptr(),
+                missing_path.len(),
+            )
+        };
+        assert_eq!(missing.tag, NATIVE_ARRAY_LVALUE_INVALID_ROOT);
+        assert_eq!(
+            native_diagnostic_message_for_test(missing.diagnostic),
+            "invalid foreach: missing array lvalue iterable"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(missing) };
+
+        let append_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_APPEND,
+            key: NativeValueHandle::null(),
+        }];
+        let append = unsafe {
+            phpc_native_array_lvalue_owner_foreach_iterable_result(
+                owner,
+                append_path.as_ptr(),
+                append_path.len(),
+            )
+        };
+        assert_eq!(append.tag, NATIVE_ARRAY_LVALUE_INVALID_KEY);
+        assert_eq!(
+            native_diagnostic_message_for_test(append.diagnostic),
+            "array foreach iterable path cannot contain append segments"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(append) };
+
+        let out_of_range =
+            unsafe { phpc_native_array_foreach_iterable_value_result(iterable.value, 99) };
+        assert_eq!(out_of_range.tag, NATIVE_ARRAY_LVALUE_INVALID_KEY);
+        assert_eq!(
+            native_diagnostic_message_for_test(out_of_range.diagnostic),
+            "array foreach value index 99 is out of range"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(out_of_range) };
+
+        unsafe { phpc_native_array_lvalue_result_free(nested_iterable) };
+        unsafe { phpc_native_value_free(missing_key) };
+        unsafe { phpc_native_value_free(items_key) };
+        unsafe { phpc_native_array_lvalue_result_free(iterable) };
         unsafe { phpc_native_array_free(handle) };
     }
 
