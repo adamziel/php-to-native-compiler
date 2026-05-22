@@ -397,6 +397,8 @@ const VALUE_OFFSET_MUTATION_ARRAY_APPEND_SOURCE: &str = "<?php\n$items = [\"seed
 
 const VALUE_OFFSET_MUTATION_ARRAY_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$key = \"named\";\n$value = \"C\";\necho ($items[] = \"B\"), \"|\";\necho ($items[] = $value), \"|\";\necho ($items[$key] = \"D\"), \"|\";\necho $items[0], \"|\", $items[1], \"|\", $items[$key], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
 
+const VALUE_OFFSET_ARRAY_READ_SOURCE: &str = "<?php\n$items = [\"first\" => \"q\", 2 => \"B\"];\n$key = \"first\";\n$out = [];\n$out[] = $items[$key];\necho $items[$key], \"|\";\nprint $items[2];\necho \"|\", $out[0], \"|\";\necho strtoupper($items[$key]);\n";
+
 const VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE: &str = "<?php\n$items = [\"keep\" => \"A\", \"drop\" => \"B\", 2 => \"C\"];\n$key = \"drop\";\nunset($items[$key]);\nunset($items[2]);\nunset($items[99]);\necho isset($items[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[2]) ? 1 : 0;\necho \"|\";\n$items[$key] = \"D\";\necho $items[$key];\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_MULTI_UNSET_SOURCE: &str = "<?php\n$left = [\"keep\" => \"L\", \"drop\" => \"D\", 2 => \"I\"];\n$right = [0 => \"R0\", \"drop\" => \"RD\"];\n$key = \"drop\";\nunset($left[$key], $right[0], $left[2], $right[\"missing\"]);\necho isset($left[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($left[$key]) ? 1 : 0;\necho \"|\";\necho empty($right[0]) ? 1 : 0;\necho \"|\";\necho empty($left[2]) ? 1 : 0;\necho \"|\";\necho isset($right[\"drop\"]) ? 1 : 0;\n";
@@ -629,6 +631,40 @@ fn native_executable_c_source_routes_array_assignment_expression_values_through_
     assert!(
         !body.contains("phpc_native_array_append_value_with_diagnostic("),
         "array assignment expressions should not bypass the value-offset mutation ABI:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_array_offset_reads_through_value_offset_boundary() {
+    let program = parse(VALUE_OFFSET_ARRAY_READ_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_offset_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert_eq!(
+        body.matches(" = phpc_native_value_offset_operation_with_diagnostic(")
+            .count(),
+        5,
+        "array offset reads should share the value-offset read boundary across output and value consumers:\n{source}"
+    );
+    assert!(
+        body.contains(", 0, &value_offset_read_diagnostic_"),
+        "array offset reads should use the shared read operation tag:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_offset_mutation_operation_with_diagnostic"),
+        "array read results should feed array value mutation consumers:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_string_result_operation_with_diagnostic"),
+        "array read results should feed native string-result consumers:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_array_read_key_with_diagnostic("),
+        "lowerable generated-C array reads should not bypass the shared value-offset ABI:\n{source}"
     );
 }
 
@@ -1747,6 +1783,53 @@ fn emit_exe_links_and_runs_array_assignment_expression_value_mutation_program() 
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"B|C|D|B|C|D|1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_offset_read_value_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("array_offset_read_value_boundary");
+    let source_path = native_link_output_path("array_offset_read_value_boundary_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, VALUE_OFFSET_ARRAY_READ_SOURCE)
+        .expect("native array offset read source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array offset read source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"q|B|q|Q");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

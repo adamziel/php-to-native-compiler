@@ -698,6 +698,7 @@ fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
 
 fn native_value_result_output_expr(expr: &Expr) -> bool {
     match expr {
+        Expr::Index { .. } => true,
         Expr::Unary { op, .. } => native_value_unary_op_tag(*op).is_some(),
         Expr::Binary { op, .. } => native_value_binary_op_tag(*op).is_some(),
         Expr::Cast { .. } => true,
@@ -11658,7 +11659,92 @@ impl CGenerator {
                 }
                 Ok(None)
             }
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => {
+                if !self.uses_native_string_helpers || !self.is_array_offset_subject_expr(target) {
+                    return Ok(None);
+                }
+                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(superglobal_span) = request_superglobal_expr_span(target) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                if is_object_offset_expr(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+
+                let subject =
+                    self.materialize_native_value_result_operand(target, failure_cleanup)?;
+                let offset_failure_cleanup = format!(
+                    "{}{}",
+                    c_cleanup_sequence(&subject.cleanup_after_use),
+                    failure_cleanup
+                );
+                let offset =
+                    self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?;
+                Ok(Some(self.emit_native_value_offset_read_result_handle(
+                    subject,
+                    offset,
+                    failure_cleanup,
+                )))
+            }
             _ => Ok(None),
+        }
+    }
+
+    fn is_array_offset_subject_expr(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Array { .. } => true,
+            Expr::Variable(name, _) => {
+                matches!(self.variables.get(name), Some(CValue::ArrayHandle(_)))
+            }
+            _ => false,
+        }
+    }
+
+    fn emit_native_value_offset_read_result_handle(
+        &mut self,
+        subject: CNativeValueMaterialization,
+        offset: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        self.uses_native_string_helpers = true;
+
+        let subject_handle = subject.handle.clone();
+        let offset_handle = offset.handle.clone();
+        let mut operand_cleanup = offset.cleanup_after_use;
+        operand_cleanup.extend(subject.cleanup_after_use);
+
+        let diagnostic = self.next_native_name("value_offset_read_diagnostic");
+        let result = self.next_native_name("value_offset_read");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_offset_operation_with_diagnostic({subject_handle}, {offset_handle}, {}, &{diagnostic});",
+            NativeStringOffsetOperation::Read as u8
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&operand_cleanup),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.extend(operand_cleanup);
+
+        CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
         }
     }
 
