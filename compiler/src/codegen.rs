@@ -8531,6 +8531,75 @@ impl CGenerator {
         Ok(true)
     }
 
+    fn emit_request_superglobal_keyed_to_keyed_reference_assignment(
+        &mut self,
+        target: &AssignTarget,
+        source: &ReferenceSource,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some((target_root, target_index)) = request_superglobal_keyed_reference_target(target)
+        else {
+            return Ok(false);
+        };
+        let Some((source_root, source_index)) = request_superglobal_keyed_reference_source(source)
+        else {
+            return Ok(false);
+        };
+
+        self.use_native_request_state_reference_helpers();
+        let source_key = self.materialize_request_superglobal_key(source_index, failure_cleanup)?;
+        let source_key_cleanup = c_cleanup_sequence(&source_key.cleanup_after_use);
+        let request_state = self.ensure_native_request_state_handle();
+        let source_bag_bytes = self.emit_request_superglobal_bag_static_bytes(source_root);
+        let source_result = self.next_native_name("request_keyed_alias_source");
+        self.body.push(format!(
+            "phpc_NativeRequestStateReferenceResult {source_result} = phpc_native_request_state_superglobal_keyed_reference_operation({request_state}, {source_bag_bytes}, {}, {source_key}.buffer.ptr, {source_key}.buffer.len, {source_key}.status);",
+            source_root.len(),
+            source_key = source_key.result
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_reference_result_report_diagnostic({source_result});"
+        ));
+        let source_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_reference_result_free({source_result}); {source_key_cleanup}{failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({source_result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK || {source_result}.reference.ptr == NULL) {{ {source_error_exit} }}"
+        ));
+        self.body.extend(source_key.cleanup_after_use);
+
+        let target_failure_cleanup = format!(
+            "phpc_native_request_state_reference_result_free({source_result}); {failure_cleanup}"
+        );
+        let target_key =
+            self.materialize_request_superglobal_key(target_index, &target_failure_cleanup)?;
+        let target_key_cleanup = c_cleanup_sequence(&target_key.cleanup_after_use);
+        let target_bag_bytes = self.emit_request_superglobal_bag_static_bytes(target_root);
+        let bind_result = self.next_native_name("request_keyed_alias_bind");
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {bind_result} = phpc_native_request_state_superglobal_keyed_reference_bind_operation({request_state}, {target_bag_bytes}, {}, {target_key}.buffer.ptr, {target_key}.buffer.len, {target_key}.status, {source_result}.reference);",
+            target_root.len(),
+            target_key = target_key.result
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({bind_result});"
+        ));
+        let bind_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({bind_result}); {target_key_cleanup}phpc_native_request_state_reference_result_free({source_result}); {failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({bind_result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {bind_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_free({bind_result});"
+        ));
+        self.body.extend(target_key.cleanup_after_use);
+        self.body.push(format!(
+            "phpc_native_request_state_reference_result_free({source_result});"
+        ));
+        Ok(true)
+    }
+
     fn emit_request_superglobal_keyed_reference_source_assignment(
         &mut self,
         target: &AssignTarget,
@@ -10216,6 +10285,12 @@ impl CGenerator {
 
                 if self.emit_request_superglobal_root_reference_source_assignment(
                     target, source, *span, "",
+                )? {
+                    return Ok(());
+                }
+
+                if self.emit_request_superglobal_keyed_to_keyed_reference_assignment(
+                    target, source, "",
                 )? {
                     return Ok(());
                 }
