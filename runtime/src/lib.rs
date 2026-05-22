@@ -1137,6 +1137,10 @@ impl NativeValueHandle {
     unsafe fn as_ref(&self) -> Option<&Value> {
         unsafe { self.ptr.as_ref() }
     }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut Value> {
+        unsafe { self.ptr.as_mut() }
+    }
 }
 
 impl NativeDiagnosticHandle {
@@ -5720,6 +5724,88 @@ pub unsafe extern "C" fn phpc_native_value_offset_path_append_with_diagnostic(
     }
 }
 
+/// # Safety
+///
+/// `subject` and every value in `offsets` must be null or value handles
+/// previously returned by the runtime ABI and not yet freed. When
+/// `offsets_len` is nonzero, `offsets` must point to `offsets_len` readable
+/// `NativeValueHandle` values. `diagnostic` may be null; when non-null, it must
+/// point to writable storage for one `NativeDiagnosticHandle`. On success the
+/// root array value inside `subject` is mutated in place so callers can write
+/// the same value handle back into a symbol/request slot and preserve the
+/// promoted nested reference cell.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_array_reference_for_path_with_diagnostic(
+    mut subject: NativeValueHandle,
+    offsets: *const NativeValueHandle,
+    offsets_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let keys = match unsafe {
+        native_value_offset_key_path_from_handles(
+            offsets,
+            offsets_len,
+            "native value array reference path",
+        )
+    } {
+        Ok(keys) => keys,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            return NativeReferenceHandle::null();
+        }
+    };
+    if keys.is_empty() {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::invalid_array_access(
+                    "native value array reference path failed: offset path requires at least one key",
+                )
+                .message(),
+            )
+        };
+        return NativeReferenceHandle::null();
+    }
+
+    let Some(subject) = (unsafe { subject.as_mut() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::invalid_array_access(
+                    "native value array reference path failed: subject handle is null",
+                )
+                .message(),
+            )
+        };
+        return NativeReferenceHandle::null();
+    };
+
+    let Value::Array(array) = subject else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                native_value_offset_path_subject_error(
+                    "reference",
+                    "native value array reference path",
+                    subject,
+                )
+                .message(),
+            )
+        };
+        return NativeReferenceHandle::null();
+    };
+
+    match array.reference_path(&keys) {
+        Ok(reference) => NativeReferenceHandle::from_cell(reference),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeReferenceHandle::null()
+        }
+    }
+}
+
 unsafe fn native_value_string_offset_operation_value(
     subject: NativeValueHandle,
     offset: NativeValueHandle,
@@ -9924,6 +10010,39 @@ impl PhpArray {
         let reference = child.promote_path_to_reference_cell(rest)?;
         slot.set_value(Value::Array(child));
         Some(reference)
+    }
+
+    pub fn reference_path(&mut self, keys: &[ArrayKey]) -> RuntimeResult<PhpReferenceCell> {
+        let Some((key, rest)) = keys.split_first() else {
+            return Err(RuntimeError::invalid_array_key(
+                "array reference paths require at least one key",
+            ));
+        };
+
+        if rest.is_empty() {
+            if self.get_slot(key.clone()).is_none() {
+                self.insert(key.clone(), Value::Null);
+            }
+            return self
+                .get_slot_mut(key.clone())
+                .map(ArraySlot::promote_to_reference_cell)
+                .ok_or_else(|| RuntimeError::invalid_array_key("array reference leaf is missing"));
+        }
+
+        let mut child = match self.get_cloned(key.clone()) {
+            Some(Value::Array(child)) => child,
+            Some(Value::Null) | Some(Value::Bool(false)) | None => Self::new(),
+            Some(other) => {
+                return Err(RuntimeError::invalid_array_access(format!(
+                    "cannot write offset on {}",
+                    other.type_name()
+                )));
+            }
+        };
+
+        let reference = child.reference_path(rest)?;
+        self.insert(key.clone(), Value::Array(child));
+        Ok(reference)
     }
 
     pub fn write_existing_path(&mut self, keys: &[ArrayKey], value: Value) -> bool {
@@ -23902,6 +24021,265 @@ mod tests {
             .contains("string subjects pending mutable string-offset path append"));
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(failed_string) };
+    }
+
+    #[test]
+    fn native_value_array_reference_path_promotes_nested_cells_across_storage_roots() {
+        fn string_key(name: &str) -> NativeValueHandle {
+            NativeValueHandle::from_value(Value::String(name.to_string()))
+        }
+
+        fn string_value(value: &str) -> NativeValueHandle {
+            NativeValueHandle::from_value(Value::String(value.to_string()))
+        }
+
+        fn offset_read(subject: NativeValueHandle, offset: &str) -> NativeValueHandle {
+            let offset = string_key(offset);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_offset_operation_with_diagnostic(
+                    subject,
+                    offset,
+                    NativeStringOffsetOperation::Read as u8,
+                    &mut diagnostic,
+                )
+            };
+            assert!(
+                diagnostic.is_null(),
+                "unexpected offset diagnostic: {}",
+                native_diagnostic_message_for_test(diagnostic)
+            );
+            unsafe { phpc_native_value_free(offset) };
+            result
+        }
+
+        fn assert_nested_echo(
+            subject: NativeValueHandle,
+            first: &str,
+            second: &str,
+            expected: &[u8],
+        ) {
+            let nested = offset_read(subject, first);
+            let leaf = offset_read(nested, second);
+            assert_eq!(native_value_echo_bytes_for_test(leaf), expected);
+            unsafe { phpc_native_value_free(leaf) };
+            unsafe { phpc_native_value_free(nested) };
+        }
+
+        let mid_key = string_key("mid");
+        let leaf_key = string_key("leaf");
+        let path = [mid_key, leaf_key];
+
+        let direct = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let direct_reference = unsafe {
+            phpc_native_value_array_reference_for_path_with_diagnostic(
+                direct,
+                path.as_ptr(),
+                path.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!phpc_native_reference_is_null(direct_reference));
+
+        let direct_first = string_value("direct-first");
+        assert!(unsafe { phpc_native_reference_set_value(direct_reference, direct_first) });
+        assert_nested_echo(direct, "mid", "leaf", b"direct-first");
+        let direct_second = string_value("direct-second");
+        assert!(unsafe { phpc_native_reference_set_value(direct_reference, direct_second) });
+        assert_nested_echo(direct, "mid", "leaf", b"direct-second");
+
+        let mut false_parent_array = PhpArray::new();
+        false_parent_array.insert("false_parent", Value::Bool(false));
+        let false_parent = NativeValueHandle::from_value(Value::Array(false_parent_array));
+        let false_key = string_key("false_parent");
+        let false_path = [false_key, leaf_key];
+        let false_reference = unsafe {
+            phpc_native_value_array_reference_for_path_with_diagnostic(
+                false_parent,
+                false_path.as_ptr(),
+                false_path.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!phpc_native_reference_is_null(false_reference));
+        let false_value = string_value("false-parent");
+        assert!(unsafe { phpc_native_reference_set_value(false_reference, false_value) });
+        assert_nested_echo(false_parent, "false_parent", "leaf", b"false-parent");
+
+        let symbols = phpc_native_symbol_table_new();
+        let symbol_name = b"root_array";
+        let symbol_seed = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        assert!(unsafe {
+            phpc_native_symbol_table_write(
+                symbols,
+                symbol_name.as_ptr(),
+                symbol_name.len(),
+                symbol_seed,
+            )
+        });
+        let symbol_value = unsafe {
+            phpc_native_symbol_table_read(symbols, symbol_name.as_ptr(), symbol_name.len())
+        };
+        let symbol_reference = unsafe {
+            phpc_native_value_array_reference_for_path_with_diagnostic(
+                symbol_value,
+                path.as_ptr(),
+                path.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let symbol_first = string_value("symbol-first");
+        assert!(unsafe { phpc_native_reference_set_value(symbol_reference, symbol_first) });
+        assert!(unsafe {
+            phpc_native_symbol_table_write(
+                symbols,
+                symbol_name.as_ptr(),
+                symbol_name.len(),
+                symbol_value,
+            )
+        });
+        let symbol_read = unsafe {
+            phpc_native_symbol_table_read(symbols, symbol_name.as_ptr(), symbol_name.len())
+        };
+        assert_nested_echo(symbol_read, "mid", "leaf", b"symbol-first");
+        unsafe { phpc_native_value_free(symbol_read) };
+        let symbol_second = string_value("symbol-second");
+        assert!(unsafe { phpc_native_reference_set_value(symbol_reference, symbol_second) });
+        let symbol_read = unsafe {
+            phpc_native_symbol_table_read(symbols, symbol_name.as_ptr(), symbol_name.len())
+        };
+        assert_nested_echo(symbol_read, "mid", "leaf", b"symbol-second");
+        unsafe { phpc_native_value_free(symbol_read) };
+
+        let request = phpc_native_request_state_empty();
+        let request_bag = b"_GET";
+        let request_slot = b"slot";
+        let request_seed = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        assert!(unsafe {
+            phpc_native_request_state_insert_superglobal_value(
+                request,
+                request_bag.as_ptr(),
+                request_bag.len(),
+                request_slot.as_ptr(),
+                request_slot.len(),
+                request_seed,
+            )
+        });
+        let request_value = unsafe {
+            phpc_native_request_state_superglobal_value(
+                request,
+                request_bag.as_ptr(),
+                request_bag.len(),
+                request_slot.as_ptr(),
+                request_slot.len(),
+            )
+        };
+        let request_reference = unsafe {
+            phpc_native_value_array_reference_for_path_with_diagnostic(
+                request_value,
+                path.as_ptr(),
+                path.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let request_first = string_value("request-first");
+        assert!(unsafe { phpc_native_reference_set_value(request_reference, request_first) });
+        assert!(unsafe {
+            phpc_native_request_state_insert_superglobal_value(
+                request,
+                request_bag.as_ptr(),
+                request_bag.len(),
+                request_slot.as_ptr(),
+                request_slot.len(),
+                request_value,
+            )
+        });
+        let request_read = unsafe {
+            phpc_native_request_state_superglobal_value(
+                request,
+                request_bag.as_ptr(),
+                request_bag.len(),
+                request_slot.as_ptr(),
+                request_slot.len(),
+            )
+        };
+        assert_nested_echo(request_read, "mid", "leaf", b"request-first");
+        unsafe { phpc_native_value_free(request_read) };
+        let request_second = string_value("request-second");
+        assert!(unsafe { phpc_native_reference_set_value(request_reference, request_second) });
+        let request_read = unsafe {
+            phpc_native_request_state_superglobal_value(
+                request,
+                request_bag.as_ptr(),
+                request_bag.len(),
+                request_slot.as_ptr(),
+                request_slot.len(),
+            )
+        };
+        assert_nested_echo(request_read, "mid", "leaf", b"request-second");
+        unsafe { phpc_native_value_free(request_read) };
+
+        let scalar_parent = NativeValueHandle::from_value(Value::Int(7));
+        let scalar_reference = unsafe {
+            phpc_native_value_array_reference_for_path_with_diagnostic(
+                scalar_parent,
+                path.as_ptr(),
+                path.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(phpc_native_reference_is_null(scalar_reference));
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: cannot use a scalar value as an array"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let invalid_key = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let invalid_path = [invalid_key, leaf_key];
+        let invalid_reference = unsafe {
+            phpc_native_value_array_reference_for_path_with_diagnostic(
+                direct,
+                invalid_path.as_ptr(),
+                invalid_path.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(phpc_native_reference_is_null(invalid_reference));
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("array keys are not supported")
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(invalid_key) };
+        unsafe { phpc_native_value_free(scalar_parent) };
+        unsafe { phpc_native_value_free(request_second) };
+        unsafe { phpc_native_value_free(request_first) };
+        unsafe { phpc_native_value_free(request_value) };
+        unsafe { phpc_native_value_free(request_seed) };
+        unsafe { phpc_native_reference_free(request_reference) };
+        unsafe { phpc_native_request_state_free(request) };
+        unsafe { phpc_native_value_free(symbol_second) };
+        unsafe { phpc_native_value_free(symbol_first) };
+        unsafe { phpc_native_value_free(symbol_value) };
+        unsafe { phpc_native_value_free(symbol_seed) };
+        unsafe { phpc_native_reference_free(symbol_reference) };
+        unsafe { phpc_native_symbol_table_free(symbols) };
+        unsafe { phpc_native_value_free(false_value) };
+        unsafe { phpc_native_reference_free(false_reference) };
+        unsafe { phpc_native_value_free(false_key) };
+        unsafe { phpc_native_value_free(false_parent) };
+        unsafe { phpc_native_value_free(direct_second) };
+        unsafe { phpc_native_value_free(direct_first) };
+        unsafe { phpc_native_reference_free(direct_reference) };
+        unsafe { phpc_native_value_free(direct) };
+        unsafe { phpc_native_value_free(leaf_key) };
+        unsafe { phpc_native_value_free(mid_key) };
     }
 
     #[test]
