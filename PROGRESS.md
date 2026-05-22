@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 18:55 CEST
-Evaluation marker: `20260522T165500Z`
+Updated: 2026-05-22 18:51 CEST
+Evaluation marker: `20260522T165100Z`
 Primary semantic HEAD: `aa94e4bd codegen: route GLOBALS request aliases through state ABI`
 Current pushed semantic baseline: `aa94e4bd codegen: route GLOBALS request aliases through state ABI`
 
