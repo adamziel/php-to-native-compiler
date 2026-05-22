@@ -174,6 +174,7 @@ pub enum NativeValueOffsetMutationOperation {
 }
 
 const NATIVE_ARRAY_PATH_KEY: u8 = 0;
+const NATIVE_ARRAY_PATH_APPEND: u8 = 1;
 const NATIVE_ARRAY_LVALUE_OK: u8 = 0;
 const NATIVE_ARRAY_LVALUE_INVALID_ROOT: u8 = 2;
 const NATIVE_ARRAY_LVALUE_INVALID_KEY: u8 = 3;
@@ -181,6 +182,12 @@ const NATIVE_ARRAY_LVALUE_UNSUPPORTED: u8 = 6;
 const NATIVE_ARRAY_LVALUE_OWNER_ARRAY: u8 = 0;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE: u8 = 0;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET: u8 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NativeArrayLvaluePathElement {
+    Key(ArrayKey),
+    Append,
+}
 
 pub const PHP_STRING_OFFSET_TRUNCATED_REPLACEMENT_WARNING: &str =
     "Only the first byte will be assigned to the string offset";
@@ -4553,8 +4560,8 @@ pub extern "C" fn phpc_native_array_lvalue_owner_array(
 /// The owner and each key handle inside `segments` must be null or handles
 /// previously returned by the runtime ABI and not yet freed. `segments` must be
 /// null when `segment_count` is zero, or point to `segment_count` initialized
-/// path segments. Write and unset value-operation families are executable
-/// through this ABI slice; other families remain centralized blockers.
+/// path segments. Key and append segments are executable for writes; unset
+/// remains key-only. Other families remain centralized blockers.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
     mut owner: NativeArrayLvalueOwner,
@@ -4589,24 +4596,29 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
             "array lvalue root is not a live native array handle",
         );
     };
-    let keys = match unsafe { native_array_lvalue_key_path_from_segments(segments, segment_count) }
-    {
-        Ok(keys) => keys,
-        Err(result) => return result,
-    };
-
     match family {
         NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE => {
+            let path =
+                match unsafe { native_array_lvalue_path_from_segments(segments, segment_count) } {
+                    Ok(path) => path,
+                    Err(result) => return result,
+                };
             let value = match unsafe { native_array_lvalue_clone_write_value(value) } {
                 Ok(value) => value,
                 Err(result) => return result,
             };
-            match native_array_write_key_path(&mut array.value, &keys, value) {
+            match native_array_write_lvalue_path(&mut array.value, &path, value) {
                 Ok(()) => NativeArrayLvalueResult::ok(),
                 Err(result) => result,
             }
         }
         NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET => {
+            let keys = match unsafe {
+                native_array_lvalue_key_path_from_segments(segments, segment_count)
+            } {
+                Ok(keys) => keys,
+                Err(result) => return result,
+            };
             native_array_unset_key_path(&mut array.value, &keys);
             NativeArrayLvalueResult::ok()
         }
@@ -4624,6 +4636,22 @@ unsafe fn native_array_lvalue_key_path_from_segments(
     segments: *const NativeArrayPathSegment,
     segment_count: usize,
 ) -> Result<Vec<ArrayKey>, NativeArrayLvalueResult> {
+    let path = unsafe { native_array_lvalue_path_from_segments(segments, segment_count) }?;
+    path.into_iter()
+        .map(|segment| match segment {
+            NativeArrayLvaluePathElement::Key(key) => Ok(key),
+            NativeArrayLvaluePathElement::Append => Err(NativeArrayLvalueResult::diagnostic(
+                NATIVE_ARRAY_LVALUE_INVALID_KEY,
+                "array lvalue unset path cannot contain an append segment",
+            )),
+        })
+        .collect()
+}
+
+unsafe fn native_array_lvalue_path_from_segments(
+    segments: *const NativeArrayPathSegment,
+    segment_count: usize,
+) -> Result<Vec<NativeArrayLvaluePathElement>, NativeArrayLvalueResult> {
     if segment_count == 0 {
         return Err(NativeArrayLvalueResult::diagnostic(
             NATIVE_ARRAY_LVALUE_INVALID_KEY,
@@ -4638,29 +4666,37 @@ unsafe fn native_array_lvalue_key_path_from_segments(
     }
 
     let segments = unsafe { std::slice::from_raw_parts(segments, segment_count) };
-    let mut keys = Vec::with_capacity(segment_count);
+    let mut path = Vec::with_capacity(segment_count);
     for segment in segments {
-        if segment.tag != NATIVE_ARRAY_PATH_KEY {
-            return Err(NativeArrayLvalueResult::diagnostic(
-                NATIVE_ARRAY_LVALUE_INVALID_KEY,
-                format!(
-                    "array lvalue path segment tag {} is not supported",
-                    segment.tag
-                ),
-            ));
+        match segment.tag {
+            NATIVE_ARRAY_PATH_KEY => {
+                let Some(value) = (unsafe { segment.key.as_ref() }) else {
+                    return Err(NativeArrayLvalueResult::diagnostic(
+                        NATIVE_ARRAY_LVALUE_INVALID_KEY,
+                        "array lvalue key segment has a null value handle",
+                    ));
+                };
+                let key = native_array_key_from_runtime_value(value).map_err(|error| {
+                    NativeArrayLvalueResult::diagnostic(
+                        NATIVE_ARRAY_LVALUE_INVALID_KEY,
+                        error.message(),
+                    )
+                })?;
+                path.push(NativeArrayLvaluePathElement::Key(key));
+            }
+            NATIVE_ARRAY_PATH_APPEND => path.push(NativeArrayLvaluePathElement::Append),
+            _ => {
+                return Err(NativeArrayLvalueResult::diagnostic(
+                    NATIVE_ARRAY_LVALUE_INVALID_KEY,
+                    format!(
+                        "array lvalue path segment tag {} is not supported",
+                        segment.tag
+                    ),
+                ))
+            }
         }
-        let Some(value) = (unsafe { segment.key.as_ref() }) else {
-            return Err(NativeArrayLvalueResult::diagnostic(
-                NATIVE_ARRAY_LVALUE_INVALID_KEY,
-                "array lvalue key segment has a null value handle",
-            ));
-        };
-        let key = native_array_key_from_runtime_value(value).map_err(|error| {
-            NativeArrayLvalueResult::diagnostic(NATIVE_ARRAY_LVALUE_INVALID_KEY, error.message())
-        })?;
-        keys.push(key);
     }
-    Ok(keys)
+    Ok(path)
 }
 
 unsafe fn native_array_lvalue_clone_write_value(
@@ -4676,41 +4712,67 @@ unsafe fn native_array_lvalue_clone_write_value(
     Ok(value.clone())
 }
 
-fn native_array_write_key_path(
+fn native_array_write_lvalue_path(
     array: &mut PhpArray,
-    keys: &[ArrayKey],
+    path: &[NativeArrayLvaluePathElement],
     value: Value,
 ) -> Result<(), NativeArrayLvalueResult> {
-    let Some((key, rest)) = keys.split_first() else {
+    let Some((segment, rest)) = path.split_first() else {
         return Err(NativeArrayLvalueResult::diagnostic(
             NATIVE_ARRAY_LVALUE_INVALID_KEY,
-            "array lvalue write path must contain at least one key segment",
+            "array lvalue write path must contain at least one path segment",
         ));
     };
 
-    if rest.is_empty() {
-        array.insert(key.clone(), value);
-        return Ok(());
-    }
+    match segment {
+        NativeArrayLvaluePathElement::Key(key) => {
+            if rest.is_empty() {
+                array.insert(key.clone(), value);
+                return Ok(());
+            }
 
-    let mut child = match array.get_cloned(key.clone()) {
-        Some(Value::Array(child)) => child,
-        Some(Value::Null) | None => PhpArray::new(),
-        Some(other) => {
-            return Err(NativeArrayLvalueResult::diagnostic(
-                NATIVE_ARRAY_LVALUE_INVALID_ROOT,
-                format!(
-                    "array lvalue nested write failed: {} intermediate at key {} requires the shared scalar-to-array warning/recovery boundary",
-                    other.type_name(),
-                    key.diagnostic_key()
-                ),
-            ));
+            let mut child = match array.get_cloned(key.clone()) {
+                Some(Value::Array(child)) => child,
+                Some(Value::Null) | None => PhpArray::new(),
+                Some(other) => {
+                    return Err(NativeArrayLvalueResult::diagnostic(
+                        NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+                        format!(
+                            "array lvalue nested write failed: {} intermediate at key {} requires the shared scalar-to-array warning/recovery boundary",
+                            other.type_name(),
+                            key.diagnostic_key()
+                        ),
+                    ));
+                }
+            };
+
+            native_array_write_lvalue_path(&mut child, rest, value)?;
+            array.insert(key.clone(), Value::Array(child));
+            Ok(())
         }
-    };
+        NativeArrayLvaluePathElement::Append => {
+            if rest.is_empty() {
+                return array.append(value).map(|_| ()).map_err(|error| {
+                    NativeArrayLvalueResult::diagnostic(
+                        NATIVE_ARRAY_LVALUE_INVALID_KEY,
+                        error.message(),
+                    )
+                });
+            }
 
-    native_array_write_key_path(&mut child, rest, value)?;
-    array.insert(key.clone(), Value::Array(child));
-    Ok(())
+            let mut child = PhpArray::new();
+            native_array_write_lvalue_path(&mut child, rest, value)?;
+            array
+                .append(Value::Array(child))
+                .map(|_| ())
+                .map_err(|error| {
+                    NativeArrayLvalueResult::diagnostic(
+                        NATIVE_ARRAY_LVALUE_INVALID_KEY,
+                        error.message(),
+                    )
+                })
+        }
+    }
 }
 
 fn native_array_unset_key_path(array: &mut PhpArray, keys: &[ArrayKey]) -> bool {
@@ -19311,6 +19373,153 @@ mod tests {
         unsafe { phpc_native_value_free(inner_key) };
         unsafe { phpc_native_value_free(outer_key) };
         unsafe { phpc_native_value_free(direct_key) };
+        unsafe { phpc_native_array_free(handle) };
+    }
+
+    #[test]
+    fn native_array_lvalue_owner_write_operation_materializes_nested_append_paths() {
+        let mut existing_child = PhpArray::new();
+        existing_child.insert("stay", Value::String("keep".to_string()));
+
+        let mut root = PhpArray::new();
+        root.insert("outer", Value::Array(existing_child));
+        root.insert("root", Value::String("R".to_string()));
+
+        let handle = NativeArrayHandle::from_array(root);
+        let owner = phpc_native_array_lvalue_owner_array(handle);
+        let outer_key = NativeValueHandle::from_value(Value::String("outer".to_string()));
+        let created_key = NativeValueHandle::from_value(Value::String("created".to_string()));
+        let leaf_key = NativeValueHandle::from_value(Value::String("leaf".to_string()));
+        let existing_append_value = NativeValueHandle::from_value(Value::String("A".to_string()));
+        let missing_append_value = NativeValueHandle::from_value(Value::String("B".to_string()));
+        let suffix_append_value = NativeValueHandle::from_value(Value::String("C".to_string()));
+
+        let existing_append_path = [
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: outer_key,
+            },
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_APPEND,
+                key: NativeValueHandle::null(),
+            },
+        ];
+        let existing_append = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                existing_append_path.as_ptr(),
+                existing_append_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE,
+                0,
+                0,
+                0,
+                existing_append_value,
+            )
+        };
+        assert_eq!(existing_append.tag, NATIVE_ARRAY_LVALUE_OK);
+        unsafe { phpc_native_array_lvalue_result_free(existing_append) };
+
+        let missing_append_path = [
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: created_key,
+            },
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_APPEND,
+                key: NativeValueHandle::null(),
+            },
+        ];
+        let missing_append = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                missing_append_path.as_ptr(),
+                missing_append_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE,
+                0,
+                0,
+                0,
+                missing_append_value,
+            )
+        };
+        assert_eq!(missing_append.tag, NATIVE_ARRAY_LVALUE_OK);
+        unsafe { phpc_native_array_lvalue_result_free(missing_append) };
+
+        let suffix_append_path = [
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_APPEND,
+                key: NativeValueHandle::null(),
+            },
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: leaf_key,
+            },
+        ];
+        let suffix_append = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                suffix_append_path.as_ptr(),
+                suffix_append_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE,
+                0,
+                0,
+                0,
+                suffix_append_value,
+            )
+        };
+        assert_eq!(suffix_append.tag, NATIVE_ARRAY_LVALUE_OK);
+        unsafe { phpc_native_array_lvalue_result_free(suffix_append) };
+
+        let array = unsafe { handle.as_ref() }.expect("array handle remains live");
+        let outer = array.value.get("outer").expect("outer array remains");
+        let Value::Array(outer) = outer else {
+            panic!("outer slot should remain an array");
+        };
+        assert_eq!(outer.get("stay"), Some(&Value::String("keep".to_string())));
+        assert_eq!(
+            outer.get(0),
+            Some(&Value::String("A".to_string())),
+            "append below an existing keyed child should use the child's append cursor"
+        );
+        let created = array
+            .value
+            .get("created")
+            .expect("missing parent append path should autovivify");
+        let Value::Array(created) = created else {
+            panic!("created slot should be an array");
+        };
+        assert_eq!(created.get(0), Some(&Value::String("B".to_string())));
+        let appended = array
+            .value
+            .get(0)
+            .expect("root append with suffix should append a child array");
+        let Value::Array(appended) = appended else {
+            panic!("root append slot should be an array");
+        };
+        assert_eq!(appended.get("leaf"), Some(&Value::String("C".to_string())));
+
+        let unset_append = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                existing_append_path.as_ptr(),
+                existing_append_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET,
+                0,
+                0,
+                0,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(unset_append.tag, NATIVE_ARRAY_LVALUE_INVALID_KEY);
+        assert!(native_diagnostic_message_for_test(unset_append.diagnostic)
+            .contains("unset path cannot contain an append segment"));
+        unsafe { phpc_native_array_lvalue_result_free(unset_append) };
+
+        unsafe { phpc_native_value_free(suffix_append_value) };
+        unsafe { phpc_native_value_free(missing_append_value) };
+        unsafe { phpc_native_value_free(existing_append_value) };
+        unsafe { phpc_native_value_free(leaf_key) };
+        unsafe { phpc_native_value_free(created_key) };
+        unsafe { phpc_native_value_free(outer_key) };
         unsafe { phpc_native_array_free(handle) };
     }
 

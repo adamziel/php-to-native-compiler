@@ -153,6 +153,7 @@ const ASSEMBLY_OUTPUT_BUFFER_REJECTION: &str = "assembly output-buffer lowering 
 const NATIVE_VALUE_OFFSET_MUTATION_WRITE: u8 = 0;
 const NATIVE_VALUE_OFFSET_MUTATION_APPEND: u8 = 1;
 const NATIVE_ARRAY_PATH_KEY_TAG: u8 = 0;
+const NATIVE_ARRAY_PATH_APPEND_TAG: u8 = 1;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE_TAG: u8 = 0;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET_TAG: u8 = 1;
 
@@ -6947,6 +6948,9 @@ impl CGenerator {
                         "#define PHPC_NATIVE_ARRAY_PATH_KEY {NATIVE_ARRAY_PATH_KEY_TAG}\n"
                     ));
                     output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_PATH_APPEND {NATIVE_ARRAY_PATH_APPEND_TAG}\n"
+                    ));
+                    output.push_str(&format!(
                         "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE {NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE_TAG}\n"
                     ));
                     output.push_str(&format!(
@@ -8001,12 +8005,41 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<CNativeArrayLvaluePath> {
-        if indices.is_empty() {
+        self.materialize_native_array_lvalue_path(indices, false, &[], span, failure_cleanup)
+    }
+
+    fn materialize_native_array_lvalue_append_path(
+        &mut self,
+        prefix_indices: &[&Expr],
+        suffix_indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeArrayLvaluePath> {
+        self.materialize_native_array_lvalue_path(
+            prefix_indices,
+            true,
+            suffix_indices,
+            span,
+            failure_cleanup,
+        )
+    }
+
+    fn materialize_native_array_lvalue_path(
+        &mut self,
+        prefix_indices: &[&Expr],
+        include_append: bool,
+        suffix_indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeArrayLvaluePath> {
+        if prefix_indices.is_empty() && !include_append && suffix_indices.is_empty() {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
         }
 
-        let mut keys = Vec::new();
-        for index in indices {
+        let mut keys: Vec<CNativeValueMaterialization> = Vec::new();
+        let mut initializers = Vec::new();
+
+        for index in prefix_indices {
             let prior_cleanup = c_cleanup_sequence(
                 &keys
                     .iter()
@@ -8017,23 +8050,43 @@ impl CGenerator {
                 index,
                 &format!("{prior_cleanup}{failure_cleanup}"),
             )?;
+            initializers.push(format!("{{ PHPC_NATIVE_ARRAY_PATH_KEY, {} }}", key.handle));
+            keys.push(key);
+        }
+
+        if include_append {
+            initializers
+                .push("{ PHPC_NATIVE_ARRAY_PATH_APPEND, (phpc_NativeValueHandle){0} }".to_string());
+        }
+
+        for index in suffix_indices {
+            let prior_cleanup = c_cleanup_sequence(
+                &keys
+                    .iter()
+                    .flat_map(|key| key.cleanup_after_use.clone())
+                    .collect::<Vec<_>>(),
+            );
+            let key = self.materialize_native_value_result_operand(
+                index,
+                &format!("{prior_cleanup}{failure_cleanup}"),
+            )?;
+            initializers.push(format!("{{ PHPC_NATIVE_ARRAY_PATH_KEY, {} }}", key.handle));
             keys.push(key);
         }
 
         let path = self.next_native_name("array_lvalue_path");
         self.body.push(format!(
             "phpc_NativeArrayPathSegment {path}[{}] = {{",
-            keys.len()
+            initializers.len()
         ));
-        for key in &keys {
-            self.body
-                .push(format!("{{ PHPC_NATIVE_ARRAY_PATH_KEY, {} }},", key.handle));
+        for initializer in initializers {
+            self.body.push(format!("{initializer},"));
         }
         self.body.push("};".to_string());
 
         Ok(CNativeArrayLvaluePath {
             path,
-            len: keys.len(),
+            len: prefix_indices.len() + usize::from(include_append) + suffix_indices.len(),
             cleanup_after_use: keys
                 .into_iter()
                 .flat_map(|key| key.cleanup_after_use)
@@ -8086,6 +8139,49 @@ impl CGenerator {
             self.materialize_native_value_result_operand(replacement_expr, &path_cleanup)?;
         let owner = self.next_native_name("array_lvalue_owner");
         let result = self.next_native_name("array_lvalue_write_result");
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
+            path.path, path.len, replacement.handle
+        ));
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&replacement.cleanup_after_use),
+            path_cleanup
+        );
+        self.emit_native_array_lvalue_result_check(&result, &cleanup);
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.body.extend(replacement.cleanup_after_use);
+        self.body.extend(path.cleanup_after_use);
+        Ok(())
+    }
+
+    fn emit_array_lvalue_append_write_for_handle(
+        &mut self,
+        handle: &str,
+        prefix_indices: &[&Expr],
+        suffix_indices: &[&Expr],
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let path = self.materialize_native_array_lvalue_append_path(
+            prefix_indices,
+            suffix_indices,
+            span,
+            "",
+        )?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let replacement =
+            self.materialize_native_value_result_operand(replacement_expr, &path_cleanup)?;
+        let owner = self.next_native_name("array_lvalue_owner");
+        let result = self.next_native_name("array_lvalue_append_write_result");
         self.body.push(format!(
             "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
         ));
@@ -9181,7 +9277,25 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            AssignTarget::NestedArrayAppend { span, .. } => {
+            AssignTarget::NestedArrayAppend {
+                name,
+                indices,
+                suffix_indices,
+                span,
+            } => {
+                if self.uses_native_string_helpers {
+                    if let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() {
+                        let prefix_indices = indices.iter().collect::<Vec<_>>();
+                        let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
+                        return self.emit_array_lvalue_append_write_for_handle(
+                            &handle,
+                            &prefix_indices,
+                            &suffix_indices,
+                            expr,
+                            *span,
+                        );
+                    }
+                }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             AssignTarget::ObjectPropertyArrayIndex { span, .. }
