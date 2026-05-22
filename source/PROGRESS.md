@@ -1,45 +1,46 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 03:36 CEST
-Evaluation marker: 20260522T013047Z-plus-ff938b0a
+Updated: 2026-05-22 03:47 CEST
+Evaluation marker: 20260522T013047Z-plus-ffb158c4
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local work is candidate material until selected, gated, committed, and pushed.
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **42%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **43%**
 
 ```
-Generalized runtime/ABI foundations      [#################---] 86%
-Compiler/backend consumers               [#################---] 87%
-Executable generalized PHP semantics     [##########----------] 52%
-Arrays, references, COW, lvalues         [#####---------------] 24%
+Generalized runtime/ABI foundations      [#################---] 87%
+Compiler/backend consumers               [##################--] 88%
+Executable generalized PHP semantics     [###########---------] 53%
+Arrays, references, COW, lvalues         [#####---------------] 26%
 Objects, properties, methods             [##------------------] 11%
 Diagnostics/control-flow composition     [#####---------------] 25%
-Broad integrated verification            [########------------] 42%
+Broad integrated verification            [#########-----------] 43%
 ```
 
 ## Current Primary State
 
-- Current committed primary HEAD at progress update: `ff938b0a native: route byte string compares through string-int ABI`; `origin/master` matches for the semantic code push.
-- Latest committed semantic baseline: `ff938b0a native: route byte string compares through string-int ABI`.
-- Latest semantic batch routes generated-native C `strcmp()`, `strncmp()`, and `strncasecmp()` through the shared string-int runtime ABI, reusing byte-preserving value-to-string conversion, diagnostics, length handling, and generated-C linked execution. It removed backend-local rejection for these lowerable byte string compare builtins without claiming full PHP string semantics.
-- Previous semantic batch routes generated-native C string-offset reads through `phpc_native_value_string_offset_operation_with_diagnostic(...)`, clones returned one-byte string values through the shared byte-buffer boundary, reports diagnostics through the shared native diagnostic reporter, tracks byte lengths, and frees owned byte buffers on normal/error exits.
+- Current committed primary HEAD at progress update: `ffb158c4 codegen: route offset presence through value ABI`; `origin/master` matches for the semantic code push.
+- Latest committed semantic baseline: `ffb158c4 codegen: route offset presence through value ABI`.
+- Latest semantic batch routes generated-native C array and string offset `isset()` / `empty()` presence through the shared `phpc_native_value_offset_operation_with_diagnostic(...)` runtime ABI, then through the native bool diagnostic boundary, with focused runtime, generated-source, linked-executable, string-offset, package-check, format, and diff gates passing. This is a generalized value-offset consumer for arrays and strings, not object/ArrayAccess/resource offset semantics.
+- Previous semantic batch routes generated-native C `strcmp()`, `strncmp()`, and `strncasecmp()` through the shared string-int runtime ABI, reusing byte-preserving value-to-string conversion, diagnostics, length handling, and generated-C linked execution. It removed backend-local rejection for these lowerable byte string compare builtins without claiming full PHP string semantics.
+- Earlier semantic batch routes generated-native C string-offset reads through `phpc_native_value_string_offset_operation_with_diagnostic(...)`, clones returned one-byte string values through the shared byte-buffer boundary, reports diagnostics through the shared native diagnostic reporter, tracks byte lengths, and frees owned byte buffers on normal/error exits.
 - Earlier batches in this window routed generated-C string-offset assignment through shared write/byte-buffer helpers, kept supported warning-capable writes running after diagnostics, routed string-offset `isset()`/`empty()` probes through shared bool-result paths, and shared owned diagnostic report/free consumption.
-- Explicit remaining blockers for the string-offset family: string-offset unsets/references, nested/append/compound writes, scalar subject warning parity, negative offsets, out-of-range read recovery, invalid-key parity, non-UTF-8 byte string results, array/object/ArrayAccess/resource offset behavior, references/COW mutation, arbitrary dynamic byte-buffer subjects, LLVM parity, and C assembly fallback lowering.
-- Resource note: `/dev/shm` is currently healthy for focused gates at about 19G free, but recent test waves drove it near full. Continue isolated target dirs and low job counts for primary integration.
+- Explicit remaining blockers for the offset family: array and string offset writes beyond the landed string write path, unsets/references, nested/append/compound writes, scalar subject warning parity, negative offsets, out-of-range read recovery, invalid-key parity, non-UTF-8 byte string results, object/ArrayAccess/resource offset behavior, references/COW mutation, arbitrary dynamic byte-buffer subjects, LLVM parity, and C assembly fallback lowering.
+- Resource note: `/dev/shm` is usable but tighter at about 7.9G free. Continue isolated target dirs and low job counts for primary integration.
 
 ## Grand Roadmap Position
 
-The compiler is steadily replacing backend-local decisions and direct scalar/string handling with reusable runtime/ABI contracts and selected generated-C/runtime consumers. Recent primary progress is strongest in generated-C string-offset reads/bool probes/writes, warning-capable write continuation, byte string compare builtins through the string-int ABI, primitive arithmetic conversion, unary string-result execution, comparison relation routing, public operand comparison consumers, recursive-array blocker classification, native object/resource strict-identity relation results, generated-C value output for `echo`/`print`, type predicates, bitwise/shift operations, scalar casts, string byte materialization, array-handle value operands, selected call diagnostics, and focused verification gates.
+The compiler is steadily replacing backend-local decisions and direct scalar/string handling with reusable runtime/ABI contracts and selected generated-C/runtime consumers. Recent primary progress is strongest in generated-C value-offset presence for arrays/strings, generated-C string-offset reads/bool probes/writes, warning-capable write continuation, byte string compare builtins through the string-int ABI, primitive arithmetic conversion, unary string-result execution, comparison relation routing, public operand comparison consumers, recursive-array blocker classification, native object/resource strict-identity relation results, generated-C value output for `echo`/`print`, type predicates, bitwise/shift operations, scalar casts, string byte materialization, array-handle value operands, selected call diagnostics, and focused verification gates.
 
 The product is still far from full generalized PHP. The largest missing regions remain references/COW, executable lvalues, user calls and frames, object/class/property semantics, mutable globals/superglobals, include/require, exceptions/finally, exact diagnostics, and cleanup across real control flow.
 
 ## Done / In Progress / Not Done
 
 - [x] Supervised parallel lanes and a primary integration gate are established.
-- [x] Shared runtime ABI surfaces exist for strings, byte buffers, comparisons, numeric-string classification, array key/value operations, request-state snapshots, selected conversions, selected diagnostics, branch-decision status/abort handling, native value bitwise/shift operations, native value type predicates, runtime string-byte materialization, typed bool extraction, diagnostic report/free, and string-offset read/write/bool results.
-- [x] LLVM/generated-C consumers exist for selected primitive arithmetic, selected unary string-result builtins, selected generated-C string-offset reads/bool probes/writes, selected string-int/distance/path builtins, array key/value operations, array-handle value operands, array append diagnostics, comparison relation results, comparison abort guards, strict array/object identity in selected array-search builtins, native value bitwise/shift operations, scalar value echo/print output, print value-result output, native value type predicates, casts/type-name output, selected filesystem/cache blockers, and centralized call diagnostics.
+- [x] Shared runtime ABI surfaces exist for strings, byte buffers, comparisons, numeric-string classification, array key/value operations, value-offset read/presence operations, request-state snapshots, selected conversions, selected diagnostics, branch-decision status/abort handling, native value bitwise/shift operations, native value type predicates, runtime string-byte materialization, typed bool extraction, diagnostic report/free, and string-offset read/write/bool results.
+- [x] LLVM/generated-C consumers exist for selected primitive arithmetic, selected unary string-result builtins, selected generated-C array/string offset presence, selected generated-C string-offset reads/bool probes/writes, selected string-int/distance/path builtins, array key/value operations, array-handle value operands, array append diagnostics, comparison relation results, comparison abort guards, strict array/object identity in selected array-search builtins, native value bitwise/shift operations, scalar value echo/print output, print value-result output, native value type predicates, casts/type-name output, selected filesystem/cache blockers, and centralized call diagnostics.
 - [x] Reusable array-entry snapshot ABI exists for future foreach/lvalue/reference consumers.
 - [ ] In progress: replace shared blockers with executable semantics one family at a time.
 - [ ] In progress: generalize value/result/source ownership across returns, call args, conditions, branch joins, stdout, discarded temporaries, comparisons, casts, string-byte materialization, bool probes, diagnostics, and cleanup.
@@ -54,17 +55,19 @@ The product is still far from full generalized PHP. The largest missing regions 
 
 | Active item | Primary-integrated | Lane-local candidate maturity | Current read |
 | --- | ---: | ---: | --- |
-| String conversion, truthiness, byte buffers | 74% | 87% | Primary has shared value string-form semantics, generated-C unary string-result execution, generated-C byte string compare builtins through the string-int ABI, generated-C string-offset reads, generated-C string-offset `isset`/`empty` bool probes, generated-C string-offset writes with byte-buffer rematerialization, warning-capable multi-byte replacement truncation, scalar value output, generated-C print output, comparison byte materialization, runtime string-byte materialization, and raw-buffer writes. Lane-local string-offset/lvalue blockers and formatter/string-byte work are broader but not counted until integrated. |
+| String conversion, truthiness, byte buffers | 75% | 87% | Primary has shared value string-form semantics, generated-C unary string-result execution, generated-C byte string compare builtins through the string-int ABI, generated-C value-offset presence for string offsets, generated-C string-offset reads, generated-C string-offset `isset`/`empty` bool probes, generated-C string-offset writes with byte-buffer rematerialization, warning-capable multi-byte replacement truncation, scalar value output, generated-C print output, comparison byte materialization, runtime string-byte materialization, and raw-buffer writes. Lane-local string-offset/lvalue blockers and formatter/string-byte work are broader but not counted until integrated. |
 | Call operation cleanup and ownership | 43% | 68% | Primary routes many call-result contexts, function declaration fallbacks, and backend call diagnostics through common contracts. Lane-local required-lvalue/discarded-result cleanup is broader; real frames, binding, returns, by-ref semantics, and dispatch remain mostly non-executable in primary. |
 | Comparison and conversion semantics | 74% | 83% | Primary has reusable comparison validation, relation-result/result/branch/free/decision/status/abort ABIs, generated-C relation-result consumers, public operand routing, recursive-array blocker classification, string-handle operands, byte string compare builtin consumers, native object/resource strict identity, primitive arithmetic conversion for known operands, scalar casts, bitwise/shift consumers, value-operation output, type predicates, unary string-result output, and string-offset execution slices. Dynamic arithmetic, division/modulo warning parity, executable recursive array comparison, object property comparison, resource loose comparison, reference dereference comparison, and backend parity remain open. |
-| Arrays, lvalues, references, COW | 24% | 84% | Primary has array-key materialization, array value-operation result ABI, array-entry snapshots, array-handle comparisons, append diagnostics, native array handles as owned value operands, cloned-literal cleanup, and selected string-offset probes outside full array semantics. Lane-local value-offset presence, dynamic string-offset lvalue read/probe, foreach/root-aware blockers, and reference/COW owner-cell candidates are much stronger; full executable lvalues/references/COW are not integrated. |
+| Arrays, lvalues, references, COW | 26% | 84% | Primary has array-key materialization, array value-operation result ABI, generated-C array/string offset presence through the value-offset ABI, array-entry snapshots, array-handle comparisons, append diagnostics, native array handles as owned value operands, cloned-literal cleanup, and selected string-offset probes outside full array/lvalue semantics. Lane-local dynamic string-offset lvalue read/probe, foreach/root-aware blockers, and reference/COW owner-cell candidates are much stronger; full executable lvalues/references/COW are not integrated. |
 | Symbols, globals, request state | 24% | 67% | Primary has symbol ABI helpers, request/superglobal snapshot ABI, and selected expression-result boundaries. Lane-local reference/COW-aware symbol cells and request-superglobal backing storage are promising, but primary still lacks real generalized locals, frames, globals, imports, request mutation, and reference assignment lowering. |
 | Objects, properties, methods | 11% | 50% | Primary has native object handle strict-identity relation results and loose-comparison blockers through the shared comparison path. Lane-local object/class/property blockers and operation plans continue improving, but executable object/property/method behavior is still largely absent. |
 | Diagnostics and control-flow cleanup | 25% | 69% | Primary has selected severity/blocker surfaces, diagnostic array append behavior, a shared native diagnostic report consumer, centralized call diagnostics, call-boundary cleanup routing, comparison branch abort handling, string-offset bool diagnostics, and warning-capable string-offset write continuation. Lane-local diagnostic-result and terminating-arm cleanup boundaries are broader, but most loop/switch/goto/finally/exception behavior remains blocker/model work. |
-| Broad composition verification | 42% | 48% | Focused runtime/native-link gates cover the newest byte string compare builtin path, string-offset read path, shared diagnostic report consumer, string-offset warning continuation, string-offset write path, string-offset bool path, unary string-result executable path, comparison relation-result path, value-operation, scalar echo, print output, bitwise, type-predicate, array-value, string-byte, and diagnostic paths. Broad differential PHP composition coverage remains thin. |
+| Broad composition verification | 43% | 49% | Focused runtime/native-link gates cover the newest value-offset array/string presence path, byte string compare builtin path, string-offset read path, shared diagnostic report consumer, string-offset warning continuation, string-offset write path, string-offset bool path, unary string-result executable path, comparison relation-result path, value-operation, scalar echo, print output, bitwise, type-predicate, array-value, string-byte, and diagnostic paths. Broad differential PHP composition coverage remains thin. |
 
 ## Recent Primary-Integrated Work
 
+- `ffb158c4 codegen: route offset presence through value ABI`
+  - Routes generated-native C array/string offset `isset()` and `empty()` through `phpc_native_value_offset_operation_with_diagnostic(...)` and the native bool diagnostic boundary, with focused runtime, source, linked executable, string-offset, package-check, rustfmt, and diff gates passing.
 - `ff938b0a native: route byte string compares through string-int ABI`
   - Routes generated-native C `strcmp()`, `strncmp()`, and `strncasecmp()` through the shared string-int runtime ABI, with focused runtime, generated-source, linked-executable, string-int filter, package check, rustfmt, and diff gates passing.
 - `4291db4d codegen: route string offset reads through native ABI`
@@ -84,8 +87,7 @@ The product is still far from full generalized PHP. The largest missing regions 
 
 ## Current Lane-Local Candidate Work Not Yet Counted
 
-- Integration-batch candidate: generated-C array/string offset presence through the shared value-offset ABI.
-- Array/lvalue candidates: dynamic string-offset read/probe execution through lvalue results, generated-C owner/value/reference operation wrappers, current-read/RMW/null-aware/foreach/reference/lvalue candidates, dynamic key source-span diagnostics, and root-aware by-reference foreach blockers.
+- Array/lvalue candidates: dynamic string-offset read/probe execution through lvalue results, generated-C owner/value/reference operation wrappers, current-read/RMW/null-aware/foreach/reference/lvalue candidates, dynamic key source-span diagnostics, root-aware by-reference foreach blockers, and follow-up writes/unsets/references on top of the landed value-offset presence boundary.
 - Reference/COW candidates: owner-cell alias-visibility, mutation-barrier, cleanup-insertion, and call-emission scaffolds; useful planning, but still not emitted execution in primary.
 - Symbol/request candidates: reference/COW-aware native symbol cells, request-superglobal backing storage, root/frame/imported alias reference binding, undefined-slot tracking, and request-state operation contracts.
 - Conversion/string candidates: conversion-result stdout/free ABI, primitive comparison/bitwise/division/modulo conversion result work, formatter/string-byte/string-offset surfaces, and broader binary-safe string operation boundaries.
@@ -102,10 +104,10 @@ The project remains boundary-heavy. More result/blocker vocabulary without immed
 
 ## Near-Term Steering
 
-1. Treat `ff938b0a` as the latest committed semantic baseline; progress-only commits are management artifacts.
+1. Treat `ffb158c4` as the latest committed semantic baseline; progress-only commits are management artifacts.
 2. Avoid extending scalar/string work unless it removes another real backend-local bypass with executable gates; otherwise steer the next primary slice toward lvalues/references/symbols/control-flow.
 3. Prefer small executable generated-C/LLVM/runtime consumers of existing ABI surfaces over more standalone vocabulary.
-4. Strong next candidates: shared value-offset array/string presence, dynamic string-offset lvalue read/probe, a narrow reference/COW symbol-cell consumer, or a control-flow cleanup consumer that emits before a real terminal transfer.
+4. Strong next candidates: dynamic string-offset lvalue read/probe, a narrow reference/COW symbol-cell consumer, generated-C/LLVM parity for the value-offset boundary, or a control-flow cleanup consumer that emits before a real terminal transfer.
 5. Avoid whole-lane merges. Current lane evidence is broad and conflict-prone even when technically useful.
 6. Refresh the supervisor dashboard; its current tail is stale versus live git/status evidence.
 7. Keep resource checks explicit before broad gates; `/dev/shm` is currently healthy but has recently been near full under concurrent lane builds.
