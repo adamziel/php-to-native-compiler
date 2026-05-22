@@ -897,6 +897,17 @@ const VALUE_OFFSET_NULL_COALESCE_ASSIGN_SOURCE: &str = "<?php\n$items = [\"kept\
 
 const ARRAY_LVALUE_NESTED_NULL_COALESCE_ASSIGN_SOURCE: &str = "<?php\n$outer = \"outer\";\n$items = [$outer => [\"kept\" => \"K\", \"nullish\" => null, \"falsey\" => false]];\n$key = \"missing\";\n$items[$outer][$key] ??= \"M\";\n$items[$outer][\"nullish\"] ??= \"N\";\n$items[$outer][\"kept\"] ??= \"bad\";\n$items[\"fresh\"][\"created\"] ??= \"F\";\n$items[\"nullable\"] = null;\n$items[\"nullable\"][\"created\"] ??= \"NP\";\necho $items[$outer][$key], \"|\", $items[$outer][\"nullish\"], \"|\", $items[$outer][\"kept\"], \"|\";\necho $items[\"fresh\"][\"created\"], \"|\", $items[\"nullable\"][\"created\"], \"|\";\necho ($items[\"expr\"][\"slot\"] ??= (string) 7), \"|\";\n$stored = ($items[$outer][\"stored\"] ??= $items[\"fresh\"][\"created\"]);\necho $stored, \"|\", $items[$outer][\"stored\"], \"|\";\n$items[$outer][\"falsey\"] ??= \"wrong\";\necho empty($items[$outer][\"falsey\"]) ? 1 : 0;\n";
 
+const REQUEST_SUPERGLOBAL_ROOT_SOURCE: &str = concat!(
+    "<?php\n",
+    "echo empty($_GET);\n",
+    "echo \"|\";\n",
+    "echo isset($_POST, $_COOKIE);\n",
+    "echo \"|\";\n",
+    "echo gettype($_FILES);\n",
+    "echo \"|\";\n",
+    "echo $_SERVER;\n",
+);
+
 const NATIVE_VALUE_VARIABLE_STORAGE_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$key = \"first\";\n$slot = $items[$key];\n$copy = $slot;\necho $slot, \"|\", $copy, \"|\";\n$upper = strtoupper($copy);\necho $upper, \"|\";\n$fallback = $items[\"missing\"] ?? \"m\";\necho $fallback, \"|\";\n$cast = (string) 42;\necho $cast, \"|\";\n$items[] = $upper;\necho $items[1];\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inner = \"inner\";\n$items = [\"keep\" => \"A\", \"drop\" => \"B\", 2 => \"C\", $outer => [$inner => \"N\", \"stay\" => \"S\"]];\n$key = \"drop\";\nunset($items[$key]);\nunset($items[2]);\nunset($items[99]);\nunset($items[$outer][$inner]);\necho isset($items[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[2]) ? 1 : 0;\necho \"|\";\necho isset($items[$outer][$inner]) ? 1 : 0;\necho \"|\";\n$items[$key] = \"D\";\necho $items[$key];\n";
@@ -1782,6 +1793,45 @@ fn native_executable_c_source_routes_nested_null_coalesce_assign_through_lvalue_
     assert!(
         !body.contains("array_offset_null_coalesce_assign_present_"),
         "nested ??= should not use the direct value-offset ??= helper:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_request_roots_through_request_state_snapshot() {
+    let program = parse(REQUEST_SUPERGLOBAL_ROOT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(source.contains("phpc_NativeRequestStateHandle"), "{source}");
+    assert!(
+        source.contains("phpc_native_request_state_empty"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_snapshot_value"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_free"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_cast_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_type_name_result"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_request_state_superglobal_snapshot_value")
+            .count()
+            >= 5,
+        "{source}"
+    );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
     );
 }
 
@@ -3899,6 +3949,53 @@ fn emit_exe_links_and_runs_nested_array_lvalue_null_coalesce_assign_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"M|N|K|F|NP|7|F|F|1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_root_snapshot_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("request_root_snapshot");
+    let source_path = native_link_output_path("request_root_snapshot_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, REQUEST_SUPERGLOBAL_ROOT_SOURCE)
+        .expect("native request root source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native request root source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1|1|array|Array");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
