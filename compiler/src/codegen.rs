@@ -7444,9 +7444,26 @@ struct CReferencePath<'a> {
     span: Span,
 }
 
+struct CGlobalsSymbolReferencePath<'a> {
+    keys: Vec<&'a Expr>,
+    append: bool,
+}
+
+enum CSymbolReferencePath<'a> {
+    Named(CReferencePath<'a>),
+    Globals(CGlobalsSymbolReferencePath<'a>),
+}
+
 struct CMaterializedReferencePath {
     name_bytes: String,
     name_len: usize,
+    keys: String,
+    key_count: usize,
+    cleanup_after_use: Vec<String>,
+    append: bool,
+}
+
+struct CMaterializedGlobalsReferencePath {
     keys: String,
     key_count: usize,
     cleanup_after_use: Vec<String>,
@@ -7788,6 +7805,8 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_symbol_table_snapshot_value(phpc_NativeSymbolTableHandle table);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_symbol_table_reference_for_path(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, const phpc_NativeValueHandle *keys, size_t key_count, bool append);\n");
                 output.push_str("extern bool phpc_native_symbol_table_bind_reference_path(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, const phpc_NativeValueHandle *keys, size_t key_count, bool append, phpc_NativeReferenceHandle reference);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_symbol_table_reference_for_value_path(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, bool append);\n");
+                output.push_str("extern bool phpc_native_symbol_table_bind_reference_value_path(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, bool append, phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern void phpc_native_symbol_table_free(phpc_NativeSymbolTableHandle table);\n");
             }
             if self.uses_native_string_helpers {
@@ -8258,6 +8277,126 @@ impl CGenerator {
         }
     }
 
+    fn is_static_ordinary_globals_symbol_root(&self, index: &Expr) -> bool {
+        static_string_key_expr_value(index)
+            .as_deref()
+            .is_some_and(|name| {
+                !is_request_superglobal_name(name) && !is_globals_superglobal_name(name)
+            })
+    }
+
+    fn globals_symbol_reference_path_for_assign_target<'a>(
+        &self,
+        target: &'a AssignTarget,
+    ) -> Option<CGlobalsSymbolReferencePath<'a>> {
+        match target {
+            AssignTarget::ArrayIndex {
+                name,
+                index: Some(index),
+                ..
+            } if is_globals_superglobal_name(name)
+                && self.is_static_ordinary_globals_symbol_root(index) =>
+            {
+                Some(CGlobalsSymbolReferencePath {
+                    keys: vec![index],
+                    append: false,
+                })
+            }
+            AssignTarget::NestedArrayIndex { name, indices, .. }
+                if is_globals_superglobal_name(name)
+                    && indices.first().is_some_and(|index| {
+                        self.is_static_ordinary_globals_symbol_root(index)
+                    }) =>
+            {
+                Some(CGlobalsSymbolReferencePath {
+                    keys: indices.iter().collect(),
+                    append: false,
+                })
+            }
+            AssignTarget::NestedArrayAppend {
+                name,
+                indices,
+                suffix_indices,
+                ..
+            } if is_globals_superglobal_name(name)
+                && suffix_indices.is_empty()
+                && indices
+                    .first()
+                    .is_some_and(|index| self.is_static_ordinary_globals_symbol_root(index)) =>
+            {
+                Some(CGlobalsSymbolReferencePath {
+                    keys: indices.iter().collect(),
+                    append: true,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn globals_symbol_reference_path_for_source<'a>(
+        &self,
+        source: &'a ReferenceSource,
+    ) -> Option<CGlobalsSymbolReferencePath<'a>> {
+        match source {
+            ReferenceSource::ArrayIndex { name, index, .. }
+                if is_globals_superglobal_name(name)
+                    && self.is_static_ordinary_globals_symbol_root(index) =>
+            {
+                Some(CGlobalsSymbolReferencePath {
+                    keys: vec![index],
+                    append: false,
+                })
+            }
+            ReferenceSource::NestedArrayIndex { name, indices, .. }
+                if is_globals_superglobal_name(name)
+                    && indices.first().is_some_and(|index| {
+                        self.is_static_ordinary_globals_symbol_root(index)
+                    }) =>
+            {
+                Some(CGlobalsSymbolReferencePath {
+                    keys: indices.iter().collect(),
+                    append: false,
+                })
+            }
+            ReferenceSource::ArrayAppend { name, indices, .. }
+                if is_globals_superglobal_name(name)
+                    && indices.first().is_some_and(|index| {
+                        self.is_static_ordinary_globals_symbol_root(index)
+                    }) =>
+            {
+                Some(CGlobalsSymbolReferencePath {
+                    keys: indices.iter().collect(),
+                    append: true,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn c_symbol_reference_path_for_assign_target<'a>(
+        &self,
+        target: &'a AssignTarget,
+    ) -> Option<CSymbolReferencePath<'a>> {
+        if let Some(path) = self.globals_symbol_reference_path_for_assign_target(target) {
+            return Some(CSymbolReferencePath::Globals(path));
+        }
+
+        self.c_reference_path_for_assign_target(target)
+            .map(CSymbolReferencePath::Named)
+    }
+
+    fn c_symbol_reference_path_for_source<'a>(
+        &self,
+        source: &'a ReferenceSource,
+    ) -> Option<CSymbolReferencePath<'a>> {
+        if let Some(path) = self.globals_symbol_reference_path_for_source(source) {
+            return Some(CSymbolReferencePath::Globals(path));
+        }
+
+        self.c_reference_path_for_source(source)
+            .map(CSymbolReferencePath::Named)
+    }
+
     fn reject_unsupported_symbol_reference_path_root(
         &self,
         path: &CReferencePath<'_>,
@@ -8326,6 +8465,23 @@ impl CGenerator {
         })
     }
 
+    fn materialize_globals_symbol_value_reference_path(
+        &mut self,
+        path: CGlobalsSymbolReferencePath<'_>,
+        failure_cleanup: &str,
+    ) -> CompileResult<CMaterializedGlobalsReferencePath> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_symbol_table_helpers = true;
+
+        let keys = self.materialize_globals_symbol_path_keys(&path.keys, failure_cleanup)?;
+        Ok(CMaterializedGlobalsReferencePath {
+            keys: keys.handles,
+            key_count: keys.len,
+            cleanup_after_use: keys.cleanup_after_use,
+            append: path.append,
+        })
+    }
+
     fn emit_c_symbol_path_reference_assignment(
         &mut self,
         target: &AssignTarget,
@@ -8333,41 +8489,77 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<bool> {
-        let Some(source_path) = self.c_reference_path_for_source(source) else {
+        let Some(source_path) = self.c_symbol_reference_path_for_source(source) else {
             return Ok(false);
         };
-        let Some(target_path) = self.c_reference_path_for_assign_target(target) else {
+        let Some(target_path) = self.c_symbol_reference_path_for_assign_target(target) else {
             return Ok(false);
         };
-        self.reject_unsupported_symbol_reference_path_root(&source_path, span)?;
-        self.reject_unsupported_symbol_reference_path_root(&target_path, span)?;
+        if let CSymbolReferencePath::Named(path) = &source_path {
+            self.reject_unsupported_symbol_reference_path_root(path, span)?;
+        }
+        if let CSymbolReferencePath::Named(path) = &target_path {
+            self.reject_unsupported_symbol_reference_path_root(path, span)?;
+        }
 
         let table = self.ensure_globals_symbol_table(failure_cleanup, span)?;
-        let source = self.materialize_c_reference_path(source_path, failure_cleanup)?;
-        let source_cleanup = c_cleanup_sequence(&source.cleanup_after_use);
         let source_ref = self.next_native_name("symbol_reference");
-        let source_append = if source.append { "true" } else { "false" };
-        self.body.push(format!(
-            "phpc_NativeReferenceHandle {source_ref} = phpc_native_symbol_table_reference_for_path({table}, {}, {}, {}, {}, {source_append});",
-            source.name_bytes, source.name_len, source.keys, source.key_count
-        ));
+        let source_cleanup_after_use = match source_path {
+            CSymbolReferencePath::Named(path) => {
+                let source = self.materialize_c_reference_path(path, failure_cleanup)?;
+                let source_append = if source.append { "true" } else { "false" };
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {source_ref} = phpc_native_symbol_table_reference_for_path({table}, {}, {}, {}, {}, {source_append});",
+                    source.name_bytes, source.name_len, source.keys, source.key_count
+                ));
+                source.cleanup_after_use
+            }
+            CSymbolReferencePath::Globals(path) => {
+                let source =
+                    self.materialize_globals_symbol_value_reference_path(path, failure_cleanup)?;
+                let source_append = if source.append { "true" } else { "false" };
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {source_ref} = phpc_native_symbol_table_reference_for_value_path({table}, {}, {}, {source_append});",
+                    source.keys, source.key_count
+                ));
+                source.cleanup_after_use
+            }
+        };
+        let source_cleanup = c_cleanup_sequence(&source_cleanup_after_use);
         let source_error_exit =
             self.native_error_exit(&format!("{source_cleanup}{failure_cleanup}"));
         self.body.push(format!(
             "if ({source_ref}.ptr == NULL) {{ {source_error_exit} }}"
         ));
-        self.body.extend(source.cleanup_after_use);
+        self.body.extend(source_cleanup_after_use);
 
         let target_failure_cleanup =
             format!("phpc_native_reference_free({source_ref}); {failure_cleanup}");
-        let target = self.materialize_c_reference_path(target_path, &target_failure_cleanup)?;
-        let target_cleanup = c_cleanup_sequence(&target.cleanup_after_use);
-        let target_append = if target.append { "true" } else { "false" };
         let bound = self.next_native_name("symbol_reference_bound");
-        self.body.push(format!(
-            "bool {bound} = phpc_native_symbol_table_bind_reference_path({table}, {}, {}, {}, {}, {target_append}, {source_ref});",
-            target.name_bytes, target.name_len, target.keys, target.key_count
-        ));
+        let target_cleanup_after_use = match target_path {
+            CSymbolReferencePath::Named(path) => {
+                let target = self.materialize_c_reference_path(path, &target_failure_cleanup)?;
+                let target_append = if target.append { "true" } else { "false" };
+                self.body.push(format!(
+                    "bool {bound} = phpc_native_symbol_table_bind_reference_path({table}, {}, {}, {}, {}, {target_append}, {source_ref});",
+                    target.name_bytes, target.name_len, target.keys, target.key_count
+                ));
+                target.cleanup_after_use
+            }
+            CSymbolReferencePath::Globals(path) => {
+                let target = self.materialize_globals_symbol_value_reference_path(
+                    path,
+                    &target_failure_cleanup,
+                )?;
+                let target_append = if target.append { "true" } else { "false" };
+                self.body.push(format!(
+                    "bool {bound} = phpc_native_symbol_table_bind_reference_value_path({table}, {}, {}, {target_append}, {source_ref});",
+                    target.keys, target.key_count
+                ));
+                target.cleanup_after_use
+            }
+        };
+        let target_cleanup = c_cleanup_sequence(&target_cleanup_after_use);
         let bind_error_exit = self.native_error_exit(&format!(
             "phpc_native_reference_free({source_ref}); {target_cleanup}{failure_cleanup}"
         ));
@@ -8375,7 +8567,7 @@ impl CGenerator {
             .push(format!("if (!{bound}) {{ {bind_error_exit} }}"));
         self.body
             .push(format!("phpc_native_reference_free({source_ref});"));
-        self.body.extend(target.cleanup_after_use);
+        self.body.extend(target_cleanup_after_use);
         Ok(true)
     }
 

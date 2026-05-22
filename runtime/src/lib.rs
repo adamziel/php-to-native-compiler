@@ -3425,6 +3425,16 @@ fn native_symbol_table_reference_for_path(
     Some(reference)
 }
 
+fn native_symbol_table_reference_for_value_path(
+    table: &mut NativeSymbolTable,
+    keys: &[ArrayKey],
+    append: bool,
+) -> Option<PhpReferenceCell> {
+    let (root, keys) = keys.split_first()?;
+    let name = native_symbol_table_path_root_name(root);
+    native_symbol_table_reference_for_path(table, &name, keys, append)
+}
+
 fn native_symbol_table_bind_reference_path(
     table: &mut NativeSymbolTable,
     name: &str,
@@ -3457,6 +3467,19 @@ fn native_symbol_table_bind_reference_path(
         slot.set_value(Value::Array(root));
     }
     bound
+}
+
+fn native_symbol_table_bind_reference_value_path(
+    table: &mut NativeSymbolTable,
+    keys: &[ArrayKey],
+    append: bool,
+    reference: PhpReferenceCell,
+) -> bool {
+    let Some((root, keys)) = keys.split_first() else {
+        return false;
+    };
+    let name = native_symbol_table_path_root_name(root);
+    native_symbol_table_bind_reference_path(table, &name, keys, append, reference)
 }
 
 fn native_symbol_table_unset_value_by_path(
@@ -3715,6 +3738,78 @@ pub unsafe extern "C" fn phpc_native_symbol_table_bind_reference_path(
     };
 
     native_symbol_table_bind_reference_path(table, &name, &keys, append, reference.cell.clone())
+}
+
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. `keys` must point to at least one initialized
+/// value handle previously returned by the runtime ABI and not yet freed. The
+/// first key selects the root symbol-table slot and remaining keys select a
+/// nested reference path below that root. The returned reference handle owns a
+/// clone of the selected reference cell and must be released with
+/// `phpc_native_reference_free`. Missing roots and null/false parents are
+/// materialized when the selected path needs an array.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_reference_for_value_path(
+    mut handle: NativeSymbolTableHandle,
+    keys: *const NativeValueHandle,
+    key_count: usize,
+    append: bool,
+) -> NativeReferenceHandle {
+    let Some(table) = (unsafe { handle.as_mut() }) else {
+        return NativeReferenceHandle::null();
+    };
+    let keys = match unsafe {
+        native_value_offset_key_path_from_handles(
+            keys,
+            key_count,
+            "symbol table value reference path",
+        )
+    } {
+        Ok(keys) => keys,
+        Err(_) => return NativeReferenceHandle::null(),
+    };
+
+    native_symbol_table_reference_for_value_path(table, &keys, append)
+        .map(NativeReferenceHandle::from_cell)
+        .unwrap_or_else(NativeReferenceHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. `keys` must point to at least one initialized
+/// value handle previously returned by the runtime ABI and not yet freed. The
+/// first key selects the root symbol-table slot and remaining keys select a
+/// nested reference path below that root. `reference` must be null or a
+/// reference handle previously returned by the runtime ABI and not yet freed.
+/// Ownership of `reference` remains with the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_bind_reference_value_path(
+    mut handle: NativeSymbolTableHandle,
+    keys: *const NativeValueHandle,
+    key_count: usize,
+    append: bool,
+    reference: NativeReferenceHandle,
+) -> bool {
+    let (Some(table), Some(reference)) =
+        (unsafe { handle.as_mut() }, unsafe { reference.as_ref() })
+    else {
+        return false;
+    };
+    let keys = match unsafe {
+        native_value_offset_key_path_from_handles(
+            keys,
+            key_count,
+            "symbol table value reference bind",
+        )
+    } {
+        Ok(keys) => keys,
+        Err(_) => return false,
+    };
+
+    native_symbol_table_bind_reference_value_path(table, &keys, append, reference.cell.clone())
 }
 
 /// # Safety
@@ -23778,8 +23873,12 @@ mod tests {
         let list = b"list";
         let list_alias = b"list_alias";
         let scalar = b"scalar";
+        let value_alias = b"value_alias";
         let slot_key = unsafe { value_handle(Value::String("slot".to_string())) };
         let zero_key = unsafe { value_handle(Value::Int(0)) };
+        let source_value_key = unsafe { value_handle(Value::String("source".to_string())) };
+        let value_alias_key = unsafe { value_handle(Value::String("value_alias".to_string())) };
+        let value_list_key = unsafe { value_handle(Value::String("value_list".to_string())) };
 
         unsafe { write_symbol(table, source, Value::String("initial".to_string())) };
         let source_ref = unsafe {
@@ -23874,6 +23973,57 @@ mod tests {
         assert!(!phpc_native_reference_is_null(appended_slot));
         unsafe { assert_reference_value(appended_slot, b"through-append") };
 
+        let value_path_source_ref = unsafe {
+            phpc_native_symbol_table_reference_for_value_path(table, &source_value_key, 1, false)
+        };
+        assert!(!phpc_native_reference_is_null(value_path_source_ref));
+        unsafe {
+            set_reference_value(
+                value_path_source_ref,
+                Value::String("through-value-root".to_string()),
+            )
+        };
+        unsafe { assert_symbol_value(table, source, b"through-value-root") };
+
+        assert!(unsafe {
+            phpc_native_symbol_table_bind_reference_value_path(
+                table,
+                &value_alias_key,
+                1,
+                false,
+                value_path_source_ref,
+            )
+        });
+        unsafe {
+            set_reference_value(
+                value_path_source_ref,
+                Value::String("through-value-bind".to_string()),
+            )
+        };
+        unsafe { assert_symbol_value(table, value_alias, b"through-value-bind") };
+
+        let value_path_append_ref = unsafe {
+            phpc_native_symbol_table_reference_for_value_path(table, &value_list_key, 1, true)
+        };
+        assert!(!phpc_native_reference_is_null(value_path_append_ref));
+        unsafe {
+            set_reference_value(
+                value_path_append_ref,
+                Value::String("through-value-append".to_string()),
+            )
+        };
+        let value_path_appended_slot = unsafe {
+            let keys = [value_list_key, zero_key];
+            phpc_native_symbol_table_reference_for_value_path(
+                table,
+                keys.as_ptr(),
+                keys.len(),
+                false,
+            )
+        };
+        assert!(!phpc_native_reference_is_null(value_path_appended_slot));
+        unsafe { assert_reference_value(value_path_appended_slot, b"through-value-append") };
+
         unsafe { write_symbol(table, scalar, Value::Int(7)) };
         let invalid_ref = unsafe {
             phpc_native_symbol_table_reference_for_path(
@@ -23891,8 +24041,14 @@ mod tests {
         unsafe { phpc_native_reference_free(array_ref) };
         unsafe { phpc_native_reference_free(append_ref) };
         unsafe { phpc_native_reference_free(appended_slot) };
+        unsafe { phpc_native_reference_free(value_path_source_ref) };
+        unsafe { phpc_native_reference_free(value_path_append_ref) };
+        unsafe { phpc_native_reference_free(value_path_appended_slot) };
         unsafe { phpc_native_value_free(slot_key) };
         unsafe { phpc_native_value_free(zero_key) };
+        unsafe { phpc_native_value_free(source_value_key) };
+        unsafe { phpc_native_value_free(value_alias_key) };
+        unsafe { phpc_native_value_free(value_list_key) };
         unsafe { phpc_native_symbol_table_free(table) };
     }
 
