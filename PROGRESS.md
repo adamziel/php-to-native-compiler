@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 21:38 CEST
+Updated: 2026-05-22 21:35 CEST
 Evaluation marker: `20260522T192635Z`
 Primary management HEAD: this PROGRESS.md update
 Primary semantic HEAD: `6b80fd79 runtime: mutate reference-backed request roots`
