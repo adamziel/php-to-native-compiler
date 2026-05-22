@@ -1,27 +1,27 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 15:34 CEST
+Updated: 2026-05-22 15:49 CEST
 Evaluation marker: `20260522T132634Z`
-Primary HEAD: `95f8dee5 docs: update progress after symbol nested write ABI`
-Current pushed semantic baseline: `764cf014 runtime: add symbol-table nested write ABI`
+Primary HEAD: progress update on top of `d7fc807d codegen: materialize direct $GLOBALS snapshots`
+Current pushed semantic baseline: `d7fc807d codegen: materialize direct $GLOBALS snapshots`
 
 Percentages are candid engineering estimates, not test-suite pass rates. Lane-local candidate work and unstaged primary diffs are not counted as product capability until integrated into `master`, gated, committed, and pushed.
 
 ## Executive Read
 
-Overall estimated progress toward the current generalized native-compiler roadmap: **74%** `[###############-----]`
+Overall estimated progress toward the current generalized native-compiler roadmap: **75%** `[###############-----]`
 
-Momentum remains positive, but the remaining blockers are structural. Pushed primary now has stronger request/symbol storage, direct request-root assignment/snapshots, direct keyed request-superglobal read/write/unset/`isset()`/`empty()` storage, direct request-root value/reference storage, runtime symbol-table nested write-by-path storage, selected generated-C array/lvalue/string/native-value consumers, natural array sort execution through the lvalue sort ABI, a runtime ABI for nested array reference paths over owned value handles, and source-location metadata on shared native diagnostic handles. This is real generalized infrastructure, but not broad PHP compatibility yet: executable `$GLOBALS`, nested/path superglobal lowering beyond direct keyed slots, generated reference assignment, full references/COW, user calls, objects, structured control flow, and exact diagnostic attachment/ordering remain major blockers.
+Momentum remains positive, but the remaining blockers are structural. Pushed primary now has stronger request/symbol storage, direct `$GLOBALS` root snapshots, direct request-root assignment/snapshots, direct keyed request-superglobal read/write/unset/`isset()`/`empty()` storage, direct request-root value/reference storage, runtime symbol-table nested write-by-path storage, selected generated-C array/lvalue/string/native-value consumers, natural array sort execution through the lvalue sort ABI, a runtime ABI for nested array reference paths over owned value handles, and source-location metadata on shared native diagnostic handles. This is real generalized infrastructure, but not broad PHP compatibility yet: full `$GLOBALS` aliasing/mutation, nested/path superglobal lowering beyond direct keyed slots, generated reference assignment, full references/COW, user calls, objects, structured control flow, and exact diagnostic attachment/ordering remain major blockers.
 
 ## Roadmap Position
 
 | Area | Estimate | Bar | Primary-integrated read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong pushed surfaces exist for values, arrays, strings, comparisons, diagnostics, diagnostic source locations, symbol tables, symbol-table nested write paths, request state, request-root direct values/references, reference slots, request/superglobal mutation, nested array reference paths, and array sort result families. |
-| Selected compiler/backend consumers | 76% | `[###############-----]` | Generated-C consumers exist for selected scalar/string/array/lvalue/request-root behavior, including direct request-root assignment, direct keyed request storage, keyed request `empty()`, and lvalue-backed sort families. Symbols, nested/path request storage, calls, objects, references, and control-flow cleanup remain partial or absent. |
-| Executable generalized PHP semantics | 65% | `[#############-------]` | Selected scalar, string, array, lvalue, symbol-runtime, request-runtime, direct request-root value/reference storage, direct root assignment, snapshots, keyed request storage including `empty()`, null-callback array value behavior, and natural sort execution works. Broad PHP programs still hit structural blockers. |
+| Selected compiler/backend consumers | 77% | `[###############-----]` | Generated-C consumers exist for selected scalar/string/array/lvalue/request-root behavior, including direct `$GLOBALS` root snapshots, direct request-root assignment, direct keyed request storage, keyed request `empty()`, and lvalue-backed sort families. Symbol paths, nested/path request storage, calls, objects, references, and control-flow cleanup remain partial or absent. |
+| Executable generalized PHP semantics | 66% | `[#############-------]` | Selected scalar, string, array, lvalue, direct `$GLOBALS` root snapshots, symbol-runtime, request-runtime, direct request-root value/reference storage, direct root assignment, snapshots, keyed request storage including `empty()`, null-callback array value behavior, and natural sort execution works. Broad PHP programs still hit structural blockers. |
 | Arrays, references, COW, lvalues | 71% | `[##############------]` | Primary has selected array/lvalue execution plus natural sort execution and a runtime nested reference-path ABI. Generated PHP reference assignment, arbitrary roots, owner/value/reference slots, by-reference foreach, and full COW remain open. |
-| Symbols, globals, request state | 54% | `[###########---------]` | Pushed runtime symbol/request roots can snapshot, mutate, store direct scalar/null/object/resource root values, store direct root reference cells, clear stale keyed slots, re-enter keyed storage where safe, write nested symbol-table paths through a shared runtime ABI, and generated C can assign direct request roots plus direct keyed request slots and keyed `empty()` through request-state ABIs. Compiler-level `$GLOBALS`, nested/path superglobal lowering beyond direct keyed slots, request lifetime, and frame propagation are not integrated. |
+| Symbols, globals, request state | 57% | `[###########---------]` | Pushed runtime symbol/request roots can snapshot, mutate, store direct scalar/null/object/resource root values, store direct root reference cells, clear stale keyed slots, re-enter keyed storage where safe, write nested symbol-table paths through a shared runtime ABI, and generated C can materialize direct `$GLOBALS` root snapshots, assign direct request roots, and route direct keyed request slots plus keyed `empty()` through request-state ABIs. `$GLOBALS` aliasing/mutation, symbol paths, nested/path superglobal lowering beyond direct keyed slots, request lifetime, and frame propagation are not integrated. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Runtime call contracts and promising lane-local source-call/value-frame consumers exist, but primary still lacks broad executable user function/method/closure frames and result consumers. |
 | Objects, properties, methods | 11% | `[##------------------]` | Mostly blockers, metadata, and lane-local scaffolds. Real allocation/property/method behavior remains largely absent. |
 | Diagnostics and control-flow cleanup | 29% | `[######--------------]` | Shared diagnostic/status surfaces exist, diagnostics can carry source-location metadata, and request missing-key value reads report through request result carriers. Generated source-span attachment, exact ordering, recovery, loops/switch/goto/finally/exceptions, and cleanup stacks are not primary-integrated. |
@@ -47,10 +47,11 @@ Momentum remains positive, but the remaining blockers are structural. Pushed pri
 - [x] Runtime nested array reference-path ABI over owned value handles, with root writeback coverage for direct values, symbol-table values, and request-superglobal slots.
 - [x] Runtime source-location metadata on shared native diagnostic handles, with clone/query ABI coverage across direct, conversion, and request diagnostics.
 - [x] Runtime symbol-table nested write-by-path ABI over native value key paths, including missing/null/false parent materialization, scalar-parent diagnostics, invalid path/key diagnostics, and reference-backed root slots.
-- [ ] Compiler consumers for runtime symbol-table nested write paths, including `$GLOBALS`/symbol path lowering and request-root nested mutation.
+- [x] Generated-native C direct `$GLOBALS` root snapshots through the symbol-table snapshot ABI, with current root variable materialization, owned snapshot storage, direct value consumers, and linked executable coverage.
+- [ ] Compiler consumers for runtime symbol-table nested write paths, including `$GLOBALS[$expr]`/symbol path lowering and request-root nested mutation.
 - [ ] Compiler-lowered nested/path request-superglobal reads, writes, unsets, assignment-expression values, and `$GLOBALS` request aliases in committed/pushed primary.
 - [ ] Generated PHP reference assignment over the path-reference ABI.
-- [ ] Executable PHP-level `$GLOBALS`, request lifetime threading, and frame propagation.
+- [ ] Full PHP-level `$GLOBALS` aliasing/mutation, request lifetime threading, and frame propagation.
 - [ ] General references/COW, owner-slot/value-slot/reference-slot materialization, by-reference arguments/returns, and alias-visible mutation barriers.
 - [ ] Real object allocation, properties, methods, magic hooks, visibility, ArrayAccess, and resource offset behavior.
 - [ ] General dynamic calls, user function frames, variadics/spreads, cleanup, and exact diagnostic ordering across control flow.
@@ -59,6 +60,7 @@ Momentum remains positive, but the remaining blockers are structural. Pushed pri
 
 Recent pushed semantic commits:
 
+- `d7fc807d codegen: materialize direct $GLOBALS snapshots`
 - `764cf014 runtime: add symbol-table nested write ABI`
 - `ed2d9031 runtime: add array reference path ABI`
 - `4d4158f3 runtime: store direct request root values`
@@ -71,10 +73,10 @@ Recent pushed semantic commits:
 
 Current primary state:
 
-- `master` and `origin/master` are synced at `95f8dee5`.
-- This progress update is docs-only. The latest pushed semantic baseline is `764cf014`.
+- `master` has a semantic `$GLOBALS` snapshot commit ready to push, with this progress update as a docs-only follow-up.
+- The latest pushed semantic baseline after this batch is `d7fc807d`.
 - Live primary has an unstaged `runtime/src/lib.rs` null-slot increment/decrement hunk; it is not counted as product progress until gated, committed, and pushed.
-- The latest pushed semantic addition is the runtime symbol-table nested write-by-path ABI. Generated compiler consumers for `$GLOBALS`/symbol paths, generated PHP source-span attachment, nested/path request operations, `$GLOBALS` reconciliation, request-root reference assignment, LLVM parity, PHP reference assignment, arbitrary writable roots, and full references/COW still need primary compiler consumers.
+- The latest semantic addition is generated-native C direct `$GLOBALS` root snapshot materialization over the symbol-table snapshot ABI. Generated compiler consumers for `$GLOBALS[$expr]`/symbol paths, `$GLOBALS` alias reconciliation and mutation, generated PHP source-span attachment, nested/path request operations, request-root reference assignment, LLVM parity, PHP reference assignment, arbitrary writable roots, and full references/COW still need primary compiler consumers.
 
 ## Lane-Local Candidate Work
 
@@ -93,7 +95,7 @@ These are active or completed candidates, not integrated capability:
 | Active item | Estimate | Status | Next useful primary shape |
 | --- | ---: | --- | --- |
 | Array/lvalue execution | 71% | In progress | Consume the path-reference ABI in generated reference assignment, arbitrary-root writeback, by-reference foreach, `??=`/RMW, owner/value/reference-slot materialization, or LLVM parity. |
-| Symbols/request/globals | 54% | In progress | Extend beyond runtime symbol-table nested writes and direct keyed request storage into compiler-lowered symbol paths, nested/path request reads/writes/unsets/`empty()`, `$GLOBALS` aliasing, request-root reference consumers, assignment-expression values, or request lifetime threading. |
+| Symbols/request/globals | 57% | In progress | Extend beyond direct `$GLOBALS` root snapshots, runtime symbol-table nested writes, and direct keyed request storage into compiler-lowered symbol paths, nested/path request reads/writes/unsets/`empty()`, `$GLOBALS` aliasing/mutation, request-root reference consumers, assignment-expression values, or request lifetime threading. |
 | References/COW | 31% | In progress | Narrow owner/reference slot materialization with alias-visible mutation and executable evidence, not just runtime ABI vocabulary. |
 | Calls/functions | 25% | In progress | Real declaration descriptor/callable table population with generated body callbacks, by-value source-call argument vectors, and result consumers. |
 | Objects/properties/methods | 11% | Early | Allocation/property/method behavior through shared carriers, not metadata-only blockers. |
@@ -102,6 +104,6 @@ These are active or completed candidates, not integrated capability:
 
 ## Steering Notes
 
-The next best primary slice should move beyond direct keyed request slots, diagnostic metadata, and sort-family breadth: nested/path superglobal reads, writes, unsets, `empty()`, `$GLOBALS` alias reconciliation, request-root reference assignment, request lifetime/frame threading, generated reference assignment over proven array/request parents, arbitrary-root/owner-slot/reference-slot lvalue materialization, or a narrow real call/control-flow execution slice. Avoid another standalone builtin-family batch unless it crosses references/COW, request state, function frames, object/ArrayAccess, resource behavior, or structured cleanup.
+The next best primary slice should move beyond direct keyed request slots, direct `$GLOBALS` root snapshots, diagnostic metadata, and sort-family breadth: `$GLOBALS[$expr]`/symbol path mutation, nested/path superglobal reads, writes, unsets, `empty()`, `$GLOBALS` alias reconciliation, request-root reference assignment, request lifetime/frame threading, generated reference assignment over proven array/request parents, arbitrary-root/owner-slot/reference-slot lvalue materialization, or a narrow real call/control-flow execution slice. Avoid another standalone builtin-family batch unless it crosses references/COW, request state, function frames, object/ArrayAccess, resource behavior, or structured cleanup.
 
 The live dirty `runtime/src/lib.rs` null-slot hunk should be explicitly classified by its owner. It is not part of the pushed symbol-table nested write ABI batch and should not stay ambiguous background state.
