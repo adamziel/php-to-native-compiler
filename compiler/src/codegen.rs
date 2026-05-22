@@ -7467,6 +7467,7 @@ impl CGenerator {
                 );
                 output.push_str("extern phpc_NativeRequestStateKeyResult phpc_native_request_state_key_from_value(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status);\n");
+                output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_path_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t **key_ptrs, const size_t *key_lens, size_t key_count, uint8_t key_status);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_keyed_mutation_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status, phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_path_mutation_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t **key_ptrs, const size_t *key_lens, size_t key_count, uint8_t key_status, phpc_NativeValueHandle value);\n");
                 output.push_str("extern size_t phpc_native_request_state_operation_result_report_diagnostic(phpc_NativeRequestStateOperationResult result);\n");
@@ -7850,9 +7851,9 @@ impl CGenerator {
         })
     }
 
-    fn materialize_request_superglobal_path_keys(
+    fn materialize_request_superglobal_path_key_refs(
         &mut self,
-        indices: &[Expr],
+        indices: &[&Expr],
         failure_cleanup: &str,
     ) -> CompileResult<CRequestStatePathMaterialization> {
         debug_assert!(!indices.is_empty());
@@ -7910,6 +7911,15 @@ impl CGenerator {
         })
     }
 
+    fn materialize_request_superglobal_path_keys(
+        &mut self,
+        indices: &[Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CRequestStatePathMaterialization> {
+        let indices = indices.iter().collect::<Vec<_>>();
+        self.materialize_request_superglobal_path_key_refs(&indices, failure_cleanup)
+    }
+
     fn request_superglobal_operation_failure_condition(&self, result: &str) -> String {
         format!(
             "{result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY"
@@ -7949,6 +7959,42 @@ impl CGenerator {
         })
     }
 
+    fn emit_request_superglobal_path_value_read(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let path = self.materialize_request_superglobal_path_key_refs(indices, failure_cleanup)?;
+        let result = self.next_native_name("request_superglobal_path_read");
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_path_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_VALUE, {bag_bytes}, {}, {}, {}, {}, {});",
+            name.len(),
+            path.ptrs,
+            path.lens,
+            path.len,
+            path.status
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({result});"
+        ));
+        let result_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({result}); {}{}",
+            c_cleanup_sequence(&path.cleanup_after_use),
+            failure_cleanup
+        ));
+        self.body.push(format!(
+            "if ({result}.value.ptr == NULL) {{ {result_error_exit} }}"
+        ));
+        self.body.extend(path.cleanup_after_use);
+        Ok(CNativeValueMaterialization {
+            handle: format!("{result}.value"),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result}.value);")],
+        })
+    }
+
     fn emit_request_superglobal_keyed_presence_expr(
         &mut self,
         name: &str,
@@ -7977,6 +8023,40 @@ impl CGenerator {
             "if ({failure_condition}) {{ {result_error_exit} }}"
         ));
         self.body.extend(key.cleanup_after_use);
+        Ok(CValue::BoolExpr(format!("{result}.is_set != 0")))
+    }
+
+    fn emit_request_superglobal_path_presence_expr(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let path = self.materialize_request_superglobal_path_key_refs(indices, failure_cleanup)?;
+        let result = self.next_native_name("request_superglobal_path_presence");
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_path_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE, {bag_bytes}, {}, {}, {}, {}, {});",
+            name.len(),
+            path.ptrs,
+            path.lens,
+            path.len,
+            path.status
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({result});"
+        ));
+        let result_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({result}); {}{}",
+            c_cleanup_sequence(&path.cleanup_after_use),
+            failure_cleanup
+        ));
+        let failure_condition = self.request_superglobal_operation_failure_condition(&result);
+        self.body.push(format!(
+            "if ({failure_condition}) {{ {result_error_exit} }}"
+        ));
+        self.body.extend(path.cleanup_after_use);
         Ok(CValue::BoolExpr(format!("{result}.is_set != 0")))
     }
 
@@ -8072,6 +8152,107 @@ impl CGenerator {
         self.body.push(format!("{result} = !{truthy};"));
         self.body.push("}".to_string());
         self.body.extend(key.cleanup_after_use);
+        Ok(CValue::BoolExpr(result))
+    }
+
+    fn emit_request_superglobal_path_empty_expr(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let path = self.materialize_request_superglobal_path_key_refs(indices, failure_cleanup)?;
+        let presence = self.next_native_name("request_superglobal_path_empty_presence");
+        let present = self.next_native_name("request_superglobal_path_empty_present");
+        let result = self.next_native_name("request_superglobal_path_empty");
+        self.body.push(format!("_Bool {result} = 1;"));
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {presence} = phpc_native_request_state_superglobal_path_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE, {bag_bytes}, {}, {}, {}, {}, {});",
+            name.len(),
+            path.ptrs,
+            path.lens,
+            path.len,
+            path.status
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({presence});"
+        ));
+        let presence_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({presence}); {}{}",
+            c_cleanup_sequence(&path.cleanup_after_use),
+            failure_cleanup
+        ));
+        let presence_failure_condition =
+            self.request_superglobal_operation_failure_condition(&presence);
+        self.body.push(format!(
+            "if ({presence_failure_condition}) {{ {presence_error_exit} }}"
+        ));
+        self.body
+            .push(format!("_Bool {present} = {presence}.is_set != 0;"));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_free({presence});"
+        ));
+
+        let value = self.next_native_name("request_superglobal_path_empty_value");
+        let diagnostic = self.next_native_name("request_superglobal_path_empty_diagnostic");
+        let truthy = self.next_native_name("request_superglobal_path_empty_truthy");
+        self.body.push(format!("if ({present}) {{"));
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {value} = phpc_native_request_state_superglobal_path_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_VALUE, {bag_bytes}, {}, {}, {}, {}, {});",
+            name.len(),
+            path.ptrs,
+            path.lens,
+            path.len,
+            path.status
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({value});"
+        ));
+        let value_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({value}); {}{}",
+            c_cleanup_sequence(&path.cleanup_after_use),
+            failure_cleanup
+        ));
+        self.body.push(format!(
+            "if ({value}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK || {value}.value.ptr == NULL) {{ {value_error_exit} }}"
+        ));
+        let bool_value = self.emit_native_value_cast_operation_result_handle(
+            CNativeValueMaterialization {
+                handle: format!("{value}.value"),
+                cleanup_after_use: vec![format!(
+                    "phpc_native_request_state_operation_result_free({value});"
+                )],
+            },
+            "PHPC_NATIVE_VALUE_CAST_BOOL",
+            &format!(
+                "{}{}",
+                c_cleanup_sequence(&path.cleanup_after_use),
+                failure_cleanup
+            ),
+        );
+        let bool_handle = bool_value.handle.clone();
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "_Bool {truthy} = phpc_native_value_bool_with_diagnostic({bool_handle}, &{diagnostic});"
+        ));
+        let bool_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({diagnostic}); {}{}{}",
+            c_cleanup_sequence(&bool_value.cleanup_after_use),
+            c_cleanup_sequence(&path.cleanup_after_use),
+            failure_cleanup
+        ));
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ {bool_error_exit} }}"
+        ));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(bool_value.cleanup_after_use);
+        self.body.push(format!("{result} = !{truthy};"));
+        self.body.push("}".to_string());
+        self.body.extend(path.cleanup_after_use);
         Ok(CValue::BoolExpr(result))
     }
 
@@ -8588,6 +8769,12 @@ impl CGenerator {
                 if self.is_string_offset_subject_expr(target) {
                     return self.emit_string_offset_read_expr(expr);
                 }
+                if let Some(value) =
+                    self.try_materialize_request_superglobal_path_value_read_expr(expr, "")?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
                 if let Expr::Index { target, index, .. } = expr {
                     if let Some(name) = request_superglobal_root_name(target) {
                         let value =
@@ -8993,13 +9180,20 @@ impl CGenerator {
                 continue;
             }
 
-            if let Expr::Index { target, index, .. } = arg {
-                if let Some(name) = request_superglobal_root_name(target) {
-                    match self.emit_request_superglobal_keyed_presence_expr(name, index, "")? {
+            if let Some((root, indices, _)) = array_index_expr_path(arg) {
+                if let Some(name) = request_superglobal_root_name(root) {
+                    let value = if indices.len() == 1 {
+                        self.emit_request_superglobal_keyed_presence_expr(name, indices[0], "")?
+                    } else {
+                        self.emit_request_superglobal_path_presence_expr(name, &indices, "")?
+                    };
+                    match value {
                         CValue::Bool(false) => return Ok(CValue::Bool(false)),
                         CValue::Bool(true) => continue,
                         CValue::BoolExpr(value) => dynamic_checks.push(value),
-                        _ => unreachable!("request superglobal keyed isset returns a bool C value"),
+                        _ => {
+                            unreachable!("request superglobal path isset returns a bool C value")
+                        }
                     }
                     continue;
                 }
@@ -9066,9 +9260,12 @@ impl CGenerator {
             return Ok(self.emit_request_superglobal_empty_expr(name, ""));
         }
 
-        if let Expr::Index { target, index, .. } = arg {
-            if let Some(name) = request_superglobal_root_name(target) {
-                return self.emit_request_superglobal_keyed_empty_expr(name, index, "");
+        if let Some((root, indices, _)) = array_index_expr_path(arg) {
+            if let Some(name) = request_superglobal_root_name(root) {
+                if indices.len() == 1 {
+                    return self.emit_request_superglobal_keyed_empty_expr(name, indices[0], "");
+                }
+                return self.emit_request_superglobal_path_empty_expr(name, &indices, "");
             }
         }
 
@@ -15183,6 +15380,12 @@ impl CGenerator {
         }
 
         if let Some(value) =
+            self.try_materialize_request_superglobal_path_value_read_expr(expr, failure_cleanup)?
+        {
+            return Ok(Some(value));
+        }
+
+        if let Some(value) =
             self.try_materialize_nested_array_lvalue_read_expr(expr, failure_cleanup)?
         {
             return Ok(Some(value));
@@ -15450,6 +15653,25 @@ impl CGenerator {
             }
             _ => Ok(None),
         }
+    }
+
+    fn try_materialize_request_superglobal_path_value_read_expr(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some((root, indices, _)) = array_index_expr_path(expr) else {
+            return Ok(None);
+        };
+        if indices.len() < 2 {
+            return Ok(None);
+        }
+        let Some(name) = request_superglobal_root_name(root) else {
+            return Ok(None);
+        };
+
+        self.emit_request_superglobal_path_value_read(name, &indices, failure_cleanup)
+            .map(Some)
     }
 
     fn try_materialize_nested_array_lvalue_read_expr(
