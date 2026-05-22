@@ -403,7 +403,7 @@ const VALUE_OFFSET_NULL_COALESCE_SOURCE: &str = "<?php\n$items = [\"present\" =>
 
 const NATIVE_VALUE_VARIABLE_STORAGE_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$key = \"first\";\n$slot = $items[$key];\n$copy = $slot;\necho $slot, \"|\", $copy, \"|\";\n$upper = strtoupper($copy);\necho $upper, \"|\";\n$fallback = $items[\"missing\"] ?? \"m\";\necho $fallback, \"|\";\n$cast = (string) 42;\necho $cast, \"|\";\n$items[] = $upper;\necho $items[1];\n";
 
-const VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE: &str = "<?php\n$items = [\"keep\" => \"A\", \"drop\" => \"B\", 2 => \"C\"];\n$key = \"drop\";\nunset($items[$key]);\nunset($items[2]);\nunset($items[99]);\necho isset($items[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[2]) ? 1 : 0;\necho \"|\";\n$items[$key] = \"D\";\necho $items[$key];\n";
+const VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inner = \"inner\";\n$items = [\"keep\" => \"A\", \"drop\" => \"B\", 2 => \"C\", $outer => [$inner => \"N\", \"stay\" => \"S\"]];\n$key = \"drop\";\nunset($items[$key]);\nunset($items[2]);\nunset($items[99]);\nunset($items[$outer][$inner]);\necho isset($items[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[2]) ? 1 : 0;\necho \"|\";\necho isset($items[$outer][$inner]) ? 1 : 0;\necho \"|\";\n$items[$key] = \"D\";\necho $items[$key];\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_MULTI_UNSET_SOURCE: &str = "<?php\n$left = [\"keep\" => \"L\", \"drop\" => \"D\", 2 => \"I\"];\n$right = [0 => \"R0\", \"drop\" => \"RD\"];\n$key = \"drop\";\nunset($left[$key], $right[0], $left[2], $right[\"missing\"]);\necho isset($left[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($left[$key]) ? 1 : 0;\necho \"|\";\necho empty($right[0]) ? 1 : 0;\necho \"|\";\necho empty($left[2]) ? 1 : 0;\necho \"|\";\necho isset($right[\"drop\"]) ? 1 : 0;\n";
 
@@ -749,77 +749,80 @@ fn native_executable_c_source_stores_native_value_results_in_direct_variables() 
 }
 
 #[test]
-fn native_executable_c_source_routes_array_offset_unsets_through_value_offset_mutation_boundary() {
+fn native_executable_c_source_routes_array_offset_unsets_through_lvalue_owner_operation() {
     let program = parse(VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
     assert!(
-        source.contains(
-            "extern phpc_NativeArrayHandle phpc_native_value_array_clone(phpc_NativeValueHandle value);"
-        ),
+        source.contains("typedef struct { uint8_t tag; phpc_NativeValueHandle key; } phpc_NativeArrayPathSegment"),
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_value_offset_mutation_operation_with_diagnostic"),
+        source.contains("phpc_native_array_lvalue_owner_array"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_value_operation_result"),
+        "{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET"),
         "{source}"
     );
     assert_eq!(
-        body.matches(" = phpc_native_value_offset_mutation_operation_with_diagnostic(")
+        body.matches(" = phpc_native_array_lvalue_owner_value_operation_result(")
             .count(),
         4,
-        "array offset unsets and the later rewrite should share the value-offset mutation boundary:\n{source}"
+        "direct and nested array-offset unsets should share the lvalue owner operation boundary:\n{source}"
     );
-    assert_eq!(
-        body.matches(" = phpc_native_value_array_clone(").count(),
-        4,
-        "array mutation results should rematerialize through the value-array clone boundary:\n{source}"
-    );
-    assert_eq!(
-        body.matches(", 2, &array_offset_unset_diagnostic_").count(),
-        3,
-        "array offset unsets should use the shared unset operation tag:\n{source}"
+    assert!(
+        body.matches("PHPC_NATIVE_ARRAY_PATH_KEY").count() >= 5,
+        "direct and nested unset paths should materialize every key through path segments:\n{source}"
     );
     assert!(
         body.contains(", 0, &array_offset_write_diagnostic_"),
-        "the same mutation helper should still route the follow-up write:\n{source}"
+        "the adjacent write should stay on the value-offset mutation ABI:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_from_array(array_"),
-        "array subjects should enter the mutation ABI as native values:\n{source}"
+        body.matches(" = phpc_native_value_offset_mutation_operation_with_diagnostic(")
+            .count()
+            == 1,
+        "unset should leave the value-offset mutation ABI for the lvalue owner path while preserving the follow-up write:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_array_unset_int")
             && !source.contains("phpc_native_array_unset_string"),
-        "direct array unset helpers should not bypass the value-offset mutation ABI:\n{source}"
+        "array unset should not reintroduce direct int/string unset helpers:\n{source}"
     );
 }
 
 #[test]
-fn native_executable_c_source_sequences_multi_operand_array_offset_unsets() {
+fn native_executable_c_source_sequences_multi_operand_array_offset_unsets_through_lvalue_owner() {
     let program = parse(VALUE_OFFSET_MUTATION_ARRAY_MULTI_UNSET_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
     assert!(
-        source.contains("phpc_native_value_offset_mutation_operation_with_diagnostic"),
+        source.contains("phpc_native_array_lvalue_owner_value_operation_result"),
         "{source}"
     );
     assert_eq!(
-        body.matches(" = phpc_native_value_offset_mutation_operation_with_diagnostic(")
+        body.matches(" = phpc_native_array_lvalue_owner_value_operation_result(")
             .count(),
         4,
-        "each unset operand should enter the shared value-offset mutation boundary:\n{source}"
+        "each unset operand should enter the shared lvalue owner operation boundary:\n{source}"
     );
     assert_eq!(
-        body.matches(" = phpc_native_value_array_clone(").count(),
+        body.matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET")
+            .count(),
         4,
-        "each mutation result should rematerialize its owner array:\n{source}"
+        "multi-operand unset should reuse the shared unset operation family for every operand:\n{source}"
     );
     assert_eq!(
-        body.matches(", 2, &array_offset_unset_diagnostic_").count(),
+        body.matches("PHPC_NATIVE_ARRAY_PATH_KEY").count(),
         4,
-        "multi-operand unset should reuse the shared unset operation tag for every operand:\n{source}"
+        "multi-operand direct unset should materialize every key through path segments:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_array_unset_int")
@@ -2011,13 +2014,13 @@ fn emit_exe_links_and_runs_native_value_variable_storage_program() {
 }
 
 #[test]
-fn emit_exe_links_and_runs_array_offset_unset_value_mutation_program() {
+fn emit_exe_links_and_runs_array_offset_unset_lvalue_owner_program() {
     if !has_cc() {
         return;
     }
 
-    let output_path = native_link_output_path("array_offset_unset_value_mutation");
-    let source_path = native_link_output_path("array_offset_unset_value_mutation_source.php");
+    let output_path = native_link_output_path("array_offset_unset_lvalue_owner");
+    let source_path = native_link_output_path("array_offset_unset_lvalue_owner_source.php");
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
     fs::write(&source_path, VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE)
@@ -2050,7 +2053,7 @@ fn emit_exe_links_and_runs_array_offset_unset_value_mutation_program() {
         .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
 
     assert!(run.status.success(), "native executable failed");
-    assert_eq!(run.stdout, b"1|0|1|D");
+    assert_eq!(run.stdout, b"1|0|1|0|D");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

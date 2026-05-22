@@ -173,6 +173,14 @@ pub enum NativeValueOffsetMutationOperation {
     Unset = 2,
 }
 
+const NATIVE_ARRAY_PATH_KEY: u8 = 0;
+const NATIVE_ARRAY_LVALUE_OK: u8 = 0;
+const NATIVE_ARRAY_LVALUE_INVALID_ROOT: u8 = 2;
+const NATIVE_ARRAY_LVALUE_INVALID_KEY: u8 = 3;
+const NATIVE_ARRAY_LVALUE_UNSUPPORTED: u8 = 6;
+const NATIVE_ARRAY_LVALUE_OWNER_ARRAY: u8 = 0;
+const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET: u8 = 1;
+
 pub const PHP_STRING_OFFSET_TRUNCATED_REPLACEMENT_WARNING: &str =
     "Only the first byte will be assigned to the string offset";
 
@@ -318,6 +326,31 @@ pub struct NativeComparisonBranchDecision {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeArrayHandle {
     ptr: *mut NativeArray,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeArrayPathSegment {
+    tag: u8,
+    key: NativeValueHandle,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeArrayLvalueOwner {
+    tag: u8,
+    array: NativeArrayHandle,
+    value: NativeValueHandle,
+    value_slot: *mut NativeValueHandle,
+    reference: NativeReferenceHandle,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeArrayLvalueResult {
+    tag: u8,
+    value: NativeValueHandle,
+    diagnostic: NativeDiagnosticHandle,
 }
 
 #[repr(C)]
@@ -1474,6 +1507,36 @@ impl NativeArrayHandle {
 
     unsafe fn as_mut(&mut self) -> Option<&mut NativeArray> {
         unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl NativeArrayLvalueOwner {
+    fn array(array: NativeArrayHandle) -> Self {
+        Self {
+            tag: NATIVE_ARRAY_LVALUE_OWNER_ARRAY,
+            array,
+            value: NativeValueHandle::null(),
+            value_slot: ptr::null_mut(),
+            reference: NativeReferenceHandle::null(),
+        }
+    }
+}
+
+impl NativeArrayLvalueResult {
+    fn ok() -> Self {
+        Self {
+            tag: NATIVE_ARRAY_LVALUE_OK,
+            value: NativeValueHandle::null(),
+            diagnostic: NativeDiagnosticHandle::null(),
+        }
+    }
+
+    fn diagnostic(tag: u8, message: impl Into<String>) -> Self {
+        Self {
+            tag,
+            value: NativeValueHandle::null(),
+            diagnostic: NativeDiagnosticHandle::from_message(message),
+        }
     }
 }
 
@@ -4470,6 +4533,133 @@ unsafe fn native_array_value_offset_mutation_operation_value(
     }
 
     Ok((Value::Array(array), None))
+}
+
+/// # Safety
+///
+/// `array` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. The returned owner borrows the array handle; ownership
+/// remains with the caller.
+#[no_mangle]
+pub extern "C" fn phpc_native_array_lvalue_owner_array(
+    array: NativeArrayHandle,
+) -> NativeArrayLvalueOwner {
+    NativeArrayLvalueOwner::array(array)
+}
+
+/// # Safety
+///
+/// The owner and each key handle inside `segments` must be null or handles
+/// previously returned by the runtime ABI and not yet freed. `segments` must be
+/// null when `segment_count` is zero, or point to `segment_count` initialized
+/// path segments. Only the unset value-operation family is executable through
+/// this ABI slice; other families remain centralized blockers.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
+    mut owner: NativeArrayLvalueOwner,
+    segments: *const NativeArrayPathSegment,
+    segment_count: usize,
+    family: u8,
+    _operation: u8,
+    _op: u8,
+    _position: u8,
+    _value: NativeValueHandle,
+) -> NativeArrayLvalueResult {
+    if family != NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            format!("array lvalue value-operation family tag {family} is not supported"),
+        );
+    }
+
+    if owner.tag != NATIVE_ARRAY_LVALUE_OWNER_ARRAY {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array lvalue owner is not a native array handle",
+        );
+    }
+
+    let Some(array) = (unsafe { owner.array.as_mut() }) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array lvalue root is not a live native array handle",
+        );
+    };
+    let keys = match unsafe { native_array_lvalue_key_path_from_segments(segments, segment_count) }
+    {
+        Ok(keys) => keys,
+        Err(result) => return result,
+    };
+
+    native_array_unset_key_path(&mut array.value, &keys);
+    NativeArrayLvalueResult::ok()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_lvalue_result_free(result: NativeArrayLvalueResult) {
+    unsafe { phpc_native_value_free(result.value) };
+    unsafe { phpc_native_diagnostic_free(result.diagnostic) };
+}
+
+unsafe fn native_array_lvalue_key_path_from_segments(
+    segments: *const NativeArrayPathSegment,
+    segment_count: usize,
+) -> Result<Vec<ArrayKey>, NativeArrayLvalueResult> {
+    if segment_count == 0 {
+        return Err(NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_KEY,
+            "array lvalue unset path must contain at least one key segment",
+        ));
+    }
+    if segments.is_null() {
+        return Err(NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_KEY,
+            "array lvalue path pointer is null with nonzero length",
+        ));
+    }
+
+    let segments = unsafe { std::slice::from_raw_parts(segments, segment_count) };
+    let mut keys = Vec::with_capacity(segment_count);
+    for segment in segments {
+        if segment.tag != NATIVE_ARRAY_PATH_KEY {
+            return Err(NativeArrayLvalueResult::diagnostic(
+                NATIVE_ARRAY_LVALUE_INVALID_KEY,
+                format!(
+                    "array lvalue path segment tag {} is not supported",
+                    segment.tag
+                ),
+            ));
+        }
+        let Some(value) = (unsafe { segment.key.as_ref() }) else {
+            return Err(NativeArrayLvalueResult::diagnostic(
+                NATIVE_ARRAY_LVALUE_INVALID_KEY,
+                "array lvalue key segment has a null value handle",
+            ));
+        };
+        let key = native_array_key_from_runtime_value(value).map_err(|error| {
+            NativeArrayLvalueResult::diagnostic(NATIVE_ARRAY_LVALUE_INVALID_KEY, error.message())
+        })?;
+        keys.push(key);
+    }
+    Ok(keys)
+}
+
+fn native_array_unset_key_path(array: &mut PhpArray, keys: &[ArrayKey]) -> bool {
+    let Some((key, rest)) = keys.split_first() else {
+        return false;
+    };
+
+    if rest.is_empty() {
+        array.remove(key.clone());
+        return true;
+    }
+
+    let Some(Value::Array(mut child)) = array.get_cloned(key.clone()) else {
+        return true;
+    };
+    let removed = native_array_unset_key_path(&mut child, rest);
+    array.insert(key.clone(), Value::Array(child));
+    removed
 }
 
 unsafe fn native_string_value_offset_mutation_operation_value(
@@ -18900,6 +19090,111 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(missing_replacement) };
+    }
+
+    #[test]
+    fn native_array_lvalue_owner_unset_operation_materializes_direct_and_nested_paths() {
+        let mut child = PhpArray::new();
+        child.insert("inner", Value::String("drop".to_string()));
+        child.insert("stay", Value::String("keep".to_string()));
+
+        let mut root = PhpArray::new();
+        root.insert("direct", Value::Int(1));
+        root.insert(2, Value::Int(2));
+        root.insert("outer", Value::Array(child));
+
+        let handle = NativeArrayHandle::from_array(root);
+        let owner = phpc_native_array_lvalue_owner_array(handle);
+        let direct_key = NativeValueHandle::from_value(Value::String("direct".to_string()));
+        let int_key = NativeValueHandle::from_value(Value::Int(2));
+        let outer_key = NativeValueHandle::from_value(Value::String("outer".to_string()));
+        let inner_key = NativeValueHandle::from_value(Value::String("inner".to_string()));
+
+        let direct_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: direct_key,
+        }];
+        let direct = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                direct_path.as_ptr(),
+                direct_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET,
+                0,
+                0,
+                0,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(direct.tag, NATIVE_ARRAY_LVALUE_OK);
+        unsafe { phpc_native_array_lvalue_result_free(direct) };
+
+        let int_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: int_key,
+        }];
+        let int_unset = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                int_path.as_ptr(),
+                int_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET,
+                0,
+                0,
+                0,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(int_unset.tag, NATIVE_ARRAY_LVALUE_OK);
+        unsafe { phpc_native_array_lvalue_result_free(int_unset) };
+
+        let nested_path = [
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: outer_key,
+            },
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: inner_key,
+            },
+        ];
+        let nested = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                nested_path.as_ptr(),
+                nested_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET,
+                0,
+                0,
+                0,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(nested.tag, NATIVE_ARRAY_LVALUE_OK);
+        unsafe { phpc_native_array_lvalue_result_free(nested) };
+
+        let array = unsafe { handle.as_ref() }.expect("array handle remains live");
+        assert!(!array.value.contains_key("direct"));
+        assert!(!array.value.contains_key(2));
+        let outer = array
+            .value
+            .get("outer")
+            .expect("outer array remains after nested unset");
+        let Value::Array(outer) = outer else {
+            panic!("outer slot should remain an array");
+        };
+        assert!(!outer.contains_key("inner"));
+        assert_eq!(
+            outer.get("stay"),
+            Some(&Value::String("keep".to_string())),
+            "nested unset should not remove sibling keys"
+        );
+
+        unsafe { phpc_native_value_free(inner_key) };
+        unsafe { phpc_native_value_free(outer_key) };
+        unsafe { phpc_native_value_free(int_key) };
+        unsafe { phpc_native_value_free(direct_key) };
+        unsafe { phpc_native_array_free(handle) };
     }
 
     #[test]

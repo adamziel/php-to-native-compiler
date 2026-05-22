@@ -152,7 +152,8 @@ const ASSEMBLY_OUTPUT_BUFFER_REJECTION: &str = "assembly output-buffer lowering 
 
 const NATIVE_VALUE_OFFSET_MUTATION_WRITE: u8 = 0;
 const NATIVE_VALUE_OFFSET_MUTATION_APPEND: u8 = 1;
-const NATIVE_VALUE_OFFSET_MUTATION_UNSET: u8 = 2;
+const NATIVE_ARRAY_PATH_KEY_TAG: u8 = 0;
+const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET_TAG: u8 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeCallBackend {
@@ -6559,6 +6560,7 @@ struct CGenerator {
     uses_native_value_clone: bool,
     uses_native_value_string_clone_bytes: bool,
     uses_native_value_offset_mutation: bool,
+    uses_native_array_lvalue_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -6847,6 +6849,12 @@ struct CNativeArrayKeyMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+struct CNativeArrayLvaluePath {
+    path: String,
+    len: usize,
+    cleanup_after_use: Vec<String>,
+}
+
 struct CNativeValueMaterialization {
     handle: String,
     cleanup_after_use: Vec<String>,
@@ -6928,6 +6936,19 @@ impl CGenerator {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeArrayHandle;\n");
                 output.push_str("typedef struct { uint8_t tag; int64_t int_value; phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeArrayKeyMaterializationResult;\n");
                 output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeValueOperationResult;\n");
+                if self.uses_native_array_lvalue_helpers {
+                    output.push_str("typedef struct { void *ptr; } phpc_NativeReferenceHandle;\n");
+                    output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle key; } phpc_NativeArrayPathSegment;\n");
+                    output.push_str("typedef struct { uint8_t tag; phpc_NativeArrayHandle array; phpc_NativeValueHandle value; phpc_NativeValueHandle *value_slot; phpc_NativeReferenceHandle reference; } phpc_NativeArrayLvalueOwner;\n");
+                    output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeArrayLvalueResult;\n");
+                    output.push_str("#define PHPC_NATIVE_ARRAY_LVALUE_OK 0\n");
+                    output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_PATH_KEY {NATIVE_ARRAY_PATH_KEY_TAG}\n"
+                    ));
+                    output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET {NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET_TAG}\n"
+                    ));
+                }
                 output.push_str("#define PHPC_NATIVE_VALUE_OPERATION_OK 0\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_UNARY_NEGATE 0\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_UNARY_BITWISE_NOT 1\n");
@@ -7033,6 +7054,11 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_array_read_key_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_array_key_materialization_result_free(phpc_NativeArrayKeyMaterializationResult key);\n");
                 output.push_str("extern void phpc_native_value_operation_result_free(phpc_NativeValueOperationResult result);\n");
+                if self.uses_native_array_lvalue_helpers {
+                    output.push_str("extern phpc_NativeArrayLvalueOwner phpc_native_array_lvalue_owner_array(phpc_NativeArrayHandle array);\n");
+                    output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_value_operation_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t family, uint8_t operation, uint8_t op, uint8_t position, phpc_NativeValueHandle value);\n");
+                    output.push_str("extern void phpc_native_array_lvalue_result_free(phpc_NativeArrayLvalueResult result);\n");
+                }
                 output.push_str(
                     "extern void phpc_native_array_free(phpc_NativeArrayHandle array);\n\n",
                 );
@@ -7273,9 +7299,11 @@ impl CGenerator {
             Stmt::UnsetArrayIndex { name, index, span } => {
                 self.emit_unset_array_index(name, index, *span)
             }
-            Stmt::UnsetNestedArrayIndex { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
-            }
+            Stmt::UnsetNestedArrayIndex {
+                name,
+                indices,
+                span,
+            } => self.emit_unset_nested_array_index(name, indices, *span),
             Stmt::UnsetMany { targets, span } => {
                 if targets
                     .iter()
@@ -7963,6 +7991,80 @@ impl CGenerator {
         )
     }
 
+    fn materialize_native_array_lvalue_key_path(
+        &mut self,
+        indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeArrayLvaluePath> {
+        if indices.is_empty() {
+            return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
+        }
+
+        let mut keys = Vec::new();
+        for index in indices {
+            let prior_cleanup = c_cleanup_sequence(
+                &keys
+                    .iter()
+                    .flat_map(|key: &CNativeValueMaterialization| key.cleanup_after_use.clone())
+                    .collect::<Vec<_>>(),
+            );
+            let key = self.materialize_native_value_result_operand(
+                index,
+                &format!("{prior_cleanup}{failure_cleanup}"),
+            )?;
+            keys.push(key);
+        }
+
+        let path = self.next_native_name("array_lvalue_path");
+        self.body.push(format!(
+            "phpc_NativeArrayPathSegment {path}[{}] = {{",
+            keys.len()
+        ));
+        for key in &keys {
+            self.body
+                .push(format!("{{ PHPC_NATIVE_ARRAY_PATH_KEY, {} }},", key.handle));
+        }
+        self.body.push("};".to_string());
+
+        Ok(CNativeArrayLvaluePath {
+            path,
+            len: keys.len(),
+            cleanup_after_use: keys
+                .into_iter()
+                .flat_map(|key| key.cleanup_after_use)
+                .collect(),
+        })
+    }
+
+    fn emit_array_lvalue_unset_for_handle(
+        &mut self,
+        handle: &str,
+        indices: &[&Expr],
+        span: Span,
+    ) -> CompileResult<()> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let path = self.materialize_native_array_lvalue_key_path(indices, span, "")?;
+        let owner = self.next_native_name("array_lvalue_owner");
+        let result = self.next_native_name("array_lvalue_unset_result");
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
+            path.path, path.len
+        ));
+        let cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        self.emit_native_array_lvalue_result_check(&result, &cleanup);
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.body.extend(path.cleanup_after_use);
+        Ok(())
+    }
+
     fn emit_unset_array_index(
         &mut self,
         name: &str,
@@ -7977,15 +8079,24 @@ impl CGenerator {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
         };
 
-        self.emit_array_offset_mutation(
-            name,
-            &handle,
-            Some(index_expr),
-            None,
-            NATIVE_VALUE_OFFSET_MUTATION_UNSET,
-            "array_offset_unset",
-            span,
-        )
+        self.emit_array_lvalue_unset_for_handle(&handle, &[index_expr], span)
+    }
+
+    fn emit_unset_nested_array_index(
+        &mut self,
+        name: &str,
+        indices: &[Expr],
+        span: Span,
+    ) -> CompileResult<()> {
+        if !self.uses_native_string_helpers {
+            return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
+        }
+
+        let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+            return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
+        };
+        let indices = indices.iter().collect::<Vec<_>>();
+        self.emit_array_lvalue_unset_for_handle(&handle, &indices, span)
     }
 
     fn emit_unset_many(&mut self, targets: &[UnsetTarget], span: Span) -> CompileResult<()> {
@@ -7994,10 +8105,19 @@ impl CGenerator {
         }
 
         for target in targets {
-            let UnsetTarget::ArrayIndex { name, index, span } = target else {
-                return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION));
-            };
-            self.emit_unset_array_index(name, index, *span)?;
+            match target {
+                UnsetTarget::ArrayIndex { name, index, span } => {
+                    self.emit_unset_array_index(name, index, *span)?;
+                }
+                UnsetTarget::NestedArrayIndex {
+                    name,
+                    indices,
+                    span,
+                } => {
+                    self.emit_unset_nested_array_index(name, indices, *span)?;
+                }
+                _ => return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION)),
+            }
         }
 
         Ok(())
@@ -12245,6 +12365,15 @@ impl CGenerator {
         ));
         self.body.push(format!(
             "if ({result}.tag != PHPC_NATIVE_VALUE_OPERATION_OK) {{ if ({result}.diagnostic.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({result}.diagnostic); }} {result_error_exit} }}"
+        ));
+    }
+
+    fn emit_native_array_lvalue_result_check(&mut self, result: &str, cleanup: &str) {
+        let result_error_exit = self.native_error_exit(&format!(
+            "{cleanup}phpc_native_array_lvalue_result_free({result}); "
+        ));
+        self.body.push(format!(
+            "if ({result}.tag != PHPC_NATIVE_ARRAY_LVALUE_OK) {{ if ({result}.diagnostic.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({result}.diagnostic); }} {result_error_exit} }}"
         ));
     }
 
