@@ -543,6 +543,8 @@ const ARRAY_LVALUE_COMPOUND_ASSIGNMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n
 
 const ARRAY_LVALUE_INCREMENT_DECREMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n$float = \"float\";\n$items = [$key => 4, $float => 1.5, \"other\" => 9];\n$items[$key]++;\necho ++$items[$key], \"|\", $items[$key]--, \"|\", $items[$key], \"|\";\n$oldFloat = $items[$float]--;\necho $oldFloat, \"|\", $items[$float], \"|\";\n$out = [];\n$out[++$items[$key]] = $items[$key]--;\necho $out[6], \"|\", $items[$key];\n";
 
+const ARRAY_LVALUE_INCREMENT_DECREMENT_MISSING_SOURCE: &str = "<?php\n$key = \"missing\";\n$leaf = \"leaf\";\n$items = [\"outer\" => []];\n$post = $items[$key]++;\n$pre = ++$items[\"outer\"][$leaf];\n$items[\"down\"]--;\necho $post, \"|\", $items[$key], \"|\", $pre, \"|\", $items[\"outer\"][$leaf], \"|\", empty($items[\"down\"]) ? 1 : 0;\n";
+
 const ARRAY_LVALUE_APPEND_INCREMENT_DECREMENT_SOURCE: &str = "<?php\n$outer = \"outer\";\n$items = [$outer => []];\n$items[]++;\necho $items[0], \"|\";\necho ++$items[], \"|\", $items[1], \"|\";\n$post = $items[$outer][]++;\necho $post, \"|\", $items[$outer][0], \"|\";\n$old = $items[]++;\necho $old, \"|\", $items[2];\n";
 
 const ARRAY_LVALUE_NESTED_RMW_SOURCE: &str = "<?php\n$outer = \"outer\";\n$leaf = \"leaf\";\n$other = \"other\";\n$items = [$outer => [$leaf => 3, $other => 10]];\n$items[$outer][$leaf] += 4;\n$compound = ($items[$outer][$other] *= 2);\necho $items[$outer][$leaf], \"|\", $compound, \"|\";\n$post = $items[$outer][$leaf]++;\necho $post, \"|\", ++$items[$outer][$leaf], \"|\";\n$out = [];\n$out[$items[$outer][$leaf] += 1] = $items[$outer][$other]--;\necho $out[10], \"|\", $items[$outer][$other], \"|\", $items[$outer][$leaf];\n";
@@ -2708,6 +2710,63 @@ fn emit_exe_links_and_runs_array_lvalue_increment_decrement_program() {
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"6|6|5|1.5|0.5|6|5");
     assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_lvalue_increment_decrement_missing_slot_recovery() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("array_lvalue_increment_decrement_missing");
+    let source_path =
+        native_link_output_path("array_lvalue_increment_decrement_missing_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(
+        &source_path,
+        ARRAY_LVALUE_INCREMENT_DECREMENT_MISSING_SOURCE,
+    )
+    .expect("native array lvalue missing-slot increment/decrement source can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path.to_str().expect(
+                "native array lvalue missing-slot increment/decrement source path is valid UTF-8",
+            ),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"|1|1|1|1");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("undefined array key \"missing\""),
+        "{stderr}"
+    );
+    assert!(stderr.contains("undefined array key \"leaf\""), "{stderr}");
+    assert!(stderr.contains("undefined array key \"down\""), "{stderr}");
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
