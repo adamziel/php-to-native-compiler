@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 01:48 CEST
+Updated: 2026-05-23 02:00 CEST
 Evaluation marker: `20260522T233339Z` was consumed as candid steering but
 produced a stale `PROGRESS.md` diff because primary advanced while it ran.
-Primary management baseline before this update: `9ade9293 runtime: enforce call-frame type metadata`
+Primary management baseline before this update: `44d3be41 docs: refresh progress after call-frame metadata`
 Primary semantic baseline: `9ade9293 runtime: enforce call-frame type metadata`
 Prior evaluator marker: `20260522T224455Z`; next scheduled marker
 `2026-05-23T02:23:15+02:00`.
@@ -17,10 +17,11 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 
 Overall estimated progress: **85%** `[#################---]`
 
-Primary is synced at `9ade9293`. The newest landed slice enforces call-frame
-type metadata in runtime/interpreter call handling, which is generalized
-call/frame infrastructure rather than a fixture-shaped special case. It is
-useful groundwork, but it is not yet generated-native call lowering, so it only
+Primary is pushed at `44d3be41`; the latest semantic capability is still
+`9ade9293`. That landed slice enforces call-frame type metadata in
+runtime/interpreter call handling, which is generalized call/frame
+infrastructure rather than a fixture-shaped special case. It is useful
+groundwork, but it is not yet generated-native call lowering, so it only
 modestly moves the call/frame roadmap item.
 
 The preceding `83e08c94` routes reference-backed symbol-table roots through
@@ -57,15 +58,16 @@ unintegrated and is not counted.
 ## Current Primary State
 
 - Primary `master` and `origin/master`: synced at
-  `9ade9293f0945bea6485abfb97dcd86432ec7828`.
+  `44d3be41 docs: refresh progress after call-frame metadata`.
 - Latest semantic commit: `9ade9293 runtime: enforce call-frame type metadata`.
-- Current product diff at refresh time: this `PROGRESS.md` update plus the
-  preserved unstaged `runtime/src/lib.rs` null-slot increment/decrement hunk.
-  After this progress commit lands, the runtime hunk should remain the only
-  known primary diff. The runtime hunk remains unintegrated and is not counted.
-- Resource note from this review: `/dev/shm` has about 11G available out of
-  22G; `/home` has about 166G available out of 459G. Headroom is serviceable,
-  but broad concurrent test waves still need owner-aware cleanup first.
+- Current product diff at refresh time: a generated-native `exit()`/`die()`
+  termination WIP is under primary integration review, plus the preserved
+  unstaged `runtime/src/lib.rs` null-slot increment/decrement hunk. Neither is
+  counted until reviewed, tested, committed, and pushed.
+- Resource note from this review: `/dev/shm` has about 6.2G available out of
+  22G, just above the 6G dispatch floor; `/home` has about 165G available out
+  of 459G. Avoid broad extra test waves until active builds finish or
+  owner-aware cleanup reclaims more space.
 
 ## Recent Primary-Integrated Progress
 
