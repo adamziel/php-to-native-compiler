@@ -516,6 +516,7 @@ struct NativeArrayEntrySnapshotEntry {
 #[derive(Debug)]
 struct NativeSymbolTable {
     values: HashMap<String, Value>,
+    insertion_order: Vec<String>,
 }
 
 enum NativeObject {}
@@ -1716,6 +1717,7 @@ impl NativeSymbolTableHandle {
         Self {
             ptr: Box::into_raw(Box::new(NativeSymbolTable {
                 values: HashMap::new(),
+                insertion_order: Vec::new(),
             })),
         }
     }
@@ -2402,8 +2404,35 @@ pub unsafe extern "C" fn phpc_native_symbol_table_write(
         return false;
     };
 
+    if !table.values.contains_key(&name) {
+        table.insertion_order.push(name.clone());
+    }
     table.values.insert(name, value.clone());
     true
+}
+
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. The returned value handle owns a PHP array
+/// snapshot of the current symbol table in slot insertion order. Null handles
+/// return a null value handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_snapshot_value(
+    handle: NativeSymbolTableHandle,
+) -> NativeValueHandle {
+    let Some(table) = (unsafe { handle.as_ref() }) else {
+        return NativeValueHandle::null();
+    };
+
+    let mut snapshot = PhpArray::new();
+    for name in &table.insertion_order {
+        if let Some(value) = table.values.get(name) {
+            snapshot.insert(name.clone(), value.clone());
+        }
+    }
+
+    NativeValueHandle::from_value(Value::Array(snapshot))
 }
 
 /// # Safety
@@ -17268,6 +17297,95 @@ mod tests {
         .is_null());
 
         unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_symbol_table_free(table) };
+    }
+
+    #[test]
+    fn native_symbol_table_snapshot_value_materializes_ordered_owned_root_values() {
+        let table = phpc_native_symbol_table_new();
+        let first_name = b"first";
+        let second_name = b"second";
+        let null_name = b"nullable";
+        let first = NativeValueHandle::from_value(Value::String("one".to_string()));
+        let second = NativeValueHandle::from_value(Value::Int(2));
+        let null_value = NativeValueHandle::from_value(Value::Null);
+        let first_overwrite =
+            NativeValueHandle::from_value(Value::String("one-updated".to_string()));
+
+        assert!(unsafe {
+            phpc_native_symbol_table_write(table, first_name.as_ptr(), first_name.len(), first)
+        });
+        assert!(unsafe {
+            phpc_native_symbol_table_write(table, second_name.as_ptr(), second_name.len(), second)
+        });
+        assert!(unsafe {
+            phpc_native_symbol_table_write(table, null_name.as_ptr(), null_name.len(), null_value)
+        });
+        assert!(unsafe {
+            phpc_native_symbol_table_write(
+                table,
+                first_name.as_ptr(),
+                first_name.len(),
+                first_overwrite,
+            )
+        });
+
+        unsafe { phpc_native_value_free(first) };
+        unsafe { phpc_native_value_free(second) };
+        unsafe { phpc_native_value_free(null_value) };
+        unsafe { phpc_native_value_free(first_overwrite) };
+
+        let snapshot = unsafe { phpc_native_symbol_table_snapshot_value(table) };
+        let second_after_snapshot =
+            NativeValueHandle::from_value(Value::String("after".to_string()));
+        assert!(unsafe {
+            phpc_native_symbol_table_write(
+                table,
+                second_name.as_ptr(),
+                second_name.len(),
+                second_after_snapshot,
+            )
+        });
+        unsafe { phpc_native_value_free(second_after_snapshot) };
+
+        {
+            let Some(Value::Array(array)) = (unsafe { snapshot.as_ref() }) else {
+                panic!("symbol table snapshot should be an array value");
+            };
+
+            assert_eq!(array.entries().len(), 3);
+            assert_eq!(
+                array.entries()[0].key,
+                ArrayKey::String("first".to_string())
+            );
+            assert_eq!(
+                array.entries()[1].key,
+                ArrayKey::String("second".to_string())
+            );
+            assert_eq!(
+                array.entries()[2].key,
+                ArrayKey::String("nullable".to_string())
+            );
+            assert_eq!(
+                array.get(ArrayKey::string("first")),
+                Some(&Value::String("one-updated".to_string()))
+            );
+            assert_eq!(array.get(ArrayKey::string("second")), Some(&Value::Int(2)));
+            assert_eq!(array.get(ArrayKey::string("nullable")), Some(&Value::Null));
+        }
+
+        let live_second = unsafe {
+            phpc_native_symbol_table_read(table, second_name.as_ptr(), second_name.len())
+        };
+        assert_eq!(native_value_echo_bytes_for_test(live_second), b"after");
+
+        assert!(unsafe {
+            phpc_native_symbol_table_snapshot_value(NativeSymbolTableHandle::null())
+        }
+        .is_null());
+
+        unsafe { phpc_native_value_free(live_second) };
+        unsafe { phpc_native_value_free(snapshot) };
         unsafe { phpc_native_symbol_table_free(table) };
     }
 
