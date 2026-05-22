@@ -1022,6 +1022,24 @@ const GLOBALS_SNAPSHOT_SOURCE: &str = concat!(
     "echo gettype($GLOBALS);\n",
 );
 
+const GLOBALS_SYMBOL_PATH_SOURCE: &str = concat!(
+    "<?php\n",
+    "$alpha = \"A\";\n",
+    "$bag = [\"slot\" => \"B\", \"empty\" => \"\"];\n",
+    "$key = \"alpha\";\n",
+    "$slot = \"slot\";\n",
+    "$absent_key = \"absent\";\n",
+    "echo $GLOBALS[$key];\n",
+    "echo \"|\";\n",
+    "echo $GLOBALS[\"bag\"][$slot];\n",
+    "echo \"|\";\n",
+    "echo isset($GLOBALS[$key]) ? 1 : 0;\n",
+    "echo isset($GLOBALS[$absent_key]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo empty($GLOBALS[\"bag\"][\"empty\"]) ? 1 : 0;\n",
+    "echo empty($GLOBALS[\"bag\"][\"slot\"]) ? 1 : 0;\n",
+);
+
 const REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
     "<?php\n",
     "$_GET = \"alpha\";\n",
@@ -2091,6 +2109,58 @@ fn native_executable_c_source_routes_direct_globals_through_symbol_snapshot() {
     assert!(
         body.contains("phpc_native_value_clone"),
         "storing $GLOBALS should clone the owned snapshot for variable storage:\n{source}"
+    );
+    assert!(
+        !source.contains("global-symbol-table lowering rejects $GLOBALS"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_dynamic_globals_paths_through_symbol_table_abi() {
+    let program = parse(GLOBALS_SYMBOL_PATH_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_symbol_table_read_value_by_path_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_isset_value_by_path"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_empty_value_by_path"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_read_value_by_path_with_diagnostic")
+            .count()
+            >= 2,
+        "$GLOBALS path reads should use the symbol-table path read ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_isset_value_by_path")
+            .count()
+            >= 2,
+        "$GLOBALS path isset probes should use the quiet symbol-table path ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_empty_value_by_path")
+            .count()
+            >= 2,
+        "$GLOBALS path empty probes should use the quiet symbol-table path ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_NativeValueHandle globals_symbol_path")
+            .count()
+            >= 6,
+        "$GLOBALS path keys should be materialized from value expressions:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_write").count() >= 6,
+        "current root variables should be copied into each symbol path snapshot:\n{source}"
     );
     assert!(
         !source.contains("global-symbol-table lowering rejects $GLOBALS"),
@@ -4564,6 +4634,53 @@ fn emit_exe_links_and_runs_globals_snapshot_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"A|2|array|array");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_globals_symbol_path_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("globals_symbol_path");
+    let source_path = native_link_output_path("globals_symbol_path_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, GLOBALS_SYMBOL_PATH_SOURCE)
+        .expect("native globals symbol path source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native globals symbol path source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native globals symbol path executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"A|B|10|10");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

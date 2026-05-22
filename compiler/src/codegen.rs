@@ -7197,6 +7197,17 @@ struct CRequestStatePathMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+struct CNativeSymbolTableMaterialization {
+    handle: String,
+    cleanup_after_use: Vec<String>,
+}
+
+struct CNativeSymbolPathMaterialization {
+    handles: String,
+    len: usize,
+    cleanup_after_use: Vec<String>,
+}
+
 struct CNativeArrayLvaluePath {
     path: String,
     len: usize,
@@ -7483,6 +7494,9 @@ impl CGenerator {
                     "extern phpc_NativeSymbolTableHandle phpc_native_symbol_table_new(void);\n",
                 );
                 output.push_str("extern bool phpc_native_symbol_table_write(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_symbol_table_read_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_symbol_table_isset_value_by_path(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count);\n");
+                output.push_str("extern bool phpc_native_symbol_table_empty_value_by_path(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_symbol_table_snapshot_value(phpc_NativeSymbolTableHandle table);\n");
                 output.push_str("extern void phpc_native_symbol_table_free(phpc_NativeSymbolTableHandle table);\n");
             }
@@ -7697,11 +7711,11 @@ impl CGenerator {
         bytes_name
     }
 
-    fn materialize_globals_snapshot_value(
+    fn materialize_globals_symbol_table(
         &mut self,
         failure_cleanup: &str,
         span: Span,
-    ) -> CompileResult<CNativeValueMaterialization> {
+    ) -> CompileResult<CNativeSymbolTableMaterialization> {
         self.uses_native_string_helpers = true;
         self.uses_native_symbol_table_helpers = true;
 
@@ -7730,23 +7744,156 @@ impl CGenerator {
                 .push(format!("phpc_native_value_free({value_handle});"));
         }
 
+        Ok(CNativeSymbolTableMaterialization {
+            handle: table.clone(),
+            cleanup_after_use: vec![format!("phpc_native_symbol_table_free({table});")],
+        })
+    }
+
+    fn materialize_globals_snapshot_value(
+        &mut self,
+        failure_cleanup: &str,
+        span: Span,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let table = self.materialize_globals_symbol_table(failure_cleanup, span)?;
         let snapshot = self.next_native_name("globals_snapshot");
         self.body.push(format!(
-            "phpc_NativeValueHandle {snapshot} = phpc_native_symbol_table_snapshot_value({table});"
+            "phpc_NativeValueHandle {snapshot} = phpc_native_symbol_table_snapshot_value({});",
+            table.handle
         ));
         let snapshot_error_exit = self.native_error_exit(&format!(
-            "phpc_native_symbol_table_free({table}); {failure_cleanup}"
+            "{}{failure_cleanup}",
+            c_cleanup_sequence(&table.cleanup_after_use)
         ));
         self.body.push(format!(
             "if ({snapshot}.ptr == NULL) {{ {snapshot_error_exit} }}"
         ));
-        self.body
-            .push(format!("phpc_native_symbol_table_free({table});"));
+        self.body.extend(table.cleanup_after_use);
 
         Ok(CNativeValueMaterialization {
             handle: snapshot.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({snapshot});")],
         })
+    }
+
+    fn materialize_globals_symbol_path_keys(
+        &mut self,
+        indices: &[&Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeSymbolPathMaterialization> {
+        if indices.is_empty() {
+            return Err(Diagnostic::new(
+                Phase::Codegen,
+                0,
+                0,
+                "native $GLOBALS symbol path lowering requires at least one key",
+            ));
+        }
+
+        let mut keys = Vec::new();
+        let mut cleanup_after_use = Vec::new();
+        for index in indices {
+            let key_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let key = self.materialize_native_value_result_operand(index, &key_failure_cleanup)?;
+            cleanup_after_use.extend(key.cleanup_after_use.clone());
+            keys.push(key);
+        }
+
+        let handles = self.next_native_name("globals_symbol_path");
+        let entries = keys
+            .iter()
+            .map(|key| key.handle.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {handles}[] = {{ {entries} }};"
+        ));
+
+        Ok(CNativeSymbolPathMaterialization {
+            handles,
+            len: keys.len(),
+            cleanup_after_use,
+        })
+    }
+
+    fn emit_globals_symbol_path_value_read(
+        &mut self,
+        indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let path = self.materialize_globals_symbol_path_keys(indices, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let table = self
+            .materialize_globals_symbol_table(&format!("{path_cleanup}{failure_cleanup}"), span)?;
+        let table_cleanup = c_cleanup_sequence(&table.cleanup_after_use);
+        let diagnostic = self.next_native_name("globals_symbol_path_read_diagnostic");
+        let value = self.next_native_name("globals_symbol_path_read");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_symbol_table_read_value_by_path_with_diagnostic({}, {}, {}, &{diagnostic});",
+            table.handle, path.handles, path.len
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let read_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_free({diagnostic}); {path_cleanup}{table_cleanup}{failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if ({value}.ptr == NULL) {{ {read_error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(path.cleanup_after_use);
+        self.body.extend(table.cleanup_after_use);
+
+        Ok(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        })
+    }
+
+    fn emit_globals_symbol_path_presence_expr(
+        &mut self,
+        indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let path = self.materialize_globals_symbol_path_keys(indices, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let table = self
+            .materialize_globals_symbol_table(&format!("{path_cleanup}{failure_cleanup}"), span)?;
+        let result = self.next_native_name("globals_symbol_path_isset");
+        self.body.push(format!(
+            "bool {result} = phpc_native_symbol_table_isset_value_by_path({}, {}, {});",
+            table.handle, path.handles, path.len
+        ));
+        self.body.extend(path.cleanup_after_use);
+        self.body.extend(table.cleanup_after_use);
+        Ok(CValue::BoolExpr(result))
+    }
+
+    fn emit_globals_symbol_path_empty_expr(
+        &mut self,
+        indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let path = self.materialize_globals_symbol_path_keys(indices, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let table = self
+            .materialize_globals_symbol_table(&format!("{path_cleanup}{failure_cleanup}"), span)?;
+        let result = self.next_native_name("globals_symbol_path_empty");
+        self.body.push(format!(
+            "bool {result} = phpc_native_symbol_table_empty_value_by_path({}, {}, {});",
+            table.handle, path.handles, path.len
+        ));
+        self.body.extend(path.cleanup_after_use);
+        self.body.extend(table.cleanup_after_use);
+        Ok(CValue::BoolExpr(result))
     }
 
     fn clone_native_value_handle(&mut self, handle: &str) -> String {
@@ -8863,6 +9010,12 @@ impl CGenerator {
                     return self.emit_string_offset_read_expr(expr);
                 }
                 if let Some(value) =
+                    self.try_materialize_globals_symbol_path_value_read_expr(expr, "")?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                if let Some(value) =
                     self.try_materialize_request_superglobal_path_value_read_expr(expr, "")?
                 {
                     self.retain_native_value_cleanup_handle(&value.handle);
@@ -9319,7 +9472,19 @@ impl CGenerator {
                 continue;
             }
 
-            if let Some((root, indices, _)) = array_index_expr_path(arg) {
+            if let Some((root, indices, path_span)) = array_index_expr_path(arg) {
+                if matches!(root, Expr::Variable(name, _) if is_globals_superglobal_name(name)) {
+                    let value =
+                        self.emit_globals_symbol_path_presence_expr(&indices, path_span, "")?;
+                    match value {
+                        CValue::Bool(false) => return Ok(CValue::Bool(false)),
+                        CValue::Bool(true) => continue,
+                        CValue::BoolExpr(value) => dynamic_checks.push(value),
+                        _ => unreachable!("$GLOBALS symbol path isset returns a bool C value"),
+                    }
+                    continue;
+                }
+
                 if let Some(name) = request_superglobal_root_name(root) {
                     let value = if indices.len() == 1 {
                         self.emit_request_superglobal_keyed_presence_expr(name, indices[0], "")?
@@ -9399,7 +9564,11 @@ impl CGenerator {
             return Ok(self.emit_request_superglobal_empty_expr(name, ""));
         }
 
-        if let Some((root, indices, _)) = array_index_expr_path(arg) {
+        if let Some((root, indices, path_span)) = array_index_expr_path(arg) {
+            if matches!(root, Expr::Variable(name, _) if is_globals_superglobal_name(name)) {
+                return self.emit_globals_symbol_path_empty_expr(&indices, path_span, "");
+            }
+
             if let Some(name) = request_superglobal_root_name(root) {
                 if indices.len() == 1 {
                     return self.emit_request_superglobal_keyed_empty_expr(name, indices[0], "");
@@ -15525,6 +15694,12 @@ impl CGenerator {
         }
 
         if let Some(value) =
+            self.try_materialize_globals_symbol_path_value_read_expr(expr, failure_cleanup)?
+        {
+            return Ok(Some(value));
+        }
+
+        if let Some(value) =
             self.try_materialize_nested_array_lvalue_read_expr(expr, failure_cleanup)?
         {
             return Ok(Some(value));
@@ -15810,6 +15985,22 @@ impl CGenerator {
         };
 
         self.emit_request_superglobal_path_value_read(name, &indices, failure_cleanup)
+            .map(Some)
+    }
+
+    fn try_materialize_globals_symbol_path_value_read_expr(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some((root, indices, span)) = array_index_expr_path(expr) else {
+            return Ok(None);
+        };
+        if !matches!(root, Expr::Variable(name, _) if is_globals_superglobal_name(name)) {
+            return Ok(None);
+        }
+
+        self.emit_globals_symbol_path_value_read(&indices, span, failure_cleanup)
             .map(Some)
     }
 

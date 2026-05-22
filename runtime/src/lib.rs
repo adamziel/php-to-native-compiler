@@ -3014,6 +3014,30 @@ enum NativeSymbolTableNestedRead {
     MissingKey(ArrayKey),
 }
 
+fn native_symbol_table_path_root_name(root: &ArrayKey) -> String {
+    match root {
+        ArrayKey::Int(value) => value.to_string(),
+        ArrayKey::String(value) => value.clone(),
+    }
+}
+
+unsafe fn native_symbol_table_value_path_from_handles(
+    keys: *const NativeValueHandle,
+    key_count: usize,
+    operation: &'static str,
+) -> RuntimeResult<(String, Vec<ArrayKey>)> {
+    let mut keys =
+        unsafe { native_value_offset_key_path_from_handles(keys, key_count, operation) }?;
+    if keys.is_empty() {
+        return Err(RuntimeError::invalid_array_access(format!(
+            "{operation} failed: symbol path must contain at least one key"
+        )));
+    }
+
+    let root = native_symbol_table_path_root_name(&keys.remove(0));
+    Ok((root, keys))
+}
+
 fn native_php_array_read_nested_symbol_path(
     array: &PhpArray,
     keys: &[ArrayKey],
@@ -3063,6 +3087,23 @@ fn native_symbol_table_read_nested_value_by_path(
             other.type_name()
         ))),
     }
+}
+
+fn native_symbol_table_read_value_by_path(
+    table: &NativeSymbolTable,
+    name: &str,
+    keys: &[ArrayKey],
+) -> RuntimeResult<NativeSymbolTableNestedRead> {
+    if keys.is_empty() {
+        return Ok(table
+            .values
+            .get(name)
+            .map(ArraySlot::value_cloned)
+            .map(NativeSymbolTableNestedRead::Value)
+            .unwrap_or(NativeSymbolTableNestedRead::MissingRoot));
+    }
+
+    native_symbol_table_read_nested_value_by_path(table, name, keys)
 }
 
 /// # Safety
@@ -3263,6 +3304,71 @@ pub unsafe extern "C" fn phpc_native_symbol_table_read_nested_value_by_path_with
 /// # Safety
 ///
 /// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. `keys` must be null when `key_count` is zero,
+/// or point to `key_count` initialized value handles previously returned by the
+/// runtime ABI and not yet freed. The first key selects the root symbol-table
+/// slot and remaining keys select nested array offsets. The returned value
+/// handle owns a clone of the selected value. When `diagnostic` is non-null,
+/// invalid keys, missing roots/keys, and invalid scalar parents store a
+/// diagnostic handle owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_read_value_by_path_with_diagnostic(
+    handle: NativeSymbolTableHandle,
+    keys: *const NativeValueHandle,
+    key_count: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let Some(table) = (unsafe { handle.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "symbol table path read failed: symbol table handle is null",
+            )
+        };
+        return NativeValueHandle::null();
+    };
+    let (name, keys) = match unsafe {
+        native_symbol_table_value_path_from_handles(keys, key_count, "symbol table path read")
+    } {
+        Ok(path) => path,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            return NativeValueHandle::null();
+        }
+    };
+
+    match native_symbol_table_read_value_by_path(table, &name, &keys) {
+        Ok(NativeSymbolTableNestedRead::Value(value)) => NativeValueHandle::from_value(value),
+        Ok(NativeSymbolTableNestedRead::MissingRoot) => {
+            unsafe {
+                native_store_diagnostic_message(
+                    diagnostic,
+                    RuntimeError::undefined_variable(name).message(),
+                )
+            };
+            NativeValueHandle::null()
+        }
+        Ok(NativeSymbolTableNestedRead::MissingKey(key)) => {
+            unsafe {
+                native_store_diagnostic_message(
+                    diagnostic,
+                    RuntimeError::undefined_array_key(key.diagnostic_key()).message(),
+                )
+            };
+            NativeValueHandle::null()
+        }
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
 /// runtime ABI and not yet freed. `name` must either be null with
 /// `name_len == 0`, or point to at least `name_len` readable bytes. `keys`
 /// must be null when `key_count` is zero, or point to `key_count` initialized
@@ -3300,6 +3406,39 @@ pub unsafe extern "C" fn phpc_native_symbol_table_isset_nested_value_by_path(
 /// # Safety
 ///
 /// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. `keys` must be null when `key_count` is zero,
+/// or point to `key_count` initialized value handles previously returned by the
+/// runtime ABI and not yet freed. The first key selects the root symbol-table
+/// slot and remaining keys select nested array offsets. Returns PHP `isset()`
+/// semantics for the symbol path without reporting missing-root/key
+/// diagnostics.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_isset_value_by_path(
+    handle: NativeSymbolTableHandle,
+    keys: *const NativeValueHandle,
+    key_count: usize,
+) -> bool {
+    let Some(table) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok((name, keys)) = (unsafe {
+        native_symbol_table_value_path_from_handles(keys, key_count, "symbol table path isset")
+    }) else {
+        return false;
+    };
+
+    match native_symbol_table_read_value_by_path(table, &name, &keys) {
+        Ok(NativeSymbolTableNestedRead::Value(value)) => !matches!(value, Value::Null),
+        Ok(
+            NativeSymbolTableNestedRead::MissingRoot | NativeSymbolTableNestedRead::MissingKey(_),
+        )
+        | Err(_) => false,
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
 /// runtime ABI and not yet freed. `name` must either be null with
 /// `name_len == 0`, or point to at least `name_len` readable bytes. `keys`
 /// must be null when `key_count` is zero, or point to `key_count` initialized
@@ -3326,6 +3465,39 @@ pub unsafe extern "C" fn phpc_native_symbol_table_empty_nested_value_by_path(
     };
 
     match native_symbol_table_read_nested_value_by_path(table, &name, &keys) {
+        Ok(NativeSymbolTableNestedRead::Value(value)) => !value.is_truthy(),
+        Ok(
+            NativeSymbolTableNestedRead::MissingRoot | NativeSymbolTableNestedRead::MissingKey(_),
+        )
+        | Err(_) => true,
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. `keys` must be null when `key_count` is zero,
+/// or point to `key_count` initialized value handles previously returned by the
+/// runtime ABI and not yet freed. The first key selects the root symbol-table
+/// slot and remaining keys select nested array offsets. Returns PHP `empty()`
+/// semantics for the symbol path without reporting missing-root/key
+/// diagnostics.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_empty_value_by_path(
+    handle: NativeSymbolTableHandle,
+    keys: *const NativeValueHandle,
+    key_count: usize,
+) -> bool {
+    let Some(table) = (unsafe { handle.as_ref() }) else {
+        return true;
+    };
+    let Ok((name, keys)) = (unsafe {
+        native_symbol_table_value_path_from_handles(keys, key_count, "symbol table path empty")
+    }) else {
+        return true;
+    };
+
+    match native_symbol_table_read_value_by_path(table, &name, &keys) {
         Ok(NativeSymbolTableNestedRead::Value(value)) => !value.is_truthy(),
         Ok(
             NativeSymbolTableNestedRead::MissingRoot | NativeSymbolTableNestedRead::MissingKey(_),
@@ -22703,6 +22875,161 @@ mod tests {
             );
             phpc_native_value_free(reference_value);
             phpc_native_reference_free(reference);
+        }
+
+        unsafe { phpc_native_symbol_table_free(table) };
+    }
+
+    #[test]
+    fn native_symbol_table_root_paths_read_and_probe_dynamic_keys() {
+        unsafe fn value_handle(value: Value) -> NativeValueHandle {
+            NativeValueHandle::from_value(value)
+        }
+
+        unsafe fn key_handles(values: Vec<Value>) -> Vec<NativeValueHandle> {
+            values
+                .into_iter()
+                .map(NativeValueHandle::from_value)
+                .collect()
+        }
+
+        unsafe fn free_handles(handles: Vec<NativeValueHandle>) {
+            for handle in handles {
+                unsafe { phpc_native_value_free(handle) };
+            }
+        }
+
+        unsafe fn write_symbol(table: NativeSymbolTableHandle, name: &[u8], value: Value) {
+            let value = unsafe { value_handle(value) };
+            assert!(unsafe {
+                phpc_native_symbol_table_write(table, name.as_ptr(), name.len(), value)
+            });
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        unsafe fn read_path(
+            table: NativeSymbolTableHandle,
+            key_values: Vec<Value>,
+        ) -> (NativeValueHandle, Option<String>) {
+            let keys = unsafe { key_handles(key_values) };
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let value = unsafe {
+                phpc_native_symbol_table_read_value_by_path_with_diagnostic(
+                    table,
+                    keys.as_ptr(),
+                    keys.len(),
+                    &mut diagnostic,
+                )
+            };
+            unsafe { free_handles(keys) };
+            let message = if diagnostic.is_null() {
+                None
+            } else {
+                let message = native_diagnostic_message_for_test(diagnostic);
+                unsafe { phpc_native_diagnostic_free(diagnostic) };
+                Some(message)
+            };
+            (value, message)
+        }
+
+        unsafe fn isset_path(table: NativeSymbolTableHandle, key_values: Vec<Value>) -> bool {
+            let keys = unsafe { key_handles(key_values) };
+            let result = unsafe {
+                phpc_native_symbol_table_isset_value_by_path(table, keys.as_ptr(), keys.len())
+            };
+            unsafe { free_handles(keys) };
+            result
+        }
+
+        unsafe fn empty_path(table: NativeSymbolTableHandle, key_values: Vec<Value>) -> bool {
+            let keys = unsafe { key_handles(key_values) };
+            let result = unsafe {
+                phpc_native_symbol_table_empty_value_by_path(table, keys.as_ptr(), keys.len())
+            };
+            unsafe { free_handles(keys) };
+            result
+        }
+
+        let table = phpc_native_symbol_table_new();
+        let mut bag = PhpArray::new();
+        bag.insert(ArrayKey::string("slot"), Value::String("leaf".to_string()));
+        bag.insert(ArrayKey::string("empty"), Value::String(String::new()));
+
+        unsafe {
+            write_symbol(table, b"alpha", Value::String("A".to_string()));
+            write_symbol(table, b"0", Value::String("zero-root".to_string()));
+            write_symbol(table, b"nil", Value::Null);
+            write_symbol(table, b"flag", Value::Bool(false));
+            write_symbol(table, b"bag", Value::Array(bag));
+
+            let (alpha, diagnostic) = read_path(table, vec![Value::String("alpha".to_string())]);
+            assert_eq!(diagnostic, None);
+            assert_eq!(native_value_echo_bytes_for_test(alpha), b"A");
+            phpc_native_value_free(alpha);
+
+            let (zero, diagnostic) = read_path(table, vec![Value::Int(0)]);
+            assert_eq!(diagnostic, None);
+            assert_eq!(native_value_echo_bytes_for_test(zero), b"zero-root");
+            phpc_native_value_free(zero);
+
+            let (nested, diagnostic) = read_path(
+                table,
+                vec![
+                    Value::String("bag".to_string()),
+                    Value::String("slot".to_string()),
+                ],
+            );
+            assert_eq!(diagnostic, None);
+            assert_eq!(native_value_echo_bytes_for_test(nested), b"leaf");
+            phpc_native_value_free(nested);
+
+            assert!(isset_path(table, vec![Value::String("alpha".to_string())]));
+            assert!(isset_path(table, vec![Value::String("flag".to_string())]));
+            assert!(!isset_path(table, vec![Value::String("nil".to_string())]));
+            assert!(!isset_path(
+                table,
+                vec![Value::String("missing".to_string())]
+            ));
+            assert!(isset_path(
+                table,
+                vec![
+                    Value::String("bag".to_string()),
+                    Value::String("slot".to_string())
+                ],
+            ));
+
+            assert!(!empty_path(table, vec![Value::String("alpha".to_string())]));
+            assert!(empty_path(table, vec![Value::String("flag".to_string())]));
+            assert!(empty_path(table, vec![Value::String("nil".to_string())]));
+            assert!(empty_path(
+                table,
+                vec![
+                    Value::String("bag".to_string()),
+                    Value::String("empty".to_string())
+                ],
+            ));
+            assert!(empty_path(
+                table,
+                vec![
+                    Value::String("bag".to_string()),
+                    Value::String("missing".to_string())
+                ],
+            ));
+
+            let (missing, diagnostic) =
+                read_path(table, vec![Value::String("missing".to_string())]);
+            assert!(missing.is_null());
+            assert!(diagnostic
+                .expect("missing symbol path should report a diagnostic")
+                .contains("undefined variable '$missing'"));
+            phpc_native_value_free(missing);
+
+            let (bad_key, diagnostic) = read_path(table, vec![Value::Array(PhpArray::new())]);
+            assert!(bad_key.is_null());
+            assert!(diagnostic
+                .expect("invalid root key should report a diagnostic")
+                .contains("array keys are not supported"));
+            phpc_native_value_free(bad_key);
         }
 
         unsafe { phpc_native_symbol_table_free(table) };
