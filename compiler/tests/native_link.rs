@@ -6394,6 +6394,8 @@ const NATIVE_VALUE_BITWISE_SOURCE: &str = "<?php\n$a = [];\n$a[\"and\"] = \"B\" 
 
 const NATIVE_VALUE_COMPARE_CAST_TYPE_NAME_SOURCE: &str = "<?php\n$a = [];\n$a[(int)\"5\"] = (string)((2 + 3) > 4);\n$a[(int)(3 <= 2)] = get_debug_type((string)123);\n$a[(float)\"3\"] = gettype((float)\"3.5\");\necho $a[5], \"|\", $a[0], \"|\", $a[3];\n";
 
+const NATIVE_VALUE_STRICT_IDENTITY_SOURCE: &str = "<?php\n$a = [\"i\" => 1, \"s\" => \"1\", \"n\" => null];\n$i = $a[\"i\"];\n$s = $a[\"s\"];\n$n = $a[\"n\"];\n$copy = $i;\n$GLOBALS[\"g\"] = 7;\n$_GET[\"id\"] = \"7\";\necho $i === 1;\necho \"|\";\necho $i !== 1;\necho \"|\";\necho $s !== 1;\necho \"|\";\necho $n === null;\necho \"|\";\necho $copy === 1;\necho \"|\";\necho $GLOBALS[\"g\"] === 7;\necho \"|\";\necho $_GET[\"id\"] === \"7\";\n";
+
 const NATIVE_VALUE_TYPE_PREDICATE_SOURCE: &str = "<?php\necho is_int(\"6\" + 1), \"|\";\necho is_float(\"7\" / 2), \"|\";\necho is_string((string)(2 + 3)), \"|\";\necho is_bool((2 + 3) > 4), \"|\";\necho is_array((array)\"x\"), \"|\";\necho is_scalar(gettype((float)\"3.5\")), \"|\";\necho is_numeric((string)(2 + 3)), \"|\";\necho is_countable((array)null), \"|\";\necho is_iterable((array)\"x\"), \"|\";\necho is_null((array)null), \"|\";\necho is_object((array)\"x\");\n";
 
 const NATIVE_VALUE_CAST_ECHO_SOURCE: &str = "<?php\necho (int)\"5.9\", \"|\";\necho (float)\"3.5\", \"|\";\necho (string)(2 + 3), \"|\";\necho (bool)\"0\", \"|\";\necho gettype((string)123);\n";
@@ -6770,6 +6772,81 @@ fn emit_exe_links_and_runs_native_compare_cast_type_name_result_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"1|string|double");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn native_executable_c_source_routes_native_value_strict_identity_through_comparison_operands() {
+    let program = parse(NATIVE_VALUE_STRICT_IDENTITY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("extern phpc_NativeValueHandle phpc_native_value_clone"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_clone(")
+            && source.contains("phpc_NativeComparisonOperand")
+            && source.contains("phpc_native_comparison_operand_compare_operation_relation_and_free")
+            && source
+                .contains("phpc_native_comparison_relation_result_decision_or_report_stderr_and_free"),
+        "native value handles should be cloned into the shared comparison operand boundary for strict identity:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_comparison_operation_from_opcode(6)")
+            .count()
+            >= 4
+            && source
+                .matches("phpc_native_comparison_operation_from_opcode(7)")
+                .count()
+                >= 2,
+        "strict identity and non-identity should both use runtime comparison operations:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_value_strict_identity_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let temp_php = native_link_output_path("native_value_strict_identity").with_extension("php");
+    fs::write(&temp_php, NATIVE_VALUE_STRICT_IDENTITY_SOURCE)
+        .expect("write native value strict identity fixture");
+    let output_path = native_link_output_path("native_value_strict_identity");
+    let _ = fs::remove_file(&output_path);
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            temp_php
+                .to_str()
+                .expect("temporary PHP path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1||1|1|1|1|1");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

@@ -14650,6 +14650,13 @@ impl CGenerator {
                 ));
                 Ok(NativeCComparisonOperand { operand })
             }
+            CValue::NativeValueHandle(handle) => {
+                self.uses_native_value_clone = true;
+                self.body.push(format!(
+                    "phpc_NativeComparisonOperand {operand} = (phpc_NativeComparisonOperand){{phpc_native_value_clone({handle}), (phpc_NativeDiagnosticHandle){{0}}}};"
+                ));
+                Ok(NativeCComparisonOperand { operand })
+            }
             CValue::Int(value) => {
                 self.body.push(format!(
                     "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_scalar((phpc_NativeScalarValue){{2, 0, (int64_t)({value}), 0.0}});"
@@ -14692,9 +14699,7 @@ impl CGenerator {
                 ));
                 Ok(NativeCComparisonOperand { operand })
             }
-            CValue::ArrayHandle(_) | CValue::NativeValueHandle(_) => {
-                Err(self.unsupported(span, assembly_comparison_rejection()))
-            }
+            CValue::ArrayHandle(_) => Err(self.unsupported(span, assembly_comparison_rejection())),
         }
     }
 
@@ -15336,6 +15341,10 @@ impl CGenerator {
                     c_comparison_decision_bool_expr(&right),
                     span,
                 );
+            }
+            (left @ CValue::NativeValueHandle(_), right)
+            | (left, right @ CValue::NativeValueHandle(_)) => {
+                return self.emit_native_runtime_comparison(left, op, right, span);
             }
             (CValue::String(left), CValue::String(right)) => left == right,
             (CValue::StringExpr(left), CValue::StringExpr(right)) => {
