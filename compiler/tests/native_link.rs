@@ -949,6 +949,24 @@ const REQUEST_SUPERGLOBAL_KEYED_STORAGE_SOURCE: &str = concat!(
     "echo isset($_COOKIE[0]) ? 1 : 0;\n",
 );
 
+const REQUEST_SUPERGLOBAL_KEYED_EMPTY_SOURCE: &str = concat!(
+    "<?php\n",
+    "$zero = \"zero\";\n",
+    "$_GET[$zero] = \"0\";\n",
+    "$_POST[\"name\"] = \"Ada\";\n",
+    "$_COOKIE[false] = \"\";\n",
+    "$_REQUEST[true] = [];\n",
+    "echo empty($_GET[$zero]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo empty($_POST[\"name\"]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo empty($_SERVER[\"missing\"]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo empty($_COOKIE[0]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo empty($_REQUEST[1]) ? 1 : 0;\n",
+);
+
 const NATIVE_VALUE_VARIABLE_STORAGE_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$key = \"first\";\n$slot = $items[$key];\n$copy = $slot;\necho $slot, \"|\", $copy, \"|\";\n$upper = strtoupper($copy);\necho $upper, \"|\";\n$fallback = $items[\"missing\"] ?? \"m\";\necho $fallback, \"|\";\n$cast = (string) 42;\necho $cast, \"|\";\n$items[] = $upper;\necho $items[1];\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inner = \"inner\";\n$items = [\"keep\" => \"A\", \"drop\" => \"B\", 2 => \"C\", $outer => [$inner => \"N\", \"stay\" => \"S\"]];\n$key = \"drop\";\nunset($items[$key]);\nunset($items[2]);\nunset($items[99]);\nunset($items[$outer][$inner]);\necho isset($items[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[2]) ? 1 : 0;\necho \"|\";\necho isset($items[$outer][$inner]) ? 1 : 0;\necho \"|\";\n$items[$key] = \"D\";\necho $items[$key];\n";
@@ -1950,6 +1968,41 @@ fn native_executable_c_source_routes_request_keyed_storage_through_state_operati
         body.contains("PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET"),
         "{source}"
     );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_request_keyed_empty_through_state_operations() {
+    let program = parse(REQUEST_SUPERGLOBAL_KEYED_EMPTY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_key_from_value"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_bool_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE")
+            .count()
+            >= 5,
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_OP_VALUE").count() >= 5,
+        "{source}"
+    );
+    assert!(body.contains("request_superglobal_keyed_empty"), "{source}");
     assert!(
         !source.contains("request-superglobal lowering rejects"),
         "{source}"
@@ -4211,6 +4264,53 @@ fn emit_exe_links_and_runs_request_keyed_storage_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"Ada|1|0|ANSWER|0");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_keyed_empty_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("request_keyed_empty");
+    let source_path = native_link_output_path("request_keyed_empty_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, REQUEST_SUPERGLOBAL_KEYED_EMPTY_SOURCE)
+        .expect("native request keyed empty source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native request keyed empty source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native request keyed empty executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1|0|1|1|1");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
