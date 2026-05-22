@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 17:18 CEST
+Updated: 2026-05-22 17:31 CEST
 Evaluation marker: `20260522T151651Z`
-Primary HEAD: `a3d032bb docs: update progress after GLOBALS path lowering`
-Current pushed semantic baseline: `633c8713 codegen: route GLOBALS symbol paths through ABI`
+Primary HEAD: `6ded95bc codegen: route GLOBALS symbol writes through ABI`
+Current pushed semantic baseline: `6ded95bc codegen: route GLOBALS symbol writes through ABI`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -14,27 +14,29 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 
 Overall estimated progress: **80%** `[################----]`
 
-This review is a marker refresh after a near-immediate follow-up evaluator run.
-No new primary semantic commit landed after the prior 17:14 CEST evaluation.
-Primary remains synced with `origin/master` at `a3d032bb`; the latest semantic
-baseline remains `633c8713`.
+Primary now has one new generalized semantic slice after the marker refresh:
+generated-C `$GLOBALS[$expr]` and nested `$GLOBALS[...]` writes execute through
+a root-inclusive symbol-table path write ABI. The compiler keeps a persistent
+root symbol table once `$GLOBALS` path mutation starts, so subsequent
+`$GLOBALS` reads/probes and direct variable reads/writes share the same symbol
+path boundary instead of mutating a throwaway snapshot.
 
-Recent integrated work is still meaningful: request-state paths and dynamic
-`$GLOBALS[...]` reads/probes now execute through shared runtime/compiler ABIs.
-That is real movement toward generalized PHP semantics, but it is not full
-global/request/reference behavior. Writes, unsets, aliases, frames, references,
-COW, exact diagnostics, object/property semantics, and broad control-flow
-cleanup remain substantial open systems.
+Recent integrated work is still bounded: request-state paths and dynamic
+`$GLOBALS[...]` read/probe/write paths now execute through shared
+runtime/compiler ABIs. That is real movement toward generalized PHP semantics,
+but it is not full global/request/reference behavior. Unsets, request aliases,
+frames, references, COW, exact diagnostics, object/property semantics, and
+broad control-flow cleanup remain substantial open systems.
 
 ## Roadmap Position
 
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
-| Compiler/backend consumers | 83% | `[#################---]` | Good for selected request/array/string/`$GLOBALS` read paths; uneven across calls, objects, control flow, and LLVM/C parity. |
+| Compiler/backend consumers | 84% | `[#################---]` | Good for selected request/array/string/`$GLOBALS` read/write paths; uneven across calls, objects, control flow, and LLVM/C parity. |
 | Executable generalized PHP semantics | 71% | `[##############------]` | Improving, but many real PHP compositions still block. |
 | Arrays, lvalues, references, COW | 73% | `[###############-----]` | Arrays/lvalues advanced; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 67% | `[#############-------]` | Request paths and `$GLOBALS` reads/probes are stronger; writes, aliases, frames, and self-reference remain incomplete. |
+| Symbols, globals, request state | 69% | `[##############------]` | Request paths and `$GLOBALS` reads/writes/probes are stronger; unsets, aliases, frames, and self-reference remain incomplete. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Early; call/frame candidates exist but broad executable semantics are not primary yet. |
 | Objects, properties, methods | 11% | `[##------------------]` | Early; runtime candidates exist, but general compiled object/property/method execution remains missing. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused work, but exact diagnostic ordering and structured cleanup are not generalized. |
@@ -54,7 +56,9 @@ cleanup remain substantial open systems.
   write/read/probe ABIs.
 - [x] Compiler-lowered `$GLOBALS[$expr]` and nested `$GLOBALS[...]`
   read/`isset`/`empty` paths through the symbol-table path ABI in generated C.
-- [ ] `$GLOBALS` symbol path writes/unsets and request-root alias
+- [x] Compiler-lowered `$GLOBALS[$expr]` and nested `$GLOBALS[...]` writes
+  through a persistent root symbol-table path ABI in generated C.
+- [ ] `$GLOBALS` symbol path unsets and request-root alias
   reconciliation.
 - [ ] Request-root append/write behavior reconciled with `$GLOBALS` and
   request-state storage.
@@ -73,6 +77,7 @@ cleanup remain substantial open systems.
 
 Recent semantic commits on primary:
 
+- `6ded95bc codegen: route GLOBALS symbol writes through ABI`
 - `633c8713 codegen: route GLOBALS symbol paths through ABI`
 - `39586978 runtime: add symbol-table nested read probes`
 - `8c13b871 codegen: return request assignment values`
@@ -85,8 +90,10 @@ Recent semantic commits on primary:
 
 Primary-integrated capability now includes strong request-superglobal path
 execution through shared request-state ABIs and generated-C `$GLOBALS[...]`
-read/probe lowering through shared symbol-table path ABIs. No new primary
-semantic commit landed in this short follow-up cycle.
+read/probe/write lowering through shared symbol-table path ABIs. The write
+slice intentionally leaves unsets, request-root alias reconciliation,
+self-reference behavior, frames, references/COW, and LLVM/C assembly parity
+blocked.
 
 ## Lane-Local And Active Candidate Work
 
@@ -110,7 +117,7 @@ The next integration batches should favor small executable slices:
 
 - Treat this review as no-new-primary semantic progress; percentages are
   intentionally unchanged.
-- Build directly on the current global/request work: `$GLOBALS` writes/unsets,
+- Build directly on the current global/request work: `$GLOBALS` unsets,
   request/global alias reconciliation, or request-root append/write behavior.
 - Keep one source of truth for `$GLOBALS`, request roots, symbol-table roots,
   and aliases before importing dynamic request-root dispatch.
