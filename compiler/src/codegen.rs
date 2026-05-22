@@ -2076,6 +2076,16 @@ fn is_globals_superglobal_name(name: &str) -> bool {
     name == "GLOBALS"
 }
 
+fn globals_request_superglobal_alias_path<'a>(
+    indices: &'a [&'a Expr],
+) -> Option<(&'a str, &'a [&'a Expr])> {
+    let (first, rest) = indices.split_first()?;
+    match *first {
+        Expr::String(name, _) if is_request_superglobal_name(name) => Some((name.as_str(), rest)),
+        _ => None,
+    }
+}
+
 fn request_superglobal_root_name(expr: &Expr) -> Option<&str> {
     match expr {
         Expr::Variable(name, _) if is_request_superglobal_name(name) => Some(name.as_str()),
@@ -8467,6 +8477,184 @@ impl CGenerator {
         )
     }
 
+    fn emit_globals_request_alias_value_read(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        if indices.is_empty() {
+            return Ok(self.materialize_request_superglobal_snapshot_value(name, failure_cleanup));
+        }
+
+        self.emit_request_superglobal_path_value_read(name, indices, failure_cleanup)
+    }
+
+    fn emit_globals_request_alias_presence_expr(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        if indices.is_empty() {
+            return Ok(self.emit_request_superglobal_isset_expr(name, failure_cleanup));
+        }
+
+        self.emit_request_superglobal_path_presence_expr(name, indices, failure_cleanup)
+    }
+
+    fn emit_globals_request_alias_empty_expr(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        if indices.is_empty() {
+            return Ok(self.emit_request_superglobal_empty_expr(name, failure_cleanup));
+        }
+
+        self.emit_request_superglobal_path_empty_expr(name, indices, failure_cleanup)
+    }
+
+    fn emit_globals_request_alias_assignment(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        if indices.is_empty() {
+            let value = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
+            return self.emit_request_superglobal_root_assignment_from_materialized(
+                name,
+                value,
+                failure_cleanup,
+            );
+        }
+
+        let path = self.materialize_request_superglobal_path_key_refs(indices, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let value = self.materialize_native_value_result_operand(
+            expr,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        )?;
+        self.emit_request_superglobal_path_assignment_from_materialized(
+            name,
+            path,
+            value,
+            failure_cleanup,
+        )
+    }
+
+    fn emit_globals_request_alias_assignment_expr(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        if indices.is_empty() {
+            let (result_value, value) =
+                self.materialize_assignment_expression_replacement_value(expr, failure_cleanup)?;
+            self.emit_request_superglobal_root_assignment_from_materialized(
+                name,
+                value,
+                failure_cleanup,
+            )?;
+            return Ok(result_value);
+        }
+
+        let path = self.materialize_request_superglobal_path_key_refs(indices, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let (result_value, value) = self.materialize_assignment_expression_replacement_value(
+            expr,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        )?;
+        self.emit_request_superglobal_path_assignment_from_materialized(
+            name,
+            path,
+            value,
+            failure_cleanup,
+        )?;
+        Ok(result_value)
+    }
+
+    fn emit_globals_request_alias_append_assignment(
+        &mut self,
+        name: &str,
+        prefix_indices: &[&Expr],
+        suffix_indices: &[&Expr],
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        if !suffix_indices.is_empty() {
+            return Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
+        let path = self.materialize_optional_request_superglobal_path_key_refs(
+            prefix_indices,
+            failure_cleanup,
+        )?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let value = self.materialize_native_value_result_operand(
+            expr,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        )?;
+        self.emit_request_superglobal_path_append_assignment_from_materialized(
+            name,
+            path,
+            value,
+            failure_cleanup,
+        )
+    }
+
+    fn emit_globals_request_alias_append_assignment_expr(
+        &mut self,
+        name: &str,
+        prefix_indices: &[&Expr],
+        suffix_indices: &[&Expr],
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        if !suffix_indices.is_empty() {
+            return Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
+        let path = self.materialize_optional_request_superglobal_path_key_refs(
+            prefix_indices,
+            failure_cleanup,
+        )?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let (result_value, value) = self.materialize_assignment_expression_replacement_value(
+            expr,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        )?;
+        self.emit_request_superglobal_path_append_assignment_from_materialized(
+            name,
+            path,
+            value,
+            failure_cleanup,
+        )?;
+        Ok(result_value)
+    }
+
+    fn emit_globals_request_alias_unset(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        if indices.is_empty() {
+            return Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
+        let path = self.materialize_request_superglobal_path_key_refs(indices, failure_cleanup)?;
+        self.emit_request_superglobal_path_unset_from_path(name, path, failure_cleanup)
+    }
+
     fn emit_request_superglobal_keyed_value_read(
         &mut self,
         name: &str,
@@ -9145,9 +9333,18 @@ impl CGenerator {
         indices: &[Expr],
         failure_cleanup: &str,
     ) -> CompileResult<()> {
+        let path = self.materialize_request_superglobal_path_keys(indices, failure_cleanup)?;
+        self.emit_request_superglobal_path_unset_from_path(name, path, failure_cleanup)
+    }
+
+    fn emit_request_superglobal_path_unset_from_path(
+        &mut self,
+        name: &str,
+        path: CRequestStatePathMaterialization,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
         let request_state = self.ensure_native_request_state_handle();
         let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
-        let path = self.materialize_request_superglobal_path_keys(indices, failure_cleanup)?;
         let result = self.next_native_name("request_superglobal_path_unset");
         self.body.push(format!(
             "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_path_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET, {bag_bytes}, {}, {}, {}, {}, {}, (phpc_NativeValueHandle){{0}});",
@@ -9972,9 +10169,22 @@ impl CGenerator {
                 name,
                 index: Some(index),
                 ..
-            } if is_globals_superglobal_name(name) => self
-                .emit_globals_symbol_path_assignment_expr(&[index], expr, span, failure_cleanup)
-                .map(Some),
+            } if is_globals_superglobal_name(name) => {
+                if let Expr::String(alias_name, _) = index {
+                    if is_request_superglobal_name(alias_name) {
+                        return self
+                            .emit_globals_request_alias_assignment_expr(
+                                alias_name,
+                                &[],
+                                expr,
+                                failure_cleanup,
+                            )
+                            .map(Some);
+                    }
+                }
+                self.emit_globals_symbol_path_assignment_expr(&[index], expr, span, failure_cleanup)
+                    .map(Some)
+            }
             AssignTarget::ArrayIndex { name, .. } if is_globals_superglobal_name(name) => {
                 Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION))
             }
@@ -9982,6 +10192,18 @@ impl CGenerator {
                 if is_globals_superglobal_name(name) =>
             {
                 let indices = indices.iter().collect::<Vec<_>>();
+                if let Some((alias_name, request_indices)) =
+                    globals_request_superglobal_alias_path(&indices)
+                {
+                    return self
+                        .emit_globals_request_alias_assignment_expr(
+                            alias_name,
+                            request_indices,
+                            expr,
+                            failure_cleanup,
+                        )
+                        .map(Some);
+                }
                 self.emit_globals_symbol_path_assignment_expr(&indices, expr, span, failure_cleanup)
                     .map(Some)
             }
@@ -9993,6 +10215,20 @@ impl CGenerator {
             } if is_globals_superglobal_name(name) => {
                 let prefix_indices = indices.iter().collect::<Vec<_>>();
                 let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
+                if let Some((alias_name, request_indices)) =
+                    globals_request_superglobal_alias_path(&prefix_indices)
+                {
+                    return self
+                        .emit_globals_request_alias_append_assignment_expr(
+                            alias_name,
+                            request_indices,
+                            &suffix_indices,
+                            expr,
+                            span,
+                            failure_cleanup,
+                        )
+                        .map(Some);
+                }
                 self.emit_globals_symbol_path_append_assignment_expr(
                     &prefix_indices,
                     &suffix_indices,
@@ -10038,8 +10274,13 @@ impl CGenerator {
 
             if let Some((root, indices, path_span)) = array_index_expr_path(arg) {
                 if matches!(root, Expr::Variable(name, _) if is_globals_superglobal_name(name)) {
-                    let value =
-                        self.emit_globals_symbol_path_presence_expr(&indices, path_span, "")?;
+                    let value = if let Some((name, request_indices)) =
+                        globals_request_superglobal_alias_path(&indices)
+                    {
+                        self.emit_globals_request_alias_presence_expr(name, request_indices, "")?
+                    } else {
+                        self.emit_globals_symbol_path_presence_expr(&indices, path_span, "")?
+                    };
                     match value {
                         CValue::Bool(false) => return Ok(CValue::Bool(false)),
                         CValue::Bool(true) => continue,
@@ -10143,6 +10384,11 @@ impl CGenerator {
 
         if let Some((root, indices, path_span)) = array_index_expr_path(arg) {
             if matches!(root, Expr::Variable(name, _) if is_globals_superglobal_name(name)) {
+                if let Some((name, request_indices)) =
+                    globals_request_superglobal_alias_path(&indices)
+                {
+                    return self.emit_globals_request_alias_empty_expr(name, request_indices, "");
+                }
                 return self.emit_globals_symbol_path_empty_expr(&indices, path_span, "");
             }
 
@@ -12134,6 +12380,11 @@ impl CGenerator {
             return self.emit_request_superglobal_keyed_unset(name, index_expr, "");
         }
         if is_globals_superglobal_name(name) {
+            if let Expr::String(alias_name, _) = index_expr {
+                if is_request_superglobal_name(alias_name) {
+                    return self.emit_globals_request_alias_unset(alias_name, &[], span, "");
+                }
+            }
             return self.emit_globals_symbol_path_unset(&[index_expr], span, "");
         }
 
@@ -12169,6 +12420,16 @@ impl CGenerator {
         }
         if is_globals_superglobal_name(name) {
             let indices = indices.iter().collect::<Vec<_>>();
+            if let Some((alias_name, request_indices)) =
+                globals_request_superglobal_alias_path(&indices)
+            {
+                return self.emit_globals_request_alias_unset(
+                    alias_name,
+                    request_indices,
+                    span,
+                    "",
+                );
+            }
             return self.emit_globals_symbol_path_unset(&indices, span, "");
         }
 
@@ -13577,6 +13838,16 @@ impl CGenerator {
                     let Some(index) = index.as_ref() else {
                         return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
                     };
+                    if let Expr::String(alias_name, _) = index {
+                        if is_request_superglobal_name(alias_name) {
+                            return self.emit_globals_request_alias_assignment(
+                                alias_name,
+                                &[],
+                                expr,
+                                "",
+                            );
+                        }
+                    }
                     return self.emit_globals_symbol_path_assignment(&[index], expr, *span, "");
                 }
                 if self.uses_native_string_helpers {
@@ -13635,6 +13906,16 @@ impl CGenerator {
                 }
                 if is_globals_superglobal_name(name) {
                     let indices = indices.iter().collect::<Vec<_>>();
+                    if let Some((alias_name, request_indices)) =
+                        globals_request_superglobal_alias_path(&indices)
+                    {
+                        return self.emit_globals_request_alias_assignment(
+                            alias_name,
+                            request_indices,
+                            expr,
+                            "",
+                        );
+                    }
                     return self.emit_globals_symbol_path_assignment(&indices, expr, *span, "");
                 }
                 if self.uses_native_string_helpers {
@@ -13670,6 +13951,18 @@ impl CGenerator {
                 if is_globals_superglobal_name(name) {
                     let prefix_indices = indices.iter().collect::<Vec<_>>();
                     let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
+                    if let Some((alias_name, request_indices)) =
+                        globals_request_superglobal_alias_path(&prefix_indices)
+                    {
+                        return self.emit_globals_request_alias_append_assignment(
+                            alias_name,
+                            request_indices,
+                            &suffix_indices,
+                            expr,
+                            *span,
+                            "",
+                        );
+                    }
                     return self.emit_globals_symbol_path_append_assignment(
                         &prefix_indices,
                         &suffix_indices,
@@ -16406,6 +16699,15 @@ impl CGenerator {
                     {
                         return Ok(Some(value));
                     }
+                    if let Some(value) = self
+                        .try_materialize_globals_request_alias_null_coalesce_expr(
+                            left,
+                            right,
+                            failure_cleanup,
+                        )?
+                    {
+                        return Ok(Some(value));
+                    }
                     return self.try_materialize_native_value_offset_null_coalesce_expr(
                         left,
                         right,
@@ -16688,6 +16990,37 @@ impl CGenerator {
         .map(Some)
     }
 
+    fn try_materialize_globals_request_alias_null_coalesce_expr(
+        &mut self,
+        left: &Expr,
+        right: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some((root, indices, _)) = array_index_expr_path(left) else {
+            return Ok(None);
+        };
+        if !matches!(root, Expr::Variable(name, _) if is_globals_superglobal_name(name)) {
+            return Ok(None);
+        }
+        let Some((name, request_indices)) = globals_request_superglobal_alias_path(&indices) else {
+            return Ok(None);
+        };
+        if request_indices.is_empty() {
+            return Ok(Some(self.materialize_request_superglobal_snapshot_value(
+                name,
+                failure_cleanup,
+            )));
+        }
+
+        self.emit_request_superglobal_path_null_coalesce_value(
+            name,
+            request_indices,
+            right,
+            failure_cleanup,
+        )
+        .map(Some)
+    }
+
     fn emit_request_superglobal_path_null_coalesce_value(
         &mut self,
         name: &str,
@@ -16783,6 +17116,11 @@ impl CGenerator {
         };
         if !matches!(root, Expr::Variable(name, _) if is_globals_superglobal_name(name)) {
             return Ok(None);
+        }
+        if let Some((name, request_indices)) = globals_request_superglobal_alias_path(&indices) {
+            return self
+                .emit_globals_request_alias_value_read(name, request_indices, failure_cleanup)
+                .map(Some);
         }
 
         self.emit_globals_symbol_path_value_read(&indices, span, failure_cleanup)
