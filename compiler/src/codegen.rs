@@ -7144,6 +7144,11 @@ struct CNativeArrayKeyMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+struct CRequestStateKeyMaterialization {
+    result: String,
+    cleanup_after_use: Vec<String>,
+}
+
 struct CNativeArrayLvaluePath {
     path: String,
     len: usize,
@@ -7209,6 +7214,9 @@ impl CGenerator {
             output.push_str("typedef struct { void *ptr; } phpc_NativeStringHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeValueHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeDiagnosticHandle;\n");
+            if self.uses_native_array_helpers || self.uses_native_request_state_helpers {
+                output.push_str("typedef struct { void *ptr; } phpc_NativeArrayHandle;\n");
+            }
             if self.uses_native_request_state_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeRequestStateHandle;\n");
             }
@@ -7219,6 +7227,16 @@ impl CGenerator {
             }
             if self.uses_native_string_helpers {
                 output.push_str("typedef struct { phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeStringConversionResult;\n");
+            }
+            if self.uses_native_request_state_helpers {
+                output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeArrayHandle array; uint8_t is_set; uint8_t result_kind; uint8_t status; uint8_t exists; } phpc_NativeRequestStateOperationResult;\n");
+                output.push_str("typedef struct { phpc_NativeByteBuffer buffer; uint8_t status; } phpc_NativeRequestStateKeyResult;\n");
+                output.push_str("#define PHPC_NATIVE_REQUEST_STATE_OP_VALUE 1\n");
+                output.push_str("#define PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE 3\n");
+                output.push_str("#define PHPC_NATIVE_REQUEST_STATE_STATUS_OK 1\n");
+                output.push_str("#define PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY 2\n");
+                output.push_str("#define PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE 1\n");
+                output.push_str("#define PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET 2\n");
             }
             if self.uses_native_comparison_helpers {
                 output.push_str("typedef struct { uint8_t opcode; uint8_t valid; } phpc_NativeComparisonOperation;\n");
@@ -7232,7 +7250,6 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_COMPARISON_STATUS_BLOCKED 1\n");
             }
             if self.uses_native_array_helpers {
-                output.push_str("typedef struct { void *ptr; } phpc_NativeArrayHandle;\n");
                 output.push_str("typedef struct { uint8_t tag; int64_t int_value; phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeArrayKeyMaterializationResult;\n");
                 output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeValueOperationResult;\n");
                 if self.uses_native_array_lvalue_helpers {
@@ -7386,6 +7403,11 @@ impl CGenerator {
                 output.push_str(
                     "extern phpc_NativeRequestStateHandle phpc_native_request_state_empty(void);\n",
                 );
+                output.push_str("extern phpc_NativeRequestStateKeyResult phpc_native_request_state_key_from_value(phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status);\n");
+                output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_keyed_mutation_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status, phpc_NativeValueHandle value);\n");
+                output.push_str("extern size_t phpc_native_request_state_operation_result_report_diagnostic(phpc_NativeRequestStateOperationResult result);\n");
+                output.push_str("extern void phpc_native_request_state_operation_result_free(phpc_NativeRequestStateOperationResult result);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_request_state_superglobal_snapshot_value(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag);\n");
                 output.push_str("extern _Bool phpc_native_request_state_superglobal_replace_value_with_diagnostic(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str(
@@ -7416,6 +7438,11 @@ impl CGenerator {
                 }
                 if self.uses_native_value_string_clone_bytes {
                     output.push_str("extern phpc_NativeByteBuffer phpc_native_value_string_clone_bytes(phpc_NativeValueHandle value);\n");
+                    output.push_str(
+                        "extern void phpc_native_byte_buffer_free(phpc_NativeByteBuffer buffer);\n",
+                    );
+                }
+                if self.uses_native_request_state_helpers {
                     output.push_str(
                         "extern void phpc_native_byte_buffer_free(phpc_NativeByteBuffer buffer);\n",
                     );
@@ -7605,23 +7632,123 @@ impl CGenerator {
         handle
     }
 
-    fn emit_request_superglobal_bag_handle(&mut self, name: &str) -> String {
-        self.uses_native_string_helpers = true;
+    fn emit_request_superglobal_bag_static_bytes(&mut self, name: &str) -> String {
         self.uses_native_request_state_helpers = true;
 
         let index = self.next_static_data;
         self.next_static_data += 1;
         let bytes = c_byte_array(name.as_bytes());
+        let bytes_name = format!("request_superglobal_bag_bytes_{index}");
         self.static_data.push(format!(
-            "static const uint8_t request_superglobal_bag_bytes_{index}[] = {{{bytes}}};"
+            "static const uint8_t {bytes_name}[] = {{{bytes}}};"
         ));
+        bytes_name
+    }
+
+    fn emit_request_superglobal_bag_handle(&mut self, name: &str) -> String {
+        self.uses_native_string_helpers = true;
+
+        let bytes_name = self.emit_request_superglobal_bag_static_bytes(name);
 
         let bag = self.next_native_name("request_superglobal_bag");
         self.body.push(format!(
-            "phpc_NativeStringHandle {bag} = phpc_native_string_from_bytes(request_superglobal_bag_bytes_{index}, {});",
+            "phpc_NativeStringHandle {bag} = phpc_native_string_from_bytes({bytes_name}, {});",
             name.len()
         ));
         bag
+    }
+
+    fn materialize_request_superglobal_key(
+        &mut self,
+        key_expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CRequestStateKeyMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_request_state_helpers = true;
+
+        let key_value = self.materialize_native_value_result_operand(key_expr, failure_cleanup)?;
+        let result = self.next_native_name("request_superglobal_key");
+        self.body.push(format!(
+            "phpc_NativeRequestStateKeyResult {result} = phpc_native_request_state_key_from_value({});",
+            key_value.handle
+        ));
+
+        let mut cleanup_after_use = vec![format!("phpc_native_byte_buffer_free({result}.buffer);")];
+        cleanup_after_use.extend(key_value.cleanup_after_use);
+        Ok(CRequestStateKeyMaterialization {
+            result,
+            cleanup_after_use,
+        })
+    }
+
+    fn request_superglobal_operation_failure_condition(&self, result: &str) -> String {
+        format!(
+            "{result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY"
+        )
+    }
+
+    fn emit_request_superglobal_keyed_value_read(
+        &mut self,
+        name: &str,
+        index: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let key = self.materialize_request_superglobal_key(index, failure_cleanup)?;
+        let result = self.next_native_name("request_superglobal_keyed_read");
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_VALUE, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status);",
+            name.len(),
+            key = key.result
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({result});"
+        ));
+        let result_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({result}); {}{}",
+            c_cleanup_sequence(&key.cleanup_after_use),
+            failure_cleanup
+        ));
+        self.body.push(format!(
+            "if ({result}.value.ptr == NULL) {{ {result_error_exit} }}"
+        ));
+        self.body.extend(key.cleanup_after_use);
+        Ok(CNativeValueMaterialization {
+            handle: format!("{result}.value"),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result}.value);")],
+        })
+    }
+
+    fn emit_request_superglobal_keyed_presence_expr(
+        &mut self,
+        name: &str,
+        index: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let key = self.materialize_request_superglobal_key(index, failure_cleanup)?;
+        let result = self.next_native_name("request_superglobal_keyed_presence");
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status);",
+            name.len(),
+            key = key.result
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({result});"
+        ));
+        let result_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({result}); {}{}",
+            c_cleanup_sequence(&key.cleanup_after_use),
+            failure_cleanup
+        ));
+        let failure_condition = self.request_superglobal_operation_failure_condition(&result);
+        self.body.push(format!(
+            "if ({failure_condition}) {{ {result_error_exit} }}"
+        ));
+        self.body.extend(key.cleanup_after_use);
+        Ok(CValue::BoolExpr(format!("{result}.is_set != 0")))
     }
 
     fn materialize_request_superglobal_snapshot_value(
@@ -7676,6 +7803,76 @@ impl CGenerator {
             .push(format!("phpc_native_diagnostic_free({diagnostic});"));
         self.body.push(format!("phpc_native_string_free({bag});"));
         self.body.extend(value.cleanup_after_use);
+        Ok(())
+    }
+
+    fn emit_request_superglobal_keyed_assignment(
+        &mut self,
+        name: &str,
+        index: &Expr,
+        expr: &Expr,
+    ) -> CompileResult<()> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let key = self.materialize_request_superglobal_key(index, "")?;
+        let key_cleanup = c_cleanup_sequence(&key.cleanup_after_use);
+        let value = self.materialize_native_value_result_operand(expr, &key_cleanup)?;
+        let result = self.next_native_name("request_superglobal_keyed_write");
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_keyed_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status, {});",
+            name.len(),
+            value.handle,
+            key = key.result
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({result});"
+        ));
+        let result_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({result}); {}{}",
+            c_cleanup_sequence(&value.cleanup_after_use),
+            c_cleanup_sequence(&key.cleanup_after_use)
+        ));
+        self.body.push(format!(
+            "if ({result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {result_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_free({result});"
+        ));
+        self.body.extend(value.cleanup_after_use);
+        self.body.extend(key.cleanup_after_use);
+        Ok(())
+    }
+
+    fn emit_request_superglobal_keyed_unset(
+        &mut self,
+        name: &str,
+        index: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let key = self.materialize_request_superglobal_key(index, failure_cleanup)?;
+        let result = self.next_native_name("request_superglobal_keyed_unset");
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_keyed_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status, (phpc_NativeValueHandle){{0}});",
+            name.len(),
+            key = key.result
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({result});"
+        ));
+        let result_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({result}); {}{}",
+            c_cleanup_sequence(&key.cleanup_after_use),
+            failure_cleanup
+        ));
+        self.body.push(format!(
+            "if ({result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {result_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_free({result});"
+        ));
+        self.body.extend(key.cleanup_after_use);
         Ok(())
     }
 
@@ -7987,6 +8184,14 @@ impl CGenerator {
             Expr::Index { target, span, .. } => {
                 if self.is_string_offset_subject_expr(target) {
                     return self.emit_string_offset_read_expr(expr);
+                }
+                if let Expr::Index { target, index, .. } = expr {
+                    if let Some(name) = request_superglobal_root_name(target) {
+                        let value =
+                            self.emit_request_superglobal_keyed_value_read(name, index, "")?;
+                        self.retain_native_value_cleanup_handle(&value.handle);
+                        return Ok(CValue::NativeValueHandle(value.handle));
+                    }
                 }
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
@@ -8369,6 +8574,18 @@ impl CGenerator {
                     _ => unreachable!("request superglobal isset returns a bool C value"),
                 }
                 continue;
+            }
+
+            if let Expr::Index { target, index, .. } = arg {
+                if let Some(name) = request_superglobal_root_name(target) {
+                    match self.emit_request_superglobal_keyed_presence_expr(name, index, "")? {
+                        CValue::Bool(false) => return Ok(CValue::Bool(false)),
+                        CValue::Bool(true) => continue,
+                        CValue::BoolExpr(value) => dynamic_checks.push(value),
+                        _ => unreachable!("request superglobal keyed isset returns a bool C value"),
+                    }
+                    continue;
+                }
             }
 
             if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
@@ -10307,6 +10524,10 @@ impl CGenerator {
         index_expr: &Expr,
         span: Span,
     ) -> CompileResult<()> {
+        if is_request_superglobal_name(name) {
+            return self.emit_request_superglobal_keyed_unset(name, index_expr, "");
+        }
+
         if !self.uses_native_string_helpers {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
         }
@@ -11701,6 +11922,12 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION))
             }
             AssignTarget::ArrayIndex { name, index, span } => {
+                if is_request_superglobal_name(name) {
+                    let Some(index) = index.as_ref() else {
+                        return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                    };
+                    return self.emit_request_superglobal_keyed_assignment(name, index, expr);
+                }
                 if self.uses_native_string_helpers {
                     return match self.variables.get(name).cloned() {
                         Some(CValue::ArrayHandle(handle)) => {
@@ -14647,6 +14874,11 @@ impl CGenerator {
                 index,
                 span,
             } => {
+                if let Some(name) = request_superglobal_root_name(target) {
+                    return self
+                        .emit_request_superglobal_keyed_value_read(name, index, failure_cleanup)
+                        .map(Some);
+                }
                 if !self.uses_native_string_helpers || !self.is_array_offset_subject_expr(target) {
                     return Ok(None);
                 }

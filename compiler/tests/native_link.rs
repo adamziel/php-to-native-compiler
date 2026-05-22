@@ -926,6 +926,24 @@ const REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
     "echo $_SERVER;\n",
 );
 
+const REQUEST_SUPERGLOBAL_KEYED_STORAGE_SOURCE: &str = concat!(
+    "<?php\n",
+    "$key = \"name\";\n",
+    "$_GET[$key] = \"Ada\";\n",
+    "echo $_GET[\"name\"];\n",
+    "echo \"|\";\n",
+    "echo isset($_GET[$key]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "unset($_GET[$key]);\n",
+    "echo isset($_GET[\"name\"]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "$_POST[42] = strtoupper(\"answer\");\n",
+    "echo $_POST[\"42\"];\n",
+    "echo \"|\";\n",
+    "$_COOKIE[false] = null;\n",
+    "echo isset($_COOKIE[0]) ? 1 : 0;\n",
+);
+
 const NATIVE_VALUE_VARIABLE_STORAGE_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$key = \"first\";\n$slot = $items[$key];\n$copy = $slot;\necho $slot, \"|\", $copy, \"|\";\n$upper = strtoupper($copy);\necho $upper, \"|\";\n$fallback = $items[\"missing\"] ?? \"m\";\necho $fallback, \"|\";\n$cast = (string) 42;\necho $cast, \"|\";\n$items[] = $upper;\necho $items[1];\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inner = \"inner\";\n$items = [\"keep\" => \"A\", \"drop\" => \"B\", 2 => \"C\", $outer => [$inner => \"N\", \"stay\" => \"S\"]];\n$key = \"drop\";\nunset($items[$key]);\nunset($items[2]);\nunset($items[99]);\nunset($items[$outer][$inner]);\necho isset($items[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[2]) ? 1 : 0;\necho \"|\";\necho isset($items[$outer][$inner]) ? 1 : 0;\necho \"|\";\n$items[$key] = \"D\";\necho $items[$key];\n";
@@ -1878,6 +1896,54 @@ fn native_executable_c_source_routes_request_root_assignments_through_replace_va
     assert!(
         source.contains("phpc_native_value_string_result_operation_with_diagnostic"),
         "request-root replacement should consume existing native value-result operands:\n{source}"
+    );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_request_keyed_storage_through_state_operations() {
+    let program = parse(REQUEST_SUPERGLOBAL_KEYED_STORAGE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_key_from_value"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_keyed_mutation_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_operation_result_report_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_OP_VALUE").count() >= 2,
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET"),
+        "{source}"
     );
     assert!(
         !source.contains("request-superglobal lowering rejects"),
@@ -4093,6 +4159,53 @@ fn emit_exe_links_and_runs_request_root_assignment_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"alpha|42|1|array|SRV");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_keyed_storage_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("request_keyed_storage");
+    let source_path = native_link_output_path("request_keyed_storage_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, REQUEST_SUPERGLOBAL_KEYED_STORAGE_SOURCE)
+        .expect("native request keyed storage source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native request keyed storage source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native request keyed storage executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"Ada|1|0|ANSWER|0");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
