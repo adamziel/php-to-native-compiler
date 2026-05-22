@@ -2500,6 +2500,36 @@ impl NativeRequestState {
         Ok(true)
     }
 
+    fn append_superglobal_path_reference(
+        &mut self,
+        bag: NativeRequestStateBag,
+        keys: &[ArrayKey],
+        reference: PhpReferenceCell,
+    ) -> Result<Vec<ArrayKey>, NativeRequestStateOperationStatus> {
+        if self.superglobal_root_is_reference(bag) {
+            let Some(root_value) = self.root_values.get_mut(&bag) else {
+                return Err(NativeRequestStateOperationStatus::UnsupportedKeyedValue);
+            };
+            let mut array = match root_value.value_cloned() {
+                Value::Array(array) => array,
+                Value::Null | Value::Bool(false) => PhpArray::new(),
+                _ => return Err(NativeRequestStateOperationStatus::UnsupportedKeyedValue),
+            };
+            let appended_keys = array
+                .append_path_reference(keys, reference)
+                .map_err(|_| NativeRequestStateOperationStatus::UnsupportedKeyedValue)?;
+            root_value.set_value(Value::Array(array));
+            return Ok(appended_keys);
+        }
+
+        self.prepare_superglobal_keyed_write(bag)?;
+        self.superglobals
+            .entry(bag)
+            .or_default()
+            .append_path_reference(keys, reference)
+            .map_err(|_| NativeRequestStateOperationStatus::UnsupportedKeyedValue)
+    }
+
     fn populate_superglobal_from_symbol_table(
         &mut self,
         bag: NativeRequestStateBag,
@@ -4840,6 +4870,89 @@ pub unsafe extern "C" fn phpc_native_request_state_superglobal_path_reference_bi
 /// # Safety
 ///
 /// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `reference` must be null or a native
+/// reference handle returned by the runtime ABI and not yet freed. Other
+/// pointer operands follow the same contract as
+/// `phpc_native_request_state_superglobal_path_mutation_operation`. A
+/// `key_count` of zero appends to the request bag root; otherwise keys select
+/// the parent path that receives the appended reference slot.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_path_reference_append_operation(
+    handle: NativeRequestStateHandle,
+    bag_ptr: *const u8,
+    bag_len: usize,
+    key_ptrs: *const *const u8,
+    key_lens: *const usize,
+    key_count: usize,
+    key_status: u8,
+    reference: NativeReferenceHandle,
+) -> NativeRequestStateOperationResult {
+    let Some(reference) = (unsafe { reference.as_ref() }) else {
+        return NativeRequestStateOperationResult::unsupported(
+            NativeRequestStateOperationStatus::InvalidAbi,
+        );
+    };
+    let mutation = unsafe {
+        NativeRequestStateMutation::from_path_abi(
+            handle, bag_ptr, bag_len, key_ptrs, key_lens, key_count, key_status,
+        )
+    };
+
+    match mutation {
+        Ok(NativeRequestStateMutation::KeyPath {
+            request_state,
+            bag,
+            keys,
+        }) => {
+            request_state_reference_append_result(request_state, bag, &keys, reference.cell.clone())
+        }
+        Ok(_) => NativeRequestStateOperationResult::unsupported(
+            NativeRequestStateOperationStatus::InvalidAbi,
+        ),
+        Err(status) => NativeRequestStateOperationResult::unsupported(status),
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. Pointer operands follow the same contract as
+/// `phpc_native_request_state_superglobal_path_reference_operation`. A
+/// `key_count` of zero appends to the request bag root; otherwise keys select
+/// the parent path that receives the new null-backed reference slot. The
+/// returned reference result owns any non-null reference handle it carries.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_path_reference_append_source_operation(
+    handle: NativeRequestStateHandle,
+    bag_ptr: *const u8,
+    bag_len: usize,
+    key_ptrs: *const *const u8,
+    key_lens: *const usize,
+    key_count: usize,
+    key_status: u8,
+) -> NativeRequestStateReferenceResult {
+    let mutation = unsafe {
+        NativeRequestStateMutation::from_path_abi(
+            handle, bag_ptr, bag_len, key_ptrs, key_lens, key_count, key_status,
+        )
+    };
+
+    match mutation {
+        Ok(NativeRequestStateMutation::KeyPath {
+            request_state,
+            bag,
+            keys,
+        }) => request_state_reference_append_source_result(request_state, bag, &keys),
+        Ok(_) => NativeRequestStateReferenceResult::unsupported(
+            NativeRequestStateOperationStatus::InvalidAbi,
+        ),
+        Err(status) => NativeRequestStateReferenceResult::unsupported(status),
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
 /// runtime ABI and not yet freed. `bag_ptr` must either be valid for `bag_len`
 /// bytes or null with a zero length. `key_ptrs` and `key_lens` must be valid
 /// arrays with `key_count` entries. Each key pointer must be valid for the
@@ -5864,6 +5977,35 @@ fn request_state_path_mutation_result(
     match request_state.superglobal_path_value(bag, keys) {
         Ok(value) => request_state_presence_result_from_value(value.as_ref(), status),
         Err(status) => NativeRequestStateOperationResult::unsupported(status),
+    }
+}
+
+fn request_state_reference_append_result(
+    request_state: &mut NativeRequestState,
+    bag: NativeRequestStateBag,
+    keys: &[ArrayKey],
+    reference: PhpReferenceCell,
+) -> NativeRequestStateOperationResult {
+    match request_state.append_superglobal_path_reference(bag, keys, reference) {
+        Ok(appended_keys) => request_state_path_mutation_result(
+            request_state,
+            bag,
+            &appended_keys,
+            NativeRequestStateOperationStatus::Ok,
+        ),
+        Err(status) => NativeRequestStateOperationResult::unsupported(status),
+    }
+}
+
+fn request_state_reference_append_source_result(
+    request_state: &mut NativeRequestState,
+    bag: NativeRequestStateBag,
+    keys: &[ArrayKey],
+) -> NativeRequestStateReferenceResult {
+    let reference = PhpReferenceCell::new(Value::Null);
+    match request_state.append_superglobal_path_reference(bag, keys, reference.clone()) {
+        Ok(_) => NativeRequestStateReferenceResult::ok(reference),
+        Err(status) => NativeRequestStateReferenceResult::unsupported(status),
     }
 }
 
@@ -22754,6 +22896,234 @@ mod tests {
             phpc_native_reference_free(root);
             phpc_native_string_free(cookie_root);
             phpc_native_request_state_reference_result_free(nested);
+            phpc_native_request_state_free(request_state);
+        }
+    }
+
+    #[test]
+    fn native_request_state_append_reference_results_bind_root_and_nested_cells() {
+        unsafe fn value_handle(value: Value) -> NativeValueHandle {
+            NativeValueHandle::from_value(value)
+        }
+
+        unsafe fn string_handle(bytes: &[u8]) -> NativeStringHandle {
+            unsafe { phpc_native_string_from_bytes(bytes.as_ptr(), bytes.len()) }
+        }
+
+        unsafe fn set_reference_value(reference: NativeReferenceHandle, value: Value) {
+            let value = unsafe { value_handle(value) };
+            assert!(unsafe { phpc_native_reference_set_value(reference, value) });
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        unsafe fn append_reference(
+            request_state: NativeRequestStateHandle,
+            bag: &[u8],
+            keys: &[&[u8]],
+            reference: NativeReferenceHandle,
+        ) -> NativeRequestStateOperationResult {
+            let ptrs = keys.iter().map(|key| key.as_ptr()).collect::<Vec<_>>();
+            let lens = keys.iter().map(|key| key.len()).collect::<Vec<_>>();
+            let (ptrs, lens) = if keys.is_empty() {
+                (ptr::null(), ptr::null())
+            } else {
+                (ptrs.as_ptr(), lens.as_ptr())
+            };
+            unsafe {
+                phpc_native_request_state_superglobal_path_reference_append_operation(
+                    request_state,
+                    bag.as_ptr(),
+                    bag.len(),
+                    ptrs,
+                    lens,
+                    keys.len(),
+                    PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+                    reference,
+                )
+            }
+        }
+
+        unsafe fn append_reference_source(
+            request_state: NativeRequestStateHandle,
+            bag: &[u8],
+            keys: &[&[u8]],
+        ) -> NativeRequestStateReferenceResult {
+            let ptrs = keys.iter().map(|key| key.as_ptr()).collect::<Vec<_>>();
+            let lens = keys.iter().map(|key| key.len()).collect::<Vec<_>>();
+            let (ptrs, lens) = if keys.is_empty() {
+                (ptr::null(), ptr::null())
+            } else {
+                (ptrs.as_ptr(), lens.as_ptr())
+            };
+            unsafe {
+                phpc_native_request_state_superglobal_path_reference_append_source_operation(
+                    request_state,
+                    bag.as_ptr(),
+                    bag.len(),
+                    ptrs,
+                    lens,
+                    keys.len(),
+                    PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+                )
+            }
+        }
+
+        unsafe fn assert_request_path_value(
+            request_state: NativeRequestStateHandle,
+            bag: &[u8],
+            keys: &[&[u8]],
+            expected: Value,
+        ) {
+            let ptrs = keys.iter().map(|key| key.as_ptr()).collect::<Vec<_>>();
+            let lens = keys.iter().map(|key| key.len()).collect::<Vec<_>>();
+            let value = unsafe {
+                phpc_native_request_state_superglobal_path_operation(
+                    request_state,
+                    PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                    bag.as_ptr(),
+                    bag.len(),
+                    ptrs.as_ptr(),
+                    lens.as_ptr(),
+                    keys.len(),
+                    PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+                )
+            };
+            assert_eq!(value.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+            assert_eq!(unsafe { value.value.as_ref() }, Some(&expected));
+            unsafe { phpc_native_request_state_operation_result_free(value) };
+        }
+
+        let request_state = phpc_native_request_state_empty();
+        let source_reference = native_reference_from_value(Value::String("seed".to_string()));
+        let root_append =
+            unsafe { append_reference(request_state, b"_GET", &[], source_reference) };
+        assert_request_state_presence_result_for_test(
+            root_append,
+            1,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        unsafe {
+            set_reference_value(source_reference, Value::String("root-target".to_string()));
+            assert_request_path_value(
+                request_state,
+                b"_GET",
+                &[b"0".as_slice()],
+                Value::String("root-target".to_string()),
+            );
+        }
+
+        let root_source = unsafe { append_reference_source(request_state, b"_POST", &[]) };
+        assert_eq!(root_source.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+        assert!(!phpc_native_reference_is_null(root_source.reference));
+        unsafe {
+            set_reference_value(
+                root_source.reference,
+                Value::String("root-source".to_string()),
+            );
+            assert_request_path_value(
+                request_state,
+                b"_POST",
+                &[b"0".as_slice()],
+                Value::String("root-source".to_string()),
+            );
+        }
+
+        let mirror_bind = unsafe {
+            phpc_native_request_state_superglobal_keyed_reference_bind_operation(
+                request_state,
+                b"_COOKIE".as_ptr(),
+                b"_COOKIE".len(),
+                b"mirror".as_ptr(),
+                b"mirror".len(),
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+                root_source.reference,
+            )
+        };
+        assert_eq!(mirror_bind.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+        unsafe {
+            phpc_native_request_state_operation_result_free(mirror_bind);
+            set_reference_value(root_source.reference, Value::String("shared".to_string()));
+            assert_request_path_value(
+                request_state,
+                b"_POST",
+                &[b"0".as_slice()],
+                Value::String("shared".to_string()),
+            );
+            assert_request_path_value(
+                request_state,
+                b"_COOKIE",
+                &[b"mirror".as_slice()],
+                Value::String("shared".to_string()),
+            );
+        }
+
+        let nested_source =
+            unsafe { append_reference_source(request_state, b"_REQUEST", &[b"items".as_slice()]) };
+        assert_eq!(nested_source.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+        unsafe {
+            set_reference_value(
+                nested_source.reference,
+                Value::String("nested-source".to_string()),
+            );
+            assert_request_path_value(
+                request_state,
+                b"_REQUEST",
+                &[b"items".as_slice(), b"0".as_slice()],
+                Value::String("nested-source".to_string()),
+            );
+        }
+
+        let cookie_root = unsafe { string_handle(b"_COOKIE") };
+        let cookie_reference = unsafe {
+            phpc_native_request_state_superglobal_reference_for_root(request_state, cookie_root)
+        };
+        assert!(!phpc_native_reference_is_null(cookie_reference));
+        unsafe {
+            set_reference_value(cookie_reference, Value::Null);
+        }
+        let reference_backed_append = unsafe {
+            append_reference(
+                request_state,
+                b"_COOKIE",
+                &[b"box".as_slice()],
+                source_reference,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            reference_backed_append,
+            1,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        unsafe {
+            set_reference_value(
+                source_reference,
+                Value::String("reference-backed".to_string()),
+            );
+            assert_request_path_value(
+                request_state,
+                b"_COOKIE",
+                &[b"box".as_slice(), b"0".as_slice()],
+                Value::String("reference-backed".to_string()),
+            );
+            set_reference_value(cookie_reference, Value::String("scalar".to_string()));
+        }
+        let blocked =
+            unsafe { append_reference_source(request_state, b"_COOKIE", &[b"blocked".as_slice()]) };
+        assert_eq!(
+            blocked.status,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEYED_VALUE
+        );
+        assert!(phpc_native_reference_is_null(blocked.reference));
+
+        unsafe {
+            phpc_native_request_state_reference_result_free(blocked);
+            phpc_native_reference_free(cookie_reference);
+            phpc_native_string_free(cookie_root);
+            phpc_native_request_state_reference_result_free(nested_source);
+            phpc_native_request_state_reference_result_free(root_source);
+            phpc_native_reference_free(source_reference);
             phpc_native_request_state_free(request_state);
         }
     }

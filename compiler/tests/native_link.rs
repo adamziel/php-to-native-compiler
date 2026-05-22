@@ -1749,6 +1749,28 @@ const REQUEST_SUPERGLOBAL_PATH_REFERENCE_ASSIGNMENT_SOURCE: &str = concat!(
     "echo $_REQUEST[\"new\"][\"leaf\"];\n",
 );
 
+const REQUEST_SUPERGLOBAL_APPEND_REFERENCE_ASSIGNMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "$source = \"A\";\n",
+    "$_GET[] =& $source;\n",
+    "$source = \"B\";\n",
+    "echo $_GET[0];\n",
+    "echo \"|\";\n",
+    "$alias =& $_POST[];\n",
+    "$alias = \"C\";\n",
+    "echo $_POST[0];\n",
+    "echo \"|\";\n",
+    "$key = \"items\";\n",
+    "$nested = \"D\";\n",
+    "$_REQUEST[$key][] =& $nested;\n",
+    "$nested = \"E\";\n",
+    "echo $_REQUEST[\"items\"][0];\n",
+    "echo \"|\";\n",
+    "$pathAlias =& $_COOKIE[$key][];\n",
+    "$pathAlias = \"F\";\n",
+    "echo $_COOKIE[\"items\"][0];\n",
+);
+
 const ROOT_SYMBOL_UNDEFINED_READ_SOURCE: &str = concat!(
     "<?php\n",
     "$copy = $third;\n",
@@ -3737,6 +3759,64 @@ fn native_executable_c_source_routes_request_path_references_through_state_abi()
 }
 
 #[test]
+fn native_executable_c_source_routes_request_append_references_through_state_abi() {
+    let program = parse(REQUEST_SUPERGLOBAL_APPEND_REFERENCE_ASSIGNMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_path_reference_append_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains(
+            "phpc_native_request_state_superglobal_path_reference_append_source_operation"
+        ),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_reference_result_free"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_reference_for_path"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_bind_reference_path"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_request_state_superglobal_path_reference_append_operation")
+            .count()
+            >= 2,
+        "request append reference targets should append direct and nested request slots through the shared request-state ABI:\n{source}"
+    );
+    assert!(
+        body.matches(
+            "phpc_native_request_state_superglobal_path_reference_append_source_operation"
+        )
+        .count()
+            >= 2,
+        "request append reference sources should return aliasable root and nested request slots through the shared request-state ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_request_state_key_from_value")
+            .count()
+            >= 2,
+        "request append reference paths should materialize dynamic parent keys through the request key ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("reference-assignment lowering rejects"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_symbol_reference_assignment_paths() {
     if !has_cc() {
         return;
@@ -4236,6 +4316,63 @@ fn emit_exe_links_and_runs_request_path_reference_assignment_paths() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "B|D|E|F|G");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_append_reference_assignment_paths() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("request_append_reference_assignment_paths.php");
+    let output_path = native_link_output_path("request_append_reference_assignment_paths");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        REQUEST_SUPERGLOBAL_APPEND_REFERENCE_ASSIGNMENT_SOURCE,
+    )
+    .expect("write request append reference assignment native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native request append reference source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native request append reference executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native request append reference executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "B|C|E|F");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
