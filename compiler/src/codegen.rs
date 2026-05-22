@@ -7496,6 +7496,7 @@ impl CGenerator {
                 );
                 output.push_str("extern bool phpc_native_symbol_table_write(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_symbol_table_set_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_symbol_table_append_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *prefix_keys, size_t prefix_key_count, const phpc_NativeValueHandle *suffix_keys, size_t suffix_key_count, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_unset_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_symbol_table_read_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_isset_value_by_path(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count);\n");
@@ -7828,6 +7829,22 @@ impl CGenerator {
             ));
         }
 
+        self.materialize_optional_globals_symbol_path_keys(indices, failure_cleanup)
+    }
+
+    fn materialize_optional_globals_symbol_path_keys(
+        &mut self,
+        indices: &[&Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeSymbolPathMaterialization> {
+        if indices.is_empty() {
+            return Ok(CNativeSymbolPathMaterialization {
+                handles: "NULL".to_string(),
+                len: 0,
+                cleanup_after_use: Vec::new(),
+            });
+        }
+
         let mut keys = Vec::new();
         let mut cleanup_after_use = Vec::new();
         for index in indices {
@@ -7985,6 +8002,106 @@ impl CGenerator {
             &format!("{path_cleanup}{failure_cleanup}"),
         )?;
         self.emit_globals_symbol_path_write_from_materialized(path, value, span, failure_cleanup)?;
+        Ok(result_value)
+    }
+
+    fn emit_globals_symbol_path_append_from_materialized(
+        &mut self,
+        prefix_path: CNativeSymbolPathMaterialization,
+        suffix_path: CNativeSymbolPathMaterialization,
+        value: CNativeValueMaterialization,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let prefix_cleanup = c_cleanup_sequence(&prefix_path.cleanup_after_use);
+        let suffix_cleanup = c_cleanup_sequence(&suffix_path.cleanup_after_use);
+        let value_cleanup = c_cleanup_sequence(&value.cleanup_after_use);
+        let table = self.ensure_globals_symbol_table(
+            &format!("{value_cleanup}{suffix_cleanup}{prefix_cleanup}{failure_cleanup}"),
+            span,
+        )?;
+        let diagnostic = self.next_native_name("globals_symbol_path_append_diagnostic");
+        let appended = self.next_native_name("globals_symbol_path_appended");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {appended} = phpc_native_symbol_table_append_value_by_path_with_diagnostic({table}, {}, {}, {}, {}, {}, &{diagnostic});",
+            prefix_path.handles,
+            prefix_path.len,
+            suffix_path.handles,
+            suffix_path.len,
+            value.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let append_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_free({diagnostic}); {value_cleanup}{suffix_cleanup}{prefix_cleanup}{failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if (!{appended}) {{ {append_error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(value.cleanup_after_use);
+        self.body.extend(suffix_path.cleanup_after_use);
+        self.body.extend(prefix_path.cleanup_after_use);
+        Ok(())
+    }
+
+    fn emit_globals_symbol_path_append_assignment(
+        &mut self,
+        prefix_indices: &[&Expr],
+        suffix_indices: &[&Expr],
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let prefix_path =
+            self.materialize_globals_symbol_path_keys(prefix_indices, failure_cleanup)?;
+        let prefix_cleanup = c_cleanup_sequence(&prefix_path.cleanup_after_use);
+        let suffix_path = self.materialize_optional_globals_symbol_path_keys(
+            suffix_indices,
+            &format!("{prefix_cleanup}{failure_cleanup}"),
+        )?;
+        let suffix_cleanup = c_cleanup_sequence(&suffix_path.cleanup_after_use);
+        let value = self.materialize_native_value_result_operand(
+            expr,
+            &format!("{suffix_cleanup}{prefix_cleanup}{failure_cleanup}"),
+        )?;
+        self.emit_globals_symbol_path_append_from_materialized(
+            prefix_path,
+            suffix_path,
+            value,
+            span,
+            failure_cleanup,
+        )
+    }
+
+    fn emit_globals_symbol_path_append_assignment_expr(
+        &mut self,
+        prefix_indices: &[&Expr],
+        suffix_indices: &[&Expr],
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let prefix_path =
+            self.materialize_globals_symbol_path_keys(prefix_indices, failure_cleanup)?;
+        let prefix_cleanup = c_cleanup_sequence(&prefix_path.cleanup_after_use);
+        let suffix_path = self.materialize_optional_globals_symbol_path_keys(
+            suffix_indices,
+            &format!("{prefix_cleanup}{failure_cleanup}"),
+        )?;
+        let suffix_cleanup = c_cleanup_sequence(&suffix_path.cleanup_after_use);
+        let (result_value, value) = self.materialize_assignment_expression_replacement_value(
+            expr,
+            &format!("{suffix_cleanup}{prefix_cleanup}{failure_cleanup}"),
+        )?;
+        self.emit_globals_symbol_path_append_from_materialized(
+            prefix_path,
+            suffix_path,
+            value,
+            span,
+            failure_cleanup,
+        )?;
         Ok(result_value)
     }
 
@@ -9701,8 +9818,22 @@ impl CGenerator {
                 self.emit_globals_symbol_path_assignment_expr(&indices, expr, span, failure_cleanup)
                     .map(Some)
             }
-            AssignTarget::NestedArrayAppend { name, .. } if is_globals_superglobal_name(name) => {
-                Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION))
+            AssignTarget::NestedArrayAppend {
+                name,
+                indices,
+                suffix_indices,
+                ..
+            } if is_globals_superglobal_name(name) => {
+                let prefix_indices = indices.iter().collect::<Vec<_>>();
+                let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
+                self.emit_globals_symbol_path_append_assignment_expr(
+                    &prefix_indices,
+                    &suffix_indices,
+                    expr,
+                    span,
+                    failure_cleanup,
+                )
+                .map(Some)
             }
             AssignTarget::Variable { name, .. }
                 if self.globals_symbol_table_is_active() && !is_globals_superglobal_name(name) =>
@@ -13342,6 +13473,17 @@ impl CGenerator {
                 suffix_indices,
                 span,
             } => {
+                if is_globals_superglobal_name(name) {
+                    let prefix_indices = indices.iter().collect::<Vec<_>>();
+                    let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
+                    return self.emit_globals_symbol_path_append_assignment(
+                        &prefix_indices,
+                        &suffix_indices,
+                        expr,
+                        *span,
+                        "",
+                    );
+                }
                 if self.uses_native_string_helpers {
                     if let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() {
                         let prefix_indices = indices.iter().collect::<Vec<_>>();
