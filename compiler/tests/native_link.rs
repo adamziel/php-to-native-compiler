@@ -320,6 +320,45 @@ fn native_executable_c_source_routes_unary_string_results_through_runtime_contra
     );
 }
 
+const STRING_OFFSET_ISSET_EMPTY_SOURCE: &str = "<?php\n$selected = \"A0\0B\";\n$offset = \"1\";\necho isset($selected[0], $selected[$offset]) ? 1 : 0;\necho \"|\";\necho empty($selected[$offset]) ? 1 : 0;\necho \"|\";\necho isset($selected[99]) ? 1 : 0;\necho \"|\";\necho empty((\"102\")[1]) ? 1 : 0;\necho \"|\";\necho empty(strrev(\"za\")[1]) ? 1 : 0;\n";
+
+#[test]
+fn native_executable_c_source_routes_string_offset_isset_empty_through_bool_boundary() {
+    let program = parse(STRING_OFFSET_ISSET_EMPTY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_string_offset_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_bool_with_diagnostic"),
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = phpc_native_value_string_offset_operation_with_diagnostic(")
+            .count(),
+        6,
+        "isset/empty offsets should share the runtime string-offset operation boundary:\n{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = phpc_native_value_bool_with_diagnostic(")
+            .count(),
+        6,
+        "offset bool results should pass through the typed native bool boundary:\n{source}"
+    );
+    assert!(
+        source.contains(", 1, &string_offset_bool_diagnostic_"),
+        "isset offsets should use the shared operation tag:\n{source}"
+    );
+    assert!(
+        source.contains(", 2, &string_offset_bool_diagnostic_"),
+        "empty offsets should use the shared operation tag:\n{source}"
+    );
+}
+
 const FILESYSTEM_PATH_OPERATION_SOURCE: &str = "<?php\n$path = \"pmt/\\0A\";\n$flag = str_contains($path, \"\\0\");\nfile_get_contents($path, $flag);\nrealpath($path);\nfile_exists(42);\nis_writable($path);\nfilesize($path);\nfilemtime($path);\ngetcwd();\nclearstatcache($flag, $path);\nrealpath_cache_get();\nrealpath_cache_size();\necho \"done\\n\";\n";
 
 #[test]
@@ -1061,6 +1100,53 @@ fn emit_exe_links_and_runs_unary_string_result_operation_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"B\0A|Nm-09|410042|mixed|MIXED|Word|word|24024");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_string_offset_isset_empty_bool_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("string_offset_isset_empty_bool_boundary");
+    let source_path = native_link_output_path("string_offset_isset_empty_bool_boundary_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, STRING_OFFSET_ISSET_EMPTY_SOURCE)
+        .expect("native string-offset bool source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native string-offset bool source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1|1|0|1|0");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

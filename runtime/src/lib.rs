@@ -156,6 +156,25 @@ pub enum NativeStringResultOperation {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeStringOffsetOperation {
+    Isset = 1,
+    Empty = 2,
+}
+
+impl NativeStringOffsetOperation {
+    fn from_tag(tag: u8) -> RuntimeResult<Self> {
+        match tag {
+            tag if tag == Self::Isset as u8 => Ok(Self::Isset),
+            tag if tag == Self::Empty as u8 => Ok(Self::Empty),
+            _ => Err(RuntimeError::invalid_string_conversion(
+                "native string offset operation failed: unsupported operation tag",
+            )),
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeFilesystemPathOperation {
     FileGetContents = 0,
     Realpath = 1,
@@ -4020,6 +4039,196 @@ pub unsafe extern "C" fn phpc_native_value_string_result_operation_with_diagnost
             }
             NativeValueHandle::null()
         }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `diagnostic` may be null; when non-null, it must
+/// point to writable storage for one `NativeDiagnosticHandle`. A null handle or
+/// non-bool value stores a diagnostic handle that the caller owns and must
+/// release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_bool_with_diagnostic(
+    handle: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_bool_result(handle) } {
+        Ok(value) => value,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+unsafe fn native_value_bool_result(handle: NativeValueHandle) -> RuntimeResult<bool> {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::unsupported_call(
+            "native value bool extraction",
+            "native value bool extraction failed: value handle is null",
+        ));
+    };
+
+    match value {
+        Value::Bool(value) => Ok(*value),
+        other => Err(RuntimeError::unsupported_call(
+            "native value bool extraction",
+            format!(
+                "native value bool extraction requires a bool value; {} must be routed through PHP truthiness or typed operation semantics first",
+                other.type_name()
+            ),
+        )),
+    }
+}
+
+/// # Safety
+///
+/// `subject` and `offset` must be null or value handles previously returned by
+/// the runtime ABI and not yet freed. `diagnostic` may be null; when non-null,
+/// it must point to writable storage for one `NativeDiagnosticHandle`. On
+/// failure the helper stores a diagnostic handle that the caller owns and must
+/// release with `phpc_native_diagnostic_free`. Operation tag `1` returns
+/// `isset(subject[offset])` as an owned PHP bool, and tag `2` returns
+/// `empty(subject[offset])` as an owned PHP bool.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_string_offset_operation_with_diagnostic(
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_string_offset_operation_value(subject, offset, operation) } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+unsafe fn native_value_string_offset_operation_value(
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    operation: u8,
+) -> RuntimeResult<Value> {
+    let operation = NativeStringOffsetOperation::from_tag(operation)?;
+    let bytes = unsafe { native_value_string_offset_subject_bytes(subject) }?;
+    let offset = unsafe { native_string_offset_index_from_value(offset) }?;
+    Ok(Value::Bool(php_string_offset_bool_operation(
+        &bytes, offset, operation,
+    )))
+}
+
+unsafe fn native_value_string_offset_subject_bytes(
+    handle: NativeValueHandle,
+) -> RuntimeResult<Vec<u8>> {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string offset operation failed: subject handle is null",
+        ));
+    };
+
+    match value {
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+            Ok(analyze_php_value_string_semantics(value)
+                .into_string()
+                .into_bytes())
+        }
+        Value::Array(_)
+        | Value::Object(_)
+        | Value::Closure(_)
+        | Value::Resource(_) => Err(RuntimeError::invalid_string_conversion(format!(
+            "native string offset operation failed: {} subjects are not supported; only null, bool, int, float, and string subjects are implemented",
+            value.type_name()
+        ))),
+    }
+}
+
+unsafe fn native_string_offset_index_from_value(handle: NativeValueHandle) -> RuntimeResult<usize> {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string offset operation failed: offset handle is null",
+        ));
+    };
+
+    let offset = match value {
+        Value::Null => 0,
+        Value::Bool(false) => 0,
+        Value::Bool(true) => 1,
+        Value::Int(value) => *value,
+        Value::Float(value)
+            if value.is_finite()
+                && value.fract() == 0.0
+                && *value >= i64::MIN as f64
+                && *value <= i64::MAX as f64 =>
+        {
+            *value as i64
+        }
+        Value::Float(_) => {
+            return Err(RuntimeError::invalid_string_conversion(
+                "native string offset operation failed: offset must be an integer",
+            ))
+        }
+        Value::String(value) => php_string_offset_index_from_string(value)?,
+        other => {
+            return Err(RuntimeError::invalid_string_conversion(format!(
+                "native string offset operation failed: {} offsets are not supported; only null, bool, int, integral float, and integer string offsets are implemented",
+                other.type_name()
+            )))
+        }
+    };
+
+    usize::try_from(offset).map_err(|_| {
+        RuntimeError::invalid_string_conversion(
+            "native string offset operation failed: offset must be a non-negative integer",
+        )
+    })
+}
+
+fn php_string_offset_index_from_string(value: &str) -> RuntimeResult<i64> {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string offset operation failed: offset must be an integer string",
+        ));
+    }
+
+    let digits = match bytes[0] {
+        b'+' | b'-' if bytes.len() > 1 => &bytes[1..],
+        b'+' | b'-' => &[][..],
+        _ => bytes,
+    };
+
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string offset operation failed: offset must be an integer string",
+        ));
+    }
+
+    value.parse::<i64>().map_err(|_| {
+        RuntimeError::invalid_string_conversion(
+            "native string offset operation failed: offset integer string is out of range",
+        )
+    })
+}
+
+fn php_string_offset_bool_operation(
+    bytes: &[u8],
+    offset: usize,
+    operation: NativeStringOffsetOperation,
+) -> bool {
+    match operation {
+        NativeStringOffsetOperation::Isset => bytes.get(offset).is_some(),
+        NativeStringOffsetOperation::Empty => match bytes.get(offset) {
+            Some(b'0') | None => true,
+            Some(_) => false,
+        },
     }
 }
 
@@ -17388,6 +17597,108 @@ mod tests {
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(valid_subject) };
         unsafe { phpc_native_value_free(resource) };
+    }
+
+    #[test]
+    fn native_value_bool_extraction_feeds_bool_and_string_offset_results() {
+        fn string_offset_bool(
+            subject: NativeValueHandle,
+            offset: NativeValueHandle,
+            operation: NativeStringOffsetOperation,
+        ) -> NativeValueHandle {
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_string_offset_operation_with_diagnostic(
+                    subject,
+                    offset,
+                    operation as u8,
+                    &mut diagnostic,
+                )
+            };
+            assert!(
+                diagnostic.is_null(),
+                "unexpected string-offset diagnostic: {}",
+                native_diagnostic_message_for_test(diagnostic)
+            );
+            assert!(
+                !result.is_null(),
+                "string-offset operation produced no value"
+            );
+            result
+        }
+
+        let true_value = phpc_native_value_from_scalar(phpc_native_bool(true));
+        let false_value = phpc_native_value_from_scalar(phpc_native_bool(false));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe { phpc_native_value_bool_with_diagnostic(true_value, &mut diagnostic) });
+        assert!(diagnostic.is_null());
+        assert!(!unsafe { phpc_native_value_bool_with_diagnostic(false_value, &mut diagnostic) });
+        assert!(diagnostic.is_null());
+
+        let subject = NativeValueHandle::from_value(Value::String("A0\0B".to_string()));
+        let offset_zero = phpc_native_value_from_scalar(phpc_native_int(0));
+        let offset_one = NativeValueHandle::from_value(Value::String("1".to_string()));
+        let offset_missing = phpc_native_value_from_scalar(phpc_native_int(99));
+
+        let isset_present =
+            string_offset_bool(subject, offset_zero, NativeStringOffsetOperation::Isset);
+        assert!(unsafe { phpc_native_value_bool_with_diagnostic(isset_present, &mut diagnostic) });
+        assert!(diagnostic.is_null());
+
+        let empty_zero =
+            string_offset_bool(subject, offset_one, NativeStringOffsetOperation::Empty);
+        assert!(unsafe { phpc_native_value_bool_with_diagnostic(empty_zero, &mut diagnostic) });
+        assert!(diagnostic.is_null());
+
+        let isset_missing =
+            string_offset_bool(subject, offset_missing, NativeStringOffsetOperation::Isset);
+        assert!(!unsafe { phpc_native_value_bool_with_diagnostic(isset_missing, &mut diagnostic) });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe { phpc_native_value_bool_with_diagnostic(subject, &mut diagnostic) });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call native value bool extraction: native value bool extraction requires a bool value; string must be routed through PHP truthiness or typed operation semantics first"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let resource = NativeValueHandle::from_value(Value::Resource(7));
+        let blocked = unsafe {
+            phpc_native_value_string_offset_operation_with_diagnostic(
+                resource,
+                offset_zero,
+                NativeStringOffsetOperation::Isset as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(blocked.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string offset operation failed: resource subjects are not supported; only null, bool, int, float, and string subjects are implemented"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let null_bool = unsafe {
+            phpc_native_value_bool_with_diagnostic(NativeValueHandle::null(), &mut diagnostic)
+        };
+        assert!(!null_bool);
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call native value bool extraction: native value bool extraction failed: value handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(blocked) };
+        unsafe { phpc_native_value_free(resource) };
+        unsafe { phpc_native_value_free(isset_missing) };
+        unsafe { phpc_native_value_free(empty_zero) };
+        unsafe { phpc_native_value_free(isset_present) };
+        unsafe { phpc_native_value_free(offset_missing) };
+        unsafe { phpc_native_value_free(offset_one) };
+        unsafe { phpc_native_value_free(offset_zero) };
+        unsafe { phpc_native_value_free(subject) };
+        unsafe { phpc_native_value_free(false_value) };
+        unsafe { phpc_native_value_free(true_value) };
     }
 
     #[test]

@@ -11,8 +11,9 @@ use php_runtime::{
     classify_php_numeric_string, is_php_truthy_string, php_primitive_arithmetic_result,
     php_strings_use_numeric_comparison, NativeComparisonOp, NativeFilesystemPathOperation,
     NativeIntConversionOperation, NativeStringDistanceOperation, NativeStringIntOperation,
-    NativeStringPredicate, NativeStringResultOperation, PhpPrimitiveArithmeticError,
-    PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue, PhpPrimitiveValue,
+    NativeStringOffsetOperation, NativeStringPredicate, NativeStringResultOperation,
+    PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue,
+    PhpPrimitiveValue,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -6430,6 +6431,8 @@ impl CGenerator {
                 output.push_str("extern int64_t phpc_native_value_string_int_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_distance_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t insertion_cost, int64_t replacement_cost, int64_t deletion_cost, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_result_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, phpc_NativeValueHandle replacement, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_offset_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern _Bool phpc_native_value_bool_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_filesystem_path_operation_with_diagnostic(phpc_NativeValueHandle path, phpc_NativeValueHandle option, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_string_conversion_result_free(phpc_NativeStringConversionResult result);\n");
             }
@@ -6993,45 +6996,81 @@ impl CGenerator {
         }
     }
 
-    fn emit_isset_call(&self, args: &[Expr], span: Span) -> CompileResult<CValue> {
-        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
-            return Err(self.unsupported_call_operation(operation));
-        }
-
-        let [arg] = args else {
+    fn emit_isset_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        if args.is_empty() {
             return Err(
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
             );
-        };
-
-        if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
-            return Err(self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
         }
 
-        if is_array_access_offset_expr(arg) {
-            return Err(self.unsupported(arg.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+        let mut dynamic_checks = Vec::new();
+        for arg in args {
+            if let Some(value) = self
+                .emit_string_offset_bool_operation_expr(arg, NativeStringOffsetOperation::Isset)?
+            {
+                match value {
+                    CValue::Bool(false) => return Ok(CValue::Bool(false)),
+                    CValue::Bool(true) => continue,
+                    CValue::BoolExpr(value) => dynamic_checks.push(value),
+                    _ => unreachable!("string offset isset returns a bool C value"),
+                }
+                continue;
+            }
+
+            if let Some(operation) =
+                native_direct_call_argument_result_operation(std::slice::from_ref(arg), span)
+            {
+                return Err(self.unsupported_call_operation(operation));
+            }
+
+            if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
+                return Err(
+                    self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                );
+            }
+
+            if is_array_access_offset_expr(arg) {
+                return Err(self.unsupported(arg.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+            }
+
+            let Expr::Variable(name, _) = arg else {
+                return Err(self.unsupported(arg.span(), ASSEMBLY_ISSET_REJECTION));
+            };
+
+            if matches!(self.variables.get(name), None | Some(CValue::Null)) {
+                return Ok(CValue::Bool(false));
+            }
         }
 
-        let Expr::Variable(name, _) = arg else {
-            return Err(self.unsupported(arg.span(), ASSEMBLY_ISSET_REJECTION));
-        };
-
-        Ok(CValue::Bool(!matches!(
-            self.variables.get(name),
-            None | Some(CValue::Null)
-        )))
+        Ok(match dynamic_checks.len() {
+            0 => CValue::Bool(true),
+            1 => CValue::BoolExpr(dynamic_checks.remove(0)),
+            _ => CValue::BoolExpr(
+                dynamic_checks
+                    .into_iter()
+                    .map(|value| format!("({value})"))
+                    .collect::<Vec<_>>()
+                    .join(" && "),
+            ),
+        })
     }
 
-    fn emit_empty_call(&self, args: &[Expr], span: Span) -> CompileResult<CValue> {
-        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
-            return Err(self.unsupported_call_operation(operation));
-        }
-
+    fn emit_empty_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
         let [arg] = args else {
             return Err(
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
             );
         };
+
+        if let Some(value) =
+            self.emit_string_offset_bool_operation_expr(arg, NativeStringOffsetOperation::Empty)?
+        {
+            return Ok(value);
+        }
+
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
+        }
 
         if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
             return Err(self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
@@ -7052,6 +7091,83 @@ impl CGenerator {
         self.known_truthiness_for_value(value)
             .map(|truthy| CValue::Bool(!truthy))
             .ok_or_else(|| self.unsupported(arg.span(), ASSEMBLY_EMPTY_REJECTION))
+    }
+
+    fn emit_string_offset_bool_operation_expr(
+        &mut self,
+        expr: &Expr,
+        operation: NativeStringOffsetOperation,
+    ) -> CompileResult<Option<CValue>> {
+        let Expr::Index { target, index, .. } = expr else {
+            return Ok(None);
+        };
+
+        if !self.is_string_offset_subject_expr(target) {
+            return Ok(None);
+        }
+
+        let subject = self.materialize_native_value_result_operand(target, "")?;
+        let offset_failure_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let offset =
+            self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?;
+        let mut operand_cleanup = offset.cleanup_after_use;
+        operand_cleanup.extend(subject.cleanup_after_use);
+
+        self.uses_native_string_helpers = true;
+        let result = self.next_native_name("string_offset_bool_value");
+        let diagnostic = self.next_native_name("string_offset_bool_diagnostic");
+        let bool_diagnostic = self.next_native_name("string_offset_bool_result_diagnostic");
+        let bool_result = self.next_native_name("string_offset_bool_result");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_string_offset_operation_with_diagnostic({}, {}, {}, &{diagnostic});",
+            subject.handle,
+            offset.handle,
+            operation as u8
+        ));
+        let result_cleanup = format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}",
+            c_cleanup_sequence(&operand_cleanup)
+        );
+        let result_error_exit = self.native_error_exit(&result_cleanup);
+        self.body.push(format!(
+            "if ({result}.ptr == NULL) {{ {result_error_exit} }}"
+        ));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(operand_cleanup);
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {bool_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "_Bool {bool_result} = phpc_native_value_bool_with_diagnostic({result}, &{bool_diagnostic});"
+        ));
+        let bool_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_message_stderr({bool_diagnostic}); phpc_native_diagnostic_free({bool_diagnostic}); phpc_native_value_free({result}); "
+        ));
+        self.body.push(format!(
+            "if ({bool_diagnostic}.ptr != NULL) {{ {bool_error_exit} }}"
+        ));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({bool_diagnostic});"));
+        self.body.push(format!("phpc_native_value_free({result});"));
+
+        Ok(Some(CValue::BoolExpr(bool_result)))
+    }
+
+    fn is_string_offset_subject_expr(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::String(_, _) => true,
+            Expr::Variable(name, _) => matches!(
+                self.variables.get(name),
+                Some(CValue::String(_) | CValue::StringExpr(_))
+            ),
+            Expr::Call { name, args, .. } => {
+                args.len() == 1 && native_string_result_operation_for_name(name).is_some()
+            }
+            _ => false,
+        }
     }
 
     fn emit_strlen_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
