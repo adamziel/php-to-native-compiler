@@ -200,6 +200,43 @@ fn native_executable_c_source_routes_array_pointer_builtins_through_lvalue_owner
 }
 
 #[test]
+fn native_executable_c_source_routes_array_sort_builtins_through_lvalue_owner_results() {
+    let program = parse(
+        "<?php\n$values = [3, 1, 2];\n$mode = 1;\nsort($values, $mode);\n$box = [\"items\" => [\"a\" => \"b2\", \"b\" => \"b10\"], \"keys\" => [\"a\" => 1, \"b\" => 2]];\nasort($box[\"items\"], 2);\nkrsort($box[\"keys\"]);\nrsort($values);\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_sort_result"),
+        "{source}"
+    );
+    for tag in [
+        "PHPC_NATIVE_ARRAY_LVALUE_SORT_SORT",
+        "PHPC_NATIVE_ARRAY_LVALUE_SORT_ASORT",
+        "PHPC_NATIVE_ARRAY_LVALUE_SORT_KRSORT",
+        "PHPC_NATIVE_ARRAY_LVALUE_SORT_RSORT",
+    ] {
+        assert!(source.contains(tag), "{tag}\n\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_array_lvalue_owner_sort_result")
+            .count()
+            >= 4,
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_NativeValueHandle array_sort_operands_"),
+        "sort flags should be materialized as PHP value operands:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_array_pointer_lvalue_owner_program() {
     if !has_cc() {
         return;
@@ -254,6 +291,61 @@ fn emit_exe_links_and_runs_array_pointer_lvalue_owner_program() {
         b"first|10|second|20|first|10|third|30|first|10|n2|n3|n1"
     );
     assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_sort_lvalue_owner_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("array_sort_lvalue_owner.php");
+    let output_path = native_link_output_path("array_sort_lvalue_owner");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        "<?php\n$values = [3, 1, 2];\n$mode = 1;\nsort($values, $mode);\nforeach ($values as $v) { echo $v; }\necho \"|\";\n$box = [\"items\" => [\"a\" => \"b2\", \"b\" => \"b10\"], \"keys\" => [\"a\" => 1, \"b\" => 2]];\nasort($box[\"items\"], 2);\nforeach ($box[\"items\"] as $k => $v) { echo $k, \"=\", $v, \";\"; }\necho \"|\";\nkrsort($box[\"keys\"]);\nforeach ($box[\"keys\"] as $k => $v) { echo $k, \"=\", $v, \";\"; }\necho \"|\";\necho rsort($values) ? \"T\" : \"F\";\n",
+    )
+    .expect("write array sort native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array sort source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native array sort executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native array sort executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"123|b=b10;a=b2;|b=2;a=1;|T");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
     let _ = fs::remove_file(&output_path);
