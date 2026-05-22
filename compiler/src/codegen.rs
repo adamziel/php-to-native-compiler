@@ -3,8 +3,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassMember, Expr, ForAction, FunctionDecl,
-    FunctionParam, Program, ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassMember, CompoundAssignOp, Expr, ForAction,
+    FunctionDecl, FunctionParam, Program, ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
@@ -672,6 +672,22 @@ fn native_value_bitwise_binary_result_prefix(op: BinaryOp) -> Option<&'static st
     }
 }
 
+fn native_array_lvalue_compound_binary_op_tag(op: CompoundAssignOp) -> &'static str {
+    match op {
+        CompoundAssignOp::Add => "PHPC_NATIVE_VALUE_BINARY_ADD",
+        CompoundAssignOp::Sub => "PHPC_NATIVE_VALUE_BINARY_SUB",
+        CompoundAssignOp::Mul => "PHPC_NATIVE_VALUE_BINARY_MUL",
+        CompoundAssignOp::Div => "PHPC_NATIVE_VALUE_BINARY_DIV",
+        CompoundAssignOp::Mod => "PHPC_NATIVE_VALUE_BINARY_MOD",
+        CompoundAssignOp::Concat => "PHPC_NATIVE_VALUE_BINARY_CONCAT",
+        CompoundAssignOp::BitwiseAnd => "PHPC_NATIVE_VALUE_BINARY_BITWISE_AND",
+        CompoundAssignOp::BitwiseOr => "PHPC_NATIVE_VALUE_BINARY_BITWISE_OR",
+        CompoundAssignOp::BitwiseXor => "PHPC_NATIVE_VALUE_BINARY_BITWISE_XOR",
+        CompoundAssignOp::ShiftLeft => "PHPC_NATIVE_VALUE_BINARY_SHIFT_LEFT",
+        CompoundAssignOp::ShiftRight => "PHPC_NATIVE_VALUE_BINARY_SHIFT_RIGHT",
+    }
+}
+
 fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
     match op {
         BinaryOp::Eq => Some("PHPC_NATIVE_VALUE_COMPARISON_EQ"),
@@ -703,6 +719,7 @@ fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
 fn native_value_result_output_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Index { .. } => true,
+        Expr::CompoundAssign { .. } => true,
         Expr::NullCoalesceAssign { .. } => true,
         Expr::Unary { op, .. } => native_value_unary_op_tag(*op).is_some(),
         Expr::Binary { op, .. } => {
@@ -7343,8 +7360,29 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Stmt::CompoundAssign { target, span, .. }
-            | Stmt::IncrementDecrement { target, span, .. } => {
+            Stmt::CompoundAssign {
+                target,
+                op,
+                expr,
+                span,
+            } => {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                if let Some(value) = self
+                    .materialize_array_lvalue_compound_assignment_result_for_target(
+                        target, *op, expr, *span, "",
+                    )?
+                {
+                    self.body.extend(value.cleanup_after_use);
+                    return Ok(());
+                }
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
+            Stmt::IncrementDecrement { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -7748,8 +7786,29 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Expr::CompoundAssign { target, span, .. }
-            | Expr::IncrementDecrement { target, span, .. } => {
+            Expr::CompoundAssign {
+                target,
+                op,
+                expr,
+                span,
+            } => {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                if let Some(value) = self
+                    .materialize_array_lvalue_compound_assignment_result_for_target(
+                        target, *op, expr, *span, "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
+            Expr::IncrementDecrement { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -8816,6 +8875,127 @@ impl CGenerator {
             "array_lvalue_assign_expr_result",
         )?;
         Ok(Some(replacement_value))
+    }
+
+    fn native_array_lvalue_key_target_parts<'a>(
+        &self,
+        target: &'a AssignTarget,
+    ) -> Option<(String, Vec<&'a Expr>, Span)> {
+        match target {
+            AssignTarget::ArrayIndex {
+                name,
+                index: Some(index),
+                span,
+            } => match self.variables.get(name) {
+                Some(CValue::ArrayHandle(handle)) => Some((handle.clone(), vec![index], *span)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn materialize_array_lvalue_compound_assignment_result_for_target(
+        &mut self,
+        target: &AssignTarget,
+        op: CompoundAssignOp,
+        rhs_expr: &Expr,
+        _span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some((handle, indices, span)) = self.native_array_lvalue_key_target_parts(target)
+        else {
+            return Ok(None);
+        };
+
+        self.materialize_array_lvalue_compound_assignment_result_for_handle(
+            &handle,
+            &indices,
+            span,
+            op,
+            rhs_expr,
+            failure_cleanup,
+        )
+        .map(Some)
+    }
+
+    fn materialize_array_lvalue_compound_assignment_result_for_handle(
+        &mut self,
+        handle: &str,
+        indices: &[&Expr],
+        span: Span,
+        op: CompoundAssignOp,
+        rhs_expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let path = self.materialize_native_array_lvalue_key_path(indices, span, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let read_owner = self.next_native_name("array_lvalue_compound_read_owner");
+        let read_result = self.next_native_name("array_lvalue_compound_read_result");
+        let current = self.next_native_name("array_lvalue_compound_current");
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {read_owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {read_result} = phpc_native_array_lvalue_owner_value_operation_result({read_owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
+            path.path, path.len
+        ));
+        self.emit_native_array_lvalue_result_check(
+            &read_result,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        );
+        self.body.push(format!(
+            "phpc_NativeValueHandle {current} = {read_result}.value;"
+        ));
+        self.body.push(format!(
+            "{read_result}.value = (phpc_NativeValueHandle){{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_native_array_lvalue_result_free({read_result});"
+        ));
+
+        let current_value = CNativeValueMaterialization {
+            handle: current.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({current});")],
+        };
+        let rhs_failure_cleanup = format!(
+            "{}{path_cleanup}{failure_cleanup}",
+            c_cleanup_sequence(&current_value.cleanup_after_use)
+        );
+        let rhs_value =
+            self.materialize_native_value_result_operand(rhs_expr, &rhs_failure_cleanup)?;
+        let value = self.emit_native_value_binary_result_handle(
+            current_value,
+            native_array_lvalue_compound_binary_op_tag(op),
+            rhs_value,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        );
+
+        let write_owner = self.next_native_name("array_lvalue_compound_write_owner");
+        let write_result = self.next_native_name("array_lvalue_compound_write_result");
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {write_owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {write_result} = phpc_native_array_lvalue_owner_value_operation_result({write_owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
+            path.path, path.len, value.handle
+        ));
+        self.emit_native_array_lvalue_result_check(
+            &write_result,
+            &format!(
+                "{}{path_cleanup}{failure_cleanup}",
+                c_cleanup_sequence(&value.cleanup_after_use)
+            ),
+        );
+        self.body.push(format!(
+            "phpc_native_array_lvalue_result_free({write_result});"
+        ));
+        self.body.extend(path.cleanup_after_use);
+
+        Ok(value)
     }
 
     fn emit_array_offset_mutation_from_materialized(
@@ -12473,6 +12653,18 @@ impl CGenerator {
                     failure_cleanup,
                 )))
             }
+            Expr::CompoundAssign {
+                target,
+                op,
+                expr,
+                span,
+            } => self.materialize_array_lvalue_compound_assignment_result_for_target(
+                target,
+                *op,
+                expr,
+                *span,
+                failure_cleanup,
+            ),
             Expr::Call { name, args, span } => {
                 if let Some(op_tag) = native_value_cast_builtin_op_tag(name) {
                     let [arg] = args.as_slice() else {

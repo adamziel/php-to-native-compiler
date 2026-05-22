@@ -401,6 +401,8 @@ const ARRAY_LVALUE_NESTED_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$outer = \"oute
 
 const ARRAY_LVALUE_NESTED_READ_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inner = \"inner\";\n$leaf = \"leaf\";\n$items = [$outer => [$inner => \"v\"], \"other\" => [$leaf => \"x\"]];\n$out = [];\n$out[] = $items[$outer][$inner];\necho $items[$outer][$inner], \"|\";\nprint $items[\"other\"][$leaf];\necho \"|\", strtoupper($items[$outer][$inner]), \"|\", $out[0];\n";
 
+const ARRAY_LVALUE_COMPOUND_ASSIGNMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n$alt = \"alt\";\n$items = [$key => 2, $alt => 10, \"text\" => \"A\"];\n$out = [];\n$items[$key] += 3;\n$twenty = ($items[$alt] *= 2);\necho $twenty;\n$out[($items[$key] .= \"x\")] = ($items[$alt] -= 5);\necho \"|\", $out[\"5x\"], \"|\", $items[$alt], \"|\", $items[$key];\n";
+
 const VALUE_OFFSET_MUTATION_ARRAY_APPEND_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$items[] = \"B\";\n$value = \"C\";\n$items[] = $value;\necho $items[\"seed\"], \"|\", $items[0], \"|\", $items[1], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$key = \"named\";\n$value = \"C\";\necho ($items[] = \"B\"), \"|\";\necho ($items[] = $value), \"|\";\necho ($items[$key] = \"D\"), \"|\";\necho $items[0], \"|\", $items[1], \"|\", $items[$key], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
@@ -717,6 +719,48 @@ fn native_executable_c_source_routes_nested_array_reads_through_lvalue_owner_ope
     assert!(
         !body.contains("phpc_native_array_read_key_with_diagnostic("),
         "nested reads should not reintroduce the legacy array-read bypass:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_array_lvalue_compound_assignments_through_read_compute_write()
+{
+    let program = parse(ARRAY_LVALUE_COMPOUND_ASSIGNMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_value_operation_result"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_binary_result"),
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ")
+            .count()
+            >= 4,
+        "compound assignments should read current lvalue values through the shared read family:\n{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE")
+            .count()
+            >= 4,
+        "compound assignments should write computed values through the shared write family:\n{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_value_binary_result(").count() >= 4,
+        "compound assignments should compute through the native value binary ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_NativeValueHandle array_lvalue_compound_current_")
+            && body.contains("phpc_NativeValueHandle native_value_binary_"),
+        "compound assignments should own current and computed native value handles:\n{source}"
+    );
+    assert!(
+        !body.contains("assembly mutation lowering rejects"),
+        "lowerable array lvalue compound assignments should not fall through the blanket mutation blocker:\n{source}"
     );
 }
 
@@ -2337,6 +2381,53 @@ fn emit_exe_links_and_runs_array_offset_read_value_boundary_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"q|B|q|Q");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_lvalue_compound_assignment_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("array_lvalue_compound_assignment");
+    let source_path = native_link_output_path("array_lvalue_compound_assignment_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, ARRAY_LVALUE_COMPOUND_ASSIGNMENT_SOURCE)
+        .expect("native array lvalue compound-assignment source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array lvalue compound source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"20|15|15|5x");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
