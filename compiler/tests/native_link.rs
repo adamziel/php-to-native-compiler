@@ -393,6 +393,8 @@ const STRING_OFFSET_WRITE_SOURCE: &str = concat!(
 
 const VALUE_OFFSET_MUTATION_ARRAY_WRITE_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$key = \"dyn\";\n$items[$key] = \"B\";\n$slot = 2;\n$items[$slot] = \"C\";\necho $items[\"seed\"], \"|\", $items[$key], \"|\", $items[$slot], \"|\";\necho isset($items[$key]) ? 1 : 0;\n";
 
+const VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE: &str = "<?php\n$items = [\"keep\" => \"A\", \"drop\" => \"B\", 2 => \"C\"];\n$key = \"drop\";\nunset($items[$key]);\nunset($items[2]);\nunset($items[99]);\necho isset($items[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[2]) ? 1 : 0;\necho \"|\";\n$items[$key] = \"D\";\necho $items[$key];\n";
+
 #[test]
 fn native_executable_c_source_routes_string_offset_isset_empty_through_bool_boundary() {
     let program = parse(STRING_OFFSET_ISSET_EMPTY_SOURCE).unwrap();
@@ -542,6 +544,53 @@ fn native_executable_c_source_routes_array_offset_writes_through_value_offset_mu
     assert!(
         body.contains(", 0, &array_offset_write_diagnostic_"),
         "array offset writes should use the shared write operation tag:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_array_offset_unsets_through_value_offset_mutation_boundary() {
+    let program = parse(VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeArrayHandle phpc_native_value_array_clone(phpc_NativeValueHandle value);"
+        ),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_offset_mutation_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert_eq!(
+        body.matches(" = phpc_native_value_offset_mutation_operation_with_diagnostic(")
+            .count(),
+        4,
+        "array offset unsets and the later rewrite should share the value-offset mutation boundary:\n{source}"
+    );
+    assert_eq!(
+        body.matches(" = phpc_native_value_array_clone(").count(),
+        4,
+        "array mutation results should rematerialize through the value-array clone boundary:\n{source}"
+    );
+    assert_eq!(
+        body.matches(", 2, &array_offset_unset_diagnostic_").count(),
+        3,
+        "array offset unsets should use the shared unset operation tag:\n{source}"
+    );
+    assert!(
+        body.contains(", 0, &array_offset_write_diagnostic_"),
+        "the same mutation helper should still route the follow-up write:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_from_array(array_"),
+        "array subjects should enter the mutation ABI as native values:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_array_unset_int")
+            && !source.contains("phpc_native_array_unset_string"),
+        "direct array unset helpers should not bypass the value-offset mutation ABI:\n{source}"
     );
 }
 
@@ -1483,6 +1532,53 @@ fn emit_exe_links_and_runs_array_offset_write_value_mutation_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"A|B|C|1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_offset_unset_value_mutation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("array_offset_unset_value_mutation");
+    let source_path = native_link_output_path("array_offset_unset_value_mutation_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE)
+        .expect("native array offset unset source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array offset unset source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1|0|1|D");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
