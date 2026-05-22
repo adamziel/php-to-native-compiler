@@ -7496,6 +7496,7 @@ impl CGenerator {
                     "extern phpc_NativeSymbolTableHandle phpc_native_symbol_table_new(void);\n",
                 );
                 output.push_str("extern bool phpc_native_symbol_table_write(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_symbol_table_read_with_diagnostic(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_set_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_append_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *prefix_keys, size_t prefix_key_count, const phpc_NativeValueHandle *suffix_keys, size_t suffix_key_count, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_unset_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -8146,8 +8147,43 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<CNativeValueMaterialization> {
+        let table = self.ensure_globals_symbol_table(failure_cleanup, span)?;
+        let name_bytes = self.emit_symbol_name_static_bytes(name);
+        let diagnostic = self.next_native_name("symbol_table_read_diagnostic");
+        let value = self.next_native_name("symbol_table_read");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_symbol_table_read_with_diagnostic({table}, {name_bytes}, {}, &{diagnostic});",
+            name.len()
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let read_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_free({diagnostic}); {failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if ({value}.ptr == NULL) {{ {read_error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+
+        Ok(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        })
+    }
+
+    fn emit_symbol_table_variable_assignment_from_materialized(
+        &mut self,
+        name: &str,
+        value: CNativeValueMaterialization,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        self.remember_variable_order(name);
         let path = self.materialize_static_globals_symbol_path_key(name, span, failure_cleanup)?;
-        self.emit_globals_symbol_path_value_read_from_path(path, span, failure_cleanup)
+        self.release_variable_native_value_handle(name);
+        self.variables.remove(name);
+        self.emit_globals_symbol_path_write_from_materialized(path, value, span, failure_cleanup)
     }
 
     fn emit_symbol_table_variable_assignment(
@@ -9542,10 +9578,15 @@ impl CGenerator {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
                 }
-                self.variables
-                    .get(name)
-                    .cloned()
-                    .ok_or_else(|| self.unsupported(*span, ASSEMBLY_VARIABLE_READ_REJECTION))
+                if let Some(value) = self.variables.get(name).cloned() {
+                    return Ok(value);
+                }
+                if self.uses_native_string_helpers {
+                    let value = self.emit_symbol_table_variable_value_read(name, *span, "")?;
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_VARIABLE_READ_REJECTION))
             }
             Expr::Call { name, args, span } if is_exit_construct_name(name) => {
                 Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_TERMINATION_REJECTION))
@@ -13494,11 +13535,30 @@ impl CGenerator {
                 }
                 if self.uses_native_string_helpers {
                     if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
+                        if self.globals_symbol_table_is_active()
+                            && !is_globals_superglobal_name(name)
+                        {
+                            return self.emit_symbol_table_variable_assignment_from_materialized(
+                                name,
+                                value,
+                                target.span(),
+                                "",
+                            );
+                        }
                         self.store_native_value_result_variable(name, value);
                         return Ok(());
                     }
                 }
                 let value = self.emit_expr(expr)?;
+                if self.globals_symbol_table_is_active() && !is_globals_superglobal_name(name) {
+                    let value = self.materialize_native_array_c_value_handle(value, expr.span())?;
+                    return self.emit_symbol_table_variable_assignment_from_materialized(
+                        name,
+                        value,
+                        target.span(),
+                        "",
+                    );
+                }
                 self.store_variable_value(name, value);
                 Ok(())
             }

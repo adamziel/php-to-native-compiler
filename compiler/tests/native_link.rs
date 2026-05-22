@@ -1092,6 +1092,20 @@ const GLOBALS_SYMBOL_PATH_APPEND_SOURCE: &str = concat!(
     "echo $GLOBALS[$key][1];\n",
 );
 
+const ROOT_SYMBOL_UNDEFINED_READ_SOURCE: &str = concat!(
+    "<?php\n",
+    "$copy = $third;\n",
+    "echo gettype($copy);\n",
+    "echo \"|\";\n",
+    "echo $missing;\n",
+    "echo \"A\";\n",
+    "print $other;\n",
+    "echo \"B\";\n",
+    "$discarded;\n",
+    "$after = \"C\";\n",
+    "echo $after;\n",
+);
+
 const REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
     "<?php\n",
     "$_GET = \"alpha\";\n",
@@ -2249,7 +2263,7 @@ fn native_executable_c_source_routes_globals_path_writes_through_symbol_table_ab
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_symbol_table_read_value_by_path_with_diagnostic"),
+        source.contains("phpc_native_symbol_table_read_with_diagnostic"),
         "{source}"
     );
     assert!(
@@ -2261,8 +2275,14 @@ fn native_executable_c_source_routes_globals_path_writes_through_symbol_table_ab
     assert!(
         body.matches("phpc_native_symbol_table_read_value_by_path_with_diagnostic")
             .count()
-            >= 3,
-        "$GLOBALS path reads and direct variable reads after activation should use the shared symbol path read ABI:\n{source}"
+            >= 2,
+        "$GLOBALS path reads should use the shared symbol path read ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_read_with_diagnostic")
+            .count()
+            >= 1,
+        "direct variable reads after symbol-table activation should use the diagnostic root-slot read ABI:\n{source}"
     );
     assert!(
         body.matches("phpc_NativeValueHandle globals_symbol_path")
@@ -2321,7 +2341,7 @@ fn native_executable_c_source_routes_globals_path_appends_through_symbol_table_a
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_symbol_table_read_value_by_path_with_diagnostic"),
+        source.contains("phpc_native_symbol_table_read_with_diagnostic"),
         "{source}"
     );
     assert!(
@@ -2333,8 +2353,14 @@ fn native_executable_c_source_routes_globals_path_appends_through_symbol_table_a
     assert!(
         body.matches("phpc_native_symbol_table_read_value_by_path_with_diagnostic")
             .count()
-            >= 6,
-        "post-append reads and direct variable reads after activation should stay on the symbol path read ABI:\n{source}"
+            >= 4,
+        "post-append $GLOBALS path reads should stay on the symbol path read ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_read_with_diagnostic")
+            .count()
+            >= 4,
+        "dynamic key variables after activation should use the diagnostic root-slot read ABI:\n{source}"
     );
     assert!(
         body.matches("phpc_NativeValueHandle globals_symbol_path")
@@ -2344,6 +2370,34 @@ fn native_executable_c_source_routes_globals_path_appends_through_symbol_table_a
     );
     assert!(
         !source.contains("global-symbol-table lowering rejects $GLOBALS"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_direct_root_undefined_reads_through_symbol_table_abi() {
+    let program = parse(ROOT_SYMBOL_UNDEFINED_READ_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_symbol_table_read_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_read_with_diagnostic")
+            .count()
+            >= 5,
+        "undefined and active direct root reads should use the shared diagnostic root-slot read ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_set_value_by_path_with_diagnostic")
+            .count()
+            >= 2,
+        "assignments after a root diagnostic read should export through the active symbol table:\n{source}"
+    );
+    assert!(
+        !source.contains("variable-read lowering rejects"),
         "{source}"
     );
 }
@@ -5043,6 +5097,59 @@ fn emit_exe_links_and_runs_globals_symbol_path_append_program() {
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"A|B|M|C|C");
     assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_direct_root_undefined_read_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("root_symbol_undefined_read");
+    let source_path = native_link_output_path("root_symbol_undefined_read_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, ROOT_SYMBOL_UNDEFINED_READ_SOURCE)
+        .expect("native root undefined read source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native root undefined read source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native root undefined read executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"NULL|ABC");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    for name in ["third", "missing", "other", "discarded"] {
+        assert!(
+            stderr.contains(&format!("undefined variable '${name}'")),
+            "{stderr}"
+        );
+    }
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);

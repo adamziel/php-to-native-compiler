@@ -2955,6 +2955,49 @@ pub unsafe extern "C" fn phpc_native_symbol_table_read(
 ///
 /// `handle` must be null or a symbol-table handle previously returned by the
 /// runtime ABI and not yet freed. `name` must either be null with
+/// `name_len == 0`, or point to at least `name_len` readable bytes. The
+/// returned value handle owns a clone of the variable value. Missing variables
+/// return an owned PHP null value and store an undefined-variable diagnostic
+/// when `diagnostic` is non-null.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_read_with_diagnostic(
+    handle: NativeSymbolTableHandle,
+    name: *const u8,
+    name_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let (Some(table), Some(name)) = (unsafe { handle.as_ref() }, unsafe {
+        native_symbol_name_from_bytes(name, name_len)
+    }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "symbol table read failed: symbol table handle or name is invalid",
+            )
+        };
+        return NativeValueHandle::null();
+    };
+
+    match table.values.get(&name) {
+        Some(slot) => NativeValueHandle::from_value(slot.value_cloned()),
+        None => {
+            unsafe {
+                native_store_diagnostic_message(
+                    diagnostic,
+                    RuntimeError::undefined_variable(name).message(),
+                )
+            };
+            NativeValueHandle::from_value(Value::Null)
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. `name` must either be null with
 /// `name_len == 0`, or point to at least `name_len` readable bytes. `value`
 /// must be null or a value handle previously returned by the runtime ABI and
 /// not yet freed. The symbol table owns a clone of `value`; ownership of
@@ -22627,6 +22670,56 @@ mod tests {
 
         unsafe { phpc_native_value_free(read) };
         unsafe { phpc_native_symbol_table_free(table) };
+    }
+
+    #[test]
+    fn native_symbol_table_read_with_diagnostic_returns_null_for_missing_roots() {
+        let table = phpc_native_symbol_table_new();
+        let present = b"present";
+        let missing = b"missing";
+        let value = NativeValueHandle::from_value(Value::String("value".to_string()));
+
+        assert!(unsafe {
+            phpc_native_symbol_table_write(table, present.as_ptr(), present.len(), value)
+        });
+        unsafe { phpc_native_value_free(value) };
+
+        let mut present_diagnostic = NativeDiagnosticHandle::null();
+        let present_read = unsafe {
+            phpc_native_symbol_table_read_with_diagnostic(
+                table,
+                present.as_ptr(),
+                present.len(),
+                &mut present_diagnostic,
+            )
+        };
+        assert!(!present_read.is_null());
+        assert!(present_diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(present_read), b"value");
+        unsafe { phpc_native_value_free(present_read) };
+
+        let mut missing_diagnostic = NativeDiagnosticHandle::null();
+        let missing_read = unsafe {
+            phpc_native_symbol_table_read_with_diagnostic(
+                table,
+                missing.as_ptr(),
+                missing.len(),
+                &mut missing_diagnostic,
+            )
+        };
+        assert!(!missing_read.is_null());
+        assert!(!missing_diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(missing_read), b"");
+        assert_eq!(
+            native_diagnostic_message_for_test(missing_diagnostic),
+            "undefined variable '$missing'"
+        );
+
+        unsafe {
+            phpc_native_value_free(missing_read);
+            phpc_native_diagnostic_free(missing_diagnostic);
+            phpc_native_symbol_table_free(table);
+        }
     }
 
     #[test]
