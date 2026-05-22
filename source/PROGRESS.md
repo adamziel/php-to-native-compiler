@@ -1,31 +1,31 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 13:31 CEST
-Evaluation marker: `20260522T105253Z` plus post-evaluator semantic refresh through `b21c5c42`
-Primary HEAD: current progress-only update on top of `b21c5c42`
-Current primary semantic baseline: `b21c5c42 codegen: route request roots through snapshot ABI`
+Updated: 2026-05-22 13:45 CEST
+Evaluation marker: `20260522T114515Z`
+Primary HEAD: `ed2d9031 runtime: add array reference path ABI`
+Current primary semantic baseline: `ed2d9031 runtime: add array reference path ABI`
 
-Percentages are candid engineering estimates, not test-suite pass rates. Lane-local and primary-local candidate work is not counted as product capability until it is integrated into `master`, gated, committed, and pushed.
+Percentages are candid engineering estimates, not test-suite pass rates. Lane-local candidate work is not counted as product capability until it is integrated into `master`, gated, committed, and pushed.
 
 ## Executive Read
 
-Overall estimated progress toward the current generalized native-compiler roadmap: **68%** `[##############------]`
+Overall estimated progress toward the current generalized native-compiler roadmap: **69%** `[##############------]`
 
-Momentum is positive, but still uneven. The primary branch recently landed real request/symbol runtime storage, generated-C array/lvalue consumers, request missing-key diagnostics, runtime request/superglobal path mutation, shell-escape string-result routing, comparator-free array sort-family routing over the array-lvalue ABI, generated-C null-callback `array_filter()` / `array_map()` execution through the native value-result ABI, and now generated-C direct request-superglobal root snapshots through the request-state ABI. Ordinary broad PHP program support still has major blockers in `$GLOBALS`, keyed/path superglobals, request mutation lowering, references/COW, calls, objects, control flow, exact diagnostics, and broad composition.
+Momentum remains positive and still uneven. Primary now has stronger request/symbol storage, generated-C array/lvalue consumers, direct request-root snapshot consumers, null-callback array value consumers, and a new runtime ABI for nested array reference paths over owned value handles. This is real generalized infrastructure. It is not yet broad PHP compatibility: executable `$GLOBALS`, keyed/path superglobal lowering, generated reference assignment, references/COW, user calls, objects, structured control flow, and exact diagnostics remain the major blockers.
 
 ## Roadmap Position
 
 | Area | Estimate | Bar | Primary-integrated read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | 93% | `[###################-]` | Strong shared surfaces exist for values, arrays, strings, comparisons, diagnostics, symbol tables, request state, reference slots, and request/superglobal path mutation. |
-| Selected compiler/backend consumers | 72% | `[##############------]` | Many generated-C consumers exist, including null-callback array value-result consumers and direct request-root snapshots, but important consumers for symbols, request keyed/path storage, calls, objects, references, and control-flow cleanup remain absent or partial. |
+| Runtime and ABI foundations | 94% | `[###################-]` | Strong shared surfaces exist for values, arrays, strings, comparisons, diagnostics, symbol tables, request state, reference slots, request/superglobal mutation, and nested array reference paths. |
+| Selected compiler/backend consumers | 72% | `[##############------]` | Generated-C consumers exist for selected scalar/string/array/lvalue/request-root behavior, but symbols, keyed/path request storage, calls, objects, references, and control-flow cleanup remain partial or absent. |
 | Executable generalized PHP semantics | 59% | `[############--------]` | Selected scalar, string, array, lvalue, symbol-runtime, request-runtime, request-root snapshot, and null-callback array value behavior works. Broad PHP programs still hit structural blockers. |
-| Arrays, references, COW, lvalues | 68% | `[##############------]` | Selected generated-C array/lvalue/value execution works, including pointer/cursor builtins, direct value-offset writes, comparator-free sort-family mutation, and null-callback `array_filter()` / `array_map()` over native value handles. Arbitrary roots, full references/COW, by-reference foreach, and ArrayAccess/resource offsets remain open. |
-| Symbols, globals, request state | 41% | `[########------------]` | Runtime symbol/request roots can snapshot, populate, share reference cells, report missing-key value-read diagnostics, mutate request/superglobal paths, and now feed generated-C direct superglobal root reads/probes. Compiler-level `$GLOBALS`, keyed/path superglobal lowering, request lifetime, and frame propagation are not done. |
-| Calls, functions, frames | 25% | `[#####---------------]` | Runtime call contracts and lane-local source-call consumers exist, but primary still lacks broad executable user function/method/closure frames and result consumers. |
+| Arrays, references, COW, lvalues | 70% | `[##############------]` | Primary has selected array/lvalue execution plus a runtime nested reference-path ABI. Generated PHP reference assignment, arbitrary roots, owner/value/reference slots, by-reference foreach, and full COW remain open. |
+| Symbols, globals, request state | 42% | `[########------------]` | Runtime symbol/request roots can snapshot, mutate, share reference cells, and participate in reference-path ABI tests. Compiler-level `$GLOBALS`, keyed/path superglobal lowering, request lifetime, and frame propagation are not done. |
+| Calls, functions, frames | 25% | `[#####---------------]` | Runtime call contracts and promising lane-local source-call consumers exist, but primary still lacks broad executable user function/method/closure frames and result consumers. |
 | Objects, properties, methods | 11% | `[##------------------]` | Mostly blockers and metadata. Real allocation/property/method behavior remains largely absent. |
-| Diagnostics and control-flow cleanup | 28% | `[######--------------]` | Shared diagnostic/status surfaces exist and request missing-key value reads now report through the request result carrier. Exact ordering, recovery, loops/switch/goto/finally/exceptions, and cleanup stacks are not integrated. |
-| Broad integrated verification | 70% | `[##############------]` | Focused gates and linked tests are useful, including linked executable coverage for null-callback array builtins and request-root snapshots. Broad differential composition coverage remains thin. |
+| Diagnostics and control-flow cleanup | 28% | `[######--------------]` | Shared diagnostic/status surfaces exist and request missing-key value reads report through request result carriers. Exact ordering, recovery, loops/switch/goto/finally/exceptions, and cleanup stacks are not primary-integrated. |
+| Broad integrated verification | 71% | `[##############------]` | Focused gates and linked tests are useful, including request-root snapshots, null-callback array builtins, sort-family lvalues, and runtime reference-path storage-root coverage. Broad differential composition coverage remains thin. |
 
 ## Done / In Progress / Not Done
 
@@ -33,14 +33,14 @@ Momentum is positive, but still uneven. The primary branch recently landed real 
 - [x] Generated-native C consumers for selected scalar/string/array/lvalue behaviors with linked executable coverage.
 - [x] Request-state runtime snapshot/rebuild and symbol-table population ABIs.
 - [x] Symbol-table and request-root reference-cell sharing at runtime.
-- [x] Generated-native C pointer/cursor builtins over tracked native array owners and nested owner paths.
-- [x] Generated-native C direct value-offset writes over missing/null/false/scalar roots through the shared mutation ABI.
 - [x] Runtime request missing-key value-read diagnostics through the shared request operation-result carrier.
 - [x] Runtime request/superglobal path mutation through shared request-state storage.
-- [x] Generated-native C shell-escape calls through the shared native string-result ABI with runtime diagnostics and linked executable coverage.
-- [x] Generated-native C comparator-free array sort builtins over tracked native array owners and nested owner paths through the array-lvalue result ABI.
+- [x] Generated-native C shell-escape calls through the shared native string-result ABI.
+- [x] Generated-native C comparator-free array sort builtins over tracked native array owners and nested owner paths.
 - [x] Generated-native C null-callback `array_filter()` and `array_map()` through shared native value handles and the native array callback result ABI.
 - [x] Generated-native C direct request-superglobal root snapshots through the request-state ABI, including root `isset()`, root `empty()`, type-name, and output consumers.
+- [x] Runtime nested array reference-path ABI over owned value handles, with root writeback coverage for direct values, symbol-table values, and request-superglobal slots.
+- [ ] Generated PHP reference assignment over the new path-reference ABI.
 - [ ] Executable PHP-level `$GLOBALS`, compiler-lowered keyed/path superglobal reads/writes/`isset()`/`empty()`, request lifetime threading, and frame propagation.
 - [ ] General references/COW, owner-slot/value-slot/reference-slot materialization, by-reference arguments/returns, and alias-visible mutation barriers.
 - [ ] Real object allocation, properties, methods, magic hooks, visibility, ArrayAccess, and resource offset behavior.
@@ -48,49 +48,43 @@ Momentum is positive, but still uneven. The primary branch recently landed real 
 
 ## Recent Primary Progress
 
-Integrated and pushed in the latest evaluator window:
+Recent integrated semantic commits:
 
-- `f0f785e5 runtime: report request missing-key value diagnostics`
-- `dbc6b13c runtime: mutate request superglobal paths`
-- `01db5099 codegen: route shell escapes through string-result ABI`
 - `f3c0f574 codegen: route array sort builtins through lvalue ABI`
 - `161a7006 codegen: route null array callbacks through value ABI`
 - `b21c5c42 codegen: route request roots through snapshot ABI`
+- `ed2d9031 runtime: add array reference path ABI`
 
-Earlier recent integrated work in this run includes request-root population, symbol/request reference-slot sharing, array pointer builtins, and direct value-offset writes.
+Current primary state:
 
-Current product repo state:
-
-- `master` has semantic progress through `b21c5c42`; this dashboard update is progress-only.
-- Direct request-superglobal root snapshot routing is integrated in `compiler/src/codegen.rs` and `compiler/tests/native_link.rs`, reusing the existing runtime request-state snapshot ABI.
-- Null-callback array value-result routing for `array_filter()` and `array_map()` remains integrated in `compiler/src/codegen.rs`, `compiler/tests/native_link.rs`, and `runtime/src/lib.rs`.
-- Preserved unrelated unstaged runtime hunk remains in `runtime/src/lib.rs`.
-- The preserved hunk is not counted as product progress here.
+- `master` and `origin/master` are synced at `ed2d9031`.
+- The product dashboard update is progress-only on top of that semantic baseline.
+- The preserved unrelated unstaged runtime hunk remains in `runtime/src/lib.rs` and is not counted as product progress.
+- The latest semantic addition is runtime-only reference-path infrastructure; generated-C/LLVM PHP reference assignment still needs a primary compiler consumer.
 
 ## Lane-Local Candidate Work
 
 These are active or completed candidates, not integrated capability:
 
-- `impl-global-symbols`: direct request-root snapshot consumers have been sliced into primary; `$GLOBALS`, function activation, request lifetime, keyed/path mutation lowering, and symbol-environment contracts remain lane-local or excluded.
-- `impl-native-integration-batch`: array sort-family owner/path mutation and null-callback array value-result consumers have been sliced into primary; broader lane work remains excluded.
-- `impl-native-call-semantics`: generated-C echo/print statement-operand call consumers over the shared runtime call result handle.
-- `impl-array-linked-exec`: callback-free `array_filter()` through the native value-result callback-family ABI, plus adjacent string-transform/sort-family surfaces.
-- `impl-array-lowering`: centralized conditional RHS state-merge blocker for lazy `??=` operation families.
-- `impl-binary-string-runtime`: include-path, constants, stream/filesystem, and shell/string-result follow-ons in lane-local history.
-- `impl-native-type-conversion`, `impl-native-diagnostics`, `impl-native-control-flow-seed`, `impl-native-exit-seed`, object, reference-cell, and symbol lanes: useful generalized surfaces remain mostly lane-local or conflict-heavy until sliced.
+- `impl-global-symbols`: nested array reference source lowering through the path-reference ABI and request/symbol writeback contracts; promising next-step material, still lane-local.
+- `impl-native-call-semantics`: generated native C frame callbacks for descriptor-ready top-level by-value functions with straight-line supported bodies; high value if sliced narrowly.
+- `impl-native-control-flow-seed`: executable LLVM loop condition/backedge lowering for state-stable loop forms; still missing loop-carried state, transfer cleanup, switch/goto, and phis.
+- `impl-native-diagnostics`: `$GLOBALS` static-string request-root aliases route to a shared request-state symbol blocker; not executable reconciliation yet.
+- `impl-array-linked-exec`: additional generated-C array/value builtin consumers and by-reference foreach scalar-offset recovery; useful but lower priority than structural semantics.
+- `impl-array-value-runtime`, `impl-binary-string-runtime`, and `impl-native-type-conversion`: broad callable, byte-string, regex, constant, predicate, and conversion work; needs small transplant notes before primary selection.
 
 ## Active Roadmap Items
 
 | Active item | Estimate | Status | Next useful primary shape |
 | --- | ---: | --- | --- |
-| Array/lvalue execution | 68% | In progress | Prefer arbitrary-root writes, by-reference foreach, `??=`/RMW, owner/value/reference-slot materialization, callback/user-frame execution, LLVM parity, or deeper cleanup/diagnostic ordering over another null-callback/builtin breadth slice. |
-| Symbols/request/globals | 41% | In progress | Keyed/path request/superglobal reads and probes, compiler-lowered mutations, `$GLOBALS` aliasing, request lifetime threading, or symbol/frame consumers over request roots. |
-| References/COW | 28% | In progress | Narrow owner/reference slot materialization with alias-visible mutation and executable evidence. |
-| Calls/functions | 25% | In progress | Real declaration descriptor/callable table population, dynamic call lookup, or user-frame value propagation beyond statement-only consumers. |
+| Array/lvalue execution | 70% | In progress | Consume the path-reference ABI in generated reference assignment, arbitrary-root writeback, by-reference foreach, `??=`/RMW, owner/value/reference-slot materialization, or LLVM parity. |
+| Symbols/request/globals | 42% | In progress | Keyed/path request/superglobal reads and probes, compiler-lowered mutations, `$GLOBALS` aliasing, request-root replacement, or request lifetime threading. |
+| References/COW | 30% | In progress | Narrow owner/reference slot materialization with alias-visible mutation and executable evidence, not just runtime ABI vocabulary. |
+| Calls/functions | 25% | In progress | Real declaration descriptor/callable table population with generated body callbacks and result consumers. |
 | Objects/properties/methods | 11% | Early | Allocation/property/method behavior through shared carriers, not metadata-only blockers. |
-| Control flow/cleanup/diagnostics | 28% | Early | One real structured transfer or cleanup path with exact ordering evidence, plus request diagnostic consumers in generated backends. |
-| Broad verification | 67% | In progress | Composition checks crossing request, symbols, arrays, references, calls, diagnostics, and control flow after each primary consumer lands. |
+| Control flow/cleanup/diagnostics | 28% | Early | One real structured branch/loop/transfer cleanup path with exact ordering evidence. |
+| Broad verification | 71% | In progress | Composition checks crossing request, symbols, arrays, references, calls, diagnostics, and control flow after each primary consumer lands. |
 
 ## Steering Notes
 
-The next best primary slices should turn landed runtime/storage surfaces into deeper executable compiler behavior, especially keyed/path superglobal reads/writes/`isset()`/`empty()`, `$GLOBALS` aliasing, request lifetime threading, or reference/COW materialization. Direct request-root snapshots, sort-family routing, and null-callback array routing are counted as real but narrow generated-C consumers, not a reason to keep prioritizing builtin breadth over deeper symbol/request/reference/call/control-flow work. Whole-lane merges, fixture-shaped production lowering, generated-source substring-only progress, formatter spillover, and docs-only churn outside this progress dashboard remain rejected.
+The next best primary slice should turn the new reference-path runtime ABI or the request/symbol storage surfaces into executable compiler behavior. Prefer generated reference assignment over proven array parents, keyed/path superglobal reads/writes/probes, `$GLOBALS` alias reconciliation, request lifetime threading, or a narrow real call/control-flow execution slice. Avoid another standalone builtin-family batch unless it crosses references/COW, request state, function frames, object/ArrayAccess, or structured cleanup. Whole-lane merges, fixture-shaped production lowering, generated-source substring-only proof, formatter spillover, and docs-only churn outside this dashboard remain rejected.
