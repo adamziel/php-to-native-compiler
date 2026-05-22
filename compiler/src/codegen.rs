@@ -2132,14 +2132,41 @@ fn is_globals_superglobal_name(name: &str) -> bool {
     name == "GLOBALS"
 }
 
-fn globals_request_superglobal_alias_path<'a>(
-    indices: &'a [&'a Expr],
-) -> Option<(&'a str, &'a [&'a Expr])> {
-    let (first, rest) = indices.split_first()?;
-    match *first {
-        Expr::String(name, _) if is_request_superglobal_name(name) => Some((name.as_str(), rest)),
+fn static_string_key_expr_value(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::String(value, _) => Some(value.clone()),
+        Expr::Binary {
+            left,
+            op: BinaryOp::Concat,
+            right,
+            ..
+        } => {
+            let mut value = static_string_key_expr_value(left)?;
+            value.push_str(&static_string_key_expr_value(right)?);
+            Some(value)
+        }
         _ => None,
     }
+}
+
+fn globals_request_superglobal_alias_path<'a>(
+    indices: &'a [&'a Expr],
+) -> Option<(String, &'a [&'a Expr])> {
+    let mut remaining = indices;
+    while let Some((first, rest)) = remaining.split_first() {
+        let Some(name) = static_string_key_expr_value(first) else {
+            return None;
+        };
+        if is_globals_superglobal_name(&name) {
+            remaining = rest;
+            continue;
+        }
+        if is_request_superglobal_name(&name) {
+            return Some((name, rest));
+        }
+        return None;
+    }
+    None
 }
 
 fn request_superglobal_root_name(expr: &Expr) -> Option<&str> {
@@ -11036,7 +11063,7 @@ impl CGenerator {
                 {
                     return self
                         .emit_globals_request_alias_assignment_expr(
-                            alias_name,
+                            alias_name.as_str(),
                             request_indices,
                             expr,
                             failure_cleanup,
@@ -11059,7 +11086,7 @@ impl CGenerator {
                 {
                     return self
                         .emit_globals_request_alias_append_assignment_expr(
-                            alias_name,
+                            alias_name.as_str(),
                             request_indices,
                             &suffix_indices,
                             expr,
@@ -11116,7 +11143,11 @@ impl CGenerator {
                     let value = if let Some((name, request_indices)) =
                         globals_request_superglobal_alias_path(&indices)
                     {
-                        self.emit_globals_request_alias_presence_expr(name, request_indices, "")?
+                        self.emit_globals_request_alias_presence_expr(
+                            name.as_str(),
+                            request_indices,
+                            "",
+                        )?
                     } else {
                         self.emit_globals_symbol_path_presence_expr(&indices, path_span, "")?
                     };
@@ -11226,7 +11257,11 @@ impl CGenerator {
                 if let Some((name, request_indices)) =
                     globals_request_superglobal_alias_path(&indices)
                 {
-                    return self.emit_globals_request_alias_empty_expr(name, request_indices, "");
+                    return self.emit_globals_request_alias_empty_expr(
+                        name.as_str(),
+                        request_indices,
+                        "",
+                    );
                 }
                 return self.emit_globals_symbol_path_empty_expr(&indices, path_span, "");
             }
@@ -13538,7 +13573,7 @@ impl CGenerator {
                 globals_request_superglobal_alias_path(&indices)
             {
                 return self.emit_globals_request_alias_unset(
-                    alias_name,
+                    alias_name.as_str(),
                     request_indices,
                     span,
                     "",
@@ -15035,7 +15070,7 @@ impl CGenerator {
                         globals_request_superglobal_alias_path(&indices)
                     {
                         return self.emit_globals_request_alias_assignment(
-                            alias_name,
+                            alias_name.as_str(),
                             request_indices,
                             expr,
                             "",
@@ -15080,7 +15115,7 @@ impl CGenerator {
                         globals_request_superglobal_alias_path(&prefix_indices)
                     {
                         return self.emit_globals_request_alias_append_assignment(
-                            alias_name,
+                            alias_name.as_str(),
                             request_indices,
                             &suffix_indices,
                             expr,
@@ -18174,13 +18209,13 @@ impl CGenerator {
         };
         if request_indices.is_empty() {
             return Ok(Some(self.materialize_request_superglobal_snapshot_value(
-                name,
+                name.as_str(),
                 failure_cleanup,
             )));
         }
 
         self.emit_request_superglobal_path_null_coalesce_value(
-            name,
+            name.as_str(),
             request_indices,
             right,
             failure_cleanup,
@@ -18286,7 +18321,11 @@ impl CGenerator {
         }
         if let Some((name, request_indices)) = globals_request_superglobal_alias_path(&indices) {
             return self
-                .emit_globals_request_alias_value_read(name, request_indices, failure_cleanup)
+                .emit_globals_request_alias_value_read(
+                    name.as_str(),
+                    request_indices,
+                    failure_cleanup,
+                )
                 .map(Some);
         }
 

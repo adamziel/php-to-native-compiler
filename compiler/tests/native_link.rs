@@ -1792,6 +1792,32 @@ const GLOBALS_REQUEST_ALIAS_SOURCE: &str = concat!(
     "echo $_GET[\"expr\"];\n",
 );
 
+const GLOBALS_SELF_REQUEST_ALIAS_SOURCE: &str = concat!(
+    "<?php\n",
+    "$key = \"name\";\n",
+    "$outer = \"box\";\n",
+    "$inner = \"leaf\";\n",
+    "$GLOBALS[\"GLOBALS\"][\"_GET\"] = [\"name\" => \"Ada\", \"empty\" => \"\"];\n",
+    "echo $_GET[$key];\n",
+    "echo \"|\";\n",
+    "$GLOBALS[\"GLO\" . \"BALS\"][\"_POST\"][$outer][$inner] = \"P\";\n",
+    "echo $_POST[$outer][$inner];\n",
+    "echo \"|\";\n",
+    "$GLOBALS[\"GLOBALS\"][\"GLOBALS\"][\"_COOKIE\"][$key] = strtoupper(\"c\");\n",
+    "echo $_COOKIE[$key];\n",
+    "echo \"|\";\n",
+    "unset($GLOBALS[\"GLOBALS\"][\"_COOKIE\"][$key]);\n",
+    "echo isset($_COOKIE[$key]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "$GLOBALS[\"GLOBALS\"][\"_POST\"][$outer][] = \"A\";\n",
+    "echo $_POST[$outer][0];\n",
+    "echo \"|\";\n",
+    "echo isset($GLOBALS[\"GLOBALS\"][\"_GET\"][$key]) ? 1 : 0;\n",
+    "echo empty($GLOBALS[\"GLOBALS\"][\"_GET\"][\"empty\"]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo gettype($GLOBALS[\"GLOBALS\"][\"_REQUEST\"]);\n",
+);
+
 const NATIVE_VALUE_VARIABLE_STORAGE_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$key = \"first\";\n$slot = $items[$key];\n$copy = $slot;\necho $slot, \"|\", $copy, \"|\";\n$upper = strtoupper($copy);\necho $upper, \"|\";\n$fallback = $items[\"missing\"] ?? \"m\";\necho $fallback, \"|\";\n$cast = (string) 42;\necho $cast, \"|\";\n$items[] = $upper;\necho $items[1];\n";
 
 const ACTIVE_SYMBOL_ROOT_OFFSET_MUTATION_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$box = null;\n$path = null;\n$trigger = $items[\"missing\"] ?? \"m\";\n$items[] = strtoupper($items[\"first\"]);\n$items[\"first\"] = \"r\";\n$box[] = \"B\";\n$path[\"outer\"][] = \"P\";\necho $trigger, \"|\", $items[1], \"|\", $items[\"first\"], \"|\", $items[0], \"|\", $box[0], \"|\", isset($path[\"outer\"]) ? 1 : 0;\n";
@@ -4043,6 +4069,70 @@ fn native_executable_c_source_routes_globals_request_aliases_through_request_sta
     assert!(
         !body.contains("phpc_native_symbol_table_read_value_by_path_with_diagnostic"),
         "$GLOBALS request-root aliases should not read the ordinary symbol table:\n{source}"
+    );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("global-symbol-table lowering rejects $GLOBALS"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_globals_self_request_aliases_through_request_state() {
+    let program = parse(GLOBALS_SELF_REQUEST_ALIAS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_replace_value_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_path_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_keyed_mutation_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_path_mutation_operation"),
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE")
+            .count()
+            >= 2,
+        "{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND"),
+        "{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET"),
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_OP_VALUE").count() >= 3,
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_symbol_table_set_value_by_path_with_diagnostic"),
+        "$GLOBALS self request-root aliases should not write the ordinary symbol table:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_symbol_table_read_value_by_path_with_diagnostic"),
+        "$GLOBALS self request-root aliases should not read the ordinary symbol table:\n{source}"
     );
     assert!(
         !source.contains("request-superglobal lowering rejects"),
@@ -7058,6 +7148,53 @@ fn emit_exe_links_and_runs_globals_request_alias_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"Ada|P|C|R|11|0|A|xyz|xyz");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_globals_self_request_alias_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("globals_self_request_alias");
+    let source_path = native_link_output_path("globals_self_request_alias_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, GLOBALS_SELF_REQUEST_ALIAS_SOURCE)
+        .expect("native globals self request alias source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native globals self request alias source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native globals self request alias executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"Ada|P|C|0|A|11|array");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
