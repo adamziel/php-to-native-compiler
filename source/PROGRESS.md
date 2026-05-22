@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 23:12 CEST
+Updated: 2026-05-22 23:29 CEST
 Evaluation marker: `20260522T210338Z`
-Primary management baseline before this update: `207d31ca docs: update progress dashboard`
-Primary semantic baseline: `0398c9f0 codegen: route GLOBALS symbol references`
+Primary management baseline before this update: `30378230 docs: update progress after GLOBALS symbol references`
+Primary semantic baseline: `068ec41a codegen: dispatch dynamic GLOBALS references`
 Prior evaluator marker: `20260522T201400Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -13,12 +13,13 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 
 ## Executive Read
 
-Overall estimated progress: **83%** `[#################---]`
+Overall estimated progress: **84%** `[#################---]`
 
-Primary landed and pushed `0398c9f0`, a small generated-C/runtime slice for
-ordinary `$GLOBALS[...]` symbol-path reference assignment. The overall estimate
-stays at 83% because the slice is narrow, but the symbols/globals/reference
-surface is materially less blocked.
+Primary landed and pushed `068ec41a`, a generated-C slice for dynamic
+non-append `$GLOBALS[$expr]` reference assignment. Dynamic request-root names
+now dispatch reference sources and targets through request-state root/path
+reference ABIs, with ordinary symbol-table value-path fallback for non-request
+roots.
 
 The latest integrated baseline includes generated-C request/reference/global
 symbol progress, direct and mixed symbol-root unsets, request append suffix
@@ -27,26 +28,35 @@ through reference-backed request roots, by-value `foreach` body array-lvalue
 unsets, nested request-superglobal reference paths, and dynamic
 `$GLOBALS[$expr]` request-root assignment, read, `isset()`, and `empty()`
 dispatch. It now also includes ordinary static `$GLOBALS[...]` symbol-path
-reference targets and sources through a shared value-path reference ABI.
+reference targets/sources through a shared value-path reference ABI and dynamic
+`$GLOBALS[$expr]` root/path reference source/target dispatch for non-append
+paths.
 
 The preserved `runtime/src/lib.rs` null-slot increment/decrement hunk remains
 unintegrated and is not counted.
 
 ## Current Primary State
 
-- Primary `master...origin/master`: synced at pushed semantic head `0398c9f0`
+- Primary `master...origin/master`: synced at pushed semantic head `068ec41a`
   before this management update.
-- Latest semantic commit: `0398c9f0 codegen: route GLOBALS symbol references`.
+- Latest semantic commit: `068ec41a codegen: dispatch dynamic GLOBALS references`.
 - Current product diff at final verification before this management update:
   this `PROGRESS.md` update plus the preserved runtime null-slot hunk.
 - The preserved null-slot increment/decrement hunk is still present inside the
   `runtime/src/lib.rs` diff and remains unintegrated.
-- Resource note from this batch: `/dev/shm` was above the 6G floor but still
-  close enough to prior pressure that semantic gates used disk target
-  `/home/claude/php-to-native-compiler/target-primary-integrator-disk`.
+- Resource note from this batch: `/dev/shm` was above the 6G floor, but stale
+  target-cache permissions blocked writable test directories there and in the
+  existing disk target. Focused gates used fresh `/tmp/phpc-target-primary-integrator.*`
+  targets with `umask 0022`, removed after each run.
 
 ## Recent Primary-Integrated Progress
 
+- `068ec41a`: dynamic non-append `$GLOBALS[$expr]` reference assignment now
+  evaluates root/path keys once, dispatches request-root matches to
+  request-state root/path reference source and target ABIs, and preserves
+  ordinary symbol-table value-path reference fallback. Focused gates:
+  `cargo test -p phpc --test native_link globals_dynamic_reference -- --nocapture`
+  and `cargo test -p phpc --test native_link reference_assignment_paths -- --nocapture`.
 - `0398c9f0`: ordinary static `$GLOBALS[...]` symbol-path reference assignment
   now uses a reusable symbol-table value-path reference ABI for root, nested,
   and append reference sources/targets while keeping request aliases and
@@ -89,9 +99,9 @@ backend parity.
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong value, array, symbol-table, request-state, comparison, truthiness, and reference ABIs. |
 | Compiler/backend consumers | 95% | `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbol, value, array, lvalue, and reference consumers; uneven across calls, objects, control flow, and LLVM/C parity. |
-| Executable generalized PHP semantics | 79% | `[################----]` | Improving through linked executable gates, but still selected islands rather than a complete PHP execution model. |
-| Arrays, lvalues, references, COW | 82% | `[################----]` | Stronger arrays/lvalues and selected reference paths, including ordinary `$GLOBALS` symbol references; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 93% | `[###################-]` | Request paths, `$GLOBALS` static/self aliases, ordinary `$GLOBALS` symbol references, dynamic root assignment/read/probe dispatch, symbol paths, direct/mixed root unsets, and selected request references are strong; nested dynamic aliases and request append/reference forms remain open. |
+| Executable generalized PHP semantics | 80% | `[################----]` | Improving through linked executable gates, but still selected islands rather than a complete PHP execution model. |
+| Arrays, lvalues, references, COW | 83% | `[#################---]` | Stronger arrays/lvalues and selected reference paths, including ordinary and dynamic non-append `$GLOBALS` references; full references/COW and arbitrary writable roots remain large. |
+| Symbols, globals, request state | 94% | `[###################-]` | Request paths, `$GLOBALS` static/self aliases, ordinary `$GLOBALS` symbol references, dynamic root assignment/read/probe dispatch, dynamic non-append `$GLOBALS` references, symbol paths, direct/mixed root unsets, and selected request references are strong; request append/reference forms and broader reconciliation remain open. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Lane candidates exist, but broad executable call/frame semantics are not primary. |
 | Objects, properties, methods | 11% | `[##------------------]` | Mostly lane-local/runtime candidate work; primary still lacks general compiled object/property/method execution. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused diagnostics exist; exact ordering and structured cleanup are not generalized. |
@@ -117,30 +127,33 @@ Done on primary:
   request superglobal names through request-state key matching and preserve
   ordinary symbol-table read/presence/empty fallbacks.
 - [x] `$GLOBALS[...]` symbol-table path reads, probes, writes, unsets, appends,
-  direct unresolved root reads, and ordinary static symbol-path reference
-  assignment through shared symbol-table ABIs.
+  direct unresolved root reads, ordinary static symbol-path reference
+  assignment through shared symbol-table ABIs, and dynamic non-append
+  root/path reference dispatch through request-state matching plus ordinary
+  symbol-table fallback.
 - [x] Direct symbol-root `unset(...)` through the native symbol-table root unset
   ABI for single and all-direct multi-target forms.
 - [x] Mixed generated-C `unset(...)` target sequencing across supported direct
   roots, array-offset roots after symbol-table activation, and `$GLOBALS` paths.
 - [x] Selected generated-C reference assignment between ordinary symbol paths,
   ordinary static `$GLOBALS` symbol paths, request roots, keyed request slots,
-  and nested request-superglobal paths.
+  nested request-superglobal paths, and dynamic non-append `$GLOBALS[$expr]`
+  root/path references.
 - [x] Generated-C array-query/value-offset consumers, active-root offset
   writeback, and by-value `foreach` body array-lvalue unsets.
 - [x] Focused executable linked gates for the newest primary semantic slices.
 
 In progress or candidate only:
 
-- [ ] Request/global alias reconciliation, dynamic `$GLOBALS[$expr]`
-  request-root nested aliases, dynamic `$GLOBALS[$expr]` reference dispatch,
-  direct no-key `$GLOBALS[]`, keyed reference binding through reference-backed
-  request roots, request append reference/by-reference behavior, and
-  non-request `$GLOBALS["GLOBALS"]` self-reference behavior. Estimate: 63%
-  `[#############-------]`.
-- [ ] General generated PHP reference assignment over dynamic `$GLOBALS`,
-  objects, arbitrary owner/value/reference slots, frames, append request slots,
-  and COW-aware boundaries. Estimate: 58% `[############--------]`.
+- [ ] Request/global alias reconciliation, broader dynamic `$GLOBALS[$expr]`
+  nested aliases outside non-append reference assignment, direct no-key
+  `$GLOBALS[]`, keyed reference binding through reference-backed request roots,
+  request append reference/by-reference behavior, and non-request
+  `$GLOBALS["GLOBALS"]` self-reference behavior. Estimate: 60%
+  `[############--------]`.
+- [ ] General generated PHP reference assignment over objects, arbitrary
+  owner/value/reference slots, frames, append request slots, no-key `$GLOBALS`
+  slots, and COW-aware boundaries. Estimate: 60% `[############--------]`.
 - [ ] Narrow real call/frame execution beyond helper/blocker routing.
   Estimate: 25% `[#####---------------]`.
 - [ ] Object/property/method executable semantics beyond lane-local candidates.
@@ -182,12 +195,13 @@ on primary with focused executable proof.
 
 ## Current Steering Bias
 
-Keep primary integration on compact structural consumers. After `0398c9f0`,
-ordinary static `$GLOBALS[...]` symbol-path references should be treated as done
-for non-repeat purposes. The highest-value request/global work now is dynamic
-nested aliases, dynamic `$GLOBALS[$expr]` reference dispatch, direct no-key
-`$GLOBALS[]`, request append/reference forms, keyed references through
-reference-backed request roots, and request/global alias reconciliation.
+Keep primary integration on compact structural consumers. After `068ec41a`,
+ordinary static `$GLOBALS[...]` symbol-path references and dynamic non-append
+`$GLOBALS[$expr]` reference dispatch should be treated as done for non-repeat
+purposes. The highest-value request/global work now is broader dynamic nested
+aliases, direct no-key `$GLOBALS[]`, request append/reference forms, keyed
+references through reference-backed request roots, and request/global alias
+reconciliation.
 
 The low-percentage areas are calls, objects, and control flow. A narrow primary
 slice there is valuable only if it executes real PHP behavior with linked proof;
