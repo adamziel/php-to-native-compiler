@@ -555,6 +555,8 @@ const VALUE_OFFSET_MUTATION_VALUE_APPEND_SOURCE: &str = "<?php\n$null = null;\n$
 
 const VALUE_OFFSET_PATH_MUTATION_SOURCE: &str = "<?php\n$key = \"a\";\n$null = null;\n$null[$key][\"b\"] = \"A\\0\";\n$false = false;\n$false[\"bucket\"][][\"leaf\"] = \"B\";\n$int = 3;\n$int[\"x\"][\"y\"] = \"z\";\necho isset($null[$key]) ? 1 : 0, \"|\", isset($false[\"bucket\"]) ? 1 : 0, \"|\", $int;\n";
 
+const VALUE_OFFSET_PATH_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$key = \"a\";\n$null = null;\necho ($null[$key][\"b\"] = \"A\"), \"|\", isset($null[$key]) ? 1 : 0, \"|\";\n$false = false;\n$value = \"B\";\necho ($false[\"bucket\"][][\"leaf\"] = $value), \"|\", isset($false[\"bucket\"]) ? 1 : 0, \"|\";\n$source = [\"rhs\" => \"C\"];\n$target = null;\n$stored = ($target[\"copy\"][\"leaf\"] = $source[\"rhs\"]);\necho $stored, \"|\", isset($target[\"copy\"]) ? 1 : 0;\n";
+
 const VALUE_OFFSET_MUTATION_ARRAY_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$key = \"named\";\n$value = \"C\";\necho ($items[] = \"B\"), \"|\";\necho ($items[] = $value), \"|\";\necho ($items[$key] = \"D\"), \"|\";\necho $items[0], \"|\", $items[1], \"|\", $items[$key], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
 
 const VALUE_OFFSET_ARRAY_READ_SOURCE: &str = "<?php\n$items = [\"first\" => \"q\", 2 => \"B\"];\n$key = \"first\";\n$out = [];\n$out[] = $items[$key];\necho $items[$key], \"|\";\nprint $items[2];\necho \"|\", $out[0], \"|\";\necho strtoupper($items[$key]);\n";
@@ -1132,6 +1134,43 @@ fn native_executable_c_source_routes_nested_value_writes_through_path_boundaries
     assert!(
         !body.contains("assembly array lowering rejects"),
         "nested value writes should not fall through to the blanket array rejection:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_nested_value_assignment_expressions_through_path_boundaries() {
+    let program = parse(VALUE_OFFSET_PATH_ASSIGNMENT_EXPR_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_offset_path_write_with_diagnostic"
+        ) && source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_offset_path_append_with_diagnostic"
+        ),
+        "generated C should declare the shared value-offset path mutation ABI:\n{source}"
+    );
+    assert_eq!(
+        body.matches(" = phpc_native_value_offset_path_write_with_diagnostic(")
+            .count(),
+        2,
+        "nested keyed assignment expressions should share one path write ABI:\n{source}"
+    );
+    assert_eq!(
+        body.matches(" = phpc_native_value_offset_path_append_with_diagnostic(")
+            .count(),
+        1,
+        "nested append assignment expressions should share one path append ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_clone(value_offset_path_write_value_to_clone_")
+            && body.contains("phpc_native_value_clone(value_offset_path_append_value_to_clone_"),
+        "assignment-expression path mutations should store the mutated owner through native value clones:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_echo_stdout("),
+        "native-value RHS assignment results should remain available to expression consumers:\n{source}"
     );
 }
 
@@ -2728,6 +2767,58 @@ fn emit_exe_links_and_runs_nested_value_path_write_program() {
     assert!(
         stderr.contains("Automatic conversion of false to array is deprecated")
             && stderr.contains("cannot use a scalar value as an array"),
+        "stderr:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_value_path_assignment_expression_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("nested_value_path_assignment_expression_boundary");
+    let source_path =
+        native_link_output_path("nested_value_path_assignment_expression_boundary_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, VALUE_OFFSET_PATH_ASSIGNMENT_EXPR_SOURCE)
+        .expect("native nested value path assignment-expression source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native nested assignment-expression source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"A|1|B|1|C|1");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("Automatic conversion of false to array is deprecated"),
         "stderr:\n{stderr}"
     );
 

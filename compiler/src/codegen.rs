@@ -8354,6 +8354,25 @@ impl CGenerator {
             &replacement_failure_cleanup,
         )?;
 
+        self.emit_value_offset_path_write_assignment_from_materialized(
+            name,
+            subject,
+            offset_values,
+            offsets_ptr,
+            offsets_len,
+            replacement,
+        )
+    }
+
+    fn emit_value_offset_path_write_assignment_from_materialized(
+        &mut self,
+        name: &str,
+        subject: CNativeValueMaterialization,
+        offset_values: Vec<CNativeValueMaterialization>,
+        offsets_ptr: String,
+        offsets_len: usize,
+        replacement: CNativeValueMaterialization,
+    ) -> CompileResult<()> {
         self.uses_native_string_helpers = true;
         self.uses_native_value_offset_mutation = true;
         self.uses_native_value_offset_path_write = true;
@@ -8398,6 +8417,44 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_value_offset_path_write_assignment_expr(
+        &mut self,
+        name: &str,
+        subject: CValue,
+        indices: &[Expr],
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<CValue> {
+        let subject = self.materialize_native_array_c_value_handle(subject, span)?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let (offsets_ptr, offsets_len, offset_values) =
+            self.emit_native_value_offset_key_path(indices, &subject_cleanup)?;
+        let offset_cleanup_steps = offset_values
+            .iter()
+            .flat_map(|offset| offset.cleanup_after_use.clone())
+            .collect::<Vec<_>>();
+        let replacement_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&offset_cleanup_steps),
+            subject_cleanup
+        );
+        let (replacement_value, replacement) = self
+            .materialize_assignment_expression_replacement_value(
+                replacement_expr,
+                &replacement_failure_cleanup,
+            )?;
+
+        self.emit_value_offset_path_write_assignment_from_materialized(
+            name,
+            subject,
+            offset_values,
+            offsets_ptr,
+            offsets_len,
+            replacement,
+        )?;
+        Ok(replacement_value)
+    }
+
     fn emit_value_offset_path_append_assignment(
         &mut self,
         name: &str,
@@ -8431,6 +8488,29 @@ impl CGenerator {
             &replacement_failure_cleanup,
         )?;
 
+        self.emit_value_offset_path_append_assignment_from_materialized(
+            name,
+            subject,
+            offset_values,
+            prefix_offsets_ptr,
+            prefix_offsets_len,
+            suffix_offsets_ptr,
+            suffix_offsets_len,
+            replacement,
+        )
+    }
+
+    fn emit_value_offset_path_append_assignment_from_materialized(
+        &mut self,
+        name: &str,
+        subject: CNativeValueMaterialization,
+        offset_values: Vec<CNativeValueMaterialization>,
+        prefix_offsets_ptr: String,
+        prefix_offsets_len: usize,
+        suffix_offsets_ptr: String,
+        suffix_offsets_len: usize,
+        replacement: CNativeValueMaterialization,
+    ) -> CompileResult<()> {
         self.uses_native_string_helpers = true;
         self.uses_native_value_offset_mutation = true;
         self.uses_native_value_offset_path_append = true;
@@ -8473,6 +8553,89 @@ impl CGenerator {
             },
         );
         Ok(())
+    }
+
+    fn emit_value_offset_path_append_assignment_expr(
+        &mut self,
+        name: &str,
+        subject: CValue,
+        indices: &[Expr],
+        suffix_indices: &[Expr],
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<CValue> {
+        let subject = self.materialize_native_array_c_value_handle(subject, span)?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let (prefix_offsets_ptr, prefix_offsets_len, mut offset_values) =
+            self.emit_native_value_offset_key_path(indices, &subject_cleanup)?;
+        let prefix_cleanup_steps = offset_values
+            .iter()
+            .flat_map(|offset| offset.cleanup_after_use.clone())
+            .collect::<Vec<_>>();
+        let suffix_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&prefix_cleanup_steps),
+            subject_cleanup
+        );
+        let (suffix_offsets_ptr, suffix_offsets_len, suffix_offset_values) =
+            self.emit_native_value_offset_key_path(suffix_indices, &suffix_failure_cleanup)?;
+        offset_values.extend(suffix_offset_values);
+        let offset_cleanup_steps = offset_values
+            .iter()
+            .flat_map(|offset| offset.cleanup_after_use.clone())
+            .collect::<Vec<_>>();
+        let replacement_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&offset_cleanup_steps),
+            subject_cleanup
+        );
+        let (replacement_value, replacement) = self
+            .materialize_assignment_expression_replacement_value(
+                replacement_expr,
+                &replacement_failure_cleanup,
+            )?;
+
+        self.emit_value_offset_path_append_assignment_from_materialized(
+            name,
+            subject,
+            offset_values,
+            prefix_offsets_ptr,
+            prefix_offsets_len,
+            suffix_offsets_ptr,
+            suffix_offsets_len,
+            replacement,
+        )?;
+        Ok(replacement_value)
+    }
+
+    fn materialize_assignment_expression_replacement_value(
+        &mut self,
+        replacement_expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<(CValue, CNativeValueMaterialization)> {
+        if let Some(value) =
+            self.try_materialize_native_value_result_expr(replacement_expr, failure_cleanup)?
+        {
+            let result_handle = value.handle;
+            self.retain_native_value_cleanup_handle(&result_handle);
+            let replacement_handle = self.clone_native_value_handle(&result_handle);
+            return Ok((
+                CValue::NativeValueHandle(result_handle),
+                CNativeValueMaterialization {
+                    handle: replacement_handle.clone(),
+                    cleanup_after_use: vec![format!(
+                        "phpc_native_value_free({replacement_handle});"
+                    )],
+                },
+            ));
+        }
+
+        let replacement_value = self.emit_expr(replacement_expr)?;
+        let replacement = self.materialize_native_array_c_value_handle(
+            replacement_value.clone(),
+            replacement_expr.span(),
+        )?;
+        Ok((replacement_value, replacement))
     }
 
     fn emit_native_value_offset_key_path(
@@ -9585,32 +9748,60 @@ impl CGenerator {
 
         let (handle, path) = match target {
             AssignTarget::NestedArrayIndex { name, indices, .. } => {
-                let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
-                    return Ok(None);
-                };
-                let indices = indices.iter().collect::<Vec<_>>();
-                let path = self.materialize_native_array_lvalue_key_path(&indices, span, "")?;
-                (handle, path)
+                match self.variables.get(name).cloned() {
+                    Some(CValue::ArrayHandle(handle)) => {
+                        let indices = indices.iter().collect::<Vec<_>>();
+                        let path =
+                            self.materialize_native_array_lvalue_key_path(&indices, span, "")?;
+                        (handle, path)
+                    }
+                    Some(subject)
+                        if !matches!(subject, CValue::String(_) | CValue::StringExpr(_)) =>
+                    {
+                        return self
+                            .emit_value_offset_path_write_assignment_expr(
+                                name,
+                                subject,
+                                indices,
+                                replacement_expr,
+                                span,
+                            )
+                            .map(Some);
+                    }
+                    _ => return Ok(None),
+                }
             }
             AssignTarget::NestedArrayAppend {
                 name,
                 indices,
                 suffix_indices,
                 ..
-            } => {
-                let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
-                    return Ok(None);
-                };
-                let prefix_indices = indices.iter().collect::<Vec<_>>();
-                let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
-                let path = self.materialize_native_array_lvalue_append_path(
-                    &prefix_indices,
-                    &suffix_indices,
-                    span,
-                    "",
-                )?;
-                (handle, path)
-            }
+            } => match self.variables.get(name).cloned() {
+                Some(CValue::ArrayHandle(handle)) => {
+                    let prefix_indices = indices.iter().collect::<Vec<_>>();
+                    let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
+                    let path = self.materialize_native_array_lvalue_append_path(
+                        &prefix_indices,
+                        &suffix_indices,
+                        span,
+                        "",
+                    )?;
+                    (handle, path)
+                }
+                Some(subject) if !matches!(subject, CValue::String(_) | CValue::StringExpr(_)) => {
+                    return self
+                        .emit_value_offset_path_append_assignment_expr(
+                            name,
+                            subject,
+                            indices,
+                            suffix_indices,
+                            replacement_expr,
+                            span,
+                        )
+                        .map(Some);
+                }
+                _ => return Ok(None),
+            },
             _ => return Ok(None),
         };
 
