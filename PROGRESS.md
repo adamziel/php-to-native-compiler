@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 00:08 CEST
-Evaluation marker: `20260522T215411Z` (corrected after PHP fatal check)
-Primary management baseline before this update: `068256cb docs: update progress after GLOBALS root appends`
-Primary semantic baseline: `59f83295 codegen: reject direct GLOBALS root appends`
+Updated: 2026-05-23 00:21 CEST
+Evaluation marker: `20260522T215411Z` (request append-reference primary slice)
+Primary management baseline before this update: `be79ee1c docs: correct progress after GLOBALS root append rejection`
+Primary semantic baseline: `2edd49ab runtime: append request reference slots`
 Prior evaluator marker: `20260522T210338Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -13,14 +13,14 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 
 ## Executive Read
 
-Overall estimated progress: **83%** `[#################---]`
+Overall estimated progress: **84%** `[#################---]`
 
-Primary landed corrective semantic commit `59f83295` after local PHP proved
-that direct no-key `$GLOBALS[]` append is fatal with `Cannot append to
-$GLOBALS`. Generated-C lowering now rejects direct no-key `$GLOBALS[]` value
-append statements, assignment-expression appends, and reference append
-sources/targets through that PHP fatal boundary. The runtime root-append ABI
-now reports the same diagnostic and does not mutate the symbol table.
+Primary landed semantic commit `2edd49ab`, adding a request-state append
+reference ABI and generated-C consumers for request-superglobal append
+reference targets and append-reference sources against ordinary symbol
+references. `$_GET[] =& $source`, `$alias =& $_POST[]`, and nested dynamic
+parent paths now execute through shared request-state reference cells instead
+of falling through to the request-superglobal reference blocker.
 
 The latest integrated baseline includes generated-C request/reference/global
 symbol progress, direct and mixed symbol-root unsets, request append suffix
@@ -31,24 +31,22 @@ unsets, nested request-superglobal reference paths, and dynamic
 dispatch. It also includes ordinary static `$GLOBALS[...]` symbol-path
 reference targets/sources through a shared value-path reference ABI, dynamic
 `$GLOBALS[$expr]` root/path reference source/target dispatch for non-append
-paths, and keyed request references through reference-backed request roots.
-The previously counted direct no-key `$GLOBALS[]` value append slice from
-`aad22967` is superseded by `59f83295` and is not counted as completed
-capability.
+paths, keyed request references through reference-backed request roots, and
+PHP-fatal direct no-key `$GLOBALS[]` rejection. The previously counted direct
+no-key `$GLOBALS[]` value append slice from `aad22967` is superseded by
+`59f83295` and is not counted as completed capability.
 
 The preserved `runtime/src/lib.rs` null-slot increment/decrement hunk remains
 unintegrated and is not counted.
 
 ## Current Primary State
 
-- Primary `master...origin/master`: ahead of `origin/master` at corrective
-  semantic head `59f83295` before this management update.
-- Latest semantic commit: `59f83295 codegen: reject direct GLOBALS root
-  appends`.
+- Primary `master...origin/master`: ahead of `origin/master` at semantic head
+  `2edd49ab` before this management update.
+- Latest semantic commit: `2edd49ab runtime: append request reference slots`.
 - Current product diff at final verification before this management update:
-  this `PROGRESS.md` update plus the preserved runtime null-slot hunk.
-- The preserved null-slot increment/decrement hunk is still present inside the
-  `runtime/src/lib.rs` diff and remains unintegrated.
+  this `PROGRESS.md` update; the preserved runtime null-slot hunk was parked
+  during the semantic commit and remains unintegrated.
 - Resource note from this batch: focused gates used fresh
   `/tmp/phpc-target-primary-integrator.*` targets with `chmod 700`,
   `umask 0022`, `CARGO_INCREMENTAL=0`, and `CARGO_BUILD_JOBS=1`, removed
@@ -56,6 +54,17 @@ unintegrated and is not counted.
 
 ## Recent Primary-Integrated Progress
 
+- `2edd49ab`: request-superglobal append reference targets and append-reference
+  sources now route through
+  `phpc_native_request_state_superglobal_path_reference_append_operation(...)`
+  and
+  `phpc_native_request_state_superglobal_path_reference_append_source_operation(...)`.
+  The generated-C consumer covers direct root appends, nested/dynamic parent
+  append paths, ordinary symbol source references, and ordinary symbol targets.
+  Focused gates: `cargo test -p php_runtime native_request_state_append_reference_results_bind_root_and_nested_cells -- --nocapture`,
+  `cargo test -p phpc --test native_link request_append_reference -- --nocapture`,
+  adjacent `request_keyed_reference` and `request_path_reference` native-link
+  gates, and `cargo check -q -p php_runtime -p phpc`.
 - `59f83295`: direct no-key `$GLOBALS[]` value append statements,
   assignment-expression appends, and reference append forms now reject with the
   PHP fatal `Cannot append to $GLOBALS`; the runtime root-append ABI reports
@@ -121,11 +130,11 @@ backend parity.
 
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | 96% | `[###################-]` | Strong value, array, symbol-table, request-state, comparison, truthiness, and reference ABIs. |
+| Runtime and ABI foundations | 97% | `[###################-]` | Strong value, array, symbol-table, request-state, comparison, truthiness, and reference ABIs. |
 | Compiler/backend consumers | 95% | `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbol, value, array, lvalue, and reference consumers; uneven across calls, objects, control flow, and LLVM/C parity. |
-| Executable generalized PHP semantics | 80% | `[################----]` | Improving through linked executable gates, but still selected islands rather than a complete PHP execution model. |
-| Arrays, lvalues, references, COW | 84% | `[#################---]` | Stronger arrays/lvalues and selected reference paths, including ordinary and dynamic non-append `$GLOBALS` references plus keyed request references through reference-backed roots; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 95% | `[###################-]` | Request paths, `$GLOBALS` static/self aliases, ordinary `$GLOBALS` symbol references, dynamic root assignment/read/probe dispatch, dynamic non-append `$GLOBALS` references, symbol paths, direct/mixed root unsets, selected request references, and PHP-fatal direct no-key `$GLOBALS[]` rejection are strong; request append/reference forms and broader reconciliation remain open. |
+| Executable generalized PHP semantics | 81% | `[################----]` | Improving through linked executable gates, but still selected islands rather than a complete PHP execution model. |
+| Arrays, lvalues, references, COW | 85% | `[#################---]` | Stronger arrays/lvalues and selected reference paths, including ordinary and dynamic non-append `$GLOBALS` references, keyed/path request references, and request append reference slots; full references/COW and arbitrary writable roots remain large. |
+| Symbols, globals, request state | 96% | `[###################-]` | Request paths, `$GLOBALS` static/self aliases, ordinary `$GLOBALS` symbol references, dynamic root assignment/read/probe dispatch, dynamic non-append `$GLOBALS` references, symbol paths, direct/mixed root unsets, selected request references, request append reference slots, and PHP-fatal direct no-key `$GLOBALS[]` rejection are strong; broader request/global reconciliation remains open. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Lane candidates exist, but broad executable call/frame semantics are not primary. |
 | Objects, properties, methods | 11% | `[##------------------]` | Mostly lane-local/runtime candidate work; primary still lacks general compiled object/property/method execution. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused diagnostics exist; exact ordering and structured cleanup are not generalized. |
@@ -161,8 +170,9 @@ Done on primary:
   roots, array-offset roots after symbol-table activation, and `$GLOBALS` paths.
 - [x] Selected generated-C reference assignment between ordinary symbol paths,
   ordinary static `$GLOBALS` symbol paths, request roots, keyed request slots,
-  nested request-superglobal paths, and dynamic non-append `$GLOBALS[$expr]`
-  root/path references.
+  nested request-superglobal paths, request append reference slots against
+  ordinary symbol references, and dynamic non-append `$GLOBALS[$expr]` root/path
+  references.
 - [x] Keyed request-superglobal reference operations through reference-backed
   request roots, reusing the path-reference helper so source and target keyed
   aliases update the shared root array.
@@ -173,11 +183,11 @@ Done on primary:
 In progress or candidate only:
 
 - [ ] Request/global alias reconciliation, broader dynamic `$GLOBALS[$expr]`
-  nested aliases outside non-append reference assignment, request append
-  reference/by-reference behavior, and non-request `$GLOBALS["GLOBALS"]`
-  self-reference behavior. Direct no-key `$GLOBALS[]` value/reference append is
-  not a PHP capability and is now covered by fatal rejection. Estimate: 63%
-  `[############--------]`.
+  nested aliases outside non-append reference assignment, remaining
+  request-to-request append reference combinations, by-reference foreach
+  request slots, and non-request `$GLOBALS["GLOBALS"]` self-reference behavior.
+  Direct no-key `$GLOBALS[]` value/reference append is not a PHP capability and
+  is now covered by fatal rejection. Estimate: 67% `[#############-------]`.
 - [ ] General generated PHP reference assignment over objects, arbitrary
   owner/value/reference slots, frames, append request slots, and COW-aware
   boundaries. Estimate: 60% `[############--------]`.
