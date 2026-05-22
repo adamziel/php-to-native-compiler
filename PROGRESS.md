@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 15:49 CEST
+Updated: 2026-05-22 16:02 CEST
 Evaluation marker: `20260522T132634Z`
 Primary HEAD: progress update on top of `d7fc807d codegen: materialize direct $GLOBALS snapshots`
 Current pushed semantic baseline: `d7fc807d codegen: materialize direct $GLOBALS snapshots`
@@ -73,9 +73,9 @@ Recent pushed semantic commits:
 
 Current primary state:
 
-- `master` has a semantic `$GLOBALS` snapshot commit ready to push, with this progress update as a docs-only follow-up.
+- `master` is pushed through the semantic `$GLOBALS` snapshot commit, with this progress update as a docs-only follow-up.
 - The latest pushed semantic baseline after this batch is `d7fc807d`.
-- Live primary has an unstaged `runtime/src/lib.rs` null-slot increment/decrement hunk; it is not counted as product progress until gated, committed, and pushed.
+- Live primary currently has an unstaged `primary-integrator` array-mutation candidate in `compiler/src/codegen.rs` and `runtime/src/lib.rs`, plus the preserved `runtime/src/lib.rs` null-slot increment/decrement hunk. None of that live WIP is counted as product progress until gated, committed, and pushed.
 - The latest semantic addition is generated-native C direct `$GLOBALS` root snapshot materialization over the symbol-table snapshot ABI. Generated compiler consumers for `$GLOBALS[$expr]`/symbol paths, `$GLOBALS` alias reconciliation and mutation, generated PHP source-span attachment, nested/path request operations, request-root reference assignment, LLVM parity, PHP reference assignment, arbitrary writable roots, and full references/COW still need primary compiler consumers.
 
 ## Lane-Local Candidate Work
