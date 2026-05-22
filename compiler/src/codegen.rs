@@ -9414,26 +9414,18 @@ impl CGenerator {
         prefix_indices: &[&Expr],
         suffix_indices: &[&Expr],
         expr: &Expr,
-        span: Span,
+        _span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<()> {
-        if !suffix_indices.is_empty() {
-            return Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
-        }
-
         let path = self.materialize_optional_request_superglobal_path_key_refs(
             prefix_indices,
             failure_cleanup,
         )?;
-        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
-        let value = self.materialize_native_value_result_operand(
-            expr,
-            &format!("{path_cleanup}{failure_cleanup}"),
-        )?;
-        self.emit_request_superglobal_path_append_assignment_from_materialized(
+        self.emit_request_superglobal_path_append_assignment_from_expr(
             name,
             path,
-            value,
+            suffix_indices,
+            expr,
             failure_cleanup,
         )
     }
@@ -9444,29 +9436,20 @@ impl CGenerator {
         prefix_indices: &[&Expr],
         suffix_indices: &[&Expr],
         expr: &Expr,
-        span: Span,
+        _span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<CValue> {
-        if !suffix_indices.is_empty() {
-            return Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
-        }
-
         let path = self.materialize_optional_request_superglobal_path_key_refs(
             prefix_indices,
             failure_cleanup,
         )?;
-        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
-        let (result_value, value) = self.materialize_assignment_expression_replacement_value(
-            expr,
-            &format!("{path_cleanup}{failure_cleanup}"),
-        )?;
-        self.emit_request_superglobal_path_append_assignment_from_materialized(
+        self.emit_request_superglobal_path_append_assignment_expr_from_path(
             name,
             path,
-            value,
+            suffix_indices,
+            expr,
             failure_cleanup,
-        )?;
-        Ok(result_value)
+        )
     }
 
     fn emit_globals_request_alias_unset(
@@ -10049,15 +10032,31 @@ impl CGenerator {
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<()> {
+        self.emit_request_superglobal_path_append_assignment_with_suffix(
+            name,
+            indices,
+            &[],
+            expr,
+            failure_cleanup,
+        )
+    }
+
+    fn emit_request_superglobal_path_append_assignment_with_suffix(
+        &mut self,
+        name: &str,
+        indices: &[Expr],
+        suffix_indices: &[Expr],
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
         let path =
             self.materialize_optional_request_superglobal_path_keys(indices, failure_cleanup)?;
-        let key_cleanup_sequence = c_cleanup_sequence(&path.cleanup_after_use);
-        let value_failure_cleanup = format!("{key_cleanup_sequence}{failure_cleanup}");
-        let value = self.materialize_native_value_result_operand(expr, &value_failure_cleanup)?;
-        self.emit_request_superglobal_path_append_assignment_from_materialized(
+        let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
+        self.emit_request_superglobal_path_append_assignment_from_expr(
             name,
             path,
-            value,
+            &suffix_indices,
+            expr,
             failure_cleanup,
         )
     }
@@ -10069,12 +10068,99 @@ impl CGenerator {
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<CValue> {
+        self.emit_request_superglobal_path_append_assignment_expr_with_suffix(
+            name,
+            indices,
+            &[],
+            expr,
+            failure_cleanup,
+        )
+    }
+
+    fn emit_request_superglobal_path_append_assignment_expr_with_suffix(
+        &mut self,
+        name: &str,
+        indices: &[Expr],
+        suffix_indices: &[Expr],
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
         let path =
             self.materialize_optional_request_superglobal_path_keys(indices, failure_cleanup)?;
-        let key_cleanup_sequence = c_cleanup_sequence(&path.cleanup_after_use);
-        let value_failure_cleanup = format!("{key_cleanup_sequence}{failure_cleanup}");
-        let (result_value, value) =
-            self.materialize_assignment_expression_replacement_value(expr, &value_failure_cleanup)?;
+        let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
+        self.emit_request_superglobal_path_append_assignment_expr_from_path(
+            name,
+            path,
+            &suffix_indices,
+            expr,
+            failure_cleanup,
+        )
+    }
+
+    fn emit_request_superglobal_path_append_assignment_from_expr(
+        &mut self,
+        name: &str,
+        path: CRequestStatePathMaterialization,
+        suffix_indices: &[&Expr],
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let suffix_keys = self.materialize_native_array_key_suffix(
+            suffix_indices,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        )?;
+        let suffix_cleanup = c_cleanup_sequence(
+            &suffix_keys
+                .iter()
+                .flat_map(|key| key.cleanup_after_use.clone())
+                .collect::<Vec<_>>(),
+        );
+        let value = self.materialize_native_value_result_operand(
+            expr,
+            &format!("{suffix_cleanup}{path_cleanup}{failure_cleanup}"),
+        )?;
+        let value = self.wrap_native_value_for_append_suffix(
+            suffix_keys,
+            value,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        );
+        self.emit_request_superglobal_path_append_assignment_from_materialized(
+            name,
+            path,
+            value,
+            failure_cleanup,
+        )
+    }
+
+    fn emit_request_superglobal_path_append_assignment_expr_from_path(
+        &mut self,
+        name: &str,
+        path: CRequestStatePathMaterialization,
+        suffix_indices: &[&Expr],
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let suffix_keys = self.materialize_native_array_key_suffix(
+            suffix_indices,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        )?;
+        let suffix_cleanup = c_cleanup_sequence(
+            &suffix_keys
+                .iter()
+                .flat_map(|key| key.cleanup_after_use.clone())
+                .collect::<Vec<_>>(),
+        );
+        let (result_value, value) = self.materialize_assignment_expression_replacement_value(
+            expr,
+            &format!("{suffix_cleanup}{path_cleanup}{failure_cleanup}"),
+        )?;
+        let value = self.wrap_native_value_for_append_suffix(
+            suffix_keys,
+            value,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        );
         self.emit_request_superglobal_path_append_assignment_from_materialized(
             name,
             path,
@@ -10082,6 +10168,78 @@ impl CGenerator {
             failure_cleanup,
         )?;
         Ok(result_value)
+    }
+
+    fn materialize_native_array_key_suffix(
+        &mut self,
+        suffix_indices: &[&Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<Vec<CNativeArrayKeyMaterialization>> {
+        let mut keys = Vec::new();
+        for index in suffix_indices {
+            let mut cleanup = keys
+                .iter()
+                .flat_map(|key: &CNativeArrayKeyMaterialization| key.cleanup_after_use.clone())
+                .collect::<Vec<_>>();
+            if !failure_cleanup.is_empty() {
+                cleanup.push(failure_cleanup.to_string());
+            }
+            keys.push(self.materialize_native_array_key(index, &cleanup)?);
+        }
+        Ok(keys)
+    }
+
+    fn wrap_native_value_for_append_suffix(
+        &mut self,
+        suffix_keys: Vec<CNativeArrayKeyMaterialization>,
+        mut value: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        if suffix_keys.is_empty() {
+            return value;
+        }
+
+        self.uses_native_array_helpers = true;
+        let suffix_cleanup = suffix_keys
+            .iter()
+            .flat_map(|key| key.cleanup_after_use.clone())
+            .collect::<Vec<_>>();
+
+        for key in suffix_keys.iter().rev() {
+            let array = self.next_native_name("request_append_suffix_array");
+            let diagnostic = self.next_native_name("request_append_suffix_diagnostic");
+            self.body.push(format!(
+                "phpc_NativeArrayHandle {array} = phpc_native_array_empty();"
+            ));
+            self.body
+                .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+            let insert_failure_cleanup = format!(
+                "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}phpc_native_array_free({array}); {failure_cleanup}",
+                c_cleanup_sequence(&suffix_cleanup),
+                c_cleanup_sequence(&value.cleanup_after_use)
+            );
+            let insert_error_exit = self.native_error_exit(&insert_failure_cleanup);
+            self.body.push(format!(
+                "if (!phpc_native_array_insert_key_value_with_diagnostic({array}, {}, {}, &{diagnostic})) {{ {insert_error_exit} }}",
+                key.result,
+                value.handle
+            ));
+            self.body
+                .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+            self.body.extend(value.cleanup_after_use);
+            let wrapped = self.next_native_name("request_append_suffix_value");
+            self.body.push(format!(
+                "phpc_NativeValueHandle {wrapped} = phpc_native_value_from_array({array});"
+            ));
+            self.body.push(format!("phpc_native_array_free({array});"));
+            value = CNativeValueMaterialization {
+                handle: wrapped.clone(),
+                cleanup_after_use: vec![format!("phpc_native_value_free({wrapped});")],
+            };
+        }
+
+        self.body.extend(suffix_cleanup);
+        value
     }
 
     fn emit_request_superglobal_path_append_assignment_from_materialized(
@@ -10969,7 +11127,7 @@ impl CGenerator {
         &mut self,
         target: &AssignTarget,
         expr: &Expr,
-        span: Span,
+        _span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CValue>> {
         match target {
@@ -11007,18 +11165,15 @@ impl CGenerator {
                 indices,
                 suffix_indices,
                 ..
-            } if is_request_superglobal_name(name) => {
-                if !suffix_indices.is_empty() {
-                    return Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
-                }
-                self.emit_request_superglobal_path_append_assignment_expr(
+            } if is_request_superglobal_name(name) => self
+                .emit_request_superglobal_path_append_assignment_expr_with_suffix(
                     name,
                     indices,
+                    suffix_indices,
                     expr,
                     failure_cleanup,
                 )
-                .map(Some)
-            }
+                .map(Some),
             _ => Ok(None),
         }
     }
@@ -15102,11 +15257,13 @@ impl CGenerator {
                 span,
             } => {
                 if is_request_superglobal_name(name) {
-                    if !suffix_indices.is_empty() {
-                        return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
-                    }
-                    return self
-                        .emit_request_superglobal_path_append_assignment(name, indices, expr, "");
+                    return self.emit_request_superglobal_path_append_assignment_with_suffix(
+                        name,
+                        indices,
+                        suffix_indices,
+                        expr,
+                        "",
+                    );
                 }
                 if is_globals_superglobal_name(name) {
                     let prefix_indices = indices.iter().collect::<Vec<_>>();

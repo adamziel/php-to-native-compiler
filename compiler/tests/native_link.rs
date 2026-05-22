@@ -1698,6 +1698,28 @@ const REQUEST_SUPERGLOBAL_PATH_APPEND_SOURCE: &str = concat!(
     "echo $_COOKIE[$slot][0];\n",
 );
 
+const REQUEST_SUPERGLOBAL_APPEND_SUFFIX_SOURCE: &str = concat!(
+    "<?php\n",
+    "$slot = \"items\";\n",
+    "$leaf = \"leaf\";\n",
+    "$inner = \"inner\";\n",
+    "$_GET[$slot][][$leaf] = \"G\";\n",
+    "$_POST[][$leaf] = strtoupper(\"p\");\n",
+    "$GLOBALS[\"_COOKIE\"][$slot][][$inner] = \"C\";\n",
+    "$_GET[$slot][][$inner][$leaf] = \"N\";\n",
+    "echo $_GET[$slot][0][$leaf];\n",
+    "echo \"|\";\n",
+    "echo $_POST[0][$leaf];\n",
+    "echo \"|\";\n",
+    "echo $_COOKIE[$slot][0][$inner];\n",
+    "echo \"|\";\n",
+    "echo $_GET[$slot][1][$inner][$leaf];\n",
+    "echo \"|\";\n",
+    "echo ($_REQUEST[$slot][][$leaf] = strrev(\"zyx\"));\n",
+    "echo \"|\";\n",
+    "echo $_REQUEST[$slot][0][$leaf];\n",
+);
+
 const REQUEST_SUPERGLOBAL_PATH_READ_PROBE_SOURCE: &str = concat!(
     "<?php\n",
     "$outer = \"outer\";\n",
@@ -3863,6 +3885,56 @@ fn native_executable_c_source_routes_request_path_appends_through_state_operatio
     assert!(
         body.contains("phpc_native_value_echo_stdout"),
         "request append assignment-expression values should feed native-value output consumers:\n{source}"
+    );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_request_append_suffixes_through_state_operations() {
+    let program = parse(REQUEST_SUPERGLOBAL_APPEND_SUFFIX_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_path_mutation_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_request_state_superglobal_path_mutation_operation")
+            .count()
+            >= 5,
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND")
+            .count()
+            >= 5,
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_array_insert_key_value_with_diagnostic")
+            .count()
+            >= 6,
+        "request append suffixes should wrap appended values as nested arrays:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_from_array").count() >= 6,
+        "request append suffixes should materialize wrapped array values:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_request_state_key_from_value"),
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_echo_stdout"),
+        "request append assignment-expression values should still feed native-value output consumers:\n{source}"
     );
     assert!(
         !source.contains("request-superglobal lowering rejects"),
@@ -6957,6 +7029,53 @@ fn emit_exe_links_and_runs_request_path_append_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"A|B|C|D|D");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_append_suffix_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("request_append_suffix");
+    let source_path = native_link_output_path("request_append_suffix_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, REQUEST_SUPERGLOBAL_APPEND_SUFFIX_SOURCE)
+        .expect("native request append suffix source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native request append suffix source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native request append suffix executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"G|P|C|N|xyz|xyz");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
