@@ -7189,6 +7189,14 @@ struct CRequestStateKeyMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+struct CRequestStatePathMaterialization {
+    ptrs: String,
+    lens: String,
+    len: usize,
+    status: String,
+    cleanup_after_use: Vec<String>,
+}
+
 struct CNativeArrayLvaluePath {
     path: String,
     len: usize,
@@ -7460,6 +7468,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeRequestStateKeyResult phpc_native_request_state_key_from_value(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_keyed_mutation_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status, phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_path_mutation_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t **key_ptrs, const size_t *key_lens, size_t key_count, uint8_t key_status, phpc_NativeValueHandle value);\n");
                 output.push_str("extern size_t phpc_native_request_state_operation_result_report_diagnostic(phpc_NativeRequestStateOperationResult result);\n");
                 output.push_str("extern void phpc_native_request_state_operation_result_free(phpc_NativeRequestStateOperationResult result);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_request_state_superglobal_snapshot_value(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag);\n");
@@ -7841,6 +7850,66 @@ impl CGenerator {
         })
     }
 
+    fn materialize_request_superglobal_path_keys(
+        &mut self,
+        indices: &[Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CRequestStatePathMaterialization> {
+        debug_assert!(!indices.is_empty());
+        self.uses_native_string_helpers = true;
+        self.uses_native_request_state_helpers = true;
+
+        let mut keys = Vec::new();
+        let mut cleanup_after_use = Vec::new();
+        for index in indices {
+            let key_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let key = self.materialize_request_superglobal_key(index, &key_failure_cleanup)?;
+            cleanup_after_use.extend(key.cleanup_after_use.clone());
+            keys.push(key);
+        }
+
+        let ptrs = self.next_native_name("request_superglobal_path_key_ptrs");
+        let ptr_entries = keys
+            .iter()
+            .map(|key| format!("{}.buffer.ptr", key.result))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.body
+            .push(format!("const uint8_t *{ptrs}[] = {{ {ptr_entries} }};"));
+
+        let lens = self.next_native_name("request_superglobal_path_key_lens");
+        let len_entries = keys
+            .iter()
+            .map(|key| format!("{}.buffer.len", key.result))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.body
+            .push(format!("size_t {lens}[] = {{ {len_entries} }};"));
+
+        let status = self.next_native_name("request_superglobal_path_key_status");
+        self.body.push(format!(
+            "uint8_t {status} = PHPC_NATIVE_REQUEST_STATE_STATUS_OK;"
+        ));
+        for key in &keys {
+            self.body.push(format!(
+                "if ({status} == PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {key}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {status} = {key}.status; }}",
+                key = key.result
+            ));
+        }
+
+        Ok(CRequestStatePathMaterialization {
+            ptrs,
+            lens,
+            len: keys.len(),
+            status,
+            cleanup_after_use,
+        })
+    }
+
     fn request_superglobal_operation_failure_condition(&self, result: &str) -> String {
         format!(
             "{result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY"
@@ -8098,6 +8167,49 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_request_superglobal_path_assignment(
+        &mut self,
+        name: &str,
+        indices: &[Expr],
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let path = self.materialize_request_superglobal_path_keys(indices, failure_cleanup)?;
+        let key_cleanup_sequence = c_cleanup_sequence(&path.cleanup_after_use);
+        let value_failure_cleanup = format!("{key_cleanup_sequence}{failure_cleanup}");
+        let value = self.materialize_native_value_result_operand(expr, &value_failure_cleanup)?;
+        let result = self.next_native_name("request_superglobal_path_write");
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_path_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE, {bag_bytes}, {}, {}, {}, {}, {}, {});",
+            name.len(),
+            path.ptrs,
+            path.lens,
+            path.len,
+            path.status,
+            value.handle
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({result});"
+        ));
+        let result_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({result}); {}{}{}",
+            c_cleanup_sequence(&value.cleanup_after_use),
+            c_cleanup_sequence(&path.cleanup_after_use),
+            failure_cleanup
+        ));
+        self.body.push(format!(
+            "if ({result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {result_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_free({result});"
+        ));
+        self.body.extend(value.cleanup_after_use);
+        self.body.extend(path.cleanup_after_use);
+        Ok(())
+    }
+
     fn emit_request_superglobal_keyed_unset(
         &mut self,
         name: &str,
@@ -8128,6 +8240,42 @@ impl CGenerator {
             "phpc_native_request_state_operation_result_free({result});"
         ));
         self.body.extend(key.cleanup_after_use);
+        Ok(())
+    }
+
+    fn emit_request_superglobal_path_unset(
+        &mut self,
+        name: &str,
+        indices: &[Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let path = self.materialize_request_superglobal_path_keys(indices, failure_cleanup)?;
+        let result = self.next_native_name("request_superglobal_path_unset");
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_path_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET, {bag_bytes}, {}, {}, {}, {}, {}, (phpc_NativeValueHandle){{0}});",
+            name.len(),
+            path.ptrs,
+            path.lens,
+            path.len,
+            path.status
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({result});"
+        ));
+        let result_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({result}); {}{}",
+            c_cleanup_sequence(&path.cleanup_after_use),
+            failure_cleanup
+        ));
+        self.body.push(format!(
+            "if ({result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {result_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_free({result});"
+        ));
+        self.body.extend(path.cleanup_after_use);
         Ok(())
     }
 
@@ -10926,6 +11074,10 @@ impl CGenerator {
         indices: &[Expr],
         span: Span,
     ) -> CompileResult<()> {
+        if is_request_superglobal_name(name) {
+            return self.emit_request_superglobal_path_unset(name, indices, "");
+        }
+
         if !self.uses_native_string_helpers {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
         }
@@ -12350,6 +12502,9 @@ impl CGenerator {
                 indices,
                 span,
             } => {
+                if is_request_superglobal_name(name) {
+                    return self.emit_request_superglobal_path_assignment(name, indices, expr, "");
+                }
                 if self.uses_native_string_helpers {
                     if let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() {
                         let indices = indices.iter().collect::<Vec<_>>();
