@@ -1709,6 +1709,16 @@ impl NativeRequestState {
             .unwrap_or_else(PhpArray::new)
     }
 
+    fn populate_superglobal_from_symbol_table(
+        &mut self,
+        bag: NativeRequestStateBag,
+        source: &NativeSymbolTable,
+    ) -> bool {
+        self.superglobals
+            .insert(bag, native_symbol_table_snapshot_array(source));
+        true
+    }
+
     fn rebuild_request_from_order(&mut self, order: &[u8]) -> bool {
         let mut request = PhpArray::new();
         for bag in request_population_sources(order) {
@@ -2449,6 +2459,16 @@ pub unsafe extern "C" fn phpc_native_symbol_table_write(
     true
 }
 
+fn native_symbol_table_snapshot_array(table: &NativeSymbolTable) -> PhpArray {
+    let mut snapshot = PhpArray::new();
+    for name in &table.insertion_order {
+        if let Some(value) = table.values.get(name) {
+            snapshot.insert(name.clone(), value.clone());
+        }
+    }
+    snapshot
+}
+
 /// # Safety
 ///
 /// `handle` must be null or a symbol-table handle previously returned by the
@@ -2463,14 +2483,7 @@ pub unsafe extern "C" fn phpc_native_symbol_table_snapshot_value(
         return NativeValueHandle::null();
     };
 
-    let mut snapshot = PhpArray::new();
-    for name in &table.insertion_order {
-        if let Some(value) = table.values.get(name) {
-            snapshot.insert(name.clone(), value.clone());
-        }
-    }
-
-    NativeValueHandle::from_value(Value::Array(snapshot))
+    NativeValueHandle::from_value(Value::Array(native_symbol_table_snapshot_array(table)))
 }
 
 /// # Safety
@@ -2830,6 +2843,34 @@ pub unsafe extern "C" fn phpc_native_request_state_superglobal_snapshot_value(
     };
 
     NativeValueHandle::from_value(Value::Array(request_state.superglobal_array(bag)))
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `bag` must be null or a string handle
+/// previously returned by the runtime ABI and not yet freed. `source` must be
+/// null or a symbol-table handle previously returned by the runtime ABI and not
+/// yet freed. The selected request superglobal is replaced by an ordered PHP
+/// array snapshot cloned from the source symbol table.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_populate_superglobal_from_symbol_table(
+    mut handle: NativeRequestStateHandle,
+    bag: NativeStringHandle,
+    source: NativeSymbolTableHandle,
+) -> bool {
+    let (Some(request_state), Some(bag), Some(source)) = (
+        unsafe { handle.as_mut() },
+        unsafe { bag.as_ref() },
+        unsafe { source.as_ref() },
+    ) else {
+        return false;
+    };
+    let Some(bag) = NativeRequestStateBag::from_abi_bytes(&bag.bytes) else {
+        return false;
+    };
+
+    request_state.populate_superglobal_from_symbol_table(bag, source)
 }
 
 /// # Safety
@@ -16951,6 +16992,273 @@ mod tests {
         unsafe { phpc_native_string_free(empty_request_order) };
         unsafe { phpc_native_string_free(variables_order_egpsc) };
         unsafe { phpc_native_string_free(variables_order_cg) };
+        unsafe { phpc_native_request_state_free(request_state) };
+    }
+
+    #[test]
+    fn native_request_state_populates_sapi_roots_from_symbol_table_sources() {
+        unsafe fn string_handle(bytes: &[u8]) -> NativeStringHandle {
+            unsafe { phpc_native_string_from_bytes(bytes.as_ptr(), bytes.len()) }
+        }
+
+        unsafe fn write_symbol(table: NativeSymbolTableHandle, name: &[u8], value: Value) {
+            let value = NativeValueHandle::from_value(value);
+            assert!(unsafe {
+                phpc_native_symbol_table_write(table, name.as_ptr(), name.len(), value)
+            });
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        unsafe fn snapshot(
+            request_state: NativeRequestStateHandle,
+            root: NativeStringHandle,
+        ) -> NativeValueHandle {
+            unsafe { phpc_native_request_state_superglobal_snapshot_value(request_state, root) }
+        }
+
+        unsafe fn assert_slot(snapshot: NativeValueHandle, key: &str, expected: Value) {
+            let Some(Value::Array(array)) = (unsafe { snapshot.as_ref() }) else {
+                panic!("request root snapshot should be an array");
+            };
+            assert_eq!(array.get(ArrayKey::string(key)), Some(&expected));
+        }
+
+        unsafe fn assert_missing(snapshot: NativeValueHandle, key: &str) {
+            let Some(Value::Array(array)) = (unsafe { snapshot.as_ref() }) else {
+                panic!("request root snapshot should be an array");
+            };
+            assert_eq!(array.get(ArrayKey::string(key)), None);
+        }
+
+        unsafe fn assert_order(snapshot: NativeValueHandle, expected: &[&str]) {
+            let Some(Value::Array(array)) = (unsafe { snapshot.as_ref() }) else {
+                panic!("request root snapshot should be an array");
+            };
+            let names: Vec<&str> = array
+                .entries()
+                .iter()
+                .map(|entry| match &entry.key {
+                    ArrayKey::String(name) => name.as_str(),
+                    other => panic!("expected string request key, got {other:?}"),
+                })
+                .collect();
+            assert_eq!(names, expected);
+        }
+
+        let request_state = phpc_native_request_state_empty();
+        let get_root = unsafe { string_handle(b"_GET") };
+        let cookie_root = unsafe { string_handle(b"_COOKIE") };
+        let server_root = unsafe { string_handle(b"_SERVER") };
+        let files_root = unsafe { string_handle(b"_FILES") };
+        let request_root = unsafe { string_handle(b"_REQUEST") };
+        let invalid_root = unsafe { string_handle(b"_NOPE") };
+        let order_cg = unsafe { string_handle(b"CG") };
+
+        let get_source = phpc_native_symbol_table_new();
+        unsafe {
+            write_symbol(get_source, b"id", Value::String("get".to_string()));
+            write_symbol(get_source, b"page", Value::Int(7));
+        }
+        assert!(unsafe {
+            phpc_native_request_state_populate_superglobal_from_symbol_table(
+                request_state,
+                get_root,
+                get_source,
+            )
+        });
+
+        unsafe {
+            write_symbol(get_source, b"id", Value::String("get-mutated".to_string()));
+            write_symbol(
+                get_source,
+                b"late",
+                Value::String("late-source".to_string()),
+            );
+        }
+        let get_snapshot = unsafe { snapshot(request_state, get_root) };
+        unsafe {
+            assert_slot(get_snapshot, "id", Value::String("get".to_string()));
+            assert_slot(get_snapshot, "page", Value::Int(7));
+            assert_missing(get_snapshot, "late");
+            assert_order(get_snapshot, &["id", "page"]);
+        }
+
+        let server_snapshot = {
+            assert!(unsafe {
+                phpc_native_request_state_populate_superglobal_from_symbol_table(
+                    request_state,
+                    server_root,
+                    get_source,
+                )
+            });
+            unsafe { snapshot(request_state, server_root) }
+        };
+        unsafe {
+            assert_slot(
+                server_snapshot,
+                "id",
+                Value::String("get-mutated".to_string()),
+            );
+            assert_slot(
+                server_snapshot,
+                "late",
+                Value::String("late-source".to_string()),
+            );
+            assert_order(server_snapshot, &["id", "page", "late"]);
+        }
+
+        let cookie_source = phpc_native_symbol_table_new();
+        unsafe {
+            write_symbol(
+                cookie_source,
+                b"id",
+                Value::String("cookie-stale".to_string()),
+            );
+            write_symbol(cookie_source, b"stale", Value::String("stale".to_string()));
+        }
+        assert!(unsafe {
+            phpc_native_request_state_populate_superglobal_from_symbol_table(
+                request_state,
+                cookie_root,
+                cookie_source,
+            )
+        });
+
+        let cookie_replacement = phpc_native_symbol_table_new();
+        unsafe {
+            write_symbol(
+                cookie_replacement,
+                b"id",
+                Value::String("cookie".to_string()),
+            );
+            write_symbol(
+                cookie_replacement,
+                b"sid",
+                Value::String("cookie-session".to_string()),
+            );
+        }
+        assert!(unsafe {
+            phpc_native_request_state_populate_superglobal_from_symbol_table(
+                request_state,
+                cookie_root,
+                cookie_replacement,
+            )
+        });
+        let cookie_snapshot = unsafe { snapshot(request_state, cookie_root) };
+        unsafe {
+            assert_slot(cookie_snapshot, "id", Value::String("cookie".to_string()));
+            assert_slot(
+                cookie_snapshot,
+                "sid",
+                Value::String("cookie-session".to_string()),
+            );
+            assert_missing(cookie_snapshot, "stale");
+        }
+
+        let mut upload = PhpArray::new();
+        upload.insert(
+            ArrayKey::string("name"),
+            Value::String("file.txt".to_string()),
+        );
+        let files_source = phpc_native_symbol_table_new();
+        unsafe {
+            write_symbol(files_source, b"upload", Value::Array(upload.clone()));
+        }
+        assert!(unsafe {
+            phpc_native_request_state_populate_superglobal_from_symbol_table(
+                request_state,
+                files_root,
+                files_source,
+            )
+        });
+        let files_snapshot = unsafe { snapshot(request_state, files_root) };
+        unsafe {
+            assert_slot(files_snapshot, "upload", Value::Array(upload));
+        }
+
+        let request_source = phpc_native_symbol_table_new();
+        unsafe {
+            write_symbol(
+                request_source,
+                b"manual",
+                Value::String("manual-request".to_string()),
+            );
+        }
+        assert!(unsafe {
+            phpc_native_request_state_populate_superglobal_from_symbol_table(
+                request_state,
+                request_root,
+                request_source,
+            )
+        });
+        let manual_request_snapshot = unsafe { snapshot(request_state, request_root) };
+        unsafe {
+            assert_slot(
+                manual_request_snapshot,
+                "manual",
+                Value::String("manual-request".to_string()),
+            );
+        }
+
+        assert!(unsafe {
+            phpc_native_request_state_rebuild_request_from_order(request_state, order_cg)
+        });
+        let rebuilt_request_snapshot = unsafe { snapshot(request_state, request_root) };
+        unsafe {
+            assert_slot(
+                rebuilt_request_snapshot,
+                "id",
+                Value::String("get".to_string()),
+            );
+            assert_slot(
+                rebuilt_request_snapshot,
+                "sid",
+                Value::String("cookie-session".to_string()),
+            );
+            assert_missing(rebuilt_request_snapshot, "manual");
+            assert_missing(rebuilt_request_snapshot, "stale");
+        }
+
+        assert!(!unsafe {
+            phpc_native_request_state_populate_superglobal_from_symbol_table(
+                NativeRequestStateHandle::null(),
+                get_root,
+                get_source,
+            )
+        });
+        assert!(!unsafe {
+            phpc_native_request_state_populate_superglobal_from_symbol_table(
+                request_state,
+                invalid_root,
+                get_source,
+            )
+        });
+        assert!(!unsafe {
+            phpc_native_request_state_populate_superglobal_from_symbol_table(
+                request_state,
+                get_root,
+                NativeSymbolTableHandle::null(),
+            )
+        });
+
+        unsafe { phpc_native_value_free(get_snapshot) };
+        unsafe { phpc_native_value_free(server_snapshot) };
+        unsafe { phpc_native_value_free(cookie_snapshot) };
+        unsafe { phpc_native_value_free(files_snapshot) };
+        unsafe { phpc_native_value_free(manual_request_snapshot) };
+        unsafe { phpc_native_value_free(rebuilt_request_snapshot) };
+        unsafe { phpc_native_symbol_table_free(get_source) };
+        unsafe { phpc_native_symbol_table_free(cookie_source) };
+        unsafe { phpc_native_symbol_table_free(cookie_replacement) };
+        unsafe { phpc_native_symbol_table_free(files_source) };
+        unsafe { phpc_native_symbol_table_free(request_source) };
+        unsafe { phpc_native_string_free(get_root) };
+        unsafe { phpc_native_string_free(cookie_root) };
+        unsafe { phpc_native_string_free(server_root) };
+        unsafe { phpc_native_string_free(files_root) };
+        unsafe { phpc_native_string_free(request_root) };
+        unsafe { phpc_native_string_free(invalid_root) };
+        unsafe { phpc_native_string_free(order_cg) };
         unsafe { phpc_native_request_state_free(request_state) };
     }
 
