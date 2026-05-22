@@ -6462,6 +6462,7 @@ impl CGenerator {
             if self.uses_native_array_helpers {
                 output.push_str("extern phpc_NativeArrayHandle phpc_native_array_empty(void);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_array(phpc_NativeArrayHandle array);\n");
+                output.push_str("extern phpc_NativeArrayHandle phpc_native_value_array_clone(phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_array_append_value(phpc_NativeArrayHandle array, phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_array_append_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key(phpc_NativeValueHandle value);\n");
@@ -7297,6 +7298,71 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_array_offset_mutation_assignment(
+        &mut self,
+        name: &str,
+        handle: &str,
+        index_expr: &Expr,
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        let subject = self.materialize_native_array_c_value_handle(
+            CValue::ArrayHandle(handle.to_string()),
+            span,
+        )?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let offset = self.materialize_native_value_result_operand(index_expr, &subject_cleanup)?;
+        let offset_cleanup = c_cleanup_sequence(&offset.cleanup_after_use);
+        let replacement_failure_cleanup = format!("{offset_cleanup}{subject_cleanup}");
+        let replacement = self.materialize_native_value_result_operand(
+            replacement_expr,
+            &replacement_failure_cleanup,
+        )?;
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_value_offset_mutation = true;
+
+        let write = self.next_native_name("array_offset_write_value");
+        let diagnostic = self.next_native_name("array_offset_write_diagnostic");
+        let array = self.next_native_name("array_offset_write_array");
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {write} = phpc_native_value_offset_mutation_operation_with_diagnostic({}, {}, {}, 0, &{diagnostic});",
+            subject.handle, offset.handle, replacement.handle
+        ));
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); }}"
+        ));
+        let write_failure_cleanup = format!(
+            "{}{}{}",
+            c_cleanup_sequence(&replacement.cleanup_after_use),
+            c_cleanup_sequence(&offset.cleanup_after_use),
+            c_cleanup_sequence(&subject.cleanup_after_use)
+        );
+        let write_error_exit = self.native_error_exit(&write_failure_cleanup);
+        self.body
+            .push(format!("if ({write}.ptr == NULL) {{ {write_error_exit} }}"));
+        self.body.push(format!(
+            "phpc_NativeArrayHandle {array} = phpc_native_value_array_clone({write});"
+        ));
+        let array_error_exit = self.native_error_exit(&format!(
+            "phpc_native_value_free({write}); {write_failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if ({array}.ptr == NULL) {{ {array_error_exit} }}"));
+        self.body.push(format!("phpc_native_value_free({write});"));
+        self.body.extend(replacement.cleanup_after_use);
+        self.body.extend(offset.cleanup_after_use);
+        self.body.extend(subject.cleanup_after_use);
+        self.array_cleanup_handles.push(array.clone());
+        self.variables
+            .insert(name.to_string(), CValue::ArrayHandle(array));
+        Ok(())
+    }
+
     fn emit_strlen_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
         if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
             return Err(self.unsupported_call_operation(operation));
@@ -8112,9 +8178,10 @@ impl CGenerator {
                         return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
                     };
                     return match self.variables.get(name).cloned() {
-                        Some(CValue::ArrayHandle(handle)) => {
-                            self.emit_array_write_key_value(&handle, index, expr)
-                        }
+                        Some(CValue::ArrayHandle(handle)) => self
+                            .emit_array_offset_mutation_assignment(
+                                name, &handle, index, expr, *span,
+                            ),
                         Some(subject @ (CValue::String(_) | CValue::StringExpr(_))) => self
                             .emit_string_offset_write_assignment(name, subject, index, expr, *span),
                         _ => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),

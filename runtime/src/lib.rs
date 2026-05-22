@@ -1757,6 +1757,22 @@ pub unsafe extern "C" fn phpc_native_value_from_array(
 
 /// # Safety
 ///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. Array values are cloned into a new array handle;
+/// ownership of `handle` remains with the caller. Non-array and null handles
+/// return a null array handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_array_clone(
+    handle: NativeValueHandle,
+) -> NativeArrayHandle {
+    match unsafe { handle.as_ref() } {
+        Some(Value::Array(array)) => NativeArrayHandle::from_array(array.clone()),
+        Some(_) | None => NativeArrayHandle::null(),
+    }
+}
+
+/// # Safety
+///
 /// `handle` must be null or an array handle previously returned by the runtime
 /// ABI and not yet freed.
 #[no_mangle]
@@ -15439,6 +15455,50 @@ mod tests {
         unsafe { phpc_native_value_free(second) };
         unsafe { phpc_native_value_free(first) };
         unsafe { phpc_native_value_free(array_value) };
+    }
+
+    #[test]
+    fn native_value_array_clone_materializes_independent_array_handles() {
+        let source = phpc_native_array_empty();
+        let first = NativeValueHandle::from_value(Value::String("first".to_string()));
+        let second = NativeValueHandle::from_value(Value::String("second".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(unsafe {
+            phpc_native_array_append_value_with_diagnostic(source, first, &mut diagnostic)
+        });
+        assert!(diagnostic.is_null());
+
+        let source_value = unsafe { phpc_native_value_from_array(source) };
+        let clone = unsafe { phpc_native_value_array_clone(source_value) };
+        assert!(!clone.is_null());
+        assert_eq!(unsafe { phpc_native_array_len(source) }, 1);
+        assert_eq!(unsafe { phpc_native_array_len(clone) }, 1);
+
+        assert!(unsafe {
+            phpc_native_array_append_value_with_diagnostic(clone, second, &mut diagnostic)
+        });
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { phpc_native_array_len(source) }, 1);
+        assert_eq!(unsafe { phpc_native_array_len(clone) }, 2);
+
+        let source_read = unsafe { phpc_native_array_read_int(source, 0) };
+        let clone_read = unsafe { phpc_native_array_read_int(clone, 1) };
+        assert_eq!(native_value_echo_bytes_for_test(source_read), b"first");
+        assert_eq!(native_value_echo_bytes_for_test(clone_read), b"second");
+
+        let scalar = phpc_native_value_from_scalar(phpc_native_int(5));
+        assert!(unsafe { phpc_native_value_array_clone(NativeValueHandle::null()) }.is_null());
+        assert!(unsafe { phpc_native_value_array_clone(scalar) }.is_null());
+
+        unsafe { phpc_native_value_free(scalar) };
+        unsafe { phpc_native_value_free(clone_read) };
+        unsafe { phpc_native_value_free(source_read) };
+        unsafe { phpc_native_value_free(source_value) };
+        unsafe { phpc_native_value_free(second) };
+        unsafe { phpc_native_value_free(first) };
+        unsafe { phpc_native_array_free(clone) };
+        unsafe { phpc_native_array_free(source) };
     }
 
     #[test]
