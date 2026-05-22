@@ -111,6 +111,7 @@ const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects 
 const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
+const ASSEMBLY_GLOBALS_ROOT_APPEND_REJECTION: &str = "Cannot append to $GLOBALS";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct and nested array offset write/append values and request-superglobal assignment values, non-symbol unset, object property unset, static property unset, mixed-target unset, and request/global-root unset until native read-modify-write ordering, null-aware mutation, unset writeback effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
@@ -7815,7 +7816,6 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_symbol_table_read_with_diagnostic(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_set_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_append_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *prefix_keys, size_t prefix_key_count, const phpc_NativeValueHandle *suffix_keys, size_t suffix_key_count, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
-                output.push_str("extern bool phpc_native_symbol_table_append_root_value_with_diagnostic(phpc_NativeSymbolTableHandle table, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_unset_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_symbol_table_read_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_isset_value_by_path(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count);\n");
@@ -8493,6 +8493,9 @@ impl CGenerator {
             return Err(self.unsupported(path.span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
         }
         if is_globals_superglobal_name(path.name) {
+            if path.append && path.keys.is_empty() {
+                return Err(self.unsupported(path.span, ASSEMBLY_GLOBALS_ROOT_APPEND_REJECTION));
+            }
             return Err(self.unsupported(statement_span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
         }
         Ok(())
@@ -9742,57 +9745,6 @@ impl CGenerator {
             span,
             failure_cleanup,
         )?;
-        Ok(result_value)
-    }
-
-    fn emit_globals_root_append_from_materialized(
-        &mut self,
-        value: CNativeValueMaterialization,
-        span: Span,
-        failure_cleanup: &str,
-    ) -> CompileResult<()> {
-        let value_cleanup = c_cleanup_sequence(&value.cleanup_after_use);
-        let table =
-            self.ensure_globals_symbol_table(&format!("{value_cleanup}{failure_cleanup}"), span)?;
-        let diagnostic = self.next_native_name("globals_root_append_diagnostic");
-        let appended = self.next_native_name("globals_root_appended");
-        self.body
-            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        self.body.push(format!(
-            "bool {appended} = phpc_native_symbol_table_append_root_value_with_diagnostic({table}, {}, &{diagnostic});",
-            value.handle
-        ));
-        self.emit_report_native_diagnostic(&diagnostic);
-        let append_error_exit = self.native_error_exit(&format!(
-            "phpc_native_diagnostic_free({diagnostic}); {value_cleanup}{failure_cleanup}"
-        ));
-        self.body
-            .push(format!("if (!{appended}) {{ {append_error_exit} }}"));
-        self.body
-            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
-        self.body.extend(value.cleanup_after_use);
-        Ok(())
-    }
-
-    fn emit_globals_root_append_assignment(
-        &mut self,
-        expr: &Expr,
-        span: Span,
-        failure_cleanup: &str,
-    ) -> CompileResult<()> {
-        let value = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
-        self.emit_globals_root_append_from_materialized(value, span, failure_cleanup)
-    }
-
-    fn emit_globals_root_append_assignment_expr(
-        &mut self,
-        expr: &Expr,
-        span: Span,
-        failure_cleanup: &str,
-    ) -> CompileResult<CValue> {
-        let (result_value, value) =
-            self.materialize_assignment_expression_replacement_value(expr, failure_cleanup)?;
-        self.emit_globals_root_append_from_materialized(value, span, failure_cleanup)?;
         Ok(result_value)
     }
 
@@ -12536,9 +12488,9 @@ impl CGenerator {
                 self.emit_globals_symbol_path_assignment_expr(&[index], expr, span, failure_cleanup)
                     .map(Some)
             }
-            AssignTarget::ArrayIndex { name, .. } if is_globals_superglobal_name(name) => self
-                .emit_globals_root_append_assignment_expr(expr, span, failure_cleanup)
-                .map(Some),
+            AssignTarget::ArrayIndex { name, .. } if is_globals_superglobal_name(name) => {
+                Err(self.unsupported(span, ASSEMBLY_GLOBALS_ROOT_APPEND_REJECTION))
+            }
             AssignTarget::NestedArrayIndex { name, indices, .. }
                 if is_globals_superglobal_name(name) =>
             {
@@ -16559,7 +16511,7 @@ impl CGenerator {
                 }
                 if is_globals_superglobal_name(name) {
                     let Some(index) = index.as_ref() else {
-                        return self.emit_globals_root_append_assignment(expr, *span, "");
+                        return Err(self.unsupported(*span, ASSEMBLY_GLOBALS_ROOT_APPEND_REJECTION));
                     };
                     if let Expr::String(alias_name, _) = index {
                         if is_request_superglobal_name(alias_name) {

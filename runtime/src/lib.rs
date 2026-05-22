@@ -3397,20 +3397,6 @@ fn native_symbol_table_append_value_by_path(
     Ok(())
 }
 
-fn native_symbol_table_append_root_value(
-    table: &mut NativeSymbolTable,
-    value: Value,
-) -> RuntimeResult<ArrayKey> {
-    let mut snapshot = native_symbol_table_snapshot_array(table);
-    let key = snapshot.append(value.clone())?;
-    let name = native_symbol_table_path_root_name(&key);
-    if !table.values.contains_key(&name) {
-        table.insertion_order.push(name.clone());
-    }
-    table.values.insert(name, ArraySlot::new(value));
-    Ok(key)
-}
-
 fn native_symbol_table_reference_for_path(
     table: &mut NativeSymbolTable,
     name: &str,
@@ -4182,9 +4168,9 @@ pub unsafe extern "C" fn phpc_native_symbol_table_append_value_by_path_with_diag
 ///
 /// `handle` must be null or a symbol-table handle previously returned by the
 /// runtime ABI and not yet freed. `value` must be null or a value handle
-/// previously returned by the runtime ABI and not yet freed. The selected
-/// symbol-table root key is the next PHP array auto-index computed from the
-/// current `$GLOBALS` snapshot; the symbol table stores a clone of `value`.
+/// previously returned by the runtime ABI and not yet freed. PHP treats direct
+/// no-key `$GLOBALS[]` appends as fatal, so this ABI reports the fatal
+/// diagnostic and never mutates the symbol table.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_symbol_table_append_root_value_with_diagnostic(
     mut handle: NativeSymbolTableHandle,
@@ -4193,7 +4179,7 @@ pub unsafe extern "C" fn phpc_native_symbol_table_append_root_value_with_diagnos
 ) -> bool {
     unsafe { native_clear_diagnostic_slot(diagnostic) };
 
-    let Some(table) = (unsafe { handle.as_mut() }) else {
+    let Some(_table) = (unsafe { handle.as_mut() }) else {
         unsafe {
             native_store_diagnostic_message(
                 diagnostic,
@@ -4202,7 +4188,7 @@ pub unsafe extern "C" fn phpc_native_symbol_table_append_root_value_with_diagnos
         };
         return false;
     };
-    let Some(value) = (unsafe { value.as_ref() }) else {
+    let Some(_value) = (unsafe { value.as_ref() }) else {
         unsafe {
             native_store_diagnostic_message(
                 diagnostic,
@@ -4212,13 +4198,8 @@ pub unsafe extern "C" fn phpc_native_symbol_table_append_root_value_with_diagnos
         return false;
     };
 
-    match native_symbol_table_append_root_value(table, value.clone()) {
-        Ok(_) => true,
-        Err(error) => {
-            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
-            false
-        }
-    }
+    unsafe { native_store_diagnostic_message(diagnostic, "Cannot append to $GLOBALS") };
+    false
 }
 
 /// # Safety
@@ -25820,7 +25801,7 @@ mod tests {
     }
 
     #[test]
-    fn native_symbol_table_root_appends_use_globals_snapshot_auto_indices() {
+    fn native_symbol_table_root_append_reports_php_fatal_without_mutating_globals() {
         unsafe fn value_handle(value: Value) -> NativeValueHandle {
             NativeValueHandle::from_value(value)
         }
@@ -25867,6 +25848,15 @@ mod tests {
                 unsafe { phpc_native_diagnostic_free(diagnostic) };
                 Some(message)
             }
+        }
+
+        unsafe fn isset_path(table: NativeSymbolTableHandle, key_values: Vec<Value>) -> bool {
+            let keys = unsafe { key_handles(key_values) };
+            let isset = unsafe {
+                phpc_native_symbol_table_isset_value_by_path(table, keys.as_ptr(), keys.len())
+            };
+            unsafe { free_handles(keys) };
+            isset
         }
 
         unsafe fn append_root(table: NativeSymbolTableHandle, value: Value) -> Option<String> {
@@ -25917,22 +25907,19 @@ mod tests {
         assert!(unsafe {
             set_path(
                 table,
-                vec![Value::String("alpha".to_string())],
-                Value::String("A".to_string()),
+                vec![Value::Int(0)],
+                Value::String("existing".to_string()),
             )
         }
         .is_none());
-        assert!(unsafe { append_root(table, Value::String("B".to_string())) }.is_none());
+        let first_append_message = unsafe { append_root(table, Value::String("B".to_string())) }
+            .expect("direct root append should report PHP fatal");
+        assert!(first_append_message.contains("Cannot append to $GLOBALS"));
         assert_eq!(
             unsafe { read_path(table, vec![Value::Int(0)]) },
-            Value::String("B".to_string())
+            Value::String("existing".to_string())
         );
-
-        assert!(unsafe { append_root(table, Value::String("C".to_string())) }.is_none());
-        assert_eq!(
-            unsafe { read_path(table, vec![Value::Int(1)]) },
-            Value::String("C".to_string())
-        );
+        assert!(!unsafe { isset_path(table, vec![Value::Int(1)]) });
 
         assert!(unsafe {
             set_path(
@@ -25942,11 +25929,15 @@ mod tests {
             )
         }
         .is_none());
-        assert!(unsafe { append_root(table, Value::String("tail".to_string())) }.is_none());
+        let second_append_message =
+            unsafe { append_root(table, Value::String("tail".to_string())) }
+                .expect("direct root append should keep reporting PHP fatal");
+        assert!(second_append_message.contains("Cannot append to $GLOBALS"));
         assert_eq!(
-            unsafe { read_path(table, vec![Value::Int(6)]) },
-            Value::String("tail".to_string())
+            unsafe { read_path(table, vec![Value::Int(5)]) },
+            Value::String("seed".to_string())
         );
+        assert!(!unsafe { isset_path(table, vec![Value::Int(6)]) });
 
         let null_table_message = unsafe {
             append_root(
