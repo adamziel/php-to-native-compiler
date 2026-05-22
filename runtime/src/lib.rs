@@ -528,6 +528,9 @@ pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNKNOWN_BAG: u8 = 6;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEYED_BAG: u8 = 7;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEY_COERCION: u8 = 8;
 
+const NATIVE_REQUEST_STATE_MISSING_KEY_READ_MESSAGE: &str =
+    "native request-state operation failed: missing request key";
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeSymbolTableHandle {
@@ -675,6 +678,10 @@ impl NativeRequestStateOperationKind {
 
     fn owns_runtime_handle(self) -> bool {
         self.owns_value_handle() || self.owns_array_handle()
+    }
+
+    fn reports_missing_key_diagnostic(self) -> bool {
+        self.owns_runtime_handle()
     }
 }
 
@@ -3652,6 +3659,17 @@ impl NativeRequestStateOperationResult {
                 "native request-state operation failed: invalid result status",
             );
         };
+        if status == NativeRequestStateOperationStatus::MissingKey {
+            return NativeRequestStateOperationKind::from_abi_tag(self.result_kind)
+                .filter(|result_kind| result_kind.reports_missing_key_diagnostic())
+                .map(|_| {
+                    NativeDiagnosticHandle::from_message_with_severity(
+                        NativeDiagnosticSeverity::Warning,
+                        NATIVE_REQUEST_STATE_MISSING_KEY_READ_MESSAGE,
+                    )
+                })
+                .unwrap_or_else(NativeDiagnosticHandle::null);
+        }
         status
             .diagnostic_message()
             .map(NativeDiagnosticHandle::from_message)
@@ -17898,12 +17916,6 @@ mod tests {
                 true,
                 NativeRequestStateOperationStatus::Ok,
             ),
-            NativeRequestStateOperationResult::value(
-                Value::Null,
-                false,
-                false,
-                NativeRequestStateOperationStatus::MissingKey,
-            ),
             NativeRequestStateOperationResult::array(
                 PhpArray::new(),
                 true,
@@ -17913,6 +17925,11 @@ mod tests {
                 true,
                 true,
                 NativeRequestStateOperationStatus::Ok,
+            ),
+            NativeRequestStateOperationResult::presence(
+                false,
+                false,
+                NativeRequestStateOperationStatus::MissingKey,
             ),
             NativeRequestStateOperationResult::bag_presence(
                 true,
@@ -17925,6 +17942,66 @@ mod tests {
             unsafe { phpc_native_request_state_operation_result_free(result) };
             unsafe { phpc_native_diagnostic_free(diagnostic) };
         }
+
+        let missing_value = NativeRequestStateOperationResult::value(
+            Value::Null,
+            false,
+            false,
+            NativeRequestStateOperationStatus::MissingKey,
+        );
+        let missing_diagnostic =
+            phpc_native_request_state_operation_result_diagnostic(missing_value);
+        assert!(!missing_diagnostic.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(missing_diagnostic),
+            NATIVE_REQUEST_STATE_MISSING_KEY_READ_MESSAGE
+        );
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_severity_at(missing_diagnostic, 0) },
+            NativeDiagnosticSeverity::Warning.tag()
+        );
+        unsafe { phpc_native_request_state_operation_result_free(missing_value) };
+        unsafe { phpc_native_diagnostic_free(missing_diagnostic) };
+
+        let request_state = phpc_native_request_state_empty();
+        let get_root = NativeStringHandle::from_vec(b"_GET".to_vec());
+        let key = NativeStringHandle::from_vec(b"absent".to_vec());
+        let missing_read = unsafe {
+            phpc_native_request_state_superglobal_operation(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                phpc_native_string_bytes(get_root),
+                phpc_native_string_len(get_root),
+                phpc_native_string_bytes(key),
+                phpc_native_string_len(key),
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+            )
+        };
+        assert_eq!(
+            phpc_native_request_state_operation_result_report_diagnostic(missing_read),
+            NATIVE_REQUEST_STATE_MISSING_KEY_READ_MESSAGE.len()
+        );
+        unsafe { phpc_native_request_state_operation_result_free(missing_read) };
+
+        let missing_presence = unsafe {
+            phpc_native_request_state_superglobal_operation(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE,
+                phpc_native_string_bytes(get_root),
+                phpc_native_string_len(get_root),
+                phpc_native_string_bytes(key),
+                phpc_native_string_len(key),
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+            )
+        };
+        assert_eq!(
+            phpc_native_request_state_operation_result_report_diagnostic(missing_presence),
+            0
+        );
+        unsafe { phpc_native_request_state_operation_result_free(missing_presence) };
+        unsafe { phpc_native_string_free(key) };
+        unsafe { phpc_native_string_free(get_root) };
+        unsafe { phpc_native_request_state_free(request_state) };
 
         for (status, expected) in [
             (
@@ -23847,6 +23924,18 @@ mod tests {
             phpc_native_request_state_operation_result_report_diagnostic(request_ok),
             0
         );
+
+        let request_missing_value = NativeRequestStateOperationResult::value(
+            Value::Null,
+            false,
+            false,
+            NativeRequestStateOperationStatus::MissingKey,
+        );
+        assert_eq!(
+            phpc_native_request_state_operation_result_report_diagnostic(request_missing_value),
+            NATIVE_REQUEST_STATE_MISSING_KEY_READ_MESSAGE.len()
+        );
+        unsafe { phpc_native_request_state_operation_result_free(request_missing_value) };
 
         unsafe { phpc_native_value_free(value) };
         unsafe { phpc_native_string_free(string) };
