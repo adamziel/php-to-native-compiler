@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 17:31 CEST
+Updated: 2026-05-22 17:42 CEST
 Evaluation marker: `20260522T151651Z`
-Primary HEAD: `6ded95bc codegen: route GLOBALS symbol writes through ABI`
-Current pushed semantic baseline: `6ded95bc codegen: route GLOBALS symbol writes through ABI`
+Primary HEAD: `af1511d3 codegen: route GLOBALS path unsets through ABI`
+Current pushed semantic baseline: `af1511d3 codegen: route GLOBALS path unsets through ABI`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -15,16 +15,15 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 Overall estimated progress: **80%** `[################----]`
 
 Primary now has one new generalized semantic slice after the marker refresh:
-generated-C `$GLOBALS[$expr]` and nested `$GLOBALS[...]` writes execute through
-a root-inclusive symbol-table path write ABI. The compiler keeps a persistent
-root symbol table once `$GLOBALS` path mutation starts, so subsequent
-`$GLOBALS` reads/probes and direct variable reads/writes share the same symbol
-path boundary instead of mutating a throwaway snapshot.
+generated-C `unset($GLOBALS[$expr]...)` executes through a root-inclusive
+symbol-table path unset ABI. This extends the persistent root symbol-table path
+boundary from `$GLOBALS` reads/probes/writes into unsets without adding a
+fixture-shaped recognizer.
 
 Recent integrated work is still bounded: request-state paths and dynamic
-`$GLOBALS[...]` read/probe/write paths now execute through shared
+`$GLOBALS[...]` read/probe/write/unset paths now execute through shared
 runtime/compiler ABIs. That is real movement toward generalized PHP semantics,
-but it is not full global/request/reference behavior. Unsets, request aliases,
+but it is not full global/request/reference behavior. Appends, request aliases,
 frames, references, COW, exact diagnostics, object/property semantics, and
 broad control-flow cleanup remain substantial open systems.
 
@@ -33,10 +32,10 @@ broad control-flow cleanup remain substantial open systems.
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
-| Compiler/backend consumers | 84% | `[#################---]` | Good for selected request/array/string/`$GLOBALS` read/write paths; uneven across calls, objects, control flow, and LLVM/C parity. |
+| Compiler/backend consumers | 84% | `[#################---]` | Good for selected request/array/string/`$GLOBALS` read/write/unset paths; uneven across calls, objects, control flow, and LLVM/C parity. |
 | Executable generalized PHP semantics | 71% | `[##############------]` | Improving, but many real PHP compositions still block. |
 | Arrays, lvalues, references, COW | 73% | `[###############-----]` | Arrays/lvalues advanced; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 69% | `[##############------]` | Request paths and `$GLOBALS` reads/writes/probes are stronger; unsets, aliases, frames, and self-reference remain incomplete. |
+| Symbols, globals, request state | 70% | `[##############------]` | Request paths and `$GLOBALS` reads/writes/probes/unsets are stronger; appends, aliases, frames, and self-reference remain incomplete. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Early; call/frame candidates exist but broad executable semantics are not primary yet. |
 | Objects, properties, methods | 11% | `[##------------------]` | Early; runtime candidates exist, but general compiled object/property/method execution remains missing. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused work, but exact diagnostic ordering and structured cleanup are not generalized. |
@@ -58,8 +57,9 @@ broad control-flow cleanup remain substantial open systems.
   read/`isset`/`empty` paths through the symbol-table path ABI in generated C.
 - [x] Compiler-lowered `$GLOBALS[$expr]` and nested `$GLOBALS[...]` writes
   through a persistent root symbol-table path ABI in generated C.
-- [ ] `$GLOBALS` symbol path unsets and request-root alias
-  reconciliation.
+- [x] Compiler-lowered `$GLOBALS[$expr]` and nested `$GLOBALS[...]` unsets
+  through the persistent root symbol-table path ABI in generated C.
+- [ ] `$GLOBALS` symbol path appends and request-root alias reconciliation.
 - [ ] Request-root append/write behavior reconciled with `$GLOBALS` and
   request-state storage.
 - [ ] Generated PHP reference assignment over proven array/request/symbol
@@ -77,6 +77,7 @@ broad control-flow cleanup remain substantial open systems.
 
 Recent semantic commits on primary:
 
+- `af1511d3 codegen: route GLOBALS path unsets through ABI`
 - `6ded95bc codegen: route GLOBALS symbol writes through ABI`
 - `633c8713 codegen: route GLOBALS symbol paths through ABI`
 - `39586978 runtime: add symbol-table nested read probes`
@@ -90,8 +91,8 @@ Recent semantic commits on primary:
 
 Primary-integrated capability now includes strong request-superglobal path
 execution through shared request-state ABIs and generated-C `$GLOBALS[...]`
-read/probe/write lowering through shared symbol-table path ABIs. The write
-slice intentionally leaves unsets, request-root alias reconciliation,
+read/probe/write/unset lowering through shared symbol-table path ABIs. The unset
+slice intentionally leaves appends, request-root alias reconciliation,
 self-reference behavior, frames, references/COW, and LLVM/C assembly parity
 blocked.
 
@@ -115,9 +116,9 @@ Lane-local candidates, not counted:
 
 The next integration batches should favor small executable slices:
 
-- Treat this review as no-new-primary semantic progress; percentages are
-  intentionally unchanged.
-- Build directly on the current global/request work: `$GLOBALS` unsets,
+- Keep semantic progress tied to executable primary commits, not lane-local
+  status or management-only dashboard refreshes.
+- Build directly on the current global/request work: `$GLOBALS` appends,
   request/global alias reconciliation, or request-root append/write behavior.
 - Keep one source of truth for `$GLOBALS`, request roots, symbol-table roots,
   and aliases before importing dynamic request-root dispatch.
@@ -142,10 +143,8 @@ Primary currently has one preserved unstaged implementation diff:
 as progress and still needs explicit classification, focused tests, and a
 separate commit or rejection before any runtime staging.
 
-Resource snapshot: `/dev/shm` is tight but above the dispatcher floor, around
-6.7G free of 22G; `/home` has about 199G free. The largest observed tmpfs
-consumer is `/dev/shm/phpc-target-native-exit-seed` at about 8.8G. Keep focused
-gates and avoid broad simultaneous cargo waves while tmpfs usage remains tight.
+Resource snapshot: `/dev/shm` has about 15G free of 22G; `/home` has about
+198G free. Keep focused gates and avoid broad simultaneous cargo waves.
 
 Evaluator cadence: one candid strategy/progress evaluation every 45 minutes,
 feeding advisory steering back to the supervisor. This marker was refreshed
