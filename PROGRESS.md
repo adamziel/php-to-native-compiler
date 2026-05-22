@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 20:47 CEST
+Updated: 2026-05-22 21:01 CEST
 Evaluation marker: `20260522T183315Z`
 Primary management HEAD: this PROGRESS.md update
-Primary semantic HEAD: `ad02c761 codegen: route request root reference sources through state ABI`
-Current pushed semantic baseline: `ad02c761 codegen: route request root reference sources through state ABI`
+Primary semantic HEAD: `beff266e codegen: route keyed request references through state ABI`
+Current pushed semantic baseline: `beff266e codegen: route keyed request references through state ABI`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -33,7 +33,10 @@ LLVM and generated-C truthiness for owned native value operands now share
 Generated-C reference assignment can now also acquire request-superglobal roots
 as reference sources, promote table-backed request bags to shared root cells,
 and bind those cells into direct, nested-key, and append-created ordinary
-symbol targets.
+symbol targets. Generated-C keyed request-superglobal slots now participate in
+the same reference-assignment family in both directions with ordinary symbol
+paths, using request key materialization, request-state reference results, and
+symbol-table path binding.
 
 That progress is primary-integrated: it is committed, pushed, focused-gated,
 and tied to executable generated-code behavior. It is not lane-local status
@@ -57,10 +60,10 @@ open systems.
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
-| Compiler/backend consumers | 95% | `[###################-]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, active root offset-mutation writeback, value-result offset reads, array-query value consumers, static request aliases, direct undefined root reads, generated-C symbol references, request-root reference replacement from symbol paths, request-root reference sources into symbol paths, generated-C native-value strict identity, and LLVM/generated-C native-value truthiness for unary `!` / `xor`; uneven across calls, objects, short-circuit control flow, and broader LLVM/C parity. |
+| Compiler/backend consumers | 95% | `[###################-]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, active root offset-mutation writeback, value-result offset reads, array-query value consumers, static request aliases, direct undefined root reads, generated-C symbol references, request-root and keyed request-slot reference assignment with ordinary symbol paths, generated-C native-value strict identity, and LLVM/generated-C native-value truthiness for unary `!` / `xor`; uneven across calls, objects, short-circuit control flow, and broader LLVM/C parity. |
 | Executable generalized PHP semantics | 75% | `[###############-----]` | Improving through executable path/reference/logical consumers, but many real PHP compositions still block. |
-| Arrays, lvalues, references, COW | 77% | `[###############-----]` | Arrays/lvalues advanced with query/value-result consumers, selected symbol-path references, request-root reference replacement from symbol paths, and request-root source references into symbol paths; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 81% | `[################----]` | Request paths/null-coalesce, static `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, direct undefined root reads, ordinary symbol-path reference assignment, request-root reference replacement from symbol paths, and request-root reference sources into symbol paths are stronger; dynamic aliases, direct root appends, frames, keyed request-slot references, full references, and self-reference remain incomplete. |
+| Arrays, lvalues, references, COW | 78% | `[################----]` | Arrays/lvalues advanced with query/value-result consumers, selected symbol-path references, request-root reference replacement/source paths, and keyed request-slot references with ordinary symbol paths; full references/COW and arbitrary writable roots remain large. |
+| Symbols, globals, request state | 82% | `[################----]` | Request paths/null-coalesce, static `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, direct undefined root reads, ordinary symbol-path reference assignment, request-root reference replacement/source paths, and keyed request-slot references with ordinary symbol paths are stronger; dynamic aliases, direct root appends, frames, request-to-request references, full references, and self-reference remain incomplete. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Early; lane candidates exist, but broad executable call/frame semantics are not primary yet. |
 | Objects, properties, methods | 11% | `[##------------------]` | Early; runtime candidates exist, but general compiled object/property/method execution remains missing. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused work, but exact diagnostic ordering and structured cleanup are not generalized. |
@@ -126,6 +129,11 @@ Done on primary:
   reference acquisition ABI, including table-backed request root promotion,
   direct targets, dynamic nested-key targets, append-created targets, and later
   symbol writes observed through request root snapshots/path reads.
+- [x] Generated-C reference assignment between keyed request-superglobal slots
+  and ordinary symbol roots/symbol-rooted paths through a request-state
+  reference-result ABI, including direct keyed request targets, keyed request
+  sources, dynamic/scalar key materialization, symbol nested-path sources, and
+  append-created ordinary symbol targets.
 - [x] LLVM and generated-C truthiness for owned native value operands through
   `phpc_native_value_is_truthy(...)`, covering unary `!` and
   non-short-circuit `xor` across native value producers while leaving ordered
@@ -137,10 +145,9 @@ In progress / candidate integration themes:
   append suffix wrapping, request-root write/append alias behavior, and
   `$GLOBALS["GLOBALS"]` semantics. Estimate: 55%
   `[###########---------]`.
-- [ ] Generated PHP reference assignment over keyed request slots, `$GLOBALS`,
-  object, arbitrary owner/value/reference-slot, frame, and COW-aware
-  boundaries. Estimate: 50%
-  `[##########----------]`.
+- [ ] Generated PHP reference assignment over request-to-request slots,
+  `$GLOBALS`, object, arbitrary owner/value/reference-slot, frame, and
+  COW-aware boundaries. Estimate: 54% `[###########---------]`.
 - [ ] Narrow call/frame consumers that execute real PHP-visible behavior rather
   than only centralizing blockers. Estimate: 25% `[#####---------------]`.
 - [ ] Object/property/method executable semantics beyond lane-local runtime
@@ -164,6 +171,7 @@ Not done:
 
 Recent semantic commits on primary:
 
+- `beff266e codegen: route keyed request references through state ABI`
 - `ad02c761 codegen: route request root reference sources through state ABI`
 - `ee990dad codegen: route native value truthiness through ABI`
 - `e9dc9ca9 codegen: route request root references through state ABI`
@@ -210,6 +218,10 @@ consumed native handles after boolean conversion. Generated-C reference
 assignment now also acquires request roots as reference sources through the
 request-state root reference ABI and binds them into direct, nested, and append
 ordinary symbol targets with executable request snapshot/path-read proof.
+Generated-C keyed request slots now also acquire and bind references through
+request-state reference results, composing with ordinary symbol direct, nested,
+and append-created paths while leaving request-to-request, `$GLOBALS`, and full
+COW/reference ownership open.
 
 ## Lane-Local And Active Candidate Work
 
