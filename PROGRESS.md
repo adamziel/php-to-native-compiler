@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 09:30 CEST
-Evaluation marker: 20260522T073015Z-primary-7102ac75
+Updated: 2026-05-22 09:31 CEST
+Evaluation marker: 20260522T073100Z-primary-after-5ab507cd
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local and uncommitted primary work are candidate material until selected, gated, committed, and pushed.
 
@@ -21,7 +21,7 @@ Broad integrated verification            [############--------] 60%
 
 ## Current Primary State
 
-- Primary HEAD at review: `7102ac75 docs: update progress after nested array coalesce`, synced with `origin/master`.
+- Primary branch at review: pushed with management-only progress commits on top of semantic batch `5ab507cd`, synced with `origin/master`.
 - Latest committed semantic compiler/runtime batch: `5ab507cd codegen: route nested array ??= through lvalue ABI`.
 - Recent committed semantic progress is concentrated in generated-C array-owner lvalues: by-value foreach over tracked native owners, a by-reference foreach reference-slot blocker, append-path increment/decrement, missing final keyed increment/decrement recovery, shared null increment/decrement defaults, and nested tracked-owner `??=`.
 - One pre-existing unstaged runtime cleanup hunk remains preserved in `runtime/src/lib.rs`; it is not counted as integrated capability.
@@ -38,7 +38,7 @@ The compiler is still not close to full generalized PHP semantics. Major unfinis
 - [x] Supervised parallel lanes and primary integration gate are established.
 - [x] Shared runtime ABI surfaces exist for strings, byte buffers, comparisons, selected conversions, array key/value operations, value-offset operations, diagnostics, branch decisions, native value output, snapshots, and selected array-owner lvalue operations.
 - [x] Primary has selected LLVM/generated-C consumers for primitive arithmetic, string/value-offset families, generated-C direct/nested tracked array-owner lvalues, direct and nested tracked-owner `??=`, compound assignment, increment/decrement, by-value foreach, unsets, selected recovery, direct-variable native value storage, scalar output, type predicates, bitwise/shift, casts/type-name output, and focused diagnostics.
-- [ ] In progress: array lvalue/RMW/reference/COW work. Primary has useful committed consumers; lane-local and staged primary candidates are broader than integrated capability.
+- [ ] In progress: array lvalue/RMW/reference/COW work. Primary has useful committed consumers; lane-local candidates are broader than integrated capability.
 - [ ] In progress: symbol/request/global value flow. Primary has surfaces and selected direct-variable storage, not a generalized PHP symbol table or mutable request/global model.
 - [ ] In progress: call/frame/control-flow cleanup. Lane-local work is active, but production frames, by-ref calls, returns, exceptions/finally, and broad cleanup are not integrated.
 - [ ] Not done: generalized object/class/property/method semantics, including allocation, visibility, magic hooks, `stdClass`, dynamic names, ArrayAccess, references/COW, and exact diagnostics.
@@ -55,7 +55,7 @@ The compiler is still not close to full generalized PHP semantics. Major unfinis
 | Symbols, globals, request state | 25% | 70% | Primary can persist selected owned native value-result handles in generated-C direct variables. Lane-local request-root, request-superglobal, storage-root, frame/import, and symbol operation work is broader but not integrated. |
 | Objects, properties, methods | 11% | 52% | Primary has blockers/plans and selected comparison identity handling. Lane-local object/property policies and `stdClass` diagnostic ABI work exist, but executable object allocation/property/method behavior is largely absent. |
 | Diagnostics and control-flow cleanup | 26% | 72% | Primary has selected diagnostic/reporting and cleanup paths, including recoverable array-read/update diagnostics. Lane-local terminal/control-flow and diagnostic models are broader; full warning ordering, terminal cleanup, loop/switch/goto/finally/exception behavior, and broad composition remain missing. |
-| Broad composition verification | 59% | 52% | Focused runtime/native-link/native-runtime-ABI gates cover recent slices, including missing-slot update recovery, append-path increment/decrement, by-value foreach, nested RMW, and read recovery. Broad PHP differential coverage is still thin. |
+| Broad composition verification | 60% | 52% | Focused runtime/native-link/native-runtime-ABI gates cover recent slices, including nested tracked-owner `??=`, missing-slot update recovery, append-path increment/decrement, by-value foreach, nested RMW, and read recovery. Broad PHP differential coverage is still thin. |
 
 ## Recent Primary-Integrated Work
 
