@@ -401,6 +401,8 @@ const VALUE_OFFSET_ARRAY_READ_SOURCE: &str = "<?php\n$items = [\"first\" => \"q\
 
 const VALUE_OFFSET_NULL_COALESCE_SOURCE: &str = "<?php\n$items = [\"present\" => \"L\", \"nullish\" => null, 2 => \"N\"];\n$key = \"present\";\n$missing = \"missing\";\n$text = \"abc\";\n$offset = \"1\";\necho ($items[$key] ?? \"fallback\");\necho \"|\";\necho ($items[$missing] ?? \"fallback\");\necho \"|\";\necho ($items[\"nullish\"] ?? \"fallback\");\necho \"|\";\necho ($text[$offset] ?? \"fallback\");\necho \"|\";\necho ($text[9] ?? \"fallback\");\necho \"|\";\necho strtoupper($items[2] ?? \"x\");\n";
 
+const NATIVE_VALUE_VARIABLE_STORAGE_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$key = \"first\";\n$slot = $items[$key];\n$copy = $slot;\necho $slot, \"|\", $copy, \"|\";\n$upper = strtoupper($copy);\necho $upper, \"|\";\n$fallback = $items[\"missing\"] ?? \"m\";\necho $fallback, \"|\";\n$cast = (string) 42;\necho $cast, \"|\";\n$items[] = $upper;\necho $items[1];\n";
+
 const VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE: &str = "<?php\n$items = [\"keep\" => \"A\", \"drop\" => \"B\", 2 => \"C\"];\n$key = \"drop\";\nunset($items[$key]);\nunset($items[2]);\nunset($items[99]);\necho isset($items[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[2]) ? 1 : 0;\necho \"|\";\n$items[$key] = \"D\";\necho $items[$key];\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_MULTI_UNSET_SOURCE: &str = "<?php\n$left = [\"keep\" => \"L\", \"drop\" => \"D\", 2 => \"I\"];\n$right = [0 => \"R0\", \"drop\" => \"RD\"];\n$key = \"drop\";\nunset($left[$key], $right[0], $left[2], $right[\"missing\"]);\necho isset($left[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($left[$key]) ? 1 : 0;\necho \"|\";\necho empty($right[0]) ? 1 : 0;\necho \"|\";\necho empty($left[2]) ? 1 : 0;\necho \"|\";\necho isset($right[\"drop\"]) ? 1 : 0;\n";
@@ -711,6 +713,38 @@ fn native_executable_c_source_routes_offset_null_coalesce_through_value_boundary
     assert!(
         !body.contains("phpc_native_array_read_key_with_diagnostic("),
         "offset null-coalescing should not bypass the shared value-offset ABI:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_stores_native_value_results_in_direct_variables() {
+    let program = parse(NATIVE_VALUE_VARIABLE_STORAGE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("extern phpc_NativeValueHandle phpc_native_value_clone"),
+        "{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_value_clone(").count() >= 3,
+        "native-value variable reads should clone handles for variable copies and downstream consumers:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_offset_operation_with_diagnostic"),
+        "stored array read and null-coalesce values should use the value-offset boundary:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_string_result_operation_with_diagnostic"),
+        "stored native values should feed string-result consumers:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_cast_operation_with_diagnostic"),
+        "cast results should store through the same native value handle path:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_array_read_key_with_diagnostic("),
+        "stored array offset reads should not reintroduce the array-read bypass:\n{source}"
     );
 }
 
@@ -1923,6 +1957,53 @@ fn emit_exe_links_and_runs_offset_null_coalesce_value_boundary_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"L|fallback|fallback|b|fallback|N");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_value_variable_storage_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("native_value_variable_storage");
+    let source_path = native_link_output_path("native_value_variable_storage_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, NATIVE_VALUE_VARIABLE_STORAGE_SOURCE)
+        .expect("native value variable storage source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native value variable storage source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"q|q|Q|m|42|Q");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

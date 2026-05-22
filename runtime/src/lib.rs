@@ -1773,6 +1773,19 @@ pub unsafe extern "C" fn phpc_native_value_array_clone(
 
 /// # Safety
 ///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. The returned handle owns a clone of the value. Null
+/// handles clone to null.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_clone(handle: NativeValueHandle) -> NativeValueHandle {
+    unsafe { handle.as_ref() }
+        .cloned()
+        .map(NativeValueHandle::from_value)
+        .unwrap_or_else(NativeValueHandle::null)
+}
+
+/// # Safety
+///
 /// `handle` must be null or an array handle previously returned by the runtime
 /// ABI and not yet freed.
 #[no_mangle]
@@ -12689,6 +12702,42 @@ mod tests {
             assert_eq!(native_value_echo_bytes_for_test(handle), expected);
             unsafe { phpc_native_value_free(handle) };
         }
+    }
+
+    #[test]
+    fn native_value_clone_preserves_value_handles_across_families() {
+        let scalar = phpc_native_value_from_scalar(phpc_native_int(42));
+        let scalar_clone = unsafe { phpc_native_value_clone(scalar) };
+        assert_eq!(native_value_echo_bytes_for_test(scalar), b"42");
+        assert_eq!(native_value_echo_bytes_for_test(scalar_clone), b"42");
+
+        let array = phpc_native_array_empty();
+        let value = phpc_native_value_from_scalar(phpc_native_int(7));
+        assert!(unsafe { phpc_native_array_append_value(array, value) });
+        let array_value = unsafe { phpc_native_value_from_array(array) };
+        let array_clone = unsafe { phpc_native_value_clone(array_value) };
+        let original_array = unsafe { phpc_native_value_array_clone(array_value) };
+        let cloned_array = unsafe { phpc_native_value_array_clone(array_clone) };
+        let replacement = phpc_native_value_from_scalar(phpc_native_int(9));
+        assert!(unsafe { phpc_native_array_append_value(cloned_array, replacement) });
+
+        assert_eq!(
+            unsafe { phpc_native_array_len(original_array) },
+            1,
+            "cloned value handles must not alias array storage"
+        );
+        assert_eq!(unsafe { phpc_native_array_len(cloned_array) }, 2);
+        assert!(unsafe { phpc_native_value_clone(NativeValueHandle::null()) }.is_null());
+
+        unsafe { phpc_native_value_free(replacement) };
+        unsafe { phpc_native_array_free(cloned_array) };
+        unsafe { phpc_native_array_free(original_array) };
+        unsafe { phpc_native_value_free(array_clone) };
+        unsafe { phpc_native_value_free(array_value) };
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_array_free(array) };
+        unsafe { phpc_native_value_free(scalar_clone) };
+        unsafe { phpc_native_value_free(scalar) };
     }
 
     fn native_byte_buffer_to_vec_for_test(buffer: NativeByteBuffer) -> Vec<u8> {

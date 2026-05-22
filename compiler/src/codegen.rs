@@ -6556,10 +6556,12 @@ struct CGenerator {
     uses_native_comparison_helpers: bool,
     uses_native_array_comparison_helpers: bool,
     uses_native_array_helpers: bool,
+    uses_native_value_clone: bool,
     uses_native_value_string_clone_bytes: bool,
     uses_native_value_offset_mutation: bool,
     next_static_data: usize,
     next_native_temp: usize,
+    native_value_cleanup_handles: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -6572,6 +6574,7 @@ enum CValue {
     Bool(bool),
     BoolExpr(String),
     ComparisonDecision(String),
+    NativeValueHandle(String),
     Null,
 }
 
@@ -7000,6 +7003,11 @@ impl CGenerator {
             output.push_str(
                 "extern size_t phpc_native_value_echo_stdout(phpc_NativeValueHandle value);\n",
             );
+            if self.uses_native_value_clone {
+                output.push_str(
+                    "extern phpc_NativeValueHandle phpc_native_value_clone(phpc_NativeValueHandle value);\n",
+                );
+            }
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -7060,6 +7068,11 @@ impl CGenerator {
             output.push_str(line);
             output.push('\n');
         }
+        for handle in self.native_value_cleanup_handles.iter().rev() {
+            output.push_str("  ");
+            output.push_str(&format!("phpc_native_value_free({handle});"));
+            output.push('\n');
+        }
         for buffer in self.owned_native_byte_buffers.iter().rev() {
             output.push_str("  ");
             output.push_str(&format!("phpc_native_byte_buffer_free({buffer});"));
@@ -7073,6 +7086,69 @@ impl CGenerator {
         output.push_str("  return 0;\n");
         output.push_str("}\n");
         Ok(output)
+    }
+
+    fn retain_native_value_cleanup_handle(&mut self, handle: &str) {
+        self.native_value_cleanup_handles.push(handle.to_string());
+    }
+
+    fn release_native_value_cleanup_handle(&mut self, handle: &str) {
+        if let Some(index) = self
+            .native_value_cleanup_handles
+            .iter()
+            .rposition(|owned| owned == handle)
+        {
+            self.native_value_cleanup_handles.remove(index);
+        }
+    }
+
+    fn release_variable_native_value_handle(&mut self, name: &str) {
+        let handle = self.variables.get(name).and_then(|value| match value {
+            CValue::NativeValueHandle(handle) => Some(handle.clone()),
+            _ => None,
+        });
+        if let Some(handle) = handle {
+            self.release_native_value_cleanup_handle(&handle);
+            self.body.push(format!("phpc_native_value_free({handle});"));
+        }
+    }
+
+    fn clone_native_value_handle(&mut self, handle: &str) -> String {
+        self.uses_native_string_helpers = true;
+        self.uses_native_value_clone = true;
+        let cloned = self.next_native_name("native_value_clone");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {cloned} = phpc_native_value_clone({handle});"
+        ));
+        cloned
+    }
+
+    fn value_for_variable_storage(&mut self, value: CValue) -> CValue {
+        match value {
+            CValue::NativeValueHandle(handle) => {
+                let cloned = self.clone_native_value_handle(&handle);
+                self.retain_native_value_cleanup_handle(&cloned);
+                CValue::NativeValueHandle(cloned)
+            }
+            value => value,
+        }
+    }
+
+    fn store_variable_value(&mut self, name: &str, value: CValue) {
+        let stored = self.value_for_variable_storage(value);
+        self.release_variable_native_value_handle(name);
+        self.variables.insert(name.to_string(), stored);
+    }
+
+    fn store_native_value_result_variable(
+        &mut self,
+        name: &str,
+        value: CNativeValueMaterialization,
+    ) {
+        self.release_variable_native_value_handle(name);
+        self.retain_native_value_cleanup_handle(&value.handle);
+        self.variables
+            .insert(name.to_string(), CValue::NativeValueHandle(value.handle));
     }
 
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
@@ -7846,8 +7922,7 @@ impl CGenerator {
         self.known_string_lengths
             .insert(bytes.clone(), format!("{buffer}.len"));
         self.owned_native_byte_buffers.push(buffer);
-        self.variables
-            .insert(name.to_string(), CValue::StringExpr(bytes));
+        self.store_variable_value(name, CValue::StringExpr(bytes));
         Ok(())
     }
 
@@ -8083,8 +8158,7 @@ impl CGenerator {
         self.body.extend(offset.cleanup_after_use);
         self.body.extend(subject.cleanup_after_use);
         self.array_cleanup_handles.push(array.clone());
-        self.variables
-            .insert(name.to_string(), CValue::ArrayHandle(array));
+        self.store_variable_value(name, CValue::ArrayHandle(array));
         Ok(())
     }
 
@@ -8667,6 +8741,9 @@ impl CGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
+        if matches!(value, CValue::NativeValueHandle(_)) {
+            return Err(self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership));
+        }
         match name.to_ascii_lowercase().as_str() {
             "gettype" => Ok(CValue::String(c_gettype_name(&value).to_string())),
             "get_debug_type" => Ok(CValue::String(c_debug_type_name(&value).to_string())),
@@ -8829,6 +8906,7 @@ impl CGenerator {
             | CValue::BoolExpr(_)
             | CValue::ComparisonDecision(_)
             | CValue::ArrayHandle(_) => Some(false),
+            CValue::NativeValueHandle(_) => None,
             CValue::String(value) => Some(classify_php_numeric_string(value).is_numeric()),
             CValue::StringExpr(_) => {
                 let values = self.known_string_values_for_value(value)?;
@@ -8890,8 +8968,14 @@ impl CGenerator {
 
         match target {
             AssignTarget::Variable { name, .. } => {
+                if self.uses_native_string_helpers {
+                    if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
+                        self.store_native_value_result_variable(name, value);
+                        return Ok(());
+                    }
+                }
                 let value = self.emit_expr(expr)?;
-                self.variables.insert(name.clone(), value);
+                self.store_variable_value(name, value);
                 Ok(())
             }
             AssignTarget::List { span, .. } => {
@@ -9619,7 +9703,9 @@ impl CGenerator {
                 ));
                 Ok(NativeCComparisonOperand { operand })
             }
-            CValue::ArrayHandle(_) => Err(self.unsupported(span, assembly_comparison_rejection())),
+            CValue::ArrayHandle(_) | CValue::NativeValueHandle(_) => {
+                Err(self.unsupported(span, assembly_comparison_rejection()))
+            }
         }
     }
 
@@ -9696,6 +9782,12 @@ impl CGenerator {
                 self.uses_native_array_helpers = true;
                 self.body.push(format!(
                     "phpc_NativeValueHandle {value_handle} = phpc_native_value_from_array({handle});"
+                ));
+            }
+            CValue::NativeValueHandle(handle) => {
+                self.uses_native_value_clone = true;
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value_handle} = phpc_native_value_clone({handle});"
                 ));
             }
         }
@@ -10711,7 +10803,7 @@ impl CGenerator {
             CValue::StringExpr(value) => self
                 .known_string_values(value)
                 .and_then(|values| known_string_truthiness(&values)),
-            CValue::ArrayHandle(_) => None,
+            CValue::ArrayHandle(_) | CValue::NativeValueHandle(_) => None,
             CValue::Null => Some(false),
         }
     }
@@ -10951,7 +11043,9 @@ impl CGenerator {
                 }
             }
             CValue::Null => self.emit_expr(if_false),
-            CValue::ArrayHandle(_) => Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION)),
+            CValue::ArrayHandle(_) | CValue::NativeValueHandle(_) => {
+                Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION))
+            }
             condition @ (CValue::BoolExpr(_) | CValue::ComparisonDecision(_)) => {
                 let if_false = self.emit_expr(if_false)?;
                 if !matches!(
@@ -11141,7 +11235,9 @@ impl CGenerator {
             CValue::StringExpr(value) => self
                 .known_string_values(value)
                 .map(BackendPrimitiveSource::string_values),
-            CValue::ArrayHandle(_) | CValue::ComparisonDecision(_) => None,
+            CValue::ArrayHandle(_)
+            | CValue::ComparisonDecision(_)
+            | CValue::NativeValueHandle(_) => None,
         }
     }
 
@@ -11351,7 +11447,9 @@ impl CGenerator {
                 }
             }
             CValue::Null => Ok(CValue::Bool(true)),
-            CValue::ArrayHandle(_) => Err(self.unsupported(span, ASSEMBLY_UNARY_REJECTION)),
+            CValue::ArrayHandle(_) | CValue::NativeValueHandle(_) => {
+                Err(self.unsupported(span, ASSEMBLY_UNARY_REJECTION))
+            }
         }
     }
 
@@ -12247,6 +12345,9 @@ impl CGenerator {
     fn native_error_exit_with_code(&self, local_cleanup: &str, exit_code: &str) -> String {
         let mut cleanup = String::new();
         cleanup.push_str(local_cleanup);
+        for handle in self.native_value_cleanup_handles.iter().rev() {
+            cleanup.push_str(&format!(" phpc_native_value_free({handle});"));
+        }
         for buffer in self.owned_native_byte_buffers.iter().rev() {
             cleanup.push_str(&format!(" phpc_native_byte_buffer_free({buffer});"));
         }
@@ -12309,6 +12410,10 @@ impl CGenerator {
                 }
             }
             CValue::ArrayHandle(_) => return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
+            CValue::NativeValueHandle(handle) => {
+                self.body
+                    .push(format!("phpc_native_value_echo_stdout({handle});"));
+            }
         }
         Ok(())
     }
@@ -13760,6 +13865,7 @@ fn c_gettype_name(value: &CValue) -> &'static str {
         CValue::Float(_) => "double",
         CValue::String(_) | CValue::StringExpr(_) => "string",
         CValue::ArrayHandle(_) => "array",
+        CValue::NativeValueHandle(_) => "unknown",
     }
 }
 
@@ -13771,6 +13877,7 @@ fn c_debug_type_name(value: &CValue) -> &'static str {
         CValue::Float(_) => "float",
         CValue::String(_) | CValue::StringExpr(_) => "string",
         CValue::ArrayHandle(_) => "array",
+        CValue::NativeValueHandle(_) => "unknown",
     }
 }
 
