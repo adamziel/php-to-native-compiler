@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 12:04 CEST
-Evaluation marker: `20260522T100443Z`
-Primary HEAD: `8865eb9c docs: update progress after value-offset writes`
-Current primary semantic baseline: `90d8af3f codegen: route direct value-offset writes through mutation ABI`
+Updated: 2026-05-22 12:12 CEST
+Evaluation marker: `20260522T100443Z` plus post-evaluator semantic refresh
+Primary HEAD: `f0f785e5 runtime: report request missing-key value diagnostics`
+Current primary semantic baseline: `f0f785e5 runtime: report request missing-key value diagnostics`
 
 Percentages are candid engineering estimates, not test-suite pass rates. Lane-local work is not counted as product capability until it is integrated into `master`, gated, committed, and pushed.
 
@@ -11,7 +11,7 @@ Percentages are candid engineering estimates, not test-suite pass rates. Lane-lo
 
 Overall estimated progress toward a broadly usable generalized PHP native compiler: **65%** `[#############-------]`
 
-Momentum is positive: primary has recently landed real generalized request/symbol runtime storage and generated-C array/lvalue consumers. The compiler is still not close to broad PHP completeness because executable `$GLOBALS`, mutable superglobals, references/COW, objects, calls, control flow, exact diagnostics, and broad composition remain major gaps.
+Momentum is positive: primary has recently landed real generalized request/symbol runtime storage, generated-C array/lvalue consumers, and centralized request missing-key read diagnostics. The compiler is still not close to broad PHP completeness because executable `$GLOBALS`, mutable superglobals, references/COW, objects, calls, control flow, exact diagnostics, and broad composition remain major gaps.
 
 ## Roadmap Position
 
@@ -21,9 +21,9 @@ Momentum is positive: primary has recently landed real generalized request/symbo
 | Compiler/backend consumers | 97% | `[###################-]` | Many generated-C and LLVM paths consume shared ABIs; missing consumers now concentrate in symbols, calls, objects, references, and control flow. |
 | Executable generalized PHP semantics | 79% | `[################----]` | Selected scalar, string, array, lvalue, symbol, and request runtime behavior works; ordinary broad PHP programs still hit major blockers. |
 | Arrays, references, COW, lvalues | 66% | `[#############-------]` | Selected generated-C array/lvalue execution works, including pointer/cursor builtins and direct value-offset writes; arbitrary roots, full references/COW, by-reference foreach, and ArrayAccess/resource offsets remain open. |
-| Symbols, globals, request state | 33% | `[#######-------------]` | Runtime symbol/request roots can snapshot, populate, and share reference cells; compiler-level `$GLOBALS`, superglobal mutation, request lifetime, and frame propagation are not done. |
+| Symbols, globals, request state | 34% | `[#######-------------]` | Runtime symbol/request roots can snapshot, populate, share reference cells, and report missing-key value-read diagnostics; compiler-level `$GLOBALS`, superglobal mutation, request lifetime, and frame propagation are not done. |
 | Objects, properties, methods | 11% | `[##------------------]` | Mostly blockers and metadata. Real allocation/property/method behavior remains largely absent. |
-| Diagnostics and control-flow cleanup | 26% | `[#####---------------]` | Shared diagnostic/status surfaces exist, but exact ordering, recovery, loops/switch/goto/finally/exceptions, and cleanup stacks are not integrated. |
+| Diagnostics and control-flow cleanup | 27% | `[#####---------------]` | Shared diagnostic/status surfaces exist and request missing-key value reads now report through the request result carrier, but exact ordering, recovery, loops/switch/goto/finally/exceptions, and cleanup stacks are not integrated. |
 | Broad integrated verification | 67% | `[#############-------]` | Focused gates and linked tests are useful; broad differential composition coverage remains thin. |
 
 ## Primary-Integrated Capability
@@ -34,6 +34,7 @@ Momentum is positive: primary has recently landed real generalized request/symbo
 - [x] Symbol-table and request-root reference-cell sharing at runtime.
 - [x] Generated-native C pointer/cursor builtins over tracked native array owners and nested owner paths.
 - [x] Generated-native C direct value-offset writes over missing/null/false/scalar roots through the shared mutation ABI.
+- [x] Runtime request missing-key value-read diagnostics through the shared request operation-result carrier.
 - [ ] Executable PHP-level `$GLOBALS`, mutable superglobals, request lifetime threading, and frame propagation.
 - [ ] General references/COW, owner-slot/value-slot/reference-slot materialization, by-reference arguments/returns, and alias-visible mutation barriers.
 - [ ] Real object allocation, properties, methods, magic hooks, visibility, ArrayAccess, and resource offset behavior.
@@ -47,8 +48,9 @@ Since the prior evaluator window, primary integrated and pushed:
 - `4aef9974 runtime: share symbol and request reference slots`
 - `0f123f2d codegen: route array pointer builtins through lvalue ABI`
 - `90d8af3f codegen: route direct value-offset writes through mutation ABI`
+- `f0f785e5 runtime: report request missing-key value diagnostics`
 
-The current worktree is synced with `origin/master` at `8865eb9c`. The only expected dirty primary diff is the preserved unstaged `runtime/src/lib.rs` append/null-slot cleanup hunk; it is not counted as product progress.
+The current worktree is synced with `origin/master` at `f0f785e5`. The only expected dirty primary diff is the preserved unstaged `runtime/src/lib.rs` append/null-slot cleanup hunk; it is not counted as product progress.
 
 ## Lane-Local Candidate Work
 
@@ -68,11 +70,11 @@ These are active candidates, not integrated capability:
 | Active item | Estimate | Status | Next useful primary shape |
 | --- | ---: | --- | --- |
 | Array/lvalue execution | 66% | In progress | Nested/arbitrary-root writes, `??=`, append/RMW, owner-slot/value-slot/reference-slot materialization, or LLVM parity. |
-| Symbols/request/globals | 33% | In progress | Whole-bag request/superglobal reads, `isset()`/`empty()`, mutable storage, `$GLOBALS` aliasing, or request lifetime threading. |
+| Symbols/request/globals | 34% | In progress | Whole-bag request/superglobal reads, `isset()`/`empty()`, mutable storage, `$GLOBALS` aliasing, or request lifetime threading. |
 | References/COW | 28% | In progress | Narrow owner/reference slot materialization with alias-visible mutation and executable evidence. |
 | Calls/functions | 24% | In progress | Dynamic call lookup or user-frame value propagation beyond one known callable. |
 | Objects/properties/methods | 11% | Early | Allocation/property/method behavior through shared carriers, not metadata-only blockers. |
-| Control flow/cleanup/diagnostics | 26% | Early | One real structured transfer or cleanup path with exact ordering evidence. |
+| Control flow/cleanup/diagnostics | 27% | Early | One real structured transfer or cleanup path with exact ordering evidence, plus request diagnostic consumers in generated backends. |
 | Broad verification | 67% | In progress | Composition checks crossing semantic families after each primary consumer lands. |
 
 ## Steering Notes
