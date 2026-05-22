@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 11:56 CEST
+Updated: 2026-05-22 11:51 CEST
 Current primary semantic baseline: `0f123f2d codegen: route array pointer builtins through lvalue ABI`
 
 This is a high-level roadmap view. Percentages are candid engineering estimates, not test-suite pass rates. Lane-local work is not counted as product capability until it is integrated into `master`, gated, committed, and pushed.
