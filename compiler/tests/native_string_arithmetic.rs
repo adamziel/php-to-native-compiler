@@ -26,17 +26,19 @@ echo "8" % 3;
 }
 
 #[test]
-fn emit_ir_rejects_string_operands_in_native_arithmetic() {
-    for source in [
-        "<?php\necho \"2\" + 3;\n",
-        "<?php\necho 8 - \"2.5\";\n",
-        "<?php\necho \"3e1\" * 2;\n",
-    ] {
-        let error = emit_ir_source(source).unwrap_err();
+fn emit_ir_lowers_numeric_string_operands_in_static_primitive_arithmetic() {
+    let ir = emit_ir_source(
+        r#"<?php
+echo "2" + 3, "\n";
+echo 8 - "2.5", "\n";
+echo "3e1" * 2;
+"#,
+    )
+    .unwrap();
 
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, SCALAR_COERCION_ARITHMETIC_REJECTION);
-    }
+    assert!(ir.contains("@printf(ptr @.fmt_int, i64 5)"), "{ir}");
+    assert!(ir.contains("@printf(ptr @.fmt_float, double 5.5)"), "{ir}");
+    assert!(ir.contains("@printf(ptr @.fmt_float, double 60.0)"), "{ir}");
 
     let error = emit_ir_source("<?php\necho \"8\" % 3;\n").unwrap_err();
 
@@ -50,8 +52,8 @@ fn emit_ir_rejects_string_operands_in_native_arithmetic() {
 }
 
 #[test]
-fn emit_asm_rejects_string_arithmetic_before_backend_execution() {
-    let error = emit_asm_source("<?php\necho \"2\" + 3;\n").unwrap_err();
+fn emit_asm_rejects_non_numeric_string_arithmetic_before_backend_execution() {
+    let error = emit_asm_source("<?php\necho \"two\" + 3;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, SCALAR_COERCION_ARITHMETIC_REJECTION);

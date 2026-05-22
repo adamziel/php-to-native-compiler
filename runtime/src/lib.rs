@@ -5577,6 +5577,57 @@ impl fmt::Display for ArithmeticOp {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PhpPrimitiveValue<'a> {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    String(&'a str),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhpPrimitiveArithmeticOperation {
+    Add,
+    Subtract,
+    Multiply,
+    Negate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PhpPrimitiveArithmeticValue {
+    Int(i64),
+    Float(f64),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PhpPrimitiveArithmeticError {
+    MissingRightOperand,
+    Conversion(String),
+    IntegerOverflow,
+    NonFiniteFloat,
+}
+
+impl fmt::Display for PhpPrimitiveArithmeticError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingRightOperand => {
+                write!(f, "primitive arithmetic operation is missing right operand")
+            }
+            Self::Conversion(reason) => write!(f, "{reason}"),
+            Self::IntegerOverflow => {
+                write!(
+                    f,
+                    "primitive integer arithmetic needs overflow promotion or runtime checks"
+                )
+            }
+            Self::NonFiniteFloat => {
+                write!(f, "primitive float arithmetic produced non-finite result")
+            }
+        }
+    }
+}
+
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.message)
@@ -11407,6 +11458,130 @@ impl Number {
             Number::Int(value) => value.to_string(),
             Number::Float(value) => format_php_float(value),
         }
+    }
+}
+
+impl<'a> PhpPrimitiveValue<'a> {
+    #[cfg(test)]
+    fn into_value(self) -> Value {
+        match self {
+            Self::Null => Value::Null,
+            Self::Bool(value) => Value::Bool(value),
+            Self::Int(value) => Value::Int(value),
+            Self::Float(value) => Value::Float(value),
+            Self::String(value) => Value::String(value.to_string()),
+        }
+    }
+}
+
+pub fn php_primitive_arithmetic_result(
+    left: PhpPrimitiveValue<'_>,
+    operation: PhpPrimitiveArithmeticOperation,
+    right: Option<PhpPrimitiveValue<'_>>,
+) -> Result<PhpPrimitiveArithmeticValue, PhpPrimitiveArithmeticError> {
+    match operation {
+        PhpPrimitiveArithmeticOperation::Negate => {
+            let number = primitive_arithmetic_number(left)?;
+            checked_primitive_arithmetic_value_from_unary_number(operation, number)
+        }
+        PhpPrimitiveArithmeticOperation::Add
+        | PhpPrimitiveArithmeticOperation::Subtract
+        | PhpPrimitiveArithmeticOperation::Multiply => {
+            let right = right.ok_or(PhpPrimitiveArithmeticError::MissingRightOperand)?;
+            checked_primitive_arithmetic_value_from_binary_numbers(
+                primitive_arithmetic_number(left)?,
+                operation,
+                primitive_arithmetic_number(right)?,
+            )
+        }
+    }
+}
+
+fn primitive_arithmetic_number(
+    value: PhpPrimitiveValue<'_>,
+) -> Result<Number, PhpPrimitiveArithmeticError> {
+    match value {
+        PhpPrimitiveValue::Null => Ok(Number::Int(0)),
+        PhpPrimitiveValue::Bool(false) => Ok(Number::Int(0)),
+        PhpPrimitiveValue::Bool(true) => Ok(Number::Int(1)),
+        PhpPrimitiveValue::Int(value) => Ok(Number::Int(value)),
+        PhpPrimitiveValue::Float(value) => Ok(Number::Float(value)),
+        PhpPrimitiveValue::String(value) => match classify_php_numeric_string(value) {
+            PhpNumericStringClassification::Integer(value) => Ok(Number::Int(value)),
+            PhpNumericStringClassification::Float(value) => Ok(Number::Float(value)),
+            PhpNumericStringClassification::LeadingNumeric => {
+                Err(PhpPrimitiveArithmeticError::Conversion(
+                    "leading-numeric string conversion requires warning/recovery behavior"
+                        .to_string(),
+                ))
+            }
+            PhpNumericStringClassification::NonNumeric => Err(
+                PhpPrimitiveArithmeticError::Conversion("string is not numeric".to_string()),
+            ),
+        },
+    }
+}
+
+fn checked_primitive_arithmetic_value_from_binary_numbers(
+    left: Number,
+    operation: PhpPrimitiveArithmeticOperation,
+    right: Number,
+) -> Result<PhpPrimitiveArithmeticValue, PhpPrimitiveArithmeticError> {
+    match (left, right) {
+        (Number::Int(left), Number::Int(right)) => {
+            let value = match operation {
+                PhpPrimitiveArithmeticOperation::Add => left.checked_add(right),
+                PhpPrimitiveArithmeticOperation::Subtract => left.checked_sub(right),
+                PhpPrimitiveArithmeticOperation::Multiply => left.checked_mul(right),
+                PhpPrimitiveArithmeticOperation::Negate => {
+                    unreachable!("binary arithmetic helper received unary negate")
+                }
+            };
+            value
+                .map(PhpPrimitiveArithmeticValue::Int)
+                .ok_or(PhpPrimitiveArithmeticError::IntegerOverflow)
+        }
+        (left, right) => {
+            let value = match operation {
+                PhpPrimitiveArithmeticOperation::Add => left.as_float() + right.as_float(),
+                PhpPrimitiveArithmeticOperation::Subtract => left.as_float() - right.as_float(),
+                PhpPrimitiveArithmeticOperation::Multiply => left.as_float() * right.as_float(),
+                PhpPrimitiveArithmeticOperation::Negate => {
+                    unreachable!("binary arithmetic helper received unary negate")
+                }
+            };
+            finite_primitive_float_arithmetic_value(value)
+        }
+    }
+}
+
+fn checked_primitive_arithmetic_value_from_unary_number(
+    operation: PhpPrimitiveArithmeticOperation,
+    number: Number,
+) -> Result<PhpPrimitiveArithmeticValue, PhpPrimitiveArithmeticError> {
+    match operation {
+        PhpPrimitiveArithmeticOperation::Negate => match number {
+            Number::Int(value) => value
+                .checked_neg()
+                .map(PhpPrimitiveArithmeticValue::Int)
+                .ok_or(PhpPrimitiveArithmeticError::IntegerOverflow),
+            Number::Float(value) => finite_primitive_float_arithmetic_value(-value),
+        },
+        PhpPrimitiveArithmeticOperation::Add
+        | PhpPrimitiveArithmeticOperation::Subtract
+        | PhpPrimitiveArithmeticOperation::Multiply => {
+            unreachable!("unary arithmetic helper received binary operation")
+        }
+    }
+}
+
+fn finite_primitive_float_arithmetic_value(
+    value: f64,
+) -> Result<PhpPrimitiveArithmeticValue, PhpPrimitiveArithmeticError> {
+    if value.is_finite() {
+        Ok(PhpPrimitiveArithmeticValue::Float(value))
+    } else {
+        Err(PhpPrimitiveArithmeticError::NonFiniteFloat)
     }
 }
 
@@ -17258,6 +17433,135 @@ mod tests {
                 .php_add(&Value::Float(0.25))
                 .unwrap(),
             Value::Float(0.75)
+        );
+    }
+
+    #[test]
+    fn primitive_arithmetic_result_reuses_numeric_conversion_for_scalar_families() {
+        fn value_from_primitive(value: PhpPrimitiveValue<'_>) -> Value {
+            value.into_value()
+        }
+
+        fn value_from_arithmetic(value: PhpPrimitiveArithmeticValue) -> Value {
+            match value {
+                PhpPrimitiveArithmeticValue::Int(value) => Value::Int(value),
+                PhpPrimitiveArithmeticValue::Float(value) => Value::Float(value),
+            }
+        }
+
+        fn assert_binary(
+            label: &str,
+            left: PhpPrimitiveValue<'_>,
+            operation: PhpPrimitiveArithmeticOperation,
+            right: PhpPrimitiveValue<'_>,
+            expected: PhpPrimitiveArithmeticValue,
+        ) {
+            assert_eq!(
+                php_primitive_arithmetic_result(left, operation, Some(right)).unwrap(),
+                expected,
+                "primitive arithmetic result for {label}",
+            );
+
+            let left_value = value_from_primitive(left);
+            let right_value = value_from_primitive(right);
+            let runtime = match operation {
+                PhpPrimitiveArithmeticOperation::Add => left_value.php_add(&right_value),
+                PhpPrimitiveArithmeticOperation::Subtract => left_value.php_sub(&right_value),
+                PhpPrimitiveArithmeticOperation::Multiply => left_value.php_mul(&right_value),
+                PhpPrimitiveArithmeticOperation::Negate => {
+                    unreachable!("binary assertion received unary negate")
+                }
+            }
+            .unwrap();
+            assert_eq!(
+                value_from_arithmetic(expected),
+                runtime,
+                "runtime arithmetic consumer for {label}",
+            );
+        }
+
+        assert_binary(
+            "null plus int",
+            PhpPrimitiveValue::Null,
+            PhpPrimitiveArithmeticOperation::Add,
+            PhpPrimitiveValue::Int(2),
+            PhpPrimitiveArithmeticValue::Int(2),
+        );
+        assert_binary(
+            "bool times int",
+            PhpPrimitiveValue::Bool(true),
+            PhpPrimitiveArithmeticOperation::Multiply,
+            PhpPrimitiveValue::Int(6),
+            PhpPrimitiveArithmeticValue::Int(6),
+        );
+        assert_binary(
+            "numeric string subtract bool",
+            PhpPrimitiveValue::String(" 42 "),
+            PhpPrimitiveArithmeticOperation::Subtract,
+            PhpPrimitiveValue::Bool(true),
+            PhpPrimitiveArithmeticValue::Int(41),
+        );
+        assert_binary(
+            "float numeric string multiply",
+            PhpPrimitiveValue::String("2.5"),
+            PhpPrimitiveArithmeticOperation::Multiply,
+            PhpPrimitiveValue::String("4"),
+            PhpPrimitiveArithmeticValue::Float(10.0),
+        );
+
+        assert_eq!(
+            php_primitive_arithmetic_result(
+                PhpPrimitiveValue::String("-3"),
+                PhpPrimitiveArithmeticOperation::Negate,
+                None,
+            )
+            .unwrap(),
+            PhpPrimitiveArithmeticValue::Int(3),
+        );
+        assert_eq!(
+            value_from_primitive(PhpPrimitiveValue::String("-3"))
+                .php_negate()
+                .unwrap(),
+            Value::Int(3),
+        );
+
+        assert_eq!(
+            php_primitive_arithmetic_result(
+                PhpPrimitiveValue::String("abc"),
+                PhpPrimitiveArithmeticOperation::Add,
+                Some(PhpPrimitiveValue::Int(1)),
+            )
+            .unwrap_err()
+            .to_string(),
+            "string is not numeric",
+        );
+        assert_eq!(
+            php_primitive_arithmetic_result(
+                PhpPrimitiveValue::String("8foo"),
+                PhpPrimitiveArithmeticOperation::Multiply,
+                Some(PhpPrimitiveValue::Int(2)),
+            )
+            .unwrap_err()
+            .to_string(),
+            "leading-numeric string conversion requires warning/recovery behavior",
+        );
+        assert_eq!(
+            php_primitive_arithmetic_result(
+                PhpPrimitiveValue::Int(i64::MAX),
+                PhpPrimitiveArithmeticOperation::Add,
+                Some(PhpPrimitiveValue::Int(1)),
+            )
+            .unwrap_err(),
+            PhpPrimitiveArithmeticError::IntegerOverflow,
+        );
+        assert_eq!(
+            php_primitive_arithmetic_result(
+                PhpPrimitiveValue::Float(f64::MAX),
+                PhpPrimitiveArithmeticOperation::Multiply,
+                Some(PhpPrimitiveValue::Float(f64::MAX)),
+            )
+            .unwrap_err(),
+            PhpPrimitiveArithmeticError::NonFiniteFloat,
         );
     }
 

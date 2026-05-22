@@ -3,10 +3,11 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use php_compiler::error::Phase;
-use php_compiler::{emit_asm_source, emit_ir_source, run_source};
+use php_compiler::{
+    codegen::emit_native_executable_c_source, emit_asm_source, emit_ir_source, parse, run_source,
+};
 
 const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
-const LLVM_MIXED_NUMERIC_ARITHMETIC_REJECTION: &str = "LLVM mixed numeric arithmetic lowering rejects int/float operands until native PHP numeric promotion, result typing, overflow/INF/NAN behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current mixed numeric arithmetic behavior";
 const LLVM_SCALAR_COERCION_ARITHMETIC_REJECTION: &str = "LLVM scalar-coercion arithmetic lowering rejects booleans, nulls, and strings in +, -, and * until native PHP numeric coercion, string numeric parsing, warnings/recovery behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current scalar-coercion arithmetic behavior";
 const LLVM_INTEGER_OVERFLOW_ARITHMETIC_REJECTION: &str = "LLVM integer arithmetic lowering rejects overflow-sensitive or not-statically-proven integer +, -, and * until native PHP integer overflow promotion, runtime checks, references/copy-on-write, and exact native error behavior exist; phpc run handles current integer overflow arithmetic behavior";
 const LLVM_MODULO_RUNTIME_CHECK_REJECTION: &str = "LLVM modulo lowering rejects dynamic, zero, or non-positive integer divisors until native modulo runtime checks, PHP modulo diagnostics, negative-divisor/min-int edge behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current modulo behavior";
@@ -37,17 +38,53 @@ fn emit_ir_rejects_non_integer_modulo_coercion_with_generic_arithmetic_boundary(
 }
 
 #[test]
-fn emit_ir_rejects_scalar_coercion_arithmetic_with_specific_boundary() {
-    for source in [
-        "<?php\necho true * 4;\n",
-        "<?php\necho null + 2;\n",
-        "<?php\necho \"3\" * 2;\n",
-    ] {
-        let error = emit_ir_source(source).unwrap_err();
+fn emit_ir_lowers_static_primitive_scalar_coercion_arithmetic() {
+    let ir = emit_ir_source(
+        r#"<?php
+echo true * 4, "\n";
+echo null + 2, "\n";
+echo "3" * 2, "\n";
+echo 1.5 + 2, "\n";
+echo -"3";
+"#,
+    )
+    .unwrap();
 
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_SCALAR_COERCION_ARITHMETIC_REJECTION);
-    }
+    assert!(ir.contains("@printf(ptr @.fmt_int, i64 4)"), "{ir}");
+    assert!(ir.contains("@printf(ptr @.fmt_int, i64 2)"), "{ir}");
+    assert!(ir.contains("@printf(ptr @.fmt_int, i64 6)"), "{ir}");
+    assert!(ir.contains("@printf(ptr @.fmt_float, double 3.5)"), "{ir}");
+    assert!(ir.contains("@printf(ptr @.fmt_int, i64 -3)"), "{ir}");
+}
+
+#[test]
+fn native_c_lowers_static_primitive_scalar_coercion_arithmetic() {
+    let program = parse(
+        r#"<?php
+echo true * 4, "\n";
+echo null + 2, "\n";
+echo "3" * 2, "\n";
+echo 1.5 + 2, "\n";
+echo -"3";
+"#,
+    )
+    .unwrap();
+
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        !source.contains("phpc_native_value_binary_result"),
+        "primitive arithmetic should be resolved before the generic value-operation ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_unary_result"),
+        "primitive unary arithmetic should be resolved before the generic value-operation ABI:\n{source}"
+    );
+    assert!(source.contains("int_value = 4;"), "{source}");
+    assert!(source.contains("int_value = 2;"), "{source}");
+    assert!(source.contains("int_value = 6;"), "{source}");
+    assert!(source.contains("float_value = 3.5;"), "{source}");
+    assert!(source.contains("int_value = -3;"), "{source}");
 }
 
 #[test]
@@ -85,25 +122,27 @@ echo $left + $right + $third;
 }
 
 #[test]
-fn emit_ir_rejects_mixed_numeric_arithmetic_with_specific_boundary() {
-    for source in [
-        "<?php\necho 1.5 + 2;\n",
-        "<?php\necho 8 - 2.5;\n",
-        "<?php\necho 3 * 2.5;\n",
-    ] {
-        let error = emit_ir_source(source).unwrap_err();
+fn emit_ir_lowers_static_mixed_numeric_primitive_arithmetic() {
+    let ir = emit_ir_source(
+        r#"<?php
+echo 1.5 + 2, "\n";
+echo 8 - 2.5, "\n";
+echo 3 * 2.5;
+"#,
+    )
+    .unwrap();
 
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_MIXED_NUMERIC_ARITHMETIC_REJECTION);
-    }
+    assert!(ir.contains("@printf(ptr @.fmt_float, double 3.5)"), "{ir}");
+    assert!(ir.contains("@printf(ptr @.fmt_float, double 5.5)"), "{ir}");
+    assert!(ir.contains("@printf(ptr @.fmt_float, double 7.5)"), "{ir}");
 }
 
 #[test]
-fn emit_asm_rejects_mixed_numeric_arithmetic_before_backend_execution() {
-    let error = emit_asm_source("<?php\necho 1.5 + 2;\n").unwrap_err();
+fn emit_asm_rejects_non_numeric_arithmetic_before_backend_execution() {
+    let error = emit_asm_source("<?php\necho \"two\" + 2;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_MIXED_NUMERIC_ARITHMETIC_REJECTION);
+    assert_eq!(error.message, LLVM_SCALAR_COERCION_ARITHMETIC_REJECTION);
 }
 
 #[test]
@@ -124,7 +163,7 @@ fn emit_asm_rejects_integer_arithmetic_overflow_before_backend_execution() {
 
 #[test]
 fn emit_ir_rejects_arithmetic_before_lowering_operands() {
-    let error = emit_ir_source("<?php\necho \"1\" + 2;\n").unwrap_err();
+    let error = emit_ir_source("<?php\necho \"1foo\" + 2;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_SCALAR_COERCION_ARITHMETIC_REJECTION);
@@ -132,7 +171,7 @@ fn emit_ir_rejects_arithmetic_before_lowering_operands() {
 
 #[test]
 fn emit_asm_rejects_arithmetic_before_backend_execution() {
-    let error = emit_asm_source("<?php\necho true * 4;\n").unwrap_err();
+    let error = emit_asm_source("<?php\necho \"two\" * 4;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_SCALAR_COERCION_ARITHMETIC_REJECTION);

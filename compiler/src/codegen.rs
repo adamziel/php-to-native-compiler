@@ -8,9 +8,11 @@ use crate::ast::{
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
-    classify_php_numeric_string, is_php_truthy_string, php_strings_use_numeric_comparison,
-    NativeComparisonOp, NativeFilesystemPathOperation, NativeIntConversionOperation,
-    NativeStringDistanceOperation, NativeStringIntOperation, NativeStringPredicate,
+    classify_php_numeric_string, is_php_truthy_string, php_primitive_arithmetic_result,
+    php_strings_use_numeric_comparison, NativeComparisonOp, NativeFilesystemPathOperation,
+    NativeIntConversionOperation, NativeStringDistanceOperation, NativeStringIntOperation,
+    NativeStringPredicate, PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation,
+    PhpPrimitiveArithmeticValue, PhpPrimitiveValue,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -3514,6 +3516,31 @@ impl LlvmGenerator {
         right: IrValue,
         span: Span,
     ) -> CompileResult<IrValue> {
+        let direct_numeric_pair = matches!(
+            (&left, &right),
+            (IrValue::Int(_), IrValue::Int(_)) | (IrValue::Float(_), IrValue::Float(_))
+        );
+        if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul) && !direct_numeric_pair {
+            match self.checked_static_primitive_arithmetic_result_for_values(&left, op, &right) {
+                Ok(Some(result)) => {
+                    if let Some(value) = result.into_single_ir_value() {
+                        return Ok(value);
+                    }
+                }
+                Err(PhpPrimitiveArithmeticError::IntegerOverflow) => {
+                    return Err(self.unsupported(span, LLVM_INTEGER_OVERFLOW_ARITHMETIC_REJECTION));
+                }
+                Err(PhpPrimitiveArithmeticError::NonFiniteFloat) => {
+                    return Err(self.unsupported(span, LLVM_MIXED_NUMERIC_ARITHMETIC_REJECTION));
+                }
+                Ok(None)
+                | Err(
+                    PhpPrimitiveArithmeticError::MissingRightOperand
+                    | PhpPrimitiveArithmeticError::Conversion(_),
+                ) => {}
+            }
+        }
+
         match (left, right) {
             (IrValue::Int(left), IrValue::Int(right)) => match op {
                 BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul => {
@@ -5265,7 +5292,77 @@ impl LlvmGenerator {
         }
     }
 
+    fn primitive_source_for_value(&self, value: &IrValue) -> Option<BackendPrimitiveSource> {
+        match value {
+            IrValue::Null => Some(BackendPrimitiveSource::null()),
+            IrValue::Bool(value) => Some(BackendPrimitiveSource::bool_value(*value)),
+            IrValue::BoolExpr(value) => Some(
+                self.known_bool_values(value)
+                    .map(BackendPrimitiveSource::bool_values)
+                    .unwrap_or_else(BackendPrimitiveSource::unknown_bool),
+            ),
+            IrValue::Int(value) => Some(
+                self.known_integer_values(value)
+                    .map(BackendPrimitiveSource::int_values)
+                    .unwrap_or_else(BackendPrimitiveSource::unknown_int),
+            ),
+            IrValue::Float(value) => Some(
+                self.known_float_values(value)
+                    .map(BackendPrimitiveSource::float_values)
+                    .unwrap_or_else(BackendPrimitiveSource::unknown_float),
+            ),
+            IrValue::String(value) => Some(BackendPrimitiveSource::string_value(value)),
+            IrValue::StringPtr(value) => self
+                .known_string_values(value)
+                .map(BackendPrimitiveSource::string_values),
+        }
+    }
+
+    fn checked_static_primitive_negate_result_for_value(
+        &self,
+        value: &IrValue,
+    ) -> Result<Option<BackendArithmeticResult>, PhpPrimitiveArithmeticError> {
+        self.primitive_source_for_value(value)
+            .map(|source| source.single_arithmetic_result(PhpPrimitiveArithmeticOperation::Negate))
+            .unwrap_or(Ok(None))
+    }
+
+    fn checked_static_primitive_arithmetic_result_for_values(
+        &self,
+        left: &IrValue,
+        op: BinaryOp,
+        right: &IrValue,
+    ) -> Result<Option<BackendArithmeticResult>, PhpPrimitiveArithmeticError> {
+        let Some(operation) = backend_binary_primitive_arithmetic_operation(op) else {
+            return Ok(None);
+        };
+        let Some(left) = self.primitive_source_for_value(left) else {
+            return Ok(None);
+        };
+        let Some(right) = self.primitive_source_for_value(right) else {
+            return Ok(None);
+        };
+        left.pair_arithmetic_result(operation, &right)
+    }
+
     fn emit_numeric_negate(&mut self, value: IrValue, span: Span) -> CompileResult<IrValue> {
+        if !matches!(value, IrValue::Int(_) | IrValue::Float(_)) {
+            match self.checked_static_primitive_negate_result_for_value(&value) {
+                Ok(Some(result)) => {
+                    if let Some(value) = result.into_single_ir_value() {
+                        return Ok(value);
+                    }
+                }
+                Ok(None)
+                | Err(
+                    PhpPrimitiveArithmeticError::MissingRightOperand
+                    | PhpPrimitiveArithmeticError::Conversion(_)
+                    | PhpPrimitiveArithmeticError::IntegerOverflow
+                    | PhpPrimitiveArithmeticError::NonFiniteFloat,
+                ) => {}
+            }
+        }
+
         match value {
             IrValue::Int(value) => {
                 let Some(result) = self.static_integer_negate(&value) else {
@@ -5904,6 +6001,266 @@ enum CValue {
     BoolExpr(String),
     ComparisonDecision(String),
     Null,
+}
+
+#[derive(Debug, Clone)]
+enum BackendKnownPrimitive {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    String(String),
+}
+
+#[derive(Debug, Clone)]
+enum BackendPrimitiveSource {
+    Null,
+    Bool(Vec<bool>),
+    IntValues(Vec<i64>),
+    IntAny,
+    FloatValues(Vec<f64>),
+    FloatAny,
+    StringValues(Vec<String>),
+}
+
+#[derive(Debug, Clone)]
+enum BackendArithmeticResult {
+    Int(KnownInt),
+    Float(KnownFloat),
+}
+
+impl BackendKnownPrimitive {
+    fn as_php_primitive(&self) -> PhpPrimitiveValue<'_> {
+        match self {
+            Self::Null => PhpPrimitiveValue::Null,
+            Self::Bool(value) => PhpPrimitiveValue::Bool(*value),
+            Self::Int(value) => PhpPrimitiveValue::Int(*value),
+            Self::Float(value) => PhpPrimitiveValue::Float(*value),
+            Self::String(value) => PhpPrimitiveValue::String(value),
+        }
+    }
+}
+
+impl BackendArithmeticResult {
+    fn from_values(values: impl IntoIterator<Item = PhpPrimitiveArithmeticValue>) -> Option<Self> {
+        let mut ints = Vec::new();
+        let mut floats = Vec::new();
+
+        for value in values {
+            match value {
+                PhpPrimitiveArithmeticValue::Int(value) => ints.push(value),
+                PhpPrimitiveArithmeticValue::Float(value) if value.is_finite() => {
+                    floats.push(value)
+                }
+                PhpPrimitiveArithmeticValue::Float(_) => return None,
+            }
+        }
+
+        match (ints.is_empty(), floats.is_empty()) {
+            (false, true) => KnownInt::from_values(ints).map(Self::Int),
+            (true, false) => KnownFloat::from_values(floats).map(Self::Float),
+            _ => None,
+        }
+    }
+
+    fn into_single_ir_value(self) -> Option<IrValue> {
+        match self {
+            Self::Int(values) if values.is_single() => {
+                Some(IrValue::Int(values.values()[0].to_string()))
+            }
+            Self::Float(values) if values.is_single() => {
+                Some(IrValue::Float(format_float_literal(values.values()[0])))
+            }
+            Self::Int(_) | Self::Float(_) => None,
+        }
+    }
+
+    fn into_single_c_value(self) -> Option<CValue> {
+        match self {
+            Self::Int(values) if values.is_single() => {
+                Some(CValue::Int(values.values()[0].to_string()))
+            }
+            Self::Float(values) if values.is_single() => {
+                Some(CValue::Float(format_float_literal(values.values()[0])))
+            }
+            Self::Int(_) | Self::Float(_) => None,
+        }
+    }
+}
+
+impl BackendPrimitiveSource {
+    fn null() -> Self {
+        Self::Null
+    }
+
+    fn bool_value(value: bool) -> Self {
+        Self::Bool(vec![value])
+    }
+
+    fn unknown_bool() -> Self {
+        Self::Bool(vec![false, true])
+    }
+
+    fn bool_values(values: KnownBool) -> Self {
+        Self::Bool(values.values().to_vec())
+    }
+
+    fn int_values(values: KnownInt) -> Self {
+        Self::IntValues(values.values().to_vec())
+    }
+
+    fn unknown_int() -> Self {
+        Self::IntAny
+    }
+
+    fn float_values(values: KnownFloat) -> Self {
+        Self::FloatValues(values.values().to_vec())
+    }
+
+    fn unknown_float() -> Self {
+        Self::FloatAny
+    }
+
+    fn string_value(value: &str) -> Self {
+        Self::StringValues(vec![value.to_string()])
+    }
+
+    fn string_values(values: KnownString) -> Self {
+        Self::StringValues(values.values().to_vec())
+    }
+
+    fn known_primitives(&self) -> Option<Vec<BackendKnownPrimitive>> {
+        match self {
+            Self::Null => Some(vec![BackendKnownPrimitive::Null]),
+            Self::Bool(values) => Some(
+                values
+                    .iter()
+                    .map(|value| BackendKnownPrimitive::Bool(*value))
+                    .collect(),
+            ),
+            Self::IntValues(values) => Some(
+                values
+                    .iter()
+                    .map(|value| BackendKnownPrimitive::Int(*value))
+                    .collect(),
+            ),
+            Self::IntAny => None,
+            Self::FloatValues(values) if values.iter().all(|value| value.is_finite()) => Some(
+                values
+                    .iter()
+                    .map(|value| BackendKnownPrimitive::Float(*value))
+                    .collect(),
+            ),
+            Self::FloatValues(_) | Self::FloatAny => None,
+            Self::StringValues(values) => Some(
+                values
+                    .iter()
+                    .map(|value| BackendKnownPrimitive::String(value.clone()))
+                    .collect(),
+            ),
+        }
+    }
+
+    fn single_arithmetic_result(
+        &self,
+        operation: PhpPrimitiveArithmeticOperation,
+    ) -> Result<Option<BackendArithmeticResult>, PhpPrimitiveArithmeticError> {
+        let Some(values) = self.known_primitives() else {
+            return Ok(None);
+        };
+        let mut results = Vec::new();
+        for value in &values {
+            results.push(php_primitive_arithmetic_result(
+                value.as_php_primitive(),
+                operation,
+                None,
+            )?);
+        }
+        Ok(BackendArithmeticResult::from_values(results))
+    }
+
+    fn pair_arithmetic_result(
+        &self,
+        operation: PhpPrimitiveArithmeticOperation,
+        right: &Self,
+    ) -> Result<Option<BackendArithmeticResult>, PhpPrimitiveArithmeticError> {
+        let Some(left_values) = self.known_primitives() else {
+            return Ok(None);
+        };
+        let Some(right_values) = right.known_primitives() else {
+            return Ok(None);
+        };
+        let mut results = Vec::new();
+        for left in &left_values {
+            for right in &right_values {
+                results.push(php_primitive_arithmetic_result(
+                    left.as_php_primitive(),
+                    operation,
+                    Some(right.as_php_primitive()),
+                )?);
+            }
+        }
+        Ok(BackendArithmeticResult::from_values(results))
+    }
+
+    fn from_arithmetic_result(result: BackendArithmeticResult) -> Self {
+        match result {
+            BackendArithmeticResult::Int(values) => Self::int_values(values),
+            BackendArithmeticResult::Float(values) => Self::float_values(values),
+        }
+    }
+
+    fn single_c_value(&self) -> Option<CValue> {
+        match self {
+            Self::Null => Some(CValue::Null),
+            Self::Bool(values) if values.len() == 1 => Some(CValue::Bool(values[0])),
+            Self::IntValues(values) if values.len() == 1 => {
+                Some(CValue::Int(values[0].to_string()))
+            }
+            Self::FloatValues(values) if values.len() == 1 && values[0].is_finite() => {
+                Some(CValue::Float(format_float_literal(values[0])))
+            }
+            Self::StringValues(values) if values.len() == 1 => {
+                Some(CValue::String(values[0].clone()))
+            }
+            Self::Bool(_)
+            | Self::IntValues(_)
+            | Self::IntAny
+            | Self::FloatValues(_)
+            | Self::FloatAny
+            | Self::StringValues(_) => None,
+        }
+    }
+}
+
+fn backend_binary_primitive_arithmetic_operation(
+    op: BinaryOp,
+) -> Option<PhpPrimitiveArithmeticOperation> {
+    match op {
+        BinaryOp::Add => Some(PhpPrimitiveArithmeticOperation::Add),
+        BinaryOp::Sub => Some(PhpPrimitiveArithmeticOperation::Subtract),
+        BinaryOp::Mul => Some(PhpPrimitiveArithmeticOperation::Multiply),
+        BinaryOp::Div
+        | BinaryOp::Mod
+        | BinaryOp::Concat
+        | BinaryOp::Eq
+        | BinaryOp::Ne
+        | BinaryOp::Lt
+        | BinaryOp::Le
+        | BinaryOp::Gt
+        | BinaryOp::Ge
+        | BinaryOp::StrictEq
+        | BinaryOp::StrictNe
+        | BinaryOp::NullCoalesce
+        | BinaryOp::LogicalAnd
+        | BinaryOp::LogicalOr
+        | BinaryOp::LogicalXor
+        | BinaryOp::BitwiseAnd
+        | BinaryOp::BitwiseOr
+        | BinaryOp::BitwiseXor
+        | BinaryOp::ShiftLeft
+        | BinaryOp::ShiftRight => None,
+    }
 }
 
 struct NativeCComparisonOperand {
@@ -7559,6 +7916,33 @@ impl CGenerator {
             BinaryOp::Mod => "%",
             _ => return Err(self.unsupported(span, ASSEMBLY_ARITHMETIC_REJECTION)),
         };
+        let direct_numeric_pair = matches!(
+            (&left, &right),
+            (CValue::Int(_), CValue::Int(_)) | (CValue::Float(_), CValue::Float(_))
+        );
+        if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul) && !direct_numeric_pair {
+            match self.checked_static_primitive_arithmetic_result_for_values(&left, op, &right) {
+                Ok(Some(result)) => {
+                    if let Some(value) = result.into_single_c_value() {
+                        return Ok(value);
+                    }
+                }
+                Err(PhpPrimitiveArithmeticError::IntegerOverflow) => {
+                    return Err(
+                        self.unsupported(span, ASSEMBLY_INTEGER_OVERFLOW_ARITHMETIC_REJECTION)
+                    );
+                }
+                Err(PhpPrimitiveArithmeticError::NonFiniteFloat) => {
+                    return Err(self.unsupported(span, ASSEMBLY_MIXED_NUMERIC_ARITHMETIC_REJECTION));
+                }
+                Ok(None)
+                | Err(
+                    PhpPrimitiveArithmeticError::MissingRightOperand
+                    | PhpPrimitiveArithmeticError::Conversion(_),
+                ) => {}
+            }
+        }
+
         match (left, right) {
             (CValue::Int(left), CValue::Int(right)) => {
                 if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul) {
@@ -9649,7 +10033,152 @@ impl CGenerator {
         }
     }
 
+    fn primitive_source_for_value(&self, value: &CValue) -> Option<BackendPrimitiveSource> {
+        match value {
+            CValue::Null => Some(BackendPrimitiveSource::null()),
+            CValue::Bool(value) => Some(BackendPrimitiveSource::bool_value(*value)),
+            CValue::BoolExpr(value) => Some(
+                self.known_bool_values(value)
+                    .map(BackendPrimitiveSource::bool_values)
+                    .unwrap_or_else(BackendPrimitiveSource::unknown_bool),
+            ),
+            CValue::Int(value) => Some(
+                self.known_integer_values(value)
+                    .map(BackendPrimitiveSource::int_values)
+                    .unwrap_or_else(BackendPrimitiveSource::unknown_int),
+            ),
+            CValue::Float(value) => Some(
+                self.known_float_values(value)
+                    .map(BackendPrimitiveSource::float_values)
+                    .unwrap_or_else(BackendPrimitiveSource::unknown_float),
+            ),
+            CValue::String(value) => Some(BackendPrimitiveSource::string_value(value)),
+            CValue::StringExpr(value) => self
+                .known_string_values(value)
+                .map(BackendPrimitiveSource::string_values),
+            CValue::ArrayHandle(_) | CValue::ComparisonDecision(_) => None,
+        }
+    }
+
+    fn checked_static_primitive_negate_result_for_value(
+        &self,
+        value: &CValue,
+    ) -> Result<Option<BackendArithmeticResult>, PhpPrimitiveArithmeticError> {
+        self.primitive_source_for_value(value)
+            .map(|source| source.single_arithmetic_result(PhpPrimitiveArithmeticOperation::Negate))
+            .unwrap_or(Ok(None))
+    }
+
+    fn checked_static_primitive_arithmetic_result_for_values(
+        &self,
+        left: &CValue,
+        op: BinaryOp,
+        right: &CValue,
+    ) -> Result<Option<BackendArithmeticResult>, PhpPrimitiveArithmeticError> {
+        let Some(operation) = backend_binary_primitive_arithmetic_operation(op) else {
+            return Ok(None);
+        };
+        let Some(left) = self.primitive_source_for_value(left) else {
+            return Ok(None);
+        };
+        let Some(right) = self.primitive_source_for_value(right) else {
+            return Ok(None);
+        };
+        left.pair_arithmetic_result(operation, &right)
+    }
+
+    fn static_primitive_source_for_expr(
+        &self,
+        expr: &Expr,
+    ) -> Result<Option<BackendPrimitiveSource>, PhpPrimitiveArithmeticError> {
+        match expr {
+            Expr::Null(_) => Ok(Some(BackendPrimitiveSource::null())),
+            Expr::Bool(value, _) => Ok(Some(BackendPrimitiveSource::bool_value(*value))),
+            Expr::Int(value, _) => Ok(Some(BackendPrimitiveSource::int_values(KnownInt::one(
+                *value,
+            )))),
+            Expr::Float(value, _) => Ok(Some(BackendPrimitiveSource::float_values(
+                KnownFloat::one(*value),
+            ))),
+            Expr::String(value, _) => Ok(Some(BackendPrimitiveSource::string_value(value))),
+            Expr::Variable(name, _) => Ok(self
+                .variables
+                .get(name)
+                .and_then(|value| self.primitive_source_for_value(value))),
+            Expr::Unary {
+                op: UnaryOp::Negate,
+                expr,
+                ..
+            } => {
+                let Some(source) = self.static_primitive_source_for_expr(expr)? else {
+                    return Ok(None);
+                };
+                Ok(source
+                    .single_arithmetic_result(PhpPrimitiveArithmeticOperation::Negate)?
+                    .map(BackendPrimitiveSource::from_arithmetic_result))
+            }
+            Expr::Binary {
+                left, op, right, ..
+            } => {
+                let Some(operation) = backend_binary_primitive_arithmetic_operation(*op) else {
+                    return Ok(None);
+                };
+                let Some(left) = self.static_primitive_source_for_expr(left)? else {
+                    return Ok(None);
+                };
+                let Some(right) = self.static_primitive_source_for_expr(right)? else {
+                    return Ok(None);
+                };
+                Ok(left
+                    .pair_arithmetic_result(operation, &right)?
+                    .map(BackendPrimitiveSource::from_arithmetic_result))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn try_emit_static_primitive_arithmetic_output(&mut self, expr: &Expr) -> CompileResult<bool> {
+        if !matches!(
+            expr,
+            Expr::Unary {
+                op: UnaryOp::Negate,
+                ..
+            } | Expr::Binary {
+                op: BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul,
+                ..
+            }
+        ) {
+            return Ok(false);
+        }
+
+        let Ok(Some(source)) = self.static_primitive_source_for_expr(expr) else {
+            return Ok(false);
+        };
+        let Some(value) = source.single_c_value() else {
+            return Ok(false);
+        };
+        self.emit_echo(value, expr.span())?;
+        Ok(true)
+    }
+
     fn emit_numeric_negate(&mut self, value: CValue, span: Span) -> CompileResult<CValue> {
+        if !matches!(value, CValue::Int(_) | CValue::Float(_)) {
+            match self.checked_static_primitive_negate_result_for_value(&value) {
+                Ok(Some(result)) => {
+                    if let Some(value) = result.into_single_c_value() {
+                        return Ok(value);
+                    }
+                }
+                Ok(None)
+                | Err(
+                    PhpPrimitiveArithmeticError::MissingRightOperand
+                    | PhpPrimitiveArithmeticError::Conversion(_)
+                    | PhpPrimitiveArithmeticError::IntegerOverflow
+                    | PhpPrimitiveArithmeticError::NonFiniteFloat,
+                ) => {}
+            }
+        }
+
         match value {
             CValue::Int(value) => {
                 let Some(result) = self.static_integer_negate(&value) else {
@@ -10291,6 +10820,10 @@ impl CGenerator {
     }
 
     fn try_emit_native_value_result_output(&mut self, expr: &Expr) -> CompileResult<bool> {
+        if self.try_emit_static_primitive_arithmetic_output(expr)? {
+            return Ok(true);
+        }
+
         if !native_value_result_output_expr(expr) {
             return Ok(false);
         }
