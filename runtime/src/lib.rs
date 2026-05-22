@@ -2150,6 +2150,14 @@ impl NativeRequestState {
     }
 
     fn replace_superglobal_value(&mut self, bag: NativeRequestStateBag, value: Value) {
+        if let Some(root_value) = self.root_values.get_mut(&bag) {
+            if root_value.is_reference() {
+                root_value.set_value(value);
+                self.superglobals.remove(&bag);
+                return;
+            }
+        }
+
         match value {
             Value::Array(array) => {
                 self.superglobals.insert(bag, array);
@@ -4670,8 +4678,9 @@ pub unsafe extern "C" fn phpc_native_request_state_superglobal_snapshot_value(
 /// runtime ABI and not yet freed. `bag` must be null or a string handle
 /// previously returned by the runtime ABI and not yet freed. `value` must be
 /// null or a value handle previously returned by the runtime ABI and not yet
-/// freed. Array values replace the selected request backing table; non-array
-/// values replace the direct request root value and clear stale keyed storage.
+/// freed. Reference-backed roots update their existing reference cell. Other
+/// array values replace the selected request backing table; non-array values
+/// replace the direct request root value and clear stale keyed storage.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_request_state_superglobal_replace_value_with_diagnostic(
     mut handle: NativeRequestStateHandle,
@@ -21305,6 +21314,147 @@ mod tests {
         unsafe { phpc_native_reference_free(reference) };
         unsafe { phpc_native_string_free(invalid_root) };
         unsafe { phpc_native_string_free(request_root) };
+        unsafe { phpc_native_string_free(post_root) };
+        unsafe { phpc_native_string_free(get_root) };
+        unsafe { phpc_native_request_state_free(request_state) };
+    }
+
+    #[test]
+    fn native_request_state_root_value_replacements_update_existing_reference_cells() {
+        unsafe fn string_handle(bytes: &[u8]) -> NativeStringHandle {
+            unsafe { phpc_native_string_from_bytes(bytes.as_ptr(), bytes.len()) }
+        }
+
+        unsafe fn snapshot_value(
+            request_state: NativeRequestStateHandle,
+            root: NativeStringHandle,
+        ) -> Value {
+            let snapshot = unsafe {
+                phpc_native_request_state_superglobal_snapshot_value(request_state, root)
+            };
+            let value = unsafe { snapshot.as_ref() }
+                .expect("request root snapshots should return a value")
+                .clone();
+            unsafe { phpc_native_value_free(snapshot) };
+            value
+        }
+
+        unsafe fn replace_reference(
+            request_state: NativeRequestStateHandle,
+            root: NativeStringHandle,
+            reference: NativeReferenceHandle,
+        ) {
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let replaced = unsafe {
+                phpc_native_request_state_superglobal_replace_reference_with_diagnostic(
+                    request_state,
+                    root,
+                    reference,
+                    &mut diagnostic,
+                )
+            };
+            if !diagnostic.is_null() {
+                let message = native_diagnostic_message_for_test(diagnostic);
+                unsafe { phpc_native_diagnostic_free(diagnostic) };
+                panic!("{message}");
+            }
+            assert!(replaced);
+        }
+
+        unsafe fn replace_root_value(
+            request_state: NativeRequestStateHandle,
+            root: NativeStringHandle,
+            value: Value,
+        ) {
+            let value = NativeValueHandle::from_value(value);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let replaced = unsafe {
+                phpc_native_request_state_superglobal_replace_value_with_diagnostic(
+                    request_state,
+                    root,
+                    value,
+                    &mut diagnostic,
+                )
+            };
+            unsafe { phpc_native_value_free(value) };
+            if !diagnostic.is_null() {
+                let message = native_diagnostic_message_for_test(diagnostic);
+                unsafe { phpc_native_diagnostic_free(diagnostic) };
+                panic!("{message}");
+            }
+            assert!(replaced);
+        }
+
+        unsafe fn reference_value(reference: NativeReferenceHandle) -> Value {
+            let handle = unsafe { phpc_native_reference_value_clone(reference) };
+            let value = unsafe { handle.as_ref() }
+                .expect("reference value clones should return a value")
+                .clone();
+            unsafe { phpc_native_value_free(handle) };
+            value
+        }
+
+        let request_state = phpc_native_request_state_empty();
+        let get_root = unsafe { string_handle(b"_GET") };
+        let post_root = unsafe { string_handle(b"_POST") };
+        let cookie_root = unsafe { string_handle(b"_COOKIE") };
+        let request_root = unsafe { string_handle(b"_REQUEST") };
+        let roots = [
+            (get_root, b"_GET".as_slice()),
+            (post_root, b"_POST".as_slice()),
+            (cookie_root, b"_COOKIE".as_slice()),
+            (request_root, b"_REQUEST".as_slice()),
+        ];
+        let reference = native_reference_from_value(Value::String("seed".to_string()));
+        assert!(!phpc_native_reference_is_null(reference));
+
+        for (root, _) in roots {
+            unsafe { replace_reference(request_state, root, reference) };
+        }
+
+        unsafe { replace_root_value(request_state, get_root, Value::String("scalar".to_string())) };
+        assert_eq!(
+            unsafe { reference_value(reference) },
+            Value::String("scalar".to_string())
+        );
+        for (root, _) in roots {
+            assert_eq!(
+                unsafe { snapshot_value(request_state, root) },
+                Value::String("scalar".to_string())
+            );
+        }
+
+        let mut replacement_array = PhpArray::new();
+        replacement_array.insert(ArrayKey::string("id"), Value::String("array".to_string()));
+        let replacement_value = Value::Array(replacement_array);
+        unsafe { replace_root_value(request_state, post_root, replacement_value.clone()) };
+        assert_eq!(unsafe { reference_value(reference) }, replacement_value);
+        for (_, bag) in roots {
+            let keyed_read = unsafe {
+                request_state_operation_for_test(
+                    request_state,
+                    PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                    bag,
+                    Some(b"id"),
+                )
+            };
+            assert_eq!(keyed_read.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+            assert_eq!(
+                unsafe { keyed_read.value.as_ref() },
+                Some(&Value::String("array".to_string()))
+            );
+            unsafe { phpc_native_request_state_operation_result_free(keyed_read) };
+        }
+
+        unsafe { replace_root_value(request_state, cookie_root, Value::Null) };
+        assert_eq!(unsafe { reference_value(reference) }, Value::Null);
+        for (root, _) in roots {
+            assert_eq!(unsafe { snapshot_value(request_state, root) }, Value::Null);
+        }
+
+        unsafe { phpc_native_reference_free(reference) };
+        unsafe { phpc_native_string_free(request_root) };
+        unsafe { phpc_native_string_free(cookie_root) };
         unsafe { phpc_native_string_free(post_root) };
         unsafe { phpc_native_string_free(get_root) };
         unsafe { phpc_native_request_state_free(request_state) };

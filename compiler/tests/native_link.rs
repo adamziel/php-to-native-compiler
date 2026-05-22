@@ -1582,6 +1582,30 @@ const REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
     "echo $_SERVER;\n",
 );
 
+const REQUEST_SUPERGLOBAL_REFERENCE_BACKED_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "$slot = \"seed\";\n",
+    "$_GET =& $slot;\n",
+    "$_GET = strtoupper(\"alpha\");\n",
+    "echo $slot;\n",
+    "echo \"|\";\n",
+    "echo $_GET;\n",
+    "echo \"|\";\n",
+    "$bag = [\"id\" => \"old\"];\n",
+    "$_POST =& $bag;\n",
+    "$_POST = [\"id\" => \"new\"];\n",
+    "echo gettype($bag);\n",
+    "echo \"|\";\n",
+    "echo $_POST[\"id\"];\n",
+    "echo \"|\";\n",
+    "$nil = \"seed\";\n",
+    "$_COOKIE =& $nil;\n",
+    "$_COOKIE = null;\n",
+    "echo gettype($nil);\n",
+    "echo \"|\";\n",
+    "echo gettype($_COOKIE);\n",
+);
+
 const REQUEST_SUPERGLOBAL_KEYED_STORAGE_SOURCE: &str = concat!(
     "<?php\n",
     "$key = \"name\";\n",
@@ -3544,6 +3568,42 @@ fn native_executable_c_source_routes_request_root_assignments_through_replace_va
     );
     assert!(
         !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_reference_backed_request_root_assignments_through_state_abi() {
+    let program = parse(REQUEST_SUPERGLOBAL_REFERENCE_BACKED_ROOT_ASSIGNMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_replace_reference_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_replace_value_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_request_state_superglobal_replace_reference_with_diagnostic")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_request_state_superglobal_replace_value_with_diagnostic")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("reference assignment lowering rejects"),
         "{source}"
     );
 }
@@ -6449,6 +6509,57 @@ fn emit_exe_links_and_runs_request_root_assignment_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"alpha|42|1|array|SRV");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_reference_backed_request_root_assignment_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("request_reference_backed_root_assignment");
+    let source_path =
+        native_link_output_path("request_reference_backed_root_assignment_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(
+        &source_path,
+        REQUEST_SUPERGLOBAL_REFERENCE_BACKED_ROOT_ASSIGNMENT_SOURCE,
+    )
+    .expect("native reference-backed request root assignment source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path.to_str().expect(
+                "native reference-backed request root assignment source path is valid UTF-8",
+            ),
+            "--emit-exe",
+            output_path.to_str().expect(
+                "native reference-backed request root assignment executable path is valid UTF-8",
+            ),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native reference-backed request root assignment executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"ALPHA|ALPHA|array|new|NULL|NULL");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
