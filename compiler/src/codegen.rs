@@ -153,6 +153,7 @@ const ASSEMBLY_OUTPUT_BUFFER_REJECTION: &str = "assembly output-buffer lowering 
 const NATIVE_VALUE_OFFSET_MUTATION_WRITE: u8 = 0;
 const NATIVE_VALUE_OFFSET_MUTATION_APPEND: u8 = 1;
 const NATIVE_ARRAY_PATH_KEY_TAG: u8 = 0;
+const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE_TAG: u8 = 0;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET_TAG: u8 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6946,6 +6947,9 @@ impl CGenerator {
                         "#define PHPC_NATIVE_ARRAY_PATH_KEY {NATIVE_ARRAY_PATH_KEY_TAG}\n"
                     ));
                     output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE {NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE_TAG}\n"
+                    ));
+                    output.push_str(&format!(
                         "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET {NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET_TAG}\n"
                     ));
                 }
@@ -8065,6 +8069,43 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_array_lvalue_write_for_handle(
+        &mut self,
+        handle: &str,
+        indices: &[&Expr],
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let path = self.materialize_native_array_lvalue_key_path(indices, span, "")?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let replacement =
+            self.materialize_native_value_result_operand(replacement_expr, &path_cleanup)?;
+        let owner = self.next_native_name("array_lvalue_owner");
+        let result = self.next_native_name("array_lvalue_write_result");
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
+            path.path, path.len, replacement.handle
+        ));
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&replacement.cleanup_after_use),
+            path_cleanup
+        );
+        self.emit_native_array_lvalue_result_check(&result, &cleanup);
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.body.extend(replacement.cleanup_after_use);
+        self.body.extend(path.cleanup_after_use);
+        Ok(())
+    }
+
     fn emit_unset_array_index(
         &mut self,
         name: &str,
@@ -9126,8 +9167,21 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            AssignTarget::NestedArrayIndex { span, .. }
-            | AssignTarget::NestedArrayAppend { span, .. } => {
+            AssignTarget::NestedArrayIndex {
+                name,
+                indices,
+                span,
+            } => {
+                if self.uses_native_string_helpers {
+                    if let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() {
+                        let indices = indices.iter().collect::<Vec<_>>();
+                        return self
+                            .emit_array_lvalue_write_for_handle(&handle, &indices, expr, *span);
+                    }
+                }
+                Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
+            }
+            AssignTarget::NestedArrayAppend { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             AssignTarget::ObjectPropertyArrayIndex { span, .. }

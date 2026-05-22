@@ -393,6 +393,8 @@ const STRING_OFFSET_WRITE_SOURCE: &str = concat!(
 
 const VALUE_OFFSET_MUTATION_ARRAY_WRITE_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$key = \"dyn\";\n$items[$key] = \"B\";\n$slot = 2;\n$items[$slot] = \"C\";\necho $items[\"seed\"], \"|\", $items[$key], \"|\", $items[$slot], \"|\";\necho isset($items[$key]) ? 1 : 0;\n";
 
+const ARRAY_LVALUE_NESTED_WRITE_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inner = \"inner\";\n$items = [$outer => [$inner => \"old\", \"stay\" => \"S\"], \"root\" => \"R\"];\n$value = \"new\";\n$items[$outer][$inner] = $value;\n$items[$outer][\"added\"] = \"A\" . \"B\";\necho isset($items[$outer][$inner]) ? 1 : 0;\necho \"|\";\necho empty($items[$outer][\"added\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$outer][\"stay\"]) ? 1 : 0;\necho \"|\", $items[\"root\"];\n";
+
 const VALUE_OFFSET_MUTATION_ARRAY_APPEND_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$items[] = \"B\";\n$value = \"C\";\n$items[] = $value;\necho $items[\"seed\"], \"|\", $items[0], \"|\", $items[1], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$key = \"named\";\n$value = \"C\";\necho ($items[] = \"B\"), \"|\";\necho ($items[] = $value), \"|\";\necho ($items[$key] = \"D\"), \"|\";\necho $items[0], \"|\", $items[1], \"|\", $items[$key], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
@@ -556,6 +558,46 @@ fn native_executable_c_source_routes_array_offset_writes_through_value_offset_mu
     assert!(
         body.contains(", 0, &array_offset_write_diagnostic_"),
         "array offset writes should use the shared write operation tag:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_nested_array_writes_through_lvalue_owner_operation() {
+    let program = parse(ARRAY_LVALUE_NESTED_WRITE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_array"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_value_operation_result"),
+        "{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE"),
+        "{source}"
+    );
+    assert_eq!(
+        body.matches(" = phpc_native_array_lvalue_owner_value_operation_result(")
+            .count(),
+        2,
+        "nested array writes should share the lvalue owner/path operation boundary:\n{source}"
+    );
+    assert_eq!(
+        body.matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE")
+            .count(),
+        2,
+        "nested array writes should use the write operation family for every target:\n{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_ARRAY_PATH_KEY").count() >= 4,
+        "nested write targets should materialize every path key through shared path segments:\n{source}"
+    );
+    assert!(
+        !body.contains("array_offset_write_diagnostic_"),
+        "nested writes should not fall back to the direct value-offset write path:\n{source}"
     );
 }
 
@@ -1769,6 +1811,53 @@ fn emit_exe_links_and_runs_array_offset_write_value_mutation_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"A|B|C|1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_array_lvalue_write_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("nested_array_lvalue_write");
+    let source_path = native_link_output_path("nested_array_lvalue_write_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, ARRAY_LVALUE_NESTED_WRITE_SOURCE)
+        .expect("native nested array lvalue write source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native nested array lvalue write source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1|0|1|R");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
