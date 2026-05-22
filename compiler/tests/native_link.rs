@@ -1564,6 +1564,24 @@ const ROOT_SYMBOL_UNDEFINED_READ_SOURCE: &str = concat!(
     "echo $after;\n",
 );
 
+const DIRECT_SYMBOL_UNSET_SOURCE: &str = concat!(
+    "<?php\n",
+    "$first = \"A\";\n",
+    "$second = \"B\";\n",
+    "unset($first);\n",
+    "echo isset($first);\n",
+    "echo \"|\";\n",
+    "echo empty($first);\n",
+    "echo \"|\";\n",
+    "echo $first;\n",
+    "echo \"|\";\n",
+    "unset($second, $missing);\n",
+    "echo isset($second);\n",
+    "$second = \"C\";\n",
+    "echo \"|\";\n",
+    "echo $second;\n",
+);
+
 const REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
     "<?php\n",
     "$_GET = \"alpha\";\n",
@@ -3605,6 +3623,42 @@ fn native_executable_c_source_routes_direct_root_undefined_reads_through_symbol_
     );
     assert!(
         !source.contains("variable-read lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_direct_symbol_unsets_through_symbol_table_abi() {
+    let program = parse(DIRECT_SYMBOL_UNSET_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_symbol_table_unset"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_unset").count() >= 3,
+        "single and all-direct multi-unset targets should use the shared root-symbol unset ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_symbol_table_read_with_diagnostic"),
+        "reads after unset should remain on the diagnostic root-symbol read ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_symbol_table_isset_value_by_path"),
+        "isset after unset should remain on the active symbol-table path probe ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_symbol_table_empty_value_by_path"),
+        "empty after unset should remain on the active symbol-table path probe ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_symbol_table_set_value_by_path_with_diagnostic"),
+        "reassignment after unset should write through the active symbol table:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly mutation lowering rejects"),
         "{source}"
     );
 }
@@ -6692,6 +6746,57 @@ fn emit_exe_links_and_runs_direct_root_undefined_read_program() {
             "{stderr}"
         );
     }
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_direct_symbol_unset_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("direct_symbol_unset");
+    let source_path = native_link_output_path("direct_symbol_unset_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, DIRECT_SYMBOL_UNSET_SOURCE)
+        .expect("native direct symbol unset source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native direct symbol unset source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native direct symbol unset executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"|1|||C");
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains("undefined variable '$first'"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);

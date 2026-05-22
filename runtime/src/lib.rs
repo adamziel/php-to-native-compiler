@@ -3222,6 +3222,30 @@ pub unsafe extern "C" fn phpc_native_symbol_table_write(
     true
 }
 
+/// # Safety
+///
+/// `handle` must be null or a symbol-table handle previously returned by the
+/// runtime ABI and not yet freed. `name` must either be null with
+/// `name_len == 0`, or point to at least `name_len` readable bytes. Missing
+/// variables are successful no-ops; null handles and invalid names return
+/// false.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_symbol_table_unset(
+    mut handle: NativeSymbolTableHandle,
+    name: *const u8,
+    name_len: usize,
+) -> bool {
+    let (Some(table), Some(name)) = (unsafe { handle.as_mut() }, unsafe {
+        native_symbol_name_from_bytes(name, name_len)
+    }) else {
+        return false;
+    };
+
+    table.values.remove(&name);
+    table.insertion_order.retain(|slot_name| slot_name != &name);
+    true
+}
+
 fn native_symbol_table_snapshot_array(table: &NativeSymbolTable) -> PhpArray {
     let mut snapshot = PhpArray::new();
     for name in &table.insertion_order {
@@ -24260,6 +24284,106 @@ mod tests {
 
         unsafe { phpc_native_value_free(value) };
         unsafe { phpc_native_symbol_table_free(table) };
+    }
+
+    #[test]
+    fn native_symbol_table_unset_removes_roots_and_reinserts_in_slot_order() {
+        let table = phpc_native_symbol_table_new();
+        let first_name = b"first";
+        let second_name = b"second";
+        let first = NativeValueHandle::from_value(Value::String("one".to_string()));
+        let second = NativeValueHandle::from_value(Value::String("two".to_string()));
+        let first_again = NativeValueHandle::from_value(Value::String("one-again".to_string()));
+        let missing = b"missing";
+        let invalid_utf8 = [0xff_u8];
+
+        assert!(unsafe {
+            phpc_native_symbol_table_write(table, first_name.as_ptr(), first_name.len(), first)
+        });
+        assert!(unsafe {
+            phpc_native_symbol_table_write(table, second_name.as_ptr(), second_name.len(), second)
+        });
+        unsafe {
+            phpc_native_value_free(first);
+            phpc_native_value_free(second);
+        }
+
+        assert!(unsafe {
+            phpc_native_symbol_table_unset(table, first_name.as_ptr(), first_name.len())
+        });
+        assert!(unsafe { phpc_native_symbol_table_unset(table, missing.as_ptr(), missing.len()) });
+        assert!(!unsafe {
+            phpc_native_symbol_table_unset(
+                NativeSymbolTableHandle::null(),
+                missing.as_ptr(),
+                missing.len(),
+            )
+        });
+        assert!(!unsafe { phpc_native_symbol_table_unset(table, ptr::null(), 1) });
+        assert!(!unsafe {
+            phpc_native_symbol_table_unset(table, invalid_utf8.as_ptr(), invalid_utf8.len())
+        });
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let missing_read = unsafe {
+            phpc_native_symbol_table_read_with_diagnostic(
+                table,
+                first_name.as_ptr(),
+                first_name.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(!missing_read.is_null());
+        assert!(!diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(missing_read), b"");
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "undefined variable '$first'"
+        );
+        unsafe {
+            phpc_native_value_free(missing_read);
+            phpc_native_diagnostic_free(diagnostic);
+        }
+
+        assert!(unsafe {
+            phpc_native_symbol_table_write(
+                table,
+                first_name.as_ptr(),
+                first_name.len(),
+                first_again,
+            )
+        });
+        unsafe { phpc_native_value_free(first_again) };
+
+        let snapshot = unsafe { phpc_native_symbol_table_snapshot_value(table) };
+        {
+            let Some(Value::Array(array)) = (unsafe { snapshot.as_ref() }) else {
+                panic!("symbol table snapshot should be an array value");
+            };
+
+            assert_eq!(array.entries().len(), 2);
+            assert_eq!(
+                array.entries()[0].key,
+                ArrayKey::String("second".to_string())
+            );
+            assert_eq!(
+                array.entries()[1].key,
+                ArrayKey::String("first".to_string())
+            );
+            assert_eq!(
+                array.get(ArrayKey::string("first")),
+                Some(&Value::String("one-again".to_string()))
+            );
+            assert_eq!(
+                array.get(ArrayKey::string("second")),
+                Some(&Value::String("two".to_string()))
+            );
+        }
+
+        unsafe {
+            phpc_native_value_free(snapshot);
+            phpc_native_symbol_table_free(table);
+        }
     }
 
     #[test]

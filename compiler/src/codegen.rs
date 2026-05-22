@@ -112,7 +112,7 @@ const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering 
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
-const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct and nested array offset write/append values and request-superglobal assignment values, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct and nested array offset write/append values and request-superglobal assignment values, non-symbol unset, object property unset, static property unset, mixed-target unset, and request/global-root unset until native read-modify-write ordering, null-aware mutation, unset writeback effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const ASSEMBLY_ISSET_REJECTION: &str = "assembly isset lowering rejects array offset operands, object property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset operands, object property operands, static property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
@@ -7736,6 +7736,7 @@ impl CGenerator {
                     "extern phpc_NativeSymbolTableHandle phpc_native_symbol_table_new(void);\n",
                 );
                 output.push_str("extern bool phpc_native_symbol_table_write(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, phpc_NativeValueHandle value);\n");
+                output.push_str("extern bool phpc_native_symbol_table_unset(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_symbol_table_read_with_diagnostic(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_set_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_symbol_table_append_value_by_path_with_diagnostic(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *prefix_keys, size_t prefix_key_count, const phpc_NativeValueHandle *suffix_keys, size_t suffix_key_count, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -9014,6 +9015,27 @@ impl CGenerator {
         self.release_variable_native_value_handle(name);
         self.variables.remove(name);
         self.emit_globals_symbol_path_write_from_materialized(path, value, span, failure_cleanup)
+    }
+
+    fn emit_symbol_table_variable_unset(
+        &mut self,
+        name: &str,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let table = self.ensure_globals_symbol_table(failure_cleanup, span)?;
+        let name_bytes = self.emit_symbol_name_static_bytes(name);
+        self.release_variable_native_value_handle(name);
+        self.variables.remove(name);
+        let unset = self.next_native_name("symbol_table_unset");
+        self.body.push(format!(
+            "bool {unset} = phpc_native_symbol_table_unset({table}, {name_bytes}, {});",
+            name.len()
+        ));
+        let unset_error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if (!{unset}) {{ {unset_error_exit} }}"));
+        Ok(())
     }
 
     fn emit_globals_symbol_path_presence_expr(
@@ -10604,8 +10626,15 @@ impl CGenerator {
                 body,
                 *span,
             ),
-            Stmt::UnsetVariable { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            Stmt::UnsetVariable { name, span } => {
+                if is_request_superglobal_name(name) {
+                    return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                }
+                if is_globals_superglobal_name(name) {
+                    return Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION));
+                }
+                self.emit_symbol_table_variable_unset(name, *span, "")?;
+                Ok(())
             }
             Stmt::UnsetStaticProperty { span, .. }
             | Stmt::UnsetSelfStaticProperty { span, .. }
@@ -10628,6 +10657,27 @@ impl CGenerator {
                 span,
             } => self.emit_unset_nested_array_index(name, indices, *span),
             Stmt::UnsetMany { targets, span } => {
+                if !targets.is_empty()
+                    && targets
+                        .iter()
+                        .all(|target| matches!(target, UnsetTarget::Variable { .. }))
+                {
+                    for target in targets {
+                        let UnsetTarget::Variable { name, span } = target else {
+                            unreachable!("all unset targets are direct variables");
+                        };
+                        if is_request_superglobal_name(name) {
+                            return Err(
+                                self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                            );
+                        }
+                        if is_globals_superglobal_name(name) {
+                            return Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION));
+                        }
+                        self.emit_symbol_table_variable_unset(name, *span, "")?;
+                    }
+                    return Ok(());
+                }
                 if targets
                     .iter()
                     .any(is_object_property_array_access_unset_target)
