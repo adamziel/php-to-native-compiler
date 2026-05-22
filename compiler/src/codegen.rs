@@ -7059,6 +7059,7 @@ struct CGenerator {
     uses_native_value_truthiness: bool,
     uses_native_array_lvalue_helpers: bool,
     uses_native_request_state_helpers: bool,
+    uses_native_request_state_reference_helpers: bool,
     uses_native_symbol_table_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
@@ -7487,7 +7488,10 @@ impl CGenerator {
             if self.uses_native_request_state_helpers {
                 output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeArrayHandle array; uint8_t is_set; uint8_t result_kind; uint8_t status; uint8_t exists; } phpc_NativeRequestStateOperationResult;\n");
                 output.push_str("typedef struct { phpc_NativeByteBuffer buffer; uint8_t status; } phpc_NativeRequestStateKeyResult;\n");
-                if self.uses_native_array_lvalue_helpers || self.uses_native_symbol_table_helpers {
+                if self.uses_native_array_lvalue_helpers
+                    || self.uses_native_request_state_reference_helpers
+                    || self.uses_native_symbol_table_helpers
+                {
                     output.push_str("typedef struct { phpc_NativeReferenceHandle reference; uint8_t status; } phpc_NativeRequestStateReferenceResult;\n");
                 }
                 output.push_str("#define PHPC_NATIVE_REQUEST_STATE_OP_VALUE 1\n");
@@ -7685,7 +7689,10 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_request_state_operation_result_free(phpc_NativeRequestStateOperationResult result);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_request_state_superglobal_snapshot_value(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag);\n");
                 output.push_str("extern _Bool phpc_native_request_state_superglobal_replace_value_with_diagnostic(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
-                if self.uses_native_array_lvalue_helpers || self.uses_native_symbol_table_helpers {
+                if self.uses_native_array_lvalue_helpers
+                    || self.uses_native_request_state_reference_helpers
+                    || self.uses_native_symbol_table_helpers
+                {
                     output.push_str("extern _Bool phpc_native_request_state_superglobal_replace_reference_with_diagnostic(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
                     output.push_str("extern phpc_NativeReferenceHandle phpc_native_request_state_superglobal_reference_for_root(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag);\n");
                     output.push_str("extern phpc_NativeRequestStateReferenceResult phpc_native_request_state_superglobal_keyed_reference_operation(phpc_NativeRequestStateHandle request_state, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status);\n");
@@ -8358,6 +8365,59 @@ impl CGenerator {
         Ok(true)
     }
 
+    fn emit_request_superglobal_root_to_root_reference_assignment(
+        &mut self,
+        target: &AssignTarget,
+        source: &ReferenceSource,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some(target_root) = request_superglobal_root_assign_target_name(target) else {
+            return Ok(false);
+        };
+        let Some(source_root) = request_superglobal_root_reference_source_name(source) else {
+            return Ok(false);
+        };
+
+        self.use_native_request_state_reference_helpers();
+        let request_state = self.ensure_native_request_state_handle();
+        let source_bag = self.emit_request_superglobal_bag_handle(source_root);
+        let source_ref = self.next_native_name("request_root_alias_reference");
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {source_ref} = phpc_native_request_state_superglobal_reference_for_root({request_state}, {source_bag});"
+        ));
+        let source_error_exit = self.native_error_exit(&format!(
+            "phpc_native_string_free({source_bag}); {failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({source_ref}.ptr == NULL) {{ {source_error_exit} }}"
+        ));
+        self.body
+            .push(format!("phpc_native_string_free({source_bag});"));
+
+        let target_bag = self.emit_request_superglobal_bag_handle(target_root);
+        let diagnostic = self.next_native_name("request_root_alias_diagnostic");
+        let replaced = self.next_native_name("request_root_alias_replaced");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "_Bool {replaced} = phpc_native_request_state_superglobal_replace_reference_with_diagnostic({request_state}, {target_bag}, {source_ref}, &{diagnostic});"
+        ));
+        let failure_cleanup = format!(
+            "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({target_bag}); phpc_native_reference_free({source_ref}); {failure_cleanup}"
+        );
+        let error_exit = self.native_error_exit(&failure_cleanup);
+        self.body
+            .push(format!("if (!{replaced}) {{ {error_exit} }}"));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body
+            .push(format!("phpc_native_string_free({target_bag});"));
+        self.body
+            .push(format!("phpc_native_reference_free({source_ref});"));
+        Ok(true)
+    }
+
     fn emit_request_superglobal_root_reference_source_assignment(
         &mut self,
         target: &AssignTarget,
@@ -8992,6 +9052,11 @@ impl CGenerator {
         ));
         self.native_request_state_handle = Some(handle.clone());
         handle
+    }
+
+    fn use_native_request_state_reference_helpers(&mut self) {
+        self.uses_native_request_state_helpers = true;
+        self.uses_native_request_state_reference_helpers = true;
     }
 
     fn emit_request_superglobal_bag_static_bytes(&mut self, name: &str) -> String {
@@ -10135,6 +10200,12 @@ impl CGenerator {
                 if let Some(operation) = native_reference_assignment_call_operation(target, source)
                 {
                     return Err(self.unsupported_call_operation(operation));
+                }
+
+                if self.emit_request_superglobal_root_to_root_reference_assignment(
+                    target, source, "",
+                )? {
+                    return Ok(());
                 }
 
                 if self
