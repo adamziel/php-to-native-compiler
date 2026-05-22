@@ -40,6 +40,37 @@ fn native_executable_c_source_routes_direct_strings_and_scalars_through_runtime_
 }
 
 #[test]
+fn native_executable_c_source_reports_owned_diagnostics_through_shared_consumer() {
+    let program = parse("<?php\necho \"left\";\n$s = \"AB\";\n$s[0] = \"Z\";\necho $s;\n").unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("extern size_t phpc_native_diagnostic_report"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_diagnostic_report(diagnostic_"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_diagnostic_report(string_offset_write_diagnostic_"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_diagnostic_message_stderr(diagnostic_"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_diagnostic_free(diagnostic_"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_diagnostic_message_stderr(string_offset_write_diagnostic_"),
+        "{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_scalar_runtime_value_echo_program() {
     if !has_cc() {
         return;

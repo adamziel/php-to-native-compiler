@@ -2467,6 +2467,13 @@ pub extern "C" fn phpc_native_request_state_operation_result_diagnostic(
     result.status_diagnostic()
 }
 
+#[no_mangle]
+pub extern "C" fn phpc_native_request_state_operation_result_report_diagnostic(
+    result: NativeRequestStateOperationResult,
+) -> usize {
+    unsafe { phpc_native_diagnostic_report(result.status_diagnostic()) }
+}
+
 /// # Safety
 ///
 /// Owned handles inside `result` must either be null or handles returned inside
@@ -5583,6 +5590,19 @@ pub unsafe extern "C" fn phpc_native_diagnostic_message_stderr(
         .write_string_bytes_to(&mut stderr)
         .and_then(Result::ok)
         .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed. Passing any other pointer is undefined
+/// behavior. The helper writes the diagnostic to stderr, frees the handle, and
+/// returns the number of bytes written.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_report(handle: NativeDiagnosticHandle) -> usize {
+    let written = unsafe { phpc_native_diagnostic_message_stderr(handle) };
+    unsafe { phpc_native_diagnostic_free(handle) };
+    written
 }
 
 /// # Safety
@@ -18185,9 +18205,9 @@ mod tests {
             unsafe { phpc_native_diagnostic_message_stderr(diagnostic) },
             0
         );
+        assert_eq!(unsafe { phpc_native_diagnostic_report(diagnostic) }, 0);
 
         unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
     }
 
     #[test]
@@ -18204,6 +18224,41 @@ mod tests {
         );
 
         unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_string_free(string) };
+    }
+
+    #[test]
+    fn native_diagnostic_report_consumes_string_and_request_diagnostics() {
+        let string = unsafe { phpc_native_string_from_bytes(ptr::null(), 4) };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value =
+            unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
+
+        assert!(value.is_null());
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_report(diagnostic) },
+            "native value conversion failed: string handle is null".len()
+        );
+
+        let request_status = NativeRequestStateOperationResult::unsupported(
+            NativeRequestStateOperationStatus::UnsupportedKeyCoercion,
+        );
+        assert_eq!(
+            phpc_native_request_state_operation_result_report_diagnostic(request_status),
+            "native request-state operation failed: unsupported PHP key coercion".len()
+        );
+
+        let request_ok = NativeRequestStateOperationResult::presence(
+            true,
+            true,
+            NativeRequestStateOperationStatus::Ok,
+        );
+        assert_eq!(
+            phpc_native_request_state_operation_result_report_diagnostic(request_ok),
+            0
+        );
+
         unsafe { phpc_native_value_free(value) };
         unsafe { phpc_native_string_free(string) };
     }

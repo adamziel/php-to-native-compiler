@@ -6453,6 +6453,7 @@ impl CGenerator {
             );
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
+            output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern void phpc_native_diagnostic_free(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str(
                 "extern void phpc_native_string_free(phpc_NativeStringHandle string);\n\n",
@@ -7221,7 +7222,7 @@ impl CGenerator {
             subject.handle, offset.handle, replacement.handle
         ));
         self.body.push(format!(
-            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); }}"
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); }}"
         ));
         let write_failure_cleanup = format!(
             "{}{}{}",
@@ -8877,7 +8878,7 @@ impl CGenerator {
 
     fn emit_report_native_diagnostic(&mut self, diagnostic: &str) {
         self.body.push(format!(
-            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); }}"
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); }}"
         ));
     }
 
@@ -11274,7 +11275,7 @@ impl CGenerator {
             "phpc_NativeValueHandle value_{index} = phpc_native_value_from_string_with_diagnostic(string_{index}, &diagnostic_{index});"
         ));
         self.body.push(format!(
-            "if (value_{index}.ptr == NULL) {{ phpc_native_diagnostic_message_stderr(diagnostic_{index}); phpc_native_diagnostic_free(diagnostic_{index}); }} else {{ phpc_native_value_echo_stdout(value_{index}); }}"
+            "if (value_{index}.ptr == NULL) {{ phpc_native_diagnostic_report(diagnostic_{index}); }} else {{ phpc_native_value_echo_stdout(value_{index}); }}"
         ));
         self.body
             .push(format!("phpc_native_value_free(value_{index});"));
