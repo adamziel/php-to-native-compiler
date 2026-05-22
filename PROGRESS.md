@@ -2,7 +2,7 @@
 
 Updated: 2026-05-22 12:12 CEST
 Evaluation marker: `20260522T100443Z` plus post-evaluator semantic refresh
-Primary HEAD: `f0f785e5 runtime: report request missing-key value diagnostics`
+Primary HEAD: `32d35d20 docs: update progress after request diagnostics`
 Current primary semantic baseline: `f0f785e5 runtime: report request missing-key value diagnostics`
 
 Percentages are candid engineering estimates, not test-suite pass rates. Lane-local work is not counted as product capability until it is integrated into `master`, gated, committed, and pushed.
@@ -50,7 +50,7 @@ Since the prior evaluator window, primary integrated and pushed:
 - `90d8af3f codegen: route direct value-offset writes through mutation ABI`
 - `f0f785e5 runtime: report request missing-key value diagnostics`
 
-The current worktree is synced with `origin/master` at `f0f785e5`. The only expected dirty primary diff is the preserved unstaged `runtime/src/lib.rs` append/null-slot cleanup hunk; it is not counted as product progress.
+The current worktree is synced with `origin/master` at `32d35d20`. The only expected dirty primary diff is the preserved unstaged `runtime/src/lib.rs` append/null-slot cleanup hunk; it is not counted as product progress.
 
 ## Lane-Local Candidate Work
 
