@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 18:16 CEST
-Evaluation marker: `20260522T160539Z`
-Primary semantic HEAD: `6adf3530 codegen: route undefined root reads through symbol ABI`
-Current pushed semantic baseline: `6adf3530 codegen: route undefined root reads through symbol ABI`
+Updated: 2026-05-22 18:35 CEST
+Evaluation marker: `20260522T163500Z`
+Primary semantic HEAD: `f41f2342 codegen: route request null coalesce through state ABI`
+Current pushed semantic baseline: `f41f2342 codegen: route request null coalesce through state ABI`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -16,9 +16,10 @@ Overall estimated progress: **80%** `[################----]`
 
 This review confirms real integrated movement in the last cycle: primary now
 has generated-C `$GLOBALS[...]` write/unset/append paths, request-superglobal
-root/nested appends, and direct unresolved root-variable reads routed through
-shared runtime/compiler ABIs. These are generalized symbol/path/key-driven
-slices with focused linked evidence, not fixture-shaped recognizers.
+root/nested appends, request-superglobal null-coalescing reads, and direct
+unresolved root-variable reads routed through shared runtime/compiler ABIs.
+These are generalized symbol/path/key-driven slices with focused linked
+evidence, not fixture-shaped recognizers.
 
 The work remains bounded. Primary is stronger for selected request-state and
 `$GLOBALS[...]` path operations, but it still does not have complete PHP
@@ -33,14 +34,14 @@ open systems.
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
-| Compiler/backend consumers | 87% | `[#################---]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append paths and direct undefined root reads; uneven across calls, objects, control flow, and LLVM/C parity. |
-| Executable generalized PHP semantics | 72% | `[##############------]` | Improving through executable path consumers, but many real PHP compositions still block. |
+| Compiler/backend consumers | 88% | `[##################--]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths and direct undefined root reads; uneven across calls, objects, control flow, and LLVM/C parity. |
+| Executable generalized PHP semantics | 73% | `[###############-----]` | Improving through executable path consumers, but many real PHP compositions still block. |
 | Arrays, lvalues, references, COW | 73% | `[###############-----]` | Arrays/lvalues advanced; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 74% | `[###############-----]` | Request paths, `$GLOBALS` reads/writes/probes/unsets/appends, and direct undefined root reads are stronger; direct root appends, aliases, frames, and self-reference remain incomplete. |
+| Symbols, globals, request state | 75% | `[###############-----]` | Request paths/null-coalesce, `$GLOBALS` reads/writes/probes/unsets/appends, and direct undefined root reads are stronger; direct root appends, aliases, frames, and self-reference remain incomplete. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Early; lane candidates exist, but broad executable call/frame semantics are not primary yet. |
 | Objects, properties, methods | 11% | `[##------------------]` | Early; runtime candidates exist, but general compiled object/property/method execution remains missing. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused work, but exact diagnostic ordering and structured cleanup are not generalized. |
-| Broad integrated verification | 80% | `[################----]` | Focused gates are useful; cross-feature and backend-composition coverage remains thin. |
+| Broad integrated verification | 81% | `[################----]` | Focused gates are useful; cross-feature and backend-composition coverage remains thin. |
 
 ## Done / In Progress / Not Done
 
@@ -52,6 +53,9 @@ open systems.
 - [x] Request-state root, keyed, and nested/path reads, writes, unsets,
   `isset()`, `empty()`, assignment-expression values, and appends through
   shared request ABIs.
+- [x] Request-superglobal `??` over root, keyed, and nested paths through
+  shared request-state presence/value operations in generated C, including lazy
+  fallback values and symbol-table read composition.
 - [x] Direct `$GLOBALS` root snapshots and runtime symbol-table nested
   write/read/probe ABIs.
 - [x] Compiler-lowered `$GLOBALS[$expr]` and nested `$GLOBALS[...]`
@@ -87,6 +91,7 @@ open systems.
 
 Recent semantic commits on primary:
 
+- `f41f2342 codegen: route request null coalesce through state ABI`
 - `6adf3530 codegen: route undefined root reads through symbol ABI`
 - `46d0ba88 codegen: route request path appends through state ABI`
 - `3574e350 codegen: route GLOBALS path appends through ABI`
@@ -104,13 +109,14 @@ Recent semantic commits on primary:
 
 Primary-integrated capability now includes strong selected request-superglobal
 path execution through shared request-state ABIs, including root/nested
-appends, generated-C `$GLOBALS[...]` read/probe/write/unset/append lowering
-through shared symbol-table path ABIs, and direct unresolved root-variable reads
-through a diagnostic symbol-table ABI. The latest symbol read slice
-intentionally leaves exact diagnostic ordering through arbitrary control flow,
-concat/arithmetic-specific undefined-read recovery claims, direct no-key
-`$GLOBALS[]`, request-root alias reconciliation, self-reference behavior,
-frames, references/COW, and LLVM/C assembly parity blocked.
+appends and request null-coalescing reads, generated-C `$GLOBALS[...]`
+read/probe/write/unset/append lowering through shared symbol-table path ABIs,
+and direct unresolved root-variable reads through a diagnostic symbol-table ABI.
+The latest request null-coalesce slice intentionally leaves request/global alias
+reconciliation, exact diagnostic ordering through arbitrary control flow,
+request-root mutation/reference parity, direct no-key `$GLOBALS[]`,
+self-reference behavior, frames, references/COW, and LLVM/C assembly parity
+blocked.
 
 ## Lane-Local And Active Candidate Work
 
