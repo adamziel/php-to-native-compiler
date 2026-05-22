@@ -84,7 +84,7 @@ open systems.
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
-| Compiler/backend consumers | 95% | `[###################-]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, active root offset-mutation writeback, value-result offset reads, array-query value consumers, static request aliases, direct undefined root reads, generated-C symbol references, request-root and keyed request-slot reference assignment with ordinary symbol paths plus request-to-request aliases, direct request-root replacement through existing reference cells, generated-C native-value strict identity, and LLVM/generated-C native-value truthiness for unary `!` / `xor`; uneven across calls, objects, short-circuit control flow, and broader LLVM/C parity. |
+| Compiler/backend consumers | 95% | `[###################-]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, active root offset-mutation writeback, value-result offset reads, array-query value consumers, static and self-prefixed request aliases, direct undefined root reads, generated-C symbol references, request-root and keyed request-slot reference assignment with ordinary symbol paths plus request-to-request aliases, direct request-root replacement through existing reference cells, generated-C native-value strict identity, and LLVM/generated-C native-value truthiness for unary `!` / `xor`; uneven across calls, objects, short-circuit control flow, and broader LLVM/C parity. |
 | Executable generalized PHP semantics | 77% | `[###############-----]` | Improving through executable path/reference/logical consumers, but many real PHP compositions still block. |
 | Arrays, lvalues, references, COW | 80% | `[################----]` | Arrays/lvalues advanced with query/value-result consumers, selected symbol-path references, request-root reference replacement/source/root-alias paths, keyed request-slot references with ordinary symbol paths, keyed request-to-keyed request aliases, and value mutations through reference-backed request roots; full references/COW and arbitrary writable roots remain large. |
 | Symbols, globals, request state | 87% | `[#################---]` | Request paths/null-coalesce, static and self-prefixed `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, direct undefined root reads, ordinary symbol-path reference assignment, request-root reference replacement/source/root-alias paths, keyed request-slot aliases, direct request-root assignment through existing reference cells, and keyed/path value mutations through reference-backed roots are stronger; dynamic aliases, keyed reference binding through reference-backed roots, direct root appends, frames, nested/path request references, full references, and non-request self-reference remain incomplete. |
@@ -178,6 +178,11 @@ Done on primary:
   reference-backed roots use the shared request-state mutation ABI, including
   writes, unsets, and appends over array/null/false referenced root values with
   generated-C executable proof across shared request root aliases.
+- [x] Generated-C static `$GLOBALS["GLOBALS"]` self-prefixes normalize before
+  request-alias classification, including repeated self roots, static
+  string-concat self keys, request reads, root/path writes, unsets, appends,
+  `isset()`, `empty()`, and full request-bag snapshots through existing
+  request-state ABIs.
 - [x] LLVM and generated-C truthiness for owned native value operands through
   `phpc_native_value_is_truthy(...)`, covering unary `!` and
   non-short-circuit `xor` across native value producers while leaving ordered
@@ -334,8 +339,9 @@ The next integration batches should favor small executable slices:
 - Build directly on the current request/global/reference work: alias
   reconciliation, direct no-key `$GLOBALS[]`, request append suffix wrapping,
   keyed reference binding through reference-backed request roots, request-root
-  append alias behavior, non-request `$GLOBALS["GLOBALS"]`, nested/path request
-  references, or one narrow reference/writeback consumer.
+  append alias behavior, non-request `$GLOBALS["GLOBALS"]` self-reference
+  semantics, dynamic self/request aliases, nested/path request references, or
+  one narrow reference/writeback consumer.
 - Treat native-value truthiness as landed only for unary `!` and
   non-short-circuit `xor`; do not overclaim ordered `&&` / `||`, branch
   cleanup, diagnostic timing, references/COW, or broad control flow.
@@ -361,20 +367,19 @@ Rejected distractions:
 
 ## Live Notes
 
-Primary dirty-state note: `6b80fd79` integrated the follow-on
-reference-backed request keyed/path mutation work that evaluator verification
-observed at 21:29 CEST. After this management update, the expected remaining
-primary dirty state is still the preserved `runtime/src/lib.rs` null-slot
-increment/decrement hunk; keep staging surgical.
+Primary dirty-state note: `e6037b7f` integrated static `$GLOBALS["GLOBALS"]`
+self-prefixed request alias routing. After this management update, the
+expected remaining primary dirty state is still the preserved
+`runtime/src/lib.rs` null-slot increment/decrement hunk; keep staging surgical.
 
-Resource snapshot after supervisor cleanup: `/dev/shm` recovered to 22G
-available, 3% used by `df`, after process-verified inactive lane target
-cleanup. `/home` has 459G total, 252G used, 189G free by `df`. Continue using
+Resource snapshot after supervisor cleanup: `/dev/shm` is healthy at about
+20G available / 12% used by `df`, after process-verified inactive lane target
+cleanup. `/home` has 459G total, 252G used, 188G free by `df`. Continue using
 disk targets or single-threaded focused gates when tmpfs drops below the
 dispatcher floor.
 
 Status-source note: the supervisor dashboard can lag the primary integration
-loop. After this batch, treat `6b80fd79` plus this management update as the
+loop. After this batch, treat `e6037b7f` plus this management update as the
 current primary baseline, and treat lane-local status entries as candidate
 evidence only unless the primary integrator status records a gated commit.
 
