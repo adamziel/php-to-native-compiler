@@ -316,6 +316,55 @@ fn native_executable_c_source_routes_array_callback_builtins_through_shared_resu
 }
 
 #[test]
+fn native_executable_c_source_routes_array_query_family_through_shared_value_operation() {
+    let program = parse(
+        "<?php\n$items = [\"zero\" => 0, \"string_zero\" => \"0\", \"name\" => \"Ada\", \"empty\" => \"\"];\n$labels = [\"a\", \"b\"];\n$counted = [\"a\", \"a\", 2];\n$nums = [1, \"2\", 3];\n$fillKeys = [\"x\", 7];\n$combineKeys = [\"left\", \"right\"];\n$combineValues = [1, 2];\necho array_keys($items, \"0\", false)[0], \",\", array_keys($items, \"0\", false)[1], \"|\", in_array(\"Ada\", $items, true), \"|\", array_search(\"\", $items), \"|\", array_flip($labels)[\"a\"], array_flip($labels)[\"b\"], \"|\", array_count_values($counted)[\"a\"], \",\", array_count_values($counted)[2], \"|\", array_sum($nums), \"|\", array_product($nums), \"|\", array_fill_keys($fillKeys, \"v\")[\"x\"], \",\", array_fill_keys($fillKeys, \"v\")[7], \"|\", array_combine($combineKeys, $combineValues)[\"left\"], \",\", array_combine($combineKeys, $combineValues)[\"right\"];\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_array_query_operation_with_diagnostic"
+        ),
+        "{source}"
+    );
+    for operation_tag in [
+        "PHPC_NATIVE_VALUE_ARRAY_QUERY_KEYS_MATCHING",
+        "PHPC_NATIVE_VALUE_ARRAY_QUERY_CONTAINS",
+        "PHPC_NATIVE_VALUE_ARRAY_QUERY_SEARCH",
+        "PHPC_NATIVE_VALUE_ARRAY_QUERY_FLIP",
+        "PHPC_NATIVE_VALUE_ARRAY_QUERY_COUNT_VALUES",
+        "PHPC_NATIVE_VALUE_ARRAY_QUERY_SUM",
+        "PHPC_NATIVE_VALUE_ARRAY_QUERY_PRODUCT",
+        "PHPC_NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS",
+        "PHPC_NATIVE_VALUE_ARRAY_QUERY_COMBINE",
+    ] {
+        assert!(body.contains(operation_tag), "{operation_tag}\n\n{source}");
+    }
+    assert!(body.contains("PHPC_NATIVE_ARRAY_QUERY_STRICT"), "{source}");
+    assert!(
+        body.matches(" = phpc_native_value_array_query_operation_with_diagnostic(")
+            .count()
+            >= 9,
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(native_value_array_query"),
+        "owned query results must be cleaned:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_diagnostic_report(array_query_diagnostic_"),
+        "query diagnostics must use the shared diagnostic consumer:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_value_result_offset_reads_through_shared_boundary() {
     let program = parse(
         "<?php\necho array_map(null, [\"L\", \"M\"])[1];\necho \"|\";\necho ((array) \"Q\")[0];\necho \"|\";\necho ((array) \"NO\")[0][1];\necho \"|\";\necho (\"A\" . \"B\")[1];\n",
@@ -582,6 +631,64 @@ fn emit_exe_links_and_runs_array_callback_null_result_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"Ada|Bee|Ada|five");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_query_family_through_shared_value_operation() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("array_query_family_value_operation.php");
+    let output_path = native_link_output_path("array_query_family_value_operation");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        "<?php\n$items = [\"zero\" => 0, \"string_zero\" => \"0\", \"name\" => \"Ada\", \"empty\" => \"\"];\n$labels = [\"a\", \"b\"];\n$counted = [\"a\", \"a\", 2];\n$nums = [1, \"2\", 3];\n$fillKeys = [\"x\", 7];\n$combineKeys = [\"left\", \"right\"];\n$combineValues = [1, 2];\necho array_keys($items, \"0\", false)[0], \",\", array_keys($items, \"0\", false)[1], \"|\", in_array(\"Ada\", $items, true), \"|\", array_search(\"\", $items), \"|\", array_flip($labels)[\"a\"], array_flip($labels)[\"b\"], \"|\", array_count_values($counted)[\"a\"], \",\", array_count_values($counted)[2], \"|\", array_sum($nums), \"|\", array_product($nums), \"|\", array_fill_keys($fillKeys, \"v\")[\"x\"], \",\", array_fill_keys($fillKeys, \"v\")[7], \"|\", array_combine($combineKeys, $combineValues)[\"left\"], \",\", array_combine($combineKeys, $combineValues)[\"right\"];\n",
+    )
+    .expect("write array query native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array query source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native array query executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native array query executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "zero,string_zero|1|empty|01|2,1|6|6|v,v|1,2"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);

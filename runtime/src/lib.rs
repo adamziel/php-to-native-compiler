@@ -216,6 +216,16 @@ const NATIVE_ARRAY_LVALUE_MUTATION_UNSHIFT: u8 = 3;
 const NATIVE_VALUE_ARRAY_CALLBACK_FILTER: u8 = 0;
 const NATIVE_VALUE_ARRAY_CALLBACK_MAP: u8 = 1;
 const NATIVE_VALUE_ARRAY_CALLBACK_REDUCE: u8 = 2;
+const NATIVE_VALUE_ARRAY_QUERY_KEYS_MATCHING: u8 = 0;
+const NATIVE_VALUE_ARRAY_QUERY_CONTAINS: u8 = 1;
+const NATIVE_VALUE_ARRAY_QUERY_SEARCH: u8 = 2;
+const NATIVE_VALUE_ARRAY_QUERY_FLIP: u8 = 3;
+const NATIVE_VALUE_ARRAY_QUERY_COUNT_VALUES: u8 = 4;
+const NATIVE_VALUE_ARRAY_QUERY_SUM: u8 = 5;
+const NATIVE_VALUE_ARRAY_QUERY_PRODUCT: u8 = 6;
+const NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS: u8 = 7;
+const NATIVE_VALUE_ARRAY_QUERY_COMBINE: u8 = 8;
+const NATIVE_ARRAY_QUERY_STRICT: u8 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum NativeArrayLvaluePathElement {
@@ -261,6 +271,19 @@ enum NativeValueArrayCallbackOperation {
     Filter,
     Map,
     Reduce,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeValueArrayQueryOperation {
+    KeysMatching,
+    Contains,
+    Search,
+    Flip,
+    CountValues,
+    Sum,
+    Product,
+    FillKeys,
+    Combine,
 }
 
 impl NativeArrayPointerOperation {
@@ -447,6 +470,50 @@ impl NativeValueArrayCallbackOperation {
             Self::Map => count >= 2,
             Self::Reduce => (2..=3).contains(&count),
         }
+    }
+}
+
+impl NativeValueArrayQueryOperation {
+    fn from_tag(operation: u8) -> Result<Self, RuntimeError> {
+        match operation {
+            NATIVE_VALUE_ARRAY_QUERY_KEYS_MATCHING => Ok(Self::KeysMatching),
+            NATIVE_VALUE_ARRAY_QUERY_CONTAINS => Ok(Self::Contains),
+            NATIVE_VALUE_ARRAY_QUERY_SEARCH => Ok(Self::Search),
+            NATIVE_VALUE_ARRAY_QUERY_FLIP => Ok(Self::Flip),
+            NATIVE_VALUE_ARRAY_QUERY_COUNT_VALUES => Ok(Self::CountValues),
+            NATIVE_VALUE_ARRAY_QUERY_SUM => Ok(Self::Sum),
+            NATIVE_VALUE_ARRAY_QUERY_PRODUCT => Ok(Self::Product),
+            NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS => Ok(Self::FillKeys),
+            NATIVE_VALUE_ARRAY_QUERY_COMBINE => Ok(Self::Combine),
+            _ => Err(RuntimeError::invalid_array_access(
+                "native value array query operation failed: unsupported operation tag",
+            )),
+        }
+    }
+
+    fn callable(self) -> &'static str {
+        match self {
+            Self::KeysMatching => "array_keys()",
+            Self::Contains => "in_array()",
+            Self::Search => "array_search()",
+            Self::Flip => "array_flip()",
+            Self::CountValues => "array_count_values()",
+            Self::Sum => "array_sum()",
+            Self::Product => "array_product()",
+            Self::FillKeys => "array_fill_keys()",
+            Self::Combine => "array_combine()",
+        }
+    }
+
+    fn requires_operand(self) -> bool {
+        matches!(
+            self,
+            Self::KeysMatching | Self::Contains | Self::Search | Self::FillKeys | Self::Combine
+        )
+    }
+
+    fn accepts_flags(self) -> bool {
+        matches!(self, Self::KeysMatching | Self::Contains | Self::Search)
     }
 }
 
@@ -7832,6 +7899,36 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_array_mutation_result(
 
 /// # Safety
 ///
+/// `handle` and `operand` must be null or value handles previously returned by
+/// the runtime ABI and not yet freed. The returned value handle owns the PHP
+/// value produced by the selected query operation. On failure the helper stores
+/// a diagnostic handle that the caller owns and must release with
+/// `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_array_query_operation_with_diagnostic(
+    handle: NativeValueHandle,
+    operand: NativeValueHandle,
+    flags: u8,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    if !diagnostic.is_null() {
+        unsafe { *diagnostic = NativeDiagnosticHandle::null() };
+    }
+
+    match unsafe { native_value_array_query_operation_value(handle, operand, flags, operation) } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
 /// `values` must be null when `value_count` is zero, or point to
 /// `value_count` initialized handles previously returned by the runtime ABI
 /// and not yet freed. Operand handles are borrowed; the returned result owns
@@ -7875,6 +7972,103 @@ pub unsafe extern "C" fn phpc_native_value_array_callback_result(
             NATIVE_ARRAY_LVALUE_UNSUPPORTED,
             native_value_array_callback_blocker("array_reduce()"),
         ),
+    }
+}
+
+unsafe fn native_value_array_query_operation_value(
+    handle: NativeValueHandle,
+    operand: NativeValueHandle,
+    flags: u8,
+    operation: u8,
+) -> RuntimeResult<Value> {
+    if flags & !NATIVE_ARRAY_QUERY_STRICT != 0 {
+        return Err(RuntimeError::invalid_array_access(
+            "native value array query operation failed: unsupported operation flags",
+        ));
+    }
+
+    let operation = NativeValueArrayQueryOperation::from_tag(operation)?;
+    if !operation.accepts_flags() && flags != 0 {
+        return Err(RuntimeError::invalid_array_access(format!(
+            "native value array query operation failed: {} does not accept operation flags",
+            operation.callable()
+        )));
+    }
+
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_access(format!(
+            "native value array query operation failed: {} array value handle is null",
+            operation.callable()
+        )));
+    };
+    let Value::Array(array) = value else {
+        return Err(RuntimeError::unsupported_call(
+            operation.callable(),
+            format!("argument must be array, got {}", value.type_name()),
+        ));
+    };
+
+    let strict = flags & NATIVE_ARRAY_QUERY_STRICT != 0;
+    let operand = if operation.requires_operand() {
+        Some((unsafe { operand.as_ref() }).ok_or_else(|| {
+            RuntimeError::invalid_array_access(format!(
+                "native value array query operation failed: {} operand value handle is null",
+                operation.callable()
+            ))
+        })?)
+    } else {
+        None
+    };
+
+    match operation {
+        NativeValueArrayQueryOperation::KeysMatching => {
+            let search = operand.expect("filtered array_keys operation has an operand");
+            let keys = if strict {
+                array.keys_matching_strict_scalar(search)?
+            } else {
+                array.keys_matching_loose_scalar(search)?
+            };
+            Ok(Value::Array(keys))
+        }
+        NativeValueArrayQueryOperation::Contains => {
+            let needle = operand.expect("in_array operation has an operand");
+            let contains = if strict {
+                array.contains_value_strict_scalar(needle)?
+            } else {
+                array.contains_value_loose_scalar(needle)?
+            };
+            Ok(Value::Bool(contains))
+        }
+        NativeValueArrayQueryOperation::Search => {
+            let needle = operand.expect("array_search operation has an operand");
+            let key = if strict {
+                array.search_value_strict_scalar(needle)?
+            } else {
+                array.search_value_loose_scalar(needle)?
+            };
+            Ok(key
+                .as_ref()
+                .map(array_key_to_value)
+                .unwrap_or(Value::Bool(false)))
+        }
+        NativeValueArrayQueryOperation::Flip => Ok(Value::Array(array.flipped()?)),
+        NativeValueArrayQueryOperation::CountValues => Ok(Value::Array(array.count_values()?)),
+        NativeValueArrayQueryOperation::Sum => array.sum_values(),
+        NativeValueArrayQueryOperation::Product => array.product_values(),
+        NativeValueArrayQueryOperation::FillKeys => {
+            let fill = operand.expect("array_fill_keys operation has an operand");
+            Ok(Value::Array(array.filled_keys(fill.clone())?))
+        }
+        NativeValueArrayQueryOperation::Combine => {
+            let values = operand.expect("array_combine operation has an operand");
+            let Value::Array(values) = values else {
+                return Err(RuntimeError::unsupported_call(
+                    "array_combine()",
+                    format!("second argument must be array, got {}", values.type_name()),
+                ));
+            };
+            Ok(Value::Array(array.combined_with(values)?))
+        }
     }
 }
 
@@ -29242,6 +29436,379 @@ mod tests {
         unsafe { phpc_native_value_free(mode_array) };
         unsafe { phpc_native_value_free(real_callback) };
         unsafe { phpc_native_value_free(null_callback) };
+        unsafe { phpc_native_value_free(array_handle) };
+    }
+
+    #[test]
+    fn native_value_array_query_operations_reuse_array_value_key_and_numeric_boundaries() {
+        let mut array = PhpArray::new();
+        array.insert("zero", Value::Int(0));
+        array.insert("string_zero", Value::String("0".to_string()));
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert("empty", Value::String(String::new()));
+        let array_handle = NativeValueHandle::from_value(Value::Array(array));
+        let zero_string = NativeValueHandle::from_value(Value::String("0".to_string()));
+        let ada_string = NativeValueHandle::from_value(Value::String("Ada".to_string()));
+        let empty_string = NativeValueHandle::from_value(Value::String(String::new()));
+        let index_zero = phpc_native_value_from_scalar(phpc_native_int(0));
+        let index_one = phpc_native_value_from_scalar(phpc_native_int(1));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let loose_keys = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                array_handle,
+                zero_string,
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_KEYS_MATCHING,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let loose_first = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                loose_keys,
+                index_zero,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(loose_first), b"zero");
+        let loose_second = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                loose_keys,
+                index_one,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            native_value_echo_bytes_for_test(loose_second),
+            b"string_zero"
+        );
+
+        let strict_keys = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                array_handle,
+                zero_string,
+                NATIVE_ARRAY_QUERY_STRICT,
+                NATIVE_VALUE_ARRAY_QUERY_KEYS_MATCHING,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let strict_first = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                strict_keys,
+                index_zero,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            native_value_echo_bytes_for_test(strict_first),
+            b"string_zero"
+        );
+
+        let contains = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                array_handle,
+                ada_string,
+                NATIVE_ARRAY_QUERY_STRICT,
+                NATIVE_VALUE_ARRAY_QUERY_CONTAINS,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(contains), b"1");
+
+        let searched = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                array_handle,
+                empty_string,
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_SEARCH,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(searched), b"empty");
+
+        let mut labels = PhpArray::new();
+        labels.append(Value::String("a".to_string())).unwrap();
+        labels.append(Value::String("b".to_string())).unwrap();
+        let labels_handle = NativeValueHandle::from_value(Value::Array(labels));
+        let flipped = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                labels_handle,
+                NativeValueHandle::null(),
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_FLIP,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let a_key = NativeValueHandle::from_value(Value::String("a".to_string()));
+        let flipped_a = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                flipped,
+                a_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(flipped_a), b"0");
+
+        let mut counted_array = PhpArray::new();
+        counted_array
+            .append(Value::String("a".to_string()))
+            .unwrap();
+        counted_array
+            .append(Value::String("a".to_string()))
+            .unwrap();
+        counted_array.append(Value::Int(2)).unwrap();
+        let counted_handle = NativeValueHandle::from_value(Value::Array(counted_array));
+        let counted = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                counted_handle,
+                NativeValueHandle::null(),
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_COUNT_VALUES,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let counted_a = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                counted,
+                a_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(counted_a), b"2");
+        let two_key = phpc_native_value_from_scalar(phpc_native_int(2));
+        let counted_two = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                counted,
+                two_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(counted_two), b"1");
+
+        let mut numeric_array = PhpArray::new();
+        numeric_array.append(Value::Int(1)).unwrap();
+        numeric_array
+            .append(Value::String("2".to_string()))
+            .unwrap();
+        numeric_array.append(Value::Int(3)).unwrap();
+        let numeric_handle = NativeValueHandle::from_value(Value::Array(numeric_array));
+        let sum = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                numeric_handle,
+                NativeValueHandle::null(),
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_SUM,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(sum), b"6");
+        let product = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                numeric_handle,
+                NativeValueHandle::null(),
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_PRODUCT,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(product), b"6");
+
+        let mut fill_keys = PhpArray::new();
+        fill_keys.append(Value::String("x".to_string())).unwrap();
+        fill_keys.append(Value::Int(7)).unwrap();
+        let fill_keys_handle = NativeValueHandle::from_value(Value::Array(fill_keys));
+        let fill_value = NativeValueHandle::from_value(Value::String("v".to_string()));
+        let filled = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                fill_keys_handle,
+                fill_value,
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let x_key = NativeValueHandle::from_value(Value::String("x".to_string()));
+        let seven_key = phpc_native_value_from_scalar(phpc_native_int(7));
+        let filled_x = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                filled,
+                x_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(filled_x), b"v");
+        let filled_seven = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                filled,
+                seven_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(filled_seven), b"v");
+
+        let mut combine_keys = PhpArray::new();
+        combine_keys
+            .append(Value::String("left".to_string()))
+            .unwrap();
+        combine_keys
+            .append(Value::String("right".to_string()))
+            .unwrap();
+        let combine_keys_handle = NativeValueHandle::from_value(Value::Array(combine_keys));
+        let mut combine_values = PhpArray::new();
+        combine_values.append(Value::Int(1)).unwrap();
+        combine_values.append(Value::Int(2)).unwrap();
+        let combine_values_handle = NativeValueHandle::from_value(Value::Array(combine_values));
+        let combined = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                combine_keys_handle,
+                combine_values_handle,
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_COMBINE,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let left_key = NativeValueHandle::from_value(Value::String("left".to_string()));
+        let right_key = NativeValueHandle::from_value(Value::String("right".to_string()));
+        let combined_left = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                combined,
+                left_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(combined_left), b"1");
+        let combined_right = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                combined,
+                right_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(combined_right), b"2");
+
+        let scalar = NativeValueHandle::from_value(Value::String("not-array".to_string()));
+        let failed = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                scalar,
+                zero_string,
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_CONTAINS,
+                &mut diagnostic,
+            )
+        };
+        assert!(failed.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call in_array(): argument must be array, got string"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        let bad_flags = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                array_handle,
+                NativeValueHandle::null(),
+                NATIVE_ARRAY_QUERY_STRICT,
+                NATIVE_VALUE_ARRAY_QUERY_FLIP,
+                &mut diagnostic,
+            )
+        };
+        assert!(bad_flags.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: native value array query operation failed: array_flip() does not accept operation flags"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        let missing_operand = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                array_handle,
+                NativeValueHandle::null(),
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_SEARCH,
+                &mut diagnostic,
+            )
+        };
+        assert!(missing_operand.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: native value array query operation failed: array_search() operand value handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(missing_operand) };
+        unsafe { phpc_native_value_free(bad_flags) };
+        unsafe { phpc_native_value_free(failed) };
+        unsafe { phpc_native_value_free(scalar) };
+        unsafe { phpc_native_value_free(combined_right) };
+        unsafe { phpc_native_value_free(combined_left) };
+        unsafe { phpc_native_value_free(right_key) };
+        unsafe { phpc_native_value_free(left_key) };
+        unsafe { phpc_native_value_free(combined) };
+        unsafe { phpc_native_value_free(combine_values_handle) };
+        unsafe { phpc_native_value_free(combine_keys_handle) };
+        unsafe { phpc_native_value_free(filled_seven) };
+        unsafe { phpc_native_value_free(filled_x) };
+        unsafe { phpc_native_value_free(seven_key) };
+        unsafe { phpc_native_value_free(x_key) };
+        unsafe { phpc_native_value_free(filled) };
+        unsafe { phpc_native_value_free(fill_value) };
+        unsafe { phpc_native_value_free(fill_keys_handle) };
+        unsafe { phpc_native_value_free(product) };
+        unsafe { phpc_native_value_free(sum) };
+        unsafe { phpc_native_value_free(numeric_handle) };
+        unsafe { phpc_native_value_free(counted_two) };
+        unsafe { phpc_native_value_free(two_key) };
+        unsafe { phpc_native_value_free(counted_a) };
+        unsafe { phpc_native_value_free(counted) };
+        unsafe { phpc_native_value_free(counted_handle) };
+        unsafe { phpc_native_value_free(flipped_a) };
+        unsafe { phpc_native_value_free(a_key) };
+        unsafe { phpc_native_value_free(flipped) };
+        unsafe { phpc_native_value_free(labels_handle) };
+        unsafe { phpc_native_value_free(searched) };
+        unsafe { phpc_native_value_free(contains) };
+        unsafe { phpc_native_value_free(strict_first) };
+        unsafe { phpc_native_value_free(strict_keys) };
+        unsafe { phpc_native_value_free(loose_second) };
+        unsafe { phpc_native_value_free(loose_first) };
+        unsafe { phpc_native_value_free(loose_keys) };
+        unsafe { phpc_native_value_free(index_one) };
+        unsafe { phpc_native_value_free(index_zero) };
+        unsafe { phpc_native_value_free(empty_string) };
+        unsafe { phpc_native_value_free(ada_string) };
+        unsafe { phpc_native_value_free(zero_string) };
         unsafe { phpc_native_value_free(array_handle) };
     }
 
