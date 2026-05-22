@@ -182,6 +182,7 @@ const NATIVE_ARRAY_LVALUE_INVALID_ROOT: u8 = 2;
 const NATIVE_ARRAY_LVALUE_INVALID_KEY: u8 = 3;
 const NATIVE_ARRAY_LVALUE_UNSUPPORTED: u8 = 6;
 const NATIVE_ARRAY_LVALUE_OWNER_ARRAY: u8 = 0;
+const NATIVE_ARRAY_LVALUE_OWNER_REFERENCE_SLOT: u8 = 3;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE: u8 = 0;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET: u8 = 1;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ: u8 = 2;
@@ -1985,6 +1986,16 @@ impl NativeArrayLvalueOwner {
             value: NativeValueHandle::null(),
             value_slot: ptr::null_mut(),
             reference: NativeReferenceHandle::null(),
+        }
+    }
+
+    fn reference_slot(reference: NativeReferenceHandle) -> Self {
+        Self {
+            tag: NATIVE_ARRAY_LVALUE_OWNER_REFERENCE_SLOT,
+            array: NativeArrayHandle::null(),
+            value: NativeValueHandle::null(),
+            value_slot: ptr::null_mut(),
+            reference,
         }
     }
 }
@@ -8595,6 +8606,18 @@ pub extern "C" fn phpc_native_array_lvalue_owner_array(
 
 /// # Safety
 ///
+/// `reference` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. The returned owner borrows the reference
+/// handle; ownership remains with the caller.
+#[no_mangle]
+pub extern "C" fn phpc_native_array_lvalue_owner_reference_slot(
+    reference: NativeReferenceHandle,
+) -> NativeArrayLvalueOwner {
+    NativeArrayLvalueOwner::reference_slot(reference)
+}
+
+/// # Safety
+///
 /// The owner and each key handle inside `segments` must be null or handles
 /// previously returned by the runtime ABI and not yet freed. `segments` must be
 /// null when `segment_count` is zero, or point to `segment_count` initialized
@@ -8627,19 +8650,56 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
         );
     }
 
-    if owner.tag != NATIVE_ARRAY_LVALUE_OWNER_ARRAY {
-        return NativeArrayLvalueResult::diagnostic(
+    match owner.tag {
+        NATIVE_ARRAY_LVALUE_OWNER_ARRAY => {
+            let Some(array) = (unsafe { owner.array.as_mut() }) else {
+                return NativeArrayLvalueResult::diagnostic(
+                    NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+                    "array lvalue root is not a live native array handle",
+                );
+            };
+            unsafe {
+                native_array_lvalue_owner_array_value_operation_result(
+                    &mut array.value,
+                    segments,
+                    segment_count,
+                    family,
+                    _operation,
+                    _op,
+                    _position,
+                    value,
+                )
+            }
+        }
+        NATIVE_ARRAY_LVALUE_OWNER_REFERENCE_SLOT => unsafe {
+            native_array_lvalue_owner_reference_slot_value_operation_result(
+                owner.reference,
+                segments,
+                segment_count,
+                family,
+                _operation,
+                _op,
+                _position,
+                value,
+            )
+        },
+        _ => NativeArrayLvalueResult::diagnostic(
             NATIVE_ARRAY_LVALUE_INVALID_ROOT,
-            "array lvalue owner is not a native array handle",
-        );
+            format!("array lvalue owner tag {} is not supported", owner.tag),
+        ),
     }
+}
 
-    let Some(array) = (unsafe { owner.array.as_mut() }) else {
-        return NativeArrayLvalueResult::diagnostic(
-            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
-            "array lvalue root is not a live native array handle",
-        );
-    };
+unsafe fn native_array_lvalue_owner_array_value_operation_result(
+    array: &mut PhpArray,
+    segments: *const NativeArrayPathSegment,
+    segment_count: usize,
+    family: u8,
+    operation: u8,
+    op: u8,
+    position: u8,
+    value: NativeValueHandle,
+) -> NativeArrayLvalueResult {
     match family {
         NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE => {
             let path =
@@ -8651,7 +8711,7 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
                 Ok(value) => value,
                 Err(result) => return result,
             };
-            match native_array_write_lvalue_path(&mut array.value, &path, value) {
+            match native_array_write_lvalue_path(array, &path, value) {
                 Ok(()) => NativeArrayLvalueResult::ok(),
                 Err(result) => result,
             }
@@ -8663,7 +8723,7 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
                 Ok(keys) => keys,
                 Err(result) => return result,
             };
-            match native_array_read_key_path(&array.value, &keys) {
+            match native_array_read_key_path(array, &keys) {
                 Ok(value) => NativeArrayLvalueResult::value(value),
                 Err(result) => result,
             }
@@ -8675,7 +8735,7 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
                 Ok(keys) => keys,
                 Err(result) => return result,
             };
-            match native_array_lvalue_isset_key_path(&array.value, &keys) {
+            match native_array_lvalue_isset_key_path(array, &keys) {
                 Ok(present) => NativeArrayLvalueResult::value(Value::Bool(present)),
                 Err(result) => result,
             }
@@ -8687,14 +8747,14 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
                 Ok(keys) => keys,
                 Err(result) => return result,
             };
-            native_array_unset_key_path(&mut array.value, &keys);
+            native_array_unset_key_path(array, &keys);
             NativeArrayLvalueResult::ok()
         }
         NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE => {
-            if _operation != NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT {
+            if operation != NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT {
                 return NativeArrayLvalueResult::diagnostic(
                     NATIVE_ARRAY_LVALUE_UNSUPPORTED,
-                    format!("array lvalue update operation tag {_operation} is not supported"),
+                    format!("array lvalue update operation tag {operation} is not supported"),
                 );
             }
             let path =
@@ -8702,18 +8762,99 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
                     Ok(path) => path,
                     Err(result) => return result,
                 };
-            match native_array_increment_decrement_lvalue_path(
-                &mut array.value,
-                &path,
-                _op,
-                _position,
-            ) {
+            match native_array_increment_decrement_lvalue_path(array, &path, op, position) {
                 Ok(value) => NativeArrayLvalueResult::value(value),
                 Err(result) => return result,
             }
         }
         _ => unreachable!("array lvalue value-operation family was validated above"),
     }
+}
+
+unsafe fn native_array_lvalue_owner_reference_slot_value_operation_result(
+    reference: NativeReferenceHandle,
+    segments: *const NativeArrayPathSegment,
+    segment_count: usize,
+    family: u8,
+    operation: u8,
+    op: u8,
+    position: u8,
+    value: NativeValueHandle,
+) -> NativeArrayLvalueResult {
+    let Some(reference) = (unsafe { reference.as_ref() }) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array lvalue reference owner is not a live native reference handle",
+        );
+    };
+
+    let current = reference.cell.value_cloned();
+    let mut array = match current {
+        Value::Array(array) => array,
+        Value::Null | Value::Bool(false)
+            if matches!(
+                family,
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE
+                    | NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE
+            ) =>
+        {
+            PhpArray::new()
+        }
+        Value::Null | Value::Bool(false) if family == NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET => {
+            let keys = match unsafe {
+                native_array_lvalue_key_path_from_segments(segments, segment_count, "unset")
+            } {
+                Ok(keys) => keys,
+                Err(result) => return result,
+            };
+            let _ = keys;
+            return NativeArrayLvalueResult::ok();
+        }
+        Value::Null | Value::Bool(false) if family == NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET => {
+            let keys = match unsafe {
+                native_array_lvalue_key_path_from_segments(segments, segment_count, "isset")
+            } {
+                Ok(keys) => keys,
+                Err(result) => return result,
+            };
+            let _ = keys;
+            return NativeArrayLvalueResult::value(Value::Bool(false));
+        }
+        other => {
+            return NativeArrayLvalueResult::diagnostic(
+                NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+                format!(
+                    "array lvalue reference owner contains {} and requires the shared scalar-to-array owner boundary",
+                    other.type_name()
+                ),
+            )
+        }
+    };
+
+    let result = unsafe {
+        native_array_lvalue_owner_array_value_operation_result(
+            &mut array,
+            segments,
+            segment_count,
+            family,
+            operation,
+            op,
+            position,
+            value,
+        )
+    };
+
+    if matches!(
+        family,
+        NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE
+            | NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET
+            | NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE
+    ) && result.tag == NATIVE_ARRAY_LVALUE_OK
+    {
+        reference.cell.set_value(Value::Array(array));
+    }
+
+    result
 }
 
 /// # Safety
@@ -33826,6 +33967,175 @@ mod tests {
         unsafe { phpc_native_value_free(int_key) };
         unsafe { phpc_native_value_free(direct_key) };
         unsafe { phpc_native_array_free(handle) };
+    }
+
+    #[test]
+    fn native_array_lvalue_owner_reference_slot_routes_value_operation_families() {
+        let leaf_reference = PhpReferenceCell::new(Value::String("start".to_string()));
+        let mut nested = PhpArray::new();
+        nested.insert_reference("leaf", leaf_reference.clone());
+
+        let mut root = PhpArray::new();
+        root.insert("outer", Value::Array(nested));
+        root.insert("counter", Value::Int(4));
+
+        let root_reference = PhpReferenceCell::new(Value::Array(root));
+        let reference_handle = NativeReferenceHandle::from_cell(root_reference.clone());
+        let owner = phpc_native_array_lvalue_owner_reference_slot(reference_handle);
+
+        let outer_key = NativeValueHandle::from_value(Value::String("outer".to_string()));
+        let leaf_key = NativeValueHandle::from_value(Value::String("leaf".to_string()));
+        let counter_key = NativeValueHandle::from_value(Value::String("counter".to_string()));
+        let created_key = NativeValueHandle::from_value(Value::String("created".to_string()));
+        let replacement = NativeValueHandle::from_value(Value::String("written".to_string()));
+        let created_value =
+            NativeValueHandle::from_value(Value::String("materialized".to_string()));
+
+        let leaf_path = [
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: outer_key,
+            },
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: leaf_key,
+            },
+        ];
+        let write = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                leaf_path.as_ptr(),
+                leaf_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE,
+                0,
+                0,
+                0,
+                replacement,
+            )
+        };
+        assert_eq!(write.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(
+            leaf_reference.value_cloned(),
+            Value::String("written".to_string())
+        );
+        unsafe { phpc_native_array_lvalue_result_free(write) };
+
+        let read = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                leaf_path.as_ptr(),
+                leaf_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ,
+                0,
+                0,
+                0,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(read.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(read.value), b"written");
+        unsafe { phpc_native_array_lvalue_result_free(read) };
+
+        let isset = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                leaf_path.as_ptr(),
+                leaf_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET,
+                0,
+                0,
+                0,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(isset.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(isset.value), b"1");
+        unsafe { phpc_native_array_lvalue_result_free(isset) };
+
+        let counter_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: counter_key,
+        }];
+        let increment = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                counter_path.as_ptr(),
+                counter_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE,
+                NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT,
+                NATIVE_ARRAY_LVALUE_INCREMENT,
+                NATIVE_ARRAY_LVALUE_POSITION_PRE,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(increment.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(increment.value), b"5");
+        unsafe { phpc_native_array_lvalue_result_free(increment) };
+
+        let unset = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                leaf_path.as_ptr(),
+                leaf_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET,
+                0,
+                0,
+                0,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(unset.tag, NATIVE_ARRAY_LVALUE_OK);
+        unsafe { phpc_native_array_lvalue_result_free(unset) };
+
+        let Value::Array(root_after_unset) = root_reference.value_cloned() else {
+            panic!("reference owner root should remain an array");
+        };
+        assert_eq!(root_after_unset.get("counter"), Some(&Value::Int(5)));
+        let Value::Array(outer_after_unset) = root_after_unset
+            .get("outer")
+            .expect("outer array should remain")
+        else {
+            panic!("outer slot should remain an array");
+        };
+        assert!(!outer_after_unset.contains_key("leaf"));
+
+        let null_root = PhpReferenceCell::new(Value::Null);
+        let null_handle = NativeReferenceHandle::from_cell(null_root.clone());
+        let null_owner = phpc_native_array_lvalue_owner_reference_slot(null_handle);
+        let created_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: created_key,
+        }];
+        let materialized = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                null_owner,
+                created_path.as_ptr(),
+                created_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE,
+                0,
+                0,
+                0,
+                created_value,
+            )
+        };
+        assert_eq!(materialized.tag, NATIVE_ARRAY_LVALUE_OK);
+        unsafe { phpc_native_array_lvalue_result_free(materialized) };
+        let Value::Array(null_after_write) = null_root.value_cloned() else {
+            panic!("null reference owner should materialize to an array for writes");
+        };
+        assert_eq!(
+            null_after_write.get("created"),
+            Some(&Value::String("materialized".to_string()))
+        );
+
+        unsafe { phpc_native_reference_free(null_handle) };
+        unsafe { phpc_native_value_free(created_value) };
+        unsafe { phpc_native_value_free(replacement) };
+        unsafe { phpc_native_value_free(created_key) };
+        unsafe { phpc_native_value_free(counter_key) };
+        unsafe { phpc_native_value_free(leaf_key) };
+        unsafe { phpc_native_value_free(outer_key) };
+        unsafe { phpc_native_reference_free(reference_handle) };
     }
 
     #[test]

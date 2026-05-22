@@ -1734,6 +1734,21 @@ const SYMBOL_REFERENCE_ASSIGNMENT_SOURCE: &str = concat!(
     "echo $targetAgain;\n",
 );
 
+const SYMBOL_REFERENCE_ARRAY_LVALUE_OWNER_SOURCE: &str = concat!(
+    "<?php\n",
+    "$root = [\"keep\" => \"old\"];\n",
+    "$alias =& $root;\n",
+    "$root[\"keep\"] = \"new\";\n",
+    "$alias[\"nested\"][\"leaf\"] = \"via-alias\";\n",
+    "$alias[\"nested\"][] = \"appended\";\n",
+    "unset($root[\"keep\"]);\n",
+    "echo empty($alias[\"keep\"]);\n",
+    "echo \"|\";\n",
+    "echo $root[\"nested\"][\"leaf\"];\n",
+    "echo \"|\";\n",
+    "echo $alias[\"nested\"][0];\n",
+);
+
 const GLOBALS_SYMBOL_REFERENCE_ASSIGNMENT_SOURCE: &str = concat!(
     "<?php\n",
     "$source = \"A\";\n",
@@ -3579,6 +3594,46 @@ fn native_executable_c_source_routes_symbol_reference_assignments_through_path_a
 }
 
 #[test]
+fn native_executable_c_source_routes_active_symbol_array_lvalues_through_reference_owner() {
+    let program = parse(SYMBOL_REFERENCE_ARRAY_LVALUE_OWNER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_reference_slot"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_reference_for_path"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_array_lvalue_owner_reference_slot")
+            .count()
+            >= 4,
+        "active symbol-table array writes, appends, and unsets should borrow the root reference owner:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_array_lvalue_owner_value_operation_result")
+            .count()
+            >= 4,
+        "active symbol-table array lvalues should reuse the shared value-operation owner boundary:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_reference_free").count() >= 4,
+        "borrowed root reference handles should be released after owner operations:\n{source}"
+    );
+    assert!(
+        !source.contains("reference-assignment lowering rejects"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_globals_symbol_references_through_value_path_abi() {
     let program = parse(GLOBALS_SYMBOL_REFERENCE_ASSIGNMENT_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -4055,6 +4110,60 @@ fn emit_exe_links_and_runs_symbol_reference_assignment_paths() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "B|D|E|F|G");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_active_symbol_array_lvalue_reference_owner_paths() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("symbol_array_lvalue_reference_owner.php");
+    let output_path = native_link_output_path("symbol_array_lvalue_reference_owner");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(&source_path, SYMBOL_REFERENCE_ARRAY_LVALUE_OWNER_SOURCE)
+        .expect("write symbol array lvalue owner native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native symbol array owner source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native symbol array owner executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native symbol array owner executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "1|via-alias|appended");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);

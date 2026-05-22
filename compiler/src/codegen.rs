@@ -7950,6 +7950,7 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_value_operation_result_free(phpc_NativeValueOperationResult result);\n");
                 if self.uses_native_array_lvalue_helpers {
                     output.push_str("extern phpc_NativeArrayLvalueOwner phpc_native_array_lvalue_owner_array(phpc_NativeArrayHandle array);\n");
+                    output.push_str("extern phpc_NativeArrayLvalueOwner phpc_native_array_lvalue_owner_reference_slot(phpc_NativeReferenceHandle reference);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_value_operation_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t family, uint8_t operation, uint8_t op, uint8_t position, phpc_NativeValueHandle value);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_pointer_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t operation);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_sort_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t operation, const phpc_NativeValueHandle *operands, size_t operand_count);\n");
@@ -8236,6 +8237,48 @@ impl CGenerator {
         }
 
         let handles = self.next_native_name("globals_symbol_path");
+        let entries = keys
+            .iter()
+            .map(|key| key.handle.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {handles}[] = {{ {entries} }};"
+        ));
+
+        Ok(CNativeSymbolPathMaterialization {
+            handles,
+            len: keys.len(),
+            cleanup_after_use,
+        })
+    }
+
+    fn materialize_symbol_table_rooted_path_keys(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeSymbolPathMaterialization> {
+        let root = self.emit_native_value_for_cvalue(CValue::String(name.to_string()), span)?;
+        let mut keys = vec![CNativeValueMaterialization {
+            handle: root.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({root});")],
+        }];
+        let mut cleanup_after_use = keys[0].cleanup_after_use.clone();
+
+        for index in indices {
+            let key_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let key = self.materialize_native_value_result_operand(index, &key_failure_cleanup)?;
+            cleanup_after_use.extend(key.cleanup_after_use.clone());
+            keys.push(key);
+        }
+
+        let handles = self.next_native_name("symbol_table_path");
         let entries = keys
             .iter()
             .map(|key| key.handle.as_str())
@@ -10198,6 +10241,29 @@ impl CGenerator {
             span,
             failure_cleanup,
         )
+    }
+
+    fn emit_symbol_table_root_reference_for_array_lvalue(
+        &mut self,
+        name: &str,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<String> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_symbol_table_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let table = self.ensure_globals_symbol_table(failure_cleanup, span)?;
+        let name_bytes = self.emit_symbol_name_static_bytes(name);
+        let reference = self.next_native_name("array_lvalue_symbol_reference");
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {reference} = phpc_native_symbol_table_reference_for_path({table}, {name_bytes}, {}, NULL, 0, false);",
+            name.len()
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({reference}.ptr == NULL) {{ {error_exit} }}"));
+        Ok(reference)
     }
 
     fn ensure_native_request_state_handle(&mut self) -> String {
@@ -12214,6 +12280,12 @@ impl CGenerator {
                 }
                 if let Some(value) =
                     self.try_materialize_request_superglobal_path_value_read_expr(expr, "")?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                if let Some(value) =
+                    self.try_materialize_active_symbol_table_path_value_read_expr(expr, "")?
                 {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
@@ -15250,6 +15322,138 @@ impl CGenerator {
         }
     }
 
+    fn emit_array_lvalue_write_materialized_for_reference(
+        &mut self,
+        reference: &str,
+        path: CNativeArrayLvaluePath,
+        replacement: CNativeValueMaterialization,
+        result_prefix: &str,
+    ) -> CompileResult<()> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let owner = self.next_native_name("array_lvalue_owner");
+        let result = self.next_native_name(result_prefix);
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_reference_slot({reference});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
+            path.path, path.len, replacement.handle
+        ));
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let cleanup = format!(
+            "{}phpc_native_reference_free({reference}); {path_cleanup}",
+            c_cleanup_sequence(&replacement.cleanup_after_use)
+        );
+        self.emit_native_array_lvalue_result_check(&result, &cleanup);
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.body
+            .push(format!("phpc_native_reference_free({reference});"));
+        self.body.extend(replacement.cleanup_after_use);
+        self.body.extend(path.cleanup_after_use);
+        Ok(())
+    }
+
+    fn emit_symbol_table_array_lvalue_write_with_path(
+        &mut self,
+        name: &str,
+        path: CNativeArrayLvaluePath,
+        replacement_expr: &Expr,
+        span: Span,
+        result_prefix: &str,
+    ) -> CompileResult<()> {
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let reference =
+            self.emit_symbol_table_root_reference_for_array_lvalue(name, span, &path_cleanup)?;
+        let reference_cleanup = format!("phpc_native_reference_free({reference}); ");
+        let replacement = self.materialize_native_value_result_operand(
+            replacement_expr,
+            &format!("{reference_cleanup}{path_cleanup}"),
+        )?;
+        self.emit_array_lvalue_write_materialized_for_reference(
+            &reference,
+            path,
+            replacement,
+            result_prefix,
+        )
+    }
+
+    fn emit_symbol_table_array_lvalue_write_for_indices(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        let path = self.materialize_native_array_lvalue_key_path(indices, span, "")?;
+        self.emit_symbol_table_array_lvalue_write_with_path(
+            name,
+            path,
+            replacement_expr,
+            span,
+            "array_lvalue_symbol_write_result",
+        )
+    }
+
+    fn emit_symbol_table_array_lvalue_append_write(
+        &mut self,
+        name: &str,
+        prefix_indices: &[&Expr],
+        suffix_indices: &[&Expr],
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        let path = self.materialize_native_array_lvalue_append_path(
+            prefix_indices,
+            suffix_indices,
+            span,
+            "",
+        )?;
+        self.emit_symbol_table_array_lvalue_write_with_path(
+            name,
+            path,
+            replacement_expr,
+            span,
+            "array_lvalue_symbol_append_write_result",
+        )
+    }
+
+    fn emit_symbol_table_array_lvalue_unset(
+        &mut self,
+        name: &str,
+        indices: &[&Expr],
+        span: Span,
+    ) -> CompileResult<()> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let path = self.materialize_native_array_lvalue_key_path(indices, span, "")?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let reference =
+            self.emit_symbol_table_root_reference_for_array_lvalue(name, span, &path_cleanup)?;
+        let owner = self.next_native_name("array_lvalue_owner");
+        let result = self.next_native_name("array_lvalue_symbol_unset_result");
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_reference_slot({reference});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
+            path.path, path.len
+        ));
+        let cleanup = format!("phpc_native_reference_free({reference}); {path_cleanup}");
+        self.emit_native_array_lvalue_result_check(&result, &cleanup);
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.body
+            .push(format!("phpc_native_reference_free({reference});"));
+        self.body.extend(path.cleanup_after_use);
+        Ok(())
+    }
+
     fn emit_array_lvalue_write_for_handle(
         &mut self,
         handle: &str,
@@ -15391,6 +15595,9 @@ impl CGenerator {
             }
             return self.emit_globals_symbol_path_unset(&[index_expr], span, "");
         }
+        if self.globals_symbol_table_is_active() {
+            return self.emit_symbol_table_array_lvalue_unset(name, &[index_expr], span);
+        }
 
         if !self.uses_native_string_helpers {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
@@ -15442,6 +15649,10 @@ impl CGenerator {
                 );
             }
             return self.emit_globals_symbol_path_unset(&indices, span, "");
+        }
+        if self.globals_symbol_table_is_active() {
+            let indices = indices.iter().collect::<Vec<_>>();
+            return self.emit_symbol_table_array_lvalue_unset(name, &indices, span);
         }
 
         if !self.uses_native_string_helpers {
@@ -16891,6 +17102,24 @@ impl CGenerator {
                     }
                     return self.emit_globals_symbol_path_assignment(&[index], expr, *span, "");
                 }
+                if self.globals_symbol_table_is_active() {
+                    return if let Some(index) = index.as_ref() {
+                        self.emit_symbol_table_array_lvalue_write_for_indices(
+                            name,
+                            &[index],
+                            expr,
+                            *span,
+                        )
+                    } else {
+                        self.emit_symbol_table_array_lvalue_append_write(
+                            name,
+                            &[],
+                            &[],
+                            expr,
+                            *span,
+                        )
+                    };
+                }
                 if self.uses_native_string_helpers {
                     return match self.variables.get(name).cloned() {
                         Some(CValue::ArrayHandle(handle)) => {
@@ -16959,6 +17188,12 @@ impl CGenerator {
                     }
                     return self.emit_globals_symbol_path_assignment(&indices, expr, *span, "");
                 }
+                if self.globals_symbol_table_is_active() {
+                    let indices = indices.iter().collect::<Vec<_>>();
+                    return self.emit_symbol_table_array_lvalue_write_for_indices(
+                        name, &indices, expr, *span,
+                    );
+                }
                 if self.uses_native_string_helpers {
                     if let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() {
                         let indices = indices.iter().collect::<Vec<_>>();
@@ -17012,6 +17247,17 @@ impl CGenerator {
                         expr,
                         *span,
                         "",
+                    );
+                }
+                if self.globals_symbol_table_is_active() {
+                    let prefix_indices = indices.iter().collect::<Vec<_>>();
+                    let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
+                    return self.emit_symbol_table_array_lvalue_append_write(
+                        name,
+                        &prefix_indices,
+                        &suffix_indices,
+                        expr,
+                        *span,
                     );
                 }
                 if self.uses_native_string_helpers {
@@ -19753,6 +19999,12 @@ impl CGenerator {
         }
 
         if let Some(value) =
+            self.try_materialize_active_symbol_table_path_value_read_expr(expr, failure_cleanup)?
+        {
+            return Ok(Some(value));
+        }
+
+        if let Some(value) =
             self.try_materialize_nested_array_lvalue_read_expr(expr, failure_cleanup)?
         {
             return Ok(Some(value));
@@ -20218,6 +20470,31 @@ impl CGenerator {
         }
 
         self.emit_globals_symbol_path_value_read(&indices, span, failure_cleanup)
+            .map(Some)
+    }
+
+    fn try_materialize_active_symbol_table_path_value_read_expr(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if !self.globals_symbol_table_is_active() {
+            return Ok(None);
+        }
+
+        let Some((root, indices, span)) = array_index_expr_path(expr) else {
+            return Ok(None);
+        };
+        let Expr::Variable(name, _) = root else {
+            return Ok(None);
+        };
+        if is_globals_superglobal_name(name) || is_request_superglobal_name(name) {
+            return Ok(None);
+        }
+
+        let path =
+            self.materialize_symbol_table_rooted_path_keys(name, &indices, span, failure_cleanup)?;
+        self.emit_globals_symbol_path_value_read_from_path(path, span, failure_cleanup)
             .map(Some)
     }
 
