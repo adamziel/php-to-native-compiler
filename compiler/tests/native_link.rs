@@ -913,6 +913,21 @@ const REQUEST_SUPERGLOBAL_ROOT_SOURCE: &str = concat!(
     "echo $_SERVER;\n",
 );
 
+const GLOBALS_SNAPSHOT_SOURCE: &str = concat!(
+    "<?php\n",
+    "$alpha = \"A\";\n",
+    "$count = 2;\n",
+    "$bag = [\"slot\" => \"B\"];\n",
+    "$copy = $GLOBALS;\n",
+    "echo $copy[\"alpha\"];\n",
+    "echo \"|\";\n",
+    "echo $copy[\"count\"];\n",
+    "echo \"|\";\n",
+    "echo gettype($copy[\"bag\"]);\n",
+    "echo \"|\";\n",
+    "echo gettype($GLOBALS);\n",
+);
+
 const REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
     "<?php\n",
     "$_GET = \"alpha\";\n",
@@ -1890,6 +1905,43 @@ fn native_executable_c_source_routes_request_roots_through_request_state_snapsho
     );
     assert!(
         !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_direct_globals_through_symbol_snapshot() {
+    let program = parse(GLOBALS_SNAPSHOT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(source.contains("phpc_NativeSymbolTableHandle"), "{source}");
+    assert!(source.contains("phpc_native_symbol_table_new"), "{source}");
+    assert!(
+        source.contains("phpc_native_symbol_table_write"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_snapshot_value"),
+        "{source}"
+    );
+    assert!(source.contains("phpc_native_symbol_table_free"), "{source}");
+    assert!(
+        body.matches("phpc_native_symbol_table_write").count() >= 3,
+        "current root variables should be copied into the symbol-table snapshot:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_snapshot_value")
+            .count()
+            >= 2,
+        "direct $GLOBALS should snapshot for storage and direct value consumers:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_clone"),
+        "storing $GLOBALS should clone the owned snapshot for variable storage:\n{source}"
+    );
+    assert!(
+        !source.contains("global-symbol-table lowering rejects $GLOBALS"),
         "{source}"
     );
 }
@@ -4170,6 +4222,53 @@ fn emit_exe_links_and_runs_request_root_snapshot_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"1|1|array|Array");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_globals_snapshot_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("globals_snapshot");
+    let source_path = native_link_output_path("globals_snapshot_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, GLOBALS_SNAPSHOT_SOURCE)
+        .expect("native globals snapshot source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native globals snapshot source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native globals snapshot executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"A|2|array|array");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

@@ -2038,6 +2038,10 @@ fn is_request_superglobal_name(name: &str) -> bool {
     )
 }
 
+fn is_globals_superglobal_name(name: &str) -> bool {
+    name == "GLOBALS"
+}
+
 fn request_superglobal_root_name(expr: &Expr) -> Option<&str> {
     match expr {
         Expr::Variable(name, _) if is_request_superglobal_name(name) => Some(name.as_str()),
@@ -6835,6 +6839,7 @@ struct CGenerator {
     body: Vec<String>,
     static_data: Vec<String>,
     variables: HashMap<String, CValue>,
+    variable_order: Vec<String>,
     array_cleanup_handles: Vec<String>,
     owned_native_byte_buffers: Vec<String>,
     known_ints: HashMap<String, KnownInt>,
@@ -6855,6 +6860,7 @@ struct CGenerator {
     uses_native_value_offset_path_unset: bool,
     uses_native_array_lvalue_helpers: bool,
     uses_native_request_state_helpers: bool,
+    uses_native_symbol_table_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -7182,6 +7188,7 @@ impl CGenerator {
             || self.uses_native_comparison_helpers
             || self.uses_native_array_helpers
             || self.uses_native_request_state_helpers
+            || self.uses_native_symbol_table_helpers
     }
 
     fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
@@ -7202,6 +7209,12 @@ impl CGenerator {
             if self.uses_native_comparison_helpers || self.uses_native_array_helpers {
                 output.push_str("#include <stdbool.h>\n");
             }
+            if self.uses_native_symbol_table_helpers
+                && !self.uses_native_comparison_helpers
+                && !self.uses_native_array_helpers
+            {
+                output.push_str("#include <stdbool.h>\n");
+            }
             output.push('\n');
             if self.uses_native_string_helpers
                 || self.uses_native_comparison_helpers
@@ -7219,6 +7232,9 @@ impl CGenerator {
             }
             if self.uses_native_request_state_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeRequestStateHandle;\n");
+            }
+            if self.uses_native_symbol_table_helpers {
+                output.push_str("typedef struct { void *ptr; } phpc_NativeSymbolTableHandle;\n");
             }
             if self.uses_native_string_helpers || self.uses_native_array_helpers {
                 output.push_str(
@@ -7414,6 +7430,14 @@ impl CGenerator {
                     "extern void phpc_native_request_state_free(phpc_NativeRequestStateHandle request_state);\n",
                 );
             }
+            if self.uses_native_symbol_table_helpers {
+                output.push_str(
+                    "extern phpc_NativeSymbolTableHandle phpc_native_symbol_table_new(void);\n",
+                );
+                output.push_str("extern bool phpc_native_symbol_table_write(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_symbol_table_snapshot_value(phpc_NativeSymbolTableHandle table);\n");
+                output.push_str("extern void phpc_native_symbol_table_free(phpc_NativeSymbolTableHandle table);\n");
+            }
             if self.uses_native_string_helpers {
                 output.push_str("extern phpc_NativeStringConversionResult phpc_native_value_to_string_bytes(phpc_NativeValueHandle value);\n");
                 output.push_str("extern int64_t phpc_native_value_to_int64_with_diagnostic(phpc_NativeValueHandle value, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -7580,6 +7604,102 @@ impl CGenerator {
         }
     }
 
+    fn remember_variable_order(&mut self, name: &str) {
+        if !self.variables.contains_key(name)
+            && !self.variable_order.iter().any(|seen| seen == name)
+        {
+            self.variable_order.push(name.to_string());
+        }
+    }
+
+    fn ordered_symbol_variables(&self) -> Vec<(String, CValue)> {
+        let mut entries = Vec::new();
+        for name in &self.variable_order {
+            if is_globals_superglobal_name(name) {
+                continue;
+            }
+            if let Some(value) = self.variables.get(name) {
+                entries.push((name.clone(), value.clone()));
+            }
+        }
+
+        let mut remaining = self
+            .variables
+            .iter()
+            .filter(|(name, _)| {
+                !is_globals_superglobal_name(name)
+                    && !self.variable_order.iter().any(|seen| seen == *name)
+            })
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect::<Vec<_>>();
+        remaining.sort_by(|left, right| left.0.cmp(&right.0));
+        entries.extend(remaining);
+        entries
+    }
+
+    fn emit_symbol_name_static_bytes(&mut self, name: &str) -> String {
+        let index = self.next_static_data;
+        self.next_static_data += 1;
+        let bytes = c_byte_array(name.as_bytes());
+        let bytes_name = format!("symbol_name_bytes_{index}");
+        self.static_data.push(format!(
+            "static const uint8_t {bytes_name}[] = {{{bytes}}};"
+        ));
+        bytes_name
+    }
+
+    fn materialize_globals_snapshot_value(
+        &mut self,
+        failure_cleanup: &str,
+        span: Span,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_symbol_table_helpers = true;
+
+        let table = self.next_native_name("globals_symbols");
+        self.body.push(format!(
+            "phpc_NativeSymbolTableHandle {table} = phpc_native_symbol_table_new();"
+        ));
+        let table_error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({table}.ptr == NULL) {{ {table_error_exit} }}"));
+
+        for (name, value) in self.ordered_symbol_variables() {
+            let name_bytes = self.emit_symbol_name_static_bytes(&name);
+            let value_handle = self.emit_native_value_for_cvalue(value, span)?;
+            let wrote = self.next_native_name("globals_symbol_write");
+            self.body.push(format!(
+                "bool {wrote} = phpc_native_symbol_table_write({table}, {name_bytes}, {}, {value_handle});",
+                name.len()
+            ));
+            let write_error_exit = self.native_error_exit(&format!(
+                "phpc_native_value_free({value_handle}); phpc_native_symbol_table_free({table}); {failure_cleanup}"
+            ));
+            self.body
+                .push(format!("if (!{wrote}) {{ {write_error_exit} }}"));
+            self.body
+                .push(format!("phpc_native_value_free({value_handle});"));
+        }
+
+        let snapshot = self.next_native_name("globals_snapshot");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {snapshot} = phpc_native_symbol_table_snapshot_value({table});"
+        ));
+        let snapshot_error_exit = self.native_error_exit(&format!(
+            "phpc_native_symbol_table_free({table}); {failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({snapshot}.ptr == NULL) {{ {snapshot_error_exit} }}"
+        ));
+        self.body
+            .push(format!("phpc_native_symbol_table_free({table});"));
+
+        Ok(CNativeValueMaterialization {
+            handle: snapshot.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({snapshot});")],
+        })
+    }
+
     fn clone_native_value_handle(&mut self, handle: &str) -> String {
         self.uses_native_string_helpers = true;
         self.uses_native_value_clone = true;
@@ -7602,6 +7722,7 @@ impl CGenerator {
     }
 
     fn store_variable_value(&mut self, name: &str, value: CValue) {
+        self.remember_variable_order(name);
         let stored = self.value_for_variable_storage(value);
         self.release_variable_native_value_handle(name);
         self.variables.insert(name.to_string(), stored);
@@ -8347,6 +8468,11 @@ impl CGenerator {
             | Expr::SelfMethodCall { .. }
             | Expr::LateStaticMethodCall { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Variable(name, span) => {
+                if is_globals_superglobal_name(name) {
+                    let value = self.materialize_globals_snapshot_value("", *span)?;
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
                 if is_request_superglobal_name(name) {
                     let value = self.materialize_request_superglobal_snapshot_value(name, "");
                     self.retain_native_value_cleanup_handle(&value.handle);
@@ -10113,6 +10239,7 @@ impl CGenerator {
             let key_handle =
                 self.emit_native_array_foreach_cursor_value(&iterable_handle, &index, "key");
             self.retain_native_value_cleanup_handle(&key_handle);
+            self.remember_variable_order(key);
             self.variables.insert(
                 key.to_string(),
                 CValue::NativeValueHandle(key_handle.clone()),
@@ -10124,6 +10251,7 @@ impl CGenerator {
         let value_handle =
             self.emit_native_array_foreach_cursor_value(&iterable_handle, &index, "value");
         self.retain_native_value_cleanup_handle(&value_handle);
+        self.remember_variable_order(value);
         self.variables.insert(
             value.to_string(),
             CValue::NativeValueHandle(value_handle.clone()),
@@ -14742,6 +14870,14 @@ impl CGenerator {
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if let Expr::Variable(name, span) = expr {
+            if is_globals_superglobal_name(name) {
+                return self
+                    .materialize_globals_snapshot_value(failure_cleanup, *span)
+                    .map(Some);
+            }
+        }
+
         if let Some(name) = request_superglobal_root_name(expr) {
             return Ok(Some(self.materialize_request_superglobal_snapshot_value(
                 name,
