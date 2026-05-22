@@ -703,6 +703,7 @@ fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
 fn native_value_result_output_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Index { .. } => true,
+        Expr::NullCoalesceAssign { .. } => true,
         Expr::Unary { op, .. } => native_value_unary_op_tag(*op).is_some(),
         Expr::Binary { op, .. } => {
             native_value_binary_op_tag(*op).is_some() || matches!(op, BinaryOp::NullCoalesce)
@@ -714,6 +715,88 @@ fn native_value_result_output_expr(expr: &Expr) -> bool {
                 || native_string_result_operation_for_name(name).is_some()
         }
         _ => false,
+    }
+}
+
+fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
+    match expr {
+        Expr::Array { .. }
+        | Expr::Assign { .. }
+        | Expr::CompoundAssign { .. }
+        | Expr::NullCoalesceAssign { .. }
+        | Expr::IncrementDecrement { .. }
+        | Expr::Ternary { .. }
+        | Expr::ShortTernary { .. } => true,
+        Expr::Index { target, index, .. } => {
+            native_conditional_rhs_needs_cleanup_boundary(target)
+                || native_conditional_rhs_needs_cleanup_boundary(index)
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::InstanceOf { expr: target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => native_conditional_rhs_needs_cleanup_boundary(target),
+        Expr::DynamicProperty {
+            target, property, ..
+        } => {
+            native_conditional_rhs_needs_cleanup_boundary(target)
+                || native_conditional_rhs_needs_cleanup_boundary(property)
+        }
+        Expr::Binary { left, right, .. } => {
+            native_conditional_rhs_needs_cleanup_boundary(left)
+                || native_conditional_rhs_needs_cleanup_boundary(right)
+        }
+        Expr::Call { args, .. } => args
+            .iter()
+            .any(native_conditional_rhs_needs_cleanup_boundary),
+        Expr::DynamicCall { callee, args, .. } => {
+            native_conditional_rhs_needs_cleanup_boundary(callee)
+                || args
+                    .iter()
+                    .any(native_conditional_rhs_needs_cleanup_boundary)
+        }
+        Expr::New { args, .. } => args
+            .iter()
+            .any(native_conditional_rhs_needs_cleanup_boundary),
+        Expr::Closure { .. } => true,
+        Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::InterpolatedString { .. }
+        | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::MethodCall { .. }
+        | Expr::DynamicMethodCall { .. }
+        | Expr::ParentMethodCall { .. }
+        | Expr::StaticMethodCall { .. }
+        | Expr::ObjectStaticMethodCall { .. }
+        | Expr::SelfMethodCall { .. }
+        | Expr::LateStaticMethodCall { .. } => false,
     }
 }
 
@@ -7248,9 +7331,20 @@ impl CGenerator {
 
                 Err(self.unsupported(*span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION))
             }
+            Stmt::NullCoalesceAssign { target, expr, span } => {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                if self.emit_array_offset_null_coalesce_assignment(target, expr, *span)? {
+                    return Ok(());
+                }
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
             Stmt::CompoundAssign { target, span, .. }
-            | Stmt::IncrementDecrement { target, span, .. }
-            | Stmt::NullCoalesceAssign { target, span, .. } => {
+            | Stmt::IncrementDecrement { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -7639,8 +7733,22 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
+            Expr::NullCoalesceAssign { target, expr, span } => {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                if let Some(value) = self.materialize_array_offset_null_coalesce_assignment_expr(
+                    target, expr, *span, "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
             Expr::CompoundAssign { target, span, .. }
-            | Expr::NullCoalesceAssign { target, span, .. }
             | Expr::IncrementDecrement { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
@@ -8004,6 +8112,244 @@ impl CGenerator {
             "array_offset_append",
             span,
         )
+    }
+
+    fn emit_array_offset_null_coalesce_assignment(
+        &mut self,
+        target: &AssignTarget,
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<bool> {
+        let AssignTarget::ArrayIndex {
+            name,
+            index: Some(index_expr),
+            ..
+        } = target
+        else {
+            return Ok(false);
+        };
+
+        let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+            return Ok(false);
+        };
+
+        self.emit_array_offset_null_coalesce_assignment_for_handle(
+            name,
+            &handle,
+            index_expr,
+            replacement_expr,
+            span,
+            None,
+            "",
+        )?;
+        Ok(true)
+    }
+
+    fn materialize_array_offset_null_coalesce_assignment_expr(
+        &mut self,
+        target: &AssignTarget,
+        replacement_expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let AssignTarget::ArrayIndex {
+            name,
+            index: Some(index_expr),
+            ..
+        } = target
+        else {
+            return Ok(None);
+        };
+
+        let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+            return Ok(None);
+        };
+
+        self.emit_array_offset_null_coalesce_assignment_for_handle(
+            name,
+            &handle,
+            index_expr,
+            replacement_expr,
+            span,
+            Some("array_offset_null_coalesce_assign_result"),
+            failure_cleanup,
+        )
+    }
+
+    fn emit_array_offset_null_coalesce_assignment_for_handle(
+        &mut self,
+        name: &str,
+        handle: &str,
+        index_expr: &Expr,
+        replacement_expr: &Expr,
+        span: Span,
+        result_prefix: Option<&str>,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if native_conditional_rhs_needs_cleanup_boundary(replacement_expr) {
+            return Err(self.unsupported(replacement_expr.span(), ASSEMBLY_CONDITIONAL_REJECTION));
+        }
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_value_offset_mutation = true;
+
+        let subject = self.materialize_native_array_c_value_handle(
+            CValue::ArrayHandle(handle.to_string()),
+            span,
+        )?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let offset_failure_cleanup = format!("{subject_cleanup}{failure_cleanup}");
+        let offset =
+            self.materialize_native_value_result_operand(index_expr, &offset_failure_cleanup)?;
+        let mut operand_cleanup = offset.cleanup_after_use;
+        operand_cleanup.extend(subject.cleanup_after_use);
+        let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
+
+        let current_array = self.next_native_name("array_offset_null_coalesce_assign_array");
+        let assigned_array =
+            self.next_native_name("array_offset_null_coalesce_assign_written_array");
+        self.body.push(format!(
+            "phpc_NativeArrayHandle {current_array} = {handle};"
+        ));
+        self.body
+            .push(format!("phpc_NativeArrayHandle {assigned_array} = {{0}};"));
+        self.array_cleanup_handles.push(assigned_array.clone());
+
+        let result = result_prefix.map(|prefix| self.next_native_name(prefix));
+        if let Some(result) = &result {
+            self.body
+                .push(format!("phpc_NativeValueHandle {result} = {{0}};"));
+        }
+
+        let probe = self.next_native_name("array_offset_null_coalesce_assign_probe");
+        let probe_diagnostic =
+            self.next_native_name("array_offset_null_coalesce_assign_diagnostic");
+        let bool_diagnostic =
+            self.next_native_name("array_offset_null_coalesce_assign_bool_diagnostic");
+        let present = self.next_native_name("array_offset_null_coalesce_assign_present");
+
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {probe_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {probe} = phpc_native_value_offset_operation_with_diagnostic({}, {}, {}, &{probe_diagnostic});",
+            subject.handle,
+            offset.handle,
+            NativeStringOffsetOperation::Isset as u8
+        ));
+        let probe_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({probe_diagnostic}); {operand_cleanup_sequence}{failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if ({probe}.ptr == NULL) {{ {probe_error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({probe_diagnostic});"));
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {bool_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "_Bool {present} = phpc_native_value_bool_with_diagnostic({probe}, &{bool_diagnostic});"
+        ));
+        let bool_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({bool_diagnostic}); phpc_native_value_free({probe}); {operand_cleanup_sequence}{failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({bool_diagnostic}.ptr != NULL) {{ {bool_error_exit} }}"
+        ));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({bool_diagnostic});"));
+        self.body.push(format!("phpc_native_value_free({probe});"));
+
+        if let Some(result) = &result {
+            let read = self.next_native_name("array_offset_null_coalesce_assign_read");
+            let read_diagnostic =
+                self.next_native_name("array_offset_null_coalesce_assign_read_diagnostic");
+            self.body.push(format!("if ({present}) {{"));
+            self.body.push(format!(
+                "phpc_NativeDiagnosticHandle {read_diagnostic} = {{0}};"
+            ));
+            self.body.push(format!(
+                "phpc_NativeValueHandle {read} = phpc_native_value_offset_operation_with_diagnostic({}, {}, {}, &{read_diagnostic});",
+                subject.handle,
+                offset.handle,
+                NativeStringOffsetOperation::Read as u8
+            ));
+            self.emit_report_native_diagnostic(&read_diagnostic);
+            let read_error_exit = self.native_error_exit(&format!(
+                "phpc_native_diagnostic_free({read_diagnostic}); {operand_cleanup_sequence}{failure_cleanup}"
+            ));
+            self.body
+                .push(format!("if ({read}.ptr == NULL) {{ {read_error_exit} }}"));
+            self.body
+                .push(format!("phpc_native_diagnostic_free({read_diagnostic});"));
+            self.body.push(format!("{result} = {read};"));
+            self.body.push("} else {".to_string());
+        } else {
+            self.body.push(format!("if (!{present}) {{"));
+        }
+
+        let replacement_failure_cleanup = format!("{operand_cleanup_sequence}{failure_cleanup}");
+        let replacement = self.materialize_native_value_result_operand(
+            replacement_expr,
+            &replacement_failure_cleanup,
+        )?;
+        let mutation = self.next_native_name("array_offset_null_coalesce_assign_value");
+        let mutation_diagnostic =
+            self.next_native_name("array_offset_null_coalesce_assign_write_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {mutation_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {mutation} = phpc_native_value_offset_mutation_operation_with_diagnostic({}, {}, {}, {NATIVE_VALUE_OFFSET_MUTATION_WRITE}, &{mutation_diagnostic});",
+            subject.handle,
+            offset.handle,
+            replacement.handle
+        ));
+        self.body.push(format!(
+            "if ({mutation_diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({mutation_diagnostic}); }}"
+        ));
+        let mutation_failure_cleanup = format!(
+            "{}{operand_cleanup_sequence}{failure_cleanup}",
+            c_cleanup_sequence(&replacement.cleanup_after_use)
+        );
+        let mutation_error_exit = self.native_error_exit(&mutation_failure_cleanup);
+        self.body.push(format!(
+            "if ({mutation}.ptr == NULL) {{ {mutation_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "{assigned_array} = phpc_native_value_array_clone({mutation});"
+        ));
+        let array_error_exit = self.native_error_exit(&format!(
+            "phpc_native_value_free({mutation}); {mutation_failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({assigned_array}.ptr == NULL) {{ {array_error_exit} }}"
+        ));
+        self.body
+            .push(format!("phpc_native_value_free({mutation});"));
+        if let Some(result) = &result {
+            self.uses_native_value_clone = true;
+            let assigned_result =
+                self.next_native_name("array_offset_null_coalesce_assign_assigned_value");
+            self.body.push(format!(
+                "phpc_NativeValueHandle {assigned_result} = phpc_native_value_clone({});",
+                replacement.handle
+            ));
+            self.body.push(format!("{result} = {assigned_result};"));
+        }
+        self.body
+            .push(format!("{current_array} = {assigned_array};"));
+        self.body.extend(replacement.cleanup_after_use);
+        self.body.push("}".to_string());
+        self.body.extend(operand_cleanup);
+        self.variables
+            .insert(name.to_string(), CValue::ArrayHandle(current_array));
+
+        Ok(result.map(|handle| CNativeValueMaterialization {
+            handle: handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+        }))
     }
 
     fn materialize_native_array_lvalue_key_path(
@@ -12168,6 +12514,13 @@ impl CGenerator {
                 }
                 Ok(None)
             }
+            Expr::NullCoalesceAssign { target, expr, span } => self
+                .materialize_array_offset_null_coalesce_assignment_expr(
+                    target,
+                    expr,
+                    *span,
+                    failure_cleanup,
+                ),
             Expr::Index {
                 target,
                 index,
