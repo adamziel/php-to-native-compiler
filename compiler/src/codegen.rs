@@ -96,7 +96,7 @@ const ASSEMBLY_ENUM_REJECTION: &str = "assembly enum lowering rejects enum decla
 const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const ASSEMBLY_NAMESPACE_REJECTION: &str = "assembly namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
-const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, unsupported array offset unset forms, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; generated-native C routes lowerable direct array offset writes and unsets through the value-offset mutation ABI";
+const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects arrays, array literals, array indexing, unsupported array assignment forms, foreach array iteration, unsupported array offset unset forms, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; generated-native C routes lowerable direct array offset writes, appends, and unsets through the value-offset mutation ABI";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
@@ -110,7 +110,7 @@ const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering 
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
-const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct array offset write/append values, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const ASSEMBLY_ISSET_REJECTION: &str = "assembly isset lowering rejects array offset operands, object property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset operands, object property operands, static property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
@@ -7500,7 +7500,7 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION))
             }
-            Expr::Assign { target, span, .. } => {
+            Expr::Assign { target, expr, span } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -7509,6 +7509,11 @@ impl CGenerator {
                 }
                 if is_static_member_assign_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION));
+                }
+                if let Some(value) =
+                    self.emit_array_offset_mutation_assignment_expr(target, expr, *span)?
+                {
+                    return Ok(value);
                 }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
@@ -7957,6 +7962,83 @@ impl CGenerator {
             }
         };
 
+        self.emit_array_offset_mutation_from_materialized(
+            name,
+            subject,
+            offset,
+            replacement,
+            operation,
+            temp_prefix,
+        )
+    }
+
+    fn emit_array_offset_mutation_assignment_expr(
+        &mut self,
+        target: &AssignTarget,
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<Option<CValue>> {
+        if !self.uses_native_string_helpers {
+            return Ok(None);
+        }
+
+        let AssignTarget::ArrayIndex { name, index, .. } = target else {
+            return Ok(None);
+        };
+
+        let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+            return Ok(None);
+        };
+
+        let subject =
+            self.materialize_native_array_c_value_handle(CValue::ArrayHandle(handle), span)?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let offset = if let Some(index_expr) = index.as_ref() {
+            self.materialize_native_value_result_operand(index_expr, &subject_cleanup)?
+        } else {
+            CNativeValueMaterialization {
+                handle: "(phpc_NativeValueHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            }
+        };
+        let replacement_value = self.emit_expr(replacement_expr)?;
+        let replacement = self.materialize_native_array_c_value_handle(
+            replacement_value.clone(),
+            replacement_expr.span(),
+        )?;
+
+        let (operation, temp_prefix) = if index.is_some() {
+            (
+                NATIVE_VALUE_OFFSET_MUTATION_WRITE,
+                "array_offset_assign_expr",
+            )
+        } else {
+            (
+                NATIVE_VALUE_OFFSET_MUTATION_APPEND,
+                "array_offset_append_assign_expr",
+            )
+        };
+
+        self.emit_array_offset_mutation_from_materialized(
+            name,
+            subject,
+            offset,
+            replacement,
+            operation,
+            temp_prefix,
+        )?;
+        Ok(Some(replacement_value))
+    }
+
+    fn emit_array_offset_mutation_from_materialized(
+        &mut self,
+        name: &str,
+        subject: CNativeValueMaterialization,
+        offset: CNativeValueMaterialization,
+        replacement: CNativeValueMaterialization,
+        operation: u8,
+        temp_prefix: &str,
+    ) -> CompileResult<()> {
         self.uses_native_string_helpers = true;
         self.uses_native_array_helpers = true;
         self.uses_native_value_offset_mutation = true;
