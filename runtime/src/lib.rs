@@ -226,6 +226,7 @@ const NATIVE_VALUE_ARRAY_QUERY_PRODUCT: u8 = 6;
 const NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS: u8 = 7;
 const NATIVE_VALUE_ARRAY_QUERY_COMBINE: u8 = 8;
 const NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE: u8 = 9;
+const NATIVE_VALUE_ARRAY_QUERY_COLUMN: u8 = 10;
 const NATIVE_ARRAY_QUERY_STRICT: u8 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -286,6 +287,7 @@ enum NativeValueArrayQueryOperation {
     FillKeys,
     Combine,
     ChangeKeyCase,
+    Column,
 }
 
 impl NativeArrayPointerOperation {
@@ -488,6 +490,7 @@ impl NativeValueArrayQueryOperation {
             NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS => Ok(Self::FillKeys),
             NATIVE_VALUE_ARRAY_QUERY_COMBINE => Ok(Self::Combine),
             NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE => Ok(Self::ChangeKeyCase),
+            NATIVE_VALUE_ARRAY_QUERY_COLUMN => Ok(Self::Column),
             _ => Err(RuntimeError::invalid_array_access(
                 "native value array query operation failed: unsupported operation tag",
             )),
@@ -506,18 +509,49 @@ impl NativeValueArrayQueryOperation {
             Self::FillKeys => "array_fill_keys()",
             Self::Combine => "array_combine()",
             Self::ChangeKeyCase => "array_change_key_case()",
+            Self::Column => "array_column()",
         }
     }
 
-    fn requires_operand(self) -> bool {
-        matches!(
-            self,
-            Self::KeysMatching | Self::Contains | Self::Search | Self::FillKeys | Self::Combine
-        )
+    fn array_argument_label(self) -> &'static str {
+        match self {
+            Self::Column => "first argument",
+            Self::KeysMatching
+            | Self::Contains
+            | Self::Search
+            | Self::Flip
+            | Self::CountValues
+            | Self::Sum
+            | Self::Product
+            | Self::FillKeys
+            | Self::Combine
+            | Self::ChangeKeyCase => "argument",
+        }
     }
 
-    fn accepts_optional_operand(self) -> bool {
-        matches!(self, Self::ChangeKeyCase)
+    fn min_operand_count(self) -> usize {
+        match self {
+            Self::KeysMatching
+            | Self::Contains
+            | Self::Search
+            | Self::FillKeys
+            | Self::Combine
+            | Self::Column => 1,
+            Self::Flip | Self::CountValues | Self::Sum | Self::Product | Self::ChangeKeyCase => 0,
+        }
+    }
+
+    fn max_operand_count(self) -> usize {
+        match self {
+            Self::KeysMatching
+            | Self::Contains
+            | Self::Search
+            | Self::FillKeys
+            | Self::Combine
+            | Self::ChangeKeyCase => 1,
+            Self::Column => 2,
+            Self::Flip | Self::CountValues | Self::Sum | Self::Product => 0,
+        }
     }
 
     fn accepts_flags(self) -> bool {
@@ -8886,7 +8920,60 @@ pub unsafe extern "C" fn phpc_native_value_array_query_operation_with_diagnostic
         unsafe { *diagnostic = NativeDiagnosticHandle::null() };
     }
 
-    match unsafe { native_value_array_query_operation_value(handle, operand, flags, operation) } {
+    let result =
+        unsafe { native_value_array_query_operation_value(handle, operand, flags, operation) };
+    match result {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` and each entry in `operands` must be null or value handles
+/// previously returned by the runtime ABI and not yet freed. `operands` must
+/// point to `operand_count` initialized handles when `operand_count` is
+/// nonzero. The returned value handle owns the PHP value produced by the
+/// selected query operation. On failure the helper stores a diagnostic handle
+/// that the caller owns and must release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_array_query_operation_with_operands_and_diagnostic(
+    handle: NativeValueHandle,
+    operands: *const NativeValueHandle,
+    operand_count: usize,
+    flags: u8,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    if !diagnostic.is_null() {
+        unsafe { *diagnostic = NativeDiagnosticHandle::null() };
+    }
+
+    if operand_count > 0 && operands.is_null() {
+        let error = RuntimeError::invalid_array_access(format!(
+            "native value array query operation failed: operand array is null for {operand_count} operands"
+        ));
+        if !diagnostic.is_null() {
+            unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+        }
+        return NativeValueHandle::null();
+    }
+
+    let operands = if operand_count == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(operands, operand_count) }
+    };
+
+    let result = unsafe {
+        native_value_array_query_operands_operation_value(handle, operands, flags, operation)
+    };
+    match result {
         Ok(value) => NativeValueHandle::from_value(value),
         Err(error) => {
             if !diagnostic.is_null() {
@@ -8951,6 +9038,26 @@ unsafe fn native_value_array_query_operation_value(
     flags: u8,
     operation: u8,
 ) -> RuntimeResult<Value> {
+    if operand.is_null() {
+        unsafe { native_value_array_query_operands_operation_value(handle, &[], flags, operation) }
+    } else {
+        unsafe {
+            native_value_array_query_operands_operation_value(
+                handle,
+                std::slice::from_ref(&operand),
+                flags,
+                operation,
+            )
+        }
+    }
+}
+
+unsafe fn native_value_array_query_operands_operation_value(
+    handle: NativeValueHandle,
+    operands: &[NativeValueHandle],
+    flags: u8,
+    operation: u8,
+) -> RuntimeResult<Value> {
     if flags & !NATIVE_ARRAY_QUERY_STRICT != 0 {
         return Err(RuntimeError::invalid_array_access(
             "native value array query operation failed: unsupported operation flags",
@@ -8974,32 +9081,32 @@ unsafe fn native_value_array_query_operation_value(
     let Value::Array(array) = value else {
         return Err(RuntimeError::unsupported_call(
             operation.callable(),
-            format!("argument must be array, got {}", value.type_name()),
+            format!(
+                "{} must be array, got {}",
+                operation.array_argument_label(),
+                value.type_name()
+            ),
         ));
     };
 
     let strict = flags & NATIVE_ARRAY_QUERY_STRICT != 0;
-    let operand = if operation.requires_operand() {
-        Some((unsafe { operand.as_ref() }).ok_or_else(|| {
-            RuntimeError::invalid_array_access(format!(
-                "native value array query operation failed: {} operand value handle is null",
-                operation.callable()
-            ))
-        })?)
-    } else if operation.accepts_optional_operand() && !operand.is_null() {
-        Some((unsafe { operand.as_ref() }).ok_or_else(|| {
-            RuntimeError::invalid_array_access(format!(
-                "native value array query operation failed: {} operand value handle is null",
-                operation.callable()
-            ))
-        })?)
-    } else {
-        None
-    };
+    if operands.len() < operation.min_operand_count() {
+        return Err(RuntimeError::invalid_array_access(format!(
+            "native value array query operation failed: {} operand value handle is null",
+            operation.callable()
+        )));
+    }
+    if operands.len() > operation.max_operand_count() {
+        return Err(RuntimeError::invalid_array_access(format!(
+            "native value array query operation failed: {} received unsupported operand count {}",
+            operation.callable(),
+            operands.len()
+        )));
+    }
 
     match operation {
         NativeValueArrayQueryOperation::KeysMatching => {
-            let search = operand.expect("filtered array_keys operation has an operand");
+            let search = unsafe { native_value_array_query_operand(operation, operands, 0)? };
             let keys = if strict {
                 array.keys_matching_strict_scalar(search)?
             } else {
@@ -9008,7 +9115,7 @@ unsafe fn native_value_array_query_operation_value(
             Ok(Value::Array(keys))
         }
         NativeValueArrayQueryOperation::Contains => {
-            let needle = operand.expect("in_array operation has an operand");
+            let needle = unsafe { native_value_array_query_operand(operation, operands, 0)? };
             let contains = if strict {
                 array.contains_value_strict_scalar(needle)?
             } else {
@@ -9017,7 +9124,7 @@ unsafe fn native_value_array_query_operation_value(
             Ok(Value::Bool(contains))
         }
         NativeValueArrayQueryOperation::Search => {
-            let needle = operand.expect("array_search operation has an operand");
+            let needle = unsafe { native_value_array_query_operand(operation, operands, 0)? };
             let key = if strict {
                 array.search_value_strict_scalar(needle)?
             } else {
@@ -9033,11 +9140,11 @@ unsafe fn native_value_array_query_operation_value(
         NativeValueArrayQueryOperation::Sum => array.sum_values(),
         NativeValueArrayQueryOperation::Product => array.product_values(),
         NativeValueArrayQueryOperation::FillKeys => {
-            let fill = operand.expect("array_fill_keys operation has an operand");
+            let fill = unsafe { native_value_array_query_operand(operation, operands, 0)? };
             Ok(Value::Array(array.filled_keys(fill.clone())?))
         }
         NativeValueArrayQueryOperation::Combine => {
-            let values = operand.expect("array_combine operation has an operand");
+            let values = unsafe { native_value_array_query_operand(operation, operands, 0)? };
             let Value::Array(values) = values else {
                 return Err(RuntimeError::unsupported_call(
                     "array_combine()",
@@ -9047,22 +9154,61 @@ unsafe fn native_value_array_query_operation_value(
             Ok(Value::Array(array.combined_with(values)?))
         }
         NativeValueArrayQueryOperation::ChangeKeyCase => {
-            let case = match operand {
-                Some(Value::Int(case)) => ArrayKeyCase::from_flag(*case),
-                Some(other) => {
-                    return Err(RuntimeError::unsupported_call(
-                        "array_change_key_case()",
-                        format!(
-                            "case flag must be int in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ))
-                }
+            let case = match operands.first() {
+                Some(handle) => match unsafe { handle.as_ref() } {
+                    Some(Value::Int(case)) => ArrayKeyCase::from_flag(*case),
+                    Some(other) => {
+                        return Err(RuntimeError::unsupported_call(
+                            "array_change_key_case()",
+                            format!(
+                                "case flag must be int in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ))
+                    }
+                    None => {
+                        return Err(RuntimeError::invalid_array_access(
+                            "native value array query operation failed: array_change_key_case() operand value handle is null",
+                        ))
+                    }
+                },
                 None => ArrayKeyCase::Lower,
             };
             Ok(Value::Array(array.keys_with_ascii_case(case)))
         }
+        NativeValueArrayQueryOperation::Column => {
+            let column_key = ArrayColumnKey::from_value(unsafe {
+                native_value_array_query_operand(operation, operands, 0)?
+            })?;
+            let index_key = if operands.len() > 1 {
+                ArrayColumnKey::index_from_value(unsafe {
+                    native_value_array_query_operand(operation, operands, 1)?
+                })?
+            } else {
+                None
+            };
+            Ok(Value::Array(array.column_values(column_key, index_key)?))
+        }
     }
+}
+
+unsafe fn native_value_array_query_operand<'a>(
+    operation: NativeValueArrayQueryOperation,
+    operands: &'a [NativeValueHandle],
+    index: usize,
+) -> RuntimeResult<&'a Value> {
+    let Some(handle) = operands.get(index) else {
+        return Err(RuntimeError::invalid_array_access(format!(
+            "native value array query operation failed: {} operand value handle is null",
+            operation.callable()
+        )));
+    };
+    unsafe { handle.as_ref() }.ok_or_else(|| {
+        RuntimeError::invalid_array_access(format!(
+            "native value array query operation failed: {} operand value handle is null",
+            operation.callable()
+        ))
+    })
 }
 
 fn native_value_array_filter_result(values: &[NativeValueHandle]) -> NativeArrayLvalueResult {
@@ -32605,6 +32751,128 @@ mod tests {
         unsafe { phpc_native_value_free(ada_string) };
         unsafe { phpc_native_value_free(zero_string) };
         unsafe { phpc_native_value_free(array_handle) };
+    }
+
+    #[test]
+    fn native_value_array_query_operand_list_extracts_array_columns() {
+        let mut first = PhpArray::new();
+        first.insert("id", Value::String("a".to_string()));
+        first.insert("name", Value::String("Ada".to_string()));
+        let mut second = PhpArray::new();
+        second.insert("id", Value::String("b".to_string()));
+        second.insert("name", Value::String("Bee".to_string()));
+        let mut missing_index = PhpArray::new();
+        missing_index.insert("name", Value::String("NoId".to_string()));
+        let mut rows = PhpArray::new();
+        rows.append(Value::Array(first)).unwrap();
+        rows.append(Value::Array(second)).unwrap();
+        rows.append(Value::Array(missing_index)).unwrap();
+
+        let rows_handle = NativeValueHandle::from_value(Value::Array(rows));
+        let column_key = NativeValueHandle::from_value(Value::String("name".to_string()));
+        let index_key = NativeValueHandle::from_value(Value::String("id".to_string()));
+        let operands = [column_key, index_key];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let indexed = unsafe {
+            phpc_native_value_array_query_operation_with_operands_and_diagnostic(
+                rows_handle,
+                operands.as_ptr(),
+                operands.len(),
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_COLUMN,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+
+        let a_key = NativeValueHandle::from_value(Value::String("a".to_string()));
+        let indexed_a = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                indexed,
+                a_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(indexed_a), b"Ada");
+
+        let b_key = NativeValueHandle::from_value(Value::String("b".to_string()));
+        let indexed_b = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                indexed,
+                b_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(indexed_b), b"Bee");
+
+        let zero_key = phpc_native_value_from_scalar(phpc_native_int(0));
+        let indexed_missing = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                indexed,
+                zero_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(indexed_missing), b"NoId");
+
+        let bad_index_key = phpc_native_value_from_scalar(phpc_native_bool(true));
+        let bad_index_operands = [column_key, bad_index_key];
+        let bad_index = unsafe {
+            phpc_native_value_array_query_operation_with_operands_and_diagnostic(
+                rows_handle,
+                bad_index_operands.as_ptr(),
+                bad_index_operands.len(),
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_COLUMN,
+                &mut diagnostic,
+            )
+        };
+        assert!(bad_index.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call array_column(): index key must be int, string, or null in the current subset, got bool"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        let scalar = NativeValueHandle::from_value(Value::Int(42));
+        let scalar_failed = unsafe {
+            phpc_native_value_array_query_operation_with_operands_and_diagnostic(
+                scalar,
+                operands.as_ptr(),
+                1,
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_COLUMN,
+                &mut diagnostic,
+            )
+        };
+        assert!(scalar_failed.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call array_column(): first argument must be array, got int"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(scalar_failed) };
+        unsafe { phpc_native_value_free(scalar) };
+        unsafe { phpc_native_value_free(bad_index) };
+        unsafe { phpc_native_value_free(bad_index_key) };
+        unsafe { phpc_native_value_free(indexed_missing) };
+        unsafe { phpc_native_value_free(zero_key) };
+        unsafe { phpc_native_value_free(indexed_b) };
+        unsafe { phpc_native_value_free(b_key) };
+        unsafe { phpc_native_value_free(indexed_a) };
+        unsafe { phpc_native_value_free(a_key) };
+        unsafe { phpc_native_value_free(indexed) };
+        unsafe { phpc_native_value_free(index_key) };
+        unsafe { phpc_native_value_free(column_key) };
+        unsafe { phpc_native_value_free(rows_handle) };
     }
 
     #[test]

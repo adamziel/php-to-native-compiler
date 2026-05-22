@@ -442,6 +442,45 @@ fn native_executable_c_source_routes_array_change_key_case_through_array_query_o
 }
 
 #[test]
+fn native_executable_c_source_routes_array_column_through_operand_list_query_operation() {
+    let program = parse(
+        "<?php\n$rows = [];\n$rows[] = [\"id\" => \"a\", \"name\" => \"Ada\"];\n$rows[] = [\"id\" => \"b\", \"name\" => \"Bee\"];\n$rows[] = [\"name\" => \"NoId\"];\n$names = array_column($rows, \"name\", \"id\");\n$whole = array_column($rows, null);\necho $names[\"a\"], \"|\", $names[\"b\"], \"|\", $names[0], \"|\", $whole[0][\"name\"], \"|\", $whole[2][\"name\"];\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_array_query_operation_with_operands_and_diagnostic"
+        ),
+        "{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_VALUE_ARRAY_QUERY_COLUMN"),
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_NativeValueHandle array_query_operands_"),
+        "array_column operands should be materialized as a reusable operand list:\n{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_value_array_query_operation_with_operands_and_diagnostic(")
+            .count()
+            >= 2,
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(native_value_array_query"),
+        "owned array_column query results must be cleaned:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_value_result_offset_reads_through_shared_boundary() {
     let program = parse(
         "<?php\necho array_map(null, [\"L\", \"M\"])[1];\necho \"|\";\necho ((array) \"Q\")[0];\necho \"|\";\necho ((array) \"NO\")[0][1];\necho \"|\";\necho (\"A\" . \"B\")[1];\n",
@@ -861,6 +900,66 @@ fn emit_exe_links_and_runs_array_change_key_case_through_array_query_operation()
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "Ada|mixed|seven");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_column_through_operand_list_query_operation() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("array_column_operand_list_query.php");
+    let output_path = native_link_output_path("array_column_operand_list_query");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        "<?php\n$rows = [];\n$rows[] = [\"id\" => \"a\", \"name\" => \"Ada\"];\n$rows[] = [\"id\" => \"b\", \"name\" => \"Bee\"];\n$rows[] = [\"name\" => \"NoId\"];\n$names = array_column($rows, \"name\", \"id\");\n$whole = array_column($rows, null);\necho $names[\"a\"], \"|\", $names[\"b\"], \"|\", $names[0], \"|\", $whole[0][\"name\"], \"|\", $whole[2][\"name\"];\n",
+    )
+    .expect("write array_column native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array_column source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native array_column executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native array_column executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "Ada|Bee|NoId|Ada|NoId"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);

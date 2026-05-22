@@ -808,6 +808,7 @@ enum NativeValueArrayQueryBuiltin {
     FillKeys,
     Combine,
     ChangeKeyCase,
+    Column,
 }
 
 impl NativeArraySortBuiltin {
@@ -862,6 +863,7 @@ impl NativeValueArrayQueryBuiltin {
             Self::FillKeys => "PHPC_NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS",
             Self::Combine => "PHPC_NATIVE_VALUE_ARRAY_QUERY_COMBINE",
             Self::ChangeKeyCase => "PHPC_NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE",
+            Self::Column => "PHPC_NATIVE_VALUE_ARRAY_QUERY_COLUMN",
         }
     }
 }
@@ -929,6 +931,9 @@ fn native_value_array_query_builtin(
         "array_combine" if args.len() == 2 => Some(NativeValueArrayQueryBuiltin::Combine),
         "array_change_key_case" if (1..=2).contains(&args.len()) => {
             Some(NativeValueArrayQueryBuiltin::ChangeKeyCase)
+        }
+        "array_column" if (2..=3).contains(&args.len()) => {
+            Some(NativeValueArrayQueryBuiltin::Column)
         }
         _ => None,
     }
@@ -7760,6 +7765,7 @@ impl CGenerator {
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS 7\n");
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_COMBINE 8\n");
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE 9\n");
+                    output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_COLUMN 10\n");
                     output.push_str("#define PHPC_NATIVE_ARRAY_QUERY_STRICT 1\n");
                 }
                 output.push_str("#define PHPC_NATIVE_VALUE_OPERATION_OK 0\n");
@@ -7950,6 +7956,7 @@ impl CGenerator {
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_array_mutation_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t operation, const phpc_NativeValueHandle *operands, size_t operand_count);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_value_array_callback_result(uint8_t operation, const phpc_NativeValueHandle *values, size_t value_count);\n");
                     output.push_str("extern phpc_NativeValueHandle phpc_native_value_array_query_operation_with_diagnostic(phpc_NativeValueHandle handle, phpc_NativeValueHandle operand, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    output.push_str("extern phpc_NativeValueHandle phpc_native_value_array_query_operation_with_operands_and_diagnostic(phpc_NativeValueHandle handle, const phpc_NativeValueHandle *operands, size_t operand_count, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_foreach_iterable_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count);\n");
                     output.push_str("extern size_t phpc_native_array_foreach_iterable_len(phpc_NativeValueHandle iterable);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_foreach_iterable_key_result(phpc_NativeValueHandle iterable, size_t index);\n");
@@ -14920,7 +14927,64 @@ impl CGenerator {
                     ),
                 _ => Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
             },
+            NativeValueArrayQueryBuiltin::Column => match args {
+                [subject, column_key] => self
+                    .materialize_native_value_array_query_subject_operands_expr(
+                        builtin,
+                        subject,
+                        &[column_key],
+                        "0".to_string(),
+                        failure_cleanup,
+                    ),
+                [subject, column_key, index_key] => self
+                    .materialize_native_value_array_query_subject_operands_expr(
+                        builtin,
+                        subject,
+                        &[column_key, index_key],
+                        "0".to_string(),
+                        failure_cleanup,
+                    ),
+                _ => Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
+            },
         }
+    }
+
+    fn materialize_native_value_array_query_subject_operands_expr(
+        &mut self,
+        builtin: NativeValueArrayQueryBuiltin,
+        subject_expr: &Expr,
+        operand_exprs: &[&Expr],
+        flags: String,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let subject =
+            self.materialize_native_value_result_operand(subject_expr, failure_cleanup)?;
+        let mut cleanup_after_use = subject.cleanup_after_use.clone();
+        let mut operands = Vec::new();
+        for operand_expr in operand_exprs {
+            let operand_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let operand = self
+                .materialize_native_value_result_operand(operand_expr, &operand_failure_cleanup)?;
+            let mut next_cleanup = operand.cleanup_after_use.clone();
+            next_cleanup.extend(cleanup_after_use);
+            cleanup_after_use = next_cleanup;
+            operands.push(operand);
+        }
+
+        Ok(
+            self.emit_native_value_array_query_operation_handle_with_operands(
+                builtin,
+                subject,
+                operands,
+                flags,
+                cleanup_after_use,
+                failure_cleanup,
+            ),
+        )
     }
 
     fn materialize_native_value_array_query_subject_operand_expr(
@@ -15033,6 +15097,62 @@ impl CGenerator {
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
             "phpc_NativeValueHandle {result} = phpc_native_value_array_query_operation_with_diagnostic({subject_handle}, {operand_handle}, {flags}, {operation_tag}, &{diagnostic});"
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&cleanup_after_use),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(cleanup_after_use);
+
+        CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }
+    }
+
+    fn emit_native_value_array_query_operation_handle_with_operands(
+        &mut self,
+        builtin: NativeValueArrayQueryBuiltin,
+        subject: CNativeValueMaterialization,
+        operands: Vec<CNativeValueMaterialization>,
+        flags: String,
+        cleanup_after_use: Vec<String>,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let subject_handle = subject.handle.clone();
+        let operand_array = if operands.is_empty() {
+            "NULL".to_string()
+        } else {
+            let operand_array = self.next_native_name("array_query_operands");
+            let handles = operands
+                .iter()
+                .map(|operand| operand.handle.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.body.push(format!(
+                "phpc_NativeValueHandle {operand_array}[] = {{ {handles} }};"
+            ));
+            operand_array
+        };
+        let operation_tag = builtin.operation_tag();
+        let diagnostic = self.next_native_name("array_query_diagnostic");
+        let result = self.next_native_name("native_value_array_query");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_array_query_operation_with_operands_and_diagnostic({subject_handle}, {operand_array}, {}, {flags}, {operation_tag}, &{diagnostic});",
+            operands.len()
         ));
         self.emit_report_native_diagnostic(&diagnostic);
         let cleanup = format!(
