@@ -1,31 +1,32 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 11:51 CEST
-Current primary semantic baseline: `0f123f2d codegen: route array pointer builtins through lvalue ABI`
+Updated: 2026-05-22 11:58 CEST
+Current primary semantic baseline: `90d8af3f codegen: route direct value-offset writes through mutation ABI`
 
 This is a high-level roadmap view. Percentages are candid engineering estimates, not test-suite pass rates. Lane-local work is not counted as product capability until it is integrated into `master`, gated, committed, and pushed.
 
 ## Overall Estimate
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **64%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **65%**
 
 | Area | Estimated progress | Current read |
 | --- | ---: | --- |
 | Runtime and ABI foundations | 92% | Strong shared surfaces now exist for values, arrays, strings, comparisons, diagnostics, symbol tables, request state, and reference slots. |
 | Compiler/backend consumers | 97% | Many generated-C and LLVM paths consume shared ABIs, but the hard missing consumers are now in symbols, calls, objects, references, and control flow. |
-| Executable generalized PHP semantics | 78% | Selected scalar, string, array, lvalue, symbol, and request runtime behavior works; ordinary broad PHP programs still hit major blockers. |
-| Arrays, references, COW, lvalues | 65% | Good selected array/lvalue execution exists, now including pointer/cursor builtins over tracked array owners; arbitrary writable roots, full references/COW, by-reference foreach, and ArrayAccess/resource offsets remain open. |
+| Executable generalized PHP semantics | 79% | Selected scalar, string, array, lvalue, symbol, and request runtime behavior works; ordinary broad PHP programs still hit major blockers. |
+| Arrays, references, COW, lvalues | 66% | Good selected array/lvalue execution exists, now including pointer/cursor builtins and direct value-offset writes over tracked owners; arbitrary writable roots, full references/COW, by-reference foreach, and ArrayAccess/resource offsets remain open. |
 | Symbols, globals, request state | 33% | Runtime symbol/request roots can snapshot, populate, and share reference cells; compiler-level `$GLOBALS`, superglobal mutation, request lifetime, and frame propagation are not done. |
 | Objects, properties, methods | 11% | Mostly blockers and metadata. Real allocation/property/method behavior remains largely absent. |
 | Diagnostics and control-flow cleanup | 26% | Shared diagnostic/status surfaces exist, but exact ordering, recovery, loops/switch/goto/finally/exceptions, and cleanup stacks are not integrated. |
-| Broad integrated verification | 66% | Focused gates are useful and recent array/lvalue linked gates passed; broad differential composition coverage remains thin. |
+| Broad integrated verification | 67% | Focused gates are useful and recent array/lvalue runtime, source, check, and linked gates passed; broad differential composition coverage remains thin. |
 
 ## Current Primary State
 
 - `master` is pushed and synced with `origin/master`; this file is the latest progress-dashboard update on top of the semantic baseline.
-- The current semantic baseline remains `0f123f2d`.
+- The current semantic baseline remains `90d8af3f`.
 - The only expected dirty primary diff is the preserved `runtime/src/lib.rs` append/null-slot cleanup hunk. It is not counted here.
 - The latest integrated semantic sequence is:
+  - `90d8af3f codegen: route direct value-offset writes through mutation ABI`
   - `0f123f2d codegen: route array pointer builtins through lvalue ABI`
   - `b6e271e6 runtime: snapshot request superglobal storage`
   - `9ca31007 runtime: populate request roots from symbol tables`
@@ -41,6 +42,7 @@ The current wave moved request, symbol, and array-lvalue behavior toward shared 
 - Symbol-table slots now store `ArraySlot`s, allowing root symbols to hold shared PHP reference cells instead of only cloned values.
 - Request superglobal slots can also share reference cells, so root symbol references and request slots can point at the same runtime cell.
 - Generated-native C now routes `current`, `key`, `next`, `prev`, `reset`, and `end` over tracked native array owners through the shared array-lvalue owner/path boundary instead of one builtin-specific lowering path.
+- Generated-native C direct value-offset assignments now route null/false/scalar and native-value RHS writes through the shared value-offset mutation ABI, including runtime conversion and linked executable coverage.
 - Clean verification for `4aef9974` passed the full `php_runtime` crate in a separate worktree with only the staged semantic patch applied.
 
 ## What Is Still Missing
@@ -65,7 +67,7 @@ The current wave moved request, symbol, and array-lvalue behavior toward shared 
 
 The next best primary slices should be executable consumers rather than more runtime-only vocabulary:
 
-- nested/arbitrary-root `??=`, append/RMW forms, missing/null/scalar recovery, or owner-slot/value-slot/reference-slot materialization over the array-lvalue boundary;
+- nested/arbitrary-root writes, `??=`, append/RMW forms, missing/null/scalar recovery, or owner-slot/value-slot/reference-slot materialization over the array-lvalue/value-offset boundaries;
 - whole-bag request/superglobal reads or `isset()` / `empty()` probes over the request-state boundary;
 - compiler/backend consumers for shared symbol/request reference slots or a narrow references/COW owner-slot materialization slice;
 - a concrete object/call/control-flow blocker replacement with linked executable evidence.
