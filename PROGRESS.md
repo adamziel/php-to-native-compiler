@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 19:10 CEST
+Updated: 2026-05-22 19:12 CEST
 Evaluation marker: `20260522T165426Z`
 Primary semantic HEAD: `0b28771d codegen: route native value strict identity through comparison ABI`
 Current pushed semantic baseline: `0b28771d codegen: route native value strict identity through comparison ABI`
@@ -25,6 +25,11 @@ fallback path, covering stored array-read values, `$GLOBALS[...]` reads, and
 request-state reads.
 These are generalized symbol/path/key-driven slices with focused linked
 evidence, not fixture-shaped recognizers.
+
+An adjacent `native_value_variable_storage` executable gate is still red, but
+the same failure reproduces on baseline `bc5b987f` before the strict-identity
+commit. Treat it as a known pre-existing native-value storage semantics gap, not
+as proof of a regression in `0b28771d`.
 
 The work remains bounded. Primary is stronger for selected request-state and
 `$GLOBALS[...]` path operations, but it still does not have complete PHP
@@ -191,11 +196,9 @@ Primary currently has one preserved unstaged implementation diff:
 as progress and still needs explicit classification, focused tests, and a
 separate commit or rejection before any runtime staging.
 
-Resource snapshot: `/dev/shm` has about 7.6G free of 22G (`du` reports 15G
-used) and remains close enough to the dispatcher floor to avoid broad cargo
-waves; `/home` has about 196G free (`du` reports 226G with container-overlay
-permission warnings). Keep focused gates and avoid broad simultaneous cargo
-waves.
+Resource snapshot: `/dev/shm` has about 15G free of 22G and `/home` has about
+194G free. Focused gates are fine; keep broad cargo waves coordinated so worker
+lanes do not starve integration.
 
 The supervisor dashboard tail is behind fresher worker evidence; use the
 bounded snapshot and status files for this review's current facts.
