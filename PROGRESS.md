@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 19:12 CEST
+Updated: 2026-05-22 19:28 CEST
 Evaluation marker: `20260522T165426Z`
-Primary semantic HEAD: `0b28771d codegen: route native value strict identity through comparison ABI`
-Current pushed semantic baseline: `0b28771d codegen: route native value strict identity through comparison ABI`
+Primary semantic HEAD: `a6afb405 codegen: sync active root offset mutations through symbol ABI`
+Current pushed semantic baseline: `a6afb405 codegen: sync active root offset mutations through symbol ABI`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -23,13 +23,17 @@ Generated-C strict identity for owned `NativeValueHandle` values now also
 routes through the shared comparison operand/relation ABI instead of the static
 fallback path, covering stored array-read values, `$GLOBALS[...]` reads, and
 request-state reads.
+Active root value-offset mutations now also write cloned mutation results back
+through the shared symbol-table path ABI when the root symbol table is active,
+so native-value storage, direct writes, appends, and path appends remain visible
+to later symbol-table reads.
 These are generalized symbol/path/key-driven slices with focused linked
 evidence, not fixture-shaped recognizers.
 
-An adjacent `native_value_variable_storage` executable gate is still red, but
-the same failure reproduces on baseline `bc5b987f` before the strict-identity
-commit. Treat it as a known pre-existing native-value storage semantics gap, not
-as proof of a regression in `0b28771d`.
+The adjacent `native_value_variable_storage` executable gate is now green via
+the shared active-symbol writeback path. This is still not full symbol/value
+slot materialization, but it removes the stale-root mutation gap for the
+currently lowered value-offset mutation families.
 
 The work remains bounded. Primary is stronger for selected request-state and
 `$GLOBALS[...]` path operations, but it still does not have complete PHP
@@ -44,10 +48,10 @@ substantial open systems.
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
-| Compiler/backend consumers | 90% | `[##################--]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, static request aliases, direct undefined root reads, and generated-C native-value strict identity; uneven across calls, objects, control flow, and LLVM/C parity. |
+| Compiler/backend consumers | 91% | `[##################--]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, active root offset-mutation writeback, static request aliases, direct undefined root reads, and generated-C native-value strict identity; uneven across calls, objects, control flow, and LLVM/C parity. |
 | Executable generalized PHP semantics | 73% | `[###############-----]` | Improving through executable path consumers, but many real PHP compositions still block. |
 | Arrays, lvalues, references, COW | 73% | `[###############-----]` | Arrays/lvalues advanced; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 77% | `[###############-----]` | Request paths/null-coalesce, static `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, and direct undefined root reads are stronger; dynamic aliases, direct root appends, frames, and self-reference remain incomplete. |
+| Symbols, globals, request state | 78% | `[################----]` | Request paths/null-coalesce, static `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, and direct undefined root reads are stronger; dynamic aliases, direct root appends, frames, and self-reference remain incomplete. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Early; lane candidates exist, but broad executable call/frame semantics are not primary yet. |
 | Objects, properties, methods | 11% | `[##------------------]` | Early; runtime candidates exist, but general compiled object/property/method execution remains missing. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused work, but exact diagnostic ordering and structured cleanup are not generalized. |
@@ -87,6 +91,10 @@ substantial open systems.
 - [x] Generated-C strict identity/non-identity over owned `NativeValueHandle`
   values through the shared comparison operand/relation ABI, including stored
   array-read values, `$GLOBALS[...]` path reads, and request-state reads.
+- [x] Active root value-offset mutations in generated C write cloned mutation
+  results back through the persistent symbol-table path ABI when the global
+  symbol table is active, covering native-value storage, direct keyed writes,
+  direct appends, and nested/path append writeback.
 - [ ] Dynamic `$GLOBALS[$expr]` request-root alias dispatch and direct no-key
   `$GLOBALS[]` root append.
 - [ ] Request append suffix wrapping after the append hole.
@@ -107,6 +115,7 @@ substantial open systems.
 
 Recent semantic commits on primary:
 
+- `a6afb405 codegen: sync active root offset mutations through symbol ABI`
 - `0b28771d codegen: route native value strict identity through comparison ABI`
 - `aa94e4bd codegen: route GLOBALS request aliases through state ABI`
 - `f41f2342 codegen: route request null coalesce through state ABI`
@@ -131,11 +140,12 @@ appends, request null-coalescing reads, and static `$GLOBALS[request-root]`
 alias routing, generated-C `$GLOBALS[...]` read/probe/write/unset/append
 lowering through shared symbol-table path ABIs, direct unresolved root-variable
 reads through a diagnostic symbol-table ABI, and generated-C strict identity
-over owned native-value handles through the shared comparison ABI. The latest
-strict-identity slice intentionally leaves direct one-level array-offset
-comparison operands, LLVM/C assembly parity, dynamic first-key request-root
-dispatch, exact diagnostic ordering through arbitrary control flow,
-request-root mutation/reference parity, direct no-key `$GLOBALS[]`,
+over owned native-value handles through the shared comparison ABI. Active root
+value-offset mutation results now sync back into the persistent symbol table
+when that table is active. The latest writeback slice intentionally leaves full
+symbol/value-slot materialization, LLVM/C assembly parity, dynamic first-key
+request-root dispatch, exact diagnostic ordering through arbitrary control
+flow, request-root mutation/reference parity, direct no-key `$GLOBALS[]`,
 self-reference behavior, frames, and references/COW blocked.
 
 ## Lane-Local And Active Candidate Work
@@ -196,9 +206,9 @@ Primary currently has one preserved unstaged implementation diff:
 as progress and still needs explicit classification, focused tests, and a
 separate commit or rejection before any runtime staging.
 
-Resource snapshot: `/dev/shm` has about 15G free of 22G and `/home` has about
-194G free. Focused gates are fine; keep broad cargo waves coordinated so worker
-lanes do not starve integration.
+Resource snapshot: `/dev/shm` was down to about 5G free during this integration
+pass, so focused gates used a disk-backed target under the primary worktree.
+Keep broad cargo waves coordinated so worker lanes do not starve integration.
 
 The supervisor dashboard tail is behind fresher worker evidence; use the
 bounded snapshot and status files for this review's current facts.
