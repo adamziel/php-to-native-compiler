@@ -1,120 +1,91 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 05:47 CEST
-Evaluation marker: 20260522T034700Z-plus-c9999be0
+Updated: 2026-05-22 06:08 CEST
+Evaluation marker: 20260522T040802Z-primary-e3af4261
 
-This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local or uncommitted primary work is candidate material until selected, gated, committed, and pushed.
+This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local and uncommitted primary work are candidate material until selected, gated, committed, and pushed.
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **51%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **52%**
 
 ```
 Generalized runtime/ABI foundations      [##################--] 89%
 Compiler/backend consumers               [###################-] 96%
-Executable generalized PHP semantics     [############--------] 61%
-Arrays, references, COW, lvalues         [########------------] 38%
+Executable generalized PHP semantics     [#############-------] 63%
+Arrays, references, COW, lvalues         [########------------] 40%
 Objects, properties, methods             [##------------------] 11%
 Diagnostics/control-flow composition     [#####---------------] 25%
-Broad integrated verification            [##########----------] 51%
+Broad integrated verification            [##########----------] 52%
 ```
 
 ## Current Primary State
 
-- Current primary HEAD at review: `c9999be0 codegen: route array reads through value offset ABI`.
-- Current committed semantic baseline at review: `c9999be0 codegen: route array reads through value offset ABI`.
-- Latest semantic batch routes generated-native C array offset reads for lowerable array owners through the shared `phpc_native_value_offset_operation_with_diagnostic(...)` value-offset read ABI. The read result is an owned native value handle that now composes with `echo`/`print`, array mutation replacement operands, and native string-result operands. This is lowerable generated-C array owner read execution, not arbitrary array-producing expression roots, symbol-slot storage of owned native values, nested writeback, references/COW, LLVM array-offset parity, or object/ArrayAccess/resource offset support.
-- Previous semantic batch routes generated-native C direct array assignment-expression values for keyed writes and appends through the shared `phpc_native_value_offset_mutation_operation_with_diagnostic(...)` mutation ABI, rematerializes the mutated array owner through `phpc_native_value_array_clone(...)`, and returns the assigned value to expression consumers such as `echo`. This is direct existing-array owner-slot assignment-expression execution, not parser-level chained assignment, nested writeback, undefined/null/scalar root materialization, references/COW, LLVM parity, or object/ArrayAccess/resource offset support.
-- Previous semantic batch routes generated-native C direct `$array[] = $value` assignment statements through the shared `phpc_native_value_offset_mutation_operation_with_diagnostic(...)` value-offset mutation ABI using append operation tag `1`, a null offset handle, diagnostic reporting, and returned-array rematerialization through `phpc_native_value_array_clone(...)`. This is direct owner-slot append execution, not nested append/writeback, references/COW, LLVM parity, or object/ArrayAccess/resource offset support.
-- Previous semantic batch routes LLVM lowering for lowerable string offset reads, plus string-offset `isset()`/`empty()` probes, through the shared `phpc_native_value_offset_operation_with_diagnostic(...)` value-offset ABI and native bool/string materialization consumers. It replaces an LLVM-side string-offset bypass with the same value-offset semantic boundary used by generated-native C surfaces instead of adding source-shape handling. LLVM array-offset reads/probes remain blocked behind missing owner/value-slot/lvalue contracts.
-- Previous semantic batch routes generated-native C `unset(...)` statements with multiple direct array-index operands through the same shared value-offset mutation path used by single direct array-offset unset. It sequences each target through the reusable mutation helper instead of adding a fixture-specific recognizer.
-- Previous semantic batch routes generated-native C direct `unset($array[$offset])` through the shared `phpc_native_value_offset_mutation_operation_with_diagnostic(...)` ABI using operation tag `2`, then rematerializes the returned array through `phpc_native_value_array_clone(...)`. The same helper now serves direct array-offset writes, unsets, and direct appends.
-- Previous semantic batch routed LLVM lowering for `strcasecmp()`, `strcmp()`, `strncmp()`, `strncasecmp()`, `substr_count()`, `ord()`, and `crc32()` through `phpc_native_value_string_int_operation_with_diagnostic(...)`.
-- Recent primary-integrated semantic progress in this evaluation window: generated-C byte string compare builtins through the string-int ABI; generated-C array/string offset presence through the value-offset ABI; generated-C string-offset writes through the value-offset mutation ABI; generated-C array offset reads through the value-offset read ABI; generated-C direct array-offset writes, direct array-offset unsets, multi-operand direct array-offset unset sequencing, direct array appends, and direct array assignment-expression values through the value-offset mutation ABI; LLVM string-int backend parity through the same string-int ABI; LLVM string-offset reads and probes through the shared value-offset ABI.
-- Resource note: `/dev/shm` is usable but volatile. Live check for this review showed 22G total, 3.7G used, and 19G free by `df`; it had saturated to 100% earlier in this integration window, so large gates should still prefer explicit resource checks. `/home` has about 226G free by `df`.
+- Current primary HEAD at review: `e3af4261 codegen: store native value results in variables`.
+- Latest committed semantic compiler/runtime baseline: `e3af4261 codegen: store native value results in variables`.
+- Latest integrated semantic batch adds the `phpc_native_value_clone(...)` ABI and generated-C direct-variable storage/cleanup for owned native value-result handles. Lowerable array offset reads, offset `??`, casts, and string-result operations can now persist in variables, clone on variable copy and downstream native-value consumers, and clean up on overwrite/error/program exit.
+- Previous semantic batch routes generated-C lowerable array/string offset `??` through the shared value-offset presence/read ABI, preserves RHS laziness, reports diagnostics through the native diagnostic path, and returns an owned native value for downstream consumers such as output and native string-result calls.
+- Recent integrated array/value-offset progress also includes generated-C array reads, direct appends, direct keyed/append assignment-expression values, direct/multi-operand array unsets, direct array writes, generated-C offset presence, generated-C string-offset writes, LLVM string-offset reads/probes, and LLVM/generated-C string-int consumers.
+- Resource note at this review: `/dev/shm` is 22G total, 15G used, 7.2G free, 68% full by `df`; `/home` has 225G free by `df` and about 197G used by `du`. Broad gates should keep using explicit resource checks.
 
 ## Grand Roadmap Position
 
-The compiler is steadily replacing backend-local decisions and direct scalar/string handling with reusable runtime/ABI contracts plus selected backend/runtime consumers. Recent committed progress is strongest in generated-C value-offset presence/read/mutation, LLVM string-offset read/probe routing through the shared value-offset ABI, direct array-offset writes and reads, direct array-offset unsets, multi-operand direct array-offset unset sequencing, direct array appends, direct array assignment-expression values, LLVM/generated-C string-int ABI consumers, string-offset reads/bool probes/writes, primitive arithmetic conversion, unary string-result execution, comparison relation routing, scalar output, selected type predicates, bitwise/shift operations, and focused verification gates.
+The project is making its best progress when shared runtime/ABI contracts gain real backend consumers. The value-offset family is now a meaningful executable spine for selected generated-C array/string offset reads, presence, writes, unsets, appends, assignment-expression values, and null-coalescing, with LLVM parity for string-offset reads/probes.
 
-The product is still far from full generalized PHP. The largest missing regions remain references/COW, executable lvalues, user calls and frames, object/class/property semantics, mutable globals/superglobals, include/require, exceptions/finally, exact diagnostics, and cleanup across real control flow.
+The compiler is still not close to full generalized PHP semantics. The major unfinished regions are full executable lvalues/writeback, references/COW, symbol environments, mutable globals/superglobals, functions/method frames, by-ref calls/returns, object/property/method behavior, include/require, exceptions/finally, exact diagnostics, and cleanup across real control flow.
 
 ## Done / In Progress / Not Done
 
 - [x] Supervised parallel lanes and a primary integration gate are established.
-- [x] Shared runtime ABI surfaces exist for strings, byte buffers, comparisons, numeric-string classification, array key/value operations, value-offset read/presence/mutation operations, request-state snapshots, selected conversions, selected diagnostics, branch-decision status/abort handling, native value bitwise/shift operations, native value type predicates, runtime string-byte materialization, typed bool extraction, diagnostic report/free, and string-offset read/write/bool results.
-- [x] LLVM/generated-C consumers exist for selected primitive arithmetic, selected unary string-result builtins, selected generated-C array/string offset presence, selected generated-C array offset reads through the shared value-offset ABI, selected LLVM string-offset reads and probes through the shared value-offset ABI, selected generated-C array-offset writes, direct array appends, direct array assignment-expression values, direct and multi-operand direct array-offset unsets, plus string-offset writes through value-offset mutation, selected generated-C string-offset reads/bool probes, selected LLVM/generated-C string-int builtins, selected generated-C string-distance/path builtins, array key/value operations, array-handle value operands, array append diagnostics, comparison relation results, comparison abort guards, strict array/object identity in selected array-search builtins, native value bitwise/shift operations, scalar value echo/print output, print value-result output, native value type predicates, casts/type-name output, selected filesystem/cache blockers, and centralized call diagnostics.
-- [x] Reusable array-entry snapshot ABI exists for future foreach/lvalue/reference consumers.
-- [ ] In progress: replace shared blockers with executable semantics one family at a time.
-- [ ] In progress: generalize value/result/source ownership across returns, call args, conditions, branch joins, stdout, discarded temporaries, comparisons, casts, string-byte materialization, bool probes, diagnostics, and cleanup.
-- [ ] In progress: array lvalue/RMW/reference/COW work. Primary has foundations and selected generated-C consumers; lane-local candidates are much stronger than integrated capability.
-- [ ] In progress: statement termination and control-flow cleanup candidates. Lane-local work is useful, but broad recursive loop/switch/goto/finally behavior is not integrated.
-- [ ] Not done: full symbol environment semantics for locals/imports/globals/superglobals, undefined slots, repeated calls, writes/unset, references, and request/global separation.
-- [ ] Not done: function/method frames, argument binding, by-ref args/returns, variadics/spreads, callbacks, constructors, recursion, closures, and dynamic dispatch.
-- [ ] Not done: object/class/property semantics including allocation, visibility, magic hooks, `stdClass`, dynamic names, references/COW, and exact diagnostics.
-- [ ] Not done: full control-flow cleanup, loops/switch/break/continue/goto/finally, exceptions, shutdown/destructors, and broad differential composition coverage.
+- [x] Shared runtime ABI surfaces exist for strings, byte buffers, comparisons, numeric-string classification, selected conversions, array key/value operations, value-offset read/presence/mutation operations, diagnostics, branch decisions, native value output, type predicates, bitwise/shift operations, and array snapshots.
+- [x] Primary has selected LLVM/generated-C consumers for primitive arithmetic, unary string-result builtins, string-int builtins, generated-C array/string offset presence/read/write/unset/append/null-coalesce slices, LLVM string-offset reads/probes, scalar output, type predicates, bitwise/shift, comparison relation results, casts/type-name output, and focused diagnostic paths.
+- [x] Selected generated-C direct-variable storage and cleanup for owned native value-result handles is integrated for already-lowerable value-result families.
+- [ ] In progress: array lvalue/RMW/reference/COW work. Primary has useful foundations and selected direct consumers; lane-local candidates are much broader than integrated capability.
+- [ ] In progress: symbol/request/global value-flow and request-state work. Primary has surfaces, not full mutable PHP symbol behavior.
+- [ ] In progress: control-flow cleanup and termination modeling. Lane-local work is useful, but broad loop/switch/goto/finally/exception behavior is not integrated.
+- [ ] Not done: generalized function/method frames, argument binding, by-ref args/returns, variadics/spreads, callbacks, recursion, closures, and dynamic dispatch.
+- [ ] Not done: object/class/property semantics including allocation, visibility, magic hooks, `stdClass`, dynamic names, ArrayAccess, references/COW, and exact diagnostics.
+- [ ] Not done: broad differential composition coverage across real PHP programs.
 
 ## Active Roadmap Estimates
 
-| Active item | Primary-integrated | Lane-local candidate maturity | Current read |
+| Active item | Primary-integrated | Lane-local/candidate maturity | Current read |
 | --- | ---: | ---: | --- |
-| String conversion, truthiness, byte buffers | 79% | 88% | Primary has shared value string-form semantics, generated-C unary string-result execution, LLVM/generated-C string-int consumers through the string-int ABI, generated-C value-offset presence for string offsets, generated-C string-offset reads, LLVM string-offset reads and probes through the shared value-offset ABI, `isset`/`empty` bool probes, string-offset writes through the shared value-offset mutation ABI, warning continuation, scalar value output, generated-C print output, comparison byte materialization, runtime string-byte materialization, and raw-buffer writes. Lane-local work adds more LLVM string/debug/formatter parity, but it is not counted until integrated. |
-| Call operation cleanup and ownership | 43% | 68% | Primary routes many call-result contexts, function declaration fallbacks, and backend call diagnostics through common contracts. Lane-local required-lvalue/discarded-result cleanup is broader; real frames, binding, returns, by-ref semantics, and dispatch remain mostly non-executable in primary. |
-| Comparison and conversion semantics | 75% | 84% | Primary has reusable comparison validation, relation-result/result/branch/free/decision/status/abort ABIs, generated-C relation-result consumers, public operand routing, recursive-array blocker classification, string-handle operands, LLVM/generated-C byte string compare builtin consumers, native object/resource strict identity, primitive arithmetic conversion for known operands, scalar casts, bitwise/shift consumers, value-operation output, type predicates, unary string-result output, and string-offset execution slices. Lane-local conversion work is advancing concat/source-result paths; dynamic arithmetic, division/modulo warning parity, executable recursive array comparison, object property comparison, resource loose comparison, reference dereference comparison, and backend parity remain open. |
-| Arrays, lvalues, references, COW | 38% | 85% | Primary has array-key materialization, array value-operation result ABI, generated-C array/string offset presence through the value-offset ABI, generated-C array offset reads through the same value-offset ABI, LLVM string-offset reads and probes through the value-offset ABI, runtime value-offset mutation for write/append/unset families, generated-C direct array-offset writes, direct array appends, direct keyed/append assignment-expression values, direct and multi-operand direct array-offset unsets, plus string-offset writes through that mutation ABI, array-value cloning back to owned handles, array-entry snapshots, array-handle comparisons, append diagnostics, native array handles as owned value operands, cloned-literal cleanup, and selected string-offset probes outside full array/lvalue semantics. Nested append/writeback, chained assignment-expression storage, LLVM array-offset reads/probes, full executable lvalues, references, and COW are not integrated. Lane-local lvalue/foreach/reference candidates are much stronger. |
-| Symbols, globals, request state | 24% | 68% | Primary has symbol ABI helpers, request/superglobal snapshot ABI, and selected expression-result boundaries. Lane-local expression-result and symbol-cell work is promising, but primary still lacks real generalized locals, frames, globals, imports, request mutation, and reference assignment lowering. |
-| Objects, properties, methods | 11% | 50% | Primary has native object handle strict-identity relation results and loose-comparison blockers through the shared comparison path. Lane-local object/class/property blockers and operation plans continue improving, but executable object/property/method behavior is still largely absent. |
-| Diagnostics and control-flow cleanup | 25% | 70% | Primary has selected severity/blocker surfaces, diagnostic array append behavior, a shared native diagnostic report consumer, centralized call diagnostics, call-boundary cleanup routing, comparison branch abort handling, string-offset bool diagnostics, and warning-capable string-offset write continuation. Lane-local diagnostic sinks and terminating/control-flow cleanup boundaries are broader, but most loop/switch/goto/finally/exception behavior remains blocker/model work. |
-| Broad composition verification | 51% | 50% | Focused runtime/native-link/native-runtime-ABI gates cover the newest generated-C array offset read consumer, LLVM string-offset value-offset read/probe consumer, multi-operand direct array-offset unset sequencing, direct array-offset unset consumer, LLVM string-int consumer, generated-C array-offset write consumer, value-offset mutation string-write consumer, value-offset array/string presence path, byte string compare builtin path, string-offset read path, shared diagnostic report consumer, string-offset warning continuation, string-offset write path, string-offset bool path, unary string-result executable path, comparison relation-result path, value-operation, scalar echo, print output, bitwise, type-predicate, array-value, string-byte, and diagnostic paths. Broad differential PHP composition coverage remains thin. |
+| String conversion, truthiness, byte buffers | 79% | 88% | Primary has strong selected string/value surfaces, generated-C and LLVM string-offset consumers, string-int consumers, stdout/materialization paths, and byte-buffer helpers. Lane-local formatter/binary string work is broader but not fully integrated. |
+| Call operation cleanup and ownership | 43% | 68% | Primary has common call diagnostics and selected cleanup routing. Real frames, binding, return semantics, by-ref calls, and dynamic dispatch remain mostly missing. |
+| Comparison and conversion semantics | 75% | 84% | Primary has shared comparison/conversion surfaces and selected backend consumers. Dynamic arithmetic, warning parity, recursive arrays, object/resource/reference comparisons, and full backend parity remain open. |
+| Arrays, lvalues, references, COW | 40% | 85% | Primary has selected generated-C value-offset read/presence/mutation/null-coalesce execution, owned native value-result variable storage, plus LLVM string-offset parity. Nested writeback, `??=`, RMW, references, COW, arbitrary roots, object/ArrayAccess/resource offsets, and LLVM array-offset parity remain open. |
+| Symbols, globals, request state | 25% | 68% | Primary can now persist selected owned native value-result handles in generated-C direct variables with clone/overwrite cleanup. Real generalized locals, frames, imports, globals, superglobals, undefined slots, mutation, and reference assignment lowering are not integrated. |
+| Objects, properties, methods | 11% | 50% | Primary has strict-identity/object comparison blockers and plans. Executable object allocation/property/method behavior is largely absent. |
+| Diagnostics and control-flow cleanup | 25% | 70% | Primary has selected diagnostic/reporting and cleanup paths. Full warning ordering, recovery, terminal cleanup, loop/switch/goto/finally/exception behavior, and broad composition remain missing. |
+| Broad composition verification | 52% | 50% | Focused runtime/native-link/native-runtime-ABI gates cover recent slices. Broad PHP differential coverage is still thin. |
 
 ## Recent Primary-Integrated Work
 
+- `e3af4261 codegen: store native value results in variables`
+  - Adds native value cloning plus generated-C direct-variable storage for owned native value-result handles. Source and linked executable gates cover array read values, variable copies, offset null-coalesce values, cast values, string-result values, array-append consumers, overwrite cleanup, and runtime clone independence.
+- `40941ddb codegen: route offset null coalesce through value ABI`
+  - Routes generated-C lowerable array/string offset `??` through shared value-offset presence/read operations with lazy RHS behavior and owned native-value result consumption.
 - `c9999be0 codegen: route array reads through value offset ABI`
-  - Routes generated-native C lowerable array offset reads through `phpc_native_value_offset_operation_with_diagnostic(...)` using read operation tag `0`. The owned native read result now feeds stdout, array mutation replacement operands, and native string-result operands. Focused source and linked executable gates cover dynamic string keys, integer keys, repeated reads, array-read-as-array-write input, string-result consumption, adjacent `array_offset` gates, and runtime value-offset dispatch.
+  - Routes generated-C lowerable array offset reads through the shared value-offset read ABI and lets owned read results feed output, mutation replacements, and string-result consumers.
 - `d059565d codegen: return array assignment expression values`
-  - Routes generated-native C direct keyed and append array assignment expressions over existing array owner slots through the shared value-offset mutation ABI, rematerializes the returned array owner, and returns the assigned value to expression consumers. Focused source and linked executable gates cover literal and variable append replacements, keyed assignment-expression writes, follow-up reads, `isset()` composition, runtime mutation coverage, and adjacent `array_offset` tests.
+  - Routes direct generated-C keyed and append array assignment expressions through the shared mutation ABI and returns the assigned value.
 - `0568ebb1 codegen: route array appends through value mutation ABI`
-  - Routes generated-native C direct `$array[] = $value` assignments through the shared value-offset mutation ABI with append operation tag `1`, null offset handles, diagnostic reporting, and array clone rematerialization. Focused native-link and runtime gates cover repeated appends, variable and literal replacements, follow-up offset reads, `isset()` composition, source routing, and linked executable behavior.
+  - Routes direct generated-C array append statements through the shared value-offset mutation ABI with diagnostic reporting and array rematerialization.
 - `3b537955 codegen: route LLVM offset reads through value ABI`
-  - Routes lowerable LLVM string offset reads and `isset()`/`empty()` probes through `phpc_native_value_offset_operation_with_diagnostic(...)`, then consumes returned native values through the shared bool and string/native-value materialization paths with cleanup. Focused native-runtime-ABI tests cover read/probe routing, string consumers, and assembly-backend reachability. LLVM array-offset reads/probes remain blocked.
-- `c3573793 codegen: sequence multi-operand array unsets`
-  - Routes generated-native C `unset(...)` statements with multiple direct array-index operands through repeated use of the shared array-offset mutation helper. Focused gates covered source routing, a linked executable with multiple dynamic keys, adjacent `array_offset` native-link regression tests, `cargo check -p phpc`, formatting, and diff checks.
-- `df634f81 codegen: route array offset unset through value mutation ABI`
-  - Routes generated-native C direct array-offset unsets through the shared value-offset mutation ABI with unset operation tag `2`, then clones the returned array value back into an owned array handle. Focused gates cover source routing, linked executable behavior with dynamic keys, missing-key no-op, follow-up rewrite, adjacent direct array-offset writes, runtime value-offset mutation, string-offset mutation regression, package checks, formatting, and diff checks.
-- `c56163c6 codegen: route LLVM string-int calls through native ABI`
-  - Routes lowerable LLVM `strcasecmp()`, `strcmp()`, `strncmp()`, `strncasecmp()`, `substr_count()`, `ord()`, and `crc32()` calls through the existing string-int runtime ABI with native value materialization, int conversion, diagnostics, and owned-value cleanup.
-- `e3a50ece codegen: route array offset writes through value mutation ABI`
-  - Routes generated-native C direct array-offset assignments through the shared value-offset mutation ABI, then clones returned array values back to owned array handles for subsequent reads/presence checks. This is executable array-write progress, but not yet nested lvalues, references/COW, append/unset, object/ArrayAccess/resource offsets, request storage, LLVM parity, or C assembly fallback parity.
-- `6340cf34 native: route offset writes through value mutation ABI`
-  - Adds `phpc_native_value_offset_mutation_operation_with_diagnostic(...)` for value-offset write/append/unset families and routes generated-native C string-offset assignments through the shared mutation boundary.
-- `ffb158c4 codegen: route offset presence through value ABI`
-  - Routes generated-native C array/string offset `isset()` and `empty()` through `phpc_native_value_offset_operation_with_diagnostic(...)` and the native bool diagnostic boundary.
-- `ff938b0a native: route byte string compares through string-int ABI`
-  - Routes generated-native C `strcmp()`, `strncmp()`, and `strncasecmp()` through the shared string-int runtime ABI.
+  - Routes LLVM lowerable string offset reads and `isset()`/`empty()` probes through the shared value-offset ABI. LLVM array-offset reads/probes remain blocked.
 
-## Current Work Not Yet Counted
+## Candidate Work Not Yet Counted
 
-- Lane-local array/lvalue candidates: dynamic string-offset read/probe execution through lvalue results, generated-C owner/value/reference operation wrappers, current-read/RMW/null-aware/foreach/reference/lvalue candidates, dynamic key source-span diagnostics, root-aware by-reference foreach blockers, and follow-up writes/unsets/references on top of the landed value-offset boundaries.
-- Lane-local reference/COW candidates: owner-cell alias-visibility, mutation-barrier, cleanup-insertion, and call-emission scaffolds; useful planning, but still not emitted execution in primary.
-- Lane-local symbol/request candidates: reference/COW-aware native symbol cells, request-superglobal backing storage, root/frame/imported alias reference binding, undefined-slot tracking, and request-state operation contracts.
-- Lane-local conversion/string candidates: conversion-result stdout/free ABI, dynamic concat/source-result conversion, primitive comparison/bitwise/division/modulo conversion result work, formatter/string-byte/string-offset surfaces, and broader binary-safe string operation boundaries.
-- Lane-local termination/control-flow candidates: terminating-arm cleanup insertion and structured control-transfer cleanup plans.
-- Lane-local object/call/diagnostic candidates: object-property operation plans, class-policy/object receiver blockers, diagnostic result carriers and sinks, call-frame/value-boundary work, and cleanup carriers.
+- Lane-local array/lvalue candidates: nested/current-read/RMW/null-aware/foreach/reference/lvalue work, body-storage blockers, dynamic key diagnostics, and reference-source span refinements.
+- Lane-local symbol/request candidates: reference/COW-aware symbol cells, request-superglobal storage, root/frame/imported alias binding, undefined-slot tracking, and request-state operation contracts.
+- Lane-local conversion/string candidates: dynamic concat/source-result conversion, formatter/raw byte surfaces, primitive comparison/bitwise/division/modulo conversion work, and broader binary-safe string boundaries.
+- Lane-local object/call/control/diagnostic candidates: object-property operation plans, class-policy and receiver blockers, call-frame/value boundaries, diagnostic result carriers, and termination/control-flow cleanup models.
 
 Lane-local work is useful source material, but it is not product capability until selected into a small primary batch, gated, committed, and pushed.
 
-## Candid Assessment
+## Steering Read
 
-Recent primary work is directionally sound because it turns shared ABI surfaces into concrete backend/runtime consumers and removes duplicated backend-local handling. The value-offset family is the most strategically useful recent thread because it now reaches generated-C array/string presence, generated-C array reads, array writes, direct array-offset unsets, multi-operand direct array-offset unset sequencing, direct array appends, and direct array assignment-expression values, pushing toward executable lvalue semantics; the LLVM string-int slice remains useful backend parity for an already-landed runtime/generated-C surface.
+Recent primary work is directionally sound because it turns shared ABI surfaces into executable generated-C/LLVM consumers. The supervisor should still keep language precise: generated-C direct variables can now store selected owned native value-result handles, but this is not a full PHP symbol table, reference/COW cell model, arbitrary expression root model, or generalized local/global/request variable implementation.
 
-The project remains boundary-heavy. More result/blocker vocabulary without immediate executable consumers will not move the product much. The `c9999be0` slice is directionally useful because it removes a generated-C array-read bypass and makes array read values compose through the same owned native-value path used by other value consumers, but it should not be overread as arbitrary root/value-slot storage, nested lvalue, reference/COW, or LLVM array-offset parity support. The next valuable batches should each answer: what PHP behavior now runs that did not run before, what shared runtime materialization path now has real consumers, or what backend-local bypass has been removed?
-
-## Near-Term Steering
-
-1. Treat `c9999be0` as the latest committed semantic baseline; `960babca`, `b9015b2d`, `ca06212c`, and evaluator dashboard commits are management artifacts.
-2. Use precise steering language: generated-C lowerable array offset reads now route through the shared value-offset read ABI and compose with stdout, array mutation replacement operands, and string-result operands; arbitrary array-producing roots, symbol-slot storage, nested append/writeback, references/COW, LLVM array-offset parity, and object/ArrayAccess/resource offsets did not.
-3. Avoid extending scalar/string work unless it removes another real backend-local bypass with executable gates.
-4. Prefer small executable generated-C/LLVM/runtime consumers of existing ABI surfaces over more standalone vocabulary.
-5. Strong next candidates: nested append/writeback on the value-offset mutation boundary, a narrow reference/COW symbol-cell consumer, mutable request/superglobal storage through a shared root operation, LLVM array-offset read/probe parity beyond the landed generated-C read surface, or a control-flow cleanup consumer that emits before a real terminal transfer.
-6. Avoid whole-lane merges. Current lane evidence is broad and conflict-prone even when technically useful.
-7. Keep resource checks explicit before broad gates; `/dev/shm` saturated to 100% during this evaluation window and required repeated process-aware cleanup.
+The next best primary work should stay executable and narrow: select nested value-offset writeback, LLVM array-offset parity, a narrow reference/COW symbol-cell consumer, mutable request/superglobal storage, or concrete cleanup before terminal control transfer. Avoid whole-lane merges and standalone vocabulary.
