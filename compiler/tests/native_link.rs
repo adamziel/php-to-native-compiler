@@ -237,6 +237,46 @@ fn native_executable_c_source_routes_array_sort_builtins_through_lvalue_owner_re
 }
 
 #[test]
+fn native_executable_c_source_routes_array_callback_builtins_through_shared_result() {
+    let program = parse(
+        "<?php\n$box = [];\n$filtered = array_filter([0, \"Ada\", \"\", \"Bea\"], $box[\"callback\"] ??= null, $box[\"mode\"] = \"1\");\n$mapped = array_map(null, [\"name\" => \"Ada\", 5 => \"five\"]);\narray_reduce([1, 2], \"sum\", 0);\necho $filtered[1], $mapped[\"name\"];\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_array_callback_result"),
+        "{source}"
+    );
+    for tag in [
+        "PHPC_NATIVE_VALUE_ARRAY_CALLBACK_FILTER",
+        "PHPC_NATIVE_VALUE_ARRAY_CALLBACK_MAP",
+        "PHPC_NATIVE_VALUE_ARRAY_CALLBACK_REDUCE",
+    ] {
+        assert!(source.contains(tag), "{tag}\n\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_value_array_callback_result")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_NativeValueHandle native_value_array_callback_args_"),
+        "callback operands should be materialized as PHP value handles:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(native_value_array_callback_"),
+        "owned callback results must be cleaned:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_array_pointer_lvalue_owner_program() {
     if !has_cc() {
         return;
@@ -345,6 +385,63 @@ fn emit_exe_links_and_runs_array_sort_lvalue_owner_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"123|b=b10;a=b2;|b=2;a=1;|T");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_callback_null_result_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("array_callback_null_result.php");
+    let output_path = native_link_output_path("array_callback_null_result");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        "<?php\n$callback = null;\n$filtered = array_filter([\"zero\" => 0, \"name\" => \"Ada\", \"empty\" => \"\", \"word\" => \"Bee\"], $callback, \"2\");\necho $filtered[\"name\"], \"|\", $filtered[\"word\"];\n$mapped = array_map(null, [\"name\" => \"Ada\", 5 => \"five\"]);\necho \"|\", $mapped[\"name\"], \"|\", $mapped[5];\n",
+    )
+    .expect("write array callback native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array callback source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native array callback executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native array callback executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"Ada|Bee|Ada|five");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);

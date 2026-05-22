@@ -209,6 +209,9 @@ const NATIVE_ARRAY_LVALUE_SORT_NATCASESORT: u8 = 7;
 const NATIVE_ARRAY_LVALUE_SORT_USORT: u8 = 8;
 const NATIVE_ARRAY_LVALUE_SORT_UASORT: u8 = 9;
 const NATIVE_ARRAY_LVALUE_SORT_UKSORT: u8 = 10;
+const NATIVE_VALUE_ARRAY_CALLBACK_FILTER: u8 = 0;
+const NATIVE_VALUE_ARRAY_CALLBACK_MAP: u8 = 1;
+const NATIVE_VALUE_ARRAY_CALLBACK_REDUCE: u8 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum NativeArrayLvaluePathElement {
@@ -239,6 +242,13 @@ enum NativeArraySortOperation {
     Usort,
     Uasort,
     Uksort,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeValueArrayCallbackOperation {
+    Filter,
+    Map,
+    Reduce,
 }
 
 impl NativeArrayPointerOperation {
@@ -356,6 +366,36 @@ impl NativeArraySortOperation {
 
     fn reverses_order(self) -> bool {
         matches!(self, Self::Rsort | Self::Arsort | Self::Krsort)
+    }
+}
+
+impl NativeValueArrayCallbackOperation {
+    fn from_tag(operation: u8) -> Result<Self, NativeArrayLvalueResult> {
+        match operation {
+            NATIVE_VALUE_ARRAY_CALLBACK_FILTER => Ok(Self::Filter),
+            NATIVE_VALUE_ARRAY_CALLBACK_MAP => Ok(Self::Map),
+            NATIVE_VALUE_ARRAY_CALLBACK_REDUCE => Ok(Self::Reduce),
+            _ => Err(NativeArrayLvalueResult::diagnostic(
+                NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+                format!("native value array callback operation tag {operation} is not supported"),
+            )),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Filter => "array_filter",
+            Self::Map => "array_map",
+            Self::Reduce => "array_reduce",
+        }
+    }
+
+    fn operand_count_is_supported(self, count: usize) -> bool {
+        match self {
+            Self::Filter => (2..=3).contains(&count),
+            Self::Map => count >= 2,
+            Self::Reduce => (2..=3).contains(&count),
+        }
     }
 }
 
@@ -6411,6 +6451,161 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_sort_result(
 
 /// # Safety
 ///
+/// `values` must be null when `value_count` is zero, or point to
+/// `value_count` initialized handles previously returned by the runtime ABI
+/// and not yet freed. Operand handles are borrowed; the returned result owns
+/// any value/diagnostic handles it carries.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_array_callback_result(
+    operation: u8,
+    values: *const NativeValueHandle,
+    value_count: usize,
+) -> NativeArrayLvalueResult {
+    let operation = match NativeValueArrayCallbackOperation::from_tag(operation) {
+        Ok(operation) => operation,
+        Err(result) => return result,
+    };
+
+    if value_count > 0 && values.is_null() {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            format!(
+                "native value {}() callback operand array is null for {value_count} operands",
+                operation.label()
+            ),
+        );
+    }
+
+    if !operation.operand_count_is_supported(value_count) {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            format!(
+                "native value {}() callback blocker received unsupported operand count {value_count}",
+                operation.label()
+            ),
+        );
+    }
+
+    let values = unsafe { std::slice::from_raw_parts(values, value_count) };
+    match operation {
+        NativeValueArrayCallbackOperation::Filter => native_value_array_filter_result(values),
+        NativeValueArrayCallbackOperation::Map => native_value_array_map_result(values),
+        NativeValueArrayCallbackOperation::Reduce => NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            native_value_array_callback_blocker("array_reduce()"),
+        ),
+    }
+}
+
+fn native_value_array_filter_result(values: &[NativeValueHandle]) -> NativeArrayLvalueResult {
+    let null_value = Value::Null;
+    let array_value = unsafe { values[0].as_ref() }.unwrap_or(&null_value);
+    let Value::Array(array) = array_value else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            format!(
+                "unsupported call array_filter(): first argument must be array, got {}",
+                array_value.type_name()
+            ),
+        );
+    };
+
+    let callback = unsafe { values[1].as_ref() }.unwrap_or(&null_value);
+    if !matches!(callback, Value::Null) {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            native_value_array_callback_blocker("array_filter()"),
+        );
+    }
+
+    if let Some(mode) = values.get(2) {
+        let mode = unsafe { mode.as_ref() }.unwrap_or(&null_value);
+        if let Err(message) =
+            native_value_array_callback_integer_parameter("array_filter()", "mode parameter", mode)
+        {
+            return NativeArrayLvalueResult::diagnostic(NATIVE_ARRAY_LVALUE_UNSUPPORTED, message);
+        }
+    }
+
+    NativeArrayLvalueResult::value(Value::Array(array.filtered_without_callback()))
+}
+
+fn native_value_array_map_result(values: &[NativeValueHandle]) -> NativeArrayLvalueResult {
+    let null_value = Value::Null;
+    let callback = unsafe { values[0].as_ref() }.unwrap_or(&null_value);
+    if !matches!(callback, Value::Null) {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            native_value_array_callback_blocker("array_map()"),
+        );
+    }
+
+    let mut arrays = Vec::with_capacity(values.len().saturating_sub(1));
+    for (index, handle) in values.iter().enumerate().skip(1) {
+        let value = unsafe { handle.as_ref() }.unwrap_or(&null_value);
+        let Value::Array(array) = value else {
+            return NativeArrayLvalueResult::diagnostic(
+                NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+                format!(
+                    "unsupported call array_map(): {} must be array, got {}",
+                    native_value_array_variadic_argument_label(index),
+                    value.type_name()
+                ),
+            );
+        };
+        arrays.push(array);
+    }
+
+    NativeArrayLvalueResult::value(Value::Array(PhpArray::map_null_callback(&arrays)))
+}
+
+fn native_value_array_callback_integer_parameter(
+    callable: &'static str,
+    parameter: &'static str,
+    value: &Value,
+) -> Result<i64, String> {
+    match value {
+        Value::Null => Ok(0),
+        Value::Bool(value) => Ok(i64::from(*value)),
+        Value::Int(value) => Ok(*value),
+        Value::Float(value) => native_value_float_to_int(*value, callable)
+            .map_err(|error| error.message().to_string()),
+        Value::String(value) => {
+            let Some(number) = parse_numeric_string(value) else {
+                return Err(format!("native value {callable} {parameter} string is not numeric"));
+            };
+            match number {
+                Number::Int(value) => Ok(value),
+                Number::Float(value) => native_value_float_to_int(value, callable)
+                    .map_err(|error| error.message().to_string()),
+            }
+        }
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Err(
+            format!(
+                "native value {callable} {parameter} rejects {} until shared internal-parameter integer coercion can model arrays, objects, resources, references/copy-on-write, cleanup ownership, and exact diagnostics",
+                value.type_name()
+            ),
+        ),
+    }
+}
+
+fn native_value_array_callback_blocker(callable: &'static str) -> String {
+    format!(
+        "native value {callable} callback/mode forms need one callback ABI covering callable materialization, value/key mode routing, by-reference effects, cleanup ownership, and exact PHP diagnostics"
+    )
+}
+
+fn native_value_array_variadic_argument_label(index: usize) -> String {
+    match index {
+        0 => "first argument".to_string(),
+        1 => "second argument".to_string(),
+        2 => "third argument".to_string(),
+        _ => format!("argument {}", index + 1),
+    }
+}
+
+/// # Safety
+///
 /// The owner and each key handle inside `segments` must be null or handles
 /// previously returned by the runtime ABI and not yet freed. `segments` must be
 /// null when `segment_count` is zero, or point to `segment_count` initialized
@@ -10623,6 +10818,42 @@ impl PhpArray {
             }
         }
         array
+    }
+
+    pub fn map_null_callback(arrays: &[&Self]) -> Self {
+        match arrays {
+            [] => Self::new(),
+            [array] => {
+                let mut mapped = Self::new();
+                for entry in &array.entries {
+                    mapped.insert(entry.key.clone(), entry.value_cloned());
+                }
+                mapped
+            }
+            arrays => {
+                let len = arrays
+                    .iter()
+                    .map(|array| array.entries.len())
+                    .max()
+                    .unwrap_or(0);
+                let mut mapped = Self::new();
+                for index in 0..len {
+                    let mut tuple = Self::new();
+                    for array in arrays {
+                        let value = array
+                            .entries
+                            .get(index)
+                            .map(ArrayEntry::value_cloned)
+                            .unwrap_or(Value::Null);
+                        tuple.append(value).expect("array length fits in i64");
+                    }
+                    mapped
+                        .append(Value::Array(tuple))
+                        .expect("array length fits in i64");
+                }
+                mapped
+            }
+        }
     }
 
     fn merge_entries_from(&mut self, source: &Self) {
@@ -24574,6 +24805,221 @@ mod tests {
         unsafe { phpc_native_value_free(strings_key) };
         unsafe { phpc_native_value_free(direct_key) };
         unsafe { phpc_native_array_free(handle) };
+    }
+
+    #[test]
+    fn native_value_array_callback_result_filters_and_maps_null_callback_family() {
+        let mut array = PhpArray::new();
+        array.insert("zero", Value::Int(0));
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert("empty", Value::String(String::new()));
+        array.insert("word", Value::String("Bee".to_string()));
+        let array_handle = NativeValueHandle::from_value(Value::Array(array));
+        let null_callback = NativeValueHandle::from_value(Value::Null);
+        let string_mode = NativeValueHandle::from_value(Value::String("2".to_string()));
+        let filter_args = [array_handle, null_callback, string_mode];
+
+        let filtered = unsafe {
+            phpc_native_value_array_callback_result(
+                NATIVE_VALUE_ARRAY_CALLBACK_FILTER,
+                filter_args.as_ptr(),
+                filter_args.len(),
+            )
+        };
+        assert_eq!(filtered.tag, NATIVE_ARRAY_LVALUE_OK);
+        let Value::Array(filtered_array) =
+            unsafe { filtered.value.as_ref() }.expect("array_filter result")
+        else {
+            panic!("array_filter null callback result should be an array");
+        };
+        assert_eq!(filtered_array.entries().len(), 2);
+        assert_eq!(
+            filtered_array.get("name"),
+            Some(&Value::String("Ada".to_string()))
+        );
+        assert_eq!(
+            filtered_array.get("word"),
+            Some(&Value::String("Bee".to_string()))
+        );
+        unsafe { phpc_native_array_lvalue_result_free(filtered) };
+
+        let mut keyed = PhpArray::new();
+        keyed.insert("name", Value::String("Ada".to_string()));
+        keyed.insert(5, Value::String("five".to_string()));
+        let keyed_handle = NativeValueHandle::from_value(Value::Array(keyed));
+        let single_map_args = [null_callback, keyed_handle];
+        let single = unsafe {
+            phpc_native_value_array_callback_result(
+                NATIVE_VALUE_ARRAY_CALLBACK_MAP,
+                single_map_args.as_ptr(),
+                single_map_args.len(),
+            )
+        };
+        assert_eq!(single.tag, NATIVE_ARRAY_LVALUE_OK);
+        let Value::Array(single_array) =
+            unsafe { single.value.as_ref() }.expect("array_map result")
+        else {
+            panic!("array_map single-array null callback result should be an array");
+        };
+        assert_eq!(
+            single_array.get("name"),
+            Some(&Value::String("Ada".to_string()))
+        );
+        assert_eq!(
+            single_array.get(5),
+            Some(&Value::String("five".to_string()))
+        );
+        assert!(!single_array.contains_key(0));
+        unsafe { phpc_native_array_lvalue_result_free(single) };
+
+        let mut left = PhpArray::new();
+        left.insert("left-a", Value::String("A".to_string()));
+        left.insert("left-b", Value::String("B".to_string()));
+        let left_handle = NativeValueHandle::from_value(Value::Array(left));
+        let mut right = PhpArray::new();
+        right.insert("right-a", Value::String("X".to_string()));
+        let right_handle = NativeValueHandle::from_value(Value::Array(right));
+        let multi_map_args = [null_callback, left_handle, right_handle];
+        let multi = unsafe {
+            phpc_native_value_array_callback_result(
+                NATIVE_VALUE_ARRAY_CALLBACK_MAP,
+                multi_map_args.as_ptr(),
+                multi_map_args.len(),
+            )
+        };
+        assert_eq!(multi.tag, NATIVE_ARRAY_LVALUE_OK);
+        let Value::Array(multi_array) =
+            unsafe { multi.value.as_ref() }.expect("array_map multi-array result")
+        else {
+            panic!("array_map multi-array null callback result should be an array");
+        };
+        assert_eq!(multi_array.entries().len(), 2);
+        let Some(Value::Array(first_tuple)) = multi_array.get(0) else {
+            panic!("first array_map tuple should be an array");
+        };
+        assert_eq!(first_tuple.get(0), Some(&Value::String("A".to_string())));
+        assert_eq!(first_tuple.get(1), Some(&Value::String("X".to_string())));
+        let Some(Value::Array(second_tuple)) = multi_array.get(1) else {
+            panic!("second array_map tuple should be an array");
+        };
+        assert_eq!(second_tuple.get(0), Some(&Value::String("B".to_string())));
+        assert_eq!(second_tuple.get(1), Some(&Value::Null));
+        unsafe { phpc_native_array_lvalue_result_free(multi) };
+
+        unsafe { phpc_native_value_free(right_handle) };
+        unsafe { phpc_native_value_free(left_handle) };
+        unsafe { phpc_native_value_free(keyed_handle) };
+        unsafe { phpc_native_value_free(string_mode) };
+        unsafe { phpc_native_value_free(null_callback) };
+        unsafe { phpc_native_value_free(array_handle) };
+    }
+
+    #[test]
+    fn native_value_array_callback_result_classifies_callback_family_blockers() {
+        let array_handle = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let null_callback = NativeValueHandle::from_value(Value::Null);
+        let real_callback = NativeValueHandle::from_value(Value::String("strlen".to_string()));
+        let mode_array = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let initial = NativeValueHandle::from_value(Value::Int(0));
+
+        let real_filter_args = [array_handle, real_callback];
+        let real_filter = unsafe {
+            phpc_native_value_array_callback_result(
+                NATIVE_VALUE_ARRAY_CALLBACK_FILTER,
+                real_filter_args.as_ptr(),
+                real_filter_args.len(),
+            )
+        };
+        assert_eq!(real_filter.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        let diagnostic = native_diagnostic_message_for_test(real_filter.diagnostic);
+        assert!(
+            diagnostic.contains("array_filter()")
+                && diagnostic.contains("callback ABI")
+                && diagnostic.contains("by-reference effects")
+                && diagnostic.contains("cleanup ownership"),
+            "diagnostic: {diagnostic}"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(real_filter) };
+
+        let bad_mode_args = [array_handle, null_callback, mode_array];
+        let bad_mode = unsafe {
+            phpc_native_value_array_callback_result(
+                NATIVE_VALUE_ARRAY_CALLBACK_FILTER,
+                bad_mode_args.as_ptr(),
+                bad_mode_args.len(),
+            )
+        };
+        assert_eq!(bad_mode.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert!(
+            native_diagnostic_message_for_test(bad_mode.diagnostic)
+                .contains("array_filter() mode parameter rejects array"),
+            "{}",
+            native_diagnostic_message_for_test(bad_mode.diagnostic)
+        );
+        unsafe { phpc_native_array_lvalue_result_free(bad_mode) };
+
+        let non_array = NativeValueHandle::from_value(Value::String("not-array".to_string()));
+        let non_array_args = [null_callback, array_handle, non_array];
+        let non_array_result = unsafe {
+            phpc_native_value_array_callback_result(
+                NATIVE_VALUE_ARRAY_CALLBACK_MAP,
+                non_array_args.as_ptr(),
+                non_array_args.len(),
+            )
+        };
+        assert_eq!(non_array_result.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert_eq!(
+            native_diagnostic_message_for_test(non_array_result.diagnostic),
+            "unsupported call array_map(): third argument must be array, got string"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(non_array_result) };
+
+        let reduce_args = [array_handle, real_callback, initial];
+        let reduce = unsafe {
+            phpc_native_value_array_callback_result(
+                NATIVE_VALUE_ARRAY_CALLBACK_REDUCE,
+                reduce_args.as_ptr(),
+                reduce_args.len(),
+            )
+        };
+        assert_eq!(reduce.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert!(native_diagnostic_message_for_test(reduce.diagnostic).contains("array_reduce()"));
+        unsafe { phpc_native_array_lvalue_result_free(reduce) };
+
+        let invalid_operation = unsafe {
+            phpc_native_value_array_callback_result(
+                u8::MAX,
+                reduce_args.as_ptr(),
+                reduce_args.len(),
+            )
+        };
+        assert_eq!(invalid_operation.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert_eq!(
+            native_diagnostic_message_for_test(invalid_operation.diagnostic),
+            "native value array callback operation tag 255 is not supported"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(invalid_operation) };
+
+        let null_values = unsafe {
+            phpc_native_value_array_callback_result(
+                NATIVE_VALUE_ARRAY_CALLBACK_FILTER,
+                ptr::null(),
+                2,
+            )
+        };
+        assert_eq!(null_values.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert_eq!(
+            native_diagnostic_message_for_test(null_values.diagnostic),
+            "native value array_filter() callback operand array is null for 2 operands"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(null_values) };
+
+        unsafe { phpc_native_value_free(non_array) };
+        unsafe { phpc_native_value_free(initial) };
+        unsafe { phpc_native_value_free(mode_array) };
+        unsafe { phpc_native_value_free(real_callback) };
+        unsafe { phpc_native_value_free(null_callback) };
+        unsafe { phpc_native_value_free(array_handle) };
     }
 
     #[test]
