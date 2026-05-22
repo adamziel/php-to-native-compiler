@@ -1297,6 +1297,38 @@ const GLOBALS_SYMBOL_PATH_APPEND_SOURCE: &str = concat!(
     "echo $GLOBALS[$key][1];\n",
 );
 
+const SYMBOL_REFERENCE_ASSIGNMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "$source = \"A\";\n",
+    "$alias =& $source;\n",
+    "$alias = \"B\";\n",
+    "echo $source;\n",
+    "echo \"|\";\n",
+    "$items = [\"outer\" => [\"slot\" => \"C\"]];\n",
+    "$key = \"slot\";\n",
+    "$slot =& $items[\"outer\"][$key];\n",
+    "$slot = \"D\";\n",
+    "$again =& $items[\"outer\"][$key];\n",
+    "echo $again;\n",
+    "echo \"|\";\n",
+    "$copy =& $source;\n",
+    "$items[\"copy\"] =& $copy;\n",
+    "$source = \"E\";\n",
+    "$copyAgain =& $items[\"copy\"];\n",
+    "echo $copyAgain;\n",
+    "echo \"|\";\n",
+    "$append =& $items[\"list\"][];\n",
+    "$append = \"F\";\n",
+    "$appendAgain =& $items[\"list\"][0];\n",
+    "echo $appendAgain;\n",
+    "echo \"|\";\n",
+    "$targetList = [];\n",
+    "$targetList[] =& $copy;\n",
+    "$source = \"G\";\n",
+    "$targetAgain =& $targetList[0];\n",
+    "echo $targetAgain;\n",
+);
+
 const ROOT_SYMBOL_UNDEFINED_READ_SOURCE: &str = concat!(
     "<?php\n",
     "$copy = $third;\n",
@@ -2632,6 +2664,101 @@ fn native_executable_c_source_routes_globals_path_appends_through_symbol_table_a
         !source.contains("global-symbol-table lowering rejects $GLOBALS"),
         "{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_routes_symbol_reference_assignments_through_path_abi() {
+    let program = parse(SYMBOL_REFERENCE_ASSIGNMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_symbol_table_reference_for_path"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_bind_reference_path"),
+        "{source}"
+    );
+    assert!(source.contains("phpc_native_reference_free"), "{source}");
+    assert!(
+        body.matches("phpc_native_symbol_table_reference_for_path")
+            .count()
+            >= 6,
+        "reference assignment sources should acquire direct, nested, and append references through the shared symbol path ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_bind_reference_path")
+            .count()
+            >= 6,
+        "reference assignment targets should bind direct, nested, and append paths through the shared symbol path ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_NativeValueHandle symbol_reference_path_keys_"),
+        "reference paths should materialize dynamic keys as native values:\n{source}"
+    );
+    assert!(
+        !source.contains("reference-assignment lowering rejects"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_symbol_reference_assignment_paths() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("symbol_reference_assignment_paths.php");
+    let output_path = native_link_output_path("symbol_reference_assignment_paths");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(&source_path, SYMBOL_REFERENCE_ASSIGNMENT_SOURCE)
+        .expect("write symbol reference assignment native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native symbol reference source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native symbol reference executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native symbol reference executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "B|D|E|F|G");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
 }
 
 #[test]

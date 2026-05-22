@@ -7275,6 +7275,22 @@ struct CNativeSymbolPathMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+struct CReferencePath<'a> {
+    name: &'a str,
+    keys: Vec<&'a Expr>,
+    append: bool,
+    span: Span,
+}
+
+struct CMaterializedReferencePath {
+    name_bytes: String,
+    name_len: usize,
+    keys: String,
+    key_count: usize,
+    cleanup_after_use: Vec<String>,
+    append: bool,
+}
+
 struct CNativeArrayLvaluePath {
     path: String,
     len: usize,
@@ -7356,6 +7372,9 @@ impl CGenerator {
             if self.uses_native_symbol_table_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeSymbolTableHandle;\n");
             }
+            if self.uses_native_array_lvalue_helpers || self.uses_native_symbol_table_helpers {
+                output.push_str("typedef struct { void *ptr; } phpc_NativeReferenceHandle;\n");
+            }
             if self.uses_native_string_helpers || self.uses_native_array_helpers {
                 output.push_str(
                     "typedef struct { uint8_t *ptr; size_t len; size_t cap; } phpc_NativeByteBuffer;\n",
@@ -7390,7 +7409,6 @@ impl CGenerator {
                 output.push_str("typedef struct { uint8_t tag; int64_t int_value; phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeArrayKeyMaterializationResult;\n");
                 output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeValueOperationResult;\n");
                 if self.uses_native_array_lvalue_helpers {
-                    output.push_str("typedef struct { void *ptr; } phpc_NativeReferenceHandle;\n");
                     output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle key; } phpc_NativeArrayPathSegment;\n");
                     output.push_str("typedef struct { uint8_t tag; phpc_NativeArrayHandle array; phpc_NativeValueHandle value; phpc_NativeValueHandle *value_slot; phpc_NativeReferenceHandle reference; } phpc_NativeArrayLvalueOwner;\n");
                     output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeArrayLvalueResult;\n");
@@ -7580,6 +7598,8 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_symbol_table_isset_value_by_path(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count);\n");
                 output.push_str("extern bool phpc_native_symbol_table_empty_value_by_path(phpc_NativeSymbolTableHandle table, const phpc_NativeValueHandle *keys, size_t key_count);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_symbol_table_snapshot_value(phpc_NativeSymbolTableHandle table);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_symbol_table_reference_for_path(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, const phpc_NativeValueHandle *keys, size_t key_count, bool append);\n");
+                output.push_str("extern bool phpc_native_symbol_table_bind_reference_path(phpc_NativeSymbolTableHandle table, const uint8_t *name, size_t name_len, const phpc_NativeValueHandle *keys, size_t key_count, bool append, phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern void phpc_native_symbol_table_free(phpc_NativeSymbolTableHandle table);\n");
             }
             if self.uses_native_string_helpers {
@@ -7630,6 +7650,9 @@ impl CGenerator {
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern void phpc_native_diagnostic_free(phpc_NativeDiagnosticHandle diagnostic);\n");
+            if self.uses_native_symbol_table_helpers {
+                output.push_str("extern void phpc_native_reference_free(phpc_NativeReferenceHandle reference);\n");
+            }
             output.push_str(
                 "extern void phpc_native_string_free(phpc_NativeStringHandle string);\n\n",
             );
@@ -7952,6 +7975,215 @@ impl CGenerator {
             len: keys.len(),
             cleanup_after_use,
         })
+    }
+
+    fn c_reference_path_for_assign_target<'a>(
+        &self,
+        target: &'a AssignTarget,
+    ) -> Option<CReferencePath<'a>> {
+        match target {
+            AssignTarget::Variable { name, span } => Some(CReferencePath {
+                name,
+                keys: Vec::new(),
+                append: false,
+                span: *span,
+            }),
+            AssignTarget::ArrayIndex { name, index, span } => Some(CReferencePath {
+                name,
+                keys: index.iter().collect(),
+                append: index.is_none(),
+                span: *span,
+            }),
+            AssignTarget::NestedArrayIndex {
+                name,
+                indices,
+                span,
+            } => Some(CReferencePath {
+                name,
+                keys: indices.iter().collect(),
+                append: false,
+                span: *span,
+            }),
+            AssignTarget::NestedArrayAppend {
+                name,
+                indices,
+                suffix_indices,
+                span,
+            } => {
+                if !suffix_indices.is_empty() {
+                    return None;
+                }
+                Some(CReferencePath {
+                    name,
+                    keys: indices.iter().collect(),
+                    append: true,
+                    span: *span,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn c_reference_path_for_source<'a>(
+        &self,
+        source: &'a ReferenceSource,
+    ) -> Option<CReferencePath<'a>> {
+        match source {
+            ReferenceSource::Variable { name, span } => Some(CReferencePath {
+                name,
+                keys: Vec::new(),
+                append: false,
+                span: *span,
+            }),
+            ReferenceSource::ArrayIndex { name, index, span } => Some(CReferencePath {
+                name,
+                keys: vec![index],
+                append: false,
+                span: *span,
+            }),
+            ReferenceSource::NestedArrayIndex {
+                name,
+                indices,
+                span,
+            } => Some(CReferencePath {
+                name,
+                keys: indices.iter().collect(),
+                append: false,
+                span: *span,
+            }),
+            ReferenceSource::ArrayAppend {
+                name,
+                indices,
+                span,
+            } => Some(CReferencePath {
+                name,
+                keys: indices.iter().collect(),
+                append: true,
+                span: *span,
+            }),
+            _ => None,
+        }
+    }
+
+    fn reject_unsupported_symbol_reference_path_root(
+        &self,
+        path: &CReferencePath<'_>,
+        statement_span: Span,
+    ) -> CompileResult<()> {
+        if is_request_superglobal_name(path.name) {
+            return Err(self.unsupported(path.span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+        if is_globals_superglobal_name(path.name) {
+            return Err(self.unsupported(statement_span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
+        }
+        Ok(())
+    }
+
+    fn materialize_c_reference_path(
+        &mut self,
+        path: CReferencePath<'_>,
+        failure_cleanup: &str,
+    ) -> CompileResult<CMaterializedReferencePath> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_symbol_table_helpers = true;
+
+        let name_bytes = self.emit_symbol_name_static_bytes(path.name);
+        if path.keys.is_empty() {
+            return Ok(CMaterializedReferencePath {
+                name_bytes,
+                name_len: path.name.len(),
+                keys: "NULL".to_string(),
+                key_count: 0,
+                cleanup_after_use: Vec::new(),
+                append: path.append,
+            });
+        }
+
+        let mut keys = Vec::new();
+        let mut cleanup_after_use = Vec::new();
+        for key_expr in path.keys {
+            let key_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let key =
+                self.materialize_native_value_result_operand(key_expr, &key_failure_cleanup)?;
+            cleanup_after_use.extend(key.cleanup_after_use.clone());
+            keys.push(key);
+        }
+
+        let key_array = self.next_native_name("symbol_reference_path_keys");
+        let entries = keys
+            .iter()
+            .map(|key| key.handle.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {key_array}[] = {{ {entries} }};"
+        ));
+
+        Ok(CMaterializedReferencePath {
+            name_bytes,
+            name_len: path.name.len(),
+            keys: key_array,
+            key_count: keys.len(),
+            cleanup_after_use,
+            append: path.append,
+        })
+    }
+
+    fn emit_c_symbol_path_reference_assignment(
+        &mut self,
+        target: &AssignTarget,
+        source: &ReferenceSource,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some(source_path) = self.c_reference_path_for_source(source) else {
+            return Ok(false);
+        };
+        let Some(target_path) = self.c_reference_path_for_assign_target(target) else {
+            return Ok(false);
+        };
+        self.reject_unsupported_symbol_reference_path_root(&source_path, span)?;
+        self.reject_unsupported_symbol_reference_path_root(&target_path, span)?;
+
+        let table = self.ensure_globals_symbol_table(failure_cleanup, span)?;
+        let source = self.materialize_c_reference_path(source_path, failure_cleanup)?;
+        let source_cleanup = c_cleanup_sequence(&source.cleanup_after_use);
+        let source_ref = self.next_native_name("symbol_reference");
+        let source_append = if source.append { "true" } else { "false" };
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {source_ref} = phpc_native_symbol_table_reference_for_path({table}, {}, {}, {}, {}, {source_append});",
+            source.name_bytes, source.name_len, source.keys, source.key_count
+        ));
+        let source_error_exit =
+            self.native_error_exit(&format!("{source_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({source_ref}.ptr == NULL) {{ {source_error_exit} }}"
+        ));
+        self.body.extend(source.cleanup_after_use);
+
+        let target_failure_cleanup =
+            format!("phpc_native_reference_free({source_ref}); {failure_cleanup}");
+        let target = self.materialize_c_reference_path(target_path, &target_failure_cleanup)?;
+        let target_cleanup = c_cleanup_sequence(&target.cleanup_after_use);
+        let target_append = if target.append { "true" } else { "false" };
+        let bound = self.next_native_name("symbol_reference_bound");
+        self.body.push(format!(
+            "bool {bound} = phpc_native_symbol_table_bind_reference_path({table}, {}, {}, {}, {}, {target_append}, {source_ref});",
+            target.name_bytes, target.name_len, target.keys, target.key_count
+        ));
+        let bind_error_exit = self.native_error_exit(&format!(
+            "phpc_native_reference_free({source_ref}); {target_cleanup}{failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if (!{bound}) {{ {bind_error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_reference_free({source_ref});"));
+        self.body.extend(target.cleanup_after_use);
+        Ok(true)
     }
 
     fn materialize_static_globals_symbol_path_key(
@@ -9557,6 +9789,10 @@ impl CGenerator {
                 if let Some(operation) = native_reference_assignment_call_operation(target, source)
                 {
                     return Err(self.unsupported_call_operation(operation));
+                }
+
+                if self.emit_c_symbol_path_reference_assignment(target, source, *span, "")? {
+                    return Ok(());
                 }
 
                 Err(self.unsupported(*span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION))
