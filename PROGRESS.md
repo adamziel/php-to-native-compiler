@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 00:44 CEST
-Evaluation marker: `20260522T224455Z` (periodic evaluator)
-Primary management baseline before this update: `38e98ad0 codegen: route array column queries`
-Primary semantic baseline: `38e98ad0 codegen: route array column queries`
+Updated: 2026-05-23 01:10 CEST
+Evaluation marker: `20260522T224455Z` plus manual post-integration refresh
+Primary management baseline before this update: `83e08c94 runtime: route reference-backed array lvalue owners`
+Primary semantic baseline: `83e08c94 runtime: route reference-backed array lvalue owners`
 Prior evaluator marker: `20260522T210338Z`; scheduled marker
 `20260522T215411Z` produced a stale report and did not land a dashboard commit.
 
@@ -14,16 +14,18 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 
 ## Executive Read
 
-Overall estimated progress: **84%** `[#################---]`
+Overall estimated progress: **85%** `[#################---]`
 
-Primary is synced at `38e98ad0`, which routes generated-native
-`array_column($rows, $column[, $index])` through a generalized native value
-array-query operand-list boundary. The preceding primary batch `795c60b3`
-routes generated-native `array_change_key_case(...)` through the same array
-query family. These two commits convert existing runtime array-query semantics
-into generated-C execution with linked proof; they improve backend consumer
-coverage without materially changing the largest remaining call/object/control
-flow risks.
+Primary is synced at `83e08c94`, which routes reference-backed symbol-table
+roots through shared generated-C array-lvalue owner operations. That converts
+an existing reference/COW storage boundary into executable array write/read,
+unset, presence, and increment/decrement behavior for ordinary array roots
+after reference assignment activates symbol storage. The preceding
+`38e98ad0` and `795c60b3` batches route generated-native `array_column(...)`
+and `array_change_key_case(...)` through generalized native value array-query
+boundaries. These commits improve real generated-C consumers, but they still
+leave the largest call/frame, object/property, and control-flow composition
+risks open.
 
 The latest integrated baseline includes generated-C request/reference/global
 symbol progress, direct and mixed symbol-root unsets, request append suffix
@@ -36,8 +38,9 @@ reference targets/sources through a shared value-path reference ABI, dynamic
 `$GLOBALS[$expr]` root/path reference source/target dispatch for non-append
 paths, keyed request references through reference-backed request roots, and
 PHP-fatal direct no-key `$GLOBALS[]` rejection, request append reference slots,
-and generated-native array-query routing for `array_change_key_case(...)` and
-`array_column(...)`. The previously counted direct no-key `$GLOBALS[]` value
+generated-native array-query routing for `array_change_key_case(...)` and
+`array_column(...)`, and reference-backed array-lvalue owners for active
+ordinary symbol roots. The previously counted direct no-key `$GLOBALS[]` value
 append slice from `aad22967` is superseded by `59f83295` and is not counted as
 completed capability.
 
@@ -47,17 +50,26 @@ unintegrated and is not counted.
 ## Current Primary State
 
 - Primary `master` and `origin/master`: synced at
-  `38e98ad08faa395c517ad9ca308266de40abf5f8`.
-- Latest semantic commit: `38e98ad0 codegen: route array column queries`.
-- Current product diff at evaluation time: this `PROGRESS.md` update plus the
+  `83e08c94a4dd6d971c63a1803e8c107c622688dd`.
+- Latest semantic commit: `83e08c94 runtime: route reference-backed array lvalue owners`.
+- Current product diff at refresh time: this `PROGRESS.md` update plus the
   preserved unstaged `runtime/src/lib.rs` null-slot increment/decrement hunk.
-  The runtime hunk remains unintegrated and is not counted.
-- Resource note from this review: `/dev/shm` has about 7.5G available out of
+  After this progress commit lands, the runtime hunk should remain the only
+  known primary diff. The runtime hunk remains unintegrated and is not counted.
+- Resource note from this review: `/dev/shm` has about 8.9G available out of
   22G; `/home` has about 171G available out of 459G. Headroom is serviceable
   but still too thin for broad concurrent test waves.
 
 ## Recent Primary-Integrated Progress
 
+- `83e08c94`: reference-backed generated-C array lvalue owners now route
+  ordinary active symbol-table roots through shared owner operations for
+  write/read/presence/unset/increment-update behavior after reference
+  assignment activates symbol storage. Focused gates included runtime
+  owner-slot tests, native-link source and executable tests for active symbol
+  array-lvalue reference owners, adjacent symbol-reference and array-lvalue
+  native-link suites, `cargo check -q -p php_runtime -p phpc`, rustfmt checks,
+  and diff checks.
 - `38e98ad0`: generated-native `array_column($rows, $column[, $index])` now
   uses `phpc_native_value_array_query_operation_with_operands_and_diagnostic(...)`,
   a reusable operand-list query ABI for native value array consumers needing
@@ -147,12 +159,12 @@ backend parity.
 | Runtime and ABI foundations | 97% | `[###################-]` | Strong value, array, symbol-table, request-state, comparison, truthiness, and reference ABIs. |
 | Compiler/backend consumers | 96% | `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbol, value, array-query, lvalue, and reference consumers; still uneven across calls, objects, control flow, and LLVM/C parity. |
 | Executable generalized PHP semantics | 82% | `[################----]` | Improving through linked executable gates and array-query consumers, but still selected islands rather than a complete PHP execution model. |
-| Arrays, lvalues, references, COW | 86% | `[#################---]` | Stronger arrays/lvalues, selected reference paths, and generated-native array query consumers; full references/COW and arbitrary writable roots remain large. |
+| Arrays, lvalues, references, COW | 87% | `[#################---]` | Stronger arrays/lvalues, selected reference paths, generated-native array query consumers, and reference-backed array-lvalue owners for active symbol roots; full references/COW and arbitrary writable roots remain large. |
 | Symbols, globals, request state | 96% | `[###################-]` | Request paths, `$GLOBALS` static/self aliases, ordinary `$GLOBALS` symbol references, dynamic root assignment/read/probe dispatch, dynamic non-append `$GLOBALS` references, symbol paths, direct/mixed root unsets, selected request references, request append reference slots, and PHP-fatal direct no-key `$GLOBALS[]` rejection are strong; broader request/global reconciliation remains open. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Lane candidates exist, but broad executable call/frame semantics are not primary. |
 | Objects, properties, methods | 11% | `[##------------------]` | Mostly lane-local/runtime candidate work; primary still lacks general compiled object/property/method execution. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused diagnostics exist; exact ordering and structured cleanup are not generalized. |
-| Broad integrated verification | 83% | `[#################---]` | Focused gates are strong and recent array-query adjacent gates help; cross-feature/backend-composition coverage is still thin. |
+| Broad integrated verification | 84% | `[#################---]` | Focused gates are strong and recent array-query/reference-owner adjacent gates help; cross-feature/backend-composition coverage is still thin. |
 
 ## Done / In Progress / Not Done
 
@@ -191,9 +203,9 @@ Done on primary:
   request roots, reusing the path-reference helper so source and target keyed
   aliases update the shared root array.
 - [x] Generated-C array-query/value-offset consumers, active-root offset
-  writeback, generated-native `array_change_key_case(...)` and
-  `array_column(...)` consumers, and by-value `foreach` body array-lvalue
-  unsets.
+  writeback, reference-backed active symbol-root array-lvalue owners,
+  generated-native `array_change_key_case(...)` and `array_column(...)`
+  consumers, and by-value `foreach` body array-lvalue unsets.
 - [x] Focused executable linked gates for the newest primary semantic slices.
 
 In progress or candidate only:
@@ -206,7 +218,7 @@ In progress or candidate only:
   is now covered by fatal rejection. Estimate: 67% `[#############-------]`.
 - [ ] General generated PHP reference assignment over objects, arbitrary
   owner/value/reference slots, frames, append request slots, and COW-aware
-  boundaries. Estimate: 61% `[############--------]`.
+  boundaries. Estimate: 63% `[#############-------]`.
 - [ ] Narrow real call/frame execution beyond helper/blocker routing.
   Estimate: 25% `[#####---------------]`.
 - [ ] Object/property/method executable semantics beyond lane-local candidates.
@@ -256,15 +268,18 @@ on primary with focused executable proof.
 
 ## Current Steering Bias
 
-Keep primary integration on compact structural consumers. After `38e98ad0` and
-`795c60b3`, another nearby array builtin is valuable only if it unlocks a
-shared execution boundary used by more than one PHP construct. After
-`59f83295`, direct no-key `$GLOBALS[]` value/reference append remains a fatal
-path, not a capability to extend. Ordinary static `$GLOBALS[...]` symbol-path
-references, dynamic non-append `$GLOBALS[$expr]` reference dispatch, keyed
-request references through reference-backed request roots, request append
-reference slots, and direct no-key `$GLOBALS[]` fatal rejection should all be
-treated as non-repeat guarded.
+Keep primary integration on compact structural consumers. After `83e08c94`,
+another nearby array-owner helper is valuable only if it unlocks a broader
+reference/COW execution boundary rather than repeating active symbol-root
+array-lvalue ownership. After `38e98ad0` and `795c60b3`, another nearby array
+builtin is valuable only if it unlocks a shared execution boundary used by more
+than one PHP construct. After `59f83295`, direct no-key `$GLOBALS[]`
+value/reference append remains a fatal path, not a capability to extend.
+Ordinary static `$GLOBALS[...]` symbol-path references, dynamic non-append
+`$GLOBALS[$expr]` reference dispatch, keyed request references through
+reference-backed request roots, request append reference slots, direct no-key
+`$GLOBALS[]` fatal rejection, and active symbol-root reference-backed
+array-lvalue owners should all be treated as non-repeat guarded.
 
 The next highest-value primary work is either request/global alias
 reconciliation, a compact reference/COW owner-slot slice, or a narrow executable
