@@ -7387,6 +7387,7 @@ impl CGenerator {
                     "extern phpc_NativeRequestStateHandle phpc_native_request_state_empty(void);\n",
                 );
                 output.push_str("extern phpc_NativeValueHandle phpc_native_request_state_superglobal_snapshot_value(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag);\n");
+                output.push_str("extern _Bool phpc_native_request_state_superglobal_replace_value_with_diagnostic(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str(
                     "extern void phpc_native_request_state_free(phpc_NativeRequestStateHandle request_state);\n",
                 );
@@ -7645,6 +7646,37 @@ impl CGenerator {
             handle: value.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
         }
+    }
+
+    fn emit_request_superglobal_root_assignment(
+        &mut self,
+        name: &str,
+        expr: &Expr,
+    ) -> CompileResult<()> {
+        let value = self.materialize_native_value_result_operand(expr, "")?;
+        let request_state = self.ensure_native_request_state_handle();
+        let bag = self.emit_request_superglobal_bag_handle(name);
+        let diagnostic = self.next_native_name("request_superglobal_replace_diagnostic");
+        let replaced = self.next_native_name("request_superglobal_replaced");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "_Bool {replaced} = phpc_native_request_state_superglobal_replace_value_with_diagnostic({request_state}, {bag}, {}, &{diagnostic});",
+            value.handle
+        ));
+        let failure_cleanup = format!(
+            "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({bag}); {}",
+            c_cleanup_sequence(&value.cleanup_after_use)
+        );
+        let error_exit = self.native_error_exit(&failure_cleanup);
+        self.body
+            .push(format!("if (!{replaced}) {{ {error_exit} }}"));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.push(format!("phpc_native_string_free({bag});"));
+        self.body.extend(value.cleanup_after_use);
+        Ok(())
     }
 
     fn emit_request_superglobal_isset_expr(&mut self, name: &str, failure_cleanup: &str) -> CValue {
@@ -11652,6 +11684,9 @@ impl CGenerator {
 
         match target {
             AssignTarget::Variable { name, .. } => {
+                if is_request_superglobal_name(name) {
+                    return self.emit_request_superglobal_root_assignment(name, expr);
+                }
                 if self.uses_native_string_helpers {
                     if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
                         self.store_native_value_result_variable(name, value);

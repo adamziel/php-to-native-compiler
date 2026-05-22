@@ -908,6 +908,24 @@ const REQUEST_SUPERGLOBAL_ROOT_SOURCE: &str = concat!(
     "echo $_SERVER;\n",
 );
 
+const REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "$_GET = \"alpha\";\n",
+    "echo $_GET;\n",
+    "echo \"|\";\n",
+    "$_POST = 42;\n",
+    "echo $_POST;\n",
+    "echo \"|\";\n",
+    "$_COOKIE = false;\n",
+    "echo empty($_COOKIE);\n",
+    "echo \"|\";\n",
+    "$_REQUEST = [\"name\" => \"Ada\"];\n",
+    "echo gettype($_REQUEST);\n",
+    "echo \"|\";\n",
+    "$_SERVER = strtoupper(\"srv\");\n",
+    "echo $_SERVER;\n",
+);
+
 const NATIVE_VALUE_VARIABLE_STORAGE_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$key = \"first\";\n$slot = $items[$key];\n$copy = $slot;\necho $slot, \"|\", $copy, \"|\";\n$upper = strtoupper($copy);\necho $upper, \"|\";\n$fallback = $items[\"missing\"] ?? \"m\";\necho $fallback, \"|\";\n$cast = (string) 42;\necho $cast, \"|\";\n$items[] = $upper;\necho $items[1];\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inner = \"inner\";\n$items = [\"keep\" => \"A\", \"drop\" => \"B\", 2 => \"C\", $outer => [$inner => \"N\", \"stay\" => \"S\"]];\n$key = \"drop\";\nunset($items[$key]);\nunset($items[2]);\nunset($items[99]);\nunset($items[$outer][$inner]);\necho isset($items[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[2]) ? 1 : 0;\necho \"|\";\necho isset($items[$outer][$inner]) ? 1 : 0;\necho \"|\";\n$items[$key] = \"D\";\necho $items[$key];\n";
@@ -1828,6 +1846,38 @@ fn native_executable_c_source_routes_request_roots_through_request_state_snapsho
             .count()
             >= 5,
         "{source}"
+    );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_request_root_assignments_through_replace_value() {
+    let program = parse(REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_replace_value_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_request_state_superglobal_replace_value_with_diagnostic")
+            .count()
+            >= 5,
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_request_state_superglobal_snapshot_value")
+            .count()
+            >= 5,
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_string_result_operation_with_diagnostic"),
+        "request-root replacement should consume existing native value-result operands:\n{source}"
     );
     assert!(
         !source.contains("request-superglobal lowering rejects"),
@@ -3996,6 +4046,53 @@ fn emit_exe_links_and_runs_request_root_snapshot_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"1|1|array|Array");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_root_assignment_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("request_root_assignment");
+    let source_path = native_link_output_path("request_root_assignment_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE)
+        .expect("native request root assignment source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native request root assignment source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native request root assignment executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"alpha|42|1|array|SRV");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
