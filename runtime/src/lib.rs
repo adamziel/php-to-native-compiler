@@ -1548,6 +1548,14 @@ impl NativeArrayLvalueResult {
         }
     }
 
+    fn value_with_diagnostic(value: Value, message: impl Into<String>) -> Self {
+        Self {
+            tag: NATIVE_ARRAY_LVALUE_OK,
+            value: NativeValueHandle::from_value(value),
+            diagnostic: NativeDiagnosticHandle::from_message(message),
+        }
+    }
+
     fn diagnostic(tag: u8, message: impl Into<String>) -> Self {
         Self {
             tag,
@@ -4350,7 +4358,12 @@ pub unsafe extern "C" fn phpc_native_value_offset_operation_with_diagnostic(
     unsafe { native_clear_diagnostic_slot(diagnostic) };
 
     match unsafe { native_value_offset_operation_value(subject, offset, operation) } {
-        Ok(value) => NativeValueHandle::from_value(value),
+        Ok((value, warning)) => {
+            if let Some(warning) = warning {
+                unsafe { native_store_diagnostic_message(diagnostic, warning) };
+            }
+            NativeValueHandle::from_value(value)
+        }
         Err(error) => {
             unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
             NativeValueHandle::null()
@@ -4471,7 +4484,7 @@ unsafe fn native_value_offset_operation_value(
     subject: NativeValueHandle,
     offset: NativeValueHandle,
     operation: u8,
-) -> RuntimeResult<Value> {
+) -> RuntimeResult<(Value, Option<String>)> {
     let Some(value) = (unsafe { subject.as_ref() }) else {
         return Err(RuntimeError::invalid_array_access(
             "native value offset operation failed: subject handle is null",
@@ -4483,6 +4496,7 @@ unsafe fn native_value_offset_operation_value(
     }
 
     unsafe { native_value_string_offset_operation_value(subject, offset, operation) }
+        .map(|value| (value, None))
 }
 
 unsafe fn native_value_offset_mutation_operation_value(
@@ -4829,10 +4843,7 @@ fn native_array_read_key_path(
     };
 
     let Some(value) = array.get_cloned(key.clone()) else {
-        return Err(NativeArrayLvalueResult::diagnostic(
-            NATIVE_ARRAY_LVALUE_INVALID_KEY,
-            format!("undefined array key {}", key.diagnostic_key()),
-        ));
+        return Err(native_array_lvalue_missing_key_read_result(key, rest));
     };
 
     if rest.is_empty() {
@@ -4841,6 +4852,9 @@ fn native_array_read_key_path(
 
     match value {
         Value::Array(child) => native_array_read_key_path(&child, rest),
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => Err(
+            native_array_lvalue_scalar_read_recovery_result(&value, rest),
+        ),
         other => Err(NativeArrayLvalueResult::diagnostic(
             NATIVE_ARRAY_LVALUE_INVALID_ROOT,
             format!(
@@ -4850,6 +4864,45 @@ fn native_array_read_key_path(
             ),
         )),
     }
+}
+
+fn native_array_lvalue_missing_key_read_result(
+    key: &ArrayKey,
+    rest: &[ArrayKey],
+) -> NativeArrayLvalueResult {
+    let mut diagnostics = vec![RuntimeError::undefined_array_key(key.diagnostic_key())
+        .message()
+        .to_string()];
+    diagnostics.extend(native_array_lvalue_scalar_read_recovery_diagnostics(
+        &Value::Null,
+        rest,
+    ));
+    NativeArrayLvalueResult::value_with_diagnostic(Value::Null, diagnostics.join("\n"))
+}
+
+fn native_array_lvalue_scalar_read_recovery_result(
+    root: &Value,
+    rest: &[ArrayKey],
+) -> NativeArrayLvalueResult {
+    NativeArrayLvalueResult::value_with_diagnostic(
+        Value::Null,
+        native_array_lvalue_scalar_read_recovery_diagnostics(root, rest).join("\n"),
+    )
+}
+
+fn native_array_lvalue_scalar_read_recovery_diagnostics(
+    root: &Value,
+    rest: &[ArrayKey],
+) -> Vec<String> {
+    let mut value_type = root.type_name();
+    let mut diagnostics = Vec::with_capacity(rest.len());
+    for _ in rest {
+        diagnostics.push(format!(
+            "Warning: Trying to access array offset on value of type {value_type}"
+        ));
+        value_type = Value::Null.type_name();
+    }
+    diagnostics
 }
 
 unsafe fn native_string_value_offset_mutation_operation_value(
@@ -4895,7 +4948,7 @@ unsafe fn native_array_value_offset_operation_value(
     array: &PhpArray,
     offset: NativeValueHandle,
     operation: u8,
-) -> RuntimeResult<Value> {
+) -> RuntimeResult<(Value, Option<String>)> {
     let Some(offset) = (unsafe { offset.as_ref() }) else {
         return Err(RuntimeError::invalid_array_key(
             "native value offset operation failed: offset handle is null",
@@ -4904,18 +4957,29 @@ unsafe fn native_array_value_offset_operation_value(
     let key = native_array_key_from_runtime_value(offset)?;
 
     match NativeStringOffsetOperation::from_tag(operation)? {
-        NativeStringOffsetOperation::Read => array
-            .get_cloned(key.clone())
-            .ok_or_else(|| RuntimeError::undefined_array_key(key.diagnostic_key())),
-        NativeStringOffsetOperation::Isset => Ok(Value::Bool(!matches!(
-            array.get(key),
-            None | Some(Value::Null)
-        ))),
-        NativeStringOffsetOperation::Empty => Ok(Value::Bool(
-            array
-                .get(key)
-                .map(|value| !value.is_truthy())
-                .unwrap_or(true),
+        NativeStringOffsetOperation::Read => match array.get_cloned(key.clone()) {
+            Some(value) => Ok((value, None)),
+            None => Ok((
+                Value::Null,
+                Some(
+                    RuntimeError::undefined_array_key(key.diagnostic_key())
+                        .message()
+                        .to_string(),
+                ),
+            )),
+        },
+        NativeStringOffsetOperation::Isset => Ok((
+            Value::Bool(!matches!(array.get(key), None | Some(Value::Null))),
+            None,
+        )),
+        NativeStringOffsetOperation::Empty => Ok((
+            Value::Bool(
+                array
+                    .get(key)
+                    .map(|value| !value.is_truthy())
+                    .unwrap_or(true),
+            ),
+            None,
         )),
     }
 }
@@ -18875,12 +18939,14 @@ mod tests {
                 &mut diagnostic,
             )
         };
-        assert!(missing.is_null());
+        assert!(!missing.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(missing), b"");
         assert_eq!(
             native_diagnostic_message_for_test(diagnostic),
             "undefined array key \"missing\""
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(missing) };
         unsafe { phpc_native_value_free(offset) };
         unsafe { phpc_native_value_free(subject) };
     }
@@ -19298,6 +19364,7 @@ mod tests {
         let outer_key = NativeValueHandle::from_value(Value::String("outer".to_string()));
         let inner_key = NativeValueHandle::from_value(Value::String("inner".to_string()));
         let number_key = NativeValueHandle::from_value(Value::String("number".to_string()));
+        let leaf_key = NativeValueHandle::from_value(Value::String("leaf".to_string()));
         let missing_key = NativeValueHandle::from_value(Value::String("missing".to_string()));
 
         let direct_path = [NativeArrayPathSegment {
@@ -19372,6 +19439,40 @@ mod tests {
         assert_eq!(native_value_echo_bytes_for_test(numeric.value), b"12");
         unsafe { phpc_native_array_lvalue_result_free(numeric) };
 
+        let scalar_nested_path = [
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: outer_key,
+            },
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: number_key,
+            },
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: leaf_key,
+            },
+        ];
+        let scalar_nested = unsafe {
+            phpc_native_array_lvalue_owner_value_operation_result(
+                owner,
+                scalar_nested_path.as_ptr(),
+                scalar_nested_path.len(),
+                NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ,
+                0,
+                0,
+                0,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(scalar_nested.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(scalar_nested.value), b"");
+        assert_eq!(
+            native_diagnostic_message_for_test(scalar_nested.diagnostic),
+            "Warning: Trying to access array offset on value of type int"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(scalar_nested) };
+
         let missing_path = [
             NativeArrayPathSegment {
                 tag: NATIVE_ARRAY_PATH_KEY,
@@ -19394,7 +19495,8 @@ mod tests {
                 NativeValueHandle::null(),
             )
         };
-        assert_eq!(missing.tag, NATIVE_ARRAY_LVALUE_INVALID_KEY);
+        assert_eq!(missing.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(missing.value), b"");
         assert_eq!(
             native_diagnostic_message_for_test(missing.diagnostic),
             "undefined array key \"missing\""
@@ -19431,6 +19533,7 @@ mod tests {
         unsafe { phpc_native_array_lvalue_result_free(append_read) };
 
         unsafe { phpc_native_value_free(missing_key) };
+        unsafe { phpc_native_value_free(leaf_key) };
         unsafe { phpc_native_value_free(number_key) };
         unsafe { phpc_native_value_free(inner_key) };
         unsafe { phpc_native_value_free(outer_key) };

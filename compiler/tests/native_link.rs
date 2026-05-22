@@ -407,6 +407,8 @@ const VALUE_OFFSET_MUTATION_ARRAY_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$items 
 
 const VALUE_OFFSET_ARRAY_READ_SOURCE: &str = "<?php\n$items = [\"first\" => \"q\", 2 => \"B\"];\n$key = \"first\";\n$out = [];\n$out[] = $items[$key];\necho $items[$key], \"|\";\nprint $items[2];\necho \"|\", $out[0], \"|\";\necho strtoupper($items[$key]);\n";
 
+const VALUE_OFFSET_READ_RECOVERY_SOURCE: &str = "<?php\n$items = [\"present\" => \"P\", \"outer\" => [\"scalar\" => 7, \"nullish\" => null]];\n$missing = \"missing\";\necho $items[\"present\"], \"|\";\necho $items[$missing], \"|\";\necho $items[\"outer\"][\"scalar\"][\"leaf\"], \"|\";\n$slot = $items[\"outer\"][\"absent\"];\n$copy = $slot;\nprint $copy;\necho \"|\";\necho isset($items[\"present\"]) ? 1 : 0;\n";
+
 const VALUE_OFFSET_NULL_COALESCE_SOURCE: &str = "<?php\n$items = [\"present\" => \"L\", \"nullish\" => null, 2 => \"N\"];\n$key = \"present\";\n$missing = \"missing\";\n$text = \"abc\";\n$offset = \"1\";\necho ($items[$key] ?? \"fallback\");\necho \"|\";\necho ($items[$missing] ?? \"fallback\");\necho \"|\";\necho ($items[\"nullish\"] ?? \"fallback\");\necho \"|\";\necho ($text[$offset] ?? \"fallback\");\necho \"|\";\necho ($text[9] ?? \"fallback\");\necho \"|\";\necho strtoupper($items[2] ?? \"x\");\n";
 
 const NATIVE_VALUE_VARIABLE_STORAGE_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$key = \"first\";\n$slot = $items[$key];\n$copy = $slot;\necho $slot, \"|\", $copy, \"|\";\n$upper = strtoupper($copy);\necho $upper, \"|\";\n$fallback = $items[\"missing\"] ?? \"m\";\necho $fallback, \"|\";\n$cast = (string) 42;\necho $cast, \"|\";\n$items[] = $upper;\necho $items[1];\n";
@@ -826,6 +828,38 @@ fn native_executable_c_source_routes_array_offset_reads_through_value_offset_bou
     assert!(
         !body.contains("phpc_native_array_read_key_with_diagnostic("),
         "lowerable generated-C array reads should not bypass the shared value-offset ABI:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_reports_array_read_recovery_through_shared_result_boundaries() {
+    let program = parse(VALUE_OFFSET_READ_RECOVERY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_diagnostic_report(value_offset_read_diagnostic_"),
+        "direct array-offset reads should report recoverable diagnostics through the value-offset result path:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_diagnostic_report(array_lvalue_read_result_"),
+        "nested array-lvalue reads should report recoverable diagnostics through the lvalue result path:\n{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_value_offset_operation_with_diagnostic(")
+            .count()
+            >= 3,
+        "direct reads and probes should continue to share the value-offset ABI:\n{source}"
+    );
+    assert_eq!(
+        body.matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ")
+            .count(),
+        2,
+        "nested missing/scalar reads should share the lvalue read operation family:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_clone"),
+        "recovered native read values should still compose with direct-variable storage:\n{source}"
     );
 }
 
@@ -2259,6 +2293,63 @@ fn emit_exe_links_and_runs_array_offset_read_value_boundary_program() {
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"q|B|q|Q");
     assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_read_recovery_result_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("array_read_recovery_result");
+    let source_path = native_link_output_path("array_read_recovery_result_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, VALUE_OFFSET_READ_RECOVERY_SOURCE)
+        .expect("native array read recovery source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array read recovery source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"P||||1");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    for expected in [
+        "undefined array key \"missing\"",
+        "Warning: Trying to access array offset on value of type int",
+        "undefined array key \"absent\"",
+    ] {
+        assert!(
+            stderr.contains(expected),
+            "missing {expected:?} in stderr {stderr:?}"
+        );
+    }
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);

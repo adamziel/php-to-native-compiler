@@ -10221,7 +10221,7 @@ impl CGenerator {
 
     fn emit_report_native_diagnostic(&mut self, diagnostic: &str) {
         self.body.push(format!(
-            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); }}"
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }}"
         ));
     }
 
@@ -12689,7 +12689,10 @@ impl CGenerator {
             "{cleanup}phpc_native_array_lvalue_result_free({result}); "
         ));
         self.body.push(format!(
-            "if ({result}.tag != PHPC_NATIVE_ARRAY_LVALUE_OK) {{ if ({result}.diagnostic.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({result}.diagnostic); }} {result_error_exit} }}"
+            "if ({result}.diagnostic.ptr != NULL) {{ phpc_native_diagnostic_report({result}.diagnostic); {result}.diagnostic.ptr = NULL; }}"
+        ));
+        self.body.push(format!(
+            "if ({result}.tag != PHPC_NATIVE_ARRAY_LVALUE_OK) {{ {result_error_exit} }}"
         ));
     }
 
