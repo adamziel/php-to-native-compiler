@@ -202,7 +202,7 @@ fn native_executable_c_source_routes_array_pointer_builtins_through_lvalue_owner
 #[test]
 fn native_executable_c_source_routes_array_sort_builtins_through_lvalue_owner_results() {
     let program = parse(
-        "<?php\n$values = [3, 1, 2];\n$mode = 1;\nsort($values, $mode);\n$box = [\"items\" => [\"a\" => \"b2\", \"b\" => \"b10\"], \"keys\" => [\"a\" => 1, \"b\" => 2]];\nasort($box[\"items\"], 2);\nkrsort($box[\"keys\"]);\nrsort($values);\n",
+        "<?php\n$values = [3, 1, 2];\n$mode = 1;\nsort($values, $mode);\n$box = [\"items\" => [\"a\" => \"b2\", \"b\" => \"b10\"], \"keys\" => [\"a\" => 1, \"b\" => 2], \"natural\" => [\"z\" => \"img10\", \"y\" => \"img2\", \"x\" => \"img01\"], \"case\" => [\"up\" => \"Img12\", \"low\" => \"img2\", \"first\" => \"img1\"]];\nasort($box[\"items\"], 2);\nkrsort($box[\"keys\"]);\nnatsort($box[\"natural\"]);\nnatcasesort($box[\"case\"]);\nrsort($values);\n",
     )
     .unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -216,6 +216,8 @@ fn native_executable_c_source_routes_array_sort_builtins_through_lvalue_owner_re
         "PHPC_NATIVE_ARRAY_LVALUE_SORT_SORT",
         "PHPC_NATIVE_ARRAY_LVALUE_SORT_ASORT",
         "PHPC_NATIVE_ARRAY_LVALUE_SORT_KRSORT",
+        "PHPC_NATIVE_ARRAY_LVALUE_SORT_NATSORT",
+        "PHPC_NATIVE_ARRAY_LVALUE_SORT_NATCASESORT",
         "PHPC_NATIVE_ARRAY_LVALUE_SORT_RSORT",
     ] {
         assert!(source.contains(tag), "{tag}\n\n{source}");
@@ -223,7 +225,7 @@ fn native_executable_c_source_routes_array_sort_builtins_through_lvalue_owner_re
     assert!(
         body.matches("phpc_native_array_lvalue_owner_sort_result")
             .count()
-            >= 4,
+            >= 6,
         "{source}"
     );
     assert!(
@@ -352,7 +354,7 @@ fn emit_exe_links_and_runs_array_sort_lvalue_owner_program() {
     let _ = fs::remove_file(&output_path);
     fs::write(
         &source_path,
-        "<?php\n$values = [3, 1, 2];\n$mode = 1;\nsort($values, $mode);\nforeach ($values as $v) { echo $v; }\necho \"|\";\n$box = [\"items\" => [\"a\" => \"b2\", \"b\" => \"b10\"], \"keys\" => [\"a\" => 1, \"b\" => 2]];\nasort($box[\"items\"], 2);\nforeach ($box[\"items\"] as $k => $v) { echo $k, \"=\", $v, \";\"; }\necho \"|\";\nkrsort($box[\"keys\"]);\nforeach ($box[\"keys\"] as $k => $v) { echo $k, \"=\", $v, \";\"; }\necho \"|\";\necho rsort($values) ? \"T\" : \"F\";\n",
+        "<?php\n$values = [3, 1, 2];\n$mode = 1;\nsort($values, $mode);\nforeach ($values as $v) { echo $v; }\necho \"|\";\n$box = [\"items\" => [\"a\" => \"b2\", \"b\" => \"b10\"], \"keys\" => [\"a\" => 1, \"b\" => 2], \"natural\" => [\"z\" => \"img10\", \"y\" => \"img2\", \"x\" => \"img01\"], \"case\" => [\"up\" => \"Img12\", \"low\" => \"img2\", \"first\" => \"img1\"]];\nasort($box[\"items\"], 2);\nforeach ($box[\"items\"] as $k => $v) { echo $k, \"=\", $v, \";\"; }\necho \"|\";\nkrsort($box[\"keys\"]);\nforeach ($box[\"keys\"] as $k => $v) { echo $k, \"=\", $v, \";\"; }\necho \"|\";\nnatsort($box[\"natural\"]);\nforeach ($box[\"natural\"] as $k => $v) { echo $k, \"=\", $v, \";\"; }\necho \"|\";\nnatcasesort($box[\"case\"]);\nforeach ($box[\"case\"] as $k => $v) { echo $k, \"=\", $v, \";\"; }\necho \"|\";\necho rsort($values) ? \"T\" : \"F\";\n",
     )
     .expect("write array sort native link source");
 
@@ -384,7 +386,10 @@ fn emit_exe_links_and_runs_array_sort_lvalue_owner_program() {
         .unwrap_or_else(|error| panic!("failed to run native array sort executable: {error}"));
 
     assert!(run.status.success(), "native executable failed");
-    assert_eq!(run.stdout, b"123|b=b10;a=b2;|b=2;a=1;|T");
+    assert_eq!(
+        run.stdout,
+        b"123|b=b10;a=b2;|b=2;a=1;|x=img01;y=img2;z=img10;|first=img1;low=img2;up=Img12;|T"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);

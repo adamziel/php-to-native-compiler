@@ -346,11 +346,19 @@ impl NativeArraySortOperation {
         }
     }
 
-    fn uses_comparator_free_sort(self) -> bool {
+    fn uses_mode_sort(self) -> bool {
         matches!(
             self,
             Self::Sort | Self::Rsort | Self::Asort | Self::Arsort | Self::Ksort | Self::Krsort
         )
+    }
+
+    fn uses_natural_sort(self) -> bool {
+        matches!(self, Self::Natsort | Self::Natcasesort)
+    }
+
+    fn uses_comparator_free_sort(self) -> bool {
+        self.uses_mode_sort() || self.uses_natural_sort()
     }
 
     fn sorts_keys(self) -> bool {
@@ -5352,6 +5360,118 @@ fn ascii_case_insensitive_compare_bytes(left: &[u8], right: &[u8]) -> i64 {
     }
 }
 
+fn php_strnatcmp_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i64 {
+    let mut left_index = 0;
+    let mut right_index = 0;
+
+    loop {
+        left_index = skip_natural_compare_spaces(left, left_index);
+        right_index = skip_natural_compare_spaces(right, right_index);
+
+        let left_byte = left.get(left_index).copied();
+        let right_byte = right.get(right_index).copied();
+
+        match (left_byte, right_byte) {
+            (Some(left_byte), Some(right_byte))
+                if left_byte.is_ascii_digit() && right_byte.is_ascii_digit() =>
+            {
+                let ordering = if left_byte == b'0' || right_byte == b'0' {
+                    compare_left_aligned_digit_runs(&left[left_index..], &right[right_index..])
+                } else {
+                    compare_right_aligned_digit_runs(&left[left_index..], &right[right_index..])
+                };
+
+                if ordering != 0 {
+                    return ordering;
+                }
+
+                left_index = skip_natural_compare_digits(left, left_index);
+                right_index = skip_natural_compare_digits(right, right_index);
+            }
+            (None, None) => return 0,
+            (None, Some(_)) => return -1,
+            (Some(_), None) => return 1,
+            (Some(left_byte), Some(right_byte)) => {
+                let left_byte = natural_compare_byte(left_byte, case_insensitive);
+                let right_byte = natural_compare_byte(right_byte, case_insensitive);
+
+                match left_byte.cmp(&right_byte) {
+                    Ordering::Less => return -1,
+                    Ordering::Greater => return 1,
+                    Ordering::Equal => {
+                        left_index += 1;
+                        right_index += 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn skip_natural_compare_spaces(bytes: &[u8], mut index: usize) -> usize {
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+    index
+}
+
+fn skip_natural_compare_digits(bytes: &[u8], mut index: usize) -> usize {
+    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+        index += 1;
+    }
+    index
+}
+
+fn natural_compare_byte(byte: u8, case_insensitive: bool) -> u8 {
+    if case_insensitive {
+        byte.to_ascii_lowercase()
+    } else {
+        byte
+    }
+}
+
+fn compare_left_aligned_digit_runs(left: &[u8], right: &[u8]) -> i64 {
+    let mut index = 0;
+
+    loop {
+        match (left.get(index).copied(), right.get(index).copied()) {
+            (Some(left), Some(right)) if left.is_ascii_digit() && right.is_ascii_digit() => {
+                match left.cmp(&right) {
+                    Ordering::Less => return -1,
+                    Ordering::Greater => return 1,
+                    Ordering::Equal => index += 1,
+                }
+            }
+            (Some(left), _) if left.is_ascii_digit() => return 1,
+            (_, Some(right)) if right.is_ascii_digit() => return -1,
+            _ => return 0,
+        }
+    }
+}
+
+fn compare_right_aligned_digit_runs(left: &[u8], right: &[u8]) -> i64 {
+    let mut bias = 0;
+    let mut index = 0;
+
+    loop {
+        match (left.get(index).copied(), right.get(index).copied()) {
+            (Some(left), Some(right)) if left.is_ascii_digit() && right.is_ascii_digit() => {
+                if bias == 0 {
+                    match left.cmp(&right) {
+                        Ordering::Less => bias = -1,
+                        Ordering::Greater => bias = 1,
+                        Ordering::Equal => {}
+                    }
+                }
+                index += 1;
+            }
+            (Some(left), _) if left.is_ascii_digit() => return 1,
+            (_, Some(right)) if right.is_ascii_digit() => return -1,
+            _ => return bias,
+        }
+    }
+}
+
 fn byte_compare_bytes(left: &[u8], right: &[u8]) -> i64 {
     match left.cmp(right) {
         Ordering::Less => -1,
@@ -7477,7 +7597,7 @@ unsafe fn native_array_sort_mode_from_operands(
     operands: *const NativeValueHandle,
     operand_count: usize,
 ) -> Result<Option<NativeArraySortMode>, NativeArrayLvalueResult> {
-    if !operation.uses_comparator_free_sort() {
+    if !operation.uses_mode_sort() {
         return Ok(None);
     }
 
@@ -7629,11 +7749,25 @@ fn native_array_sort_array_result(
     operation: NativeArraySortOperation,
     mode: Option<NativeArraySortMode>,
 ) -> NativeArrayLvalueResult {
+    let callable = operation.callable();
+    if operation.uses_natural_sort() {
+        let result = array.sort_values_natural_for_native(
+            callable,
+            matches!(operation, NativeArraySortOperation::Natcasesort),
+        );
+        return match result {
+            Ok(()) => NativeArrayLvalueResult::value(Value::Bool(true)),
+            Err(error) => NativeArrayLvalueResult::diagnostic(
+                NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+                error.message().to_string(),
+            ),
+        };
+    }
+
     let Some(mode) = mode else {
         return native_array_sort_blocker_result(operation);
     };
 
-    let callable = operation.callable();
     let result = if operation.sorts_keys() {
         array.sort_keys_for_native(callable, mode, operation.reverses_order())
     } else {
@@ -10447,6 +10581,18 @@ impl PhpArray {
         Ok(())
     }
 
+    fn sort_values_natural_for_native(
+        &mut self,
+        callable: &'static str,
+        case_insensitive: bool,
+    ) -> RuntimeResult<()> {
+        self.entries = self.sorted_entries_by(|left, right| {
+            array_sort_natural_value_ordering(callable, left, right, case_insensitive)
+        })?;
+        self.cursor = 0;
+        Ok(())
+    }
+
     fn sort_keys_for_native(
         &mut self,
         callable: &'static str,
@@ -11512,6 +11658,25 @@ fn array_sort_value_ordering(
             Ok(left.cmp(&right))
         }
     }
+}
+
+fn array_sort_natural_value_ordering(
+    callable: &'static str,
+    left: &ArrayEntry,
+    right: &ArrayEntry,
+    case_insensitive: bool,
+) -> RuntimeResult<Ordering> {
+    let left = left.value_cloned();
+    let right = right.value_cloned();
+    let left = array_scalar_string_comparison_value(callable, &left)?;
+    let right = array_scalar_string_comparison_value(callable, &right)?;
+    Ok(
+        match php_strnatcmp_bytes(left.as_slice(), right.as_slice(), case_insensitive) {
+            value if value < 0 => Ordering::Less,
+            0 => Ordering::Equal,
+            _ => Ordering::Greater,
+        },
+    )
 }
 
 fn array_sort_key_ordering(
@@ -25611,6 +25776,8 @@ mod tests {
         let direct_key = NativeValueHandle::from_value(Value::String("direct".to_string()));
         let strings_key = NativeValueHandle::from_value(Value::String("strings".to_string()));
         let keys_key = NativeValueHandle::from_value(Value::String("keys".to_string()));
+        let natural_key = NativeValueHandle::from_value(Value::String("natural".to_string()));
+        let case_key = NativeValueHandle::from_value(Value::String("case".to_string()));
         let scalar_key = NativeValueHandle::from_value(Value::String("scalar".to_string()));
         let sort_numeric = NativeValueHandle::from_value(Value::Int(1));
         let sort_string = NativeValueHandle::from_value(Value::Int(2));
@@ -25627,6 +25794,14 @@ mod tests {
         let keys_path = [NativeArrayPathSegment {
             tag: NATIVE_ARRAY_PATH_KEY,
             key: keys_key,
+        }];
+        let natural_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: natural_key,
+        }];
+        let case_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: case_key,
         }];
         let scalar_path = [NativeArrayPathSegment {
             tag: NATIVE_ARRAY_PATH_KEY,
@@ -25648,10 +25823,22 @@ mod tests {
         keys.insert("a", Value::Int(1));
         keys.insert("b", Value::Int(2));
 
+        let mut natural = PhpArray::new();
+        natural.insert("z", Value::String("img10".to_string()));
+        natural.insert("y", Value::String("img2".to_string()));
+        natural.insert("x", Value::String("img01".to_string()));
+
+        let mut case_values = PhpArray::new();
+        case_values.insert("up", Value::String("Img12".to_string()));
+        case_values.insert("low", Value::String("img2".to_string()));
+        case_values.insert("first", Value::String("img1".to_string()));
+
         let mut root = PhpArray::new();
         root.insert("direct", Value::Array(direct));
         root.insert("strings", Value::Array(strings));
         root.insert("keys", Value::Array(keys));
+        root.insert("natural", Value::Array(natural));
+        root.insert("case", Value::Array(case_values));
         root.insert("scalar", Value::Int(7));
 
         let handle = NativeArrayHandle::from_array(root);
@@ -25697,6 +25884,32 @@ mod tests {
         assert_eq!(sorted_keys.tag, NATIVE_ARRAY_LVALUE_OK);
         unsafe { phpc_native_array_lvalue_result_free(sorted_keys) };
 
+        let natural_sort = unsafe {
+            phpc_native_array_lvalue_owner_sort_result(
+                owner,
+                natural_path.as_ptr(),
+                natural_path.len(),
+                NATIVE_ARRAY_LVALUE_SORT_NATSORT,
+                ptr::null(),
+                0,
+            )
+        };
+        assert_eq!(natural_sort.tag, NATIVE_ARRAY_LVALUE_OK);
+        unsafe { phpc_native_array_lvalue_result_free(natural_sort) };
+
+        let case_sort = unsafe {
+            phpc_native_array_lvalue_owner_sort_result(
+                owner,
+                case_path.as_ptr(),
+                case_path.len(),
+                NATIVE_ARRAY_LVALUE_SORT_NATCASESORT,
+                ptr::null(),
+                0,
+            )
+        };
+        assert_eq!(case_sort.tag, NATIVE_ARRAY_LVALUE_OK);
+        unsafe { phpc_native_array_lvalue_result_free(case_sort) };
+
         let root = unsafe { handle.as_ref() }.expect("array handle survives sort");
         let Value::Array(direct) = root.value.get("direct").expect("direct array remains") else {
             panic!("direct sort should leave an array");
@@ -25727,6 +25940,57 @@ mod tests {
         assert_eq!(keys.entries()[0].key, ArrayKey::String("b".to_string()));
         assert_eq!(keys.entries()[1].key, ArrayKey::String("a".to_string()));
 
+        let Value::Array(natural) = root.value.get("natural").expect("natural array remains")
+        else {
+            panic!("natsort should leave an array");
+        };
+        assert_eq!(
+            natural
+                .entries()
+                .iter()
+                .map(|entry| (entry.key.clone(), entry.value_cloned()))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    ArrayKey::String("x".to_string()),
+                    Value::String("img01".to_string())
+                ),
+                (
+                    ArrayKey::String("y".to_string()),
+                    Value::String("img2".to_string())
+                ),
+                (
+                    ArrayKey::String("z".to_string()),
+                    Value::String("img10".to_string())
+                ),
+            ]
+        );
+
+        let Value::Array(case_values) = root.value.get("case").expect("case array remains") else {
+            panic!("natcasesort should leave an array");
+        };
+        assert_eq!(
+            case_values
+                .entries()
+                .iter()
+                .map(|entry| (entry.key.clone(), entry.value_cloned()))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    ArrayKey::String("first".to_string()),
+                    Value::String("img1".to_string())
+                ),
+                (
+                    ArrayKey::String("low".to_string()),
+                    Value::String("img2".to_string())
+                ),
+                (
+                    ArrayKey::String("up".to_string()),
+                    Value::String("Img12".to_string())
+                ),
+            ]
+        );
+
         let scalar_sort = unsafe {
             phpc_native_array_lvalue_owner_sort_result(
                 owner,
@@ -25744,20 +26008,31 @@ mod tests {
         );
         unsafe { phpc_native_array_lvalue_result_free(scalar_sort) };
 
-        let natural_sort = unsafe {
+        let mut natural_bad = PhpArray::new();
+        natural_bad
+            .append(Value::String("img2".to_string()))
+            .unwrap();
+        natural_bad.append(Value::Array(PhpArray::new())).unwrap();
+        natural_bad
+            .append(Value::String("img10".to_string()))
+            .unwrap();
+        let natural_bad_handle = NativeArrayHandle::from_array(natural_bad);
+        let natural_bad_result = unsafe {
             phpc_native_array_lvalue_owner_sort_result(
-                owner,
-                strings_path.as_ptr(),
-                strings_path.len(),
+                phpc_native_array_lvalue_owner_array(natural_bad_handle),
+                ptr::null(),
+                0,
                 NATIVE_ARRAY_LVALUE_SORT_NATSORT,
                 ptr::null(),
                 0,
             )
         };
-        assert_eq!(natural_sort.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
-        assert!(native_diagnostic_message_for_test(natural_sort.diagnostic)
-            .contains("sorting/comparator ABI"));
-        unsafe { phpc_native_array_lvalue_result_free(natural_sort) };
+        assert_eq!(natural_bad_result.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert_eq!(
+            native_diagnostic_message_for_test(natural_bad_result.diagnostic),
+            "unsupported call natsort(): values must be scalar in the current subset, got array"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(natural_bad_result) };
 
         let callback_sort = unsafe {
             phpc_native_array_lvalue_owner_sort_result(
@@ -25795,9 +26070,12 @@ mod tests {
         unsafe { phpc_native_value_free(sort_string) };
         unsafe { phpc_native_value_free(sort_numeric) };
         unsafe { phpc_native_value_free(scalar_key) };
+        unsafe { phpc_native_value_free(case_key) };
+        unsafe { phpc_native_value_free(natural_key) };
         unsafe { phpc_native_value_free(keys_key) };
         unsafe { phpc_native_value_free(strings_key) };
         unsafe { phpc_native_value_free(direct_key) };
+        unsafe { phpc_native_array_free(natural_bad_handle) };
         unsafe { phpc_native_array_free(handle) };
     }
 
