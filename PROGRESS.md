@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 19:45 CEST
+Updated: 2026-05-22 19:55 CEST
 Evaluation marker: `20260522T174352Z`
-Primary management HEAD: `e34fc783 docs: update progress after value-result offset reads`
-Primary semantic HEAD: `87e27b6b codegen: route value-result offset reads through ABI`
-Current pushed semantic baseline: `87e27b6b codegen: route value-result offset reads through ABI`
+Primary management HEAD: current progress commit `docs: update progress after array query ABI`
+Primary semantic HEAD: `72c3b2d5 codegen: route array query builtins through value ABI`
+Current pushed semantic baseline: `72c3b2d5 codegen: route array query builtins through value ABI`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -13,7 +13,7 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 
 ## Executive Read
 
-Overall estimated progress: **80%** `[################----]`
+Overall estimated progress: **81%** `[################----]`
 
 Primary made real integrated progress in the latest review window. Generated-C
 strict identity over owned `NativeValueHandle` values now routes through the
@@ -24,7 +24,12 @@ when the global symbol table is active, which made the adjacent
 whose subject is already an owned native value-result producer now route
 through the shared value-offset ABI, covering array callback results,
 cast-produced arrays, nested offset-read values, and binary string value
-results while preserving the direct string-offset byte path.
+results while preserving the direct string-offset byte path. Generated-C
+array-query builtins now consume that native-value infrastructure through one
+shared runtime ABI for filtered `array_keys()`, `in_array()`, `array_search()`,
+`array_flip()`, `array_count_values()`, `array_sum()`, `array_product()`,
+`array_fill_keys()`, and `array_combine()`, with linked executable proof that
+array-valued query results compose through offset reads.
 
 That progress is primary-integrated: it is committed, pushed, focused-gated,
 and tied to executable generated-code behavior. It is not lane-local status
@@ -44,9 +49,9 @@ parity remain substantial open systems.
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
-| Compiler/backend consumers | 92% | `[##################--]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, active root offset-mutation writeback, value-result offset reads, static request aliases, direct undefined root reads, and generated-C native-value strict identity; uneven across calls, objects, control flow, and LLVM/C parity. |
-| Executable generalized PHP semantics | 73% | `[###############-----]` | Improving through executable path consumers, but many real PHP compositions still block. |
-| Arrays, lvalues, references, COW | 73% | `[###############-----]` | Arrays/lvalues advanced; full references/COW and arbitrary writable roots remain large. |
+| Compiler/backend consumers | 93% | `[###################-]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, active root offset-mutation writeback, value-result offset reads, array-query value consumers, static request aliases, direct undefined root reads, and generated-C native-value strict identity; uneven across calls, objects, control flow, and LLVM/C parity. |
+| Executable generalized PHP semantics | 74% | `[###############-----]` | Improving through executable path consumers, but many real PHP compositions still block. |
+| Arrays, lvalues, references, COW | 74% | `[###############-----]` | Arrays/lvalues advanced with query/value-result consumers; full references/COW and arbitrary writable roots remain large. |
 | Symbols, globals, request state | 78% | `[################----]` | Request paths/null-coalesce, static `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, and direct undefined root reads are stronger; dynamic aliases, direct root appends, frames, references, and self-reference remain incomplete. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Early; lane candidates exist, but broad executable call/frame semantics are not primary yet. |
 | Objects, properties, methods | 11% | `[##------------------]` | Early; runtime candidates exist, but general compiled object/property/method execution remains missing. |
@@ -93,6 +98,11 @@ Done on primary:
   the shared value-offset ABI, covering array callback results, cast-produced
   arrays, nested offset-read values, and binary string value results without
   replacing the direct string-offset byte path.
+- [x] Generated-C array-query builtins over native value operands through one
+  shared runtime ABI, covering filtered `array_keys()`, `in_array()`,
+  `array_search()`, `array_flip()`, `array_count_values()`, `array_sum()`,
+  `array_product()`, `array_fill_keys()`, and `array_combine()` with
+  value-offset composition for array-valued results.
 
 In progress / candidate integration themes:
 
@@ -125,6 +135,7 @@ Not done:
 
 Recent semantic commits on primary:
 
+- `72c3b2d5 codegen: route array query builtins through value ABI`
 - `87e27b6b codegen: route value-result offset reads through ABI`
 - `a6afb405 codegen: sync active root offset mutations through symbol ABI`
 - `0b28771d codegen: route native value strict identity through comparison ABI`
@@ -152,7 +163,10 @@ lowering through shared symbol-table path ABIs; direct unresolved root-variable
 reads through a diagnostic symbol-table ABI; generated-C strict identity over
 owned native-value handles through the shared comparison ABI; active root
 value-offset mutation writeback into the persistent symbol table; and
-value-result offset reads over existing native value-result producers.
+value-result offset reads over existing native value-result producers. It now
+also includes generated-C array-query builtins routed through a shared
+native-value query ABI with executable offset-read composition for their
+array-valued results.
 
 ## Lane-Local And Active Candidate Work
 
@@ -161,9 +175,10 @@ Lane-local candidates, not counted:
 - `impl-array-value-runtime`: recent `array_map(null, ...)` identity/zip,
   value-frame, type-name, and metadata byte-registry work is plausible but
   conflict-heavy; extract only narrow executable consumers.
-- `impl-native-integration-batch`: value-result offset-read composition is now
-  primary-integrated; remaining string/list transform candidates need fresh
-  transplant notes before primary use.
+- `impl-native-integration-batch`: value-result offset-read composition and
+  array-query value operations are now primary-integrated; remaining
+  string/list transform candidates need fresh transplant notes before primary
+  use.
 - `impl-global-symbols` and `impl-native-comparison-semantics`: symbol-derived
   value-handle truthiness, type introspection, and comparison work may be useful
   if it stays aligned with primary's request/global alias model.
@@ -200,6 +215,9 @@ The next integration batches should favor small executable slices:
 - Defer broad byte-string, call-frame, object, diagnostic-state, and
   control-flow stacks until a single primary-compatible consumer can be
   extracted without importing full-lane churn.
+- Do not repeat the array-query ABI or generated-C query builtin family; next
+  array work should move toward arbitrary roots, references/COW,
+  nested/writeback/RMW gaps, or LLVM/C parity.
 
 Rejected distractions:
 
@@ -211,13 +229,9 @@ Rejected distractions:
 
 ## Live Notes
 
-Primary dirty-state note: the bounded evidence and first live check showed only
-the preserved `runtime/src/lib.rs` null-slot increment/decrement hunk. Final
-verification during this evaluator run saw additional active uncommitted
-implementation diffs in `compiler/src/codegen.rs` and `runtime/src/lib.rs`.
-Those diffs were left untouched, are not counted as progress, and need separate
-classification, focused tests, and a semantic commit or rejection before any
-runtime/compiler staging.
+Primary dirty-state note: after semantic commit `72c3b2d5`, primary still has
+only the preserved unstaged `runtime/src/lib.rs` null-slot
+increment/decrement hunk. It remains unclassified and unstaged.
 
 Resource snapshot for this review: `/dev/shm` is about 15G free by `df` and
 7.5G used by `du`; `/home` is about 193G free by `df`, with `du -sh /home`
