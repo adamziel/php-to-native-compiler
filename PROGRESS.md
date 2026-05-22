@@ -1,32 +1,32 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 06:08 CEST
-Evaluation marker: 20260522T040802Z-primary-e3af4261
+Updated: 2026-05-22 06:19 CEST
+Evaluation marker: 20260522T041902Z-primary-d53a52f6
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local and uncommitted primary work are candidate material until selected, gated, committed, and pushed.
 
 ## Overall Status
 
-Estimated progress toward a broadly usable generalized PHP native compiler: **52%**
+Estimated progress toward a broadly usable generalized PHP native compiler: **53%**
 
 ```
 Generalized runtime/ABI foundations      [##################--] 89%
 Compiler/backend consumers               [###################-] 96%
-Executable generalized PHP semantics     [#############-------] 63%
-Arrays, references, COW, lvalues         [########------------] 40%
+Executable generalized PHP semantics     [#############-------] 64%
+Arrays, references, COW, lvalues         [########------------] 41%
 Objects, properties, methods             [##------------------] 11%
 Diagnostics/control-flow composition     [#####---------------] 25%
-Broad integrated verification            [##########----------] 52%
+Broad integrated verification            [###########---------] 53%
 ```
 
 ## Current Primary State
 
-- Current primary HEAD at review: `e3af4261 codegen: store native value results in variables`.
-- Latest committed semantic compiler/runtime baseline: `e3af4261 codegen: store native value results in variables`.
-- Latest integrated semantic batch adds the `phpc_native_value_clone(...)` ABI and generated-C direct-variable storage/cleanup for owned native value-result handles. Lowerable array offset reads, offset `??`, casts, and string-result operations can now persist in variables, clone on variable copy and downstream native-value consumers, and clean up on overwrite/error/program exit.
-- Previous semantic batch routes generated-C lowerable array/string offset `??` through the shared value-offset presence/read ABI, preserves RHS laziness, reports diagnostics through the native diagnostic path, and returns an owned native value for downstream consumers such as output and native string-result calls.
-- Recent integrated array/value-offset progress also includes generated-C array reads, direct appends, direct keyed/append assignment-expression values, direct/multi-operand array unsets, direct array writes, generated-C offset presence, generated-C string-offset writes, LLVM string-offset reads/probes, and LLVM/generated-C string-int consumers.
-- Resource note at this review: `/dev/shm` is 22G total, 15G used, 7.2G free, 68% full by `df`; `/home` has 225G free by `df` and about 197G used by `du`. Broad gates should keep using explicit resource checks.
+- Current primary HEAD at review: `d53a52f6 codegen: route array unsets through lvalue ABI`.
+- Latest committed semantic compiler/runtime baseline: `d53a52f6 codegen: route array unsets through lvalue ABI`.
+- Latest integrated semantic batch adds a narrow `NativeArrayLvalueOwner`/`NativeArrayPathSegment`/`NativeArrayLvalueResult` ABI for array-owner unset paths, and generated-C direct, nested, and multi-target array-index `unset(...)` now route through that lvalue owner operation instead of the prior value-offset mutation rematerialization path.
+- Previous semantic batch adds the `phpc_native_value_clone(...)` ABI and generated-C direct-variable storage/cleanup for owned native value-result handles. Lowerable array offset reads, offset `??`, casts, and string-result operations can now persist in variables, clone on variable copy and downstream native-value consumers, and clean up on overwrite/error/program exit.
+- Recent integrated array/value-offset progress also includes generated-C array reads, direct appends, direct keyed/append assignment-expression values, direct array writes, generated-C offset presence, generated-C string-offset writes, LLVM string-offset reads/probes, and LLVM/generated-C string-int consumers.
+- Resource note at this review: `/dev/shm` is 22G total, 3.7G used, 19G free, 17% full by `df`. Broad gates should keep using explicit resource checks.
 
 ## Grand Roadmap Position
 
@@ -38,7 +38,7 @@ The compiler is still not close to full generalized PHP semantics. The major unf
 
 - [x] Supervised parallel lanes and a primary integration gate are established.
 - [x] Shared runtime ABI surfaces exist for strings, byte buffers, comparisons, numeric-string classification, selected conversions, array key/value operations, value-offset read/presence/mutation operations, diagnostics, branch decisions, native value output, type predicates, bitwise/shift operations, and array snapshots.
-- [x] Primary has selected LLVM/generated-C consumers for primitive arithmetic, unary string-result builtins, string-int builtins, generated-C array/string offset presence/read/write/unset/append/null-coalesce slices, LLVM string-offset reads/probes, scalar output, type predicates, bitwise/shift, comparison relation results, casts/type-name output, and focused diagnostic paths.
+- [x] Primary has selected LLVM/generated-C consumers for primitive arithmetic, unary string-result builtins, string-int builtins, generated-C array/string offset presence/read/write/append/null-coalesce slices, generated-C array-owner lvalue unset paths, LLVM string-offset reads/probes, scalar output, type predicates, bitwise/shift, comparison relation results, casts/type-name output, and focused diagnostic paths.
 - [x] Selected generated-C direct-variable storage and cleanup for owned native value-result handles is integrated for already-lowerable value-result families.
 - [ ] In progress: array lvalue/RMW/reference/COW work. Primary has useful foundations and selected direct consumers; lane-local candidates are much broader than integrated capability.
 - [ ] In progress: symbol/request/global value-flow and request-state work. Primary has surfaces, not full mutable PHP symbol behavior.
@@ -54,7 +54,7 @@ The compiler is still not close to full generalized PHP semantics. The major unf
 | String conversion, truthiness, byte buffers | 79% | 88% | Primary has strong selected string/value surfaces, generated-C and LLVM string-offset consumers, string-int consumers, stdout/materialization paths, and byte-buffer helpers. Lane-local formatter/binary string work is broader but not fully integrated. |
 | Call operation cleanup and ownership | 43% | 68% | Primary has common call diagnostics and selected cleanup routing. Real frames, binding, return semantics, by-ref calls, and dynamic dispatch remain mostly missing. |
 | Comparison and conversion semantics | 75% | 84% | Primary has shared comparison/conversion surfaces and selected backend consumers. Dynamic arithmetic, warning parity, recursive arrays, object/resource/reference comparisons, and full backend parity remain open. |
-| Arrays, lvalues, references, COW | 40% | 85% | Primary has selected generated-C value-offset read/presence/mutation/null-coalesce execution, owned native value-result variable storage, plus LLVM string-offset parity. Nested writeback, `??=`, RMW, references, COW, arbitrary roots, object/ArrayAccess/resource offsets, and LLVM array-offset parity remain open. |
+| Arrays, lvalues, references, COW | 41% | 85% | Primary has selected generated-C value-offset read/presence/mutation/null-coalesce execution, direct array-owner lvalue unset paths, owned native value-result variable storage, plus LLVM string-offset parity. Nested writeback beyond unset, `??=`, RMW, references, COW, arbitrary roots, object/ArrayAccess/resource offsets, and LLVM array-offset parity remain open. |
 | Symbols, globals, request state | 25% | 68% | Primary can now persist selected owned native value-result handles in generated-C direct variables with clone/overwrite cleanup. Real generalized locals, frames, imports, globals, superglobals, undefined slots, mutation, and reference assignment lowering are not integrated. |
 | Objects, properties, methods | 11% | 50% | Primary has strict-identity/object comparison blockers and plans. Executable object allocation/property/method behavior is largely absent. |
 | Diagnostics and control-flow cleanup | 25% | 70% | Primary has selected diagnostic/reporting and cleanup paths. Full warning ordering, recovery, terminal cleanup, loop/switch/goto/finally/exception behavior, and broad composition remain missing. |
@@ -62,6 +62,8 @@ The compiler is still not close to full generalized PHP semantics. The major unf
 
 ## Recent Primary-Integrated Work
 
+- `d53a52f6 codegen: route array unsets through lvalue ABI`
+  - Adds a narrow array-owner lvalue path/result ABI and routes generated-C direct, nested, and multi-target array-index `unset(...)` through operation-labeled owner/path semantics with arbitrary key expression materialization.
 - `e3af4261 codegen: store native value results in variables`
   - Adds native value cloning plus generated-C direct-variable storage for owned native value-result handles. Source and linked executable gates cover array read values, variable copies, offset null-coalesce values, cast values, string-result values, array-append consumers, overwrite cleanup, and runtime clone independence.
 - `40941ddb codegen: route offset null coalesce through value ABI`
