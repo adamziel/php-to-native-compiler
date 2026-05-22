@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
 Updated: 2026-05-22 09:30 CEST
-Evaluation marker: 20260522T073015Z-primary-5ab507cd
+Evaluation marker: 20260522T073015Z-primary-7102ac75
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local and uncommitted primary work are candidate material until selected, gated, committed, and pushed.
 
@@ -21,7 +21,7 @@ Broad integrated verification            [############--------] 60%
 
 ## Current Primary State
 
-- Primary HEAD at review: `5ab507cd codegen: route nested array ??= through lvalue ABI`, synced with `origin/master`.
+- Primary HEAD at review: `7102ac75 docs: update progress after nested array coalesce`, synced with `origin/master`.
 - Latest committed semantic compiler/runtime batch: `5ab507cd codegen: route nested array ??= through lvalue ABI`.
 - Recent committed semantic progress is concentrated in generated-C array-owner lvalues: by-value foreach over tracked native owners, a by-reference foreach reference-slot blocker, append-path increment/decrement, missing final keyed increment/decrement recovery, shared null increment/decrement defaults, and nested tracked-owner `??=`.
 - One pre-existing unstaged runtime cleanup hunk remains preserved in `runtime/src/lib.rs`; it is not counted as integrated capability.
