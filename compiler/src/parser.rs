@@ -3523,6 +3523,7 @@ impl Parser {
         match target {
             AssignTarget::Variable { .. }
             | AssignTarget::ArrayIndex { index: Some(_), .. }
+            | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::Property { .. }
             | AssignTarget::StaticProperty { .. }
@@ -3541,7 +3542,6 @@ impl Parser {
             | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
-            | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_compound_assignment_target_message())
@@ -3555,6 +3555,7 @@ impl Parser {
         match target {
             AssignTarget::Variable { .. }
             | AssignTarget::ArrayIndex { index: Some(_), .. }
+            | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::Property { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::StaticProperty { .. }
@@ -3573,7 +3574,6 @@ impl Parser {
             | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
-            | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_increment_decrement_target_message())
@@ -3607,20 +3607,21 @@ impl Parser {
                         span,
                     });
                 }
-                match expr {
-                    Expr::Index {
-                        target,
-                        index,
+
+                let (name, mut indices, span) = Self::array_index_path_from_expr(expr)
+                    .ok_or(unsupported_increment_decrement_target_message())?;
+                if indices.len() == 1 {
+                    Ok(AssignTarget::ArrayIndex {
+                        name,
+                        index: Some(indices.remove(0)),
                         span,
-                    } => match *target {
-                        Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
-                            name,
-                            index: Some(*index),
-                            span,
-                        }),
-                        _ => Err(unsupported_increment_decrement_target_message()),
-                    },
-                    _ => unreachable!("outer match already selected index expression"),
+                    })
+                } else {
+                    Ok(AssignTarget::NestedArrayIndex {
+                        name,
+                        indices,
+                        span,
+                    })
                 }
             }
             Expr::Property {
@@ -3730,20 +3731,21 @@ impl Parser {
                         span,
                     });
                 }
-                match expr {
-                    Expr::Index {
-                        target,
-                        index,
+
+                let (name, mut indices, span) = Self::array_index_path_from_expr(expr)
+                    .ok_or(unsupported_compound_assignment_target_message())?;
+                if indices.len() == 1 {
+                    Ok(AssignTarget::ArrayIndex {
+                        name,
+                        index: Some(indices.remove(0)),
                         span,
-                    } => match *target {
-                        Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
-                            name,
-                            index: Some(*index),
-                            span,
-                        }),
-                        _ => Err(unsupported_compound_assignment_target_message()),
-                    },
-                    _ => unreachable!("outer match already selected index expression"),
+                    })
+                } else {
+                    Ok(AssignTarget::NestedArrayIndex {
+                        name,
+                        indices,
+                        span,
+                    })
                 }
             }
             Expr::AppendIndex { .. } => Err(unsupported_compound_assignment_target_message()),

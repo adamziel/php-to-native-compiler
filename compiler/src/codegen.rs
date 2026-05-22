@@ -8956,6 +8956,16 @@ impl CGenerator {
                 Some(CValue::ArrayHandle(handle)) => Some((handle.clone(), vec![index], *span)),
                 _ => None,
             },
+            AssignTarget::NestedArrayIndex {
+                name,
+                indices,
+                span,
+            } => match self.variables.get(name) {
+                Some(CValue::ArrayHandle(handle)) => {
+                    Some((handle.clone(), indices.iter().collect(), *span))
+                }
+                _ => None,
+            },
             _ => None,
         }
     }
