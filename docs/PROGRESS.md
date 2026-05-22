@@ -1,5 +1,23 @@
 # Progress Log
 
+## 2026-05-23
+
+Implemented:
+
+- Added bounded runtime enforcement for by-value user-function call-frame type
+  metadata. Direct functions, dynamic string calls, public methods, ordinary
+  closures, `call_user_func()`, and `ReflectionFunction::invoke()` now coerce
+  actual arguments, omitted defaults, and return values through one shared
+  call-frame boundary for the supported `mixed`, `null`, `true`, `false`,
+  `bool`, `int`, `float`, `string`, `array`, `object`, nullable,
+  union/intersection, and runtime-visible class/interface object-name subset.
+  Focused tests cover scalar coercion, nullable/default arguments, return
+  coercion, dynamic calls, callbacks, reflection, method calls, closures, class
+  inheritance object checks, and rejected mismatches. Typed by-reference
+  parameters, `void`/`never`, callable/iterable pseudo-types,
+  `self`/`parent`/`static`, exact `TypeError` objects/text, `strict_types`,
+  and native lowering remain unsupported.
+
 ## 2026-05-21
 
 Implemented:

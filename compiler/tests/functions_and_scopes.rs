@@ -281,6 +281,79 @@ default_items();
 }
 
 #[test]
+fn user_function_type_metadata_coerces_arguments_defaults_and_returns() {
+    let execution = run_source(
+        r#"<?php
+function typed_pack(bool $flag, int $count, ?string $name = null, array $items = [1, 2]): string {
+    return ($flag ? "T" : "F") . ":" . $count . ":" . ($name === null ? "null" : $name) . ":" . count($items);
+}
+
+function typed_identity(int $value): string {
+    return $value + 1;
+}
+
+echo typed_pack("0", "42"), "\n";
+echo typed_pack(1, 7, 123, []), "\n";
+$name = "typed_identity";
+echo typed_identity("4"), "|", $name("5"), "|", call_user_func("typed_identity", "6"), "|";
+$reflection = new ReflectionFunction("typed_identity");
+echo $reflection->invoke("7");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "F:42:null:2\nT:7:123:0\n5|6|7|8");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn method_and_closure_type_metadata_share_call_frame_enforcement() {
+    let execution = run_source(
+        r#"<?php
+class Box {}
+class ChildBox extends Box {}
+class Formatter {
+    public function value(float $amount): string {
+        return $amount;
+    }
+}
+
+function takes_box(Box $box): string {
+    return "box";
+}
+
+$formatter = new Formatter();
+$closure = function (int|string $value): string {
+    return $value;
+};
+
+echo $formatter->value("2.5"), "|", takes_box(new ChildBox()), "|", $closure(12);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "2.5|box|12");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn function_type_metadata_rejects_mismatched_values() {
+    let error = runtime_error(
+        r#"<?php
+function needs_number(int $value): string {
+    return $value;
+}
+echo needs_number([]);
+"#,
+    );
+
+    assert_eq!(
+        error.message,
+        "unsupported call needs_number(): parameter $value expects int, got array"
+    );
+}
+
+#[test]
 fn function_declarations_accept_optional_trailing_commas_in_parameter_lists() {
     let execution = run_source(
         r#"<?php
@@ -535,10 +608,10 @@ echo function_exists("intersection_param"), "\n";
 }
 
 #[test]
-fn typed_function_invocation_is_rejected_until_type_enforcement_exists() {
+fn unsupported_function_type_metadata_still_rejects_invocation() {
     let error = runtime_error(
         r#"<?php
-function label(string $value): string {
+function label(callable $value): string {
     return $value;
 }
 echo label("Ada");

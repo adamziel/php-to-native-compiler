@@ -209,13 +209,20 @@ positions or parameter names; arbitrary transformed arrays and untracked
 dynamic containers remain outside the model.
 
 The method signature gate has a separate syntax-only path for COW-relevant
-magic and `ArrayAccess` dispatch. Ordinary functions accept untyped metadata
-or `mixed` metadata, because `mixed` needs no runtime value check. Dispatch
-through covered magic/`ArrayAccess` helpers additionally accepts the standard
-PHP signatures for `__get`, `__set`, `__isset`, `__unset`, `__call`,
-`__callStatic`, `offsetGet`, `offsetSet`, `offsetExists`, and `offsetUnset`.
-Those annotations let the already-supported body executor run; they do not
-turn on general PHP parameter/return type enforcement.
+magic and `ArrayAccess` dispatch. Ordinary by-value user-function, method,
+closure, `call_user_func()`, and `ReflectionFunction::invoke()` calls now run
+enforceable parameter and return metadata through the shared call-frame
+coercion boundary before local parameters are bound and after return values are
+produced. That boundary covers the current weak scalar coercions, arrays,
+objects, nullable/union/intersection declarations, and class/interface object
+names visible on runtime object metadata. Dispatch through covered
+magic/`ArrayAccess` helpers additionally accepts the standard PHP signatures
+for `__get`, `__set`, `__isset`, `__unset`, `__call`, `__callStatic`,
+`offsetGet`, `offsetSet`, `offsetExists`, and `offsetUnset` as syntax-only
+metadata for the existing body executor. Typed by-reference parameters,
+`void`/`never`, callable/iterable pseudo-types, `self`/`parent`/`static`,
+exact `TypeError` behavior, `strict_types`, and native lowering remain
+separate contracts.
 
 Non-direct holder expressions use the same identity model after evaluating the
 holder once into a temporary object root. The interpreter snapshots public
@@ -3344,7 +3351,8 @@ Native lowering also rejects user-function declarations and return statements,
 including declarations whose parameter list uses the parser's optional
 trailing-comma syntax, before traversing function bodies until generated code
 has function symbol tables, stack-frame layout, default parameter binding,
-recursion guards, return-value flow, and exact native error behavior.
+recursion guards, return-value flow, bounded parameter/return type enforcement,
+and exact native error behavior.
 Native lowering rejects executable magic constants `__LINE__`, `__FILE__`,
 `__DIR__`, `__FUNCTION__`, and `__METHOD__` until generated code has source
 mapping, path canonicalization, function/method-context tracking, eval/include

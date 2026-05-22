@@ -54370,6 +54370,7 @@ impl Interpreter {
         by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
         by_value_array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        let args = self.coerce_call_frame_values(function, args)?;
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
             self.class_context.push(class_context);
@@ -54796,6 +54797,19 @@ impl Interpreter {
                     }
                 }
             };
+            let value = match self.coerce_call_argument_value(function, param, value) {
+                Ok(value) => value,
+                Err(error) => {
+                    self.function_context.pop();
+                    if class_context.is_some() {
+                        self.class_context.pop();
+                    }
+                    if called_class_context.is_some() {
+                        self.called_class_context.pop();
+                    }
+                    return Err(error);
+                }
+            };
             let direct_copy_source = by_value_array_copy_source_bindings
                 .iter()
                 .find(|(param_name, target_keys, _)| {
@@ -55061,7 +55075,9 @@ impl Interpreter {
         writeback_result?;
         let (flow, array_copy_source) = flow?;
         match flow {
-            Flow::Normal => Ok((Value::Null, None)),
+            Flow::Normal => self
+                .coerce_call_return_value(function, Value::Null)
+                .map(|value| (value, None)),
             Flow::Break { span, .. } => Err(runtime_error(
                 span,
                 RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
@@ -55084,11 +55100,107 @@ impl Interpreter {
                         )
                     })
                     .unwrap_or(value);
+                let value = self.coerce_call_return_value(function, value)?;
+                let array_copy_source = if matches!(value, Value::Array(_)) {
+                    array_copy_source
+                } else {
+                    None
+                };
                 Ok((value, array_copy_source))
             }
             Flow::Exit(_) => Ok((Value::Null, None)),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
+    }
+
+    fn coerce_call_frame_values(
+        &self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+    ) -> CompileResult<Vec<Value>> {
+        args.into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                let Some(param) = Self::call_argument_param_for_index(function, index) else {
+                    return Ok(value);
+                };
+                self.coerce_call_argument_value(function, param, value)
+            })
+            .collect()
+    }
+
+    fn call_argument_param_for_index(
+        function: &FunctionDecl,
+        index: usize,
+    ) -> Option<&FunctionParam> {
+        if let Some(param) = function.params.get(index) {
+            return Some(param);
+        }
+        function
+            .params
+            .iter()
+            .next_back()
+            .filter(|param| param.is_variadic)
+    }
+
+    fn coerce_call_argument_value(
+        &self,
+        function: &FunctionDecl,
+        param: &FunctionParam,
+        value: Value,
+    ) -> CompileResult<Value> {
+        let Some(type_decl) = param.type_decl.as_ref() else {
+            return Ok(value);
+        };
+        if type_decl_is_exact(type_decl, "mixed") {
+            return Ok(value);
+        }
+        self.coerce_call_value_for_type_decl(
+            function,
+            type_decl,
+            &format!("parameter ${}", param.name),
+            value,
+        )
+    }
+
+    fn coerce_call_return_value(
+        &self,
+        function: &FunctionDecl,
+        value: Value,
+    ) -> CompileResult<Value> {
+        let Some(type_decl) = function.return_type.as_ref() else {
+            return Ok(value);
+        };
+        if type_decl_is_exact(type_decl, "mixed") {
+            return Ok(value);
+        }
+        self.coerce_call_value_for_type_decl(function, type_decl, "return value", value)
+    }
+
+    fn coerce_call_value_for_type_decl(
+        &self,
+        function: &FunctionDecl,
+        type_decl: &TypeDecl,
+        label: &str,
+        value: Value,
+    ) -> CompileResult<Value> {
+        let actual_type = value.type_name();
+        coerce_property_value_with_object_type_resolver(
+            &type_decl.text,
+            value,
+            &function.name,
+            label,
+            |object, type_name| object.is_instance_of_class_name(type_name),
+        )
+        .map_err(|_| {
+            runtime_error(
+                function.span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    format!("{label} expects {}, got {actual_type}", type_decl.text),
+                ),
+            )
+        })
     }
 
     fn call_user_function_with_this(
@@ -76310,7 +76422,7 @@ fn ensure_supported_function_metadata(function: &FunctionDecl, span: Span) -> Co
         ));
     }
 
-    if !function_type_metadata_is_untyped_or_mixed_only(function) {
+    if !function_type_metadata_is_runtime_enforceable(function) {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -76363,6 +76475,60 @@ fn function_type_metadata_is_untyped_or_mixed_only(function: &FunctionDecl) -> b
                 .as_ref()
                 .map_or(true, |decl| type_decl_is_exact(decl, "mixed"))
         })
+}
+
+fn function_type_metadata_is_runtime_enforceable(function: &FunctionDecl) -> bool {
+    if function.params.iter().any(|param| {
+        param.by_reference
+            && param
+                .type_decl
+                .as_ref()
+                .is_some_and(|decl| !type_decl_is_exact(decl, "mixed"))
+    }) {
+        return false;
+    }
+
+    function
+        .return_type
+        .as_ref()
+        .map_or(true, type_decl_is_runtime_enforceable_for_call)
+        && function.params.iter().all(|param| {
+            param
+                .type_decl
+                .as_ref()
+                .map_or(true, type_decl_is_runtime_enforceable_for_call)
+        })
+}
+
+fn type_decl_is_runtime_enforceable_for_call(decl: &TypeDecl) -> bool {
+    type_text_is_runtime_enforceable_for_call(decl.text.trim())
+}
+
+fn type_text_is_runtime_enforceable_for_call(text: &str) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+
+    let without_nullable = text.strip_prefix('?').unwrap_or(text).trim();
+    if without_nullable.contains('|') {
+        return without_nullable
+            .split('|')
+            .all(type_text_is_runtime_enforceable_for_call);
+    }
+    if without_nullable.contains('&') {
+        return without_nullable
+            .split('&')
+            .all(type_text_is_runtime_enforceable_for_call);
+    }
+
+    let normalized = without_nullable
+        .strip_prefix('\\')
+        .unwrap_or(without_nullable)
+        .to_ascii_lowercase();
+    !matches!(
+        normalized.as_str(),
+        "callable" | "iterable" | "never" | "parent" | "resource" | "self" | "static" | "void"
+    )
 }
 
 fn syntax_only_magic_array_access_type_metadata_is_supported(function: &FunctionDecl) -> bool {

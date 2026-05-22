@@ -2464,8 +2464,8 @@
   currently executing loop
 - function declarations with optional trailing commas in parameter lists,
   trailing variadic parameters such as `...$items` that collect extra
-  positional arguments into a current ordered array, and syntax-only
-  parameter/return type annotations for the current metadata slice. Top-level
+  positional arguments into a current ordered array, and parameter/return type
+  annotations for the current metadata slice. Top-level
   function declarations are registered before execution. Conditional or
   declaration-contained function declarations are registered only when
   execution reaches the declaration, so guarded forms such as
@@ -2489,6 +2489,16 @@
   unqualified constants, the current built-in global constant slice, and
   class-method `self::CONST` defaults resolved from the declaring class context
   when an omitted argument is bound
+- by-value user-function, public method, closure, `call_user_func()`, and
+  `ReflectionFunction::invoke()` calls enforce the bounded runtime
+  parameter/return type subset through the shared call-frame path. Supported
+  type metadata includes `mixed`, `null`, `true`, `false`, `bool`, `int`,
+  `float`, `string`, `array`, `object`, nullable forms, unions,
+  intersections, and class/interface object names visible on runtime object
+  metadata. Scalar parameters and returns use the current weak coercion model.
+  Typed by-reference parameters, `void`, `never`, `callable`, `iterable`,
+  `self`, `parent`, `static`, `resource`, exact `TypeError` objects/text,
+  `strict_types`, and native lowering remain unsupported.
 - recursive user-function calls up to a fixed 64-frame user-function call-depth
   guard
 - `return`
@@ -7425,12 +7435,12 @@
   PHP's deprecation and implicit-required behavior. Empty parameter slots such
   as `function f(,)` remain rejected. Parameter and return type declarations,
   including nullable, union, intersection, and namespace-qualified names, are
-  accepted as syntax-only metadata so WordPress-style helper signatures can be
-  registered, except parenthesized DNF-shaped declarations such as
-  `(A&B)|C`, which fail with a stable parse diagnostic. Invoking a function
-  with parameter/return type annotations fails with a stable runtime error
-  because type enforcement, coercion, exact `TypeError` behavior,
-  `strict_types`, variance, and reflection metadata are not implemented.
+  accepted except parenthesized DNF-shaped declarations such as `(A&B)|C`,
+  which fail with a stable parse diagnostic. Invoked by-value call paths
+  enforce the bounded scalar/array/object/class subset documented above.
+  Typed by-reference parameters, unsupported pseudo-types, exact `TypeError`
+  behavior, `strict_types`, variance beyond existing metadata compatibility
+  checks, and native lowering for type enforcement are not implemented.
   Reference parameter declarations are accepted as metadata, and the current
   direct user-function/method paths plus direct ordinary closure invocation can
   bind the documented direct-variable and direct array-offset argument shapes.

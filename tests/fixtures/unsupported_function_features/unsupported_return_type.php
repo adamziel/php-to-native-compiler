@@ -1,5 +1,5 @@
 <?php
-function label($value): int|string {
-    return $value;
+function label($value): void {
+    echo $value;
 }
 echo label(1);

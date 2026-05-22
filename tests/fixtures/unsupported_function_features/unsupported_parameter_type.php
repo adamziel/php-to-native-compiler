@@ -1,5 +1,5 @@
 <?php
-function label(?string $value) {
+function label(callable $value) {
     return $value;
 }
 echo label("Ada");
