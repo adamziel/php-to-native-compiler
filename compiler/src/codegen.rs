@@ -112,7 +112,7 @@ const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering 
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
-const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct and nested array offset write/append values, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct and nested array offset write/append values and request-superglobal assignment values, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const ASSEMBLY_ISSET_REJECTION: &str = "assembly isset lowering rejects array offset operands, object property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset operands, object property operands, static property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
@@ -8286,6 +8286,31 @@ impl CGenerator {
         expr: &Expr,
     ) -> CompileResult<()> {
         let value = self.materialize_native_value_result_operand(expr, "")?;
+        self.emit_request_superglobal_root_assignment_from_materialized(name, value, "")
+    }
+
+    fn emit_request_superglobal_root_assignment_expr(
+        &mut self,
+        name: &str,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let (result_value, value) =
+            self.materialize_assignment_expression_replacement_value(expr, failure_cleanup)?;
+        self.emit_request_superglobal_root_assignment_from_materialized(
+            name,
+            value,
+            failure_cleanup,
+        )?;
+        Ok(result_value)
+    }
+
+    fn emit_request_superglobal_root_assignment_from_materialized(
+        &mut self,
+        name: &str,
+        value: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
         let request_state = self.ensure_native_request_state_handle();
         let bag = self.emit_request_superglobal_bag_handle(name);
         let diagnostic = self.next_native_name("request_superglobal_replace_diagnostic");
@@ -8297,8 +8322,8 @@ impl CGenerator {
             value.handle
         ));
         let failure_cleanup = format!(
-            "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({bag}); {}",
-            c_cleanup_sequence(&value.cleanup_after_use)
+            "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({bag}); {}{failure_cleanup}",
+            c_cleanup_sequence(&value.cleanup_after_use),
         );
         let error_exit = self.native_error_exit(&failure_cleanup);
         self.body
@@ -8317,11 +8342,42 @@ impl CGenerator {
         index: &Expr,
         expr: &Expr,
     ) -> CompileResult<()> {
-        let request_state = self.ensure_native_request_state_handle();
-        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
         let key = self.materialize_request_superglobal_key(index, "")?;
         let key_cleanup = c_cleanup_sequence(&key.cleanup_after_use);
         let value = self.materialize_native_value_result_operand(expr, &key_cleanup)?;
+        self.emit_request_superglobal_keyed_assignment_from_materialized(name, key, value, "")
+    }
+
+    fn emit_request_superglobal_keyed_assignment_expr(
+        &mut self,
+        name: &str,
+        index: &Expr,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let key = self.materialize_request_superglobal_key(index, failure_cleanup)?;
+        let key_cleanup = c_cleanup_sequence(&key.cleanup_after_use);
+        let value_failure_cleanup = format!("{key_cleanup}{failure_cleanup}");
+        let (result_value, value) =
+            self.materialize_assignment_expression_replacement_value(expr, &value_failure_cleanup)?;
+        self.emit_request_superglobal_keyed_assignment_from_materialized(
+            name,
+            key,
+            value,
+            failure_cleanup,
+        )?;
+        Ok(result_value)
+    }
+
+    fn emit_request_superglobal_keyed_assignment_from_materialized(
+        &mut self,
+        name: &str,
+        key: CRequestStateKeyMaterialization,
+        value: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
         let result = self.next_native_name("request_superglobal_keyed_write");
         self.body.push(format!(
             "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_keyed_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status, {});",
@@ -8333,9 +8389,10 @@ impl CGenerator {
             "phpc_native_request_state_operation_result_report_diagnostic({result});"
         ));
         let result_error_exit = self.native_error_exit(&format!(
-            "phpc_native_request_state_operation_result_free({result}); {}{}",
+            "phpc_native_request_state_operation_result_free({result}); {}{}{}",
             c_cleanup_sequence(&value.cleanup_after_use),
-            c_cleanup_sequence(&key.cleanup_after_use)
+            c_cleanup_sequence(&key.cleanup_after_use),
+            failure_cleanup
         ));
         self.body.push(format!(
             "if ({result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {result_error_exit} }}"
@@ -8355,12 +8412,48 @@ impl CGenerator {
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<()> {
-        let request_state = self.ensure_native_request_state_handle();
-        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
         let path = self.materialize_request_superglobal_path_keys(indices, failure_cleanup)?;
         let key_cleanup_sequence = c_cleanup_sequence(&path.cleanup_after_use);
         let value_failure_cleanup = format!("{key_cleanup_sequence}{failure_cleanup}");
         let value = self.materialize_native_value_result_operand(expr, &value_failure_cleanup)?;
+        self.emit_request_superglobal_path_assignment_from_materialized(
+            name,
+            path,
+            value,
+            failure_cleanup,
+        )
+    }
+
+    fn emit_request_superglobal_path_assignment_expr(
+        &mut self,
+        name: &str,
+        indices: &[Expr],
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let path = self.materialize_request_superglobal_path_keys(indices, failure_cleanup)?;
+        let key_cleanup_sequence = c_cleanup_sequence(&path.cleanup_after_use);
+        let value_failure_cleanup = format!("{key_cleanup_sequence}{failure_cleanup}");
+        let (result_value, value) =
+            self.materialize_assignment_expression_replacement_value(expr, &value_failure_cleanup)?;
+        self.emit_request_superglobal_path_assignment_from_materialized(
+            name,
+            path,
+            value,
+            failure_cleanup,
+        )?;
+        Ok(result_value)
+    }
+
+    fn emit_request_superglobal_path_assignment_from_materialized(
+        &mut self,
+        name: &str,
+        path: CRequestStatePathMaterialization,
+        value: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
         let result = self.next_native_name("request_superglobal_path_write");
         self.body.push(format!(
             "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_path_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE, {bag_bytes}, {}, {}, {}, {}, {}, {});",
@@ -9046,6 +9139,11 @@ impl CGenerator {
                     return Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION));
                 }
                 if let Some(value) =
+                    self.emit_request_superglobal_assignment_expr(target, expr, *span, "")?
+                {
+                    return Ok(value);
+                }
+                if let Some(value) =
                     self.emit_array_offset_mutation_assignment_expr(target, expr, *span)?
                 {
                     return Ok(value);
@@ -9158,6 +9256,47 @@ impl CGenerator {
                 let (left, right) = self.emit_binary_value_operand_exprs(left, right)?;
                 self.emit_binary(left, *op, right, *span)
             }
+        }
+    }
+
+    fn emit_request_superglobal_assignment_expr(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CValue>> {
+        match target {
+            AssignTarget::Variable { name, .. } if is_request_superglobal_name(name) => self
+                .emit_request_superglobal_root_assignment_expr(name, expr, failure_cleanup)
+                .map(Some),
+            AssignTarget::ArrayIndex { name, index, .. } if is_request_superglobal_name(name) => {
+                let Some(index) = index.as_ref() else {
+                    return Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                };
+                self.emit_request_superglobal_keyed_assignment_expr(
+                    name,
+                    index,
+                    expr,
+                    failure_cleanup,
+                )
+                .map(Some)
+            }
+            AssignTarget::NestedArrayIndex { name, indices, .. }
+                if is_request_superglobal_name(name) =>
+            {
+                self.emit_request_superglobal_path_assignment_expr(
+                    name,
+                    indices,
+                    expr,
+                    failure_cleanup,
+                )
+                .map(Some)
+            }
+            AssignTarget::NestedArrayAppend { name, .. } if is_request_superglobal_name(name) => {
+                Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION))
+            }
+            _ => Ok(None),
         }
     }
 
