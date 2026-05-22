@@ -2366,6 +2366,7 @@ struct LlvmGenerator {
     uses_strcmp: bool,
     uses_native_value_echo_stdout: bool,
     uses_native_string_int_operation: bool,
+    uses_native_value_offset_operation: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -2374,6 +2375,7 @@ enum IrValue {
     Float(String),
     String(String),
     StringPtr(String),
+    NativeValue(String),
     Bool(bool),
     BoolExpr(String),
     Null,
@@ -2556,6 +2558,17 @@ impl LlvmGenerator {
             }
             output.push_str("%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }\n");
         }
+        if self.uses_native_value_offset_operation {
+            let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+            if !self.uses_native_value_echo_stdout && !self.uses_native_string_int_operation {
+                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
+                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
+            }
+            output.push_str(&format!(
+                "%phpc.NativeByteBuffer = type {{ ptr, {usize_type}, {usize_type} }}\n"
+            ));
+            output.push_str("%phpc.NativeStringConversionResult = type { %phpc.NativeByteBuffer, %phpc.NativeDiagnosticHandle }\n");
+        }
         output.push_str("declare i32 @printf(ptr, ...)\n");
         if self.uses_strcmp {
             output.push_str("declare i32 @strcmp(ptr, ptr)\n");
@@ -2599,6 +2612,12 @@ impl LlvmGenerator {
                     "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
                 );
             }
+        }
+        if self.uses_native_value_offset_operation {
+            output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)\n");
+            output.push_str("declare i1 @phpc_native_value_bool_with_diagnostic(%phpc.NativeValueHandle, ptr)\n");
+            output.push_str("declare %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle)\n");
+            output.push_str("declare void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult)\n");
         }
         output.push('\n');
         output.push_str("@.fmt_int = private unnamed_addr constant [5 x i8] c\"%lld\\00\"\n");
@@ -2679,7 +2698,12 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
             Stmt::Expr { expr, .. } => {
-                self.emit_expr(expr)?;
+                let value = self.emit_expr(expr)?;
+                if let IrValue::NativeValue(value) = value {
+                    self.body.push(format!(
+                        "call void @phpc_native_value_free(%phpc.NativeValueHandle {value})"
+                    ));
+                }
                 Ok(())
             }
             Stmt::Function(function) => Err(native_function_declaration_fallback_diagnostic(
@@ -2803,7 +2827,11 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            Expr::Index { target, span, .. } => {
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => {
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -2817,6 +2845,16 @@ impl LlvmGenerator {
                 }
                 if is_object_offset_expr(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
+                if self.is_known_value_offset_target(target) {
+                    let target = self.emit_value_operand_expr(target)?;
+                    let index = self.emit_value_operand_expr(index)?;
+                    return self.emit_native_value_offset_operation(
+                        NativeStringOffsetOperation::Read,
+                        target,
+                        index,
+                        *span,
+                    );
                 }
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
@@ -3093,7 +3131,7 @@ impl LlvmGenerator {
         }
     }
 
-    fn emit_isset_call(&self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
+    fn emit_isset_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
         if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
             return Err(self.unsupported_call_operation(operation));
         }
@@ -3110,6 +3148,24 @@ impl LlvmGenerator {
 
         if is_array_access_offset_expr(arg) {
             return Err(self.unsupported(arg.span(), LLVM_ARRAY_ACCESS_REJECTION));
+        }
+
+        if let Expr::Index {
+            target,
+            index,
+            span,
+        } = arg
+        {
+            if self.is_known_value_offset_target(target) {
+                let target = self.emit_value_operand_expr(target)?;
+                let index = self.emit_value_operand_expr(index)?;
+                return self.emit_native_value_offset_bool_operation(
+                    NativeStringOffsetOperation::Isset,
+                    target,
+                    index,
+                    *span,
+                );
+            }
         }
 
         let Expr::Variable(name, _) = arg else {
@@ -3122,7 +3178,7 @@ impl LlvmGenerator {
         )))
     }
 
-    fn emit_empty_call(&self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
+    fn emit_empty_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
         if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
             return Err(self.unsupported_call_operation(operation));
         }
@@ -3139,6 +3195,24 @@ impl LlvmGenerator {
 
         if is_array_access_offset_expr(arg) {
             return Err(self.unsupported(arg.span(), LLVM_ARRAY_ACCESS_REJECTION));
+        }
+
+        if let Expr::Index {
+            target,
+            index,
+            span,
+        } = arg
+        {
+            if self.is_known_value_offset_target(target) {
+                let target = self.emit_value_operand_expr(target)?;
+                let index = self.emit_value_operand_expr(index)?;
+                return self.emit_native_value_offset_bool_operation(
+                    NativeStringOffsetOperation::Empty,
+                    target,
+                    index,
+                    *span,
+                );
+            }
         }
 
         let Expr::Variable(name, _) = arg else {
@@ -3166,11 +3240,13 @@ impl LlvmGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
-        self.strlen_result_for_value(&value)
-            .map(|length| IrValue::Int(length.to_string()))
-            .ok_or_else(|| {
-                self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership)
-            })
+        if let Some(length) = self.strlen_result_for_value(&value) {
+            return Ok(IrValue::Int(length.to_string()));
+        }
+        if matches!(value, IrValue::NativeValue(_)) {
+            return self.emit_native_value_string_len(value, span);
+        }
+        Err(self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership))
     }
 
     fn emit_llvm_string_int_call(
@@ -3329,6 +3405,73 @@ impl LlvmGenerator {
         Ok(IrValue::Int(result))
     }
 
+    fn emit_native_value_offset_operation(
+        &mut self,
+        operation: NativeStringOffsetOperation,
+        subject: IrValue,
+        offset: IrValue,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        let subject = self
+            .emit_native_value_for_ir_value(subject, span)
+            .map_err(|_| self.unsupported(span, LLVM_ARRAY_REJECTION))?;
+        let offset = self
+            .emit_native_value_for_ir_value(offset, span)
+            .map_err(|_| self.unsupported(span, LLVM_ARRAY_REJECTION))?;
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_value_offset_operation = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic(%phpc.NativeValueHandle {subject}, %phpc.NativeValueHandle {offset}, i8 {}, ptr {diagnostic_slot})",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {offset})"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {subject})"
+        ));
+        Ok(IrValue::NativeValue(result))
+    }
+
+    fn emit_native_value_offset_bool_operation(
+        &mut self,
+        operation: NativeStringOffsetOperation,
+        subject: IrValue,
+        offset: IrValue,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        let IrValue::NativeValue(value) =
+            self.emit_native_value_offset_operation(operation, subject, offset, span)?
+        else {
+            unreachable!("value-offset operation returns a native value")
+        };
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_value_offset_operation = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call i1 @phpc_native_value_bool_with_diagnostic(%phpc.NativeValueHandle {value}, ptr {diagnostic_slot})"
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {value})"
+        ));
+        Ok(IrValue::BoolExpr(result))
+    }
+
     fn emit_function_exists_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
         if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
             return Err(self.unsupported_call_operation(operation));
@@ -3425,6 +3568,9 @@ impl LlvmGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
+        if matches!(value, IrValue::NativeValue(_)) {
+            return Err(self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership));
+        }
         match name.to_ascii_lowercase().as_str() {
             "gettype" => Ok(IrValue::String(llvm_gettype_name(&value).to_string())),
             "get_debug_type" => Ok(IrValue::String(llvm_debug_type_name(&value).to_string())),
@@ -3587,6 +3733,7 @@ impl LlvmGenerator {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_numeric_result(&values)
             }
+            IrValue::NativeValue(_) => None,
         }
     }
 
@@ -3610,6 +3757,28 @@ impl LlvmGenerator {
             }
             _ => None,
         }
+    }
+
+    fn is_known_value_offset_target(&self, target: &Expr) -> bool {
+        self.is_known_string_offset_target(target)
+    }
+
+    fn is_known_string_offset_target(&self, target: &Expr) -> bool {
+        match target {
+            Expr::String(_, _) => true,
+            Expr::Variable(name, _) => self
+                .variables
+                .get(name)
+                .is_some_and(|value| self.is_string_offset_ir_value(value)),
+            _ => false,
+        }
+    }
+
+    fn is_string_offset_ir_value(&self, value: &IrValue) -> bool {
+        matches!(
+            value,
+            IrValue::String(_) | IrValue::StringPtr(_) | IrValue::NativeValue(_)
+        )
     }
 
     fn is_callable_result_for_value(&self, value: &IrValue, syntax_only: bool) -> Option<bool> {
@@ -3643,6 +3812,12 @@ impl LlvmGenerator {
         match target {
             AssignTarget::Variable { name, .. } => {
                 let value = self.emit_expr(expr)?;
+                if matches!(value, IrValue::NativeValue(_)) {
+                    return Err(self.unsupported_direct_call(
+                        expr.span(),
+                        NativeCallBlocker::ReturnValueOwnership,
+                    ));
+                }
                 self.variables.insert(name.clone(), value);
                 Ok(())
             }
@@ -5079,6 +5254,7 @@ impl LlvmGenerator {
             IrValue::StringPtr(value) => self
                 .known_string_values(value)
                 .and_then(|values| known_string_truthiness(&values)),
+            IrValue::NativeValue(_) => None,
             IrValue::Null => Some(false),
         }
     }
@@ -5320,6 +5496,7 @@ impl LlvmGenerator {
                 }
             }
             IrValue::Null => self.emit_expr(if_false),
+            IrValue::NativeValue(_) => Err(self.unsupported(span, LLVM_CONDITIONAL_REJECTION)),
             condition @ IrValue::BoolExpr(_) => {
                 let if_false = self.emit_expr(if_false)?;
                 if !matches!(if_false, IrValue::Bool(_) | IrValue::BoolExpr(_)) {
@@ -5523,6 +5700,7 @@ impl LlvmGenerator {
             IrValue::StringPtr(value) => self
                 .known_string_values(value)
                 .map(BackendPrimitiveSource::string_values),
+            IrValue::NativeValue(_) => None,
         }
     }
 
@@ -5658,6 +5836,7 @@ impl LlvmGenerator {
                 }
             }
             IrValue::Null => Ok(IrValue::Bool(true)),
+            IrValue::NativeValue(_) => Err(self.unsupported(span, LLVM_UNARY_REJECTION)),
         }
     }
 
@@ -5719,6 +5898,7 @@ impl LlvmGenerator {
                     ));
                 }
             }
+            IrValue::NativeValue(value) => self.emit_native_value_handle_stdout(&value),
         }
     }
 
@@ -5742,6 +5922,17 @@ impl LlvmGenerator {
     fn emit_native_value_string_ptr_stdout(&mut self, value: &str, len: &str) {
         let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
         self.emit_native_value_string_pointer_stdout(value, usize_type, len);
+    }
+
+    fn emit_native_value_handle_stdout(&mut self, value: &str) {
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        self.uses_native_value_echo_stdout = true;
+        self.body.push(format!(
+            "call {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle {value})"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {value})"
+        ));
     }
 
     fn emit_native_value_string_pointer_stdout(
@@ -5836,6 +6027,49 @@ impl LlvmGenerator {
         Ok(result)
     }
 
+    fn emit_native_value_string_len(
+        &mut self,
+        value: IrValue,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        let IrValue::NativeValue(value) = value else {
+            return Err(self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership));
+        };
+        let conversion = self.next_temp();
+        let diagnostic = self.next_temp();
+        let bytes = self.next_temp();
+        let len = self.next_temp();
+        self.uses_native_value_offset_operation = true;
+        self.body.push(format!(
+            "{conversion} = call %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle {value})"
+        ));
+        self.body.push(format!(
+            "{diagnostic} = extractvalue %phpc.NativeStringConversionResult {conversion}, 1"
+        ));
+        self.emit_native_diagnostic_message_handle(&diagnostic);
+        self.body.push(format!(
+            "{bytes} = extractvalue %phpc.NativeStringConversionResult {conversion}, 0"
+        ));
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        self.body.push(format!(
+            "{len} = extractvalue %phpc.NativeByteBuffer {bytes}, 1"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult {conversion})"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {value})"
+        ));
+        if usize_type == "i64" {
+            Ok(IrValue::Int(len))
+        } else {
+            let widened = self.next_temp();
+            self.body
+                .push(format!("{widened} = zext {usize_type} {len} to i64"));
+            Ok(IrValue::Int(widened))
+        }
+    }
+
     fn emit_native_value_for_ir_value(
         &mut self,
         value: IrValue,
@@ -5872,6 +6106,7 @@ impl LlvmGenerator {
                     .ok_or_else(|| self.unsupported(span, LLVM_STRING_INT_OPERATION_REJECTION))?;
                 Ok(self.emit_native_value_from_string_bytes(&value, &len))
             }
+            IrValue::NativeValue(value) => Ok(value),
         }
     }
 
@@ -5908,15 +6143,23 @@ impl LlvmGenerator {
 
     fn emit_report_native_diagnostic_slot(&mut self, diagnostic_slot: &str) {
         let diagnostic = self.next_temp();
-        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
         self.body.push(format!(
             "{diagnostic} = load %phpc.NativeDiagnosticHandle, ptr {diagnostic_slot}"
         ));
-        self.body.push(format!(
-            "call {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle {diagnostic})"
-        ));
+        self.emit_report_native_diagnostic_handle(&diagnostic);
+    }
+
+    fn emit_report_native_diagnostic_handle(&mut self, diagnostic: &str) {
+        self.emit_native_diagnostic_message_handle(diagnostic);
         self.body.push(format!(
             "call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle {diagnostic})"
+        ));
+    }
+
+    fn emit_native_diagnostic_message_handle(&mut self, diagnostic: &str) {
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        self.body.push(format!(
+            "call {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle {diagnostic})"
         ));
     }
 
@@ -13147,6 +13390,7 @@ fn llvm_gettype_name(value: &IrValue) -> &'static str {
         IrValue::Int(_) => "integer",
         IrValue::Float(_) => "double",
         IrValue::String(_) | IrValue::StringPtr(_) => "string",
+        IrValue::NativeValue(_) => "unknown",
     }
 }
 
@@ -13157,6 +13401,7 @@ fn llvm_debug_type_name(value: &IrValue) -> &'static str {
         IrValue::Int(_) => "int",
         IrValue::Float(_) => "float",
         IrValue::String(_) | IrValue::StringPtr(_) => "string",
+        IrValue::NativeValue(_) => "unknown",
     }
 }
 

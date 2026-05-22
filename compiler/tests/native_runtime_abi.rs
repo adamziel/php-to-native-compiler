@@ -8,6 +8,7 @@ use php_compiler::{
 };
 
 const STRING_INT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strcasecmp($payload, \"a\\0B\");\necho strcmp($payload, \"A\\0c\");\necho strncmp($payload, \"A\\0bZ\", \"3\");\necho strncasecmp($payload, \"a\\0Bz\", 3);\necho substr_count($payload, \"A\", false, \"5\");\necho ord(\"A\");\necho crc32($payload);\n";
+const VALUE_OFFSET_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\\xff\";\necho $payload[1];\necho isset($payload[2]);\necho empty($payload[3]);\necho strlen($payload[0]);\necho strcmp($payload[0], \"A\");\n";
 
 #[test]
 fn scalar_echo_probe_ir_matches_committed_snapshot() {
@@ -125,6 +126,122 @@ fn generated_ir_string_int_route_reaches_assembly_backend() {
     }
 
     let asm = emit_asm_source(STRING_INT_IR_SOURCE).unwrap();
+
+    assert!(asm.contains("main"), "{asm}");
+}
+
+#[test]
+fn generated_ir_routes_string_offset_reads_and_probes_through_value_offset_boundary() {
+    let cases = [
+        ("literal read", "<?php\necho \"A\\0B\\xff\"[1];\n", 0, false),
+        (
+            "variable read",
+            "<?php\n$payload = \"A\\0B\\xff\";\necho $payload[1];\n",
+            0,
+            false,
+        ),
+        (
+            "isset probe",
+            "<?php\n$payload = \"A\\0B\\xff\";\necho isset($payload[1]);\n",
+            1,
+            true,
+        ),
+        (
+            "empty probe",
+            "<?php\n$payload = \"A\\0B\\xff\";\necho empty($payload[1]);\n",
+            2,
+            true,
+        ),
+    ];
+
+    for (label, source, tag, bool_probe) in cases {
+        let ir = emit_ir_source(source).unwrap();
+
+        assert!(
+            ir.contains("declare %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)"),
+            "{label}: {ir}"
+        );
+        assert!(
+            ir.contains(&format!(
+                "call %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic"
+            )),
+            "{label}: {ir}"
+        );
+        assert!(
+            ir.contains(&format!("i8 {tag}, ptr")),
+            "{label}: expected value-offset operation tag {tag}\n{ir}"
+        );
+        assert!(
+            ir.contains("call void @phpc_native_diagnostic_free"),
+            "{label}: {ir}"
+        );
+        assert!(
+            ir.contains("call void @phpc_native_value_free"),
+            "{label}: {ir}"
+        );
+        assert!(
+            !ir.contains("phpc_native_value_string_offset_operation_with_diagnostic"),
+            "{label}: string-only offset ABI should not be used\n{ir}"
+        );
+        if bool_probe {
+            assert!(
+                ir.contains("call i1 @phpc_native_value_bool_with_diagnostic"),
+                "{label}: {ir}"
+            );
+        } else {
+            assert!(
+                ir.contains("call i64 @phpc_native_value_echo_stdout"),
+                "{label}: {ir}"
+            );
+        }
+    }
+}
+
+#[test]
+fn generated_ir_routes_offset_results_through_string_consumers() {
+    let ir = emit_ir_source(VALUE_OFFSET_IR_SOURCE).unwrap();
+
+    assert!(
+        ir.matches(
+            "call %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic"
+        )
+        .count()
+            >= 5,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call void @phpc_native_string_conversion_result_free"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i64 @phpc_native_value_string_int_operation_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i1 @phpc_native_value_bool_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call void @phpc_native_value_free").count() >= 10,
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("phpc_native_value_string_offset_operation_with_diagnostic"),
+        "{ir}"
+    );
+}
+
+#[test]
+fn generated_ir_value_offset_route_reaches_assembly_backend() {
+    if !has_llvm_assembly_backend() {
+        return;
+    }
+
+    let asm = emit_asm_source(VALUE_OFFSET_IR_SOURCE).unwrap();
 
     assert!(asm.contains("main"), "{asm}");
 }
