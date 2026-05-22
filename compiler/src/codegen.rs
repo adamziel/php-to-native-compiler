@@ -17027,35 +17027,12 @@ impl CGenerator {
                         .emit_request_superglobal_keyed_value_read(name, index, failure_cleanup)
                         .map(Some);
                 }
-                if !self.uses_native_string_helpers || !self.is_array_offset_subject_expr(target) {
-                    return Ok(None);
-                }
-                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
-                if let Some(superglobal_span) = request_superglobal_expr_span(target) {
-                    return Err(
-                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
-                    );
-                }
-                if is_object_offset_expr(target) {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
-                }
-
-                let subject =
-                    self.materialize_native_value_result_operand(target, failure_cleanup)?;
-                let offset_failure_cleanup = format!(
-                    "{}{}",
-                    c_cleanup_sequence(&subject.cleanup_after_use),
-                    failure_cleanup
-                );
-                let offset =
-                    self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?;
-                Ok(Some(self.emit_native_value_offset_read_result_handle(
-                    subject,
-                    offset,
+                self.materialize_native_value_offset_read_expr(
+                    target,
+                    index,
+                    *span,
                     failure_cleanup,
-                )))
+                )
             }
             _ => Ok(None),
         }
@@ -17340,6 +17317,65 @@ impl CGenerator {
             }
             _ => false,
         }
+    }
+
+    fn is_native_value_offset_read_subject_expr(&self, expr: &Expr) -> bool {
+        if self.is_array_offset_subject_expr(expr) {
+            return true;
+        }
+
+        match expr {
+            Expr::Cast { .. } => true,
+            Expr::Unary { op, .. } => native_value_unary_op_tag(*op).is_some(),
+            Expr::Binary { op, .. } => {
+                native_value_binary_op_tag(*op).is_some()
+                    || native_value_comparison_op_tag(*op).is_some()
+            }
+            Expr::Call { name, args, .. } => {
+                native_value_cast_builtin_op_tag(name).is_some()
+                    || native_value_type_name_tag(name).is_some()
+                    || (args.len() == 1 && native_string_result_operation_for_name(name).is_some())
+                    || native_array_pointer_builtin(name, args).is_some()
+                    || native_array_mutation_builtin(name, args).is_some()
+                    || native_value_array_callback_builtin(name, args).is_some()
+            }
+            Expr::Index { target, .. } => self.is_native_value_offset_read_subject_expr(target),
+            _ => false,
+        }
+    }
+
+    fn materialize_native_value_offset_read_expr(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if !self.is_native_value_offset_read_subject_expr(target) {
+            return Ok(None);
+        }
+        if let Some(superglobal_span) = request_superglobal_expr_span(target) {
+            return Err(self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+        if is_object_offset_expr(target) {
+            return Err(self.unsupported(span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+        }
+
+        self.uses_native_string_helpers = true;
+        let subject = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+        let offset_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&subject.cleanup_after_use),
+            failure_cleanup
+        );
+        let offset =
+            self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?;
+
+        Ok(Some(self.emit_native_value_offset_read_result_handle(
+            subject,
+            offset,
+            failure_cleanup,
+        )))
     }
 
     fn emit_native_value_offset_read_result_handle(

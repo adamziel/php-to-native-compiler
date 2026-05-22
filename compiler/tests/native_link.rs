@@ -316,6 +316,47 @@ fn native_executable_c_source_routes_array_callback_builtins_through_shared_resu
 }
 
 #[test]
+fn native_executable_c_source_routes_value_result_offset_reads_through_shared_boundary() {
+    let program = parse(
+        "<?php\necho array_map(null, [\"L\", \"M\"])[1];\necho \"|\";\necho ((array) \"Q\")[0];\necho \"|\";\necho ((array) \"NO\")[0][1];\necho \"|\";\necho (\"A\" . \"B\")[1];\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_offset_operation_with_diagnostic"
+        ),
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_array_callback_result")
+            && body.contains("phpc_native_value_cast_operation_with_diagnostic")
+            && body.contains("phpc_native_value_binary_result"),
+        "{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_value_offset_operation_with_diagnostic(")
+            .count()
+            >= 5,
+        "value-result offset reads should share the value-offset ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_echo_stdout(value_offset_read"),
+        "offset-read values should feed the existing value formatter:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(value_offset_read"),
+        "owned offset-read results must be cleaned up:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_array_pointer_lvalue_owner_program() {
     if !has_cc() {
         return;
@@ -541,6 +582,63 @@ fn emit_exe_links_and_runs_array_callback_null_result_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"Ada|Bee|Ada|five");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_value_result_offset_read_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("value_result_offset_read.php");
+    let output_path = native_link_output_path("value_result_offset_read");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        "<?php\necho array_map(null, [\"L\", \"M\"])[1];\necho \"|\";\necho ((array) \"Q\")[0];\necho \"|\";\necho ((array) \"NO\")[0][1];\necho \"|\";\necho (\"A\" . \"B\")[1];\n",
+    )
+    .expect("write value-result offset read native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native value-result offset read source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native value-result offset read executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native value-result offset read executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"M|Q|O|B");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
