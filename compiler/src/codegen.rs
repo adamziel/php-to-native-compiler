@@ -110,7 +110,7 @@ const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering 
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
-const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct array offset write/append values, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct and nested array offset write/append values, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const ASSEMBLY_ISSET_REJECTION: &str = "assembly isset lowering rejects array offset operands, object property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset operands, object property operands, static property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
@@ -7630,6 +7630,9 @@ impl CGenerator {
                 {
                     return Ok(value);
                 }
+                if let Some(value) = self.emit_array_lvalue_assignment_expr(target, expr, *span)? {
+                    return Ok(value);
+                }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
             Expr::CompoundAssign { target, span, .. }
@@ -8137,8 +8140,27 @@ impl CGenerator {
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
         let replacement =
             self.materialize_native_value_result_operand(replacement_expr, &path_cleanup)?;
+        self.emit_array_lvalue_write_materialized_for_handle(
+            handle,
+            path,
+            replacement,
+            "array_lvalue_write_result",
+        )
+    }
+
+    fn emit_array_lvalue_write_materialized_for_handle(
+        &mut self,
+        handle: &str,
+        path: CNativeArrayLvaluePath,
+        replacement: CNativeValueMaterialization,
+        result_prefix: &str,
+    ) -> CompileResult<()> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
         let owner = self.next_native_name("array_lvalue_owner");
-        let result = self.next_native_name("array_lvalue_write_result");
+        let result = self.next_native_name(result_prefix);
         self.body.push(format!(
             "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
         ));
@@ -8146,6 +8168,7 @@ impl CGenerator {
             "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
             path.path, path.len, replacement.handle
         ));
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
         let cleanup = format!(
             "{}{}",
             c_cleanup_sequence(&replacement.cleanup_after_use),
@@ -8180,26 +8203,12 @@ impl CGenerator {
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
         let replacement =
             self.materialize_native_value_result_operand(replacement_expr, &path_cleanup)?;
-        let owner = self.next_native_name("array_lvalue_owner");
-        let result = self.next_native_name("array_lvalue_append_write_result");
-        self.body.push(format!(
-            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
-        ));
-        self.body.push(format!(
-            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
-            path.path, path.len, replacement.handle
-        ));
-        let cleanup = format!(
-            "{}{}",
-            c_cleanup_sequence(&replacement.cleanup_after_use),
-            path_cleanup
-        );
-        self.emit_native_array_lvalue_result_check(&result, &cleanup);
-        self.body
-            .push(format!("phpc_native_array_lvalue_result_free({result});"));
-        self.body.extend(replacement.cleanup_after_use);
-        self.body.extend(path.cleanup_after_use);
-        Ok(())
+        self.emit_array_lvalue_write_materialized_for_handle(
+            handle,
+            path,
+            replacement,
+            "array_lvalue_append_write_result",
+        )
     }
 
     fn emit_unset_array_index(
@@ -8361,6 +8370,62 @@ impl CGenerator {
             replacement,
             operation,
             temp_prefix,
+        )?;
+        Ok(Some(replacement_value))
+    }
+
+    fn emit_array_lvalue_assignment_expr(
+        &mut self,
+        target: &AssignTarget,
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<Option<CValue>> {
+        if !self.uses_native_string_helpers {
+            return Ok(None);
+        }
+
+        let (handle, path) = match target {
+            AssignTarget::NestedArrayIndex { name, indices, .. } => {
+                let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+                    return Ok(None);
+                };
+                let indices = indices.iter().collect::<Vec<_>>();
+                let path = self.materialize_native_array_lvalue_key_path(&indices, span, "")?;
+                (handle, path)
+            }
+            AssignTarget::NestedArrayAppend {
+                name,
+                indices,
+                suffix_indices,
+                ..
+            } => {
+                let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+                    return Ok(None);
+                };
+                let prefix_indices = indices.iter().collect::<Vec<_>>();
+                let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
+                let path = self.materialize_native_array_lvalue_append_path(
+                    &prefix_indices,
+                    &suffix_indices,
+                    span,
+                    "",
+                )?;
+                (handle, path)
+            }
+            _ => return Ok(None),
+        };
+
+        let replacement_value = self.emit_expr(replacement_expr)?;
+        let replacement = self.materialize_native_array_c_value_handle(
+            replacement_value.clone(),
+            replacement_expr.span(),
+        )?;
+
+        self.emit_array_lvalue_write_materialized_for_handle(
+            &handle,
+            path,
+            replacement,
+            "array_lvalue_assign_expr_result",
         )?;
         Ok(Some(replacement_value))
     }

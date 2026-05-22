@@ -397,6 +397,8 @@ const ARRAY_LVALUE_NESTED_WRITE_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inn
 
 const ARRAY_LVALUE_NESTED_APPEND_SOURCE: &str = "<?php\n$outer = \"outer\";\n$leaf = \"leaf\";\n$items = [$outer => [\"stay\" => \"S\"], \"root\" => \"R\"];\n$value = \"new\";\n$items[$outer][] = $value;\n$items[\"created\"][] = \"C\";\n$items[][$leaf] = \"Z\";\necho isset($items[$outer][0]) ? 1 : 0;\necho \"|\";\necho empty($items[\"created\"][0]) ? 1 : 0;\necho \"|\";\necho isset($items[0][$leaf]) ? 1 : 0;\necho \"|\", $items[\"root\"];\n";
 
+const ARRAY_LVALUE_NESTED_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$outer = \"outer\";\n$leaf = \"leaf\";\n$items = [$outer => [\"stay\" => \"S\"]];\necho ($items[$outer][$leaf] = \"A\"), \"|\";\necho ($items[$outer][] = \"B\"), \"|\";\necho ($items[][$leaf] = \"C\"), \"|\";\necho isset($items[$outer][$leaf]) ? 1 : 0;\necho \"|\";\necho empty($items[$outer][0]) ? 1 : 0;\necho \"|\";\necho isset($items[0][$leaf]) ? 1 : 0;\necho \"|\";\necho isset($items[$outer][\"stay\"]) ? 1 : 0;\n";
+
 const VALUE_OFFSET_MUTATION_ARRAY_APPEND_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$items[] = \"B\";\n$value = \"C\";\n$items[] = $value;\necho $items[\"seed\"], \"|\", $items[0], \"|\", $items[1], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$key = \"named\";\n$value = \"C\";\necho ($items[] = \"B\"), \"|\";\necho ($items[] = $value), \"|\";\necho ($items[$key] = \"D\"), \"|\";\necho $items[0], \"|\", $items[1], \"|\", $items[$key], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
@@ -637,6 +639,46 @@ fn native_executable_c_source_routes_nested_array_appends_through_lvalue_owner_o
     assert!(
         !body.contains("array_offset_append_value"),
         "nested appends should not fall back to the direct value-offset append path:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_nested_array_assignment_expression_values_through_lvalue_owner_operation(
+) {
+    let program = parse(ARRAY_LVALUE_NESTED_ASSIGNMENT_EXPR_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_value_operation_result"),
+        "{source}"
+    );
+    assert_eq!(
+        body.matches(" = phpc_native_array_lvalue_owner_value_operation_result(")
+            .count(),
+        3,
+        "nested assignment expressions should share the lvalue owner/path operation boundary:\n{source}"
+    );
+    assert_eq!(
+        body.matches("phpc_NativeArrayLvalueResult array_lvalue_assign_expr_result_")
+            .count(),
+        3,
+        "nested assignment expressions should use the assignment-expression result path:\n{source}"
+    );
+    assert_eq!(
+        body.matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE")
+            .count(),
+        3,
+        "nested assignment expressions should use the write operation family:\n{source}"
+    );
+    assert_eq!(
+        body.matches("PHPC_NATIVE_ARRAY_PATH_APPEND").count(),
+        2,
+        "nested keyed and append assignment expressions should materialize append path segments only for append forms:\n{source}"
+    );
+    assert!(
+        !body.contains("array_offset_assign_expr_diagnostic_"),
+        "nested assignment expressions should not fall back to the direct value-offset assignment-expression path:\n{source}"
     );
 }
 
@@ -1944,6 +1986,53 @@ fn emit_exe_links_and_runs_nested_array_lvalue_append_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"1|0|1|R");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_array_assignment_expression_value_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("nested_array_assignment_expr_value");
+    let source_path = native_link_output_path("nested_array_assignment_expr_value_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, ARRAY_LVALUE_NESTED_ASSIGNMENT_EXPR_SOURCE)
+        .expect("native nested array assignment-expression source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native nested array assignment-expression source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"A|B|C|1|0|1|1");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
