@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 10:25 CEST
-Evaluation marker: 20260522T082500Z-primary-after-a68693bd
+Updated: 2026-05-22 10:47 CEST
+Evaluation marker: 20260522T084700Z-primary-after-9e4c5fd
 
 This is a high-level supervisor dashboard. Percentages are candid engineering estimates, not test-suite pass rates. Primary-integrated capability means committed on `master`; lane-local and uncommitted primary work are candidate material until selected, gated, committed, and pushed.
 
@@ -13,25 +13,25 @@ Estimated progress toward a broadly usable generalized PHP native compiler: **62
 Generalized runtime/ABI foundations      [##################--] 89%
 Compiler/backend consumers               [###################-] 97%
 Executable generalized PHP semantics     [###############-----] 76%
-Arrays, references, COW, lvalues         [############--------] 61%
+Arrays, references, COW, lvalues         [############--------] 62%
 Objects, properties, methods             [##------------------] 11%
 Diagnostics/control-flow composition     [#####---------------] 26%
-Broad integrated verification            [############--------] 62%
+Broad integrated verification            [#############-------] 63%
 ```
 
-The estimate moved only in arrays/lvalues because the new primary semantic commit is a narrow generated-C value-offset consumer.
+The estimate moved only in arrays/lvalues and verification because the new primary semantic commit is a narrow generated-C value-offset unset consumer with full `native_link` coverage.
 
 ## Current Primary State
 
-- Primary branch at review: latest semantic capability is `a68693bd`; progress commits sit on top as management updates.
-- Latest committed semantic compiler/runtime batch: `a68693bd codegen: return value-root path assignment values`.
-- Recent committed semantic progress is concentrated in generated-C array/value-offset lvalues: by-value foreach over tracked native owners, a by-reference foreach reference-slot blocker, append-path increment/decrement, missing final keyed increment/decrement recovery, shared null increment/decrement defaults, nested tracked-owner `??=`, direct value append assignment over stored native value handles, nested non-string value-root path writes/appends, and nested value-root assignment-expression values.
+- Primary branch at review: latest semantic capability is `9e4c5fd`; progress commits sit on top as management updates.
+- Latest committed semantic compiler/runtime batch: `9e4c5fd codegen: route value path unsets through offset ABI`.
+- Recent committed semantic progress is concentrated in generated-C array/value-offset lvalues: by-value foreach over tracked native owners, a by-reference foreach reference-slot blocker, append-path increment/decrement, missing final keyed increment/decrement recovery, shared null increment/decrement defaults, nested tracked-owner `??=`, direct value append assignment over stored native value handles, nested non-string value-root path writes/appends, nested value-root assignment-expression values, and direct/nested value-root path unsets.
 - One preserved unstaged runtime cleanup hunk remains in `runtime/src/lib.rs`; it is not counted as integrated capability.
 - Resource note: `/dev/shm` is 22G total with about 8.5G free and about 14G used; `/home` has about 216G free and about 206G used. The largest sampled tmpfs target is `phpc-target-native-call-semantics` at about 8.2G, so broad gates still need resource checks.
 
 ## Grand Roadmap Position
 
-The strongest committed line of progress is the shared value/lvalue ABI spine with real generated-C consumers. Primary now covers selected generated-C array/string offset reads, presence, writes, unsets, appends, direct value append assignment over null/false/scalar native value handles, nested value-root path writes/appends, assignment-expression values for selected array-owner/value-offset forms including nested value-root path assignment expressions, direct and nested tracked-owner `??=`, direct and nested compound assignment, direct and nested increment/decrement, by-value foreach over tracked native owners, append increment/decrement, and selected read/update recovery.
+The strongest committed line of progress is the shared value/lvalue ABI spine with real generated-C consumers. Primary now covers selected generated-C array/string offset reads, presence, writes, unsets, appends, direct value append assignment over null/false/scalar native value handles, nested value-root path writes/appends/unsets, assignment-expression values for selected array-owner/value-offset forms including nested value-root path assignment expressions, direct and nested tracked-owner `??=`, direct and nested compound assignment, direct and nested increment/decrement, by-value foreach over tracked native owners, append increment/decrement, and selected read/update recovery.
 
 The compiler is still not close to full generalized PHP semantics. Major unfinished regions remain: arbitrary writable roots, reference/COW cells, symbol environments, mutable globals/superglobals, function/method frames, by-ref calls/returns, object/property/method behavior, include/require, exceptions/finally, exact diagnostics, and cleanup across real control flow.
 
@@ -39,7 +39,7 @@ The compiler is still not close to full generalized PHP semantics. Major unfinis
 
 - [x] Supervised parallel lanes and primary integration gate are established.
 - [x] Shared runtime ABI surfaces exist for strings, byte buffers, comparisons, selected conversions, array key/value operations, value-offset operations, diagnostics, branch decisions, native value output, snapshots, and selected array-owner lvalue operations.
-- [x] Primary has selected LLVM/generated-C consumers for primitive arithmetic, string/value-offset families, generated-C direct/nested tracked array-owner lvalues, direct and nested tracked-owner `??=`, compound assignment, increment/decrement, by-value foreach, unsets, direct value append assignment over native value storage, nested non-string value-root path writes/appends and assignment-expression results, selected recovery, direct-variable native value storage, scalar output, type predicates, bitwise/shift, casts/type-name output, and focused diagnostics.
+- [x] Primary has selected LLVM/generated-C consumers for primitive arithmetic, string/value-offset families, generated-C direct/nested tracked array-owner lvalues, direct and nested tracked-owner `??=`, compound assignment, increment/decrement, by-value foreach, unsets, direct value append assignment over native value storage, nested non-string value-root path writes/appends/unsets and assignment-expression results, selected recovery, direct-variable native value storage, scalar output, type predicates, bitwise/shift, casts/type-name output, and focused diagnostics.
 - [ ] In progress: array lvalue/RMW/reference/COW work. Primary has useful committed consumers; lane-local candidates are broader than integrated capability.
 - [ ] In progress: symbol/request/global value flow. Primary has surfaces and selected direct-variable storage, not a generalized PHP symbol table or mutable request/global model.
 - [ ] In progress: call/frame/control-flow cleanup. Lane-local work is active, but production frames, by-ref calls, returns, exceptions/finally, and broad cleanup are not integrated.
@@ -53,14 +53,16 @@ The compiler is still not close to full generalized PHP semantics. Major unfinis
 | String conversion, truthiness, byte buffers | 79% | 91% | Primary has strong selected string/value surfaces, generated-C and LLVM string-offset consumers, string-int consumers, stdout/materialization paths, and byte-buffer helpers. Lane-local work has many more string-family ABIs, but exact diagnostics, object/stringable dispatch, PCRE/stream/resource behavior, and cleanup remain open. |
 | Call operation cleanup and ownership | 43% | 72% | Primary has common call diagnostics and selected cleanup routing. Lane-local work has owned argument/frame/depth/cleanup contracts, but real source-level call dispatch, frame callback generation, by-ref parameters, returns, variadics/spreads, dynamic dispatch, and exact call diagnostics remain mostly missing. |
 | Comparison and conversion semantics | 75% | 86% | Primary has shared comparison/conversion surfaces and selected backend consumers. Lane-local work adds more constant, magic constant, undefined-variable, array-read, warning-continuation, and conversion-result paths. Recursive arrays, object/resource/reference comparisons, warning parity, and full backend parity remain open. |
-| Arrays, lvalues, references, COW | 61% | 92% | Primary has selected generated-C value-offset and array-owner lvalue execution, including direct/nested `??=`, direct/nested RMW, append increment/decrement, direct native-value append assignment, nested non-string value-root path writes/appends with assignment-expression results, by-value foreach, unsets, selected recovery, and native value storage. Lane-local candidates cover much more array builtin/value-result/reference material, but executable by-reference foreach, arbitrary roots, append RMW, references, COW, ArrayAccess/resource offsets, and LLVM array parity remain open. |
+| Arrays, lvalues, references, COW | 62% | 92% | Primary has selected generated-C value-offset and array-owner lvalue execution, including direct/nested `??=`, direct/nested RMW, append increment/decrement, direct native-value append assignment, nested non-string value-root path writes/appends/unsets with assignment-expression results for writes/appends, by-value foreach, tracked-owner unsets, selected recovery, and native value storage. Lane-local candidates cover much more array builtin/value-result/reference material, but executable by-reference foreach, arbitrary roots, append RMW, references, COW, ArrayAccess/resource offsets, and LLVM array parity remain open. |
 | Symbols, globals, request state | 26% | 74% | Primary can persist selected owned native value-result handles in generated-C direct variables and compose that storage with selected value-offset writeback. Lane-local work covers known-array `$GLOBALS`/request-superglobal nested append/unset and request foreach mutation blockers, but not a generalized symbol table, mutable request model, aliases, or global/import reconciliation. |
 | Objects, properties, methods | 11% | 55% | Primary has blockers/plans and selected comparison identity handling. Lane-local work has property/runtime ABIs and method/constructor metadata preflights, but executable object allocation/property/method behavior is still largely absent. |
 | Diagnostics and control-flow cleanup | 26% | 74% | Primary has selected diagnostic/reporting and cleanup paths, including recoverable array-read/update diagnostics. Lane-local work has richer structured-control-flow and owner-cell cleanup/diagnostic execution contracts, but real loop/switch/goto/finally/exception lowering, warning ordering, and terminal cleanup are not integrated. |
-| Broad composition verification | 62% | 55% | Focused runtime/native-link/native-runtime-ABI gates cover recent primary slices, including nested value-root assignment-expression results. Broad PHP differential coverage remains thin, and many lane-local claims are validated in isolated worktrees rather than primary. |
+| Broad composition verification | 63% | 55% | Focused runtime/native-link/native-runtime-ABI gates cover recent primary slices, including nested value-root assignment-expression results and value-root path unsets. Broad PHP differential coverage remains thin, and many lane-local claims are validated in isolated worktrees rather than primary. |
 
 ## Primary-Integrated Capability
 
+- `9e4c5fd codegen: route value path unsets through offset ABI`
+  - Generated-C direct and nested non-string value-root `unset(...)` targets now reuse a shared value-offset path unset ABI, clone the selected stored value back into native value storage, and preserve existing tracked native array-owner unsets on the array-lvalue ABI.
 - `a68693bd codegen: return value-root path assignment values`
   - Generated-C nested non-string value-root keyed and append assignment expressions now reuse the shared path mutation helpers while returning RHS values to output/storage consumers, including native value-result RHS handles.
 - `030cb4ac codegen: route nested value offsets through path ABI`
