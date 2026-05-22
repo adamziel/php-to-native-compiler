@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 11:54 CEST
+Updated: 2026-05-22 11:56 CEST
 Current primary semantic baseline: `0f123f2d codegen: route array pointer builtins through lvalue ABI`
 
 This is a high-level roadmap view. Percentages are candid engineering estimates, not test-suite pass rates. Lane-local work is not counted as product capability until it is integrated into `master`, gated, committed, and pushed.
@@ -22,8 +22,8 @@ Estimated progress toward a broadly usable generalized PHP native compiler: **64
 
 ## Current Primary State
 
-- `master` is pushed and synced with `origin/master` at `c27d31c5 docs: update progress after array pointers`.
-- The current semantic baseline remains `0f123f2d`; `c27d31c5` is the committed progress-dashboard update on top of it.
+- `master` is pushed and synced with `origin/master`; this file is the latest progress-dashboard update on top of the semantic baseline.
+- The current semantic baseline remains `0f123f2d`.
 - The only expected dirty primary diff is the preserved `runtime/src/lib.rs` append/null-slot cleanup hunk. It is not counted here.
 - The latest integrated semantic sequence is:
   - `0f123f2d codegen: route array pointer builtins through lvalue ABI`
