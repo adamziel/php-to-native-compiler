@@ -1,11 +1,12 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 01:10 CEST
-Evaluation marker: `20260522T224455Z` plus manual post-integration refresh
-Primary management baseline before this update: `83e08c94 runtime: route reference-backed array lvalue owners`
-Primary semantic baseline: `83e08c94 runtime: route reference-backed array lvalue owners`
-Prior evaluator marker: `20260522T210338Z`; scheduled marker
-`20260522T215411Z` produced a stale report and did not land a dashboard commit.
+Updated: 2026-05-23 01:48 CEST
+Evaluation marker: `20260522T233339Z` was consumed as candid steering but
+produced a stale `PROGRESS.md` diff because primary advanced while it ran.
+Primary management baseline before this update: `9ade9293 runtime: enforce call-frame type metadata`
+Primary semantic baseline: `9ade9293 runtime: enforce call-frame type metadata`
+Prior evaluator marker: `20260522T224455Z`; next scheduled marker
+`2026-05-23T02:23:15+02:00`.
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -16,16 +17,21 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 
 Overall estimated progress: **85%** `[#################---]`
 
-Primary is synced at `83e08c94`, which routes reference-backed symbol-table
-roots through shared generated-C array-lvalue owner operations. That converts
-an existing reference/COW storage boundary into executable array write/read,
-unset, presence, and increment/decrement behavior for ordinary array roots
-after reference assignment activates symbol storage. The preceding
-`38e98ad0` and `795c60b3` batches route generated-native `array_column(...)`
-and `array_change_key_case(...)` through generalized native value array-query
-boundaries. These commits improve real generated-C consumers, but they still
-leave the largest call/frame, object/property, and control-flow composition
-risks open.
+Primary is synced at `9ade9293`. The newest landed slice enforces call-frame
+type metadata in runtime/interpreter call handling, which is generalized
+call/frame infrastructure rather than a fixture-shaped special case. It is
+useful groundwork, but it is not yet generated-native call lowering, so it only
+modestly moves the call/frame roadmap item.
+
+The preceding `83e08c94` routes reference-backed symbol-table roots through
+shared generated-C array-lvalue owner operations. That converts an existing
+reference/COW storage boundary into executable array write/read, unset,
+presence, and increment/decrement behavior for ordinary array roots after
+reference assignment activates symbol storage. `38e98ad0` and `795c60b3` route
+generated-native `array_column(...)` and `array_change_key_case(...)` through
+generalized native value array-query boundaries. These commits improve real
+generated-C consumers, but still leave the largest generated-native
+call/frame, object/property, and control-flow composition risks open.
 
 The latest integrated baseline includes generated-C request/reference/global
 symbol progress, direct and mixed symbol-root unsets, request append suffix
@@ -40,9 +46,10 @@ paths, keyed request references through reference-backed request roots, and
 PHP-fatal direct no-key `$GLOBALS[]` rejection, request append reference slots,
 generated-native array-query routing for `array_change_key_case(...)` and
 `array_column(...)`, and reference-backed array-lvalue owners for active
-ordinary symbol roots. The previously counted direct no-key `$GLOBALS[]` value
-append slice from `aad22967` is superseded by `59f83295` and is not counted as
-completed capability.
+ordinary symbol roots. It now also includes call-frame type metadata checks in
+runtime/interpreter execution. The previously counted direct no-key
+`$GLOBALS[]` value append slice from `aad22967` is superseded by `59f83295` and
+is not counted as completed capability.
 
 The preserved `runtime/src/lib.rs` null-slot increment/decrement hunk remains
 unintegrated and is not counted.
@@ -50,18 +57,23 @@ unintegrated and is not counted.
 ## Current Primary State
 
 - Primary `master` and `origin/master`: synced at
-  `83e08c94a4dd6d971c63a1803e8c107c622688dd`.
-- Latest semantic commit: `83e08c94 runtime: route reference-backed array lvalue owners`.
+  `9ade9293f0945bea6485abfb97dcd86432ec7828`.
+- Latest semantic commit: `9ade9293 runtime: enforce call-frame type metadata`.
 - Current product diff at refresh time: this `PROGRESS.md` update plus the
   preserved unstaged `runtime/src/lib.rs` null-slot increment/decrement hunk.
   After this progress commit lands, the runtime hunk should remain the only
   known primary diff. The runtime hunk remains unintegrated and is not counted.
-- Resource note from this review: `/dev/shm` has about 8.9G available out of
-  22G; `/home` has about 171G available out of 459G. Headroom is serviceable
-  but still too thin for broad concurrent test waves.
+- Resource note from this review: `/dev/shm` has about 11G available out of
+  22G; `/home` has about 166G available out of 459G. Headroom is serviceable,
+  but broad concurrent test waves still need owner-aware cleanup first.
 
 ## Recent Primary-Integrated Progress
 
+- `9ade9293`: runtime/interpreter call-frame execution now enforces declared
+  call-frame type metadata instead of treating frame metadata as descriptive
+  only. This is generalized call/frame infrastructure, not generated-native
+  execution; the next related primary slice must add native/compiler consumers
+  or move to another high-value native semantic surface.
 - `83e08c94`: reference-backed generated-C array lvalue owners now route
   ordinary active symbol-table roots through shared owner operations for
   write/read/presence/unset/increment-update behavior after reference
@@ -161,7 +173,7 @@ backend parity.
 | Executable generalized PHP semantics | 82% | `[################----]` | Improving through linked executable gates and array-query consumers, but still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | 87% | `[#################---]` | Stronger arrays/lvalues, selected reference paths, generated-native array query consumers, and reference-backed array-lvalue owners for active symbol roots; full references/COW and arbitrary writable roots remain large. |
 | Symbols, globals, request state | 96% | `[###################-]` | Request paths, `$GLOBALS` static/self aliases, ordinary `$GLOBALS` symbol references, dynamic root assignment/read/probe dispatch, dynamic non-append `$GLOBALS` references, symbol paths, direct/mixed root unsets, selected request references, request append reference slots, and PHP-fatal direct no-key `$GLOBALS[]` rejection are strong; broader request/global reconciliation remains open. |
-| Calls, functions, frames | 25% | `[#####---------------]` | Lane candidates exist, but broad executable call/frame semantics are not primary. |
+| Calls, functions, frames | 27% | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement is now primary; broad generated-native call/frame execution remains open. |
 | Objects, properties, methods | 11% | `[##------------------]` | Mostly lane-local/runtime candidate work; primary still lacks general compiled object/property/method execution. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused diagnostics exist; exact ordering and structured cleanup are not generalized. |
 | Broad integrated verification | 84% | `[#################---]` | Focused gates are strong and recent array-query/reference-owner adjacent gates help; cross-feature/backend-composition coverage is still thin. |
@@ -219,8 +231,9 @@ In progress or candidate only:
 - [ ] General generated PHP reference assignment over objects, arbitrary
   owner/value/reference slots, frames, append request slots, and COW-aware
   boundaries. Estimate: 63% `[#############-------]`.
-- [ ] Narrow real call/frame execution beyond helper/blocker routing.
-  Estimate: 25% `[#####---------------]`.
+- [ ] Narrow real generated-native call/frame execution beyond helper/blocker
+  routing and runtime/interpreter metadata checks. Estimate: 27%
+  `[#####---------------]`.
 - [ ] Object/property/method executable semantics beyond lane-local candidates.
   Estimate: 11% `[##------------------]`.
 - [ ] Structured control-flow cleanup and source-ordered diagnostics across
