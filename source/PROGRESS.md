@@ -23,7 +23,7 @@ The estimate moved only in arrays/lvalues because the new primary semantic commi
 
 ## Current Primary State
 
-- Primary branch at review: `e3a97c14 docs: update progress after value-root assignment values`; latest semantic capability is `a68693bd`.
+- Primary branch at review: latest semantic capability is `a68693bd`; progress commits sit on top as management updates.
 - Latest committed semantic compiler/runtime batch: `a68693bd codegen: return value-root path assignment values`.
 - Recent committed semantic progress is concentrated in generated-C array/value-offset lvalues: by-value foreach over tracked native owners, a by-reference foreach reference-slot blocker, append-path increment/decrement, missing final keyed increment/decrement recovery, shared null increment/decrement defaults, nested tracked-owner `??=`, direct value append assignment over stored native value handles, nested non-string value-root path writes/appends, and nested value-root assignment-expression values.
 - One preserved unstaged runtime cleanup hunk remains in `runtime/src/lib.rs`; it is not counted as integrated capability.

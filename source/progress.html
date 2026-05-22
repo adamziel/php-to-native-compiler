@@ -27,7 +27,7 @@ Broad integrated verification            [############--------] 62%</code></pre>
 <p>The estimate moved only in arrays/lvalues because the new primary semantic commit is a narrow generated-C value-offset consumer.</p>
 <h3 id="current-primary-state">Current Primary State</h3>
 <ul>
-<li>Primary branch at review: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/e3a97c14">e3a97c14</a> docs: update progress after value-root assignment values</code>; latest semantic capability is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a68693bd">a68693bd</a></code>.</li>
+<li>Primary branch at review: latest semantic capability is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a68693bd">a68693bd</a></code>; progress commits sit on top as management updates.</li>
 <li>Latest committed semantic compiler/runtime batch: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a68693bd">a68693bd</a> codegen: return value-root path assignment values</code>.</li>
 <li>Recent committed semantic progress is concentrated in generated-C array/value-offset lvalues: by-value foreach over tracked native owners, a by-reference foreach reference-slot blocker, append-path increment/decrement, missing final keyed increment/decrement recovery, shared null increment/decrement defaults, nested tracked-owner <code>??=</code>, direct value append assignment over stored native value handles, nested non-string value-root path writes/appends, and nested value-root assignment-expression values.</li>
 <li>One preserved unstaged runtime cleanup hunk remains in <code>runtime/src/lib.rs</code>; it is not counted as integrated capability.</li>
@@ -82,6 +82,6 @@ Broad integrated verification            [############--------] 62%</code></pre>
 <h3 id="steering-read">Steering Read</h3>
 <p>Recent primary work is directionally sound because it turns shared ABI surfaces into executable generated-C consumers. The supervisor should keep language precise: tracked native array owners can execute selected lvalue operations, and direct variables can store and mutate selected owned native value-result handles, but this is not a full PHP symbol table, reference/COW cell model, arbitrary writable-root model, or generalized request/global/frame implementation.</p>
 <p>Next best primary work should stay executable and narrow. The broader project needs more work in owner/value/reference-slot materialization, mutable request/superglobal storage, LLVM array/value-offset parity, exact diagnostic/recovery ordering, concrete call/frame execution, or cleanup before terminal control transfer.</p></section></main>
-  <footer><span>Generated 2026-05-22T08:25:39.632Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+  <footer><span>Generated 2026-05-22T08:40:43.795Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
