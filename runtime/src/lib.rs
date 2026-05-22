@@ -787,6 +787,13 @@ pub struct NativeRequestStateKeyResult {
     status: u8,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeRequestStateReferenceResult {
+    reference: NativeReferenceHandle,
+    status: u8,
+}
+
 pub const PHPC_NATIVE_REQUEST_STATE_OP_VALUE: u8 = 1;
 pub const PHPC_NATIVE_REQUEST_STATE_OP_ARRAY: u8 = 2;
 pub const PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE: u8 = 3;
@@ -4306,6 +4313,105 @@ pub unsafe extern "C" fn phpc_native_request_state_superglobal_keyed_mutation_op
 /// # Safety
 ///
 /// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `bag_ptr` and `key_ptr` must either be valid
+/// for their respective lengths or null with a zero length. `key_status` must
+/// carry the result of resolving that key through the request key ABI, or OK
+/// for caller-owned key bytes. The returned reference result owns any non-null
+/// reference handle it carries.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_keyed_reference_operation(
+    handle: NativeRequestStateHandle,
+    bag_ptr: *const u8,
+    bag_len: usize,
+    key_ptr: *const u8,
+    key_len: usize,
+    key_status: u8,
+) -> NativeRequestStateReferenceResult {
+    let mutation = unsafe {
+        NativeRequestStateMutation::from_keyed_abi(
+            handle, bag_ptr, bag_len, key_ptr, key_len, key_status,
+        )
+    };
+
+    match mutation {
+        Ok(NativeRequestStateMutation::Keyed {
+            request_state,
+            bag,
+            key,
+        }) => native_request_state_slot_mut(request_state, bag, key)
+            .map(ArraySlot::promote_to_reference_cell)
+            .map(NativeRequestStateReferenceResult::ok)
+            .unwrap_or_else(|| {
+                NativeRequestStateReferenceResult::unsupported(
+                    NativeRequestStateOperationStatus::UnsupportedKeyedValue,
+                )
+            }),
+        Ok(_) => NativeRequestStateReferenceResult::unsupported(
+            NativeRequestStateOperationStatus::InvalidAbi,
+        ),
+        Err(status) => NativeRequestStateReferenceResult::unsupported(status),
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `reference` must be null or a native
+/// reference handle returned by the runtime ABI and not yet freed. Other
+/// pointer operands follow the same contract as
+/// `phpc_native_request_state_superglobal_keyed_mutation_operation`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_keyed_reference_bind_operation(
+    handle: NativeRequestStateHandle,
+    bag_ptr: *const u8,
+    bag_len: usize,
+    key_ptr: *const u8,
+    key_len: usize,
+    key_status: u8,
+    reference: NativeReferenceHandle,
+) -> NativeRequestStateOperationResult {
+    let Some(reference) = (unsafe { reference.as_ref() }) else {
+        return NativeRequestStateOperationResult::unsupported(
+            NativeRequestStateOperationStatus::InvalidAbi,
+        );
+    };
+    let mutation = unsafe {
+        NativeRequestStateMutation::from_keyed_abi(
+            handle, bag_ptr, bag_len, key_ptr, key_len, key_status,
+        )
+    };
+
+    match mutation {
+        Ok(NativeRequestStateMutation::Keyed {
+            request_state,
+            bag,
+            key,
+        }) => {
+            if let Err(status) = request_state.prepare_superglobal_keyed_write(bag) {
+                return NativeRequestStateOperationResult::unsupported(status);
+            }
+            let is_set = !matches!(reference.cell.value_cloned(), Value::Null);
+            request_state
+                .superglobals
+                .entry(bag)
+                .or_insert_with(PhpArray::new)
+                .insert_reference(key, reference.cell.clone());
+            NativeRequestStateOperationResult::presence(
+                is_set,
+                true,
+                NativeRequestStateOperationStatus::Ok,
+            )
+        }
+        Ok(_) => NativeRequestStateOperationResult::unsupported(
+            NativeRequestStateOperationStatus::InvalidAbi,
+        ),
+        Err(status) => NativeRequestStateOperationResult::unsupported(status),
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
 /// runtime ABI and not yet freed. `bag_ptr` must either be valid for `bag_len`
 /// bytes or null with a zero length. `key_ptrs` and `key_lens` must be valid
 /// arrays with `key_count` entries. Each key pointer must be valid for the
@@ -4372,6 +4478,24 @@ pub unsafe extern "C" fn phpc_native_request_state_key_from_value(
         Ok(bytes) => NativeRequestStateKeyResult::ok(bytes),
         Err(status) => NativeRequestStateKeyResult::unsupported(status),
     }
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_request_state_reference_result_report_diagnostic(
+    result: NativeRequestStateReferenceResult,
+) -> usize {
+    unsafe { phpc_native_diagnostic_report(result.status_diagnostic()) }
+}
+
+/// # Safety
+///
+/// Owned handles inside `result` must either be null or handles returned inside
+/// a request-state reference result that have not already been freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_reference_result_free(
+    result: NativeRequestStateReferenceResult,
+) {
+    unsafe { result.free_owned_handles() };
 }
 
 #[no_mangle]
@@ -5552,6 +5676,45 @@ impl NativeRequestStateKeyResult {
             buffer: NativeByteBuffer::empty(),
             status: status.abi_tag(),
         }
+    }
+}
+
+impl NativeRequestStateReferenceResult {
+    pub const fn null() -> Self {
+        Self {
+            reference: NativeReferenceHandle::null(),
+            status: 0,
+        }
+    }
+
+    fn ok(reference: PhpReferenceCell) -> Self {
+        Self {
+            reference: NativeReferenceHandle::from_cell(reference),
+            status: NativeRequestStateOperationStatus::Ok.abi_tag(),
+        }
+    }
+
+    fn unsupported(status: NativeRequestStateOperationStatus) -> Self {
+        Self {
+            status: status.abi_tag(),
+            ..Self::null()
+        }
+    }
+
+    fn status_diagnostic(self) -> NativeDiagnosticHandle {
+        let Some(status) = NativeRequestStateOperationStatus::from_abi_tag(self.status) else {
+            return NativeDiagnosticHandle::from_message(
+                "native request-state reference operation failed: invalid result status",
+            );
+        };
+        status
+            .diagnostic_message()
+            .map(NativeDiagnosticHandle::from_message)
+            .unwrap_or_else(NativeDiagnosticHandle::null)
+    }
+
+    unsafe fn free_owned_handles(self) {
+        unsafe { phpc_native_reference_free(self.reference) };
     }
 }
 
@@ -21287,6 +21450,152 @@ mod tests {
 
         unsafe { phpc_native_string_free(invalid_root) };
         unsafe { phpc_native_request_state_free(request_state) };
+    }
+
+    #[test]
+    fn native_request_state_keyed_reference_results_bind_shared_cells() {
+        unsafe fn value_handle(value: Value) -> NativeValueHandle {
+            NativeValueHandle::from_value(value)
+        }
+
+        unsafe fn set_reference_value(reference: NativeReferenceHandle, value: Value) {
+            let value = unsafe { value_handle(value) };
+            assert!(unsafe { phpc_native_reference_set_value(reference, value) });
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        unsafe fn assert_request_value(
+            request_state: NativeRequestStateHandle,
+            bag: &[u8],
+            key: &[u8],
+            expected: Value,
+        ) {
+            let value = unsafe {
+                phpc_native_request_state_superglobal_value(
+                    request_state,
+                    bag.as_ptr(),
+                    bag.len(),
+                    key.as_ptr(),
+                    key.len(),
+                )
+            };
+            assert_eq!(unsafe { value.as_ref() }, Some(&expected));
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        let request_state = phpc_native_request_state_empty();
+        let cases = [
+            (b"_GET".as_slice(), b"id".as_slice(), "get"),
+            (b"_REQUEST".as_slice(), b"name".as_slice(), "request"),
+        ];
+
+        for (bag, key, prefix) in cases {
+            let reference = unsafe {
+                phpc_native_request_state_superglobal_keyed_reference_operation(
+                    request_state,
+                    bag.as_ptr(),
+                    bag.len(),
+                    key.as_ptr(),
+                    key.len(),
+                    PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+                )
+            };
+            assert_eq!(reference.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+            assert!(!phpc_native_reference_is_null(reference.reference));
+            unsafe {
+                set_reference_value(
+                    reference.reference,
+                    Value::String(format!("{prefix}-value")),
+                );
+                assert_request_value(
+                    request_state,
+                    bag,
+                    key,
+                    Value::String(format!("{prefix}-value")),
+                );
+                phpc_native_request_state_reference_result_free(reference);
+            }
+        }
+
+        let shared = unsafe {
+            phpc_native_request_state_superglobal_keyed_reference_operation(
+                request_state,
+                b"_GET".as_ptr(),
+                b"_GET".len(),
+                b"id".as_ptr(),
+                b"id".len(),
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+            )
+        };
+        assert_eq!(shared.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+        let bind = unsafe {
+            phpc_native_request_state_superglobal_keyed_reference_bind_operation(
+                request_state,
+                b"_POST".as_ptr(),
+                b"_POST".len(),
+                b"alias".as_ptr(),
+                b"alias".len(),
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+                shared.reference,
+            )
+        };
+        assert_eq!(bind.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+        unsafe {
+            set_reference_value(shared.reference, Value::String("shared".to_string()));
+            assert_request_value(
+                request_state,
+                b"_GET",
+                b"id",
+                Value::String("shared".to_string()),
+            );
+            assert_request_value(
+                request_state,
+                b"_POST",
+                b"alias",
+                Value::String("shared".to_string()),
+            );
+            phpc_native_request_state_operation_result_free(bind);
+        }
+
+        let bad_key = unsafe {
+            phpc_native_request_state_superglobal_keyed_reference_operation(
+                request_state,
+                b"_GET".as_ptr(),
+                b"_GET".len(),
+                ptr::null(),
+                0,
+                PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEY_COERCION,
+            )
+        };
+        assert_eq!(
+            bad_key.status,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEY_COERCION
+        );
+        assert!(phpc_native_reference_is_null(bad_key.reference));
+        let bad_key_diagnostic = bad_key.status_diagnostic();
+        assert!(!bad_key_diagnostic.is_null());
+        unsafe { phpc_native_diagnostic_free(bad_key_diagnostic) };
+
+        let bad_bind = unsafe {
+            phpc_native_request_state_superglobal_keyed_reference_bind_operation(
+                request_state,
+                b"_COOKIE".as_ptr(),
+                b"_COOKIE".len(),
+                b"id".as_ptr(),
+                b"id".len(),
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+                NativeReferenceHandle::null(),
+            )
+        };
+        assert_eq!(
+            bad_bind.status,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_ABI
+        );
+        unsafe {
+            phpc_native_request_state_operation_result_free(bad_bind);
+            phpc_native_request_state_reference_result_free(shared);
+            phpc_native_request_state_free(request_state);
+        }
     }
 
     #[test]
