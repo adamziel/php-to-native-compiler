@@ -527,6 +527,9 @@ pub const PHPC_NATIVE_REQUEST_STATE_STATUS_NULL_STATE: u8 = 5;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNKNOWN_BAG: u8 = 6;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEYED_BAG: u8 = 7;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEY_COERCION: u8 = 8;
+pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEYED_VALUE: u8 = 9;
+pub const PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE: u8 = 1;
+pub const PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET: u8 = 2;
 
 const NATIVE_REQUEST_STATE_MISSING_KEY_READ_MESSAGE: &str =
     "native request-state operation failed: missing request key";
@@ -627,6 +630,12 @@ enum NativeRequestStateOperationKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeRequestStateMutationKind {
+    Write,
+    Unset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeRequestStateOperationAddressFamily {
     KeyedScalarSnapshot,
     BagSnapshot,
@@ -685,6 +694,16 @@ impl NativeRequestStateOperationKind {
     }
 }
 
+impl NativeRequestStateMutationKind {
+    fn from_abi_tag(value: u8) -> Option<Self> {
+        Some(match value {
+            PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE => Self::Write,
+            PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET => Self::Unset,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeRequestStateOperationStatus {
     Ok,
@@ -695,6 +714,7 @@ enum NativeRequestStateOperationStatus {
     UnknownBag,
     UnsupportedKeyedBag,
     UnsupportedKeyCoercion,
+    UnsupportedKeyedValue,
 }
 
 impl NativeRequestStateOperationStatus {
@@ -710,6 +730,7 @@ impl NativeRequestStateOperationStatus {
             PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEY_COERCION => {
                 Self::UnsupportedKeyCoercion
             }
+            PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEYED_VALUE => Self::UnsupportedKeyedValue,
             _ => return None,
         })
     }
@@ -726,6 +747,7 @@ impl NativeRequestStateOperationStatus {
             Self::UnsupportedKeyCoercion => {
                 PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEY_COERCION
             }
+            Self::UnsupportedKeyedValue => PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEYED_VALUE,
         }
     }
 
@@ -744,6 +766,9 @@ impl NativeRequestStateOperationStatus {
             Self::UnsupportedKeyCoercion => {
                 Some("native request-state operation failed: unsupported PHP key coercion")
             }
+            Self::UnsupportedKeyedValue => Some(
+                "native request-state operation failed: keyed request-state value is not array-accessible",
+            ),
         }
     }
 }
@@ -754,9 +779,27 @@ enum NativeRequestStateOperation<'a> {
         bag: NativeRequestStateBag,
         key: &'a [u8],
     },
+    KeyPath {
+        request_state: &'a NativeRequestState,
+        bag: NativeRequestStateBag,
+        keys: Vec<ArrayKey>,
+    },
     Bag {
         request_state: &'a NativeRequestState,
         bag: NativeRequestStateBag,
+    },
+}
+
+enum NativeRequestStateMutation<'a> {
+    Keyed {
+        request_state: &'a mut NativeRequestState,
+        bag: NativeRequestStateBag,
+        key: ArrayKey,
+    },
+    KeyPath {
+        request_state: &'a mut NativeRequestState,
+        bag: NativeRequestStateBag,
+        keys: Vec<ArrayKey>,
     },
 }
 
@@ -1751,6 +1794,18 @@ impl NativeRequestState {
             .and_then(|values| values.get_cloned(key))
     }
 
+    fn superglobal_path_value(
+        &self,
+        bag: NativeRequestStateBag,
+        keys: &[ArrayKey],
+    ) -> Result<Option<Value>, NativeRequestStateOperationStatus> {
+        let Some(values) = self.superglobals.get(&bag) else {
+            return Ok(None);
+        };
+
+        request_state_get_path_cloned(values, keys)
+    }
+
     fn superglobal_runtime_value(&self, bag: NativeRequestStateBag, key: &[u8]) -> Value {
         self.superglobal_value(bag, key).unwrap_or(Value::Null)
     }
@@ -1760,6 +1815,77 @@ impl NativeRequestState {
             .get(&bag)
             .cloned()
             .unwrap_or_else(PhpArray::new)
+    }
+
+    fn write_superglobal_key(
+        &mut self,
+        bag: NativeRequestStateBag,
+        key: ArrayKey,
+        value: Value,
+    ) -> NativeRequestStateOperationResult {
+        let is_set = !matches!(value, Value::Null);
+        self.superglobals.entry(bag).or_default().insert(key, value);
+        NativeRequestStateOperationResult::presence(
+            is_set,
+            true,
+            NativeRequestStateOperationStatus::Ok,
+        )
+    }
+
+    fn unset_superglobal_key(
+        &mut self,
+        bag: NativeRequestStateBag,
+        key: ArrayKey,
+    ) -> NativeRequestStateOperationResult {
+        if let Some(values) = self.superglobals.get_mut(&bag) {
+            values.remove(key);
+        }
+
+        NativeRequestStateOperationResult::presence(
+            false,
+            false,
+            NativeRequestStateOperationStatus::Ok,
+        )
+    }
+
+    fn write_superglobal_path(
+        &mut self,
+        bag: NativeRequestStateBag,
+        keys: &[ArrayKey],
+        value: Value,
+    ) -> NativeRequestStateOperationResult {
+        if keys.is_empty() {
+            return NativeRequestStateOperationResult::unsupported(
+                NativeRequestStateOperationStatus::InvalidAbi,
+            );
+        }
+
+        let values = self.superglobals.entry(bag).or_default();
+        let status = request_state_write_path_value(values, keys, value)
+            .map(|()| NativeRequestStateOperationStatus::Ok)
+            .unwrap_or_else(|status| status);
+        request_state_path_mutation_result(self, bag, keys, status)
+    }
+
+    fn unset_superglobal_path(
+        &mut self,
+        bag: NativeRequestStateBag,
+        keys: &[ArrayKey],
+    ) -> NativeRequestStateOperationResult {
+        if keys.is_empty() {
+            return NativeRequestStateOperationResult::unsupported(
+                NativeRequestStateOperationStatus::InvalidAbi,
+            );
+        }
+
+        let status = self
+            .superglobals
+            .get_mut(&bag)
+            .map(|values| request_state_unset_path_value(values, keys))
+            .transpose()
+            .map(|_| NativeRequestStateOperationStatus::Ok)
+            .unwrap_or_else(|status| status);
+        request_state_path_mutation_result(self, bag, keys, status)
     }
 
     fn populate_superglobal_from_symbol_table(
@@ -2774,6 +2900,128 @@ pub unsafe extern "C" fn phpc_native_request_state_superglobal_operation(
     }
 }
 
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `bag_ptr` must either be valid for `bag_len`
+/// bytes or null with a zero length. `key_ptrs` and `key_lens` must be valid
+/// arrays with `key_count` entries. Each key pointer must be valid for the
+/// corresponding length, except null pointers are accepted for zero-length
+/// keys. `key_status` must carry the result of resolving the key path through
+/// the request key ABI, or OK for caller-owned key bytes.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_path_operation(
+    handle: NativeRequestStateHandle,
+    operation_kind: u8,
+    bag_ptr: *const u8,
+    bag_len: usize,
+    key_ptrs: *const *const u8,
+    key_lens: *const usize,
+    key_count: usize,
+    key_status: u8,
+) -> NativeRequestStateOperationResult {
+    let Some(operation_kind) = NativeRequestStateOperationKind::from_abi_tag(operation_kind) else {
+        return NativeRequestStateOperationResult::unsupported(
+            NativeRequestStateOperationStatus::InvalidOperation,
+        );
+    };
+    let operation = unsafe {
+        NativeRequestStateOperation::from_path_abi(
+            handle,
+            operation_kind,
+            bag_ptr,
+            bag_len,
+            key_ptrs,
+            key_lens,
+            key_count,
+            key_status,
+        )
+    };
+
+    match operation {
+        Ok(operation) => operation.result(operation_kind),
+        Err(status) => NativeRequestStateOperationResult::unsupported(status),
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `bag_ptr` and `key_ptr` must either be valid
+/// for their respective lengths or null with a zero length. `key_status` must
+/// carry the result of resolving the key through the request key ABI, or OK for
+/// caller-owned key bytes. For writes, `value` must be a live value handle; the
+/// request-state slot takes a clone. Unset mutations ignore `value`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_keyed_mutation_operation(
+    handle: NativeRequestStateHandle,
+    mutation_kind: u8,
+    bag_ptr: *const u8,
+    bag_len: usize,
+    key_ptr: *const u8,
+    key_len: usize,
+    key_status: u8,
+    value: NativeValueHandle,
+) -> NativeRequestStateOperationResult {
+    let Some(mutation_kind) = NativeRequestStateMutationKind::from_abi_tag(mutation_kind) else {
+        return NativeRequestStateOperationResult::unsupported(
+            NativeRequestStateOperationStatus::InvalidOperation,
+        );
+    };
+    let mutation = unsafe {
+        NativeRequestStateMutation::from_keyed_abi(
+            handle, bag_ptr, bag_len, key_ptr, key_len, key_status,
+        )
+    };
+
+    match mutation {
+        Ok(mutation) => unsafe { mutation.apply(mutation_kind, value) }
+            .unwrap_or_else(NativeRequestStateOperationResult::unsupported),
+        Err(status) => NativeRequestStateOperationResult::unsupported(status),
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `bag_ptr` must either be valid for `bag_len`
+/// bytes or null with a zero length. `key_ptrs` and `key_lens` must be valid
+/// arrays with `key_count` entries. Each key pointer must be valid for the
+/// corresponding length, except null pointers are accepted for zero-length
+/// keys. `key_status` must carry the result of resolving the key path through
+/// the request key ABI, or OK for caller-owned key bytes. For writes, `value`
+/// must be a live value handle; request-state storage takes a clone. Unset
+/// mutations ignore `value`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_path_mutation_operation(
+    handle: NativeRequestStateHandle,
+    mutation_kind: u8,
+    bag_ptr: *const u8,
+    bag_len: usize,
+    key_ptrs: *const *const u8,
+    key_lens: *const usize,
+    key_count: usize,
+    key_status: u8,
+    value: NativeValueHandle,
+) -> NativeRequestStateOperationResult {
+    let Some(mutation_kind) = NativeRequestStateMutationKind::from_abi_tag(mutation_kind) else {
+        return NativeRequestStateOperationResult::unsupported(
+            NativeRequestStateOperationStatus::InvalidOperation,
+        );
+    };
+    let mutation = unsafe {
+        NativeRequestStateMutation::from_path_abi(
+            handle, bag_ptr, bag_len, key_ptrs, key_lens, key_count, key_status,
+        )
+    };
+
+    match mutation {
+        Ok(mutation) => unsafe { mutation.apply(mutation_kind, value) }
+            .unwrap_or_else(NativeRequestStateOperationResult::unsupported),
+        Err(status) => NativeRequestStateOperationResult::unsupported(status),
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn phpc_native_request_state_key_from_scalar(
     value: NativeScalarValue,
@@ -3519,6 +3767,124 @@ fn request_state_array_key(value: &[u8]) -> Option<ArrayKey> {
     String::from_utf8(value.to_vec()).ok().map(ArrayKey::string)
 }
 
+fn request_state_presence_result_from_value(
+    value: Option<&Value>,
+    status: NativeRequestStateOperationStatus,
+) -> NativeRequestStateOperationResult {
+    if status != NativeRequestStateOperationStatus::Ok {
+        return NativeRequestStateOperationResult::unsupported(status);
+    }
+
+    NativeRequestStateOperationResult::presence(
+        value.is_some_and(|value| !matches!(value, Value::Null)),
+        value.is_some(),
+        status,
+    )
+}
+
+fn request_state_path_mutation_result(
+    request_state: &NativeRequestState,
+    bag: NativeRequestStateBag,
+    keys: &[ArrayKey],
+    status: NativeRequestStateOperationStatus,
+) -> NativeRequestStateOperationResult {
+    if status != NativeRequestStateOperationStatus::Ok {
+        return NativeRequestStateOperationResult::unsupported(status);
+    }
+
+    match request_state.superglobal_path_value(bag, keys) {
+        Ok(value) => request_state_presence_result_from_value(value.as_ref(), status),
+        Err(status) => NativeRequestStateOperationResult::unsupported(status),
+    }
+}
+
+fn request_state_get_path_cloned(
+    array: &PhpArray,
+    keys: &[ArrayKey],
+) -> Result<Option<Value>, NativeRequestStateOperationStatus> {
+    let Some((key, rest)) = keys.split_first() else {
+        return Err(NativeRequestStateOperationStatus::InvalidAbi);
+    };
+    let Some(value) = array.get_cloned(key.clone()) else {
+        return Ok(None);
+    };
+    if rest.is_empty() {
+        return Ok(Some(value));
+    }
+
+    match value {
+        Value::Array(child) => request_state_get_path_cloned(&child, rest),
+        _ => Err(NativeRequestStateOperationStatus::UnsupportedKeyedValue),
+    }
+}
+
+fn request_state_write_path_value(
+    array: &mut PhpArray,
+    keys: &[ArrayKey],
+    value: Value,
+) -> Result<(), NativeRequestStateOperationStatus> {
+    let Some((key, rest)) = keys.split_first() else {
+        return Err(NativeRequestStateOperationStatus::InvalidAbi);
+    };
+
+    if rest.is_empty() {
+        array.insert(key.clone(), value);
+        return Ok(());
+    }
+
+    let mut child = match array.get_cloned(key.clone()) {
+        Some(Value::Array(child)) => child,
+        Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
+        Some(_) => return Err(NativeRequestStateOperationStatus::UnsupportedKeyedValue),
+    };
+    request_state_write_path_value(&mut child, rest, value)?;
+    array.insert(key.clone(), Value::Array(child));
+    Ok(())
+}
+
+fn request_state_unset_path_value(
+    array: &mut PhpArray,
+    keys: &[ArrayKey],
+) -> Result<(), NativeRequestStateOperationStatus> {
+    let Some((key, rest)) = keys.split_first() else {
+        return Err(NativeRequestStateOperationStatus::InvalidAbi);
+    };
+
+    if rest.is_empty() {
+        array.remove(key.clone());
+        return Ok(());
+    }
+
+    let Some(value) = array.get_cloned(key.clone()) else {
+        return Ok(());
+    };
+    let Value::Array(mut child) = value else {
+        return Err(NativeRequestStateOperationStatus::UnsupportedKeyedValue);
+    };
+    request_state_unset_path_value(&mut child, rest)?;
+    array.insert(key.clone(), Value::Array(child));
+    Ok(())
+}
+
+unsafe fn native_abi_request_state_key_path(
+    key_ptrs: *const *const u8,
+    key_lens: *const usize,
+    key_count: usize,
+) -> Option<Vec<ArrayKey>> {
+    if key_count == 0 || key_ptrs.is_null() || key_lens.is_null() {
+        return None;
+    }
+
+    let key_ptrs = unsafe { std::slice::from_raw_parts(key_ptrs, key_count) };
+    let key_lens = unsafe { std::slice::from_raw_parts(key_lens, key_count) };
+    let mut keys = Vec::with_capacity(key_count);
+    for (ptr, len) in key_ptrs.iter().zip(key_lens.iter()) {
+        let bytes = unsafe { native_abi_bytes(*ptr, *len) }?;
+        keys.push(request_state_array_key(bytes)?);
+    }
+    Some(keys)
+}
+
 fn request_state_lossless_float_key_bytes(value: f64) -> Option<Vec<u8>> {
     if !value.is_finite() || value.fract() != 0.0 {
         return None;
@@ -3720,6 +4086,43 @@ impl<'a> NativeRequestStateOperation<'a> {
         unsafe { Self::bag(handle, bag_ptr, bag_len) }
     }
 
+    unsafe fn from_path_abi(
+        handle: NativeRequestStateHandle,
+        operation_kind: NativeRequestStateOperationKind,
+        bag_ptr: *const u8,
+        bag_len: usize,
+        key_ptrs: *const *const u8,
+        key_lens: *const usize,
+        key_count: usize,
+        key_status: u8,
+    ) -> Result<Self, NativeRequestStateOperationStatus> {
+        if !operation_kind.uses_keyed_scalar_snapshot() {
+            return Err(NativeRequestStateOperationStatus::InvalidAbi);
+        }
+        let key_status = NativeRequestStateOperationStatus::from_abi_tag(key_status)
+            .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+        if key_status != NativeRequestStateOperationStatus::Ok {
+            return Err(key_status);
+        }
+        let request_state =
+            unsafe { handle.ptr.as_ref() }.ok_or(NativeRequestStateOperationStatus::NullState)?;
+        let bag = unsafe { native_abi_bytes(bag_ptr, bag_len) }
+            .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+        let bag = NativeRequestStateBag::from_abi_bytes(bag)
+            .ok_or(NativeRequestStateOperationStatus::UnknownBag)?;
+        if !bag.supports_keyed_scalar_snapshot() {
+            return Err(NativeRequestStateOperationStatus::UnsupportedKeyedBag);
+        }
+        let keys = unsafe { native_abi_request_state_key_path(key_ptrs, key_lens, key_count) }
+            .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+
+        Ok(Self::KeyPath {
+            request_state,
+            bag,
+            keys,
+        })
+    }
+
     unsafe fn keyed(
         handle: NativeRequestStateHandle,
         bag_ptr: *const u8,
@@ -3772,7 +4175,19 @@ impl<'a> NativeRequestStateOperation<'a> {
                 bag,
                 key,
             } => request_state.superglobal_value(*bag, key),
-            Self::Bag { .. } => None,
+            Self::KeyPath { .. } | Self::Bag { .. } => None,
+        }
+    }
+
+    fn cloned_path_value(&self) -> Result<Option<Value>, NativeRequestStateOperationStatus> {
+        match self {
+            Self::Keyed { .. } => Ok(self.value()),
+            Self::KeyPath {
+                request_state,
+                bag,
+                keys,
+            } => request_state.superglobal_path_value(*bag, keys),
+            Self::Bag { .. } => Ok(None),
         }
     }
 
@@ -3783,6 +4198,11 @@ impl<'a> NativeRequestStateOperation<'a> {
                 bag,
                 key,
             } => request_state.superglobal_runtime_value(*bag, key),
+            Self::KeyPath { .. } => self
+                .cloned_path_value()
+                .ok()
+                .flatten()
+                .unwrap_or(Value::Null),
             Self::Bag { .. } => Value::Null,
         }
     }
@@ -3790,17 +4210,19 @@ impl<'a> NativeRequestStateOperation<'a> {
     fn array(&self) -> PhpArray {
         match self {
             Self::Bag { request_state, bag } => request_state.superglobal_array(*bag),
-            Self::Keyed { .. } => PhpArray::new(),
+            Self::Keyed { .. } | Self::KeyPath { .. } => PhpArray::new(),
         }
     }
 
     fn is_set(&self) -> bool {
-        self.value()
+        self.cloned_path_value()
+            .ok()
+            .flatten()
             .is_some_and(|value| !matches!(value, Value::Null))
     }
 
     fn exists(&self) -> bool {
-        self.value().is_some()
+        self.cloned_path_value().ok().flatten().is_some()
     }
 
     fn bag_is_set(&self) -> bool {
@@ -3809,7 +4231,11 @@ impl<'a> NativeRequestStateOperation<'a> {
 
     fn status(&self) -> NativeRequestStateOperationStatus {
         match self {
-            Self::Keyed { .. } if !self.exists() => NativeRequestStateOperationStatus::MissingKey,
+            Self::Keyed { .. } | Self::KeyPath { .. } => match self.cloned_path_value() {
+                Ok(Some(_)) => NativeRequestStateOperationStatus::Ok,
+                Ok(None) => NativeRequestStateOperationStatus::MissingKey,
+                Err(status) => status,
+            },
             _ => NativeRequestStateOperationStatus::Ok,
         }
     }
@@ -3835,6 +4261,118 @@ impl<'a> NativeRequestStateOperation<'a> {
             NativeRequestStateOperationKind::BagPresence => {
                 NativeRequestStateOperationResult::bag_presence(self.bag_is_set(), status)
             }
+        }
+    }
+}
+
+impl<'a> NativeRequestStateMutation<'a> {
+    unsafe fn from_keyed_abi(
+        handle: NativeRequestStateHandle,
+        bag_ptr: *const u8,
+        bag_len: usize,
+        key_ptr: *const u8,
+        key_len: usize,
+        key_status: u8,
+    ) -> Result<Self, NativeRequestStateOperationStatus> {
+        let key_status = NativeRequestStateOperationStatus::from_abi_tag(key_status)
+            .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+        if key_status != NativeRequestStateOperationStatus::Ok {
+            return Err(key_status);
+        }
+        let request_state =
+            unsafe { handle.ptr.as_mut() }.ok_or(NativeRequestStateOperationStatus::NullState)?;
+        let bag = unsafe { native_abi_bytes(bag_ptr, bag_len) }
+            .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+        let key = unsafe { native_abi_bytes(key_ptr, key_len) }
+            .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+        let bag = NativeRequestStateBag::from_abi_bytes(bag)
+            .ok_or(NativeRequestStateOperationStatus::UnknownBag)?;
+        let key =
+            request_state_array_key(key).ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+
+        Ok(Self::Keyed {
+            request_state,
+            bag,
+            key,
+        })
+    }
+
+    unsafe fn from_path_abi(
+        handle: NativeRequestStateHandle,
+        bag_ptr: *const u8,
+        bag_len: usize,
+        key_ptrs: *const *const u8,
+        key_lens: *const usize,
+        key_count: usize,
+        key_status: u8,
+    ) -> Result<Self, NativeRequestStateOperationStatus> {
+        let key_status = NativeRequestStateOperationStatus::from_abi_tag(key_status)
+            .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+        if key_status != NativeRequestStateOperationStatus::Ok {
+            return Err(key_status);
+        }
+        let request_state =
+            unsafe { handle.ptr.as_mut() }.ok_or(NativeRequestStateOperationStatus::NullState)?;
+        let bag = unsafe { native_abi_bytes(bag_ptr, bag_len) }
+            .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+        let bag = NativeRequestStateBag::from_abi_bytes(bag)
+            .ok_or(NativeRequestStateOperationStatus::UnknownBag)?;
+        let keys = unsafe { native_abi_request_state_key_path(key_ptrs, key_lens, key_count) }
+            .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+
+        Ok(Self::KeyPath {
+            request_state,
+            bag,
+            keys,
+        })
+    }
+
+    unsafe fn apply(
+        self,
+        mutation_kind: NativeRequestStateMutationKind,
+        value: NativeValueHandle,
+    ) -> Result<NativeRequestStateOperationResult, NativeRequestStateOperationStatus> {
+        match (self, mutation_kind) {
+            (
+                Self::Keyed {
+                    request_state,
+                    bag,
+                    key,
+                },
+                NativeRequestStateMutationKind::Write,
+            ) => {
+                let value = unsafe { value.as_ref() }
+                    .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+                Ok(request_state.write_superglobal_key(bag, key, value.clone()))
+            }
+            (
+                Self::KeyPath {
+                    request_state,
+                    bag,
+                    keys,
+                },
+                NativeRequestStateMutationKind::Write,
+            ) => {
+                let value = unsafe { value.as_ref() }
+                    .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+                Ok(request_state.write_superglobal_path(bag, &keys, value.clone()))
+            }
+            (
+                Self::Keyed {
+                    request_state,
+                    bag,
+                    key,
+                },
+                NativeRequestStateMutationKind::Unset,
+            ) => Ok(request_state.unset_superglobal_key(bag, key)),
+            (
+                Self::KeyPath {
+                    request_state,
+                    bag,
+                    keys,
+                },
+                NativeRequestStateMutationKind::Unset,
+            ) => Ok(request_state.unset_superglobal_path(bag, &keys)),
         }
     }
 }
@@ -16850,6 +17388,87 @@ mod tests {
         }
     }
 
+    unsafe fn request_state_path_operation_for_test(
+        request_state: NativeRequestStateHandle,
+        operation_kind: u8,
+        bag: &[u8],
+        keys: &[&[u8]],
+    ) -> NativeRequestStateOperationResult {
+        let key_ptrs: Vec<*const u8> = keys.iter().map(|key| key.as_ptr()).collect();
+        let key_lens: Vec<usize> = keys.iter().map(|key| key.len()).collect();
+        unsafe {
+            phpc_native_request_state_superglobal_path_operation(
+                request_state,
+                operation_kind,
+                bag.as_ptr(),
+                bag.len(),
+                key_ptrs.as_ptr(),
+                key_lens.as_ptr(),
+                keys.len(),
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+            )
+        }
+    }
+
+    unsafe fn request_state_keyed_mutation_for_test(
+        request_state: NativeRequestStateHandle,
+        mutation_kind: u8,
+        bag: &[u8],
+        key: &[u8],
+        value: NativeValueHandle,
+    ) -> NativeRequestStateOperationResult {
+        unsafe {
+            phpc_native_request_state_superglobal_keyed_mutation_operation(
+                request_state,
+                mutation_kind,
+                bag.as_ptr(),
+                bag.len(),
+                key.as_ptr(),
+                key.len(),
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+                value,
+            )
+        }
+    }
+
+    unsafe fn request_state_path_mutation_for_test(
+        request_state: NativeRequestStateHandle,
+        mutation_kind: u8,
+        bag: &[u8],
+        keys: &[&[u8]],
+        value: NativeValueHandle,
+    ) -> NativeRequestStateOperationResult {
+        let key_ptrs: Vec<*const u8> = keys.iter().map(|key| key.as_ptr()).collect();
+        let key_lens: Vec<usize> = keys.iter().map(|key| key.len()).collect();
+        unsafe {
+            phpc_native_request_state_superglobal_path_mutation_operation(
+                request_state,
+                mutation_kind,
+                bag.as_ptr(),
+                bag.len(),
+                key_ptrs.as_ptr(),
+                key_lens.as_ptr(),
+                keys.len(),
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+                value,
+            )
+        }
+    }
+
+    fn assert_request_state_presence_result_for_test(
+        result: NativeRequestStateOperationResult,
+        expected_is_set: u8,
+        expected_exists: u8,
+        expected_status: u8,
+    ) {
+        assert_eq!(result.result_kind, PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE);
+        assert_eq!(result.is_set, expected_is_set);
+        assert_eq!(result.exists, expected_exists);
+        assert_eq!(result.status, expected_status);
+        assert!(result.value.is_null());
+        assert!(result.array.is_null());
+    }
+
     #[test]
     fn native_request_state_operation_kind_maps_shared_abi_contract() {
         for (
@@ -17157,6 +17776,367 @@ mod tests {
         unsafe { phpc_native_value_free(array_value) };
         unsafe { phpc_native_value_free(text_value) };
         unsafe { phpc_native_value_free(null_value) };
+        unsafe { phpc_native_request_state_free(request_state) };
+    }
+
+    #[test]
+    fn native_request_state_keyed_mutation_updates_multiple_superglobal_bags() {
+        let request_state = phpc_native_request_state_empty();
+        let get_key = b"cart-id";
+        let get_value = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
+        let get_write = unsafe {
+            request_state_keyed_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_GET",
+                get_key,
+                get_value,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            get_write,
+            1,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+
+        let get_read = unsafe {
+            request_state_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                b"_GET",
+                Some(get_key),
+            )
+        };
+        assert_eq!(get_read.result_kind, PHPC_NATIVE_REQUEST_STATE_OP_VALUE);
+        assert_eq!(get_read.exists, 1);
+        assert_eq!(get_read.is_set, 1);
+        assert_eq!(
+            unsafe { get_read.value.as_ref() },
+            Some(&Value::String("A\0B".to_string()))
+        );
+        unsafe { phpc_native_request_state_operation_result_free(get_read) };
+
+        let files_key = b"upload";
+        let files_value = NativeValueHandle::from_value(Value::Int(7));
+        let files_write = unsafe {
+            request_state_keyed_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_FILES",
+                files_key,
+                files_value,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            files_write,
+            1,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        let files_array = unsafe {
+            request_state_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_ARRAY,
+                b"_FILES",
+                None,
+            )
+        };
+        assert_eq!(files_array.result_kind, PHPC_NATIVE_REQUEST_STATE_OP_ARRAY);
+        let files_array_ref =
+            unsafe { files_array.array.as_ref() }.expect("files array result is owned");
+        assert_eq!(files_array_ref.value.len(), 1);
+        assert_eq!(
+            files_array_ref.value.get_cloned(ArrayKey::string("upload")),
+            Some(Value::Int(7))
+        );
+        unsafe { phpc_native_request_state_operation_result_free(files_array) };
+
+        let get_unset = unsafe {
+            request_state_keyed_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET,
+                b"_GET",
+                get_key,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            get_unset,
+            0,
+            0,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        let get_presence = unsafe {
+            request_state_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE,
+                b"_GET",
+                Some(get_key),
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            get_presence,
+            0,
+            0,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY,
+        );
+
+        let invalid_write = unsafe {
+            request_state_keyed_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_POST",
+                b"missing-value",
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(invalid_write.result_kind, 0);
+        assert_eq!(
+            invalid_write.status,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_ABI
+        );
+
+        let invalid_kind = unsafe {
+            request_state_keyed_mutation_for_test(
+                request_state,
+                99,
+                b"_POST",
+                b"slot",
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(invalid_kind.result_kind, 0);
+        assert_eq!(
+            invalid_kind.status,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_OPERATION
+        );
+
+        unsafe { phpc_native_value_free(files_value) };
+        unsafe { phpc_native_value_free(get_value) };
+        unsafe { phpc_native_request_state_free(request_state) };
+    }
+
+    #[test]
+    fn native_request_state_path_mutation_shares_nested_key_semantics() {
+        let request_state = phpc_native_request_state_empty();
+        let nested_keys: [&[u8]; 3] = [b"cart", b"item", b"name"];
+        let nested_value = NativeValueHandle::from_value(Value::String("P\0Q".to_string()));
+        let nested_write = unsafe {
+            request_state_path_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_POST",
+                &nested_keys,
+                nested_value,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            nested_write,
+            1,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        let nested_read = unsafe {
+            request_state_path_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                b"_POST",
+                &nested_keys,
+            )
+        };
+        assert_eq!(nested_read.result_kind, PHPC_NATIVE_REQUEST_STATE_OP_VALUE);
+        assert_eq!(nested_read.exists, 1);
+        assert_eq!(nested_read.is_set, 1);
+        assert_eq!(
+            unsafe { nested_read.value.as_ref() },
+            Some(&Value::String("P\0Q".to_string()))
+        );
+        unsafe { phpc_native_request_state_operation_result_free(nested_read) };
+
+        let null_root = NativeValueHandle::from_value(Value::Null);
+        let null_root_write = unsafe {
+            request_state_keyed_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_REQUEST",
+                b"root",
+                null_root,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            null_root_write,
+            0,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        let null_path_value = NativeValueHandle::from_value(Value::Int(12));
+        let null_path_keys: [&[u8]; 2] = [b"root", b"leaf"];
+        let null_path_write = unsafe {
+            request_state_path_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_REQUEST",
+                &null_path_keys,
+                null_path_value,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            null_path_write,
+            1,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        let null_path_read = unsafe {
+            request_state_path_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                b"_REQUEST",
+                &null_path_keys,
+            )
+        };
+        assert_eq!(
+            unsafe { null_path_read.value.as_ref() },
+            Some(&Value::Int(12))
+        );
+        unsafe { phpc_native_request_state_operation_result_free(null_path_read) };
+
+        let false_root = NativeValueHandle::from_value(Value::Bool(false));
+        let false_root_write = unsafe {
+            request_state_keyed_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_COOKIE",
+                b"root",
+                false_root,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            false_root_write,
+            1,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        let false_path_value = NativeValueHandle::from_value(Value::Bool(true));
+        let false_path_keys: [&[u8]; 2] = [b"root", b"enabled"];
+        let false_path_write = unsafe {
+            request_state_path_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_COOKIE",
+                &false_path_keys,
+                false_path_value,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            false_path_write,
+            1,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        let false_path_read = unsafe {
+            request_state_path_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                b"_COOKIE",
+                &false_path_keys,
+            )
+        };
+        assert_eq!(
+            unsafe { false_path_read.value.as_ref() },
+            Some(&Value::Bool(true))
+        );
+        unsafe { phpc_native_request_state_operation_result_free(false_path_read) };
+
+        let scalar_root = NativeValueHandle::from_value(Value::String("x".to_string()));
+        let scalar_root_write = unsafe {
+            request_state_keyed_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_GET",
+                b"scalar",
+                scalar_root,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            scalar_root_write,
+            1,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        let scalar_path_value = NativeValueHandle::from_value(Value::Int(99));
+        let scalar_path_keys: [&[u8]; 2] = [b"scalar", b"child"];
+        let scalar_path_write = unsafe {
+            request_state_path_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_GET",
+                &scalar_path_keys,
+                scalar_path_value,
+            )
+        };
+        assert_eq!(scalar_path_write.result_kind, 0);
+        assert_eq!(
+            scalar_path_write.status,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEYED_VALUE
+        );
+
+        let nested_unset = unsafe {
+            request_state_path_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET,
+                b"_POST",
+                &nested_keys,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            nested_unset,
+            0,
+            0,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        let nested_presence = unsafe {
+            request_state_path_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE,
+                b"_POST",
+                &nested_keys,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            nested_presence,
+            0,
+            0,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY,
+        );
+
+        let invalid_path = unsafe {
+            phpc_native_request_state_superglobal_path_mutation_operation(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET,
+                b"_POST".as_ptr(),
+                b"_POST".len(),
+                ptr::null(),
+                ptr::null(),
+                0,
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+                NativeValueHandle::null(),
+            )
+        };
+        assert_eq!(invalid_path.result_kind, 0);
+        assert_eq!(
+            invalid_path.status,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_ABI
+        );
+
+        unsafe { phpc_native_value_free(scalar_path_value) };
+        unsafe { phpc_native_value_free(scalar_root) };
+        unsafe { phpc_native_value_free(false_path_value) };
+        unsafe { phpc_native_value_free(false_root) };
+        unsafe { phpc_native_value_free(null_path_value) };
+        unsafe { phpc_native_value_free(null_root) };
+        unsafe { phpc_native_value_free(nested_value) };
         unsafe { phpc_native_request_state_free(request_state) };
     }
 
@@ -18027,6 +19007,10 @@ mod tests {
             (
                 NativeRequestStateOperationStatus::UnsupportedKeyCoercion,
                 "native request-state operation failed: unsupported PHP key coercion",
+            ),
+            (
+                NativeRequestStateOperationStatus::UnsupportedKeyedValue,
+                "native request-state operation failed: keyed request-state value is not array-accessible",
             ),
         ] {
             let result = NativeRequestStateOperationResult::unsupported(status);
