@@ -212,7 +212,7 @@ fn native_executable_c_source_routes_string_predicates_through_runtime_contract(
 #[test]
 fn native_executable_c_source_routes_string_int_builtins_through_runtime_contract() {
     let program = parse(
-        "<?php\n$payload = \"A\0B\";\n$repeated = \"A\0BA\0B\";\necho strcasecmp($payload, \"a\0b\");\necho substr_count($repeated, $payload, 0, 6);\necho substr_count(42042, 42);\necho ord($payload);\necho ord(42042);\necho crc32(\"123456789\");\necho crc32($payload);\necho crc32(null);\n",
+        "<?php\n$payload = \"A\0B\";\n$repeated = \"A\0BA\0B\";\necho strcasecmp($payload, \"a\0b\");\necho strcmp($payload, \"a\0b\");\necho strncmp($payload, \"A\0C\", 3);\necho strncasecmp($payload, \"a\0c\", \"2\");\necho substr_count($repeated, $payload, 0, 6);\necho substr_count(42042, 42);\necho ord($payload);\necho ord(42042);\necho crc32(\"123456789\");\necho crc32($payload);\necho crc32(null);\n",
     )
     .unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -225,29 +225,32 @@ fn native_executable_c_source_routes_string_int_builtins_through_runtime_contrac
         source
             .matches(" = (long long)phpc_native_value_string_int_operation_with_diagnostic(")
             .count(),
-        8,
+        11,
         "{source}"
     );
     assert_eq!(
         source
             .matches("phpc_NativeDiagnosticHandle string_int_diagnostic_")
             .count(),
-        8,
+        11,
         "{source}"
     );
     assert!(
         source.contains(", 0, &string_int_diagnostic_")
             && source.contains(", 1, &string_int_diagnostic_")
+            && source.contains(", 2, &string_int_diagnostic_")
+            && source.contains(", 3, &string_int_diagnostic_")
+            && source.contains(", 4, &string_int_diagnostic_")
             && source.contains(", 5, &string_int_diagnostic_")
             && source.contains(", 6, &string_int_diagnostic_"),
-        "case compare, substring count, ord, and crc32 should share the tagged string-int ABI:\n{source}"
+        "byte compare, prefix compare, substring count, ord, and crc32 should share the tagged string-int ABI:\n{source}"
     );
     assert_eq!(
         source
             .matches(" = (long long)phpc_native_value_to_int64_with_diagnostic(")
             .count(),
-        2,
-        "substr_count offset and length should share the native int conversion ABI:\n{source}"
+        4,
+        "prefix compare lengths and substr_count offset/length should share the native int conversion ABI:\n{source}"
     );
     assert!(
         source.contains("phpc_native_value_from_scalar")
@@ -1124,7 +1127,7 @@ fn emit_exe_links_and_runs_string_int_operation_program() {
     let _ = fs::remove_file(&source_path);
     fs::write(
         &source_path,
-        "<?php\n$payload = \"A\0B\";\n$repeated = \"A\0BA\0B\";\necho strcasecmp($payload, \"a\0b\");\necho \"\\n\";\necho substr_count($repeated, $payload, 0, 6);\necho \"\\n\";\necho substr_count(42042, 42);\necho \"\\n\";\necho ord($payload);\necho \"\\n\";\necho ord(42042);\necho \"\\n\";\necho crc32(\"123456789\");\necho \"\\n\";\necho crc32($payload);\necho \"\\n\";\necho crc32(null);\necho \"\\n\";\n",
+        "<?php\n$payload = \"A\0B\";\n$repeated = \"A\0BA\0B\";\necho strcasecmp($payload, \"a\0b\");\necho \"\\n\";\necho strcmp($payload, \"a\0b\");\necho \"\\n\";\necho strncmp($payload, \"A\0C\", 3);\necho \"\\n\";\necho strncasecmp($payload, \"a\0c\", \"2\");\necho \"\\n\";\necho substr_count($repeated, $payload, 0, 6);\necho \"\\n\";\necho substr_count(42042, 42);\necho \"\\n\";\necho ord($payload);\necho \"\\n\";\necho ord(42042);\necho \"\\n\";\necho crc32(\"123456789\");\necho \"\\n\";\necho crc32($payload);\necho \"\\n\";\necho crc32(null);\necho \"\\n\";\n",
     )
     .expect("native string-int source fixture can be written");
 
@@ -1157,7 +1160,7 @@ fn emit_exe_links_and_runs_string_int_operation_program() {
     assert!(run.status.success(), "native executable failed");
     assert_eq!(
         String::from_utf8_lossy(&run.stdout),
-        "0\n2\n2\n65\n52\n3421780262\n382410329\n0\n"
+        "0\n-1\n-1\n0\n2\n2\n65\n52\n3421780262\n382410329\n0\n"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 

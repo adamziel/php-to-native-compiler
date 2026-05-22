@@ -129,6 +129,9 @@ pub enum NativeStringPredicate {
 pub enum NativeStringIntOperation {
     CaseCompare = 0,
     SubstrCount = 1,
+    ByteCompare = 2,
+    BytePrefixCompare = 3,
+    CasePrefixCompare = 4,
     Ordinal = 5,
     Crc32 = 6,
 }
@@ -3769,7 +3772,9 @@ unsafe fn native_value_string_predicate(
 /// non-null, it must point to writable storage for one `NativeDiagnosticHandle`.
 /// On failure the helper stores a diagnostic handle that the caller owns and
 /// must release with `phpc_native_diagnostic_free`. Operation `0` returns
-/// `strcasecmp(subject, operand)` as -1, 0, or 1; operation `1` returns
+/// `strcasecmp(subject, operand)` as -1, 0, or 1; operation `2` returns
+/// `strcmp(subject, operand)`; operations `3` and `4` return `strncmp()` and
+/// `strncasecmp()` over `length`; operation `1` returns
 /// `substr_count(subject, operand[, offset[, length]])`; operation `5` returns
 /// `ord(subject)`; operation `6` returns `crc32(subject)`.
 #[no_mangle]
@@ -3821,6 +3826,36 @@ unsafe fn native_value_string_int_operation(
             let left = unsafe { native_value_to_string_bytes(subject) }?;
             let right = unsafe { native_value_to_string_bytes(operand) }?;
             Ok(ascii_case_insensitive_compare_bytes(&left, &right))
+        }
+        value if value == NativeStringIntOperation::ByteCompare as u8 => {
+            if flags != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native string int operation failed: strcmp does not accept length flags",
+                ));
+            }
+            let left = unsafe { native_value_to_string_bytes(subject) }?;
+            let right = unsafe { native_value_to_string_bytes(operand) }?;
+            Ok(byte_compare_bytes(&left, &right))
+        }
+        value if value == NativeStringIntOperation::BytePrefixCompare as u8 => {
+            if flags != NATIVE_STRING_INT_HAS_LENGTH {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native string int operation failed: strncmp requires the length flag",
+                ));
+            }
+            let left = unsafe { native_value_to_string_bytes(subject) }?;
+            let right = unsafe { native_value_to_string_bytes(operand) }?;
+            php_strncmp_bytes(&left, &right, length)
+        }
+        value if value == NativeStringIntOperation::CasePrefixCompare as u8 => {
+            if flags != NATIVE_STRING_INT_HAS_LENGTH {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native string int operation failed: strncasecmp requires the length flag",
+                ));
+            }
+            let left = unsafe { native_value_to_string_bytes(subject) }?;
+            let right = unsafe { native_value_to_string_bytes(operand) }?;
+            php_strncasecmp_bytes(&left, &right, length)
         }
         value if value == NativeStringIntOperation::SubstrCount as u8 => {
             let haystack = unsafe { native_value_to_string_bytes(subject) }?;
@@ -3876,6 +3911,40 @@ fn ascii_case_insensitive_compare_bytes(left: &[u8], right: &[u8]) -> i64 {
         Ordering::Equal => 0,
         Ordering::Greater => 1,
     }
+}
+
+fn byte_compare_bytes(left: &[u8], right: &[u8]) -> i64 {
+    match left.cmp(right) {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
+    }
+}
+
+fn php_strncmp_bytes(left: &[u8], right: &[u8], length: i64) -> RuntimeResult<i64> {
+    if length < 0 {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string int operation failed: strncmp length must be non-negative",
+        ));
+    }
+
+    let length = usize::try_from(length).unwrap_or(usize::MAX);
+    let left = &left[..left.len().min(length)];
+    let right = &right[..right.len().min(length)];
+    Ok(byte_compare_bytes(left, right))
+}
+
+fn php_strncasecmp_bytes(left: &[u8], right: &[u8], length: i64) -> RuntimeResult<i64> {
+    if length < 0 {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string int operation failed: strncasecmp length must be non-negative",
+        ));
+    }
+
+    let length = usize::try_from(length).unwrap_or(usize::MAX);
+    let left = &left[..left.len().min(length)];
+    let right = &right[..right.len().min(length)];
+    Ok(ascii_case_insensitive_compare_bytes(left, right))
 }
 
 fn php_strrev_bytes(bytes: &[u8]) -> Vec<u8> {
@@ -17587,6 +17656,48 @@ mod tests {
         assert_eq!(case_compare, 0);
         assert!(diagnostic.is_null());
 
+        let byte_compare = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                payload,
+                folded,
+                0,
+                0,
+                0,
+                NativeStringIntOperation::ByteCompare as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(byte_compare, -1);
+        assert!(diagnostic.is_null());
+
+        let byte_prefix_compare = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                payload,
+                folded,
+                0,
+                3,
+                NATIVE_STRING_INT_HAS_LENGTH,
+                NativeStringIntOperation::BytePrefixCompare as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(byte_prefix_compare, -1);
+        assert!(diagnostic.is_null());
+
+        let case_prefix_compare = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                payload,
+                folded,
+                0,
+                3,
+                NATIVE_STRING_INT_HAS_LENGTH,
+                NativeStringIntOperation::CasePrefixCompare as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(case_prefix_compare, 0);
+        assert!(diagnostic.is_null());
+
         let repeated_count = unsafe {
             phpc_native_value_string_int_operation_with_diagnostic(
                 repeated,
@@ -17649,6 +17760,24 @@ mod tests {
         assert_eq!(
             native_diagnostic_message_for_test(diagnostic),
             "invalid string conversion: native string int operation failed: ord/crc32 do not accept length flags"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let negative_length = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                payload,
+                folded,
+                0,
+                -1,
+                NATIVE_STRING_INT_HAS_LENGTH,
+                NativeStringIntOperation::BytePrefixCompare as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(negative_length, 0);
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string int operation failed: strncmp length must be non-negative"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
 

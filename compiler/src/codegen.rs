@@ -27,8 +27,8 @@ const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects 
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects str_starts_with(), str_ends_with(), and str_contains() until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native predicate diagnostics exist; generated-native C routes lowerable predicate operands through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
-const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lowering rejects strcasecmp(), substr_count(), ord(), and crc32() until native PHP string conversion, byte-preserving argument/result ownership, warning recovery, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable string-int operands through the shared runtime contract";
-const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int builtin lowering rejects strcasecmp(), substr_count(), ord(), and crc32() forms outside the reusable native string-int operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
+const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), substr_count(), ord(), and crc32() until native PHP string conversion, byte-preserving argument/result ownership, warning recovery, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable string-int operands through the shared runtime contract";
+const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), substr_count(), ord(), and crc32() forms outside the reusable native string-int operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_STRING_DISTANCE_OPERATION_REJECTION: &str = "LLVM string-distance builtin lowering rejects levenshtein() and similar_text() until native PHP value-to-string byte conversion, optional cost conversion, references/copy-on-write, by-reference percent output, and exact native diagnostics exist; generated-native C routes lowerable string-distance operands through the shared runtime contract";
 const ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION: &str = "assembly string-distance builtin lowering rejects levenshtein() and similar_text() forms outside the reusable native string-distance operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_STRING_RESULT_OPERATION_REJECTION: &str = "LLVM string-result builtin lowering rejects strrev(), str_rot13(), bin2hex(), strtolower(), strtoupper(), ucfirst(), and lcfirst() until native PHP string result ownership, byte-preserving conversion, diagnostics, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable unary string-result operands through the shared runtime contract";
@@ -7386,6 +7386,15 @@ impl CGenerator {
             NativeStringIntOperation::CaseCompare if args.len() == 2 => {
                 (&args[0], Some(&args[1]), None, None, false)
             }
+            NativeStringIntOperation::ByteCompare if args.len() == 2 => {
+                (&args[0], Some(&args[1]), None, None, false)
+            }
+            NativeStringIntOperation::BytePrefixCompare
+            | NativeStringIntOperation::CasePrefixCompare
+                if args.len() == 3 =>
+            {
+                (&args[0], Some(&args[1]), None, Some(&args[2]), true)
+            }
             NativeStringIntOperation::SubstrCount if (2..=4).contains(&args.len()) => (
                 &args[0],
                 Some(&args[1]),
@@ -12093,6 +12102,9 @@ fn native_string_predicate_for_name(name: &str) -> Option<NativeStringPredicate>
 fn native_string_int_operation_for_name(name: &str) -> Option<NativeStringIntOperation> {
     match name.to_ascii_lowercase().as_str() {
         "strcasecmp" => Some(NativeStringIntOperation::CaseCompare),
+        "strcmp" => Some(NativeStringIntOperation::ByteCompare),
+        "strncmp" => Some(NativeStringIntOperation::BytePrefixCompare),
+        "strncasecmp" => Some(NativeStringIntOperation::CasePrefixCompare),
         "substr_count" => Some(NativeStringIntOperation::SubstrCount),
         "ord" => Some(NativeStringIntOperation::Ordinal),
         "crc32" => Some(NativeStringIntOperation::Crc32),
@@ -12366,6 +12378,9 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "ltrim"
             | "rtrim"
             | "strcasecmp"
+            | "strcmp"
+            | "strncmp"
+            | "strncasecmp"
             | "str_contains"
             | "str_starts_with"
             | "str_ends_with"
