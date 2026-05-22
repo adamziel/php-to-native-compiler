@@ -2149,6 +2149,15 @@ fn request_superglobal_root_name(expr: &Expr) -> Option<&str> {
     }
 }
 
+fn request_superglobal_root_assign_target_name(target: &AssignTarget) -> Option<&str> {
+    match target {
+        AssignTarget::Variable { name, .. } if is_request_superglobal_name(name) => {
+            Some(name.as_str())
+        }
+        _ => None,
+    }
+}
+
 fn request_superglobal_expr_span(expr: &Expr) -> Option<Span> {
     match expr {
         Expr::Variable(name, span) if is_request_superglobal_name(name) => Some(*span),
@@ -7581,6 +7590,9 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_request_state_operation_result_free(phpc_NativeRequestStateOperationResult result);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_request_state_superglobal_snapshot_value(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag);\n");
                 output.push_str("extern _Bool phpc_native_request_state_superglobal_replace_value_with_diagnostic(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_array_lvalue_helpers || self.uses_native_symbol_table_helpers {
+                    output.push_str("extern _Bool phpc_native_request_state_superglobal_replace_reference_with_diagnostic(phpc_NativeRequestStateHandle request_state, phpc_NativeStringHandle bag, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
                 output.push_str(
                     "extern void phpc_native_request_state_free(phpc_NativeRequestStateHandle request_state);\n",
                 );
@@ -8183,6 +8195,61 @@ impl CGenerator {
         self.body
             .push(format!("phpc_native_reference_free({source_ref});"));
         self.body.extend(target.cleanup_after_use);
+        Ok(true)
+    }
+
+    fn emit_request_superglobal_root_reference_assignment(
+        &mut self,
+        target: &AssignTarget,
+        source: &ReferenceSource,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some(request_root) = request_superglobal_root_assign_target_name(target) else {
+            return Ok(false);
+        };
+        let Some(source_path) = self.c_reference_path_for_source(source) else {
+            return Ok(false);
+        };
+        self.reject_unsupported_symbol_reference_path_root(&source_path, span)?;
+
+        let table = self.ensure_globals_symbol_table(failure_cleanup, span)?;
+        let source = self.materialize_c_reference_path(source_path, failure_cleanup)?;
+        let source_cleanup = c_cleanup_sequence(&source.cleanup_after_use);
+        let source_ref = self.next_native_name("request_root_reference");
+        let source_append = if source.append { "true" } else { "false" };
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {source_ref} = phpc_native_symbol_table_reference_for_path({table}, {}, {}, {}, {}, {source_append});",
+            source.name_bytes, source.name_len, source.keys, source.key_count
+        ));
+        let source_error_exit =
+            self.native_error_exit(&format!("{source_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({source_ref}.ptr == NULL) {{ {source_error_exit} }}"
+        ));
+        self.body.extend(source.cleanup_after_use);
+
+        let request_state = self.ensure_native_request_state_handle();
+        let bag = self.emit_request_superglobal_bag_handle(request_root);
+        let diagnostic = self.next_native_name("request_root_reference_diagnostic");
+        let replaced = self.next_native_name("request_root_reference_replaced");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "_Bool {replaced} = phpc_native_request_state_superglobal_replace_reference_with_diagnostic({request_state}, {bag}, {source_ref}, &{diagnostic});"
+        ));
+        let failure_cleanup = format!(
+            "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({bag}); phpc_native_reference_free({source_ref}); {failure_cleanup}"
+        );
+        let error_exit = self.native_error_exit(&failure_cleanup);
+        self.body
+            .push(format!("if (!{replaced}) {{ {error_exit} }}"));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.push(format!("phpc_native_string_free({bag});"));
+        self.body
+            .push(format!("phpc_native_reference_free({source_ref});"));
         Ok(true)
     }
 
@@ -9789,6 +9856,12 @@ impl CGenerator {
                 if let Some(operation) = native_reference_assignment_call_operation(target, source)
                 {
                     return Err(self.unsupported_call_operation(operation));
+                }
+
+                if self
+                    .emit_request_superglobal_root_reference_assignment(target, source, *span, "")?
+                {
+                    return Ok(());
                 }
 
                 if self.emit_c_symbol_path_reference_assignment(target, source, *span, "")? {
