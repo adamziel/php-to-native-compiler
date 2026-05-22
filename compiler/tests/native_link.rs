@@ -403,6 +403,8 @@ const ARRAY_LVALUE_NESTED_READ_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inne
 
 const ARRAY_LVALUE_COMPOUND_ASSIGNMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n$alt = \"alt\";\n$items = [$key => 2, $alt => 10, \"text\" => \"A\"];\n$out = [];\n$items[$key] += 3;\n$twenty = ($items[$alt] *= 2);\necho $twenty;\n$out[($items[$key] .= \"x\")] = ($items[$alt] -= 5);\necho \"|\", $out[\"5x\"], \"|\", $items[$alt], \"|\", $items[$key];\n";
 
+const ARRAY_LVALUE_INCREMENT_DECREMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n$float = \"float\";\n$items = [$key => 4, $float => 1.5, \"other\" => 9];\n$items[$key]++;\necho ++$items[$key], \"|\", $items[$key]--, \"|\", $items[$key], \"|\";\n$oldFloat = $items[$float]--;\necho $oldFloat, \"|\", $items[$float], \"|\";\n$out = [];\n$out[++$items[$key]] = $items[$key]--;\necho $out[6], \"|\", $items[$key];\n";
+
 const VALUE_OFFSET_MUTATION_ARRAY_APPEND_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$items[] = \"B\";\n$value = \"C\";\n$items[] = $value;\necho $items[\"seed\"], \"|\", $items[0], \"|\", $items[1], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$key = \"named\";\n$value = \"C\";\necho ($items[] = \"B\"), \"|\";\necho ($items[] = $value), \"|\";\necho ($items[$key] = \"D\"), \"|\";\necho $items[0], \"|\", $items[1], \"|\", $items[$key], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
@@ -761,6 +763,43 @@ fn native_executable_c_source_routes_array_lvalue_compound_assignments_through_r
     assert!(
         !body.contains("assembly mutation lowering rejects"),
         "lowerable array lvalue compound assignments should not fall through the blanket mutation blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_array_lvalue_increment_decrement_through_update_boundary() {
+    let program = parse(ARRAY_LVALUE_INCREMENT_DECREMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE"),
+        "increment/decrement should declare the lvalue update family:\n{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT"),
+        "increment/decrement should declare the operation tag:\n{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE")
+            .count()
+            >= 5,
+        "statement and expression increment/decrement forms should share the update family:\n{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_ARRAY_LVALUE_INCREMENT")
+            && body.contains("PHPC_NATIVE_ARRAY_LVALUE_DECREMENT")
+            && body.contains("PHPC_NATIVE_ARRAY_LVALUE_POSITION_PRE")
+            && body.contains("PHPC_NATIVE_ARRAY_LVALUE_POSITION_POST"),
+        "increment/decrement should carry operation and result-position tags:\n{source}"
+    );
+    assert!(
+        !body.contains(" = phpc_native_value_binary_result("),
+        "increment/decrement should not be lowered as an exact +1/-1 binary expression:\n{source}"
+    );
+    assert!(
+        !body.contains("assembly mutation lowering rejects"),
+        "lowerable array lvalue increment/decrement should not fall through the blanket mutation blocker:\n{source}"
     );
 }
 
@@ -2428,6 +2467,53 @@ fn emit_exe_links_and_runs_array_lvalue_compound_assignment_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"20|15|15|5x");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_lvalue_increment_decrement_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("array_lvalue_increment_decrement");
+    let source_path = native_link_output_path("array_lvalue_increment_decrement_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, ARRAY_LVALUE_INCREMENT_DECREMENT_SOURCE)
+        .expect("native array lvalue increment/decrement source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array lvalue increment/decrement source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"6|6|5|1.5|0.5|6|5");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

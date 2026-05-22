@@ -4,7 +4,8 @@ use std::process::{Command, Stdio};
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassMember, CompoundAssignOp, Expr, ForAction,
-    FunctionDecl, FunctionParam, Program, ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
+    FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, Program,
+    ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
@@ -157,6 +158,12 @@ const NATIVE_ARRAY_PATH_APPEND_TAG: u8 = 1;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE_TAG: u8 = 0;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET_TAG: u8 = 1;
 const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ_TAG: u8 = 2;
+const NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE_TAG: u8 = 3;
+const NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT_TAG: u8 = 0;
+const NATIVE_ARRAY_LVALUE_INCREMENT_TAG: u8 = 0;
+const NATIVE_ARRAY_LVALUE_DECREMENT_TAG: u8 = 1;
+const NATIVE_ARRAY_LVALUE_POSITION_PRE_TAG: u8 = 0;
+const NATIVE_ARRAY_LVALUE_POSITION_POST_TAG: u8 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeCallBackend {
@@ -685,6 +692,22 @@ fn native_array_lvalue_compound_binary_op_tag(op: CompoundAssignOp) -> &'static 
         CompoundAssignOp::BitwiseXor => "PHPC_NATIVE_VALUE_BINARY_BITWISE_XOR",
         CompoundAssignOp::ShiftLeft => "PHPC_NATIVE_VALUE_BINARY_SHIFT_LEFT",
         CompoundAssignOp::ShiftRight => "PHPC_NATIVE_VALUE_BINARY_SHIFT_RIGHT",
+    }
+}
+
+fn native_array_lvalue_increment_decrement_op_tag(op: IncrementDecrementOp) -> &'static str {
+    match op {
+        IncrementDecrementOp::Increment => "PHPC_NATIVE_ARRAY_LVALUE_INCREMENT",
+        IncrementDecrementOp::Decrement => "PHPC_NATIVE_ARRAY_LVALUE_DECREMENT",
+    }
+}
+
+fn native_array_lvalue_increment_decrement_position_tag(
+    position: IncrementDecrementPosition,
+) -> &'static str {
+    match position {
+        IncrementDecrementPosition::Pre => "PHPC_NATIVE_ARRAY_LVALUE_POSITION_PRE",
+        IncrementDecrementPosition::Post => "PHPC_NATIVE_ARRAY_LVALUE_POSITION_POST",
     }
 }
 
@@ -7060,6 +7083,24 @@ impl CGenerator {
                     output.push_str(&format!(
                         "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ {NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ_TAG}\n"
                     ));
+                    output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE {NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE_TAG}\n"
+                    ));
+                    output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT {NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT_TAG}\n"
+                    ));
+                    output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_LVALUE_INCREMENT {NATIVE_ARRAY_LVALUE_INCREMENT_TAG}\n"
+                    ));
+                    output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_LVALUE_DECREMENT {NATIVE_ARRAY_LVALUE_DECREMENT_TAG}\n"
+                    ));
+                    output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_LVALUE_POSITION_PRE {NATIVE_ARRAY_LVALUE_POSITION_PRE_TAG}\n"
+                    ));
+                    output.push_str(&format!(
+                        "#define PHPC_NATIVE_ARRAY_LVALUE_POSITION_POST {NATIVE_ARRAY_LVALUE_POSITION_POST_TAG}\n"
+                    ));
                 }
                 output.push_str("#define PHPC_NATIVE_VALUE_OPERATION_OK 0\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_UNARY_NEGATE 0\n");
@@ -7382,12 +7423,24 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Stmt::IncrementDecrement { target, span, .. } => {
+            Stmt::IncrementDecrement { target, op, span } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                if let Some(value) = self
+                    .materialize_array_lvalue_increment_decrement_result_for_target(
+                        target,
+                        *op,
+                        IncrementDecrementPosition::Pre,
+                        *span,
+                        "",
+                    )?
+                {
+                    self.body.extend(value.cleanup_after_use);
+                    return Ok(());
                 }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
@@ -7808,12 +7861,25 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Expr::IncrementDecrement { target, span, .. } => {
+            Expr::IncrementDecrement {
+                target,
+                op,
+                position,
+                span,
+            } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                if let Some(value) = self
+                    .materialize_array_lvalue_increment_decrement_result_for_target(
+                        target, *op, *position, *span, "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
                 }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
@@ -8996,6 +9062,75 @@ impl CGenerator {
         self.body.extend(path.cleanup_after_use);
 
         Ok(value)
+    }
+
+    fn materialize_array_lvalue_increment_decrement_result_for_target(
+        &mut self,
+        target: &AssignTarget,
+        op: IncrementDecrementOp,
+        position: IncrementDecrementPosition,
+        _span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some((handle, indices, span)) = self.native_array_lvalue_key_target_parts(target)
+        else {
+            return Ok(None);
+        };
+
+        self.materialize_array_lvalue_increment_decrement_result_for_handle(
+            &handle,
+            &indices,
+            span,
+            op,
+            position,
+            failure_cleanup,
+        )
+        .map(Some)
+    }
+
+    fn materialize_array_lvalue_increment_decrement_result_for_handle(
+        &mut self,
+        handle: &str,
+        indices: &[&Expr],
+        span: Span,
+        op: IncrementDecrementOp,
+        position: IncrementDecrementPosition,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let path = self.materialize_native_array_lvalue_key_path(indices, span, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let owner = self.next_native_name("array_lvalue_increment_owner");
+        let result = self.next_native_name("array_lvalue_increment_result");
+        let value = self.next_native_name("array_lvalue_increment_value");
+        let op_tag = native_array_lvalue_increment_decrement_op_tag(op);
+        let position_tag = native_array_lvalue_increment_decrement_position_tag(position);
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE, PHPC_NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT, {op_tag}, {position_tag}, (phpc_NativeValueHandle){{0}});",
+            path.path, path.len
+        ));
+        self.emit_native_array_lvalue_result_check(
+            &result,
+            &format!("{path_cleanup}{failure_cleanup}"),
+        );
+        self.body
+            .push(format!("phpc_NativeValueHandle {value} = {result}.value;"));
+        self.body
+            .push(format!("{result}.value = (phpc_NativeValueHandle){{0}};"));
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.body.extend(path.cleanup_after_use);
+
+        Ok(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        })
     }
 
     fn emit_array_offset_mutation_from_materialized(
@@ -12662,6 +12797,18 @@ impl CGenerator {
                 target,
                 *op,
                 expr,
+                *span,
+                failure_cleanup,
+            ),
+            Expr::IncrementDecrement {
+                target,
+                op,
+                position,
+                span,
+            } => self.materialize_array_lvalue_increment_decrement_result_for_target(
+                target,
+                *op,
+                *position,
                 *span,
                 failure_cleanup,
             ),
