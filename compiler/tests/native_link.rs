@@ -546,6 +546,13 @@ fn native_executable_c_source_routes_string_distance_builtins_through_runtime_co
 }
 
 const NATIVE_STRING_RESULT_SOURCE: &str = "<?php\n$payload = \"A\0B\";\necho strrev($payload), \"|\";\nprint str_rot13(\"Az-09\");\necho \"|\";\necho bin2hex($payload), \"|\";\necho strtolower(\"MiXeD\"), \"|\";\necho strtoupper(strtolower(\"MiXeD\")), \"|\";\necho ucfirst(\"word\"), \"|\";\necho lcfirst(\"Word\"), \"|\";\necho strrev(42042);\n";
+const SHELL_ESCAPE_STRING_RESULT_SOURCE: &str = concat!(
+    "<?php\n",
+    "$payload = \"X ;\\$'Q\\\"\";\n",
+    "echo escapeshellarg($payload), \"|\";\n",
+    "echo escapeshellcmd($payload), \"|\";\n",
+    "echo escapeshellarg(42042);\n",
+);
 
 #[test]
 fn native_executable_c_source_routes_unary_string_results_through_runtime_contract() {
@@ -584,6 +591,39 @@ fn native_executable_c_source_routes_unary_string_results_through_runtime_contra
     assert!(
         source.contains("phpc_native_value_echo_stdout("),
         "string-result handles should be consumed through native value output:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_shell_escape_results_through_runtime_contract() {
+    let program = parse(SHELL_ESCAPE_STRING_RESULT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_string_result_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = phpc_native_value_string_result_operation_with_diagnostic(")
+            .count(),
+        3,
+        "{source}"
+    );
+    for operation_tag in ["70", "71"] {
+        assert!(
+            source.contains(&format!(", {operation_tag}, &string_result_diagnostic_")),
+            "tagged shell-escape string-result operation {operation_tag} should route through the shared ABI:\n{source}"
+        );
+    }
+    assert!(
+        source.contains("phpc_native_value_from_scalar")
+            && source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+        "scalar and string shell-escape operands should both enter the native value boundary:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_echo_stdout("),
+        "shell-escape result handles should be consumed through native value output:\n{source}"
     );
 }
 
@@ -2444,6 +2484,53 @@ fn emit_exe_links_and_runs_unary_string_result_operation_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"B\0A|Nm-09|410042|mixed|MIXED|Word|word|24024");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_shell_escape_string_result_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("shell_escape_string_result_operation");
+    let source_path = native_link_output_path("shell_escape_string_result_operation_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, SHELL_ESCAPE_STRING_RESULT_SOURCE)
+        .expect("native shell-escape source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native shell-escape source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"'X ;$'\\''Q\"'|X \\;\\$\\'Q\\\"|'42042'");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

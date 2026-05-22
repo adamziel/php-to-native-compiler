@@ -155,6 +155,8 @@ pub enum NativeStringResultOperation {
     AsciiUpper = 49,
     AsciiFirstUpper = 53,
     AsciiFirstLower = 54,
+    ShellArgEscape = 70,
+    ShellCommandEscape = 71,
 }
 
 #[repr(u8)]
@@ -5067,6 +5069,75 @@ fn php_ascii_first_lower_bytes(bytes: &[u8]) -> Vec<u8> {
     result
 }
 
+fn php_shell_arg_escape_bytes(subject: &[u8]) -> RuntimeResult<Vec<u8>> {
+    if subject.contains(&0) {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string result operation failed: escapeshellarg() argument must not contain NUL bytes",
+        ));
+    }
+
+    let quote_count = subject.iter().filter(|&&byte| byte == b'\'').count();
+    let mut output = Vec::with_capacity(subject.len() + 2 + quote_count * 3);
+    output.push(b'\'');
+    for &byte in subject {
+        if byte == b'\'' {
+            output.extend_from_slice(b"'\\''");
+        } else {
+            output.push(byte);
+        }
+    }
+    output.push(b'\'');
+    Ok(output)
+}
+
+fn php_shell_command_escape_bytes(subject: &[u8]) -> RuntimeResult<Vec<u8>> {
+    if subject.contains(&0) {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string result operation failed: escapeshellcmd() argument must not contain NUL bytes",
+        ));
+    }
+
+    let escape_count = subject
+        .iter()
+        .filter(|&&byte| php_shell_command_byte_needs_escape(byte))
+        .count();
+    let mut output = Vec::with_capacity(subject.len() + escape_count);
+    for &byte in subject {
+        if php_shell_command_byte_needs_escape(byte) {
+            output.push(b'\\');
+        }
+        output.push(byte);
+    }
+    Ok(output)
+}
+
+fn php_shell_command_byte_needs_escape(byte: u8) -> bool {
+    matches!(
+        byte,
+        b'#' | b'&'
+            | b';'
+            | b'`'
+            | b'|'
+            | b'*'
+            | b'?'
+            | b'~'
+            | b'<'
+            | b'>'
+            | b'^'
+            | b'('
+            | b')'
+            | b'['
+            | b']'
+            | b'{'
+            | b'}'
+            | b'$'
+            | b'\\'
+            | b'\n'
+            | b'\''
+            | b'"'
+    )
+}
+
 fn php_substr_count_bytes(
     haystack: &[u8],
     needle: &[u8],
@@ -5184,9 +5255,10 @@ pub unsafe extern "C" fn phpc_native_value_string_distance_operation_with_diagno
 /// `NativeDiagnosticHandle`. On failure the helper stores a diagnostic handle
 /// that the caller owns and must release with `phpc_native_diagnostic_free`.
 ///
-/// This operation-tagged boundary currently implements the unary string-result
+/// This operation-tagged boundary currently implements the string-result
 /// family for lowerable PHP values: `strrev()`, `str_rot13()`, `bin2hex()`,
-/// `strtolower()`, `strtoupper()`, `ucfirst()`, and `lcfirst()`.
+/// `strtolower()`, `strtoupper()`, `ucfirst()`, `lcfirst()`,
+/// `escapeshellarg()`, and `escapeshellcmd()`.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_value_string_result_operation_with_diagnostic(
     subject: NativeValueHandle,
@@ -7152,6 +7224,16 @@ unsafe fn native_value_string_result_operation_value(
         }
         value if value == NativeStringResultOperation::AsciiFirstLower as u8 => {
             php_ascii_first_lower_bytes(&subject)
+        }
+        value
+            if value == NativeStringResultOperation::ShellArgEscape as u8
+                || value == NativeStringResultOperation::ShellCommandEscape as u8 =>
+        {
+            if value == NativeStringResultOperation::ShellArgEscape as u8 {
+                php_shell_arg_escape_bytes(&subject)?
+            } else {
+                php_shell_command_escape_bytes(&subject)?
+            }
         }
         _ => {
             return Err(RuntimeError::invalid_string_conversion(
@@ -21984,6 +22066,27 @@ mod tests {
             ),
             b"word"
         );
+        assert_eq!(
+            string_result(
+                Value::String("X ;$'Q\"".to_string()),
+                NativeStringResultOperation::ShellArgEscape
+            ),
+            vec![b'\'', b'X', b' ', b';', b'$', b'\'', b'\\', b'\'', b'\'', b'Q', b'"', b'\'']
+        );
+        assert_eq!(
+            string_result(
+                Value::String("X ;$'Q\"".to_string()),
+                NativeStringResultOperation::ShellCommandEscape
+            ),
+            b"X \\;\\$\\'Q\\\""
+        );
+        assert_eq!(
+            string_result(
+                Value::Int(42042),
+                NativeStringResultOperation::ShellArgEscape
+            ),
+            b"'42042'"
+        );
 
         let resource = NativeValueHandle::from_value(Value::Resource(7));
         let mut diagnostic = NativeDiagnosticHandle::null();
@@ -22027,6 +22130,48 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(valid_subject) };
+
+        let nul_subject = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let nul_result = unsafe {
+            phpc_native_value_string_result_operation_with_diagnostic(
+                nul_subject,
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+                0,
+                0,
+                0,
+                NativeStringResultOperation::ShellArgEscape as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(nul_result.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string result operation failed: escapeshellarg() argument must not contain NUL bytes"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let nul_result = unsafe {
+            phpc_native_value_string_result_operation_with_diagnostic(
+                nul_subject,
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+                0,
+                0,
+                0,
+                NativeStringResultOperation::ShellCommandEscape as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(nul_result.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string result operation failed: escapeshellcmd() argument must not contain NUL bytes"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(nul_subject) };
         unsafe { phpc_native_value_free(resource) };
     }
 

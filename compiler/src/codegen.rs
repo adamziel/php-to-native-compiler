@@ -32,7 +32,7 @@ const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lower
 const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), substr_count(), ord(), and crc32() forms outside the reusable native string-int operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_STRING_DISTANCE_OPERATION_REJECTION: &str = "LLVM string-distance builtin lowering rejects levenshtein() and similar_text() until native PHP value-to-string byte conversion, optional cost conversion, references/copy-on-write, by-reference percent output, and exact native diagnostics exist; generated-native C routes lowerable string-distance operands through the shared runtime contract";
 const ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION: &str = "assembly string-distance builtin lowering rejects levenshtein() and similar_text() forms outside the reusable native string-distance operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
-const LLVM_STRING_RESULT_OPERATION_REJECTION: &str = "LLVM string-result builtin lowering rejects strrev(), str_rot13(), bin2hex(), strtolower(), strtoupper(), ucfirst(), and lcfirst() until native PHP string result ownership, byte-preserving conversion, diagnostics, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable unary string-result operands through the shared runtime contract";
+const LLVM_STRING_RESULT_OPERATION_REJECTION: &str = "LLVM string-result builtin lowering rejects strrev(), str_rot13(), bin2hex(), strtolower(), strtoupper(), ucfirst(), lcfirst(), escapeshellarg(), and escapeshellcmd() until native PHP string result ownership, byte-preserving conversion, diagnostics, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable string-result operands through the shared runtime contract";
 const ASSEMBLY_STRING_RESULT_OPERATION_REJECTION: &str = "assembly string-result builtin lowering rejects forms outside the reusable native string-result operation contract until operands can reach byte-preserving value conversion, diagnostics, result ownership, and cleanup";
 const LLVM_BASENAME_REJECTION: &str = "LLVM basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const ASSEMBLY_BASENAME_REJECTION: &str = "assembly basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
@@ -15813,6 +15813,8 @@ fn native_string_result_operation_for_name(name: &str) -> Option<NativeStringRes
         "strtoupper" => Some(NativeStringResultOperation::AsciiUpper),
         "ucfirst" => Some(NativeStringResultOperation::AsciiFirstUpper),
         "lcfirst" => Some(NativeStringResultOperation::AsciiFirstLower),
+        "escapeshellarg" => Some(NativeStringResultOperation::ShellArgEscape),
+        "escapeshellcmd" => Some(NativeStringResultOperation::ShellCommandEscape),
         _ => None,
     }
 }
@@ -15826,6 +15828,8 @@ fn native_string_result_operation_prefix(operation: NativeStringResultOperation)
         NativeStringResultOperation::AsciiUpper => "strtoupper_result",
         NativeStringResultOperation::AsciiFirstUpper => "ucfirst_result",
         NativeStringResultOperation::AsciiFirstLower => "lcfirst_result",
+        NativeStringResultOperation::ShellArgEscape => "escapeshellarg_result",
+        NativeStringResultOperation::ShellCommandEscape => "escapeshellcmd_result",
     }
 }
 
