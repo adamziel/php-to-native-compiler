@@ -4452,6 +4452,85 @@ pub unsafe extern "C" fn phpc_native_value_offset_mutation_operation_with_diagno
     }
 }
 
+/// # Safety
+///
+/// `subject`, every value in `offsets`, and `replacement` must be null or value
+/// handles previously returned by the runtime ABI and not yet freed. When
+/// `offsets_len` is nonzero, `offsets` must point to `offsets_len` readable
+/// `NativeValueHandle` values. `diagnostic` may be null; when non-null, it must
+/// point to writable storage for one `NativeDiagnosticHandle`. On failure the
+/// helper stores a diagnostic handle that the caller owns; successful
+/// false-to-array conversion stores a deprecation diagnostic.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_offset_path_write_with_diagnostic(
+    subject: NativeValueHandle,
+    offsets: *const NativeValueHandle,
+    offsets_len: usize,
+    replacement: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_offset_path_write_value(subject, offsets, offsets_len, replacement)
+    } {
+        Ok((value, warning)) => {
+            if let Some(warning) = warning {
+                unsafe { native_store_diagnostic_message(diagnostic, warning) };
+            }
+            NativeValueHandle::from_value(value)
+        }
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `subject`, every value in `prefix_offsets` and `suffix_offsets`, and
+/// `replacement` must be null or value handles previously returned by the
+/// runtime ABI and not yet freed. Nonzero path lengths require readable arrays
+/// of that many `NativeValueHandle` values. `diagnostic` may be null; when
+/// non-null, it must point to writable storage for one `NativeDiagnosticHandle`.
+/// On failure the helper stores a diagnostic handle that the caller owns;
+/// successful false-to-array conversion stores a deprecation diagnostic.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_offset_path_append_with_diagnostic(
+    subject: NativeValueHandle,
+    prefix_offsets: *const NativeValueHandle,
+    prefix_offsets_len: usize,
+    suffix_offsets: *const NativeValueHandle,
+    suffix_offsets_len: usize,
+    replacement: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_offset_path_append_value(
+            subject,
+            prefix_offsets,
+            prefix_offsets_len,
+            suffix_offsets,
+            suffix_offsets_len,
+            replacement,
+        )
+    } {
+        Ok((value, warning)) => {
+            if let Some(warning) = warning {
+                unsafe { native_store_diagnostic_message(diagnostic, warning) };
+            }
+            NativeValueHandle::from_value(value)
+        }
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
 unsafe fn native_value_string_offset_operation_value(
     subject: NativeValueHandle,
     offset: NativeValueHandle,
@@ -4609,6 +4688,215 @@ unsafe fn native_value_offset_append_mutation_value(
         "native value offset mutation append blocked for {} subjects pending object/ArrayAccess/resource/reference/COW semantics",
         subject.type_name()
     )))
+}
+
+unsafe fn native_value_offset_path_write_value(
+    subject: NativeValueHandle,
+    offsets: *const NativeValueHandle,
+    offsets_len: usize,
+    replacement: NativeValueHandle,
+) -> RuntimeResult<(Value, Option<&'static str>)> {
+    let keys = unsafe {
+        native_value_offset_key_path_from_handles(
+            offsets,
+            offsets_len,
+            "native value offset path write",
+        )
+    }?;
+    if keys.is_empty() {
+        return Err(RuntimeError::invalid_array_access(
+            "native value offset path write failed: offset path requires at least one key",
+        ));
+    }
+    let replacement = unsafe { native_value_clone_for_offset_mutation(replacement, "path write") }?;
+
+    let Some(subject) = (unsafe { subject.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_access(
+            "native value offset path write failed: subject handle is null",
+        ));
+    };
+
+    native_value_offset_path_write_subject_value(subject, &keys, replacement)
+}
+
+unsafe fn native_value_offset_path_append_value(
+    subject: NativeValueHandle,
+    prefix_offsets: *const NativeValueHandle,
+    prefix_offsets_len: usize,
+    suffix_offsets: *const NativeValueHandle,
+    suffix_offsets_len: usize,
+    replacement: NativeValueHandle,
+) -> RuntimeResult<(Value, Option<&'static str>)> {
+    let prefix_keys = unsafe {
+        native_value_offset_key_path_from_handles(
+            prefix_offsets,
+            prefix_offsets_len,
+            "native value offset path append prefix",
+        )
+    }?;
+    let suffix_keys = unsafe {
+        native_value_offset_key_path_from_handles(
+            suffix_offsets,
+            suffix_offsets_len,
+            "native value offset path append suffix",
+        )
+    }?;
+    let replacement =
+        unsafe { native_value_clone_for_offset_mutation(replacement, "path append") }?;
+    let replacement = native_value_wrap_offset_path_suffix(&suffix_keys, replacement)?;
+
+    let Some(subject) = (unsafe { subject.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_access(
+            "native value offset path append failed: subject handle is null",
+        ));
+    };
+
+    native_value_offset_path_append_subject_value(subject, &prefix_keys, replacement)
+}
+
+unsafe fn native_value_offset_key_path_from_handles(
+    offsets: *const NativeValueHandle,
+    offsets_len: usize,
+    operation: &'static str,
+) -> RuntimeResult<Vec<ArrayKey>> {
+    if offsets_len == 0 {
+        return Ok(Vec::new());
+    }
+    if offsets.is_null() {
+        return Err(RuntimeError::invalid_array_key(format!(
+            "{operation} failed: offset path pointer is null"
+        )));
+    }
+
+    let offsets = unsafe { std::slice::from_raw_parts(offsets, offsets_len) };
+    let mut keys = Vec::with_capacity(offsets.len());
+    for (index, offset) in offsets.iter().enumerate() {
+        let Some(value) = (unsafe { offset.as_ref() }) else {
+            return Err(RuntimeError::invalid_array_key(format!(
+                "{operation} failed: offset path handle {index} is null"
+            )));
+        };
+        keys.push(native_array_key_from_runtime_value(value)?);
+    }
+    Ok(keys)
+}
+
+fn native_value_offset_path_write_subject_value(
+    subject: &Value,
+    keys: &[ArrayKey],
+    replacement: Value,
+) -> RuntimeResult<(Value, Option<&'static str>)> {
+    if let Value::Array(array) = subject {
+        let mut array = array.clone();
+        native_php_array_write_path(&mut array, keys, replacement)?;
+        return Ok((Value::Array(array), None));
+    }
+
+    if matches!(subject, Value::Null | Value::Bool(false)) {
+        let mut array = PhpArray::new();
+        native_php_array_write_path(&mut array, keys, replacement)?;
+        let diagnostic =
+            matches!(subject, Value::Bool(false)).then_some(PHP_FALSE_TO_ARRAY_DEPRECATION);
+        return Ok((Value::Array(array), diagnostic));
+    }
+
+    Err(native_value_offset_path_subject_error(
+        "write",
+        "native value offset path write",
+        subject,
+    ))
+}
+
+fn native_value_offset_path_append_subject_value(
+    subject: &Value,
+    prefix_keys: &[ArrayKey],
+    replacement: Value,
+) -> RuntimeResult<(Value, Option<&'static str>)> {
+    if let Value::Array(array) = subject {
+        let mut array = array.clone();
+        array.append_path(prefix_keys, replacement)?;
+        return Ok((Value::Array(array), None));
+    }
+
+    if matches!(subject, Value::Null | Value::Bool(false)) {
+        let mut array = PhpArray::new();
+        array.append_path(prefix_keys, replacement)?;
+        let diagnostic =
+            matches!(subject, Value::Bool(false)).then_some(PHP_FALSE_TO_ARRAY_DEPRECATION);
+        return Ok((Value::Array(array), diagnostic));
+    }
+
+    Err(native_value_offset_path_subject_error(
+        "append",
+        "native value offset path append",
+        subject,
+    ))
+}
+
+fn native_value_offset_path_subject_error(
+    operation: &'static str,
+    surface: &'static str,
+    subject: &Value,
+) -> RuntimeError {
+    if subject.string_byte_view().is_some() {
+        return RuntimeError::invalid_array_access(format!(
+            "{surface} blocked for string subjects pending mutable string-offset path {operation}, references, and copy-on-write semantics"
+        ));
+    }
+
+    if matches!(subject, Value::Bool(true) | Value::Int(_) | Value::Float(_)) {
+        return RuntimeError::invalid_array_access("cannot use a scalar value as an array");
+    }
+
+    RuntimeError::invalid_array_access(format!(
+        "{surface} blocked for {} subjects pending object/ArrayAccess/resource/reference/COW semantics",
+        subject.type_name()
+    ))
+}
+
+fn native_value_wrap_offset_path_suffix(
+    suffix_keys: &[ArrayKey],
+    replacement: Value,
+) -> RuntimeResult<Value> {
+    if suffix_keys.is_empty() {
+        return Ok(replacement);
+    }
+
+    let mut array = PhpArray::new();
+    native_php_array_write_path(&mut array, suffix_keys, replacement)?;
+    Ok(Value::Array(array))
+}
+
+fn native_php_array_write_path(
+    array: &mut PhpArray,
+    keys: &[ArrayKey],
+    value: Value,
+) -> RuntimeResult<()> {
+    let Some((key, rest)) = keys.split_first() else {
+        return Err(RuntimeError::invalid_array_access(
+            "nested array assignment requires at least one key",
+        ));
+    };
+
+    if rest.is_empty() {
+        array.insert_checked(key.clone(), value)?;
+        return Ok(());
+    }
+
+    let mut child = match array.get_cloned(key.clone()) {
+        Some(Value::Array(child)) => child,
+        Some(Value::Null) | Some(Value::Bool(false)) | None => PhpArray::new(),
+        Some(other) => {
+            return Err(RuntimeError::invalid_array_access(format!(
+                "cannot write offset on {}",
+                other.type_name()
+            )));
+        }
+    };
+
+    native_php_array_write_path(&mut child, rest, value)?;
+    array.insert_checked(key.clone(), Value::Array(child))?;
+    Ok(())
 }
 
 /// # Safety
@@ -19875,6 +20163,154 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(string_failed) };
+    }
+
+    #[test]
+    fn native_value_offset_path_write_and_append_feed_nested_value_surfaces() {
+        fn path_write(
+            subject: Value,
+            offsets: Vec<Value>,
+            replacement: Value,
+        ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+            let subject = NativeValueHandle::from_value(subject);
+            let replacement = NativeValueHandle::from_value(replacement);
+            let offsets = offsets
+                .into_iter()
+                .map(NativeValueHandle::from_value)
+                .collect::<Vec<_>>();
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_offset_path_write_with_diagnostic(
+                    subject,
+                    offsets.as_ptr(),
+                    offsets.len(),
+                    replacement,
+                    &mut diagnostic,
+                )
+            };
+            for offset in offsets {
+                unsafe { phpc_native_value_free(offset) };
+            }
+            unsafe { phpc_native_value_free(replacement) };
+            unsafe { phpc_native_value_free(subject) };
+            (result, diagnostic)
+        }
+
+        fn path_append(
+            subject: Value,
+            prefix_offsets: Vec<Value>,
+            suffix_offsets: Vec<Value>,
+            replacement: Value,
+        ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+            let subject = NativeValueHandle::from_value(subject);
+            let replacement = NativeValueHandle::from_value(replacement);
+            let prefix_offsets = prefix_offsets
+                .into_iter()
+                .map(NativeValueHandle::from_value)
+                .collect::<Vec<_>>();
+            let suffix_offsets = suffix_offsets
+                .into_iter()
+                .map(NativeValueHandle::from_value)
+                .collect::<Vec<_>>();
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_offset_path_append_with_diagnostic(
+                    subject,
+                    prefix_offsets.as_ptr(),
+                    prefix_offsets.len(),
+                    suffix_offsets.as_ptr(),
+                    suffix_offsets.len(),
+                    replacement,
+                    &mut diagnostic,
+                )
+            };
+            for offset in prefix_offsets.into_iter().chain(suffix_offsets) {
+                unsafe { phpc_native_value_free(offset) };
+            }
+            unsafe { phpc_native_value_free(replacement) };
+            unsafe { phpc_native_value_free(subject) };
+            (result, diagnostic)
+        }
+
+        fn read_offset(subject: NativeValueHandle, offset: Value) -> NativeValueHandle {
+            let offset = NativeValueHandle::from_value(offset);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_offset_operation_with_diagnostic(
+                    subject,
+                    offset,
+                    NativeStringOffsetOperation::Read as u8,
+                    &mut diagnostic,
+                )
+            };
+            assert!(diagnostic.is_null());
+            unsafe { phpc_native_value_free(offset) };
+            result
+        }
+
+        let (written, diagnostic) = path_write(
+            Value::Null,
+            vec![
+                Value::String("n\0".to_string()),
+                Value::String("leaf".to_string()),
+            ],
+            Value::String("V\0".to_string()),
+        );
+        assert!(diagnostic.is_null());
+        let first = read_offset(written, Value::String("n\0".to_string()));
+        let leaf = read_offset(first, Value::String("leaf".to_string()));
+        assert_eq!(native_value_echo_bytes_for_test(leaf), b"V\0");
+        unsafe { phpc_native_value_free(leaf) };
+        unsafe { phpc_native_value_free(first) };
+        unsafe { phpc_native_value_free(written) };
+
+        let (appended, diagnostic) = path_append(
+            Value::Bool(false),
+            vec![Value::String("bucket".to_string())],
+            vec![Value::String("leaf".to_string())],
+            Value::String("false-path".to_string()),
+        );
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            PHP_FALSE_TO_ARRAY_DEPRECATION
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        let bucket = read_offset(appended, Value::String("bucket".to_string()));
+        let appended_slot = read_offset(bucket, Value::Int(0));
+        let suffix_leaf = read_offset(appended_slot, Value::String("leaf".to_string()));
+        assert_eq!(native_value_echo_bytes_for_test(suffix_leaf), b"false-path");
+        unsafe { phpc_native_value_free(suffix_leaf) };
+        unsafe { phpc_native_value_free(appended_slot) };
+        unsafe { phpc_native_value_free(bucket) };
+        unsafe { phpc_native_value_free(appended) };
+
+        let (failed_scalar, diagnostic) = path_write(
+            Value::Int(7),
+            vec![
+                Value::String("x".to_string()),
+                Value::String("y".to_string()),
+            ],
+            Value::String("z".to_string()),
+        );
+        assert!(failed_scalar.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: cannot use a scalar value as an array"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(failed_scalar) };
+
+        let (failed_string, diagnostic) = path_append(
+            Value::String("abc".to_string()),
+            Vec::new(),
+            vec![Value::String("leaf".to_string())],
+            Value::String("z".to_string()),
+        );
+        assert!(failed_string.is_null());
+        assert!(native_diagnostic_message_for_test(diagnostic)
+            .contains("string subjects pending mutable string-offset path append"));
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(failed_string) };
     }
 
     #[test]

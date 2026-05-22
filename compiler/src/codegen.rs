@@ -6688,6 +6688,8 @@ struct CGenerator {
     uses_native_value_clone: bool,
     uses_native_value_string_clone_bytes: bool,
     uses_native_value_offset_mutation: bool,
+    uses_native_value_offset_path_write: bool,
+    uses_native_value_offset_path_append: bool,
     uses_native_array_lvalue_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
@@ -7169,6 +7171,12 @@ impl CGenerator {
                 output.push_str("extern _Bool phpc_native_value_bool_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 if self.uses_native_value_offset_mutation {
                     output.push_str("extern phpc_NativeValueHandle phpc_native_value_offset_mutation_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    if self.uses_native_value_offset_path_write {
+                        output.push_str("extern phpc_NativeValueHandle phpc_native_value_offset_path_write_with_diagnostic(phpc_NativeValueHandle subject, const phpc_NativeValueHandle *offsets, size_t offsets_len, phpc_NativeValueHandle replacement, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    }
+                    if self.uses_native_value_offset_path_append {
+                        output.push_str("extern phpc_NativeValueHandle phpc_native_value_offset_path_append_with_diagnostic(phpc_NativeValueHandle subject, const phpc_NativeValueHandle *prefix_offsets, size_t prefix_offsets_len, const phpc_NativeValueHandle *suffix_offsets, size_t suffix_offsets_len, phpc_NativeValueHandle replacement, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    }
                 }
                 if self.uses_native_value_string_clone_bytes {
                     output.push_str("extern phpc_NativeByteBuffer phpc_native_value_string_clone_bytes(phpc_NativeValueHandle value);\n");
@@ -8321,6 +8329,185 @@ impl CGenerator {
             },
         );
         Ok(())
+    }
+
+    fn emit_value_offset_path_write_assignment(
+        &mut self,
+        name: &str,
+        subject: CValue,
+        indices: &[Expr],
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        let subject = self.materialize_native_array_c_value_handle(subject, span)?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let (offsets_ptr, offsets_len, offset_values) =
+            self.emit_native_value_offset_key_path(indices, &subject_cleanup)?;
+        let offset_cleanup_steps = offset_values
+            .iter()
+            .flat_map(|offset| offset.cleanup_after_use.clone())
+            .collect::<Vec<_>>();
+        let offset_cleanup = c_cleanup_sequence(&offset_cleanup_steps);
+        let replacement_failure_cleanup = format!("{offset_cleanup}{subject_cleanup}");
+        let replacement = self.materialize_native_value_result_operand(
+            replacement_expr,
+            &replacement_failure_cleanup,
+        )?;
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_value_offset_mutation = true;
+        self.uses_native_value_offset_path_write = true;
+        self.uses_native_value_clone = true;
+
+        let diagnostic = self.next_native_name("value_offset_path_write_diagnostic");
+        let path_value = self.next_native_name("value_offset_path_write_value");
+        let value_to_clone = self.next_native_name("value_offset_path_write_value_to_clone");
+        let stored_value = self.next_native_name("value_offset_path_write_stored_value");
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {path_value} = phpc_native_value_offset_path_write_with_diagnostic({}, {offsets_ptr}, {offsets_len}, {}, &{diagnostic});",
+            subject.handle, replacement.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value_to_clone} = {};",
+            subject.handle
+        ));
+        self.body.push(format!(
+            "if ({path_value}.ptr != NULL) {{ {value_to_clone} = {path_value}; }}"
+        ));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {stored_value} = phpc_native_value_clone({value_to_clone});"
+        ));
+        self.body
+            .push(format!("phpc_native_value_free({path_value});"));
+        self.body.extend(replacement.cleanup_after_use);
+        for offset in offset_values {
+            self.body.extend(offset.cleanup_after_use);
+        }
+        self.body.extend(subject.cleanup_after_use);
+        self.store_native_value_result_variable(
+            name,
+            CNativeValueMaterialization {
+                handle: stored_value,
+                cleanup_after_use: Vec::new(),
+            },
+        );
+        Ok(())
+    }
+
+    fn emit_value_offset_path_append_assignment(
+        &mut self,
+        name: &str,
+        subject: CValue,
+        indices: &[Expr],
+        suffix_indices: &[Expr],
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        let subject = self.materialize_native_array_c_value_handle(subject, span)?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let (prefix_offsets_ptr, prefix_offsets_len, mut offset_values) =
+            self.emit_native_value_offset_key_path(indices, &subject_cleanup)?;
+        let prefix_cleanup_steps = offset_values
+            .iter()
+            .flat_map(|offset| offset.cleanup_after_use.clone())
+            .collect::<Vec<_>>();
+        let prefix_cleanup = c_cleanup_sequence(&prefix_cleanup_steps);
+        let suffix_failure_cleanup = format!("{prefix_cleanup}{subject_cleanup}");
+        let (suffix_offsets_ptr, suffix_offsets_len, suffix_offset_values) =
+            self.emit_native_value_offset_key_path(suffix_indices, &suffix_failure_cleanup)?;
+        offset_values.extend(suffix_offset_values);
+        let offset_cleanup_steps = offset_values
+            .iter()
+            .flat_map(|offset| offset.cleanup_after_use.clone())
+            .collect::<Vec<_>>();
+        let offset_cleanup = c_cleanup_sequence(&offset_cleanup_steps);
+        let replacement_failure_cleanup = format!("{offset_cleanup}{subject_cleanup}");
+        let replacement = self.materialize_native_value_result_operand(
+            replacement_expr,
+            &replacement_failure_cleanup,
+        )?;
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_value_offset_mutation = true;
+        self.uses_native_value_offset_path_append = true;
+        self.uses_native_value_clone = true;
+
+        let diagnostic = self.next_native_name("value_offset_path_append_diagnostic");
+        let path_value = self.next_native_name("value_offset_path_append_value");
+        let value_to_clone = self.next_native_name("value_offset_path_append_value_to_clone");
+        let stored_value = self.next_native_name("value_offset_path_append_stored_value");
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {path_value} = phpc_native_value_offset_path_append_with_diagnostic({}, {prefix_offsets_ptr}, {prefix_offsets_len}, {suffix_offsets_ptr}, {suffix_offsets_len}, {}, &{diagnostic});",
+            subject.handle, replacement.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value_to_clone} = {};",
+            subject.handle
+        ));
+        self.body.push(format!(
+            "if ({path_value}.ptr != NULL) {{ {value_to_clone} = {path_value}; }}"
+        ));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {stored_value} = phpc_native_value_clone({value_to_clone});"
+        ));
+        self.body
+            .push(format!("phpc_native_value_free({path_value});"));
+        self.body.extend(replacement.cleanup_after_use);
+        for offset in offset_values {
+            self.body.extend(offset.cleanup_after_use);
+        }
+        self.body.extend(subject.cleanup_after_use);
+        self.store_native_value_result_variable(
+            name,
+            CNativeValueMaterialization {
+                handle: stored_value,
+                cleanup_after_use: Vec::new(),
+            },
+        );
+        Ok(())
+    }
+
+    fn emit_native_value_offset_key_path(
+        &mut self,
+        indices: &[Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<(String, usize, Vec<CNativeValueMaterialization>)> {
+        if indices.is_empty() {
+            return Ok(("NULL".to_string(), 0, Vec::new()));
+        }
+
+        let mut offset_values = Vec::with_capacity(indices.len());
+        for index in indices {
+            let prior_cleanup_steps = offset_values
+                .iter()
+                .flat_map(|offset: &CNativeValueMaterialization| offset.cleanup_after_use.clone())
+                .collect::<Vec<_>>();
+            let prior_cleanup = c_cleanup_sequence(&prior_cleanup_steps);
+            let offset = self.materialize_native_value_result_operand(
+                index,
+                &format!("{prior_cleanup}{failure_cleanup}"),
+            )?;
+            offset_values.push(offset);
+        }
+
+        let offsets_array = self.next_native_name("value_offset_path_values");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {offsets_array}[{}];",
+            indices.len()
+        ));
+        for (index, offset) in offset_values.iter().enumerate() {
+            self.body
+                .push(format!("{offsets_array}[{index}] = {};", offset.handle));
+        }
+        Ok((offsets_array, indices.len(), offset_values))
     }
 
     fn emit_array_offset_null_coalesce_assignment(
@@ -10612,6 +10799,14 @@ impl CGenerator {
                         return self
                             .emit_array_lvalue_write_for_handle(&handle, &indices, expr, *span);
                     }
+                    if let Some(subject) = self.variables.get(name).cloned() {
+                        if matches!(subject, CValue::String(_) | CValue::StringExpr(_)) {
+                            return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                        }
+                        return self.emit_value_offset_path_write_assignment(
+                            name, subject, indices, expr, *span,
+                        );
+                    }
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
@@ -10629,6 +10824,19 @@ impl CGenerator {
                             &handle,
                             &prefix_indices,
                             &suffix_indices,
+                            expr,
+                            *span,
+                        );
+                    }
+                    if let Some(subject) = self.variables.get(name).cloned() {
+                        if matches!(subject, CValue::String(_) | CValue::StringExpr(_)) {
+                            return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                        }
+                        return self.emit_value_offset_path_append_assignment(
+                            name,
+                            subject,
+                            indices,
+                            suffix_indices,
                             expr,
                             *span,
                         );
