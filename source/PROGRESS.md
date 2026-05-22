@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 17:14 CEST
-Evaluation marker: `20260522T150931Z`
-Primary HEAD: `633c8713 codegen: route GLOBALS symbol paths through ABI`
-Current pushed semantic baseline: `633c8713 codegen: route GLOBALS symbol paths through ABI`
+Updated: 2026-05-22 17:31 CEST
+Evaluation marker: `20260522T151651Z`
+Primary HEAD: `6ded95bc codegen: route GLOBALS symbol writes through ABI`
+Current pushed semantic baseline: `6ded95bc codegen: route GLOBALS symbol writes through ABI`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -14,31 +14,33 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 
 Overall estimated progress: **80%** `[################----]`
 
-The project is still moving in the right direction. Recent pushed primary work
-has converted request-state infrastructure into executable generated-C behavior
-for nested/path reads, writes, unsets, probes, `empty()`, and assignment
-expression values. The newest pushed compiler slice now also routes dynamic and
-nested `$GLOBALS[...]` reads, `isset()`, and `empty()` through the symbol-table
-path ABI with linked executable coverage.
+Primary now has one new generalized semantic slice after the marker refresh:
+generated-C `$GLOBALS[$expr]` and nested `$GLOBALS[...]` writes execute through
+a root-inclusive symbol-table path write ABI. The compiler keeps a persistent
+root symbol table once `$GLOBALS` path mutation starts, so subsequent
+`$GLOBALS` reads/probes and direct variable reads/writes share the same symbol
+path boundary instead of mutating a throwaway snapshot.
 
-This is real generalized symbol/global progress, but it is not full `$GLOBALS`
-semantics. Writes, unsets, alias reconciliation, self-reference behavior,
-reference/COW-preserving nested cells, function-frame visibility, LLVM/C
-assembly parity, and exact diagnostics still remain open.
+Recent integrated work is still bounded: request-state paths and dynamic
+`$GLOBALS[...]` read/probe/write paths now execute through shared
+runtime/compiler ABIs. That is real movement toward generalized PHP semantics,
+but it is not full global/request/reference behavior. Unsets, request aliases,
+frames, references, COW, exact diagnostics, object/property semantics, and
+broad control-flow cleanup remain substantial open systems.
 
 ## Roadmap Position
 
-| Roadmap item | Estimate | Visual | Status |
+| Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | 96% | `[###################-]` | Strong, but avoid more vocabulary-only layers without immediate consumers. |
-| Compiler/backend consumers | 83% | `[#################---]` | Good for selected request/array/string/`$GLOBALS` read paths; uneven elsewhere. |
-| Executable generalized PHP semantics | 71% | `[##############------]` | Partial; many real PHP compositions still block. |
-| Arrays, lvalues, references, COW | 73% | `[###############-----]` | Arrays/lvalues improved; references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 67% | `[#############-------]` | Request paths and `$GLOBALS` reads/probes are stronger; writes, aliases, frames, and self-reference remain incomplete. |
-| Calls, functions, frames | 25% | `[#####---------------]` | Early; frame/call execution is still mostly candidate or bounded work. |
-| Objects, properties, methods | 11% | `[##------------------]` | Early; real object allocation/property/method semantics remain missing. |
-| Diagnostics and control flow | 29% | `[######--------------]` | Early; cleanup ordering and exact PHP diagnostic order are not generalized. |
-| Broad integrated verification | 80% | `[################----]` | Useful focused gates, including linked `$GLOBALS` path coverage, but cross-feature composition remains thin. |
+| Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
+| Compiler/backend consumers | 84% | `[#################---]` | Good for selected request/array/string/`$GLOBALS` read/write paths; uneven across calls, objects, control flow, and LLVM/C parity. |
+| Executable generalized PHP semantics | 71% | `[##############------]` | Improving, but many real PHP compositions still block. |
+| Arrays, lvalues, references, COW | 73% | `[###############-----]` | Arrays/lvalues advanced; full references/COW and arbitrary writable roots remain large. |
+| Symbols, globals, request state | 69% | `[##############------]` | Request paths and `$GLOBALS` reads/writes/probes are stronger; unsets, aliases, frames, and self-reference remain incomplete. |
+| Calls, functions, frames | 25% | `[#####---------------]` | Early; call/frame candidates exist but broad executable semantics are not primary yet. |
+| Objects, properties, methods | 11% | `[##------------------]` | Early; runtime candidates exist, but general compiled object/property/method execution remains missing. |
+| Diagnostics and control flow | 29% | `[######--------------]` | Useful focused work, but exact diagnostic ordering and structured cleanup are not generalized. |
+| Broad integrated verification | 80% | `[################----]` | Focused gates are useful; cross-feature and backend-composition coverage remains thin. |
 
 ## Done / In Progress / Not Done
 
@@ -54,8 +56,12 @@ assembly parity, and exact diagnostics still remain open.
   write/read/probe ABIs.
 - [x] Compiler-lowered `$GLOBALS[$expr]` and nested `$GLOBALS[...]`
   read/`isset`/`empty` paths through the symbol-table path ABI in generated C.
-- [ ] `$GLOBALS` symbol path writes/unsets and request-root alias
+- [x] Compiler-lowered `$GLOBALS[$expr]` and nested `$GLOBALS[...]` writes
+  through a persistent root symbol-table path ABI in generated C.
+- [ ] `$GLOBALS` symbol path unsets and request-root alias
   reconciliation.
+- [ ] Request-root append/write behavior reconciled with `$GLOBALS` and
+  request-state storage.
 - [ ] Generated PHP reference assignment over proven array/request/symbol
   reference boundaries.
 - [ ] Full references/COW, arbitrary writable roots, owner/value/reference
@@ -71,6 +77,7 @@ assembly parity, and exact diagnostics still remain open.
 
 Recent semantic commits on primary:
 
+- `6ded95bc codegen: route GLOBALS symbol writes through ABI`
 - `633c8713 codegen: route GLOBALS symbol paths through ABI`
 - `39586978 runtime: add symbol-table nested read probes`
 - `8c13b871 codegen: return request assignment values`
@@ -83,42 +90,50 @@ Recent semantic commits on primary:
 
 Primary-integrated capability now includes strong request-superglobal path
 execution through shared request-state ABIs and generated-C `$GLOBALS[...]`
-read/probe lowering through shared symbol-table path ABIs. `$GLOBALS` path
-writes/unsets, alias reconciliation, self-reference behavior, and frame/request
-lifetime remain incomplete.
+read/probe/write lowering through shared symbol-table path ABIs. The write
+slice intentionally leaves unsets, request-root alias reconciliation,
+self-reference behavior, frames, references/COW, and LLVM/C assembly parity
+blocked.
 
 ## Lane-Local And Active Candidate Work
 
 Lane-local candidates, not counted:
 
-- `impl-global-symbols`: dynamic `$GLOBALS[$expr]` nested dispatch, dynamic
-  request slot names, and function-frame nested slot work.
-- `impl-native-integration-batch`: tracked array mutation owner/path and
-  by-reference foreach owner/path candidates.
-- `impl-symbol-integrator`: runtime value-content inspection and expression
-  result continuation work such as `strlen()` and `is_numeric()`.
-- Other fresh lanes are active around control flow, calls, objects, diagnostics,
-  comparison, type conversion, reference cells, binary strings, and arrays.
+- `impl-native-integration-batch`: generated-C direct value-slot array-lvalue
+  owner consumer for pointer/cursor, sort, and mutation families.
+- `impl-native-diagnostics`: request-backed `array_key_exists()` / `key_exists()`
+  path-presence lowering through request-state path operations.
+- `impl-global-symbols`: request-root append ABI and static `$GLOBALS` request
+  alias append candidates. Coordinate this with primary before merging.
+- `impl-array-value-runtime`: dynamic byte-string query value-frame dispatch for
+  `strcasecmp()`, `strpos()`, `substr()`, and `substr_count()`.
+- Other fresh lanes continue around calls, control flow, exit/termination,
+  objects/properties, references, comparison, type conversion, binary strings,
+  diagnostics, and arrays.
 
 ## Current Steering
 
 The next integration batches should favor small executable slices:
 
-- Follow the pushed `$GLOBALS` read/probe slice with `$GLOBALS` writes/unsets and
-  request/global alias reconciliation, not another standalone runtime helper.
-- Move generated reference assignment, request/global frame lifetime, and
-  owner/value/reference-slot materialization closer to primary.
-- Take one narrow call/frame or control-flow cleanup consumer only when it
-  proves real executable behavior and cleanup ordering.
-- Coordinate `impl-global-symbols` with primary before importing dynamic
-  request-root dispatch, so the alias model does not split.
+- Treat this review as no-new-primary semantic progress; percentages are
+  intentionally unchanged.
+- Build directly on the current global/request work: `$GLOBALS` unsets,
+  request/global alias reconciliation, or request-root append/write behavior.
+- Keep one source of truth for `$GLOBALS`, request roots, symbol-table roots,
+  and aliases before importing dynamic request-root dispatch.
+- Consider the fresh value-slot array-lvalue owner consumer or request
+  `array_key_exists()` path-presence slice only if they remain narrow and
+  primary-compatible.
+- Defer broad byte-string, call-frame, object, and control-flow stacks until a
+  single executable consumer can be extracted without importing full-lane churn.
 
 Rejected distractions:
 
 - Exact-shape lowering for one fixture or one PHP snippet.
 - Standalone blocker/status vocabulary without a near-term consumer.
 - Large wholesale lane merges.
-- Documentation churn that does not improve steering or integration clarity.
+- Progress percentage bumps from lane-local work alone.
+- Documentation churn beyond the required evaluator marker update.
 
 ## Live Notes
 
@@ -127,9 +142,11 @@ Primary currently has one preserved unstaged implementation diff:
 as progress and still needs explicit classification, focused tests, and a
 separate commit or rejection before any runtime staging.
 
-Resource snapshot after the latest push: `/dev/shm` is tight but above the
-dispatcher floor, around 6.5G free of 22G. Keep focused gates and avoid broad
-simultaneous cargo waves while tmpfs usage remains volatile.
+Resource snapshot: `/dev/shm` is tight but above the dispatcher floor, around
+6.7G free of 22G; `/home` has about 199G free. The largest observed tmpfs
+consumer is `/dev/shm/phpc-target-native-exit-seed` at about 8.8G. Keep focused
+gates and avoid broad simultaneous cargo waves while tmpfs usage remains tight.
 
 Evaluator cadence: one candid strategy/progress evaluation every 45 minutes,
-feeding advisory steering back to the supervisor.
+feeding advisory steering back to the supervisor. This marker was refreshed
+even though percentages did not change, so the completed review is observable.

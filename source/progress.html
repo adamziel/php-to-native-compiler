@@ -13,22 +13,22 @@
     <nav><a href="https://github.com/adamziel/php-to-native-compiler/blob/master/PROGRESS.md">PROGRESS.md</a><a href="https://github.com/adamziel/php-to-native-compiler">Repository</a><a href="../source/progress.html">Source Snapshot</a></nav>
   </header>
   <main><section class="source"><p><a href="../index.html">Back to dashboard</a> | <a href="https://github.com/adamziel/php-to-native-compiler/blob/master/PROGRESS.md">Open on GitHub</a></p><span class="eyebrow">Source document</span><h1>Canonical Progress Report</h1><h2>Visual Progress</h2><div class="tasks"><article class="card"><h3>Runtime and ABI foundations</h3><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>96%</strong></div><progress max="100" value="96">96%</progress></div></article>
-<article class="card"><h3>Compiler/backend consumers</h3><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>83%</strong></div><progress max="100" value="83">83%</progress></div></article>
+<article class="card"><h3>Compiler/backend consumers</h3><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>84%</strong></div><progress max="100" value="84">84%</progress></div></article>
 <article class="card"><h3>Executable generalized PHP semantics</h3><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>71%</strong></div><progress max="100" value="71">71%</progress></div></article>
 <article class="card"><h3>Arrays, lvalues, references, COW</h3><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>73%</strong></div><progress max="100" value="73">73%</progress></div></article>
-<article class="card"><h3>Symbols, globals, request state</h3><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>67%</strong></div><progress max="100" value="67">67%</progress></div></article>
+<article class="card"><h3>Symbols, globals, request state</h3><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>69%</strong></div><progress max="100" value="69">69%</progress></div></article>
 <article class="card"><h3>Calls, functions, frames</h3><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>25%</strong></div><progress max="100" value="25">25%</progress></div></article>
 <article class="card"><h3>Objects, properties, methods</h3><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>11%</strong></div><progress max="100" value="11">11%</progress></div></article>
 <article class="card"><h3>Diagnostics and control flow</h3><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>29%</strong></div><progress max="100" value="29">29%</progress></div></article>
 <article class="card"><h3>Broad integrated verification</h3><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>80%</strong></div><progress max="100" value="80">80%</progress></div></article></div><h2>Active Work Bars</h2><div class="tasks"></div><h2 id="php-native-compiler-progress">PHP Native Compiler Progress</h2>
-<p>Updated: 2026-05-22 17:14 CEST Evaluation marker: <code>20260522T150931Z</code> Primary HEAD: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/633c8713">633c8713</a> codegen: route GLOBALS symbol paths through ABI</code> Current pushed semantic baseline: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/633c8713">633c8713</a> codegen: route GLOBALS symbol paths through ABI</code></p>
+<p>Updated: 2026-05-22 17:31 CEST Evaluation marker: <code>20260522T151651Z</code> Primary HEAD: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/6ded95bc">6ded95bc</a> codegen: route GLOBALS symbol writes through ABI</code> Current pushed semantic baseline: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/6ded95bc">6ded95bc</a> codegen: route GLOBALS symbol writes through ABI</code></p>
 <p>These percentages are candid engineering estimates toward generalized PHP semantics in the native compiler. They are not test pass rates. Lane-local work and unstaged primary diffs do not count until reviewed, gated, committed to <code>master</code>, and pushed.</p>
 <h3 id="executive-read">Executive Read</h3>
 <p>Overall estimated progress: <strong>80%</strong> <code>[################----]</code></p>
-<p>The project is still moving in the right direction. Recent pushed primary work has converted request-state infrastructure into executable generated-C behavior for nested/path reads, writes, unsets, probes, <code>empty()</code>, and assignment expression values. The newest pushed compiler slice now also routes dynamic and nested <code>$GLOBALS[...]</code> reads, <code>isset()</code>, and <code>empty()</code> through the symbol-table path ABI with linked executable coverage.</p>
-<p>This is real generalized symbol/global progress, but it is not full <code>$GLOBALS</code> semantics. Writes, unsets, alias reconciliation, self-reference behavior, reference/COW-preserving nested cells, function-frame visibility, LLVM/C assembly parity, and exact diagnostics still remain open.</p>
+<p>Primary now has one new generalized semantic slice after the marker refresh: generated-C <code>$GLOBALS[$expr]</code> and nested <code>$GLOBALS[...]</code> writes execute through a root-inclusive symbol-table path write ABI. The compiler keeps a persistent root symbol table once <code>$GLOBALS</code> path mutation starts, so subsequent <code>$GLOBALS</code> reads/probes and direct variable reads/writes share the same symbol path boundary instead of mutating a throwaway snapshot.</p>
+<p>Recent integrated work is still bounded: request-state paths and dynamic <code>$GLOBALS[...]</code> read/probe/write paths now execute through shared runtime/compiler ABIs. That is real movement toward generalized PHP semantics, but it is not full global/request/reference behavior. Unsets, request aliases, frames, references, COW, exact diagnostics, object/property semantics, and broad control-flow cleanup remain substantial open systems.</p>
 <h3 id="roadmap-position">Roadmap Position</h3>
-<div class="table-wrap"><table><thead><tr><th>Roadmap item</th><th>Estimate</th><th>Visual</th><th>Status</th></tr></thead><tbody><tr><td>Runtime and ABI foundations</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>96%</strong></div><progress max="100" value="96">96%</progress></div></td><td><code>[###################-]</code></td><td>Strong, but avoid more vocabulary-only layers without immediate consumers.</td></tr><tr><td>Compiler/backend consumers</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>83%</strong></div><progress max="100" value="83">83%</progress></div></td><td><code>[#################---]</code></td><td>Good for selected request/array/string/<code>$GLOBALS</code> read paths; uneven elsewhere.</td></tr><tr><td>Executable generalized PHP semantics</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>71%</strong></div><progress max="100" value="71">71%</progress></div></td><td><code>[##############------]</code></td><td>Partial; many real PHP compositions still block.</td></tr><tr><td>Arrays, lvalues, references, COW</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>73%</strong></div><progress max="100" value="73">73%</progress></div></td><td><code>[###############-----]</code></td><td>Arrays/lvalues improved; references/COW and arbitrary writable roots remain large.</td></tr><tr><td>Symbols, globals, request state</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>67%</strong></div><progress max="100" value="67">67%</progress></div></td><td><code>[#############-------]</code></td><td>Request paths and <code>$GLOBALS</code> reads/probes are stronger; writes, aliases, frames, and self-reference remain incomplete.</td></tr><tr><td>Calls, functions, frames</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>25%</strong></div><progress max="100" value="25">25%</progress></div></td><td><code>[#####---------------]</code></td><td>Early; frame/call execution is still mostly candidate or bounded work.</td></tr><tr><td>Objects, properties, methods</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>11%</strong></div><progress max="100" value="11">11%</progress></div></td><td><code>[##------------------]</code></td><td>Early; real object allocation/property/method semantics remain missing.</td></tr><tr><td>Diagnostics and control flow</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>29%</strong></div><progress max="100" value="29">29%</progress></div></td><td><code>[######--------------]</code></td><td>Early; cleanup ordering and exact PHP diagnostic order are not generalized.</td></tr><tr><td>Broad integrated verification</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>80%</strong></div><progress max="100" value="80">80%</progress></div></td><td><code>[################----]</code></td><td>Useful focused gates, including linked <code>$GLOBALS</code> path coverage, but cross-feature composition remains thin.</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Roadmap item</th><th>Estimate</th><th>Visual</th><th>Primary-integrated status</th></tr></thead><tbody><tr><td>Runtime and ABI foundations</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>96%</strong></div><progress max="100" value="96">96%</progress></div></td><td><code>[###################-]</code></td><td>Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers.</td></tr><tr><td>Compiler/backend consumers</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>84%</strong></div><progress max="100" value="84">84%</progress></div></td><td><code>[#################---]</code></td><td>Good for selected request/array/string/<code>$GLOBALS</code> read/write paths; uneven across calls, objects, control flow, and LLVM/C parity.</td></tr><tr><td>Executable generalized PHP semantics</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>71%</strong></div><progress max="100" value="71">71%</progress></div></td><td><code>[##############------]</code></td><td>Improving, but many real PHP compositions still block.</td></tr><tr><td>Arrays, lvalues, references, COW</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>73%</strong></div><progress max="100" value="73">73%</progress></div></td><td><code>[###############-----]</code></td><td>Arrays/lvalues advanced; full references/COW and arbitrary writable roots remain large.</td></tr><tr><td>Symbols, globals, request state</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>69%</strong></div><progress max="100" value="69">69%</progress></div></td><td><code>[##############------]</code></td><td>Request paths and <code>$GLOBALS</code> reads/writes/probes are stronger; unsets, aliases, frames, and self-reference remain incomplete.</td></tr><tr><td>Calls, functions, frames</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>25%</strong></div><progress max="100" value="25">25%</progress></div></td><td><code>[#####---------------]</code></td><td>Early; call/frame candidates exist but broad executable semantics are not primary yet.</td></tr><tr><td>Objects, properties, methods</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>11%</strong></div><progress max="100" value="11">11%</progress></div></td><td><code>[##------------------]</code></td><td>Early; runtime candidates exist, but general compiled object/property/method execution remains missing.</td></tr><tr><td>Diagnostics and control flow</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>29%</strong></div><progress max="100" value="29">29%</progress></div></td><td><code>[######--------------]</code></td><td>Useful focused work, but exact diagnostic ordering and structured cleanup are not generalized.</td></tr><tr><td>Broad integrated verification</td><td><div class="visual-progress" aria-label="Estimate"><div><span>Estimate</span><strong>80%</strong></div><progress max="100" value="80">80%</progress></div></td><td><code>[################----]</code></td><td>Focused gates are useful; cross-feature and backend-composition coverage remains thin.</td></tr></tbody></table></div>
 <h3 id="done-in-progress-not-done">Done / In Progress / Not Done</h3>
 <ul>
 <li>[x] Runtime/value foundations for selected scalar, string, array, comparison,</li>
@@ -41,8 +41,12 @@
 <p>write/read/probe ABIs.</p>
 <li>[x] Compiler-lowered <code>$GLOBALS[$expr]</code> and nested <code>$GLOBALS[...]</code></li>
 <p>read/<code>isset</code>/<code>empty</code> paths through the symbol-table path ABI in generated C.</p>
-<li>[ ] <code>$GLOBALS</code> symbol path writes/unsets and request-root alias</li>
+<li>[x] Compiler-lowered <code>$GLOBALS[$expr]</code> and nested <code>$GLOBALS[...]</code> writes</li>
+<p>through a persistent root symbol-table path ABI in generated C.</p>
+<li>[ ] <code>$GLOBALS</code> symbol path unsets and request-root alias</li>
 <p>reconciliation.</p>
+<li>[ ] Request-root append/write behavior reconciled with <code>$GLOBALS</code> and</li>
+<p>request-state storage.</p>
 <li>[ ] Generated PHP reference assignment over proven array/request/symbol</li>
 <p>reference boundaries.</p>
 <li>[ ] Full references/COW, arbitrary writable roots, owner/value/reference</li>
@@ -57,6 +61,7 @@
 <h3 id="recent-primary-integrated-work">Recent Primary-Integrated Work</h3>
 <p>Recent semantic commits on primary:</p>
 <ul>
+<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/6ded95bc">6ded95bc</a> codegen: route GLOBALS symbol writes through ABI</code></li>
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/633c8713">633c8713</a> codegen: route GLOBALS symbol paths through ABI</code></li>
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/39586978">39586978</a> runtime: add symbol-table nested read probes</code></li>
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/8c13b871">8c13b871</a> codegen: return request assignment values</code></li>
@@ -67,42 +72,47 @@
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/764cf014">764cf014</a> runtime: add symbol-table nested write ABI</code></li>
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/ed2d9031">ed2d9031</a> runtime: add array reference path ABI</code></li>
 </ul>
-<p>Primary-integrated capability now includes strong request-superglobal path execution through shared request-state ABIs and generated-C <code>$GLOBALS[...]</code> read/probe lowering through shared symbol-table path ABIs. <code>$GLOBALS</code> path writes/unsets, alias reconciliation, self-reference behavior, and frame/request lifetime remain incomplete.</p>
+<p>Primary-integrated capability now includes strong request-superglobal path execution through shared request-state ABIs and generated-C <code>$GLOBALS[...]</code> read/probe/write lowering through shared symbol-table path ABIs. The write slice intentionally leaves unsets, request-root alias reconciliation, self-reference behavior, frames, references/COW, and LLVM/C assembly parity blocked.</p>
 <h3 id="lane-local-and-active-candidate-work">Lane-Local And Active Candidate Work</h3>
 <p>Lane-local candidates, not counted:</p>
 <ul>
-<li><code>impl-global-symbols</code>: dynamic <code>$GLOBALS[$expr]</code> nested dispatch, dynamic</li>
-<p>request slot names, and function-frame nested slot work.</p>
-<li><code>impl-native-integration-batch</code>: tracked array mutation owner/path and</li>
-<p>by-reference foreach owner/path candidates.</p>
-<li><code>impl-symbol-integrator</code>: runtime value-content inspection and expression</li>
-<p>result continuation work such as <code>strlen()</code> and <code>is_numeric()</code>.</p>
-<li>Other fresh lanes are active around control flow, calls, objects, diagnostics,</li>
-<p>comparison, type conversion, reference cells, binary strings, and arrays.</p>
+<li><code>impl-native-integration-batch</code>: generated-C direct value-slot array-lvalue</li>
+<p>owner consumer for pointer/cursor, sort, and mutation families.</p>
+<li><code>impl-native-diagnostics</code>: request-backed <code>array_key_exists()</code> / <code>key_exists()</code></li>
+<p>path-presence lowering through request-state path operations.</p>
+<li><code>impl-global-symbols</code>: request-root append ABI and static <code>$GLOBALS</code> request</li>
+<p>alias append candidates. Coordinate this with primary before merging.</p>
+<li><code>impl-array-value-runtime</code>: dynamic byte-string query value-frame dispatch for</li>
+<p><code>strcasecmp()</code>, <code>strpos()</code>, <code>substr()</code>, and <code>substr_count()</code>.</p>
+<li>Other fresh lanes continue around calls, control flow, exit/termination,</li>
+<p>objects/properties, references, comparison, type conversion, binary strings, diagnostics, and arrays.</p>
 </ul>
 <h3 id="current-steering">Current Steering</h3>
 <p>The next integration batches should favor small executable slices:</p>
 <ul>
-<li>Follow the pushed <code>$GLOBALS</code> read/probe slice with <code>$GLOBALS</code> writes/unsets and</li>
-<p>request/global alias reconciliation, not another standalone runtime helper.</p>
-<li>Move generated reference assignment, request/global frame lifetime, and</li>
-<p>owner/value/reference-slot materialization closer to primary.</p>
-<li>Take one narrow call/frame or control-flow cleanup consumer only when it</li>
-<p>proves real executable behavior and cleanup ordering.</p>
-<li>Coordinate <code>impl-global-symbols</code> with primary before importing dynamic</li>
-<p>request-root dispatch, so the alias model does not split.</p>
+<li>Treat this review as no-new-primary semantic progress; percentages are</li>
+<p>intentionally unchanged.</p>
+<li>Build directly on the current global/request work: <code>$GLOBALS</code> unsets,</li>
+<p>request/global alias reconciliation, or request-root append/write behavior.</p>
+<li>Keep one source of truth for <code>$GLOBALS</code>, request roots, symbol-table roots,</li>
+<p>and aliases before importing dynamic request-root dispatch.</p>
+<li>Consider the fresh value-slot array-lvalue owner consumer or request</li>
+<p><code>array_key_exists()</code> path-presence slice only if they remain narrow and primary-compatible.</p>
+<li>Defer broad byte-string, call-frame, object, and control-flow stacks until a</li>
+<p>single executable consumer can be extracted without importing full-lane churn.</p>
 </ul>
 <p>Rejected distractions:</p>
 <ul>
 <li>Exact-shape lowering for one fixture or one PHP snippet.</li>
 <li>Standalone blocker/status vocabulary without a near-term consumer.</li>
 <li>Large wholesale lane merges.</li>
-<li>Documentation churn that does not improve steering or integration clarity.</li>
+<li>Progress percentage bumps from lane-local work alone.</li>
+<li>Documentation churn beyond the required evaluator marker update.</li>
 </ul>
 <h3 id="live-notes">Live Notes</h3>
 <p>Primary currently has one preserved unstaged implementation diff: <code>runtime/src/lib.rs</code> null-slot increment/decrement behavior. It is not counted as progress and still needs explicit classification, focused tests, and a separate commit or rejection before any runtime staging.</p>
-<p>Resource snapshot after the latest push: <code>/dev/shm</code> is tight but above the dispatcher floor, around 6.5G free of 22G. Keep focused gates and avoid broad simultaneous cargo waves while tmpfs usage remains volatile.</p>
-<p>Evaluator cadence: one candid strategy/progress evaluation every 45 minutes, feeding advisory steering back to the supervisor.</p></section></main>
-  <footer><span>Generated 2026-05-22T15:16:36.478Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+<p>Resource snapshot: <code>/dev/shm</code> is tight but above the dispatcher floor, around 6.7G free of 22G; <code>/home</code> has about 199G free. The largest observed tmpfs consumer is <code>/dev/shm/phpc-target-native-exit-seed</code> at about 8.8G. Keep focused gates and avoid broad simultaneous cargo waves while tmpfs usage remains tight.</p>
+<p>Evaluator cadence: one candid strategy/progress evaluation every 45 minutes, feeding advisory steering back to the supervisor. This marker was refreshed even though percentages did not change, so the completed review is observable.</p></section></main>
+  <footer><span>Generated 2026-05-22T15:31:40.594Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
