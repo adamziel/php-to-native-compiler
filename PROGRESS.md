@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 14:22 CEST
+Updated: 2026-05-22 14:32 CEST
 Evaluation marker: `20260522T114515Z`
-Primary HEAD: `5600ff8a codegen: route request root assignments through state ABI`
+Primary HEAD: `7293398f docs: update progress after request root assignments`
 Current primary semantic baseline: `5600ff8a codegen: route request root assignments through state ABI`
 
 Percentages are candid engineering estimates, not test-suite pass rates. Lane-local candidate work is not counted as product capability until it is integrated into `master`, gated, committed, and pushed.
@@ -63,9 +63,9 @@ Recent integrated semantic commits:
 
 Current primary state:
 
-- `master` and `origin/master` are synced at `5600ff8a`.
-- This progress update is docs-only on top of that semantic baseline.
-- The preserved unrelated unstaged runtime hunk remains in `runtime/src/lib.rs` and is not counted as product progress.
+- `master` and `origin/master` are synced at `7293398f`.
+- This progress update is docs-only on top of semantic baseline `5600ff8a`.
+- Active dirty files currently include integrator-owned `compiler/src/codegen.rs` / `compiler/tests/native_link.rs` work and the preserved unrelated unstaged runtime hunk in `runtime/src/lib.rs`; none of those dirty files are counted as product progress until gated, committed, and pushed.
 - The latest semantic addition is generated-C direct request-root assignment through the request-state replace-value ABI. Keyed/path request mutations, `$GLOBALS` reconciliation, request-root reference assignment, LLVM parity, and PHP reference assignment still need primary compiler consumers.
 
 ## Lane-Local Candidate Work
