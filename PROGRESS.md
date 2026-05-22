@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 21:35 CEST
+Updated: 2026-05-22 21:42 CEST
 Evaluation marker: `20260522T192635Z`
 Primary management HEAD: this PROGRESS.md update
-Primary semantic HEAD: `6b80fd79 runtime: mutate reference-backed request roots`
-Current pushed semantic baseline: `6b80fd79 runtime: mutate reference-backed request roots`
+Primary semantic HEAD: `e6037b7f codegen: route GLOBALS self request aliases`
+Current pushed semantic baseline: `e6037b7f codegen: route GLOBALS self request aliases`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -50,7 +50,12 @@ ordinary aliases, request root snapshots, and keyed reads after array
 replacement. Existing generated-C keyed/path request mutations now also write
 through reference-backed request roots when the referenced root value is an
 array, null, or false, so keyed writes, nested writes, unsets, and appends stay
-visible through all request roots sharing that reference cell.
+visible through all request roots sharing that reference cell. Generated-C
+static `$GLOBALS["GLOBALS"]` self-root prefixes now normalize before request
+alias classification, so self-prefixed request reads, root/path writes,
+unsets, appends, `isset()`, `empty()`, and full-bag snapshots route through the
+same request-state ABIs, including repeated self roots and static string-concat
+self keys.
 
 That progress is primary-integrated: it is committed, pushed, focused-gated,
 and tied to executable generated-code behavior. It is not lane-local status
@@ -68,7 +73,8 @@ reference-backed request root arrays, but it still does not have
 complete PHP global/request/reference/control-flow semantics. Dynamic
 `$GLOBALS[$expr]` request-root alias dispatch, direct no-key `$GLOBALS[]`,
 keyed reference binding through reference-backed request roots, non-array
-request append suffix wrapping, `$GLOBALS["GLOBALS"]` self-reference behavior,
+request append suffix wrapping, non-request `$GLOBALS["GLOBALS"]`
+self-reference behavior,
 frames, full references/COW, exact diagnostics, object/property semantics,
 ordered short-circuit cleanup, and broader LLVM/C parity remain substantial
 open systems.
@@ -81,7 +87,7 @@ open systems.
 | Compiler/backend consumers | 95% | `[###################-]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, active root offset-mutation writeback, value-result offset reads, array-query value consumers, static request aliases, direct undefined root reads, generated-C symbol references, request-root and keyed request-slot reference assignment with ordinary symbol paths plus request-to-request aliases, direct request-root replacement through existing reference cells, generated-C native-value strict identity, and LLVM/generated-C native-value truthiness for unary `!` / `xor`; uneven across calls, objects, short-circuit control flow, and broader LLVM/C parity. |
 | Executable generalized PHP semantics | 77% | `[###############-----]` | Improving through executable path/reference/logical consumers, but many real PHP compositions still block. |
 | Arrays, lvalues, references, COW | 80% | `[################----]` | Arrays/lvalues advanced with query/value-result consumers, selected symbol-path references, request-root reference replacement/source/root-alias paths, keyed request-slot references with ordinary symbol paths, keyed request-to-keyed request aliases, and value mutations through reference-backed request roots; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 86% | `[#################---]` | Request paths/null-coalesce, static `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, direct undefined root reads, ordinary symbol-path reference assignment, request-root reference replacement/source/root-alias paths, keyed request-slot aliases, direct request-root assignment through existing reference cells, and keyed/path value mutations through reference-backed roots are stronger; dynamic aliases, keyed reference binding through reference-backed roots, direct root appends, frames, nested/path request references, full references, and self-reference remain incomplete. |
+| Symbols, globals, request state | 87% | `[#################---]` | Request paths/null-coalesce, static and self-prefixed `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, direct undefined root reads, ordinary symbol-path reference assignment, request-root reference replacement/source/root-alias paths, keyed request-slot aliases, direct request-root assignment through existing reference cells, and keyed/path value mutations through reference-backed roots are stronger; dynamic aliases, keyed reference binding through reference-backed roots, direct root appends, frames, nested/path request references, full references, and non-request self-reference remain incomplete. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Early; lane candidates exist, but broad executable call/frame semantics are not primary yet. |
 | Objects, properties, methods | 11% | `[##------------------]` | Early; runtime candidates exist, but general compiled object/property/method execution remains missing. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused work, but exact diagnostic ordering and structured cleanup are not generalized. |
@@ -105,6 +111,10 @@ Done on primary:
 - [x] Static `$GLOBALS["_GET"]` / request-root aliases for generated-C root and
   nested request read, write, append, unset, `isset()`, `empty()`, and
   assignment-expression consumers through shared request-state ABIs.
+- [x] Static `$GLOBALS["GLOBALS"]` self-prefixed request aliases for
+  generated-C request read, root/path write, append, unset, `isset()`,
+  `empty()`, and full-bag snapshot consumers through the same request-state
+  ABIs, including repeated self roots and static string-concat self keys.
 - [x] Direct `$GLOBALS` root snapshots and runtime symbol-table nested
   write/read/probe ABIs.
 - [x] Compiler-lowered `$GLOBALS[$expr]` and nested `$GLOBALS[...]`
@@ -177,8 +187,8 @@ In progress / candidate integration themes:
 
 - [ ] Request/global alias reconciliation, direct no-key `$GLOBALS[]`, keyed
   reference binding through reference-backed request roots, request append
-  suffix wrapping, request-root append alias behavior, and
-  `$GLOBALS["GLOBALS"]` semantics. Estimate: 55%
+  suffix wrapping, request-root append alias behavior, and non-request
+  `$GLOBALS["GLOBALS"]` self-reference semantics. Estimate: 56%
   `[###########---------]`.
 - [ ] Generated PHP reference assignment over `$GLOBALS`, object, arbitrary
   owner/value/reference-slot, frame, nested/path request slots, and COW-aware
@@ -206,6 +216,7 @@ Not done:
 
 Recent semantic commits on primary:
 
+- `e6037b7f codegen: route GLOBALS self request aliases`
 - `6b80fd79 runtime: mutate reference-backed request roots`
 - `596986cf runtime: preserve request root replacement aliases`
 - `fa37d429 codegen: route keyed request aliases through state ABI`
@@ -323,8 +334,8 @@ The next integration batches should favor small executable slices:
 - Build directly on the current request/global/reference work: alias
   reconciliation, direct no-key `$GLOBALS[]`, request append suffix wrapping,
   keyed reference binding through reference-backed request roots, request-root
-  append alias behavior, `$GLOBALS["GLOBALS"]`, nested/path request references,
-  or one narrow reference/writeback consumer.
+  append alias behavior, non-request `$GLOBALS["GLOBALS"]`, nested/path request
+  references, or one narrow reference/writeback consumer.
 - Treat native-value truthiness as landed only for unary `!` and
   non-short-circuit `xor`; do not overclaim ordered `&&` / `||`, branch
   cleanup, diagnostic timing, references/COW, or broad control flow.
