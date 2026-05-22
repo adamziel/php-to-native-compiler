@@ -13,60 +13,53 @@
     <nav><a href="https://github.com/adamziel/php-to-native-compiler/blob/master/PROGRESS.md">PROGRESS.md</a><a href="https://github.com/adamziel/php-to-native-compiler">Repository</a><a href="../source/progress.html">Source Snapshot</a></nav>
   </header>
   <main><section class="source"><p><a href="../index.html">Back to dashboard</a> | <a href="https://github.com/adamziel/php-to-native-compiler/blob/master/PROGRESS.md">Open on GitHub</a></p><span class="eyebrow">Source document</span><h1>Canonical Progress Report</h1><h2 id="php-native-compiler-progress">PHP Native Compiler Progress</h2>
-<p>Updated: 2026-05-22 11:51 CEST Current primary semantic baseline: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/0f123f2d">0f123f2d</a> codegen: route array pointer builtins through lvalue ABI</code></p>
-<p>This is a high-level roadmap view. Percentages are candid engineering estimates, not test-suite pass rates. Lane-local work is not counted as product capability until it is integrated into <code>master</code>, gated, committed, and pushed.</p>
-<h3 id="overall-estimate">Overall Estimate</h3>
-<p>Estimated progress toward a broadly usable generalized PHP native compiler: <strong>64%</strong></p>
-<div class="table-wrap"><table><thead><tr><th>Area</th><th>Estimated progress</th><th>Current read</th></tr></thead><tbody><tr><td>Runtime and ABI foundations</td><td>92%</td><td>Strong shared surfaces now exist for values, arrays, strings, comparisons, diagnostics, symbol tables, request state, and reference slots.</td></tr><tr><td>Compiler/backend consumers</td><td>97%</td><td>Many generated-C and LLVM paths consume shared ABIs, but the hard missing consumers are now in symbols, calls, objects, references, and control flow.</td></tr><tr><td>Executable generalized PHP semantics</td><td>78%</td><td>Selected scalar, string, array, lvalue, symbol, and request runtime behavior works; ordinary broad PHP programs still hit major blockers.</td></tr><tr><td>Arrays, references, COW, lvalues</td><td>65%</td><td>Good selected array/lvalue execution exists, now including pointer/cursor builtins over tracked array owners; arbitrary writable roots, full references/COW, by-reference foreach, and ArrayAccess/resource offsets remain open.</td></tr><tr><td>Symbols, globals, request state</td><td>33%</td><td>Runtime symbol/request roots can snapshot, populate, and share reference cells; compiler-level <code>$GLOBALS</code>, superglobal mutation, request lifetime, and frame propagation are not done.</td></tr><tr><td>Objects, properties, methods</td><td>11%</td><td>Mostly blockers and metadata. Real allocation/property/method behavior remains largely absent.</td></tr><tr><td>Diagnostics and control-flow cleanup</td><td>26%</td><td>Shared diagnostic/status surfaces exist, but exact ordering, recovery, loops/switch/goto/finally/exceptions, and cleanup stacks are not integrated.</td></tr><tr><td>Broad integrated verification</td><td>66%</td><td>Focused gates are useful and recent array/lvalue linked gates passed; broad differential composition coverage remains thin.</td></tr></tbody></table></div>
-<h3 id="current-primary-state">Current Primary State</h3>
+<p>Updated: 2026-05-22 12:12 CEST Evaluation marker: <code>20260522T100443Z</code> plus post-evaluator semantic refresh Primary HEAD: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/f0f785e5">f0f785e5</a> runtime: report request missing-key value diagnostics</code> Current primary semantic baseline: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/f0f785e5">f0f785e5</a> runtime: report request missing-key value diagnostics</code></p>
+<p>Percentages are candid engineering estimates, not test-suite pass rates. Lane-local work is not counted as product capability until it is integrated into <code>master</code>, gated, committed, and pushed.</p>
+<h3 id="executive-read">Executive Read</h3>
+<p>Overall estimated progress toward a broadly usable generalized PHP native compiler: <strong>65%</strong> <code>[#############-------]</code></p>
+<p>Momentum is positive: primary has recently landed real generalized request/symbol runtime storage, generated-C array/lvalue consumers, and centralized request missing-key read diagnostics. The compiler is still not close to broad PHP completeness because executable <code>$GLOBALS</code>, mutable superglobals, references/COW, objects, calls, control flow, exact diagnostics, and broad composition remain major gaps.</p>
+<h3 id="roadmap-position">Roadmap Position</h3>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Estimate</th><th>Bar</th><th>Current primary-integrated read</th></tr></thead><tbody><tr><td>Runtime and ABI foundations</td><td>92%</td><td><code>[##################--]</code></td><td>Strong shared surfaces exist for values, arrays, strings, comparisons, diagnostics, symbol tables, request state, and reference slots.</td></tr><tr><td>Compiler/backend consumers</td><td>97%</td><td><code>[###################-]</code></td><td>Many generated-C and LLVM paths consume shared ABIs; missing consumers now concentrate in symbols, calls, objects, references, and control flow.</td></tr><tr><td>Executable generalized PHP semantics</td><td>79%</td><td><code>[################----]</code></td><td>Selected scalar, string, array, lvalue, symbol, and request runtime behavior works; ordinary broad PHP programs still hit major blockers.</td></tr><tr><td>Arrays, references, COW, lvalues</td><td>66%</td><td><code>[#############-------]</code></td><td>Selected generated-C array/lvalue execution works, including pointer/cursor builtins and direct value-offset writes; arbitrary roots, full references/COW, by-reference foreach, and ArrayAccess/resource offsets remain open.</td></tr><tr><td>Symbols, globals, request state</td><td>34%</td><td><code>[#######-------------]</code></td><td>Runtime symbol/request roots can snapshot, populate, share reference cells, and report missing-key value-read diagnostics; compiler-level <code>$GLOBALS</code>, superglobal mutation, request lifetime, and frame propagation are not done.</td></tr><tr><td>Objects, properties, methods</td><td>11%</td><td><code>[##------------------]</code></td><td>Mostly blockers and metadata. Real allocation/property/method behavior remains largely absent.</td></tr><tr><td>Diagnostics and control-flow cleanup</td><td>27%</td><td><code>[#####---------------]</code></td><td>Shared diagnostic/status surfaces exist and request missing-key value reads now report through the request result carrier, but exact ordering, recovery, loops/switch/goto/finally/exceptions, and cleanup stacks are not integrated.</td></tr><tr><td>Broad integrated verification</td><td>67%</td><td><code>[#############-------]</code></td><td>Focused gates and linked tests are useful; broad differential composition coverage remains thin.</td></tr></tbody></table></div>
+<h3 id="primary-integrated-capability">Primary-Integrated Capability</h3>
 <ul>
-<li><code>master</code> is pushed and synced with <code>origin/master</code>; this file is the latest progress-dashboard update on top of the semantic baseline.</li>
-<li>The current semantic baseline remains <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/0f123f2d">0f123f2d</a></code>.</li>
-<li>The only expected dirty primary diff is the preserved <code>runtime/src/lib.rs</code> append/null-slot cleanup hunk. It is not counted here.</li>
-<li>The latest integrated semantic sequence is:</li>
-<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/0f123f2d">0f123f2d</a> codegen: route array pointer builtins through lvalue ABI</code></li>
-<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b6e271e6">b6e271e6</a> runtime: snapshot request superglobal storage</code></li>
+<li>[x] Shared runtime/value foundations for selected scalar, string, array, comparison, diagnostic, symbol, request, and reference-slot operations.</li>
+<li>[x] Generated-native C consumers for selected scalar/string/array/lvalue behaviors with linked executable coverage.</li>
+<li>[x] Request-state runtime snapshot/rebuild and symbol-table population ABIs.</li>
+<li>[x] Symbol-table and request-root reference-cell sharing at runtime.</li>
+<li>[x] Generated-native C pointer/cursor builtins over tracked native array owners and nested owner paths.</li>
+<li>[x] Generated-native C direct value-offset writes over missing/null/false/scalar roots through the shared mutation ABI.</li>
+<li>[x] Runtime request missing-key value-read diagnostics through the shared request operation-result carrier.</li>
+<li>[ ] Executable PHP-level <code>$GLOBALS</code>, mutable superglobals, request lifetime threading, and frame propagation.</li>
+<li>[ ] General references/COW, owner-slot/value-slot/reference-slot materialization, by-reference arguments/returns, and alias-visible mutation barriers.</li>
+<li>[ ] Real object allocation, properties, methods, magic hooks, visibility, ArrayAccess, and resource offset behavior.</li>
+<li>[ ] General dynamic calls, user function frames, variadics/spreads, cleanup, and exact diagnostic ordering across control flow.</li>
+</ul>
+<h3 id="recent-primary-progress">Recent Primary Progress</h3>
+<p>Since the prior evaluator window, primary integrated and pushed:</p>
+<ul>
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/9ca31007">9ca31007</a> runtime: populate request roots from symbol tables</code></li>
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/4aef9974">4aef9974</a> runtime: share symbol and request reference slots</code></li>
-<li>These commits add real generalized runtime/backend surfaces, but they do not yet mean executable PHP superglobal, <code>$GLOBALS</code>, reference/COW, or arbitrary array semantics are complete.</li>
+<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/0f123f2d">0f123f2d</a> codegen: route array pointer builtins through lvalue ABI</code></li>
+<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/90d8af3f">90d8af3f</a> codegen: route direct value-offset writes through mutation ABI</code></li>
+<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/f0f785e5">f0f785e5</a> runtime: report request missing-key value diagnostics</code></li>
 </ul>
-<h3 id="recent-work">Recent Work</h3>
-<p>The current wave moved request, symbol, and array-lvalue behavior toward shared runtime/backend boundaries:</p>
+<p>The current worktree is synced with <code>origin/master</code> at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/f0f785e5">f0f785e5</a></code>. The only expected dirty primary diff is the preserved unstaged <code>runtime/src/lib.rs</code> append/null-slot cleanup hunk; it is not counted as product progress.</p>
+<h3 id="lane-local-candidate-work">Lane-Local Candidate Work</h3>
+<p>These are active candidates, not integrated capability:</p>
 <ul>
-<li>Request state can snapshot backed superglobal arrays and rebuild <code>$_REQUEST</code> from <code>_GET</code>, <code>_POST</code>, and <code>_COOKIE</code> policy order.</li>
-<li>Request roots can be populated from native symbol-table snapshots through one runtime ABI.</li>
-<li>Symbol-table slots now store <code>ArraySlot</code>s, allowing root symbols to hold shared PHP reference cells instead of only cloned values.</li>
-<li>Request superglobal slots can also share reference cells, so root symbol references and request slots can point at the same runtime cell.</li>
-<li>Generated-native C now routes <code>current</code>, <code>key</code>, <code>next</code>, <code>prev</code>, <code>reset</code>, and <code>end</code> over tracked native array owners through the shared array-lvalue owner/path boundary instead of one builtin-specific lowering path.</li>
-<li>Clean verification for <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/4aef9974">4aef9974</a></code> passed the full <code>php_runtime</code> crate in a separate worktree with only the staged semantic patch applied.</li>
+<li><code>impl-array-lowering</code>: lazy <code>??=</code> RHS owner-cell storage-effect handling.</li>
+<li><code>impl-array-value-runtime</code>: generated-C and LLVM single-known dynamic call value propagation.</li>
+<li><code>impl-binary-string-runtime</code>: include-path execution and array replacement string operations.</li>
+<li><code>impl-native-control-flow-seed</code>: shared control-flow target-block allocation.</li>
+<li><code>impl-function-frame-seed</code>: typed parameter frame-slot binding contract.</li>
+<li><code>impl-native-error-diagnostic-semantics</code>: diagnostic result/family contract expansion.</li>
+<li><code>impl-native-reference-cell-runtime</code>: owner-cell production-realizer contract.</li>
+<li><code>impl-native-object-seed</code>: declared class-name constant metadata routing.</li>
 </ul>
-<h3 id="what-is-still-missing">What Is Still Missing</h3>
-<ul>
-<li>Generalized PHP-level symbol lowering: <code>$GLOBALS</code>, locals, imports, superglobals, dynamic variables, undefined slots, repeated calls, and request/global separation.</li>
-<li>Real reference/COW semantics: owner-slot/value-slot/reference-slot materialization, mutation barriers, alias visibility, by-reference assignment/args/returns, and cleanup.</li>
-<li>Full array semantics: arbitrary writable roots, string/object/resource offsets, ArrayAccess, by-reference foreach, undefined/scalar recovery, and LLVM parity.</li>
-<li>Function/call semantics: dynamic calls, frame handoff, argument cleanup, by-reference parameters, variadics/spreads, unknown callees, and return ownership.</li>
-<li>Object/property/method semantics: allocation, dynamic names, visibility, magic hooks, stdClass, static properties, property array offsets, references/COW, and diagnostics.</li>
-<li>Control-flow and diagnostics: loops, switch, break/continue, goto/labels, branch joins, cleanup stacks, exact warning/error ordering, and recovery behavior.</li>
-<li>Type conversion/comparison parity: numeric strings, truthiness, object/resource/reference blockers, recursive structures, and backend parity.</li>
-</ul>
-<h3 id="roadmap-priorities">Roadmap Priorities</h3>
-<ol>
-<li>Turn landed runtime/symbol/request reference surfaces into executable compiler/backend consumers.</li>
-<li>Replace blockers with real generalized behavior one semantic family at a time, starting where the runtime ABI is already present.</li>
-<li>Keep integrating small primary batches with focused gates and immediate pushes.</li>
-<li>Reject whole-lane merges, fixture-shaped production lowering, generated-source substring-only progress, and blocker vocabulary that does not unlock execution.</li>
-<li>Expand broad composition verification after each semantic family gains a real consumer.</li>
-</ol>
-<h3 id="near-term-steering">Near-Term Steering</h3>
-<p>The next best primary slices should be executable consumers rather than more runtime-only vocabulary:</p>
-<ul>
-<li>nested/arbitrary-root <code>??=</code>, append/RMW forms, missing/null/scalar recovery, or owner-slot/value-slot/reference-slot materialization over the array-lvalue boundary;</li>
-<li>whole-bag request/superglobal reads or <code>isset()</code> / <code>empty()</code> probes over the request-state boundary;</li>
-<li>compiler/backend consumers for shared symbol/request reference slots or a narrow references/COW owner-slot materialization slice;</li>
-<li>a concrete object/call/control-flow blocker replacement with linked executable evidence.</li>
-</ul>
-<p>Lane-local work remains useful source material, but only pushed primary commits count as shipped compiler capability.</p></section></main>
-  <footer><span>Generated 2026-05-22T09:56:04.320Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+<h3 id="active-roadmap-items">Active Roadmap Items</h3>
+<div class="table-wrap"><table><thead><tr><th>Active item</th><th>Estimate</th><th>Status</th><th>Next useful primary shape</th></tr></thead><tbody><tr><td>Array/lvalue execution</td><td>66%</td><td>In progress</td><td>Nested/arbitrary-root writes, <code>??=</code>, append/RMW, owner-slot/value-slot/reference-slot materialization, or LLVM parity.</td></tr><tr><td>Symbols/request/globals</td><td>34%</td><td>In progress</td><td>Whole-bag request/superglobal reads, <code>isset()</code>/<code>empty()</code>, mutable storage, <code>$GLOBALS</code> aliasing, or request lifetime threading.</td></tr><tr><td>References/COW</td><td>28%</td><td>In progress</td><td>Narrow owner/reference slot materialization with alias-visible mutation and executable evidence.</td></tr><tr><td>Calls/functions</td><td>24%</td><td>In progress</td><td>Dynamic call lookup or user-frame value propagation beyond one known callable.</td></tr><tr><td>Objects/properties/methods</td><td>11%</td><td>Early</td><td>Allocation/property/method behavior through shared carriers, not metadata-only blockers.</td></tr><tr><td>Control flow/cleanup/diagnostics</td><td>27%</td><td>Early</td><td>One real structured transfer or cleanup path with exact ordering evidence, plus request diagnostic consumers in generated backends.</td></tr><tr><td>Broad verification</td><td>67%</td><td>In progress</td><td>Composition checks crossing semantic families after each primary consumer lands.</td></tr></tbody></table></div>
+<h3 id="steering-notes">Steering Notes</h3>
+<p>The next best primary slices should turn landed runtime/storage surfaces into executable behavior. More standalone ABI vocabulary is lower value unless it directly unlocks a compiled PHP consumer. Whole-lane merges, fixture-shaped production lowering, generated-source substring-only progress, formatter spillover, and docs-only churn outside this progress dashboard should remain rejected.</p></section></main>
+  <footer><span>Generated 2026-05-22T10:11:08.129Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
