@@ -1040,6 +1040,23 @@ const GLOBALS_SYMBOL_PATH_SOURCE: &str = concat!(
     "echo empty($GLOBALS[\"bag\"][\"slot\"]) ? 1 : 0;\n",
 );
 
+const GLOBALS_SYMBOL_PATH_WRITE_SOURCE: &str = concat!(
+    "<?php\n",
+    "$key = \"alpha\";\n",
+    "$slot = \"slot\";\n",
+    "$GLOBALS[$key] = strtoupper(\"a\");\n",
+    "$GLOBALS[\"bag\"][$slot] = \"B\";\n",
+    "echo $alpha;\n",
+    "echo \"|\";\n",
+    "echo $GLOBALS[\"bag\"][$slot];\n",
+    "echo \"|\";\n",
+    "$alpha = \"C\";\n",
+    "echo $GLOBALS[$key];\n",
+    "echo \"|\";\n",
+    "echo isset($alpha) ? 1 : 0;\n",
+    "echo empty($missing) ? 1 : 0;\n",
+);
+
 const REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
     "<?php\n",
     "$_GET = \"alpha\";\n",
@@ -2161,6 +2178,44 @@ fn native_executable_c_source_routes_dynamic_globals_paths_through_symbol_table_
     assert!(
         body.matches("phpc_native_symbol_table_write").count() >= 6,
         "current root variables should be copied into each symbol path snapshot:\n{source}"
+    );
+    assert!(
+        !source.contains("global-symbol-table lowering rejects $GLOBALS"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_globals_path_writes_through_symbol_table_abi() {
+    let program = parse(GLOBALS_SYMBOL_PATH_WRITE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_symbol_table_set_value_by_path_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_read_value_by_path_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_set_value_by_path_with_diagnostic")
+            .count()
+            >= 3,
+        "$GLOBALS path writes and direct variable writes after activation should use the shared symbol path write ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_symbol_table_read_value_by_path_with_diagnostic")
+            .count()
+            >= 3,
+        "$GLOBALS path reads and direct variable reads after activation should use the shared symbol path read ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_NativeValueHandle globals_symbol_path")
+            .count()
+            >= 6,
+        "$GLOBALS path writes should materialize root and nested keys as native values:\n{source}"
     );
     assert!(
         !source.contains("global-symbol-table lowering rejects $GLOBALS"),
@@ -4681,6 +4736,53 @@ fn emit_exe_links_and_runs_globals_symbol_path_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"A|B|10|10");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_globals_symbol_path_write_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("globals_symbol_path_write");
+    let source_path = native_link_output_path("globals_symbol_path_write_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, GLOBALS_SYMBOL_PATH_WRITE_SOURCE)
+        .expect("native globals symbol path write source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native globals symbol path write source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native globals symbol path write executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"A|B|C|11");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
