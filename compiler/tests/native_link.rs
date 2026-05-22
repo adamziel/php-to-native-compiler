@@ -4,6 +4,17 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, parse};
 
+const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"empty\" => \"\", \"zero\" => \"0\", \"one\" => \"1\"];\n",
+    "echo (!($items[\"empty\"]) ? \"T\" : \"F\");\n",
+    "echo (!($items[\"zero\"]) ? \"T\" : \"F\");\n",
+    "echo (!($items[\"one\"]) ? \"T\" : \"F\");\n",
+    "echo (($items[\"zero\"] xor $items[\"one\"]) ? \"T\" : \"F\");\n",
+    "echo (($items[\"empty\"] xor array_sum([0])) ? \"T\" : \"F\");\n",
+    "echo ((array_sum([2]) xor $items[\"one\"]) ? \"T\" : \"F\");\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_direct_strings_and_scalars_through_runtime_helpers() {
     let program = parse(
@@ -406,6 +417,44 @@ fn native_executable_c_source_routes_value_result_offset_reads_through_shared_bo
 }
 
 #[test]
+fn native_executable_c_source_routes_native_value_truthiness_through_runtime_abi() {
+    let program = parse(NATIVE_VALUE_TRUTHINESS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("extern _Bool phpc_native_value_is_truthy(phpc_NativeValueHandle value);"),
+        "{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_value_is_truthy(").count() >= 6,
+        "unary and XOR native-value operands should share the truthiness ABI:\n{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_value_offset_operation_with_diagnostic(")
+            .count()
+            >= 4,
+        "array offset values should remain value-offset producers:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_array_query_operation_with_diagnostic"),
+        "array query values should feed the same truthiness consumer:\n{source}"
+    );
+    assert!(
+        body.contains("!="),
+        "logical XOR should combine converted truthiness operands:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly logical lowering rejects"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("assembly unary lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_array_pointer_lvalue_owner_program() {
     if !has_cc() {
         return;
@@ -746,6 +795,60 @@ fn emit_exe_links_and_runs_value_result_offset_read_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"M|Q|O|B");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_value_truthiness_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("native_value_truthiness.php");
+    let output_path = native_link_output_path("native_value_truthiness");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(&source_path, NATIVE_VALUE_TRUTHINESS_SOURCE)
+        .expect("write native value truthiness source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native value truthiness source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native value truthiness executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native value truthiness executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "TTFTFF");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);

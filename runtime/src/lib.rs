@@ -6890,6 +6890,16 @@ pub unsafe extern "C" fn phpc_native_value_bool_with_diagnostic(
     }
 }
 
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. Null handles follow PHP undefined-read null flow and
+/// are falsey.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_is_truthy(handle: NativeValueHandle) -> bool {
+    unsafe { handle.as_ref() }.is_some_and(Value::is_truthy)
+}
+
 unsafe fn native_value_bool_result(handle: NativeValueHandle) -> RuntimeResult<bool> {
     let Some(value) = (unsafe { handle.as_ref() }) else {
         return Err(RuntimeError::unsupported_call(
@@ -27148,6 +27158,33 @@ mod tests {
         unsafe { phpc_native_value_free(subject) };
         unsafe { phpc_native_value_free(false_value) };
         unsafe { phpc_native_value_free(true_value) };
+    }
+
+    #[test]
+    fn native_value_truthiness_matches_php_value_semantics() {
+        fn assert_truthy(value: Value, expected: bool) {
+            let handle = NativeValueHandle::from_value(value);
+            assert_eq!(unsafe { phpc_native_value_is_truthy(handle) }, expected);
+            unsafe { phpc_native_value_free(handle) };
+        }
+
+        assert!(!unsafe { phpc_native_value_is_truthy(NativeValueHandle::null()) });
+        assert_truthy(Value::Null, false);
+        assert_truthy(Value::Bool(false), false);
+        assert_truthy(Value::Bool(true), true);
+        assert_truthy(Value::Int(0), false);
+        assert_truthy(Value::Int(-1), true);
+        assert_truthy(Value::Float(0.0), false);
+        assert_truthy(Value::Float(0.25), true);
+        assert_truthy(Value::String(String::new()), false);
+        assert_truthy(Value::String("0".to_string()), false);
+        assert_truthy(Value::String("00".to_string()), true);
+        assert_truthy(Value::Array(PhpArray::new()), false);
+
+        let mut array = PhpArray::new();
+        array.insert(ArrayKey::string("value"), Value::Int(1));
+        assert_truthy(Value::Array(array), true);
+        assert_truthy(Value::Resource(7), true);
     }
 
     #[test]

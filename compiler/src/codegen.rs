@@ -2775,6 +2775,7 @@ struct LlvmGenerator {
     uses_native_value_echo_stdout: bool,
     uses_native_string_int_operation: bool,
     uses_native_value_offset_operation: bool,
+    uses_native_value_truthiness: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -2977,6 +2978,13 @@ impl LlvmGenerator {
             ));
             output.push_str("%phpc.NativeStringConversionResult = type { %phpc.NativeByteBuffer, %phpc.NativeDiagnosticHandle }\n");
         }
+        if self.uses_native_value_truthiness
+            && !self.uses_native_value_echo_stdout
+            && !self.uses_native_string_int_operation
+            && !self.uses_native_value_offset_operation
+        {
+            output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
+        }
         output.push_str("declare i32 @printf(ptr, ...)\n");
         if self.uses_strcmp {
             output.push_str("declare i32 @strcmp(ptr, ptr)\n");
@@ -3026,6 +3034,12 @@ impl LlvmGenerator {
             output.push_str("declare i1 @phpc_native_value_bool_with_diagnostic(%phpc.NativeValueHandle, ptr)\n");
             output.push_str("declare %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle)\n");
             output.push_str("declare void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult)\n");
+        }
+        if self.uses_native_value_truthiness {
+            output.push_str("declare i1 @phpc_native_value_is_truthy(%phpc.NativeValueHandle)\n");
+            if !self.uses_native_value_echo_stdout && !self.uses_native_string_int_operation {
+                output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
+            }
         }
         output.push('\n');
         output.push_str("@.fmt_int = private unnamed_addr constant [5 x i8] c\"%lld\\00\"\n");
@@ -5634,6 +5648,12 @@ impl LlvmGenerator {
         span: Span,
     ) -> CompileResult<IrValue> {
         let left = self.emit_expr(left)?;
+        if matches!(op, BinaryOp::LogicalXor) {
+            let left = self.emit_logical_truthiness_operand(left, span)?;
+            let right = self.emit_expr(right)?;
+            let right = self.emit_logical_truthiness_operand(right, span)?;
+            return self.emit_bool_binary(left, op, right, span);
+        }
         if let Some(left_truthy) = self.known_truthiness_for_value(&left) {
             match op {
                 BinaryOp::LogicalAnd if !left_truthy => return Ok(IrValue::Bool(false)),
@@ -5643,6 +5663,24 @@ impl LlvmGenerator {
         }
         let right = self.emit_expr(right)?;
         self.emit_bool_binary(left, op, right, span)
+    }
+
+    fn emit_logical_truthiness_operand(
+        &mut self,
+        value: IrValue,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        if let Some(truthy) = self.known_truthiness_for_value(&value) {
+            return Ok(IrValue::Bool(truthy));
+        }
+        match value {
+            value @ (IrValue::Bool(_) | IrValue::BoolExpr(_)) => Ok(value),
+            IrValue::NativeValue(handle) => {
+                let truthy = self.emit_native_value_handle_truthiness(handle);
+                Ok(IrValue::BoolExpr(truthy))
+            }
+            _ => Err(self.unsupported(span, llvm_logical_rejection())),
+        }
     }
 
     fn require_bool_value(&self, value: IrValue, span: Span) -> CompileResult<IrValue> {
@@ -6244,8 +6282,26 @@ impl LlvmGenerator {
                 }
             }
             IrValue::Null => Ok(IrValue::Bool(true)),
-            IrValue::NativeValue(_) => Err(self.unsupported(span, LLVM_UNARY_REJECTION)),
+            IrValue::NativeValue(value) => {
+                let truthy = self.emit_native_value_handle_truthiness(value);
+                let inverted = self.next_temp();
+                self.body
+                    .push(format!("{inverted} = xor i1 {truthy}, true"));
+                Ok(IrValue::BoolExpr(inverted))
+            }
         }
+    }
+
+    fn emit_native_value_handle_truthiness(&mut self, handle: String) -> String {
+        let truthy = self.next_temp();
+        self.uses_native_value_truthiness = true;
+        self.body.push(format!(
+            "{truthy} = call i1 @phpc_native_value_is_truthy(%phpc.NativeValueHandle {handle})"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+        ));
+        truthy
     }
 
     fn static_bool_not(&self, value: &str) -> Option<KnownBool> {
@@ -6967,6 +7023,7 @@ struct CGenerator {
     uses_native_value_offset_path_write: bool,
     uses_native_value_offset_path_append: bool,
     uses_native_value_offset_path_unset: bool,
+    uses_native_value_truthiness: bool,
     uses_native_array_lvalue_helpers: bool,
     uses_native_request_state_helpers: bool,
     uses_native_symbol_table_helpers: bool,
@@ -7334,6 +7391,7 @@ impl CGenerator {
             || self.uses_native_array_helpers
             || self.uses_native_request_state_helpers
             || self.uses_native_symbol_table_helpers
+            || self.uses_native_value_truthiness
     }
 
     fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
@@ -7364,6 +7422,7 @@ impl CGenerator {
             if self.uses_native_string_helpers
                 || self.uses_native_comparison_helpers
                 || self.uses_native_array_helpers
+                || self.uses_native_value_truthiness
             {
                 output.push_str(
                     "typedef struct { uint8_t tag; uint8_t bool_value; int64_t int_value; double float_value; } phpc_NativeScalarValue;\n",
@@ -7649,6 +7708,11 @@ impl CGenerator {
                 }
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_filesystem_path_operation_with_diagnostic(phpc_NativeValueHandle path, phpc_NativeValueHandle option, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_string_conversion_result_free(phpc_NativeStringConversionResult result);\n");
+            }
+            if self.uses_native_value_truthiness {
+                output.push_str(
+                    "extern _Bool phpc_native_value_is_truthy(phpc_NativeValueHandle value);\n",
+                );
             }
             output.push_str(
                 "extern size_t phpc_native_value_echo_stdout(phpc_NativeValueHandle value);\n",
@@ -10322,22 +10386,8 @@ impl CGenerator {
             }
             Expr::Unary { op, expr, span } => {
                 if matches!(op, UnaryOp::Not) {
-                    if let Expr::Unary {
-                        op: UnaryOp::Not,
-                        expr,
-                        ..
-                    } = expr.as_ref()
-                    {
-                        let value = self.emit_value_operand_expr(expr)?;
-                        if matches!(
-                            value,
-                            CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ComparisonDecision(_)
-                        ) {
-                            return Ok(value);
-                        }
-                        let inverted = self.emit_bool_not(value, *span)?;
-                        return self.emit_bool_not(inverted, *span);
-                    }
+                    let value = self.emit_logical_truthiness_expr(expr, *span)?;
+                    return self.emit_bool_not(value, *span);
                 }
                 if matches!(op, UnaryOp::BitwiseNot) {
                     if let Expr::Unary {
@@ -16467,6 +16517,11 @@ impl CGenerator {
         right: &Expr,
         span: Span,
     ) -> CompileResult<CValue> {
+        if matches!(op, BinaryOp::LogicalXor) {
+            let left = self.emit_logical_truthiness_expr(left, span)?;
+            let right = self.emit_logical_truthiness_expr(right, span)?;
+            return self.emit_bool_binary(left, op, right, span);
+        }
         let left = self.emit_expr(left)?;
         if let Some(left_truthy) = self.known_truthiness_for_value(&left) {
             match op {
@@ -16477,6 +16532,36 @@ impl CGenerator {
         }
         let right = self.emit_expr(right)?;
         self.emit_bool_binary(left, op, right, span)
+    }
+
+    fn emit_logical_truthiness_expr(&mut self, expr: &Expr, span: Span) -> CompileResult<CValue> {
+        if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
+            let truthy = self.emit_native_value_handle_truthiness(&value.handle);
+            self.body.extend(value.cleanup_after_use);
+            return Ok(CValue::BoolExpr(truthy));
+        }
+        let value = self.emit_expr(expr)?;
+        self.emit_logical_truthiness_operand(value, span)
+    }
+
+    fn emit_logical_truthiness_operand(
+        &mut self,
+        value: CValue,
+        span: Span,
+    ) -> CompileResult<CValue> {
+        if let Some(truthy) = self.known_truthiness_for_value(&value) {
+            return Ok(CValue::Bool(truthy));
+        }
+        match value {
+            value @ (CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ComparisonDecision(_)) => {
+                Ok(value)
+            }
+            CValue::NativeValueHandle(handle) => {
+                let truthy = self.emit_native_value_handle_truthiness(&handle);
+                Ok(CValue::BoolExpr(truthy))
+            }
+            _ => Err(self.unsupported(span, assembly_logical_rejection())),
+        }
     }
 
     fn require_bool_value(&self, value: CValue, span: Span) -> CompileResult<CValue> {
@@ -17142,10 +17227,21 @@ impl CGenerator {
                 }
             }
             CValue::Null => Ok(CValue::Bool(true)),
-            CValue::ArrayHandle(_) | CValue::NativeValueHandle(_) => {
-                Err(self.unsupported(span, ASSEMBLY_UNARY_REJECTION))
+            CValue::NativeValueHandle(handle) => {
+                let truthy = self.emit_native_value_handle_truthiness(&handle);
+                Ok(CValue::BoolExpr(format!("!({truthy})")))
             }
+            CValue::ArrayHandle(_) => Err(self.unsupported(span, ASSEMBLY_UNARY_REJECTION)),
         }
+    }
+
+    fn emit_native_value_handle_truthiness(&mut self, handle: &str) -> String {
+        let truthy = self.next_native_name("native_value_truthy");
+        self.uses_native_value_truthiness = true;
+        self.body.push(format!(
+            "_Bool {truthy} = phpc_native_value_is_truthy({handle});"
+        ));
+        truthy
     }
 
     fn static_bool_not(&self, value: &str) -> Option<KnownBool> {

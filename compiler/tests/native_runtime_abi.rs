@@ -236,6 +236,39 @@ fn generated_ir_routes_offset_results_through_string_consumers() {
 }
 
 #[test]
+fn generated_ir_routes_native_value_truthiness_through_runtime_abi() {
+    let source = "<?php\necho !(\"0\"[0]);\necho ((\"0\"[0]) xor (\"A\"[0]));\n";
+    let ir = emit_ir_source(source).unwrap();
+
+    assert!(
+        ir.contains("declare i1 @phpc_native_value_is_truthy(%phpc.NativeValueHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call i1 @phpc_native_value_is_truthy").count() >= 3,
+        "{ir}"
+    );
+    assert!(
+        ir.matches(
+            "call %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic"
+        )
+        .count()
+            >= 3,
+        "{ir}"
+    );
+    assert!(
+        ir.contains(" = xor i1 "),
+        "logical XOR and unary not should consume boolean truthiness operands\n{ir}"
+    );
+    assert!(
+        ir.matches("call void @phpc_native_value_free").count() >= 6,
+        "{ir}"
+    );
+    assert!(!ir.contains("logical lowering rejects"), "{ir}");
+    assert!(!ir.contains("unary lowering rejects"), "{ir}");
+}
+
+#[test]
 fn generated_ir_value_offset_route_reaches_assembly_backend() {
     if !has_llvm_assembly_backend() {
         return;
