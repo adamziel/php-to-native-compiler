@@ -1267,6 +1267,60 @@ fn emit_exe_links_and_runs_string_offset_write_byte_boundary_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_string_offset_write_warning_continuation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("string_offset_write_warning_continuation");
+    let source_path =
+        native_link_output_path("string_offset_write_warning_continuation_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(
+        &source_path,
+        "<?php\n$flag = (1 + 2) === 3;\n$s = $flag ? \"ABC\" : \"WXY\";\n$rep = $flag ? \"XY\" : \"Z\";\n$s[1] = $rep;\n$a = [];\n$a[$s] = \"hit\";\necho $s, \"|\", strlen($s), \"|\", $a[$s];\n",
+    )
+    .expect("native string-offset warning source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native string-offset warning source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"AXC|3|hit");
+    assert_eq!(
+        String::from_utf8_lossy(&run.stderr),
+        "Only the first byte will be assigned to the string offset"
+    );
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_links_and_reports_shared_filesystem_path_blocker_program() {
     if !has_cc() {
         return;

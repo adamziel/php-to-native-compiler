@@ -7220,8 +7220,11 @@ impl CGenerator {
             "phpc_NativeValueHandle {write} = phpc_native_value_string_offset_write_with_diagnostic({}, {}, {}, &{diagnostic});",
             subject.handle, offset.handle, replacement.handle
         ));
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); }}"
+        ));
         let write_failure_cleanup = format!(
-            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}{}",
+            "{}{}{}",
             c_cleanup_sequence(&replacement.cleanup_after_use),
             c_cleanup_sequence(&offset.cleanup_after_use),
             c_cleanup_sequence(&subject.cleanup_after_use)
@@ -7229,8 +7232,6 @@ impl CGenerator {
         let write_error_exit = self.native_error_exit(&write_failure_cleanup);
         self.body
             .push(format!("if ({write}.ptr == NULL) {{ {write_error_exit} }}"));
-        self.body
-            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
         self.body.push(format!(
             "phpc_NativeByteBuffer {buffer} = phpc_native_value_string_clone_bytes({write});"
         ));

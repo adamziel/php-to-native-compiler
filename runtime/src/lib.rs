@@ -161,6 +161,9 @@ pub enum NativeStringOffsetOperation {
     Empty = 2,
 }
 
+pub const PHP_STRING_OFFSET_TRUNCATED_REPLACEMENT_WARNING: &str =
+    "Only the first byte will be assigned to the string offset";
+
 impl NativeStringOffsetOperation {
     fn from_tag(tag: u8) -> RuntimeResult<Self> {
         match tag {
@@ -4135,7 +4138,10 @@ pub unsafe extern "C" fn phpc_native_value_string_offset_operation_with_diagnost
 /// previously returned by the runtime ABI and not yet freed. `diagnostic` may
 /// be null; when non-null, it must point to writable storage for one
 /// `NativeDiagnosticHandle`. On failure the helper stores a diagnostic handle
-/// that the caller owns and must release with `phpc_native_diagnostic_free`.
+/// and returns a null value. On warning-capable writes, such as multi-byte
+/// replacement truncation, the helper returns the written value and stores a
+/// diagnostic warning handle. Any non-null diagnostic handle is owned by the
+/// caller and must be released with `phpc_native_diagnostic_free`.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_value_string_offset_write_with_diagnostic(
     subject: NativeValueHandle,
@@ -4146,7 +4152,12 @@ pub unsafe extern "C" fn phpc_native_value_string_offset_write_with_diagnostic(
     unsafe { native_clear_diagnostic_slot(diagnostic) };
 
     match unsafe { native_value_string_offset_write_value(subject, offset, replacement) } {
-        Ok(value) => NativeValueHandle::from_value(value),
+        Ok((value, warning)) => {
+            if let Some(warning) = warning {
+                unsafe { native_store_diagnostic_message(diagnostic, warning) };
+            }
+            NativeValueHandle::from_value(value)
+        }
         Err(error) => {
             unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
             NativeValueHandle::null()
@@ -4171,18 +4182,19 @@ unsafe fn native_value_string_offset_write_value(
     subject: NativeValueHandle,
     offset: NativeValueHandle,
     replacement: NativeValueHandle,
-) -> RuntimeResult<Value> {
+) -> RuntimeResult<(Value, Option<&'static str>)> {
     let mut bytes = unsafe { native_value_string_offset_subject_bytes(subject) }?;
     let offset = unsafe { native_string_offset_index_from_value(offset) }?;
     let replacement = unsafe { native_string_offset_replacement_bytes_from_value(replacement) }?;
 
-    php_string_offset_write(&mut bytes, offset, &replacement)?;
-    String::from_utf8(bytes).map(Value::String).map_err(|_| {
+    let warning = php_string_offset_write(&mut bytes, offset, &replacement)?;
+    let value = String::from_utf8(bytes).map(Value::String).map_err(|_| {
         RuntimeError::unsupported_call(
             "native string offset write",
             "byte strings with invalid UTF-8 require the binary string value boundary",
         )
-    })
+    })?;
+    Ok((value, warning))
 }
 
 unsafe fn native_value_string_offset_subject_bytes(
@@ -4321,19 +4333,18 @@ pub fn php_string_offset_write(
     bytes: &mut Vec<u8>,
     offset: usize,
     replacement: &[u8],
-) -> RuntimeResult<()> {
+) -> RuntimeResult<Option<&'static str>> {
     if replacement.is_empty() {
         return Err(RuntimeError::invalid_array_access(
             "cannot assign an empty string to a string offset",
         ));
     }
-    if replacement.len() > 1 {
-        return Err(RuntimeError::unsupported_call(
-            "native string offset write",
-            "multi-byte replacements require warning-capable string offset semantics; use the interpreter string-offset write boundary",
-        ));
-    }
 
+    let warning = if replacement.len() > 1 {
+        Some(PHP_STRING_OFFSET_TRUNCATED_REPLACEMENT_WARNING)
+    } else {
+        None
+    };
     let replacement = replacement[0];
     if offset > bytes.len() {
         bytes.resize(offset, b' ');
@@ -4344,7 +4355,7 @@ pub fn php_string_offset_write(
         bytes[offset] = replacement;
     }
 
-    Ok(())
+    Ok(warning)
 }
 
 unsafe fn native_value_string_result_operation_value(
@@ -17854,6 +17865,29 @@ mod tests {
             unsafe { phpc_native_value_free(result) };
         }
 
+        fn assert_written_warning(
+            subject: Value,
+            offset: Value,
+            replacement: Value,
+            expected: &[u8],
+        ) {
+            let (result, diagnostic) = offset_write(subject, offset, replacement);
+            assert!(!result.is_null());
+            assert_eq!(native_value_echo_bytes_for_test(result), expected);
+            assert_eq!(
+                native_byte_buffer_to_vec_for_test(unsafe {
+                    phpc_native_value_string_clone_bytes(result)
+                }),
+                expected
+            );
+            assert_eq!(
+                native_diagnostic_message_for_test(diagnostic),
+                PHP_STRING_OFFSET_TRUNCATED_REPLACEMENT_WARNING
+            );
+            unsafe { phpc_native_value_free(result) };
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+        }
+
         fn assert_diagnostic(subject: Value, offset: Value, replacement: Value, expected: &str) {
             let (result, diagnostic) = offset_write(subject, offset, replacement);
             assert!(result.is_null());
@@ -17880,11 +17914,17 @@ mod tests {
             b"Q",
         );
 
-        assert_diagnostic(
+        assert_written_warning(
             Value::String("abc".to_string()),
             Value::Int(1),
             Value::String("XY".to_string()),
-            "unsupported call native string offset write: multi-byte replacements require warning-capable string offset semantics; use the interpreter string-offset write boundary",
+            b"aXc",
+        );
+        assert_written_warning(
+            Value::Int(907),
+            Value::Int(1),
+            Value::String("BC".to_string()),
+            b"9B7",
         );
         assert_diagnostic(
             Value::String("abc".to_string()),
@@ -17897,6 +17937,12 @@ mod tests {
             Value::Int(0),
             Value::String("B".to_string()),
             "invalid string conversion: native string offset operation failed: array subjects are not supported; only null, bool, int, float, and string subjects are implemented",
+        );
+        assert_diagnostic(
+            Value::String("abc".to_string()),
+            Value::Int(1),
+            Value::String(String::from_utf8(vec![0xc3, 0xa9]).unwrap()),
+            "unsupported call native string offset write: byte strings with invalid UTF-8 require the binary string value boundary",
         );
 
         let subject = NativeValueHandle::from_value(Value::String("ab".to_string()));
