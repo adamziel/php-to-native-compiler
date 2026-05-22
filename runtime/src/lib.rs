@@ -2748,6 +2748,23 @@ pub unsafe extern "C" fn phpc_native_string_clone_bytes(
 
 /// # Safety
 ///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. The returned buffer owns a clone of the PHP string
+/// bytes and must be freed independently with `phpc_native_byte_buffer_free`.
+/// Null handles and non-string values return an empty buffer.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_string_clone_bytes(
+    handle: NativeValueHandle,
+) -> NativeByteBuffer {
+    let Some(Value::String(value)) = (unsafe { handle.as_ref() }) else {
+        return NativeByteBuffer::empty();
+    };
+
+    NativeByteBuffer::from_slice(value.as_bytes())
+}
+
+/// # Safety
+///
 /// `handle` must be null or a handle previously returned by the runtime ABI
 /// and not yet freed. The returned value handle owns a cloned runtime
 /// `Value::String` for valid UTF-8 bytes. Null handles and non-UTF-8 bytes
@@ -4112,6 +4129,31 @@ pub unsafe extern "C" fn phpc_native_value_string_offset_operation_with_diagnost
     }
 }
 
+/// # Safety
+///
+/// `subject`, `offset`, and `replacement` must be null or value handles
+/// previously returned by the runtime ABI and not yet freed. `diagnostic` may
+/// be null; when non-null, it must point to writable storage for one
+/// `NativeDiagnosticHandle`. On failure the helper stores a diagnostic handle
+/// that the caller owns and must release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_string_offset_write_with_diagnostic(
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    replacement: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_string_offset_write_value(subject, offset, replacement) } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
 unsafe fn native_value_string_offset_operation_value(
     subject: NativeValueHandle,
     offset: NativeValueHandle,
@@ -4123,6 +4165,24 @@ unsafe fn native_value_string_offset_operation_value(
     Ok(Value::Bool(php_string_offset_bool_operation(
         &bytes, offset, operation,
     )))
+}
+
+unsafe fn native_value_string_offset_write_value(
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    replacement: NativeValueHandle,
+) -> RuntimeResult<Value> {
+    let mut bytes = unsafe { native_value_string_offset_subject_bytes(subject) }?;
+    let offset = unsafe { native_string_offset_index_from_value(offset) }?;
+    let replacement = unsafe { native_string_offset_replacement_bytes_from_value(replacement) }?;
+
+    php_string_offset_write(&mut bytes, offset, &replacement)?;
+    String::from_utf8(bytes).map(Value::String).map_err(|_| {
+        RuntimeError::unsupported_call(
+            "native string offset write",
+            "byte strings with invalid UTF-8 require the binary string value boundary",
+        )
+    })
 }
 
 unsafe fn native_value_string_offset_subject_bytes(
@@ -4145,6 +4205,31 @@ unsafe fn native_value_string_offset_subject_bytes(
         | Value::Closure(_)
         | Value::Resource(_) => Err(RuntimeError::invalid_string_conversion(format!(
             "native string offset operation failed: {} subjects are not supported; only null, bool, int, float, and string subjects are implemented",
+            value.type_name()
+        ))),
+    }
+}
+
+unsafe fn native_string_offset_replacement_bytes_from_value(
+    handle: NativeValueHandle,
+) -> RuntimeResult<Vec<u8>> {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string offset write failed: replacement handle is null",
+        ));
+    };
+
+    match value {
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+            Ok(analyze_php_value_string_semantics(value)
+                .into_string()
+                .into_bytes())
+        }
+        Value::Array(_)
+        | Value::Object(_)
+        | Value::Closure(_)
+        | Value::Resource(_) => Err(RuntimeError::invalid_string_conversion(format!(
+            "native string offset write failed: {} replacements are not supported; only null, bool, int, float, and string replacements are implemented",
             value.type_name()
         ))),
     }
@@ -4230,6 +4315,36 @@ fn php_string_offset_bool_operation(
             Some(_) => false,
         },
     }
+}
+
+pub fn php_string_offset_write(
+    bytes: &mut Vec<u8>,
+    offset: usize,
+    replacement: &[u8],
+) -> RuntimeResult<()> {
+    if replacement.is_empty() {
+        return Err(RuntimeError::invalid_array_access(
+            "cannot assign an empty string to a string offset",
+        ));
+    }
+    if replacement.len() > 1 {
+        return Err(RuntimeError::unsupported_call(
+            "native string offset write",
+            "multi-byte replacements require warning-capable string offset semantics; use the interpreter string-offset write boundary",
+        ));
+    }
+
+    let replacement = replacement[0];
+    if offset > bytes.len() {
+        bytes.resize(offset, b' ');
+        bytes.push(replacement);
+    } else if offset == bytes.len() {
+        bytes.push(replacement);
+    } else {
+        bytes[offset] = replacement;
+    }
+
+    Ok(())
 }
 
 unsafe fn native_value_string_result_operation_value(
@@ -17699,6 +17814,110 @@ mod tests {
         unsafe { phpc_native_value_free(subject) };
         unsafe { phpc_native_value_free(false_value) };
         unsafe { phpc_native_value_free(true_value) };
+    }
+
+    #[test]
+    fn native_string_offset_writes_share_value_key_and_replacement_boundaries() {
+        fn offset_write(
+            subject: Value,
+            offset: Value,
+            replacement: Value,
+        ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+            let subject = NativeValueHandle::from_value(subject);
+            let offset = NativeValueHandle::from_value(offset);
+            let replacement = NativeValueHandle::from_value(replacement);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_string_offset_write_with_diagnostic(
+                    subject,
+                    offset,
+                    replacement,
+                    &mut diagnostic,
+                )
+            };
+            unsafe { phpc_native_value_free(subject) };
+            unsafe { phpc_native_value_free(offset) };
+            unsafe { phpc_native_value_free(replacement) };
+            (result, diagnostic)
+        }
+
+        fn assert_written(subject: Value, offset: Value, replacement: Value, expected: &[u8]) {
+            let (result, diagnostic) = offset_write(subject, offset, replacement);
+            assert!(diagnostic.is_null());
+            assert_eq!(native_value_echo_bytes_for_test(result), expected);
+            assert_eq!(
+                native_byte_buffer_to_vec_for_test(unsafe {
+                    phpc_native_value_string_clone_bytes(result)
+                }),
+                expected
+            );
+            unsafe { phpc_native_value_free(result) };
+        }
+
+        fn assert_diagnostic(subject: Value, offset: Value, replacement: Value, expected: &str) {
+            let (result, diagnostic) = offset_write(subject, offset, replacement);
+            assert!(result.is_null());
+            assert_eq!(native_diagnostic_message_for_test(diagnostic), expected);
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+        }
+
+        assert_written(
+            Value::String("abc".to_string()),
+            Value::String("1".to_string()),
+            Value::String("Z".to_string()),
+            b"aZc",
+        );
+        assert_written(
+            Value::String("ab".to_string()),
+            Value::Int(4),
+            Value::Int(7),
+            b"ab  7",
+        );
+        assert_written(
+            Value::Null,
+            Value::Bool(false),
+            Value::String("Q".to_string()),
+            b"Q",
+        );
+
+        assert_diagnostic(
+            Value::String("abc".to_string()),
+            Value::Int(1),
+            Value::String("XY".to_string()),
+            "unsupported call native string offset write: multi-byte replacements require warning-capable string offset semantics; use the interpreter string-offset write boundary",
+        );
+        assert_diagnostic(
+            Value::String("abc".to_string()),
+            Value::Int(1),
+            Value::String(String::new()),
+            "invalid array access: cannot assign an empty string to a string offset",
+        );
+        assert_diagnostic(
+            Value::Array(PhpArray::new()),
+            Value::Int(0),
+            Value::String("B".to_string()),
+            "invalid string conversion: native string offset operation failed: array subjects are not supported; only null, bool, int, float, and string subjects are implemented",
+        );
+
+        let subject = NativeValueHandle::from_value(Value::String("ab".to_string()));
+        let offset = NativeValueHandle::from_value(Value::Int(0));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let result = unsafe {
+            phpc_native_value_string_offset_write_with_diagnostic(
+                subject,
+                offset,
+                NativeValueHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(result.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string offset write failed: replacement handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(offset) };
+        unsafe { phpc_native_value_free(subject) };
     }
 
     #[test]

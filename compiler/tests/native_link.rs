@@ -322,6 +322,25 @@ fn native_executable_c_source_routes_unary_string_results_through_runtime_contra
 
 const STRING_OFFSET_ISSET_EMPTY_SOURCE: &str = "<?php\n$selected = \"A0\0B\";\n$offset = \"1\";\necho isset($selected[0], $selected[$offset]) ? 1 : 0;\necho \"|\";\necho empty($selected[$offset]) ? 1 : 0;\necho \"|\";\necho isset($selected[99]) ? 1 : 0;\necho \"|\";\necho empty((\"102\")[1]) ? 1 : 0;\necho \"|\";\necho empty(strrev(\"za\")[1]) ? 1 : 0;\n";
 
+const STRING_OFFSET_WRITE_SOURCE: &str = concat!(
+    "<?php\n",
+    "$flag = (1 + 2) === 3;\n",
+    "$s = $flag ? \"ABCD\" : \"WXYZ\";\n",
+    "$i = \"1\";\n",
+    "$rep = $flag ? \"",
+    "\0",
+    "\" : \"Q\";\n",
+    "$s[$i] = $rep;\n",
+    "echo $s;\n",
+    "$a = [];\n",
+    "$a[$s] = $flag ? \"V",
+    "\0",
+    "\" : \"Z\";\n",
+    "echo \"|\", $a[$s];\n",
+    "$s[3] = \"!\";\n",
+    "echo \"|\", $s;\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_string_offset_isset_empty_through_bool_boundary() {
     let program = parse(STRING_OFFSET_ISSET_EMPTY_SOURCE).unwrap();
@@ -357,6 +376,53 @@ fn native_executable_c_source_routes_string_offset_isset_empty_through_bool_boun
         source.contains(", 2, &string_offset_bool_diagnostic_"),
         "empty offsets should use the shared operation tag:\n{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_routes_string_offset_writes_through_byte_boundary() {
+    let program = parse(STRING_OFFSET_WRITE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_string_offset_write_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_string_clone_bytes"),
+        "{source}"
+    );
+    assert!(source.contains("phpc_native_byte_buffer_free"), "{source}");
+    assert!(
+        source
+            .matches(" = phpc_native_value_string_offset_write_with_diagnostic(")
+            .count()
+            >= 2,
+        "string-offset writes should share the runtime write boundary:\n{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_string_clone_bytes(")
+            .count()
+            >= 2,
+        "write results should become byte buffers through the shared clone boundary:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_byte_buffer_free(string_offset_write_buffer")
+            .count()
+            >= 2,
+        "owned string-offset write byte buffers must be cleaned up:\n{source}"
+    );
+    assert!(
+        source
+            .contains("phpc_native_string_from_bytes((const uint8_t *)(string_offset_write_bytes"),
+        "dynamic write bytes should be rematerialized by byte length:\n{source}"
+    );
+    assert!(
+        !source.contains("strlen((const char *)(string_offset_write_bytes"),
+        "write result byte lengths should come from the runtime byte buffer:\n{source}"
+    );
+    assert!(!source.contains("printf(\"%s\""), "{source}");
 }
 
 const FILESYSTEM_PATH_OPERATION_SOURCE: &str = "<?php\n$path = \"pmt/\\0A\";\n$flag = str_contains($path, \"\\0\");\nfile_get_contents($path, $flag);\nrealpath($path);\nfile_exists(42);\nis_writable($path);\nfilesize($path);\nfilemtime($path);\ngetcwd();\nclearstatcache($flag, $path);\nrealpath_cache_get();\nrealpath_cache_size();\necho \"done\\n\";\n";
@@ -1147,6 +1213,53 @@ fn emit_exe_links_and_runs_string_offset_isset_empty_bool_boundary_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"1|1|0|1|0");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_string_offset_write_byte_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("string_offset_write_byte_boundary");
+    let source_path = native_link_output_path("string_offset_write_byte_boundary_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, STRING_OFFSET_WRITE_SOURCE)
+        .expect("native string-offset write source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native string-offset write source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"A\0CD|V\0|A\0C!");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

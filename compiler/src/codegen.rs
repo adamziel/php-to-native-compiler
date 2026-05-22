@@ -5997,6 +5997,7 @@ struct CGenerator {
     static_data: Vec<String>,
     variables: HashMap<String, CValue>,
     array_cleanup_handles: Vec<String>,
+    owned_native_byte_buffers: Vec<String>,
     known_ints: HashMap<String, KnownInt>,
     known_floats: HashMap<String, KnownFloat>,
     known_strings: HashMap<String, KnownString>,
@@ -6007,6 +6008,8 @@ struct CGenerator {
     uses_native_comparison_helpers: bool,
     uses_native_array_comparison_helpers: bool,
     uses_native_array_helpers: bool,
+    uses_native_value_string_clone_bytes: bool,
+    uses_native_value_string_offset_write: bool,
     next_static_data: usize,
     next_native_temp: usize,
 }
@@ -6433,6 +6436,15 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_result_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, phpc_NativeValueHandle replacement, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_offset_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern _Bool phpc_native_value_bool_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_value_string_offset_write {
+                    output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_offset_write_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, phpc_NativeValueHandle replacement, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
+                if self.uses_native_value_string_clone_bytes {
+                    output.push_str("extern phpc_NativeByteBuffer phpc_native_value_string_clone_bytes(phpc_NativeValueHandle value);\n");
+                    output.push_str(
+                        "extern void phpc_native_byte_buffer_free(phpc_NativeByteBuffer buffer);\n",
+                    );
+                }
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_filesystem_path_operation_with_diagnostic(phpc_NativeValueHandle path, phpc_NativeValueHandle option, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_string_conversion_result_free(phpc_NativeStringConversionResult result);\n");
             }
@@ -6495,6 +6507,11 @@ impl CGenerator {
         for line in &self.body {
             output.push_str("  ");
             output.push_str(line);
+            output.push('\n');
+        }
+        for buffer in self.owned_native_byte_buffers.iter().rev() {
+            output.push_str("  ");
+            output.push_str(&format!("phpc_native_byte_buffer_free({buffer});"));
             output.push('\n');
         }
         for handle in self.array_cleanup_handles.iter().rev() {
@@ -7168,6 +7185,67 @@ impl CGenerator {
             }
             _ => false,
         }
+    }
+
+    fn emit_string_offset_write_assignment(
+        &mut self,
+        name: &str,
+        subject: CValue,
+        index_expr: &Expr,
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        let subject = self.materialize_native_array_c_value_handle(subject, span)?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let offset = self.materialize_native_value_result_operand(index_expr, &subject_cleanup)?;
+        let offset_cleanup = c_cleanup_sequence(&offset.cleanup_after_use);
+        let replacement_failure_cleanup = format!("{offset_cleanup}{subject_cleanup}");
+        let replacement = self.materialize_native_value_result_operand(
+            replacement_expr,
+            &replacement_failure_cleanup,
+        )?;
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_value_string_clone_bytes = true;
+        self.uses_native_value_string_offset_write = true;
+
+        let write = self.next_native_name("string_offset_write_value");
+        let diagnostic = self.next_native_name("string_offset_write_diagnostic");
+        let buffer = self.next_native_name("string_offset_write_buffer");
+        let bytes = self.next_native_name("string_offset_write_bytes");
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {write} = phpc_native_value_string_offset_write_with_diagnostic({}, {}, {}, &{diagnostic});",
+            subject.handle, offset.handle, replacement.handle
+        ));
+        let write_failure_cleanup = format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}{}",
+            c_cleanup_sequence(&replacement.cleanup_after_use),
+            c_cleanup_sequence(&offset.cleanup_after_use),
+            c_cleanup_sequence(&subject.cleanup_after_use)
+        );
+        let write_error_exit = self.native_error_exit(&write_failure_cleanup);
+        self.body
+            .push(format!("if ({write}.ptr == NULL) {{ {write_error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.push(format!(
+            "phpc_NativeByteBuffer {buffer} = phpc_native_value_string_clone_bytes({write});"
+        ));
+        self.body
+            .push(format!("const uint8_t *{bytes} = {buffer}.ptr;"));
+        self.body.push(format!("phpc_native_value_free({write});"));
+        self.body.extend(replacement.cleanup_after_use);
+        self.body.extend(offset.cleanup_after_use);
+        self.body.extend(subject.cleanup_after_use);
+        self.known_string_lengths
+            .insert(bytes.clone(), format!("{buffer}.len"));
+        self.owned_native_byte_buffers.push(buffer);
+        self.variables
+            .insert(name.to_string(), CValue::StringExpr(bytes));
+        Ok(())
     }
 
     fn emit_strlen_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
@@ -7975,11 +8053,14 @@ impl CGenerator {
                     let Some(index) = index.as_ref() else {
                         return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
                     };
-                    let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned()
-                    else {
-                        return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                    return match self.variables.get(name).cloned() {
+                        Some(CValue::ArrayHandle(handle)) => {
+                            self.emit_array_write_key_value(&handle, index, expr)
+                        }
+                        Some(subject @ (CValue::String(_) | CValue::StringExpr(_))) => self
+                            .emit_string_offset_write_assignment(name, subject, index, expr, *span),
+                        _ => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
                     };
-                    return self.emit_array_write_key_value(&handle, index, expr);
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
@@ -11077,6 +11158,9 @@ impl CGenerator {
     fn native_error_exit_with_code(&self, local_cleanup: &str, exit_code: &str) -> String {
         let mut cleanup = String::new();
         cleanup.push_str(local_cleanup);
+        for buffer in self.owned_native_byte_buffers.iter().rev() {
+            cleanup.push_str(&format!(" phpc_native_byte_buffer_free({buffer});"));
+        }
         for handle in self.array_cleanup_handles.iter().rev() {
             cleanup.push_str(&format!(" phpc_native_array_free({handle});"));
         }
@@ -11122,14 +11206,18 @@ impl CGenerator {
             }
             CValue::StringExpr(value) => {
                 if self.uses_native_string_helpers {
-                    return Err(Diagnostic::new(
-                        Phase::Codegen,
-                        0,
-                        0,
-                        format!("native executable string output only supports direct compile-time strings through runtime helpers; dynamic string pointer {value} is not linked yet"),
-                    ));
+                    let Some(len) = self.c_string_expr_byte_len_operand(&value) else {
+                        return Err(Diagnostic::new(
+                            Phase::Codegen,
+                            0,
+                            0,
+                            format!("native executable string output requires a byte length before routing dynamic string pointer {value} through runtime helpers"),
+                        ));
+                    };
+                    self.emit_native_string_pointer_helper_echo(&value, &len);
+                } else {
+                    self.emit_c_stdout_printf(format!("printf(\"%s\", {value});"));
                 }
-                self.emit_c_stdout_printf(format!("printf(\"%s\", {value});"));
             }
             CValue::ArrayHandle(_) => return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
         }
@@ -11168,9 +11256,15 @@ impl CGenerator {
         let data = format!("phpc_native_bytes_{index}");
         self.static_data
             .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
+        self.emit_native_string_pointer_helper_echo(&data, &value.len().to_string());
+    }
+
+    fn emit_native_string_pointer_helper_echo(&mut self, value: &str, len: &str) {
+        let index = self.next_static_data;
+        self.next_static_data += 1;
+        let data = format!("(const uint8_t *)({value})");
         self.body.push(format!(
-            "phpc_NativeStringHandle string_{index} = phpc_native_string_from_bytes({data}, {});",
-            value.len()
+            "phpc_NativeStringHandle string_{index} = phpc_native_string_from_bytes({data}, {len});"
         ));
         self.body.push(format!(
             "phpc_NativeDiagnosticHandle diagnostic_{index} = {{0}};"
