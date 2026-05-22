@@ -646,6 +646,8 @@ const ARRAY_LVALUE_NESTED_RMW_SOURCE: &str = "<?php\n$outer = \"outer\";\n$leaf 
 
 const VALUE_OFFSET_MUTATION_ARRAY_APPEND_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$items[] = \"B\";\n$value = \"C\";\n$items[] = $value;\necho $items[\"seed\"], \"|\", $items[0], \"|\", $items[1], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
 
+const VALUE_OFFSET_MUTATION_VALUE_WRITE_SOURCE: &str = "<?php\n$key = \"dyn\";\n$missing[$key] = \"U\";\n$null = null;\n$null[\"n\"] = \"N\";\n$false = false;\n$false[2] = \"F\";\n$int = 3;\n$int[\"x\"] = \"bad\";\necho $missing[$key], \"|\", $null[\"n\"], \"|\", $false[2], \"|\", $int;\n";
+
 const VALUE_OFFSET_MUTATION_VALUE_APPEND_SOURCE: &str = "<?php\n$null = null;\n$null[] = \"A\";\n$false = false;\n$false[] = \"BC\";\n$int = 3;\n$int[] = \"x\";\necho $null[0], \"|\", $false[0], \"|\", $int;\n";
 
 const VALUE_OFFSET_PATH_MUTATION_SOURCE: &str = "<?php\n$key = \"a\";\n$null = null;\n$null[$key][\"b\"] = \"A\\0\";\n$false = false;\n$false[\"bucket\"][][\"leaf\"] = \"B\";\n$int = 3;\n$int[\"x\"][\"y\"] = \"z\";\necho isset($null[$key]) ? 1 : 0, \"|\", isset($false[\"bucket\"]) ? 1 : 0, \"|\", $int;\n";
@@ -1194,6 +1196,36 @@ fn native_executable_c_source_routes_value_appends_through_mutation_storage() {
     assert!(
         !body.contains("assembly array lowering rejects"),
         "value append assignments should not fall through to the blanket array rejection:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_unassigned_and_value_offset_writes_through_mutation_storage() {
+    let program = parse(VALUE_OFFSET_MUTATION_VALUE_WRITE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_offset_mutation_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        body.contains(", 0, &value_offset_write_diagnostic_"),
+        "value writes should use the shared write operation tag:\n{source}"
+    );
+    assert_eq!(
+        body.matches(" = phpc_native_value_offset_mutation_operation_with_diagnostic(")
+            .count(),
+        4,
+        "missing, null, false, and scalar keyed writes should share one mutation ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_clone(value_offset_write_value_to_clone_"),
+        "value writes should store the selected runtime value through native value storage:\n{source}"
+    );
+    assert!(
+        !body.contains("assembly array lowering rejects"),
+        "value writes should not fall through to the blanket array rejection:\n{source}"
     );
 }
 
@@ -2836,6 +2868,58 @@ fn emit_exe_links_and_runs_value_append_assignment_boundary_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"A|BC|3");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("Automatic conversion of false to array is deprecated")
+            && stderr.contains("cannot use a scalar value as an array"),
+        "stderr:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_unassigned_value_offset_write_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("value_offset_write_unassigned_boundary");
+    let source_path = native_link_output_path("value_offset_write_unassigned_boundary_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, VALUE_OFFSET_MUTATION_VALUE_WRITE_SOURCE)
+        .expect("native value write source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native value write source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"U|N|F|3");
     let stderr = String::from_utf8_lossy(&run.stderr);
     assert!(
         stderr.contains("Automatic conversion of false to array is deprecated")

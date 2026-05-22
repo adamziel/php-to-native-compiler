@@ -8405,6 +8405,65 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_value_offset_write_assignment(
+        &mut self,
+        name: &str,
+        subject: CValue,
+        index_expr: &Expr,
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        let subject = self.materialize_native_array_c_value_handle(subject, span)?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let offset = self.materialize_native_value_result_operand(index_expr, &subject_cleanup)?;
+        let offset_cleanup = c_cleanup_sequence(&offset.cleanup_after_use);
+        let replacement_failure_cleanup = format!("{offset_cleanup}{subject_cleanup}");
+        let replacement = self.materialize_native_value_result_operand(
+            replacement_expr,
+            &replacement_failure_cleanup,
+        )?;
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_value_offset_mutation = true;
+        self.uses_native_value_clone = true;
+
+        let diagnostic = self.next_native_name("value_offset_write_diagnostic");
+        let write_value = self.next_native_name("value_offset_write_value");
+        let value_to_clone = self.next_native_name("value_offset_write_value_to_clone");
+        let stored_value = self.next_native_name("value_offset_write_stored_value");
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {write_value} = phpc_native_value_offset_mutation_operation_with_diagnostic({}, {}, {}, {NATIVE_VALUE_OFFSET_MUTATION_WRITE}, &{diagnostic});",
+            subject.handle, offset.handle, replacement.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value_to_clone} = {};",
+            subject.handle
+        ));
+        self.body.push(format!(
+            "if ({write_value}.ptr != NULL) {{ {value_to_clone} = {write_value}; }}"
+        ));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {stored_value} = phpc_native_value_clone({value_to_clone});"
+        ));
+        self.body
+            .push(format!("phpc_native_value_free({write_value});"));
+        self.body.extend(replacement.cleanup_after_use);
+        self.body.extend(offset.cleanup_after_use);
+        self.body.extend(subject.cleanup_after_use);
+        self.store_native_value_result_variable(
+            name,
+            CNativeValueMaterialization {
+                handle: stored_value,
+                cleanup_after_use: Vec::new(),
+            },
+        );
+        Ok(())
+    }
+
     fn emit_value_offset_path_write_assignment(
         &mut self,
         name: &str,
@@ -11179,7 +11238,26 @@ impl CGenerator {
                         Some(subject) if index.is_none() => {
                             self.emit_value_offset_append_assignment(name, subject, expr, *span)
                         }
-                        _ => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
+                        Some(subject) => {
+                            let Some(index) = index.as_ref() else {
+                                return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                            };
+                            self.emit_value_offset_write_assignment(
+                                name, subject, index, expr, *span,
+                            )
+                        }
+                        None => {
+                            let Some(index) = index.as_ref() else {
+                                return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                            };
+                            self.emit_value_offset_write_assignment(
+                                name,
+                                CValue::Null,
+                                index,
+                                expr,
+                                *span,
+                            )
+                        }
                     };
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))

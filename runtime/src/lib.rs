@@ -5024,9 +5024,43 @@ unsafe fn native_value_offset_mutation_operation_value(
         return unsafe { native_value_offset_append_mutation_value(value, replacement) };
     }
 
+    if operation == NativeValueOffsetMutationOperation::Write as u8
+        && matches!(value, Value::Null | Value::Bool(false))
+    {
+        return unsafe {
+            native_array_conversion_offset_write_mutation_value(value, offset, replacement)
+        };
+    }
+
+    if operation == NativeValueOffsetMutationOperation::Write as u8
+        && matches!(value, Value::Bool(true) | Value::Int(_) | Value::Float(_))
+    {
+        return Err(RuntimeError::invalid_array_access(
+            "cannot use a scalar value as an array",
+        ));
+    }
+
     unsafe {
         native_string_value_offset_mutation_operation_value(subject, offset, replacement, operation)
     }
+}
+
+unsafe fn native_array_conversion_offset_write_mutation_value(
+    subject: &Value,
+    offset: NativeValueHandle,
+    replacement: NativeValueHandle,
+) -> RuntimeResult<(Value, Option<&'static str>)> {
+    let Some(offset) = (unsafe { offset.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_key(
+            "native value offset mutation failed: write offset handle is null",
+        ));
+    };
+    let value = unsafe { native_value_clone_for_offset_mutation(replacement, "write") }?;
+    let mut array = PhpArray::new();
+    array.insert(native_array_key_from_runtime_value(offset)?, value);
+    let diagnostic =
+        matches!(subject, Value::Bool(false)).then_some(PHP_FALSE_TO_ARRAY_DEPRECATION);
+    Ok((Value::Array(array), diagnostic))
 }
 
 unsafe fn native_array_value_offset_mutation_operation_value(
@@ -21565,6 +21599,90 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(missing_replacement) };
+    }
+
+    #[test]
+    fn native_value_offset_write_converts_null_false_and_blocks_scalars() {
+        fn write_value(
+            subject: Value,
+            offset: Value,
+            replacement: Value,
+        ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+            let subject = NativeValueHandle::from_value(subject);
+            let offset = NativeValueHandle::from_value(offset);
+            let replacement = NativeValueHandle::from_value(replacement);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_offset_mutation_operation_with_diagnostic(
+                    subject,
+                    offset,
+                    replacement,
+                    NativeValueOffsetMutationOperation::Write as u8,
+                    &mut diagnostic,
+                )
+            };
+            unsafe { phpc_native_value_free(replacement) };
+            unsafe { phpc_native_value_free(offset) };
+            unsafe { phpc_native_value_free(subject) };
+            (result, diagnostic)
+        }
+
+        fn read_offset(subject: NativeValueHandle, offset: Value) -> NativeValueHandle {
+            let offset = NativeValueHandle::from_value(offset);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_offset_operation_with_diagnostic(
+                    subject,
+                    offset,
+                    NativeStringOffsetOperation::Read as u8,
+                    &mut diagnostic,
+                )
+            };
+            assert!(diagnostic.is_null());
+            unsafe { phpc_native_value_free(offset) };
+            result
+        }
+
+        let (null_written, diagnostic) = write_value(
+            Value::Null,
+            Value::String("name".to_string()),
+            Value::String("Ada".to_string()),
+        );
+        assert!(diagnostic.is_null());
+        let null_read = read_offset(null_written, Value::String("name".to_string()));
+        assert_eq!(native_value_echo_bytes_for_test(null_read), b"Ada");
+        unsafe { phpc_native_value_free(null_read) };
+        unsafe { phpc_native_value_free(null_written) };
+
+        let (false_written, diagnostic) = write_value(
+            Value::Bool(false),
+            Value::Int(2),
+            Value::String("two".to_string()),
+        );
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            PHP_FALSE_TO_ARRAY_DEPRECATION
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        let false_read = read_offset(false_written, Value::Int(2));
+        assert_eq!(native_value_echo_bytes_for_test(false_read), b"two");
+        unsafe { phpc_native_value_free(false_read) };
+        unsafe { phpc_native_value_free(false_written) };
+
+        for subject in [Value::Bool(true), Value::Int(4), Value::Float(2.5)] {
+            let (failed, diagnostic) = write_value(
+                subject,
+                Value::String("key".to_string()),
+                Value::String("value".to_string()),
+            );
+            assert!(failed.is_null());
+            assert_eq!(
+                native_diagnostic_message_for_test(diagnostic),
+                "invalid array access: cannot use a scalar value as an array"
+            );
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+            unsafe { phpc_native_value_free(failed) };
+        }
     }
 
     #[test]
