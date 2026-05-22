@@ -1163,6 +1163,24 @@ const REQUEST_SUPERGLOBAL_PATH_MUTATION_SOURCE: &str = concat!(
     "echo empty($_COOKIE[\"drop\"]) ? 1 : 0;\n",
 );
 
+const REQUEST_SUPERGLOBAL_PATH_APPEND_SOURCE: &str = concat!(
+    "<?php\n",
+    "$slot = \"items\";\n",
+    "$nested = \"nested\";\n",
+    "$_GET[] = \"A\";\n",
+    "$_GET[$slot][] = \"B\";\n",
+    "$_POST[$slot][$nested][] = strtoupper(\"c\");\n",
+    "echo $_GET[0];\n",
+    "echo \"|\";\n",
+    "echo $_GET[$slot][0];\n",
+    "echo \"|\";\n",
+    "echo $_POST[$slot][$nested][0];\n",
+    "echo \"|\";\n",
+    "echo ($_COOKIE[$slot][] = \"D\");\n",
+    "echo \"|\";\n",
+    "echo $_COOKIE[$slot][0];\n",
+);
+
 const REQUEST_SUPERGLOBAL_PATH_READ_PROBE_SOURCE: &str = concat!(
     "<?php\n",
     "$outer = \"outer\";\n",
@@ -2484,6 +2502,46 @@ fn native_executable_c_source_routes_request_path_mutations_through_state_operat
     assert!(
         body.contains("size_t request_superglobal_path_key_lens_"),
         "{source}"
+    );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_request_path_appends_through_state_operations() {
+    let program = parse(REQUEST_SUPERGLOBAL_PATH_APPEND_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_path_mutation_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_request_state_superglobal_path_mutation_operation")
+            .count()
+            >= 4,
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND")
+            .count()
+            >= 4,
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_request_state_key_from_value"),
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_echo_stdout"),
+        "request append assignment-expression values should feed native-value output consumers:\n{source}"
     );
     assert!(
         !source.contains("request-superglobal lowering rejects"),
@@ -5172,6 +5230,53 @@ fn emit_exe_links_and_runs_request_path_mutation_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"0|0|1|1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_path_append_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("request_path_append");
+    let source_path = native_link_output_path("request_path_append_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, REQUEST_SUPERGLOBAL_PATH_APPEND_SOURCE)
+        .expect("native request path append source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native request path append source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native request path append executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"A|B|C|D|D");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

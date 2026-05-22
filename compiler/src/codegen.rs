@@ -7307,6 +7307,7 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY 2\n");
                 output.push_str("#define PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE 1\n");
                 output.push_str("#define PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET 2\n");
+                output.push_str("#define PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND 3\n");
             }
             if self.uses_native_comparison_helpers {
                 output.push_str("typedef struct { uint8_t opcode; uint8_t valid; } phpc_NativeComparisonOperation;\n");
@@ -8334,8 +8335,26 @@ impl CGenerator {
         failure_cleanup: &str,
     ) -> CompileResult<CRequestStatePathMaterialization> {
         debug_assert!(!indices.is_empty());
+        self.materialize_optional_request_superglobal_path_key_refs(indices, failure_cleanup)
+    }
+
+    fn materialize_optional_request_superglobal_path_key_refs(
+        &mut self,
+        indices: &[&Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CRequestStatePathMaterialization> {
         self.uses_native_string_helpers = true;
         self.uses_native_request_state_helpers = true;
+
+        if indices.is_empty() {
+            return Ok(CRequestStatePathMaterialization {
+                ptrs: "NULL".to_string(),
+                lens: "NULL".to_string(),
+                len: 0,
+                status: "PHPC_NATIVE_REQUEST_STATE_STATUS_OK".to_string(),
+                cleanup_after_use: Vec::new(),
+            });
+        }
 
         let mut keys = Vec::new();
         let mut cleanup_after_use = Vec::new();
@@ -8395,6 +8414,15 @@ impl CGenerator {
     ) -> CompileResult<CRequestStatePathMaterialization> {
         let indices = indices.iter().collect::<Vec<_>>();
         self.materialize_request_superglobal_path_key_refs(&indices, failure_cleanup)
+    }
+
+    fn materialize_optional_request_superglobal_path_keys(
+        &mut self,
+        indices: &[Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CRequestStatePathMaterialization> {
+        let indices = indices.iter().collect::<Vec<_>>();
+        self.materialize_optional_request_superglobal_path_key_refs(&indices, failure_cleanup)
     }
 
     fn request_superglobal_operation_failure_condition(&self, result: &str) -> String {
@@ -8934,6 +8962,87 @@ impl CGenerator {
         let result = self.next_native_name("request_superglobal_path_write");
         self.body.push(format!(
             "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_path_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE, {bag_bytes}, {}, {}, {}, {}, {}, {});",
+            name.len(),
+            path.ptrs,
+            path.lens,
+            path.len,
+            path.status,
+            value.handle
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({result});"
+        ));
+        let result_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({result}); {}{}{}",
+            c_cleanup_sequence(&value.cleanup_after_use),
+            c_cleanup_sequence(&path.cleanup_after_use),
+            failure_cleanup
+        ));
+        self.body.push(format!(
+            "if ({result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {result_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_free({result});"
+        ));
+        self.body.extend(value.cleanup_after_use);
+        self.body.extend(path.cleanup_after_use);
+        Ok(())
+    }
+
+    fn emit_request_superglobal_path_append_assignment(
+        &mut self,
+        name: &str,
+        indices: &[Expr],
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let path =
+            self.materialize_optional_request_superglobal_path_keys(indices, failure_cleanup)?;
+        let key_cleanup_sequence = c_cleanup_sequence(&path.cleanup_after_use);
+        let value_failure_cleanup = format!("{key_cleanup_sequence}{failure_cleanup}");
+        let value = self.materialize_native_value_result_operand(expr, &value_failure_cleanup)?;
+        self.emit_request_superglobal_path_append_assignment_from_materialized(
+            name,
+            path,
+            value,
+            failure_cleanup,
+        )
+    }
+
+    fn emit_request_superglobal_path_append_assignment_expr(
+        &mut self,
+        name: &str,
+        indices: &[Expr],
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let path =
+            self.materialize_optional_request_superglobal_path_keys(indices, failure_cleanup)?;
+        let key_cleanup_sequence = c_cleanup_sequence(&path.cleanup_after_use);
+        let value_failure_cleanup = format!("{key_cleanup_sequence}{failure_cleanup}");
+        let (result_value, value) =
+            self.materialize_assignment_expression_replacement_value(expr, &value_failure_cleanup)?;
+        self.emit_request_superglobal_path_append_assignment_from_materialized(
+            name,
+            path,
+            value,
+            failure_cleanup,
+        )?;
+        Ok(result_value)
+    }
+
+    fn emit_request_superglobal_path_append_assignment_from_materialized(
+        &mut self,
+        name: &str,
+        path: CRequestStatePathMaterialization,
+        value: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let result = self.next_native_name("request_superglobal_path_append");
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_path_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND, {bag_bytes}, {}, {}, {}, {}, {}, {});",
             name.len(),
             path.ptrs,
             path.lens,
@@ -9763,18 +9872,21 @@ impl CGenerator {
             AssignTarget::Variable { name, .. } if is_request_superglobal_name(name) => self
                 .emit_request_superglobal_root_assignment_expr(name, expr, failure_cleanup)
                 .map(Some),
-            AssignTarget::ArrayIndex { name, index, .. } if is_request_superglobal_name(name) => {
-                let Some(index) = index.as_ref() else {
-                    return Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
-                };
-                self.emit_request_superglobal_keyed_assignment_expr(
+            AssignTarget::ArrayIndex {
+                name,
+                index: Some(index),
+                ..
+            } if is_request_superglobal_name(name) => self
+                .emit_request_superglobal_keyed_assignment_expr(name, index, expr, failure_cleanup)
+                .map(Some),
+            AssignTarget::ArrayIndex { name, .. } if is_request_superglobal_name(name) => self
+                .emit_request_superglobal_path_append_assignment_expr(
                     name,
-                    index,
+                    &[],
                     expr,
                     failure_cleanup,
                 )
-                .map(Some)
-            }
+                .map(Some),
             AssignTarget::NestedArrayIndex { name, indices, .. }
                 if is_request_superglobal_name(name) =>
             {
@@ -9786,8 +9898,22 @@ impl CGenerator {
                 )
                 .map(Some)
             }
-            AssignTarget::NestedArrayAppend { name, .. } if is_request_superglobal_name(name) => {
-                Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION))
+            AssignTarget::NestedArrayAppend {
+                name,
+                indices,
+                suffix_indices,
+                ..
+            } if is_request_superglobal_name(name) => {
+                if !suffix_indices.is_empty() {
+                    return Err(self.unsupported(span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                }
+                self.emit_request_superglobal_path_append_assignment_expr(
+                    name,
+                    indices,
+                    expr,
+                    failure_cleanup,
+                )
+                .map(Some)
             }
             _ => Ok(None),
         }
@@ -13381,10 +13507,11 @@ impl CGenerator {
             }
             AssignTarget::ArrayIndex { name, index, span } => {
                 if is_request_superglobal_name(name) {
-                    let Some(index) = index.as_ref() else {
-                        return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                    return if let Some(index) = index.as_ref() {
+                        self.emit_request_superglobal_keyed_assignment(name, index, expr)
+                    } else {
+                        self.emit_request_superglobal_path_append_assignment(name, &[], expr, "")
                     };
-                    return self.emit_request_superglobal_keyed_assignment(name, index, expr);
                 }
                 if is_globals_superglobal_name(name) {
                     let Some(index) = index.as_ref() else {
@@ -13473,6 +13600,13 @@ impl CGenerator {
                 suffix_indices,
                 span,
             } => {
+                if is_request_superglobal_name(name) {
+                    if !suffix_indices.is_empty() {
+                        return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                    }
+                    return self
+                        .emit_request_superglobal_path_append_assignment(name, indices, expr, "");
+                }
                 if is_globals_superglobal_name(name) {
                     let prefix_indices = indices.iter().collect::<Vec<_>>();
                     let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();

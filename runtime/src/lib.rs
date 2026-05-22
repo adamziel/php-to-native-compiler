@@ -735,6 +735,7 @@ pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEY_COERCION: u8 = 8;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEYED_VALUE: u8 = 9;
 pub const PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE: u8 = 1;
 pub const PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET: u8 = 2;
+pub const PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND: u8 = 3;
 
 const NATIVE_REQUEST_STATE_MISSING_KEY_READ_MESSAGE: &str =
     "native request-state operation failed: missing request key";
@@ -847,6 +848,7 @@ enum NativeRequestStateOperationKind {
 enum NativeRequestStateMutationKind {
     Write,
     Unset,
+    Append,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -913,6 +915,7 @@ impl NativeRequestStateMutationKind {
         Some(match value {
             PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE => Self::Write,
             PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET => Self::Unset,
+            PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND => Self::Append,
             _ => return None,
         })
     }
@@ -2172,6 +2175,32 @@ impl NativeRequestState {
         let status = request_state_write_path_value(values, keys, value)
             .map(|()| NativeRequestStateOperationStatus::Ok)
             .unwrap_or_else(|status| status);
+        request_state_path_mutation_result(self, bag, keys, status)
+    }
+
+    fn append_superglobal_path(
+        &mut self,
+        bag: NativeRequestStateBag,
+        keys: &[ArrayKey],
+        value: Value,
+    ) -> NativeRequestStateOperationResult {
+        if let Err(status) = self.prepare_superglobal_keyed_write(bag) {
+            return NativeRequestStateOperationResult::unsupported(status);
+        }
+
+        let appended_is_set = !matches!(value, Value::Null);
+        let values = self.superglobals.entry(bag).or_default();
+        let status = values
+            .append_path(keys, value)
+            .map(|_| NativeRequestStateOperationStatus::Ok)
+            .unwrap_or(NativeRequestStateOperationStatus::UnsupportedKeyedValue);
+        if status != NativeRequestStateOperationStatus::Ok {
+            return NativeRequestStateOperationResult::unsupported(status);
+        }
+        if keys.is_empty() {
+            return NativeRequestStateOperationResult::presence(appended_is_set, true, status);
+        }
+
         request_state_path_mutation_result(self, bag, keys, status)
     }
 
@@ -5051,7 +5080,10 @@ unsafe fn native_abi_request_state_key_path(
     key_lens: *const usize,
     key_count: usize,
 ) -> Option<Vec<ArrayKey>> {
-    if key_count == 0 || key_ptrs.is_null() || key_lens.is_null() {
+    if key_count == 0 {
+        return Some(Vec::new());
+    }
+    if key_ptrs.is_null() || key_lens.is_null() {
         return None;
     }
 
@@ -5529,6 +5561,30 @@ impl<'a> NativeRequestStateMutation<'a> {
                 let value = unsafe { value.as_ref() }
                     .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
                 Ok(request_state.write_superglobal_path(bag, &keys, value.clone()))
+            }
+            (
+                Self::Keyed {
+                    request_state,
+                    bag,
+                    key,
+                },
+                NativeRequestStateMutationKind::Append,
+            ) => {
+                let value = unsafe { value.as_ref() }
+                    .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+                Ok(request_state.append_superglobal_path(bag, &[key], value.clone()))
+            }
+            (
+                Self::KeyPath {
+                    request_state,
+                    bag,
+                    keys,
+                },
+                NativeRequestStateMutationKind::Append,
+            ) => {
+                let value = unsafe { value.as_ref() }
+                    .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+                Ok(request_state.append_superglobal_path(bag, &keys, value.clone()))
             }
             (
                 Self::Keyed {
@@ -20939,6 +20995,68 @@ mod tests {
         );
         unsafe { phpc_native_request_state_operation_result_free(false_path_read) };
 
+        let root_append_value = NativeValueHandle::from_value(Value::String("root".to_string()));
+        let root_append = unsafe {
+            request_state_path_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND,
+                b"_GET",
+                &[],
+                root_append_value,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            root_append,
+            1,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        let root_append_read = unsafe {
+            request_state_path_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                b"_GET",
+                &[b"0"],
+            )
+        };
+        assert_eq!(
+            unsafe { root_append_read.value.as_ref() },
+            Some(&Value::String("root".to_string()))
+        );
+        unsafe { phpc_native_request_state_operation_result_free(root_append_read) };
+
+        let nested_append_value =
+            NativeValueHandle::from_value(Value::String("nested".to_string()));
+        let nested_append_keys: [&[u8]; 2] = [b"append", b"items"];
+        let nested_append = unsafe {
+            request_state_path_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND,
+                b"_POST",
+                &nested_append_keys,
+                nested_append_value,
+            )
+        };
+        assert_request_state_presence_result_for_test(
+            nested_append,
+            1,
+            1,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+        );
+        let nested_append_read = unsafe {
+            request_state_path_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                b"_POST",
+                &[b"append", b"items", b"0"],
+            )
+        };
+        assert_eq!(
+            unsafe { nested_append_read.value.as_ref() },
+            Some(&Value::String("nested".to_string()))
+        );
+        unsafe { phpc_native_request_state_operation_result_free(nested_append_read) };
+
         let scalar_root = NativeValueHandle::from_value(Value::String("x".to_string()));
         let scalar_root_write = unsafe {
             request_state_keyed_mutation_for_test(
@@ -21025,6 +21143,8 @@ mod tests {
         unsafe { phpc_native_value_free(scalar_root) };
         unsafe { phpc_native_value_free(false_path_value) };
         unsafe { phpc_native_value_free(false_root) };
+        unsafe { phpc_native_value_free(nested_append_value) };
+        unsafe { phpc_native_value_free(root_append_value) };
         unsafe { phpc_native_value_free(null_path_value) };
         unsafe { phpc_native_value_free(null_root) };
         unsafe { phpc_native_value_free(nested_value) };
