@@ -707,10 +707,18 @@ struct NativeString {
     bytes: Vec<u8>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct NativeDiagnostic {
     severity: NativeDiagnosticSeverity,
     message: String,
+    source_location: Option<NativeDiagnosticSourceLocation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeDiagnosticSourceLocation {
+    file: Option<Vec<u8>>,
+    line: usize,
+    column: usize,
 }
 
 #[derive(Debug)]
@@ -1175,8 +1183,21 @@ impl NativeDiagnosticHandle {
             ptr: Box::into_raw(Box::new(NativeDiagnostic {
                 severity,
                 message: message.into(),
+                source_location: None,
             })),
         }
+    }
+
+    fn clone_with_source_location(self, source_location: NativeDiagnosticSourceLocation) -> Self {
+        unsafe { self.as_ref() }
+            .cloned()
+            .map(|mut diagnostic| {
+                diagnostic.source_location = Some(source_location);
+                Self {
+                    ptr: Box::into_raw(Box::new(diagnostic)),
+                }
+            })
+            .unwrap_or_else(Self::null)
     }
 
     pub fn is_null(&self) -> bool {
@@ -4134,6 +4155,20 @@ unsafe fn native_abi_bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
         return None;
     }
     Some(unsafe { std::slice::from_raw_parts(ptr, len) })
+}
+
+unsafe fn native_diagnostic_source_location_from_abi(
+    file_ptr: *const u8,
+    file_len: usize,
+    line: usize,
+    column: usize,
+) -> Option<NativeDiagnosticSourceLocation> {
+    let file = unsafe { native_abi_bytes(file_ptr, file_len) }?;
+    Some(NativeDiagnosticSourceLocation {
+        file: (!file.is_empty()).then(|| file.to_vec()),
+        line,
+        column,
+    })
 }
 
 fn request_state_array_key(value: &[u8]) -> Option<ArrayKey> {
@@ -9447,6 +9482,85 @@ pub unsafe extern "C" fn phpc_native_diagnostic_message_clone_bytes(
 ) -> NativeByteBuffer {
     unsafe { handle.as_ref() }
         .and_then(PhpStringByteSource::string_clone_native_byte_buffer)
+        .unwrap_or_else(NativeByteBuffer::empty)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed. `file_ptr` must either be valid for
+/// `file_len` bytes or null with a zero length. The returned handle owns a
+/// clone of the diagnostic with source-location metadata attached; ownership of
+/// `handle` remains with the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_clone_with_source_location(
+    handle: NativeDiagnosticHandle,
+    file_ptr: *const u8,
+    file_len: usize,
+    line: usize,
+    column: usize,
+) -> NativeDiagnosticHandle {
+    let Some(source_location) =
+        (unsafe { native_diagnostic_source_location_from_abi(file_ptr, file_len, line, column) })
+    else {
+        return NativeDiagnosticHandle::null();
+    };
+    handle.clone_with_source_location(source_location)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_has_source_location(
+    handle: NativeDiagnosticHandle,
+) -> bool {
+    unsafe { handle.as_ref() }
+        .and_then(|diagnostic| diagnostic.source_location.as_ref())
+        .is_some()
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_source_line(
+    handle: NativeDiagnosticHandle,
+) -> usize {
+    unsafe { handle.as_ref() }
+        .and_then(|diagnostic| diagnostic.source_location.as_ref())
+        .map(|location| location.line)
+        .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_source_column(
+    handle: NativeDiagnosticHandle,
+) -> usize {
+    unsafe { handle.as_ref() }
+        .and_then(|diagnostic| diagnostic.source_location.as_ref())
+        .map(|location| location.column)
+        .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_source_file_clone_bytes(
+    handle: NativeDiagnosticHandle,
+) -> NativeByteBuffer {
+    unsafe { handle.as_ref() }
+        .and_then(|diagnostic| diagnostic.source_location.as_ref())
+        .and_then(|location| location.file.as_ref())
+        .map(|file| NativeByteBuffer::from_vec(file.clone()))
         .unwrap_or_else(NativeByteBuffer::empty)
 }
 
@@ -21659,6 +21773,7 @@ mod tests {
             &NativeDiagnostic {
                 severity: NativeDiagnosticSeverity::Warning,
                 message: "diagnostic bytes".to_string(),
+                source_location: None,
             },
             b"diagnostic bytes",
         );
@@ -27448,6 +27563,12 @@ mod tests {
 
         assert_eq!(unsafe { phpc_native_diagnostic_message_len(diagnostic) }, 0);
         assert_eq!(unsafe { phpc_native_diagnostic_count(diagnostic) }, 0);
+        assert!(!unsafe { phpc_native_diagnostic_has_source_location(diagnostic) });
+        assert_eq!(unsafe { phpc_native_diagnostic_source_line(diagnostic) }, 0);
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_source_column(diagnostic) },
+            0
+        );
         assert_eq!(
             unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
             0
@@ -27462,6 +27583,14 @@ mod tests {
         assert!(message.ptr().is_null());
         assert_eq!(message.len(), 0);
         assert_eq!(message.cap(), 0);
+        let source_file = unsafe { phpc_native_diagnostic_source_file_clone_bytes(diagnostic) };
+        assert!(source_file.ptr().is_null());
+        assert_eq!(source_file.len(), 0);
+        assert_eq!(source_file.cap(), 0);
+        let located = unsafe {
+            phpc_native_diagnostic_clone_with_source_location(diagnostic, ptr::null(), 0, 3, 9)
+        };
+        assert!(located.is_null());
         assert_eq!(
             unsafe { phpc_native_diagnostic_message_stderr(diagnostic) },
             0
@@ -27469,6 +27598,123 @@ mod tests {
         assert_eq!(unsafe { phpc_native_diagnostic_report(diagnostic) }, 0);
 
         unsafe { phpc_native_byte_buffer_free(message) };
+        unsafe { phpc_native_byte_buffer_free(source_file) };
+    }
+
+    #[test]
+    fn native_diagnostic_source_locations_clone_shared_diagnostic_handles() {
+        unsafe fn assert_source_file(handle: NativeDiagnosticHandle, expected: &[u8]) {
+            let file = unsafe { phpc_native_diagnostic_source_file_clone_bytes(handle) };
+            assert_eq!(file.len(), expected.len());
+            assert_eq!(
+                unsafe { std::slice::from_raw_parts(file.ptr(), file.len()) },
+                expected
+            );
+            unsafe { phpc_native_byte_buffer_free(file) };
+        }
+
+        let direct = NativeDiagnosticHandle::from_message_with_severity(
+            NativeDiagnosticSeverity::Warning,
+            "direct warning",
+        );
+        let direct_file = b"direct.php";
+        let direct_located = unsafe {
+            phpc_native_diagnostic_clone_with_source_location(
+                direct,
+                direct_file.as_ptr(),
+                direct_file.len(),
+                12,
+                4,
+            )
+        };
+        assert!(!unsafe { phpc_native_diagnostic_has_source_location(direct) });
+        assert!(unsafe { phpc_native_diagnostic_has_source_location(direct_located) });
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_source_line(direct_located) },
+            12
+        );
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_source_column(direct_located) },
+            4
+        );
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_severity_at(direct_located, 0,) },
+            NativeDiagnosticSeverity::Warning.tag()
+        );
+        assert_eq!(
+            native_diagnostic_message_for_test(direct_located),
+            "direct warning"
+        );
+        unsafe { assert_source_file(direct_located, direct_file) };
+
+        let request_missing = NativeRequestStateOperationResult::value(
+            Value::Null,
+            false,
+            false,
+            NativeRequestStateOperationStatus::MissingKey,
+        );
+        let request_diagnostic =
+            phpc_native_request_state_operation_result_diagnostic(request_missing);
+        let request_located = unsafe {
+            phpc_native_diagnostic_clone_with_source_location(
+                request_diagnostic,
+                ptr::null(),
+                0,
+                27,
+                2,
+            )
+        };
+        assert!(unsafe { phpc_native_diagnostic_has_source_location(request_located) });
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_source_line(request_located) },
+            27
+        );
+        let empty_request_file =
+            unsafe { phpc_native_diagnostic_source_file_clone_bytes(request_located) };
+        assert_eq!(empty_request_file.len(), 0);
+        unsafe { phpc_native_byte_buffer_free(empty_request_file) };
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_severity_at(request_located, 0) },
+            NativeDiagnosticSeverity::Warning.tag()
+        );
+        assert_eq!(
+            native_diagnostic_message_for_test(request_located),
+            NATIVE_REQUEST_STATE_MISSING_KEY_READ_MESSAGE
+        );
+
+        let mut conversion_diagnostic = NativeDiagnosticHandle::null();
+        let conversion_value = unsafe {
+            phpc_native_value_from_string_with_diagnostic(
+                NativeStringHandle::null(),
+                &mut conversion_diagnostic,
+            )
+        };
+        let conversion_file = b"conversion.php";
+        let conversion_located = unsafe {
+            phpc_native_diagnostic_clone_with_source_location(
+                conversion_diagnostic,
+                conversion_file.as_ptr(),
+                conversion_file.len(),
+                31,
+                8,
+            )
+        };
+        assert!(conversion_value.is_null());
+        assert!(unsafe { phpc_native_diagnostic_has_source_location(conversion_located) });
+        assert_eq!(
+            native_diagnostic_message_for_test(conversion_located),
+            "native value conversion failed: string handle is null"
+        );
+        unsafe { assert_source_file(conversion_located, conversion_file) };
+
+        unsafe { phpc_native_diagnostic_free(conversion_located) };
+        unsafe { phpc_native_diagnostic_free(conversion_diagnostic) };
+        unsafe { phpc_native_value_free(conversion_value) };
+        unsafe { phpc_native_diagnostic_free(request_located) };
+        unsafe { phpc_native_diagnostic_free(request_diagnostic) };
+        unsafe { phpc_native_request_state_operation_result_free(request_missing) };
+        unsafe { phpc_native_diagnostic_free(direct_located) };
+        unsafe { phpc_native_diagnostic_free(direct) };
     }
 
     #[test]
