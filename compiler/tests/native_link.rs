@@ -239,6 +239,43 @@ fn native_executable_c_source_routes_array_sort_builtins_through_lvalue_owner_re
 }
 
 #[test]
+fn native_executable_c_source_routes_array_mutation_builtins_through_lvalue_owner_results() {
+    let program = parse(
+        "<?php\n$items = [1, 2];\n$box = [\"items\" => [\"a\", \"b\"], \"head\" => 9];\narray_push($items, $box[\"value\"] = 3, $box[\"fallback\"] ??= 4);\narray_pop($box[\"items\"]);\narray_shift($box[\"items\"]);\narray_unshift($box[\"items\"], $box[\"head\"] += 1);\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_array_mutation_result"),
+        "{source}"
+    );
+    for tag in [
+        "PHPC_NATIVE_ARRAY_LVALUE_MUTATION_PUSH",
+        "PHPC_NATIVE_ARRAY_LVALUE_MUTATION_POP",
+        "PHPC_NATIVE_ARRAY_LVALUE_MUTATION_SHIFT",
+        "PHPC_NATIVE_ARRAY_LVALUE_MUTATION_UNSHIFT",
+    ] {
+        assert!(source.contains(tag), "{tag}\n\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_array_lvalue_owner_array_mutation_result")
+            .count()
+            >= 4,
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_NativeValueHandle array_mutation_operands_"),
+        "mutation operands should be materialized as PHP value handles:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_array_callback_builtins_through_shared_result() {
     let program = parse(
         "<?php\n$box = [];\n$filtered = array_filter([0, \"Ada\", \"\", \"Bea\"], $box[\"callback\"] ??= null, $box[\"mode\"] = \"1\");\n$mapped = array_map(null, [\"name\" => \"Ada\", 5 => \"five\"]);\narray_reduce([1, 2], \"sum\", 0);\necho $filtered[1], $mapped[\"name\"];\n",
@@ -390,6 +427,63 @@ fn emit_exe_links_and_runs_array_sort_lvalue_owner_program() {
         run.stdout,
         b"123|b=b10;a=b2;|b=2;a=1;|x=img01;y=img2;z=img10;|first=img1;low=img2;up=Img12;|T"
     );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_mutation_lvalue_owner_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("array_mutation_lvalue_owner.php");
+    let output_path = native_link_output_path("array_mutation_lvalue_owner");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        "<?php\n$items = [1, 2];\n$box = [\"items\" => [\"a\", \"b\"], \"head\" => 9];\n$push = array_push($items, $box[\"value\"] = 3, $box[\"fallback\"] ??= 4);\n$pop = array_pop($box[\"items\"]);\n$shift = array_shift($box[\"items\"]);\n$unshift = array_unshift($box[\"items\"], $box[\"head\"] += 1);\necho $push, \"|\", $items[2], \"|\", $items[3], \"|\", $pop, \"|\", $shift, \"|\", $unshift, \"|\", $box[\"items\"][0], \"|\", $box[\"value\"], \"|\", $box[\"fallback\"], \"|\", $box[\"head\"];\n",
+    )
+    .expect("write array mutation native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native array mutation source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native array mutation executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native array mutation executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"4|3|4|b|a|1|10|3|4|10");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);

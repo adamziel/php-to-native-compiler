@@ -209,6 +209,10 @@ const NATIVE_ARRAY_LVALUE_SORT_NATCASESORT: u8 = 7;
 const NATIVE_ARRAY_LVALUE_SORT_USORT: u8 = 8;
 const NATIVE_ARRAY_LVALUE_SORT_UASORT: u8 = 9;
 const NATIVE_ARRAY_LVALUE_SORT_UKSORT: u8 = 10;
+const NATIVE_ARRAY_LVALUE_MUTATION_PUSH: u8 = 0;
+const NATIVE_ARRAY_LVALUE_MUTATION_POP: u8 = 1;
+const NATIVE_ARRAY_LVALUE_MUTATION_SHIFT: u8 = 2;
+const NATIVE_ARRAY_LVALUE_MUTATION_UNSHIFT: u8 = 3;
 const NATIVE_VALUE_ARRAY_CALLBACK_FILTER: u8 = 0;
 const NATIVE_VALUE_ARRAY_CALLBACK_MAP: u8 = 1;
 const NATIVE_VALUE_ARRAY_CALLBACK_REDUCE: u8 = 2;
@@ -242,6 +246,14 @@ enum NativeArraySortOperation {
     Usort,
     Uasort,
     Uksort,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeArrayMutationOperation {
+    Push,
+    Pop,
+    Shift,
+    Unshift,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -374,6 +386,37 @@ impl NativeArraySortOperation {
 
     fn reverses_order(self) -> bool {
         matches!(self, Self::Rsort | Self::Arsort | Self::Krsort)
+    }
+}
+
+impl NativeArrayMutationOperation {
+    fn from_tag(operation: u8) -> Result<Self, NativeArrayLvalueResult> {
+        match operation {
+            NATIVE_ARRAY_LVALUE_MUTATION_PUSH => Ok(Self::Push),
+            NATIVE_ARRAY_LVALUE_MUTATION_POP => Ok(Self::Pop),
+            NATIVE_ARRAY_LVALUE_MUTATION_SHIFT => Ok(Self::Shift),
+            NATIVE_ARRAY_LVALUE_MUTATION_UNSHIFT => Ok(Self::Unshift),
+            _ => Err(NativeArrayLvalueResult::diagnostic(
+                NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+                format!("array lvalue mutation operation tag {operation} is not supported"),
+            )),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Push => "array_push",
+            Self::Pop => "array_pop",
+            Self::Shift => "array_shift",
+            Self::Unshift => "array_unshift",
+        }
+    }
+
+    fn operand_count_is_supported(self, operand_count: usize) -> bool {
+        match self {
+            Self::Push | Self::Unshift => operand_count >= 1,
+            Self::Pop | Self::Shift => operand_count == 0,
+        }
     }
 }
 
@@ -7001,6 +7044,75 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_sort_result(
 
 /// # Safety
 ///
+/// The owner, operand handles, and each key handle inside `segments` must be
+/// null or handles previously returned by the runtime ABI and not yet freed.
+/// `segments` must be null when `segment_count` is zero, or point to
+/// `segment_count` initialized key-only path segments. Operand handles are
+/// borrowed; the returned result owns any value/diagnostic handles it carries.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_lvalue_owner_array_mutation_result(
+    mut owner: NativeArrayLvalueOwner,
+    segments: *const NativeArrayPathSegment,
+    segment_count: usize,
+    operation: u8,
+    operands: *const NativeValueHandle,
+    operand_count: usize,
+) -> NativeArrayLvalueResult {
+    let operation = match NativeArrayMutationOperation::from_tag(operation) {
+        Ok(operation) => operation,
+        Err(result) => return result,
+    };
+
+    if operand_count > 0 && operands.is_null() {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            format!(
+                "native array {}() mutation operand array is null for {operand_count} operands",
+                operation.label()
+            ),
+        );
+    }
+
+    if !operation.operand_count_is_supported(operand_count) {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            format!(
+                "native array {}() mutation ABI received unsupported operand count {operand_count}",
+                operation.label()
+            ),
+        );
+    }
+
+    let operands = match unsafe { native_array_mutation_operands(operands, operand_count) } {
+        Ok(operands) => operands,
+        Err(result) => return result,
+    };
+
+    if owner.tag != NATIVE_ARRAY_LVALUE_OWNER_ARRAY {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array lvalue mutation owner is not a native array handle",
+        );
+    }
+
+    let Some(array) = (unsafe { owner.array.as_mut() }) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array lvalue mutation root is not a live native array handle",
+        );
+    };
+
+    let path =
+        match unsafe { native_array_lvalue_optional_path_from_segments(segments, segment_count) } {
+            Ok(path) => path,
+            Err(result) => return result,
+        };
+
+    native_array_mutation_array_path_result(&mut array.value, &path, operation, &operands)
+}
+
+/// # Safety
+///
 /// `values` must be null when `value_count` is zero, or point to
 /// `value_count` initialized handles previously returned by the runtime ABI
 /// and not yet freed. Operand handles are borrowed; the returned result owns
@@ -7966,6 +8078,162 @@ fn native_array_sort_non_array_result(
         NATIVE_ARRAY_LVALUE_UNSUPPORTED,
         format!(
             "unsupported call {}(): sorting argument must be array, got {}",
+            operation.label(),
+            value.type_name()
+        ),
+    )
+}
+
+unsafe fn native_array_mutation_operands(
+    operands: *const NativeValueHandle,
+    operand_count: usize,
+) -> Result<Vec<Value>, NativeArrayLvalueResult> {
+    if operand_count == 0 {
+        return Ok(Vec::new());
+    }
+
+    let handles = unsafe { std::slice::from_raw_parts(operands, operand_count) };
+    handles
+        .iter()
+        .map(|handle| {
+            let Some(value) = (unsafe { handle.as_ref() }) else {
+                return Err(NativeArrayLvalueResult::diagnostic(
+                    NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+                    "native array mutation operand materialization produced a null value handle",
+                ));
+            };
+            Ok(value.clone())
+        })
+        .collect()
+}
+
+fn native_array_mutation_array_path_result(
+    array: &mut PhpArray,
+    path: &[NativeArrayLvaluePathElement],
+    operation: NativeArrayMutationOperation,
+    operands: &[Value],
+) -> NativeArrayLvalueResult {
+    let Some((segment, rest)) = path.split_first() else {
+        return native_array_mutation_array_result(array, operation, operands);
+    };
+
+    match segment {
+        NativeArrayLvaluePathElement::Key(key) => {
+            let Some(mut value) = array.get_cloned(key.clone()) else {
+                return NativeArrayLvalueResult::diagnostic(
+                    NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+                    RuntimeError::undefined_array_key(key.diagnostic_key()).message(),
+                );
+            };
+            let result =
+                native_array_mutation_value_path_result(&mut value, rest, operation, operands);
+            if result.tag == NATIVE_ARRAY_LVALUE_OK {
+                array.insert(key.clone(), value);
+            }
+            result
+        }
+        NativeArrayLvaluePathElement::Append => NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_KEY,
+            format!(
+                "unsupported call {}(): mutation paths cannot contain append segments",
+                operation.label()
+            ),
+        ),
+    }
+}
+
+fn native_array_mutation_value_path_result(
+    value: &mut Value,
+    path: &[NativeArrayLvaluePathElement],
+    operation: NativeArrayMutationOperation,
+    operands: &[Value],
+) -> NativeArrayLvalueResult {
+    if path.is_empty() {
+        return match value {
+            Value::Array(array) => native_array_mutation_array_result(array, operation, operands),
+            Value::Object(_) | Value::Closure(_) => {
+                native_array_mutation_object_array_access_blocker_result(operation)
+            }
+            Value::Resource(_) => native_array_mutation_resource_blocker_result(operation),
+            other => native_array_mutation_non_array_result(operation, other),
+        };
+    }
+
+    match value {
+        Value::Array(array) => {
+            native_array_mutation_array_path_result(array, path, operation, operands)
+        }
+        Value::Object(_) | Value::Closure(_) => {
+            native_array_mutation_object_array_access_blocker_result(operation)
+        }
+        Value::Resource(_) => native_array_mutation_resource_blocker_result(operation),
+        other => native_array_mutation_non_array_result(operation, other),
+    }
+}
+
+fn native_array_mutation_array_result(
+    array: &mut PhpArray,
+    operation: NativeArrayMutationOperation,
+    operands: &[Value],
+) -> NativeArrayLvalueResult {
+    match operation {
+        NativeArrayMutationOperation::Push => {
+            for operand in operands {
+                if let Err(error) = array.append(operand.clone()) {
+                    return NativeArrayLvalueResult::diagnostic(
+                        NATIVE_ARRAY_LVALUE_INVALID_KEY,
+                        error.message().to_string(),
+                    );
+                }
+            }
+            NativeArrayLvalueResult::value(Value::Int(
+                i64::try_from(array.len()).expect("array length fits in i64"),
+            ))
+        }
+        NativeArrayMutationOperation::Pop => NativeArrayLvalueResult::value(array.pop_value()),
+        NativeArrayMutationOperation::Shift => NativeArrayLvalueResult::value(array.shift_value()),
+        NativeArrayMutationOperation::Unshift => match array.unshift_values(operands) {
+            Ok(len) => NativeArrayLvalueResult::value(Value::Int(len)),
+            Err(error) => NativeArrayLvalueResult::diagnostic(
+                NATIVE_ARRAY_LVALUE_INVALID_KEY,
+                error.message().to_string(),
+            ),
+        },
+    }
+}
+
+fn native_array_mutation_object_array_access_blocker_result(
+    operation: NativeArrayMutationOperation,
+) -> NativeArrayLvalueResult {
+    NativeArrayLvalueResult::diagnostic(
+        NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+        format!(
+            "native array {}() mutation needs object/ArrayAccess dispatch, reference/copy-on-write separation, cleanup ownership, and exact diagnostics",
+            operation.label()
+        ),
+    )
+}
+
+fn native_array_mutation_resource_blocker_result(
+    operation: NativeArrayMutationOperation,
+) -> NativeArrayLvalueResult {
+    NativeArrayLvalueResult::diagnostic(
+        NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+        format!(
+            "native array {}() mutation needs resource diagnostics, reference/copy-on-write separation, cleanup ownership, and exact diagnostics",
+            operation.label()
+        ),
+    )
+}
+
+fn native_array_mutation_non_array_result(
+    operation: NativeArrayMutationOperation,
+    value: &Value,
+) -> NativeArrayLvalueResult {
+    NativeArrayLvalueResult::diagnostic(
+        NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+        format!(
+            "unsupported call {}(): mutation argument must be array, got {}",
             operation.label(),
             value.type_name()
         ),
@@ -10889,6 +11157,30 @@ impl PhpArray {
         }
 
         entry.into_value()
+    }
+
+    pub fn shift_value(&mut self) -> Value {
+        if self.entries.is_empty() {
+            self.cursor = 0;
+            return Value::Null;
+        }
+
+        let shifted = self.entries.remove(0);
+        let mut array = Self::new();
+        for entry in self.entries.drain(..) {
+            let ArrayEntry { key, slot } = entry;
+            match key {
+                ArrayKey::Int(_) => {
+                    array.append_slot(slot).expect("array length fits in i64");
+                }
+                ArrayKey::String(key) => {
+                    array.insert_slot(key, slot);
+                }
+            }
+        }
+
+        *self = array;
+        shifted.into_value()
     }
 
     pub fn keys_reindexed(&self) -> Self {
@@ -26487,6 +26779,276 @@ mod tests {
         unsafe { phpc_native_value_free(strings_key) };
         unsafe { phpc_native_value_free(direct_key) };
         unsafe { phpc_native_array_free(natural_bad_handle) };
+        unsafe { phpc_native_array_free(handle) };
+    }
+
+    #[test]
+    fn native_array_lvalue_array_mutation_result_executes_mutation_family_and_classifies_failures()
+    {
+        let direct_key = NativeValueHandle::from_value(Value::String("direct".to_string()));
+        let box_key = NativeValueHandle::from_value(Value::String("box".to_string()));
+        let items_key = NativeValueHandle::from_value(Value::String("items".to_string()));
+        let prepend_key = NativeValueHandle::from_value(Value::String("prepend".to_string()));
+        let queue_key = NativeValueHandle::from_value(Value::String("queue".to_string()));
+        let scalar_key = NativeValueHandle::from_value(Value::String("scalar".to_string()));
+        let push_three = NativeValueHandle::from_value(Value::Int(3));
+        let push_four = NativeValueHandle::from_value(Value::String("four".to_string()));
+        let unshift_zero = NativeValueHandle::from_value(Value::Int(0));
+        let unshift_one = NativeValueHandle::from_value(Value::Int(1));
+
+        let direct_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: direct_key,
+        }];
+        let items_path = [
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: box_key,
+            },
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: items_key,
+            },
+        ];
+        let prepend_path = [
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: box_key,
+            },
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: prepend_key,
+            },
+        ];
+        let queue_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: queue_key,
+        }];
+        let scalar_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: scalar_key,
+        }];
+        let push_operands = [push_three, push_four];
+        let unshift_operands = [unshift_zero, unshift_one];
+
+        let mut direct = PhpArray::new();
+        direct.append(Value::Int(1)).unwrap();
+        direct.append(Value::Int(2)).unwrap();
+
+        let mut items = PhpArray::new();
+        items.append(Value::String("a".to_string())).unwrap();
+        items.append(Value::String("b".to_string())).unwrap();
+
+        let mut prepend = PhpArray::new();
+        prepend.append(Value::Int(2)).unwrap();
+
+        let mut box_array = PhpArray::new();
+        box_array.insert("items", Value::Array(items));
+        box_array.insert("prepend", Value::Array(prepend));
+
+        let mut queue = PhpArray::new();
+        queue.insert(10, Value::String("first".to_string()));
+        queue.insert("s", Value::String("stay".to_string()));
+        queue.insert(20, Value::String("second".to_string()));
+
+        let mut root = PhpArray::new();
+        root.insert("direct", Value::Array(direct));
+        root.insert("box", Value::Array(box_array));
+        root.insert("queue", Value::Array(queue));
+        root.insert("scalar", Value::Int(7));
+
+        let handle = NativeArrayHandle::from_array(root);
+        let owner = phpc_native_array_lvalue_owner_array(handle);
+
+        let pushed = unsafe {
+            phpc_native_array_lvalue_owner_array_mutation_result(
+                owner,
+                direct_path.as_ptr(),
+                direct_path.len(),
+                NATIVE_ARRAY_LVALUE_MUTATION_PUSH,
+                push_operands.as_ptr(),
+                push_operands.len(),
+            )
+        };
+        assert_eq!(pushed.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(pushed.value), b"4");
+        unsafe { phpc_native_array_lvalue_result_free(pushed) };
+
+        let popped = unsafe {
+            phpc_native_array_lvalue_owner_array_mutation_result(
+                owner,
+                items_path.as_ptr(),
+                items_path.len(),
+                NATIVE_ARRAY_LVALUE_MUTATION_POP,
+                ptr::null(),
+                0,
+            )
+        };
+        assert_eq!(popped.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(popped.value), b"b");
+        unsafe { phpc_native_array_lvalue_result_free(popped) };
+
+        let shifted = unsafe {
+            phpc_native_array_lvalue_owner_array_mutation_result(
+                owner,
+                queue_path.as_ptr(),
+                queue_path.len(),
+                NATIVE_ARRAY_LVALUE_MUTATION_SHIFT,
+                ptr::null(),
+                0,
+            )
+        };
+        assert_eq!(shifted.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(shifted.value), b"first");
+        unsafe { phpc_native_array_lvalue_result_free(shifted) };
+
+        let unshifted = unsafe {
+            phpc_native_array_lvalue_owner_array_mutation_result(
+                owner,
+                prepend_path.as_ptr(),
+                prepend_path.len(),
+                NATIVE_ARRAY_LVALUE_MUTATION_UNSHIFT,
+                unshift_operands.as_ptr(),
+                unshift_operands.len(),
+            )
+        };
+        assert_eq!(unshifted.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(unshifted.value), b"3");
+        unsafe { phpc_native_array_lvalue_result_free(unshifted) };
+
+        let root = unsafe { handle.as_ref() }.expect("array handle survives mutations");
+        let Value::Array(direct) = root.value.get("direct").expect("direct array remains") else {
+            panic!("array_push should leave an array");
+        };
+        assert_eq!(direct.entries()[2].key, ArrayKey::Int(2));
+        assert_eq!(direct.entries()[2].value(), &Value::Int(3));
+        assert_eq!(direct.entries()[3].key, ArrayKey::Int(3));
+        assert_eq!(
+            direct.entries()[3].value(),
+            &Value::String("four".to_string())
+        );
+
+        let Value::Array(box_array) = root.value.get("box").expect("box array remains") else {
+            panic!("nested mutations should leave an array");
+        };
+        let Value::Array(items) = box_array.get("items").expect("items array remains") else {
+            panic!("array_pop should leave nested items as an array");
+        };
+        assert_eq!(items.len(), 1);
+        assert_eq!(items.entries()[0].value(), &Value::String("a".to_string()));
+
+        let Value::Array(prepend) = box_array.get("prepend").expect("prepend array remains") else {
+            panic!("array_unshift should leave nested prepend as an array");
+        };
+        assert_eq!(
+            prepend
+                .entries()
+                .iter()
+                .map(|entry| (entry.key.clone(), entry.value_cloned()))
+                .collect::<Vec<_>>(),
+            vec![
+                (ArrayKey::Int(0), Value::Int(0)),
+                (ArrayKey::Int(1), Value::Int(1)),
+                (ArrayKey::Int(2), Value::Int(2)),
+            ]
+        );
+
+        let Value::Array(queue) = root.value.get("queue").expect("queue array remains") else {
+            panic!("array_shift should leave queue as an array");
+        };
+        assert_eq!(
+            queue
+                .entries()
+                .iter()
+                .map(|entry| (entry.key.clone(), entry.value_cloned()))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    ArrayKey::String("s".to_string()),
+                    Value::String("stay".to_string())
+                ),
+                (ArrayKey::Int(0), Value::String("second".to_string())),
+            ]
+        );
+
+        let scalar_push = unsafe {
+            phpc_native_array_lvalue_owner_array_mutation_result(
+                owner,
+                scalar_path.as_ptr(),
+                scalar_path.len(),
+                NATIVE_ARRAY_LVALUE_MUTATION_PUSH,
+                push_operands.as_ptr(),
+                1,
+            )
+        };
+        assert_eq!(scalar_push.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert_eq!(
+            native_diagnostic_message_for_test(scalar_push.diagnostic),
+            "unsupported call array_push(): mutation argument must be array, got int"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(scalar_push) };
+
+        let invalid_arity = unsafe {
+            phpc_native_array_lvalue_owner_array_mutation_result(
+                owner,
+                direct_path.as_ptr(),
+                direct_path.len(),
+                NATIVE_ARRAY_LVALUE_MUTATION_POP,
+                push_operands.as_ptr(),
+                1,
+            )
+        };
+        assert_eq!(invalid_arity.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert_eq!(
+            native_diagnostic_message_for_test(invalid_arity.diagnostic),
+            "native array array_pop() mutation ABI received unsupported operand count 1"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(invalid_arity) };
+
+        let null_operands = unsafe {
+            phpc_native_array_lvalue_owner_array_mutation_result(
+                owner,
+                direct_path.as_ptr(),
+                direct_path.len(),
+                NATIVE_ARRAY_LVALUE_MUTATION_PUSH,
+                ptr::null(),
+                2,
+            )
+        };
+        assert_eq!(null_operands.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert_eq!(
+            native_diagnostic_message_for_test(null_operands.diagnostic),
+            "native array array_push() mutation operand array is null for 2 operands"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(null_operands) };
+
+        let invalid_operation = unsafe {
+            phpc_native_array_lvalue_owner_array_mutation_result(
+                owner,
+                ptr::null(),
+                0,
+                u8::MAX,
+                ptr::null(),
+                0,
+            )
+        };
+        assert_eq!(invalid_operation.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
+        assert_eq!(
+            native_diagnostic_message_for_test(invalid_operation.diagnostic),
+            "array lvalue mutation operation tag 255 is not supported"
+        );
+        unsafe { phpc_native_array_lvalue_result_free(invalid_operation) };
+
+        unsafe { phpc_native_value_free(unshift_one) };
+        unsafe { phpc_native_value_free(unshift_zero) };
+        unsafe { phpc_native_value_free(push_four) };
+        unsafe { phpc_native_value_free(push_three) };
+        unsafe { phpc_native_value_free(scalar_key) };
+        unsafe { phpc_native_value_free(queue_key) };
+        unsafe { phpc_native_value_free(prepend_key) };
+        unsafe { phpc_native_value_free(items_key) };
+        unsafe { phpc_native_value_free(box_key) };
+        unsafe { phpc_native_value_free(direct_key) };
         unsafe { phpc_native_array_free(handle) };
     }
 

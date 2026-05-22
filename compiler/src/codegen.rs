@@ -781,6 +781,14 @@ enum NativeArraySortBuiltin {
 }
 
 #[derive(Clone, Copy)]
+enum NativeArrayMutationBuiltin {
+    Push,
+    Pop,
+    Shift,
+    Unshift,
+}
+
+#[derive(Clone, Copy)]
 enum NativeValueArrayCallbackBuiltin {
     Filter,
     Map,
@@ -801,6 +809,17 @@ impl NativeArraySortBuiltin {
             Self::Usort => "PHPC_NATIVE_ARRAY_LVALUE_SORT_USORT",
             Self::Uasort => "PHPC_NATIVE_ARRAY_LVALUE_SORT_UASORT",
             Self::Uksort => "PHPC_NATIVE_ARRAY_LVALUE_SORT_UKSORT",
+        }
+    }
+}
+
+impl NativeArrayMutationBuiltin {
+    fn operation_tag(self) -> &'static str {
+        match self {
+            Self::Push => "PHPC_NATIVE_ARRAY_LVALUE_MUTATION_PUSH",
+            Self::Pop => "PHPC_NATIVE_ARRAY_LVALUE_MUTATION_POP",
+            Self::Shift => "PHPC_NATIVE_ARRAY_LVALUE_MUTATION_SHIFT",
+            Self::Unshift => "PHPC_NATIVE_ARRAY_LVALUE_MUTATION_UNSHIFT",
         }
     }
 }
@@ -828,6 +847,16 @@ fn native_array_sort_builtin(name: &str, args: &[Expr]) -> Option<NativeArraySor
         "usort" if args.len() == 2 => Some(NativeArraySortBuiltin::Usort),
         "uasort" if args.len() == 2 => Some(NativeArraySortBuiltin::Uasort),
         "uksort" if args.len() == 2 => Some(NativeArraySortBuiltin::Uksort),
+        _ => None,
+    }
+}
+
+fn native_array_mutation_builtin(name: &str, args: &[Expr]) -> Option<NativeArrayMutationBuiltin> {
+    match name.to_ascii_lowercase().as_str() {
+        "array_push" if args.len() >= 2 => Some(NativeArrayMutationBuiltin::Push),
+        "array_pop" if args.len() == 1 => Some(NativeArrayMutationBuiltin::Pop),
+        "array_shift" if args.len() == 1 => Some(NativeArrayMutationBuiltin::Shift),
+        "array_unshift" if args.len() >= 2 => Some(NativeArrayMutationBuiltin::Unshift),
         _ => None,
     }
 }
@@ -891,6 +920,7 @@ fn native_value_result_output_expr(expr: &Expr) -> bool {
                 || native_value_type_name_tag(name).is_some()
                 || native_string_result_operation_for_name(name).is_some()
                 || native_array_pointer_builtin(name, args).is_some()
+                || native_array_mutation_builtin(name, args).is_some()
                 || native_value_array_callback_builtin(name, args).is_some()
         }
         _ => false,
@@ -1069,6 +1099,10 @@ fn native_value_result_expr_call_operation(
         Expr::Call { name, args, .. } if native_array_sort_builtin(name, args).is_some() => args
             .iter()
             .find_map(|arg| native_value_result_expr_call_operation(arg, blocker)),
+        Expr::Call { name, args, .. } if native_array_mutation_builtin(name, args).is_some() => {
+            args.iter()
+                .find_map(|arg| native_value_result_expr_call_operation(arg, blocker))
+        }
         Expr::Call { name, args, .. }
             if native_value_array_callback_builtin(name, args).is_some() =>
         {
@@ -7361,6 +7395,10 @@ impl CGenerator {
                     output.push_str(&format!(
                         "#define PHPC_NATIVE_ARRAY_LVALUE_SORT_UKSORT {NATIVE_ARRAY_LVALUE_SORT_UKSORT_TAG}\n"
                     ));
+                    output.push_str("#define PHPC_NATIVE_ARRAY_LVALUE_MUTATION_PUSH 0\n");
+                    output.push_str("#define PHPC_NATIVE_ARRAY_LVALUE_MUTATION_POP 1\n");
+                    output.push_str("#define PHPC_NATIVE_ARRAY_LVALUE_MUTATION_SHIFT 2\n");
+                    output.push_str("#define PHPC_NATIVE_ARRAY_LVALUE_MUTATION_UNSHIFT 3\n");
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_CALLBACK_FILTER 0\n");
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_CALLBACK_MAP 1\n");
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_CALLBACK_REDUCE 2\n");
@@ -7512,6 +7550,7 @@ impl CGenerator {
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_value_operation_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t family, uint8_t operation, uint8_t op, uint8_t position, phpc_NativeValueHandle value);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_pointer_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t operation);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_sort_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t operation, const phpc_NativeValueHandle *operands, size_t operand_count);\n");
+                    output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_array_mutation_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t operation, const phpc_NativeValueHandle *operands, size_t operand_count);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_value_array_callback_result(uint8_t operation, const phpc_NativeValueHandle *values, size_t value_count);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_foreach_iterable_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count);\n");
                     output.push_str("extern size_t phpc_native_array_foreach_iterable_len(phpc_NativeValueHandle iterable);\n");
@@ -8570,6 +8609,15 @@ impl CGenerator {
                 let builtin = native_array_sort_builtin(name, args)
                     .expect("array sort guard should provide operation");
                 self.emit_native_array_sort_call(builtin, args, *span, "")
+            }
+            Expr::Call { name, args, span }
+                if native_array_mutation_builtin(name, args).is_some() =>
+            {
+                let builtin = native_array_mutation_builtin(name, args)
+                    .expect("array mutation guard should provide operation");
+                let value = self.emit_native_array_mutation_call(builtin, args, *span, "")?;
+                self.retain_native_value_cleanup_handle(&value.handle);
+                Ok(CValue::NativeValueHandle(value.handle))
             }
             Expr::Call { name, args, span }
                 if native_value_array_callback_builtin(name, args).is_some() =>
@@ -10523,6 +10571,100 @@ impl CGenerator {
         self.body.extend(path_cleanup);
 
         Ok(CValue::Bool(true))
+    }
+
+    fn emit_native_array_mutation_call(
+        &mut self,
+        builtin: NativeArrayMutationBuiltin,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let Some((argument, operand_exprs)) = args.split_first() else {
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
+        };
+        let Some((handle, indices, lvalue_span)) = self.native_array_foreach_lvalue_parts(argument)
+        else {
+            return Err(self.unsupported(argument.span(), ASSEMBLY_ARRAY_REJECTION));
+        };
+
+        let (path_arg, path_len, path_cleanup) = if indices.is_empty() {
+            ("NULL".to_string(), 0, Vec::new())
+        } else {
+            let path = self.materialize_native_array_lvalue_key_path(
+                &indices,
+                lvalue_span,
+                failure_cleanup,
+            )?;
+            (path.path, path.len, path.cleanup_after_use)
+        };
+
+        let mut operands = Vec::new();
+        let mut operand_cleanup = Vec::new();
+        for operand in operand_exprs {
+            let operand_failure_cleanup = format!(
+                "{}{}{}",
+                c_cleanup_sequence(&operand_cleanup),
+                c_cleanup_sequence(&path_cleanup),
+                failure_cleanup
+            );
+            let materialized =
+                self.materialize_native_value_result_operand(operand, &operand_failure_cleanup)?;
+            operand_cleanup.extend(materialized.cleanup_after_use.clone());
+            operands.push(materialized);
+        }
+
+        let (operands_arg, operand_count) = if operands.is_empty() {
+            ("NULL".to_string(), 0)
+        } else {
+            let operand_array = self.next_native_name("array_mutation_operands");
+            let handles = operands
+                .iter()
+                .map(|operand| operand.handle.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.body.push(format!(
+                "phpc_NativeValueHandle {operand_array}[] = {{ {handles} }};"
+            ));
+            (operand_array, operands.len())
+        };
+
+        let owner = self.next_native_name("array_mutation_owner");
+        let result = self.next_native_name("array_mutation_result");
+        let value = self.next_native_name("array_mutation_value");
+        let operation = builtin.operation_tag();
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_array_mutation_result({owner}, {path_arg}, {path_len}, {operation}, {operands_arg}, {operand_count});"
+        ));
+        let cleanup = format!(
+            "{}{}{}",
+            c_cleanup_sequence(&operand_cleanup),
+            c_cleanup_sequence(&path_cleanup),
+            failure_cleanup
+        );
+        self.emit_native_array_lvalue_result_check(&result, &cleanup);
+        self.body
+            .push(format!("phpc_NativeValueHandle {value} = {result}.value;"));
+        self.body
+            .push(format!("{result}.value = (phpc_NativeValueHandle){{0}};"));
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.body.extend(operand_cleanup);
+        self.body.extend(path_cleanup);
+
+        Ok(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        })
     }
 
     fn emit_native_value_array_callback_call(
@@ -15076,6 +15218,11 @@ impl CGenerator {
                         .materialize_native_array_c_value_handle(value, *span)
                         .map(Some);
                 }
+                if let Some(builtin) = native_array_mutation_builtin(name, args) {
+                    return self
+                        .emit_native_array_mutation_call(builtin, args, *span, failure_cleanup)
+                        .map(Some);
+                }
                 if let Some(builtin) = native_value_array_callback_builtin(name, args) {
                     return self
                         .emit_native_value_array_callback_call(
@@ -16680,7 +16827,9 @@ fn is_array_builtin(name: &str) -> bool {
             | "usort"
             | "uasort"
             | "uksort"
+            | "array_push"
             | "array_unshift"
+            | "array_shift"
             | "array_pop"
             | "in_array"
             | "array_search"
@@ -17144,7 +17293,9 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "usort"
             | "uasort"
             | "uksort"
+            | "array_push"
             | "array_unshift"
+            | "array_shift"
             | "array_pop"
             | "in_array"
             | "array_search"
