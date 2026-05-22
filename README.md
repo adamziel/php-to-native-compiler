@@ -239,13 +239,17 @@ platform-specific assembly text.
 ### `phpc compile --emit-exe`
 
 `phpc compile <input.php> --emit-exe <output>` builds the first bounded linked
-native executable path. It currently emits C for the same narrow straight-line
-native subset, builds and links the Rust `php_runtime` static library with
-`cc`, and routes direct compile-time string `echo`/`print` output through the
-runtime string/value stdout helpers.
+native executable path. It emits C for the current generated-native subset,
+builds and links the Rust `php_runtime` static library with `cc`, and routes
+direct output through runtime string/value stdout helpers. Bounded direct
+`exit()`/`die()` calls now terminate generated-native executables for
+materializable `null`, `int`, and `string` operands: strings are written to
+stdout, integer operands become the process status, and owned native runtime
+handles are cleaned before returning from `main`.
 
-This is not broad native PHP support. Arrays, objects, functions, references,
-request/session/stream/header state, exceptions, includes, dynamic
+This is not broad native PHP support. Objects, functions, references,
+request/session/stream/header state, exceptions, includes, shutdown callbacks,
+destructors/finally ordering, output buffers, SAPI interaction, dynamic
 string-pointer helper lowering, and broad PHP coercions remain unsupported or
 limited to the existing native diagnostics.
 
@@ -926,10 +930,13 @@ string value handles, production array lowering beyond this empty-handle ABI
 probe, object/resource/reference storage semantics, general diagnostics, and
 broad production runtime string-helper lowering are not implemented.
 
+The linked native executable C path handles bounded direct `exit()`/`die()`
+termination for materializable no-argument, `null`, `int`, and `string`
+operands. LLVM IR and assembly lowering still reject `exit()`/`die()`.
+
 Native lowering rejects arrays, array destructuring, objects, `instanceof`
 relationship checks, static class members, ArrayAccess object-offset dispatch,
-clone expressions,
-`exit()`/`die()` termination, user functions, closure values,
+clone expressions, user functions, closure values,
 include/require, broad control flow, exception boundaries, scalar casts,
 mutation forms that require symbol-table effects, double-quoted string
 interpolation, dynamic calls, `assert()`, runtime constant tables,

@@ -63,6 +63,21 @@ pub struct NativeStringConversionResult {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeExitResultStatus {
+    Ok = 0,
+    Error = 1,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeExitResult {
+    pub exit_code: c_int,
+    pub status: NativeExitResultStatus,
+    pub diagnostic: NativeDiagnosticHandle,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeDiagnosticSeverity {
     Notice = 1,
     Warning = 2,
@@ -1389,6 +1404,24 @@ impl NativeStringConversionResult {
 
     pub fn is_success(&self) -> bool {
         self.diagnostic.is_null()
+    }
+}
+
+impl NativeExitResult {
+    fn ok(exit_code: c_int) -> Self {
+        Self {
+            exit_code,
+            status: NativeExitResultStatus::Ok,
+            diagnostic: NativeDiagnosticHandle::null(),
+        }
+    }
+
+    fn diagnostic(message: impl Into<String>) -> Self {
+        Self {
+            exit_code: 1,
+            status: NativeExitResultStatus::Error,
+            diagnostic: NativeDiagnosticHandle::from_message(message),
+        }
     }
 }
 
@@ -6760,6 +6793,50 @@ pub unsafe extern "C" fn phpc_native_value_echo_bytes(
     unsafe { handle.as_ref() }
         .map(|value| NativeByteBuffer::from_vec(value.echo_string().into_bytes()))
         .unwrap_or_else(NativeByteBuffer::empty)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. This helper consumes `handle` after converting the
+/// PHP exit operand into a native process status/result.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_exit_value_result_and_free(
+    handle: NativeValueHandle,
+) -> NativeExitResult {
+    let result = unsafe { native_exit_value_result(handle) };
+    unsafe { phpc_native_value_free(handle) };
+    result
+}
+
+unsafe fn native_exit_value_result(handle: NativeValueHandle) -> NativeExitResult {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return NativeExitResult::diagnostic("native exit failed: value handle is null");
+    };
+
+    match value {
+        Value::Null => NativeExitResult::ok(0),
+        Value::Int(value) => match c_int::try_from(*value) {
+            Ok(exit_code) => NativeExitResult::ok(exit_code),
+            Err(_) => NativeExitResult::diagnostic(
+                "native exit failed: integer status must fit in i32 in the current subset",
+            ),
+        },
+        Value::String(value) => {
+            let mut stdout = io::stdout();
+            match stdout
+                .write_all(value.as_bytes())
+                .and_then(|()| stdout.flush())
+            {
+                Ok(()) => NativeExitResult::ok(0),
+                Err(_) => NativeExitResult::diagnostic("native exit failed: stdout write failed"),
+            }
+        }
+        value => NativeExitResult::diagnostic(format!(
+            "native exit failed: argument must be null, int, or string in the current subset, got {}",
+            value.type_name()
+        )),
+    }
 }
 
 unsafe fn native_value_to_string_bytes(handle: NativeValueHandle) -> RuntimeResult<Vec<u8>> {
@@ -19177,6 +19254,48 @@ mod tests {
             assert_eq!(native_value_echo_bytes_for_test(handle), expected);
             unsafe { phpc_native_value_free(handle) };
         }
+    }
+
+    #[test]
+    fn native_exit_value_result_accepts_bounded_status_values() {
+        let null = NativeValueHandle::from_value(Value::Null);
+        let null_result = unsafe { phpc_native_exit_value_result_and_free(null) };
+        assert_eq!(null_result.status, NativeExitResultStatus::Ok);
+        assert_eq!(null_result.exit_code, 0);
+        assert!(null_result.diagnostic.is_null());
+
+        let int = NativeValueHandle::from_value(Value::Int(7));
+        let int_result = unsafe { phpc_native_exit_value_result_and_free(int) };
+        assert_eq!(int_result.status, NativeExitResultStatus::Ok);
+        assert_eq!(int_result.exit_code, 7);
+        assert!(int_result.diagnostic.is_null());
+
+        let oversized = NativeValueHandle::from_value(Value::Int(i64::from(i32::MAX) + 1));
+        let oversized_result = unsafe { phpc_native_exit_value_result_and_free(oversized) };
+        assert_eq!(oversized_result.status, NativeExitResultStatus::Error);
+        assert_eq!(
+            native_diagnostic_message_for_test(oversized_result.diagnostic),
+            "native exit failed: integer status must fit in i32 in the current subset"
+        );
+        unsafe { phpc_native_diagnostic_free(oversized_result.diagnostic) };
+
+        let boolean = NativeValueHandle::from_value(Value::Bool(true));
+        let boolean_result = unsafe { phpc_native_exit_value_result_and_free(boolean) };
+        assert_eq!(boolean_result.status, NativeExitResultStatus::Error);
+        assert_eq!(
+            native_diagnostic_message_for_test(boolean_result.diagnostic),
+            "native exit failed: argument must be null, int, or string in the current subset, got bool"
+        );
+        unsafe { phpc_native_diagnostic_free(boolean_result.diagnostic) };
+
+        let null_handle_result =
+            unsafe { phpc_native_exit_value_result_and_free(NativeValueHandle::null()) };
+        assert_eq!(null_handle_result.status, NativeExitResultStatus::Error);
+        assert_eq!(
+            native_diagnostic_message_for_test(null_handle_result.diagnostic),
+            "native exit failed: value handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(null_handle_result.diagnostic) };
     }
 
     #[test]

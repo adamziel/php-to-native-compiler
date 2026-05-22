@@ -15,6 +15,59 @@ const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "echo ((array_sum([2]) xor $items[\"one\"]) ? \"T\" : \"F\");\n",
 );
 
+const NATIVE_EXIT_STRING_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"message\" => \"bye\"];\n",
+    "echo \"before|\";\n",
+    "exit($items[\"message\"]);\n",
+    "echo \"after\";\n",
+);
+
+const NATIVE_EXIT_NO_ARG_SOURCE: &str = concat!(
+    "<?php\n",
+    "echo \"before|\";\n",
+    "exit();\n",
+    "echo \"after\";\n",
+);
+
+const NATIVE_EXIT_NULL_SOURCE: &str = concat!(
+    "<?php\n",
+    "$status = null;\n",
+    "echo \"before|\";\n",
+    "exit($status);\n",
+    "echo \"after\";\n",
+);
+
+const NATIVE_EXIT_STATUS_SOURCE: &str = concat!(
+    "<?php\n",
+    "$status = [\"code\" => 5];\n",
+    "echo \"before|\";\n",
+    "die($status[\"code\"]);\n",
+    "echo \"after\";\n",
+);
+
+const NATIVE_EXIT_UNSUPPORTED_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"flag\" => true];\n",
+    "echo \"before|\";\n",
+    "exit($items[\"flag\"]);\n",
+    "echo \"after\";\n",
+);
+
+const NATIVE_EXIT_SYMBOL_CLEANUP_SOURCE: &str = concat!(
+    "<?php\n",
+    "$root = [\"message\" => \"bye\"];\n",
+    "$alias =& $root;\n",
+    "exit($alias[\"message\"]);\n",
+    "echo \"after\";\n",
+);
+
+const NATIVE_EXIT_REQUEST_CLEANUP_SOURCE: &str = concat!(
+    "<?php\n",
+    "exit($_GET[\"message\"]);\n",
+    "echo \"after\";\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_direct_strings_and_scalars_through_runtime_helpers() {
     let program = parse(
@@ -82,6 +135,42 @@ fn native_executable_c_source_reports_owned_diagnostics_through_shared_consumer(
 }
 
 #[test]
+fn native_executable_c_source_routes_exit_through_runtime_result_and_cleanup() {
+    for (source_text, expected_cleanup) in [
+        (
+            NATIVE_EXIT_SYMBOL_CLEANUP_SOURCE,
+            "phpc_native_symbol_table_free(",
+        ),
+        (
+            NATIVE_EXIT_REQUEST_CLEANUP_SOURCE,
+            "phpc_native_request_state_free(",
+        ),
+    ] {
+        let program = parse(source_text).unwrap();
+        let source = emit_native_executable_c_source(&program).unwrap();
+        let body = main_body(&source);
+
+        assert!(source.contains("phpc_NativeExitResult"), "{source}");
+        assert!(
+            source.contains("phpc_native_exit_value_result_and_free"),
+            "{source}"
+        );
+        assert!(source.contains("PHPC_NATIVE_EXIT_OK"), "{source}");
+        let return_pos = body.find("return native_exit_result_").unwrap_or_else(|| {
+            panic!("exit should terminate main after the runtime result is consumed:\n{source}")
+        });
+        assert!(
+            body[..return_pos].contains(expected_cleanup),
+            "early exit should run owned cleanup before returning:\n{source}"
+        );
+        assert!(
+            !source.contains("termination lowering rejects exit()/die()"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn emit_exe_links_and_runs_scalar_runtime_value_echo_program() {
     if !has_cc() {
         return;
@@ -134,6 +223,122 @@ fn emit_exe_links_and_runs_scalar_runtime_value_echo_program() {
 
     let _ = fs::remove_file(&source_path);
     let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_exit_string_value_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("native_exit_string", NATIVE_EXIT_STRING_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native exit executable: {error}"));
+
+    assert!(run.status.success(), "native exit executable failed");
+    assert_eq!(run.stdout, b"before|bye");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_exit_without_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("native_exit_no_arg", NATIVE_EXIT_NO_ARG_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native no-arg exit executable: {error}"));
+
+    assert!(run.status.success(), "native no-arg exit executable failed");
+    assert_eq!(run.stdout, b"before|");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_exit_null_value_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("native_exit_null", NATIVE_EXIT_NULL_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native null exit executable: {error}"));
+
+    assert!(run.status.success(), "native null exit executable failed");
+    assert_eq!(run.stdout, b"before|");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_exit_integer_status_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("native_exit_status", NATIVE_EXIT_STATUS_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native exit status executable: {error}"));
+
+    assert_eq!(
+        run.status.code(),
+        Some(5),
+        "native exit status should be the PHP integer operand"
+    );
+    assert_eq!(run.stdout, b"before|");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_reports_native_exit_unsupported_value_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("native_exit_unsupported", NATIVE_EXIT_UNSUPPORTED_SOURCE);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native exit unsupported executable: {error}")
+    });
+
+    assert_eq!(run.status.code(), Some(1));
+    assert_eq!(run.stdout, b"before|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains(
+            "native exit failed: argument must be null, int, or string in the current subset, got bool"
+        ),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("after"), "{stderr}");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
 }
 
 #[test]
@@ -10672,14 +10877,51 @@ fn emit_exe_links_and_runs_generalized_array_key_materialization_program() {
     let _ = fs::remove_file(&temp_php);
 }
 
-fn has_cc() -> bool {
-    Command::new("cc").arg("--version").output().is_ok()
-}
-
 fn native_link_output_path(name: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!("phpc-native-link-{name}-{}", std::process::id()));
     path
+}
+
+fn compile_native_link_fixture(name: &str, source: &str) -> (PathBuf, PathBuf) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path(name).with_extension("php");
+    let output_path = native_link_output_path(name);
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(&source_path, source).expect("write native link fixture source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native link fixture source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    (source_path, output_path)
+}
+
+fn has_cc() -> bool {
+    Command::new("cc").arg("--version").output().is_ok()
 }
 
 fn main_body(source: &str) -> &str {

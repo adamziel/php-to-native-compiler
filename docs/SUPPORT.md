@@ -5469,10 +5469,16 @@
   `$result = include 'file.php';` through a dedicated codegen diagnostic that
   names include return values, `_once` de-duplication results, caller-scope
   side effects, and multi-file execution.
-- Native lowering rejects `exit()`/`die()` through a dedicated termination
-  diagnostic until generated code has termination control flow, exit
-  status/stdout handoff, shutdown functions, destructors/finally ordering,
-  output buffers, SAPI interaction, and exact native diagnostics.
+- `phpc compile --emit-exe` handles bounded direct `exit()`/`die()` through
+  generated executable C for materializable no-argument, `null`, `int`, and
+  `string` operands. String operands write to stdout, integer operands become
+  the process status, and generated early returns run owned native value,
+  request-state, symbol-table, byte-buffer, and array cleanup. Shutdown
+  functions, destructors/finally ordering, output buffers, SAPI interaction,
+  dynamic termination operands outside the current native value subset, exact
+  PHP diagnostics/`Throwable` behavior, and LLVM IR/assembly lowering remain
+  unsupported; `--emit-ir` and `--emit-asm` still reject `exit()`/`die()` with
+  the dedicated termination diagnostic.
 - Native lowering rejects `try`/`catch`/`finally` blocks through a dedicated
   try-block diagnostic until generated code has `Throwable` objects, stack
   unwinding, catch type matching, catch variable binding, finally execution

@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added bounded generated-native executable termination for direct
+  `exit()`/`die()` calls on the `phpc compile --emit-exe` C-link path. The
+  generated C now lowers direct no-argument termination and materializable
+  `null`, `int`, and `string` operands through a runtime-owned exit-result
+  ABI: strings are written to stdout, integers become the process status,
+  unsupported operand values report a runtime diagnostic, and early returns
+  run the same owned native value, request-state, symbol-table, byte-buffer,
+  and array cleanup used by ordinary native executable failure paths. Focused
+  tests cover no-argument, null, string, integer-status, unsupported-operand,
+  symbol-table cleanup, request-state cleanup, and the runtime ABI status
+  classifier. Shutdown callbacks, destructors/finally ordering, output
+  buffers, SAPI interaction, exact PHP diagnostics/`Throwable` behavior,
+  broad dynamic operands, and LLVM IR/assembly lowering remain unsupported.
+
 - Added bounded runtime enforcement for by-value user-function call-frame type
   metadata. Direct functions, dynamic string calls, public methods, ordinary
   closures, `call_user_func()`, and `ReflectionFunction::invoke()` now coerce

@@ -7159,6 +7159,7 @@ struct CGenerator {
     uses_native_request_state_helpers: bool,
     uses_native_request_state_reference_helpers: bool,
     uses_native_symbol_table_helpers: bool,
+    uses_native_exit_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -7549,6 +7550,18 @@ fn c_cleanup_sequence(cleanup: &[String]) -> String {
     }
 }
 
+fn native_value_aux_cleanup_after_consuming_handle(
+    value: &CNativeValueMaterialization,
+) -> Vec<String> {
+    let consumed_handle_cleanup = format!("phpc_native_value_free({});", value.handle);
+    value
+        .cleanup_after_use
+        .iter()
+        .filter(|cleanup| *cleanup != &consumed_handle_cleanup)
+        .cloned()
+        .collect()
+}
+
 impl CGenerator {
     fn next_native_name(&mut self, prefix: &str) -> String {
         let index = self.next_native_temp;
@@ -7563,6 +7576,7 @@ impl CGenerator {
             || self.uses_native_request_state_helpers
             || self.uses_native_symbol_table_helpers
             || self.uses_native_value_truthiness
+            || self.uses_native_exit_helpers
     }
 
     fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
@@ -7624,6 +7638,10 @@ impl CGenerator {
             }
             if self.uses_native_string_helpers {
                 output.push_str("typedef struct { phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeStringConversionResult;\n");
+            }
+            if self.uses_native_exit_helpers {
+                output.push_str("typedef struct { int exit_code; uint8_t status; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeExitResult;\n");
+                output.push_str("#define PHPC_NATIVE_EXIT_OK 0\n");
             }
             if self.uses_native_request_state_helpers {
                 output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeArrayHandle array; uint8_t is_set; uint8_t result_kind; uint8_t status; uint8_t exists; } phpc_NativeRequestStateOperationResult;\n");
@@ -7906,6 +7924,9 @@ impl CGenerator {
                 }
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_filesystem_path_operation_with_diagnostic(phpc_NativeValueHandle path, phpc_NativeValueHandle option, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_string_conversion_result_free(phpc_NativeStringConversionResult result);\n");
+            }
+            if self.uses_native_exit_helpers {
+                output.push_str("extern phpc_NativeExitResult phpc_native_exit_value_result_and_free(phpc_NativeValueHandle value);\n");
             }
             if self.uses_native_value_truthiness {
                 output.push_str(
@@ -12383,7 +12404,7 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_VARIABLE_READ_REJECTION))
             }
             Expr::Call { name, args, span } if is_exit_construct_name(name) => {
-                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_TERMINATION_REJECTION))
+                self.emit_exit_construct(args, *span)
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("defined") => {
                 self.emit_defined_call(args, *span)
@@ -12691,6 +12712,50 @@ impl CGenerator {
                 self.emit_binary(left, *op, right, *span)
             }
         }
+    }
+
+    fn emit_exit_construct(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        if !self.uses_native_string_helpers {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_TERMINATION_REJECTION,
+            ));
+        }
+        if args.len() > 1 {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_TERMINATION_REJECTION,
+            ));
+        }
+
+        self.uses_native_exit_helpers = true;
+        let Some(arg) = args.first() else {
+            self.body.push(self.native_error_exit_with_code("", "0"));
+            return Ok(CValue::Null);
+        };
+
+        let value = self.materialize_native_array_expr_value_handle(arg, "")?;
+        let result = self.next_native_name("native_exit_result");
+        self.body.push(format!(
+            "phpc_NativeExitResult {result} = phpc_native_exit_value_result_and_free({});",
+            value.handle
+        ));
+        let operand_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
+        let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
+        let diagnostic_cleanup = format!(
+            "phpc_native_diagnostic_report({result}.diagnostic); {operand_cleanup_sequence}"
+        );
+        let error_exit = self.native_error_exit(&diagnostic_cleanup);
+        self.body.push(format!(
+            "if ({result}.status != PHPC_NATIVE_EXIT_OK) {{{error_exit} }}"
+        ));
+        self.body.push(self.native_error_exit_with_code(
+            &operand_cleanup_sequence,
+            &format!("{result}.exit_code"),
+        ));
+        Ok(CValue::Null)
     }
 
     fn emit_request_superglobal_assignment_expr(
@@ -21159,6 +21224,9 @@ impl CGenerator {
         }
         if let Some(handle) = &self.native_request_state_handle {
             cleanup.push_str(&format!(" phpc_native_request_state_free({handle});"));
+        }
+        if let Some(handle) = &self.native_globals_symbol_table_handle {
+            cleanup.push_str(&format!(" phpc_native_symbol_table_free({handle});"));
         }
         cleanup.push_str(&format!(" return {exit_code};"));
         cleanup
