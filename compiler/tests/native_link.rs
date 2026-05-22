@@ -1236,6 +1236,28 @@ const REQUEST_SUPERGLOBAL_ASSIGNMENT_EXPRESSION_SOURCE: &str = concat!(
     "echo $_COOKIE[\"root\"];\n",
 );
 
+const REQUEST_SUPERGLOBAL_NULL_COALESCE_SOURCE: &str = concat!(
+    "<?php\n",
+    "$key = \"name\";\n",
+    "$outer = \"box\";\n",
+    "$inner = \"leaf\";\n",
+    "$_GET[$key] = \"Ada\";\n",
+    "$_POST[$outer][$inner] = strtoupper(\"p\");\n",
+    "$_COOKIE[\"empty\"] = null;\n",
+    "echo ($_GET[$key] ?? $never);\n",
+    "echo \"|\";\n",
+    "echo ($_GET[\"absent\"] ?? \"fallback\");\n",
+    "echo \"|\";\n",
+    "echo ($_COOKIE[\"empty\"] ?? \"null-fallback\");\n",
+    "echo \"|\";\n",
+    "echo strtoupper($_POST[$outer][$inner] ?? \"x\");\n",
+    "echo \"|\";\n",
+    "$stored = $_POST[$outer][\"absent\"] ?? strrev(\"zyx\");\n",
+    "echo $stored;\n",
+    "echo \"|\";\n",
+    "echo gettype($_REQUEST ?? $root_never);\n",
+);
+
 const NATIVE_VALUE_VARIABLE_STORAGE_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$key = \"first\";\n$slot = $items[$key];\n$copy = $slot;\necho $slot, \"|\", $copy, \"|\";\n$upper = strtoupper($copy);\necho $upper, \"|\";\n$fallback = $items[\"missing\"] ?? \"m\";\necho $fallback, \"|\";\n$cast = (string) 42;\necho $cast, \"|\";\n$items[] = $upper;\necho $items[1];\n";
 
 const VALUE_OFFSET_MUTATION_ARRAY_UNSET_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inner = \"inner\";\n$items = [\"keep\" => \"A\", \"drop\" => \"B\", 2 => \"C\", $outer => [$inner => \"N\", \"stay\" => \"S\"]];\n$key = \"drop\";\nunset($items[$key]);\nunset($items[2]);\nunset($items[99]);\nunset($items[$outer][$inner]);\necho isset($items[\"keep\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[2]) ? 1 : 0;\necho \"|\";\necho isset($items[$outer][$inner]) ? 1 : 0;\necho \"|\";\n$items[$key] = \"D\";\necho $items[$key];\n";
@@ -2694,6 +2716,59 @@ fn native_executable_c_source_routes_request_assignment_expression_values_throug
         !source.contains("assembly mutation lowering rejects"),
         "{source}"
     );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_request_null_coalesce_through_state_operations() {
+    let program = parse(REQUEST_SUPERGLOBAL_NULL_COALESCE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_path_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_snapshot_value"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_read_with_diagnostic"),
+        "lazy request null-coalesce RHS values should still lower through the shared symbol read ABI when needed:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_request_state_superglobal_path_operation")
+            .count()
+            >= 10,
+        "request null-coalesce should share request-state presence and value operations across keyed and nested paths:\n{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE")
+            .count()
+            >= 5,
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_REQUEST_STATE_OP_VALUE").count() >= 5,
+        "{source}"
+    );
+    assert!(
+        body.contains("request_superglobal_null_coalesce_presence"),
+        "{source}"
+    );
+    assert!(
+        body.contains("request_superglobal_null_coalesce_value"),
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_string_result_operation_with_diagnostic"),
+        "fallback values should remain ordinary native-value consumers:\n{source}"
+    );
+    assert!(!source.contains("conditional lowering rejects"), "{source}");
     assert!(
         !source.contains("request-superglobal lowering rejects"),
         "{source}"
@@ -5481,6 +5556,53 @@ fn emit_exe_links_and_runs_request_assignment_expression_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"ADA|42|42|array|ADA|C");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_null_coalesce_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("request_null_coalesce");
+    let source_path = native_link_output_path("request_null_coalesce_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, REQUEST_SUPERGLOBAL_NULL_COALESCE_SOURCE)
+        .expect("native request null-coalesce source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native request null-coalesce source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native request null-coalesce executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"Ada|fallback|null-fallback|P|xyz|array");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
