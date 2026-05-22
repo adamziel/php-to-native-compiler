@@ -6960,7 +6960,7 @@ impl CGenerator {
                 {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
-                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+                self.emit_unset_many(targets, *span)
             }
             Stmt::ConstDeclaration { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
@@ -7641,6 +7641,21 @@ impl CGenerator {
             "array_offset_unset",
             span,
         )
+    }
+
+    fn emit_unset_many(&mut self, targets: &[UnsetTarget], span: Span) -> CompileResult<()> {
+        if targets.is_empty() {
+            return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION));
+        }
+
+        for target in targets {
+            let UnsetTarget::ArrayIndex { name, index, span } = target else {
+                return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION));
+            };
+            self.emit_unset_array_index(name, index, *span)?;
+        }
+
+        Ok(())
     }
 
     fn emit_array_offset_mutation(
