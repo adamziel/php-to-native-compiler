@@ -151,6 +151,7 @@ const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects 
 const ASSEMBLY_OUTPUT_BUFFER_REJECTION: &str = "assembly output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_length(), ob_list_handlers(), ob_get_status(), ob_get_clean(), ob_get_flush(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 
 const NATIVE_VALUE_OFFSET_MUTATION_WRITE: u8 = 0;
+const NATIVE_VALUE_OFFSET_MUTATION_APPEND: u8 = 1;
 const NATIVE_VALUE_OFFSET_MUTATION_UNSET: u8 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7853,10 +7854,28 @@ impl CGenerator {
         self.emit_array_offset_mutation(
             name,
             handle,
-            index_expr,
+            Some(index_expr),
             Some(replacement_expr),
             NATIVE_VALUE_OFFSET_MUTATION_WRITE,
             "array_offset_write",
+            span,
+        )
+    }
+
+    fn emit_array_offset_append_assignment(
+        &mut self,
+        name: &str,
+        handle: &str,
+        replacement_expr: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_array_offset_mutation(
+            name,
+            handle,
+            None,
+            Some(replacement_expr),
+            NATIVE_VALUE_OFFSET_MUTATION_APPEND,
+            "array_offset_append",
             span,
         )
     }
@@ -7878,7 +7897,7 @@ impl CGenerator {
         self.emit_array_offset_mutation(
             name,
             &handle,
-            index_expr,
+            Some(index_expr),
             None,
             NATIVE_VALUE_OFFSET_MUTATION_UNSET,
             "array_offset_unset",
@@ -7905,7 +7924,7 @@ impl CGenerator {
         &mut self,
         name: &str,
         handle: &str,
-        index_expr: &Expr,
+        index_expr: Option<&Expr>,
         replacement_expr: Option<&Expr>,
         operation: u8,
         temp_prefix: &str,
@@ -7916,7 +7935,14 @@ impl CGenerator {
             span,
         )?;
         let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
-        let offset = self.materialize_native_value_result_operand(index_expr, &subject_cleanup)?;
+        let offset = if let Some(index_expr) = index_expr {
+            self.materialize_native_value_result_operand(index_expr, &subject_cleanup)?
+        } else {
+            CNativeValueMaterialization {
+                handle: "(phpc_NativeValueHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            }
+        };
         let offset_cleanup = c_cleanup_sequence(&offset.cleanup_after_use);
         let replacement_failure_cleanup = format!("{offset_cleanup}{subject_cleanup}");
         let replacement = if let Some(replacement_expr) = replacement_expr {
@@ -8788,16 +8814,24 @@ impl CGenerator {
             }
             AssignTarget::ArrayIndex { name, index, span } => {
                 if self.uses_native_string_helpers {
-                    let Some(index) = index.as_ref() else {
-                        return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
-                    };
                     return match self.variables.get(name).cloned() {
-                        Some(CValue::ArrayHandle(handle)) => self
-                            .emit_array_offset_mutation_assignment(
-                                name, &handle, index, expr, *span,
-                            ),
-                        Some(subject @ (CValue::String(_) | CValue::StringExpr(_))) => self
-                            .emit_string_offset_write_assignment(name, subject, index, expr, *span),
+                        Some(CValue::ArrayHandle(handle)) => {
+                            if let Some(index) = index.as_ref() {
+                                self.emit_array_offset_mutation_assignment(
+                                    name, &handle, index, expr, *span,
+                                )
+                            } else {
+                                self.emit_array_offset_append_assignment(name, &handle, expr, *span)
+                            }
+                        }
+                        Some(subject @ (CValue::String(_) | CValue::StringExpr(_))) => {
+                            let Some(index) = index.as_ref() else {
+                                return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                            };
+                            self.emit_string_offset_write_assignment(
+                                name, subject, index, expr, *span,
+                            )
+                        }
                         _ => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
                     };
                 }
