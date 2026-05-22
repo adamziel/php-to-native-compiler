@@ -7449,9 +7449,15 @@ struct CGlobalsSymbolReferencePath<'a> {
     append: bool,
 }
 
+struct CGlobalsDynamicReferencePath<'a> {
+    root: &'a Expr,
+    rest: Vec<&'a Expr>,
+}
+
 enum CSymbolReferencePath<'a> {
     Named(CReferencePath<'a>),
     Globals(CGlobalsSymbolReferencePath<'a>),
+    GlobalsDynamic(CGlobalsDynamicReferencePath<'a>),
 }
 
 struct CMaterializedReferencePath {
@@ -7468,6 +7474,17 @@ struct CMaterializedGlobalsReferencePath {
     key_count: usize,
     cleanup_after_use: Vec<String>,
     append: bool,
+}
+
+struct CMaterializedGlobalsDynamicReferencePath {
+    root_request_key: String,
+    request_ptrs: String,
+    request_lens: String,
+    request_len: usize,
+    request_status: String,
+    symbol_keys: String,
+    symbol_key_count: usize,
+    cleanup_after_use: Vec<String>,
 }
 
 struct CNativeArrayLvaluePath {
@@ -8285,6 +8302,10 @@ impl CGenerator {
             })
     }
 
+    fn is_dynamic_globals_symbol_root(&self, index: &Expr) -> bool {
+        static_string_key_expr_value(index).is_none()
+    }
+
     fn globals_symbol_reference_path_for_assign_target<'a>(
         &self,
         target: &'a AssignTarget,
@@ -8333,6 +8354,37 @@ impl CGenerator {
         }
     }
 
+    fn globals_dynamic_reference_path_for_assign_target<'a>(
+        &self,
+        target: &'a AssignTarget,
+    ) -> Option<CGlobalsDynamicReferencePath<'a>> {
+        match target {
+            AssignTarget::ArrayIndex {
+                name,
+                index: Some(index),
+                ..
+            } if is_globals_superglobal_name(name)
+                && self.is_dynamic_globals_symbol_root(index) =>
+            {
+                Some(CGlobalsDynamicReferencePath {
+                    root: index,
+                    rest: Vec::new(),
+                })
+            }
+            AssignTarget::NestedArrayIndex { name, indices, .. }
+                if is_globals_superglobal_name(name)
+                    && indices
+                        .first()
+                        .is_some_and(|index| self.is_dynamic_globals_symbol_root(index)) =>
+            {
+                let mut path = indices.iter().collect::<Vec<_>>();
+                let root = path.remove(0);
+                Some(CGlobalsDynamicReferencePath { root, rest: path })
+            }
+            _ => None,
+        }
+    }
+
     fn globals_symbol_reference_path_for_source<'a>(
         &self,
         source: &'a ReferenceSource,
@@ -8373,12 +8425,43 @@ impl CGenerator {
         }
     }
 
+    fn globals_dynamic_reference_path_for_source<'a>(
+        &self,
+        source: &'a ReferenceSource,
+    ) -> Option<CGlobalsDynamicReferencePath<'a>> {
+        match source {
+            ReferenceSource::ArrayIndex { name, index, .. }
+                if is_globals_superglobal_name(name)
+                    && self.is_dynamic_globals_symbol_root(index) =>
+            {
+                Some(CGlobalsDynamicReferencePath {
+                    root: index,
+                    rest: Vec::new(),
+                })
+            }
+            ReferenceSource::NestedArrayIndex { name, indices, .. }
+                if is_globals_superglobal_name(name)
+                    && indices
+                        .first()
+                        .is_some_and(|index| self.is_dynamic_globals_symbol_root(index)) =>
+            {
+                let mut path = indices.iter().collect::<Vec<_>>();
+                let root = path.remove(0);
+                Some(CGlobalsDynamicReferencePath { root, rest: path })
+            }
+            _ => None,
+        }
+    }
+
     fn c_symbol_reference_path_for_assign_target<'a>(
         &self,
         target: &'a AssignTarget,
     ) -> Option<CSymbolReferencePath<'a>> {
         if let Some(path) = self.globals_symbol_reference_path_for_assign_target(target) {
             return Some(CSymbolReferencePath::Globals(path));
+        }
+        if let Some(path) = self.globals_dynamic_reference_path_for_assign_target(target) {
+            return Some(CSymbolReferencePath::GlobalsDynamic(path));
         }
 
         self.c_reference_path_for_assign_target(target)
@@ -8391,6 +8474,9 @@ impl CGenerator {
     ) -> Option<CSymbolReferencePath<'a>> {
         if let Some(path) = self.globals_symbol_reference_path_for_source(source) {
             return Some(CSymbolReferencePath::Globals(path));
+        }
+        if let Some(path) = self.globals_dynamic_reference_path_for_source(source) {
+            return Some(CSymbolReferencePath::GlobalsDynamic(path));
         }
 
         self.c_reference_path_for_source(source)
@@ -8482,6 +8568,282 @@ impl CGenerator {
         })
     }
 
+    fn materialize_globals_dynamic_reference_path(
+        &mut self,
+        path: CGlobalsDynamicReferencePath<'_>,
+        failure_cleanup: &str,
+    ) -> CompileResult<CMaterializedGlobalsDynamicReferencePath> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_symbol_table_helpers = true;
+        self.uses_native_request_state_helpers = true;
+
+        let root = self.materialize_globals_dynamic_root_key(path.root, failure_cleanup)?;
+        let root_request_key = root.request_key.clone();
+        let mut cleanup_after_use = Self::globals_dynamic_root_key_cleanup(&root);
+        let mut request_keys = Vec::new();
+        let mut symbol_values = Vec::new();
+
+        for index in path.rest {
+            let key_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let value =
+                self.materialize_native_value_result_operand(index, &key_failure_cleanup)?;
+            let request_key = self.next_native_name("globals_dynamic_reference_path_key");
+            self.body.push(format!(
+                "phpc_NativeRequestStateKeyResult {request_key} = phpc_native_request_state_key_from_value({});",
+                value.handle
+            ));
+            cleanup_after_use.push(format!(
+                "phpc_native_byte_buffer_free({request_key}.buffer);"
+            ));
+            cleanup_after_use.extend(value.cleanup_after_use.clone());
+            request_keys.push(request_key);
+            symbol_values.push(value);
+        }
+
+        let (request_ptrs, request_lens, request_status) = if request_keys.is_empty() {
+            (
+                "NULL".to_string(),
+                "NULL".to_string(),
+                "PHPC_NATIVE_REQUEST_STATE_STATUS_OK".to_string(),
+            )
+        } else {
+            let ptrs = self.next_native_name("globals_dynamic_reference_path_key_ptrs");
+            let ptr_entries = request_keys
+                .iter()
+                .map(|key| format!("{key}.buffer.ptr"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.body
+                .push(format!("const uint8_t *{ptrs}[] = {{ {ptr_entries} }};"));
+
+            let lens = self.next_native_name("globals_dynamic_reference_path_key_lens");
+            let len_entries = request_keys
+                .iter()
+                .map(|key| format!("{key}.buffer.len"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.body
+                .push(format!("size_t {lens}[] = {{ {len_entries} }};"));
+
+            let status = self.next_native_name("globals_dynamic_reference_path_key_status");
+            self.body.push(format!(
+                "uint8_t {status} = PHPC_NATIVE_REQUEST_STATE_STATUS_OK;"
+            ));
+            for key in &request_keys {
+                self.body.push(format!(
+                    "if ({status} == PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {key}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {status} = {key}.status; }}"
+                ));
+            }
+
+            (ptrs, lens, status)
+        };
+
+        let symbol_keys = self.next_native_name("globals_dynamic_reference_symbol_path");
+        let mut symbol_entries = vec![root.value.handle];
+        symbol_entries.extend(symbol_values.iter().map(|value| value.handle.clone()));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {symbol_keys}[] = {{ {} }};",
+            symbol_entries.join(", ")
+        ));
+
+        Ok(CMaterializedGlobalsDynamicReferencePath {
+            root_request_key,
+            request_ptrs,
+            request_lens,
+            request_len: request_keys.len(),
+            request_status,
+            symbol_keys,
+            symbol_key_count: symbol_entries.len(),
+            cleanup_after_use,
+        })
+    }
+
+    fn emit_globals_dynamic_reference_source(
+        &mut self,
+        table: &str,
+        path: CGlobalsDynamicReferencePath<'_>,
+        source_ref: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<Vec<String>> {
+        self.use_native_request_state_reference_helpers();
+
+        let path = self.materialize_globals_dynamic_reference_path(path, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let request_state = self.ensure_native_request_state_handle();
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {source_ref} = (phpc_NativeReferenceHandle){{0}};"
+        ));
+        let matched = self.next_native_name("globals_dynamic_reference_source_matched");
+        self.body.push(format!("_Bool {matched} = 0;"));
+
+        for name in REQUEST_SUPERGLOBAL_NAMES {
+            let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+            let is_match = self.next_native_name("globals_dynamic_reference_source_match");
+            self.body.push(format!(
+                "_Bool {is_match} = phpc_native_request_state_key_matches_superglobal({}, {bag_bytes}, {});",
+                path.root_request_key,
+                name.len()
+            ));
+            self.body.push(format!("if (!{matched} && {is_match}) {{"));
+            self.body.push(format!("  {matched} = 1;"));
+            if path.request_len == 0 {
+                let bag = self.next_native_name("globals_dynamic_reference_source_bag");
+                self.body.push(format!(
+                    "  phpc_NativeStringHandle {bag} = phpc_native_string_from_bytes({bag_bytes}, {});",
+                    name.len()
+                ));
+                self.body.push(format!(
+                    "  {source_ref} = phpc_native_request_state_superglobal_reference_for_root({request_state}, {bag});"
+                ));
+                let branch_failure_cleanup =
+                    format!("phpc_native_string_free({bag}); {path_cleanup}{failure_cleanup}");
+                let error_exit = self.native_error_exit(&branch_failure_cleanup);
+                self.body.push(format!(
+                    "  if ({source_ref}.ptr == NULL) {{ {error_exit} }}"
+                ));
+                self.body.push(format!("  phpc_native_string_free({bag});"));
+            } else {
+                let result = self.next_native_name("globals_dynamic_reference_source_result");
+                self.body.push(format!(
+                    "  phpc_NativeRequestStateReferenceResult {result} = phpc_native_request_state_superglobal_path_reference_operation({request_state}, {bag_bytes}, {}, {}, {}, {}, {});",
+                    name.len(),
+                    path.request_ptrs,
+                    path.request_lens,
+                    path.request_len,
+                    path.request_status
+                ));
+                self.body.push(format!(
+                    "  phpc_native_request_state_reference_result_report_diagnostic({result});"
+                ));
+                let branch_failure_cleanup = format!(
+                    "phpc_native_request_state_reference_result_free({result}); {path_cleanup}{failure_cleanup}"
+                );
+                let error_exit = self.native_error_exit(&branch_failure_cleanup);
+                self.body.push(format!(
+                    "  if ({result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK || {result}.reference.ptr == NULL) {{ {error_exit} }}"
+                ));
+                self.body
+                    .push(format!("  {source_ref} = {result}.reference;"));
+            }
+            self.body.push("}".to_string());
+        }
+
+        self.body.push(format!("if (!{matched}) {{"));
+        self.body.push(format!(
+            "  {source_ref} = phpc_native_symbol_table_reference_for_value_path({table}, {}, {}, false);",
+            path.symbol_keys, path.symbol_key_count
+        ));
+        let fallback_failure_cleanup = format!("{path_cleanup}{failure_cleanup}");
+        let error_exit = self.native_error_exit(&fallback_failure_cleanup);
+        self.body.push(format!(
+            "  if ({source_ref}.ptr == NULL) {{ {error_exit} }}"
+        ));
+        self.body.push("}".to_string());
+
+        Ok(path.cleanup_after_use)
+    }
+
+    fn emit_globals_dynamic_reference_target_bind(
+        &mut self,
+        table: &str,
+        path: CGlobalsDynamicReferencePath<'_>,
+        source_ref: &str,
+        bound: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<Vec<String>> {
+        self.use_native_request_state_reference_helpers();
+
+        let path = self.materialize_globals_dynamic_reference_path(path, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let request_state = self.ensure_native_request_state_handle();
+        self.body.push(format!("bool {bound} = false;"));
+        let matched = self.next_native_name("globals_dynamic_reference_target_matched");
+        self.body.push(format!("_Bool {matched} = 0;"));
+
+        for name in REQUEST_SUPERGLOBAL_NAMES {
+            let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+            let is_match = self.next_native_name("globals_dynamic_reference_target_match");
+            self.body.push(format!(
+                "_Bool {is_match} = phpc_native_request_state_key_matches_superglobal({}, {bag_bytes}, {});",
+                path.root_request_key,
+                name.len()
+            ));
+            self.body.push(format!("if (!{matched} && {is_match}) {{"));
+            self.body.push(format!("  {matched} = 1;"));
+            if path.request_len == 0 {
+                let bag = self.next_native_name("globals_dynamic_reference_target_bag");
+                self.body.push(format!(
+                    "  phpc_NativeStringHandle {bag} = phpc_native_string_from_bytes({bag_bytes}, {});",
+                    name.len()
+                ));
+                let diagnostic =
+                    self.next_native_name("globals_dynamic_reference_target_diagnostic");
+                let replaced = self.next_native_name("globals_dynamic_reference_target_replaced");
+                self.body.push(format!(
+                    "  phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
+                ));
+                self.body.push(format!(
+                    "  _Bool {replaced} = phpc_native_request_state_superglobal_replace_reference_with_diagnostic({request_state}, {bag}, {source_ref}, &{diagnostic});"
+                ));
+                let branch_failure_cleanup = format!(
+                    "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({bag}); {path_cleanup}{failure_cleanup}"
+                );
+                let error_exit = self.native_error_exit(&branch_failure_cleanup);
+                self.body
+                    .push(format!("  if (!{replaced}) {{ {error_exit} }}"));
+                self.emit_report_native_diagnostic(&diagnostic);
+                self.body
+                    .push(format!("  phpc_native_diagnostic_free({diagnostic});"));
+                self.body.push(format!("  phpc_native_string_free({bag});"));
+                self.body.push(format!("  {bound} = true;"));
+            } else {
+                let result = self.next_native_name("globals_dynamic_reference_target_result");
+                self.body.push(format!(
+                    "  phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_path_reference_bind_operation({request_state}, {bag_bytes}, {}, {}, {}, {}, {}, {source_ref});",
+                    name.len(),
+                    path.request_ptrs,
+                    path.request_lens,
+                    path.request_len,
+                    path.request_status
+                ));
+                self.body.push(format!(
+                    "  phpc_native_request_state_operation_result_report_diagnostic({result});"
+                ));
+                let branch_failure_cleanup = format!(
+                    "phpc_native_request_state_operation_result_free({result}); {path_cleanup}{failure_cleanup}"
+                );
+                let error_exit = self.native_error_exit(&branch_failure_cleanup);
+                self.body.push(format!(
+                    "  if ({result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {error_exit} }}"
+                ));
+                self.body.push(format!(
+                    "  phpc_native_request_state_operation_result_free({result});"
+                ));
+                self.body.push(format!("  {bound} = true;"));
+            }
+            self.body.push("}".to_string());
+        }
+
+        self.body.push(format!("if (!{matched}) {{"));
+        let fallback_bound = self.next_native_name("globals_dynamic_reference_symbol_bound");
+        self.body.push(format!(
+            "  bool {fallback_bound} = phpc_native_symbol_table_bind_reference_value_path({table}, {}, {}, false, {source_ref});",
+            path.symbol_keys, path.symbol_key_count
+        ));
+        let fallback_failure_cleanup = format!("{path_cleanup}{failure_cleanup}");
+        let error_exit = self.native_error_exit(&fallback_failure_cleanup);
+        self.body
+            .push(format!("  if (!{fallback_bound}) {{ {error_exit} }}"));
+        self.body.push(format!("  {bound} = {fallback_bound};"));
+        self.body.push("}".to_string());
+
+        Ok(path.cleanup_after_use)
+    }
+
     fn emit_c_symbol_path_reference_assignment(
         &mut self,
         target: &AssignTarget,
@@ -8524,6 +8886,13 @@ impl CGenerator {
                 ));
                 source.cleanup_after_use
             }
+            CSymbolReferencePath::GlobalsDynamic(path) => self
+                .emit_globals_dynamic_reference_source(
+                    &table,
+                    path,
+                    &source_ref,
+                    failure_cleanup,
+                )?,
         };
         let source_cleanup = c_cleanup_sequence(&source_cleanup_after_use);
         let source_error_exit =
@@ -8558,6 +8927,14 @@ impl CGenerator {
                 ));
                 target.cleanup_after_use
             }
+            CSymbolReferencePath::GlobalsDynamic(path) => self
+                .emit_globals_dynamic_reference_target_bind(
+                    &table,
+                    path,
+                    &source_ref,
+                    &bound,
+                    &target_failure_cleanup,
+                )?,
         };
         let target_cleanup = c_cleanup_sequence(&target_cleanup_after_use);
         let bind_error_exit = self.native_error_exit(&format!(

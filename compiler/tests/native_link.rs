@@ -1551,6 +1551,37 @@ const GLOBALS_SYMBOL_REFERENCE_ASSIGNMENT_SOURCE: &str = concat!(
     "echo $GLOBALS[\"refs\"][1];\n",
 );
 
+const GLOBALS_DYNAMIC_REFERENCE_ASSIGNMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "$getRoot = \"_GET\";\n",
+    "$postRoot = \"_POST\";\n",
+    "$plainRoot = \"plain\";\n",
+    "$slot = \"slot\";\n",
+    "$source = \"A\";\n",
+    "$GLOBALS[$getRoot] =& $source;\n",
+    "$source = [\"name\" => \"Ada\"];\n",
+    "echo $_GET[\"name\"];\n",
+    "echo \"|\";\n",
+    "$_POST[\"box\"][$slot] = \"B\";\n",
+    "$alias =& $GLOBALS[$postRoot][\"box\"][$slot];\n",
+    "$alias = \"C\";\n",
+    "echo $_POST[\"box\"][\"slot\"];\n",
+    "echo \"|\";\n",
+    "$target = \"D\";\n",
+    "$GLOBALS[$plainRoot] =& $target;\n",
+    "$target = \"E\";\n",
+    "echo $plain;\n",
+    "echo \"|\";\n",
+    "$copy =& $GLOBALS[$plainRoot];\n",
+    "$copy = \"F\";\n",
+    "echo $target;\n",
+    "echo \"|\";\n",
+    "$cookieRoot = \"_COOKIE\";\n",
+    "$GLOBALS[$cookieRoot][\"leaf\"] =& $copy;\n",
+    "$copy = \"G\";\n",
+    "echo $_COOKIE[\"leaf\"];\n",
+);
+
 const REQUEST_SUPERGLOBAL_ROOT_REFERENCE_ASSIGNMENT_SOURCE: &str = concat!(
     "<?php\n",
     "$source = \"A\";\n",
@@ -3310,6 +3341,64 @@ fn native_executable_c_source_routes_globals_symbol_references_through_value_pat
 }
 
 #[test]
+fn native_executable_c_source_routes_globals_dynamic_references_through_request_dispatch() {
+    let program = parse(GLOBALS_DYNAMIC_REFERENCE_ASSIGNMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_key_matches_superglobal"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_reference_for_root"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_replace_reference_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_path_reference_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_path_reference_bind_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_reference_for_value_path"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_bind_reference_value_path"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_request_state_key_matches_superglobal")
+            .count()
+            >= 5,
+        "dynamic $GLOBALS reference dispatch should test request-root aliases before ordinary symbol-table fallback:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_NativeRequestStateKeyResult globals_dynamic_reference_path_key_"),
+        "dynamic nested $GLOBALS references should derive request path keys from the already-materialized path values:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_NativeValueHandle globals_dynamic_reference_symbol_path_"),
+        "dynamic $GLOBALS references should keep an ordinary symbol-table value-path fallback:\n{source}"
+    );
+    assert!(
+        !source.contains("reference-assignment lowering rejects"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("global-symbol-table lowering rejects $GLOBALS"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_request_root_references_through_state_abi() {
     let program = parse(REQUEST_SUPERGLOBAL_ROOT_REFERENCE_ASSIGNMENT_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -3676,6 +3765,60 @@ fn emit_exe_links_and_runs_globals_symbol_reference_assignment_paths() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "B|D|F|G|H");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_globals_dynamic_reference_assignment_paths() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("globals_dynamic_reference_assignment_paths.php");
+    let output_path = native_link_output_path("globals_dynamic_reference_assignment_paths");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(&source_path, GLOBALS_DYNAMIC_REFERENCE_ASSIGNMENT_SOURCE)
+        .expect("write dynamic globals reference assignment native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native dynamic globals reference source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native dynamic globals reference executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native dynamic globals reference executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "Ada|C|E|F|G");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
