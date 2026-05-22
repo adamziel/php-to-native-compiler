@@ -12902,7 +12902,7 @@ impl CGenerator {
         {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
         }
-        if native_foreach_body_may_mutate_storage(body) {
+        if self.native_foreach_body_may_mutate_storage(body) {
             return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION));
         }
 
@@ -13598,6 +13598,53 @@ impl CGenerator {
 
     fn native_foreach_symbol_target_has_prior_storage(&self, name: &str) -> bool {
         self.variables.contains_key(name)
+    }
+
+    fn native_foreach_body_may_mutate_storage(&self, body: &[Stmt]) -> bool {
+        body.iter()
+            .any(|statement| self.native_foreach_stmt_may_mutate_storage(statement))
+    }
+
+    fn native_foreach_stmt_may_mutate_storage(&self, stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::Echo { exprs, .. } => exprs.iter().any(native_foreach_expr_may_mutate_storage),
+            Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } => {
+                native_foreach_expr_may_mutate_storage(expr)
+            }
+            Stmt::UnsetArrayIndex { name, index, .. } => {
+                !self.native_foreach_array_unset_root_has_prior_storage(name)
+                    || native_foreach_expr_may_mutate_storage(index)
+            }
+            Stmt::UnsetNestedArrayIndex { name, indices, .. } => {
+                !self.native_foreach_array_unset_root_has_prior_storage(name)
+                    || indices.iter().any(native_foreach_expr_may_mutate_storage)
+            }
+            Stmt::UnsetMany { targets, .. } => targets
+                .iter()
+                .any(|target| self.native_foreach_unset_target_may_mutate_storage(target)),
+            _ => true,
+        }
+    }
+
+    fn native_foreach_unset_target_may_mutate_storage(&self, target: &UnsetTarget) -> bool {
+        match target {
+            UnsetTarget::ArrayIndex { name, index, .. } => {
+                !self.native_foreach_array_unset_root_has_prior_storage(name)
+                    || native_foreach_expr_may_mutate_storage(index)
+            }
+            UnsetTarget::NestedArrayIndex { name, indices, .. } => {
+                !self.native_foreach_array_unset_root_has_prior_storage(name)
+                    || indices.iter().any(native_foreach_expr_may_mutate_storage)
+            }
+            _ => true,
+        }
+    }
+
+    fn native_foreach_array_unset_root_has_prior_storage(&self, name: &str) -> bool {
+        match self.variables.get(name) {
+            Some(CValue::String(_) | CValue::StringExpr(_)) | None => false,
+            Some(_) => true,
+        }
     }
 
     fn emit_array_lvalue_write_for_handle(
@@ -19478,20 +19525,6 @@ fn array_index_expr_path(expr: &Expr) -> Option<(&Expr, Vec<&Expr>, Span)> {
             Some((root, indices, *span))
         }
         root => Some((root, vec![index.as_ref()], *span)),
-    }
-}
-
-fn native_foreach_body_may_mutate_storage(body: &[Stmt]) -> bool {
-    body.iter().any(native_foreach_stmt_may_mutate_storage)
-}
-
-fn native_foreach_stmt_may_mutate_storage(stmt: &Stmt) -> bool {
-    match stmt {
-        Stmt::Echo { exprs, .. } => exprs.iter().any(native_foreach_expr_may_mutate_storage),
-        Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } => {
-            native_foreach_expr_may_mutate_storage(expr)
-        }
-        _ => true,
     }
 }
 

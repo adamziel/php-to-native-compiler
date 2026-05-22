@@ -176,6 +176,37 @@ fn native_executable_c_source_routes_by_value_foreach_through_array_lvalue_owner
 }
 
 #[test]
+fn native_executable_c_source_routes_foreach_body_array_offset_unsets_through_lvalue_owner() {
+    let program = parse(
+        "<?php\n$items = [\"x\" => \"A\", \"y\" => \"B\", \"z\" => \"C\"];\n$other = [\"z\" => \"Z\", \"keep\" => \"K\"];\n$nested = [\"outer\" => [\"drop\" => \"D\", \"keep\" => \"N\"]];\nforeach ($items as $key => $value) { unset($items[$key], $other[\"z\"], $nested[\"outer\"][\"drop\"]); echo $key, \":\", $value, \";\"; }\necho \"|\", isset($items[\"x\"]) ? 1 : 0, isset($items[\"z\"]) ? 1 : 0, isset($other[\"z\"]) ? 1 : 0, isset($other[\"keep\"]) ? 1 : 0, isset($nested[\"outer\"][\"drop\"]) ? 1 : 0, isset($nested[\"outer\"][\"keep\"]) ? 1 : 0;\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_foreach_iterable_result"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_array_lvalue_owner_value_operation_result")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        !source.contains("assembly mutation lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_array_pointer_builtins_through_lvalue_owner_results() {
     let program = parse(
         "<?php\n$items = [10 => \"first\", 20 => \"second\", 30 => \"third\"];\n$box = [\"nested\" => [\"n1\", \"n2\", \"n3\"]];\necho current($items), \"|\", key($items), \"|\", next($items), \"|\", key($items), \"|\", prev($items), \"|\", end($items), \"|\", reset($items), \"|\", next($box[\"nested\"]), \"|\", end($box[\"nested\"]), \"|\", reset($box[\"nested\"]);\n",
@@ -860,6 +891,7 @@ fn native_executable_c_source_blocks_foreach_forms_without_symbol_or_reference_s
     for source in [
         "<?php\n$v = \"old\";\n$a = [\"new\"];\nforeach ($a as $v) { echo $v; }\n",
         "<?php\n$a = [\"new\"];\nforeach ($a as $v) { $seen = $v; }\n",
+        "<?php\n$a = [\"new\"];\nforeach ($a as $v) { unset($missing[0]); }\n",
     ] {
         let program = parse(source).unwrap();
         let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -948,6 +980,63 @@ fn emit_exe_links_and_runs_by_value_foreach_array_lvalue_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"x=AB;y=CD;n=EF;lit=GH;");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_foreach_body_array_offset_unset_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("foreach_body_array_offset_unset.php");
+    let output_path = native_link_output_path("foreach_body_array_offset_unset");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &source_path,
+        "<?php\n$items = [\"x\" => \"A\", \"y\" => \"B\", \"z\" => \"C\"];\n$other = [\"z\" => \"Z\", \"keep\" => \"K\"];\n$nested = [\"outer\" => [\"drop\" => \"D\", \"keep\" => \"N\"]];\nforeach ($items as $key => $value) { unset($items[$key], $other[\"z\"], $nested[\"outer\"][\"drop\"]); echo $key, \":\", $value, \";\"; }\necho \"|\", isset($items[\"x\"]) ? 1 : 0, isset($items[\"z\"]) ? 1 : 0, isset($other[\"z\"]) ? 1 : 0, isset($other[\"keep\"]) ? 1 : 0, isset($nested[\"outer\"][\"drop\"]) ? 1 : 0, isset($nested[\"outer\"][\"keep\"]) ? 1 : 0;\n",
+    )
+    .expect("write foreach body unset native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native foreach body unset source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("failed to compile native foreach body unset executable: {error}")
+        });
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native foreach body unset executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"x:A;y:B;z:C;|000101");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
