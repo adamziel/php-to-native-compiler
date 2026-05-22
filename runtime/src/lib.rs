@@ -4589,9 +4589,10 @@ pub extern "C" fn phpc_native_array_lvalue_owner_array(
 /// The owner and each key handle inside `segments` must be null or handles
 /// previously returned by the runtime ABI and not yet freed. `segments` must be
 /// null when `segment_count` is zero, or point to `segment_count` initialized
-/// path segments. Key and append segments are executable for writes; reads,
-/// unsets, and read-modify-write updates remain key-only. Other families
-/// remain centralized blockers.
+/// path segments. Key and append segments are executable for writes; reads and
+/// unsets remain key-only. Increment/decrement updates accept key paths and
+/// final append segments; append suffix updates remain centralized blockers.
+/// Other families remain centralized blockers.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
     mut owner: NativeArrayLvalueOwner,
@@ -4674,20 +4675,19 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_value_operation_result(
                     format!("array lvalue update operation tag {_operation} is not supported"),
                 );
             }
-            let keys = match unsafe {
-                native_array_lvalue_key_path_from_segments(
-                    segments,
-                    segment_count,
-                    "increment/decrement",
-                )
-            } {
-                Ok(keys) => keys,
-                Err(result) => return result,
-            };
-            match native_array_increment_decrement_key_path(&mut array.value, &keys, _op, _position)
-            {
+            let path =
+                match unsafe { native_array_lvalue_path_from_segments(segments, segment_count) } {
+                    Ok(path) => path,
+                    Err(result) => return result,
+                };
+            match native_array_increment_decrement_lvalue_path(
+                &mut array.value,
+                &path,
+                _op,
+                _position,
+            ) {
                 Ok(value) => NativeArrayLvalueResult::value(value),
-                Err(result) => result,
+                Err(result) => return result,
             }
         }
         _ => unreachable!("array lvalue value-operation family was validated above"),
@@ -4975,13 +4975,13 @@ fn native_array_unset_key_path(array: &mut PhpArray, keys: &[ArrayKey]) -> bool 
     removed
 }
 
-fn native_array_increment_decrement_key_path(
+fn native_array_increment_decrement_lvalue_path(
     array: &mut PhpArray,
-    keys: &[ArrayKey],
+    path: &[NativeArrayLvaluePathElement],
     op: u8,
     position: u8,
 ) -> Result<Value, NativeArrayLvalueResult> {
-    let Some((key, rest)) = keys.split_first() else {
+    let Some((segment, rest)) = path.split_first() else {
         return Err(NativeArrayLvalueResult::diagnostic(
             NATIVE_ARRAY_LVALUE_INVALID_KEY,
             "array lvalue increment/decrement path must contain at least one key segment",
@@ -5007,38 +5007,61 @@ fn native_array_increment_decrement_key_path(
         ));
     }
 
-    if rest.is_empty() {
-        let Some(slot) = array.get_slot_mut(key.clone()) else {
-            return Err(NativeArrayLvalueResult::diagnostic(
-                NATIVE_ARRAY_LVALUE_INVALID_ROOT,
-                RuntimeError::undefined_array_key(key.diagnostic_key()).message(),
-            ));
-        };
+    match segment {
+        NativeArrayLvaluePathElement::Key(key) if rest.is_empty() => {
+            let Some(slot) = array.get_slot_mut(key.clone()) else {
+                return Err(NativeArrayLvalueResult::diagnostic(
+                    NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+                    RuntimeError::undefined_array_key(key.diagnostic_key()).message(),
+                ));
+            };
 
-        let previous = slot.value_cloned();
-        let updated = native_array_lvalue_increment_decrement_value(&previous, op)?;
-        let expression_value = if position == NATIVE_ARRAY_LVALUE_POSITION_PRE {
-            updated.clone()
-        } else {
-            previous
-        };
-        slot.set_value(updated);
-        return Ok(expression_value);
-    }
+            let previous = slot.value_cloned();
+            let updated = native_array_lvalue_increment_decrement_value(&previous, op)?;
+            let expression_value = if position == NATIVE_ARRAY_LVALUE_POSITION_PRE {
+                updated.clone()
+            } else {
+                previous
+            };
+            slot.set_value(updated);
+            Ok(expression_value)
+        }
+        NativeArrayLvaluePathElement::Key(key) => {
+            let Some(Value::Array(mut child)) = array.get_cloned(key.clone()) else {
+                return Err(NativeArrayLvalueResult::diagnostic(
+                    NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+                    format!(
+                        "array lvalue nested increment/decrement failed: missing or non-array intermediate at key {} requires the shared read-modify-write recovery boundary",
+                        key.diagnostic_key()
+                    ),
+                ));
+            };
 
-    let Some(Value::Array(mut child)) = array.get_cloned(key.clone()) else {
-        return Err(NativeArrayLvalueResult::diagnostic(
+            let value = native_array_increment_decrement_lvalue_path(&mut child, rest, op, position)?;
+            array.insert(key.clone(), Value::Array(child));
+            Ok(value)
+        }
+        NativeArrayLvaluePathElement::Append if rest.is_empty() => {
+            let previous = Value::Null;
+            let updated = native_array_lvalue_increment_decrement_value(&previous, op)?;
+            let expression_value = if position == NATIVE_ARRAY_LVALUE_POSITION_PRE {
+                updated.clone()
+            } else {
+                previous
+            };
+            array.append(updated).map_err(|error| {
+                NativeArrayLvalueResult::diagnostic(
+                    NATIVE_ARRAY_LVALUE_INVALID_KEY,
+                    error.message(),
+                )
+            })?;
+            Ok(expression_value)
+        }
+        NativeArrayLvaluePathElement::Append => Err(NativeArrayLvalueResult::diagnostic(
             NATIVE_ARRAY_LVALUE_INVALID_ROOT,
-            format!(
-                "array lvalue nested increment/decrement failed: missing or non-array intermediate at key {} requires the shared read-modify-write recovery boundary",
-                key.diagnostic_key()
-            ),
-        ));
-    };
-
-    let value = native_array_increment_decrement_key_path(&mut child, rest, op, position)?;
-    array.insert(key.clone(), Value::Array(child));
-    Ok(value)
+            "array lvalue nested append increment/decrement suffix awaits the shared missing-slot read-modify-write recovery boundary",
+        )),
+    }
 }
 
 fn native_array_lvalue_increment_decrement_value(
@@ -5046,6 +5069,8 @@ fn native_array_lvalue_increment_decrement_value(
     op: u8,
 ) -> Result<Value, NativeArrayLvalueResult> {
     match (current, op) {
+        (Value::Null, NATIVE_ARRAY_LVALUE_INCREMENT) => Ok(Value::Int(1)),
+        (Value::Null, NATIVE_ARRAY_LVALUE_DECREMENT) => Ok(Value::Null),
         (Value::Int(value), NATIVE_ARRAY_LVALUE_INCREMENT) => Ok(Value::Int(value.wrapping_add(1))),
         (Value::Int(value), NATIVE_ARRAY_LVALUE_DECREMENT) => Ok(Value::Int(value.wrapping_sub(1))),
         (Value::Float(value), NATIVE_ARRAY_LVALUE_INCREMENT) => Ok(Value::Float(value + 1.0)),
@@ -20104,6 +20129,131 @@ mod tests {
         unsafe { phpc_native_value_free(string_key) };
         unsafe { phpc_native_value_free(float_key) };
         unsafe { phpc_native_value_free(direct_key) };
+        unsafe { phpc_native_array_free(handle) };
+    }
+
+    #[test]
+    fn native_array_lvalue_append_increment_decrement_updates_null_slots() {
+        fn update(
+            owner: NativeArrayLvalueOwner,
+            path: &[NativeArrayPathSegment],
+            op: u8,
+            position: u8,
+        ) -> NativeArrayLvalueResult {
+            unsafe {
+                phpc_native_array_lvalue_owner_value_operation_result(
+                    owner,
+                    path.as_ptr(),
+                    path.len(),
+                    NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE,
+                    NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT,
+                    op,
+                    position,
+                    NativeValueHandle::null(),
+                )
+            }
+        }
+
+        let mut outer = PhpArray::new();
+        outer.insert("stay", Value::String("keep".to_string()));
+        let mut root = PhpArray::new();
+        root.insert("outer", Value::Array(outer));
+
+        let handle = NativeArrayHandle::from_array(root);
+        let owner = phpc_native_array_lvalue_owner_array(handle);
+        let append_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_APPEND,
+            key: NativeValueHandle::null(),
+        }];
+        let outer_key = NativeValueHandle::from_value(Value::String("outer".to_string()));
+        let nested_append_path = [
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: outer_key,
+            },
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_APPEND,
+                key: NativeValueHandle::null(),
+            },
+        ];
+        let leaf_key = NativeValueHandle::from_value(Value::String("leaf".to_string()));
+        let append_suffix_path = [
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_APPEND,
+                key: NativeValueHandle::null(),
+            },
+            NativeArrayPathSegment {
+                tag: NATIVE_ARRAY_PATH_KEY,
+                key: leaf_key,
+            },
+        ];
+
+        let post_increment = update(
+            owner,
+            &append_path,
+            NATIVE_ARRAY_LVALUE_INCREMENT,
+            NATIVE_ARRAY_LVALUE_POSITION_POST,
+        );
+        assert_eq!(post_increment.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(post_increment.value), b"");
+        unsafe { phpc_native_array_lvalue_result_free(post_increment) };
+
+        let pre_increment = update(
+            owner,
+            &append_path,
+            NATIVE_ARRAY_LVALUE_INCREMENT,
+            NATIVE_ARRAY_LVALUE_POSITION_PRE,
+        );
+        assert_eq!(pre_increment.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(pre_increment.value), b"1");
+        unsafe { phpc_native_array_lvalue_result_free(pre_increment) };
+
+        let nested_post_increment = update(
+            owner,
+            &nested_append_path,
+            NATIVE_ARRAY_LVALUE_INCREMENT,
+            NATIVE_ARRAY_LVALUE_POSITION_POST,
+        );
+        assert_eq!(nested_post_increment.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(
+            native_value_echo_bytes_for_test(nested_post_increment.value),
+            b""
+        );
+        unsafe { phpc_native_array_lvalue_result_free(nested_post_increment) };
+
+        let pre_decrement = update(
+            owner,
+            &append_path,
+            NATIVE_ARRAY_LVALUE_DECREMENT,
+            NATIVE_ARRAY_LVALUE_POSITION_PRE,
+        );
+        assert_eq!(pre_decrement.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(native_value_echo_bytes_for_test(pre_decrement.value), b"");
+        unsafe { phpc_native_array_lvalue_result_free(pre_decrement) };
+
+        let append_suffix = update(
+            owner,
+            &append_suffix_path,
+            NATIVE_ARRAY_LVALUE_INCREMENT,
+            NATIVE_ARRAY_LVALUE_POSITION_PRE,
+        );
+        assert_eq!(append_suffix.tag, NATIVE_ARRAY_LVALUE_INVALID_ROOT);
+        assert!(native_diagnostic_message_for_test(append_suffix.diagnostic)
+            .contains("append increment/decrement suffix"));
+        unsafe { phpc_native_array_lvalue_result_free(append_suffix) };
+
+        let array = unsafe { handle.as_ref() }.expect("array handle remains live");
+        assert_eq!(array.value.get(0), Some(&Value::Int(1)));
+        assert_eq!(array.value.get(1), Some(&Value::Int(1)));
+        assert_eq!(array.value.get(2), Some(&Value::Null));
+        let Value::Array(outer) = array.value.get("outer").expect("outer array remains") else {
+            panic!("outer slot should remain an array");
+        };
+        assert_eq!(outer.get(0), Some(&Value::Int(1)));
+        assert_eq!(outer.get("stay"), Some(&Value::String("keep".to_string())));
+
+        unsafe { phpc_native_value_free(leaf_key) };
+        unsafe { phpc_native_value_free(outer_key) };
         unsafe { phpc_native_array_free(handle) };
     }
 

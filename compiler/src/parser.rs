@@ -3556,12 +3556,16 @@ impl Parser {
             AssignTarget::Variable { .. }
             | AssignTarget::ArrayIndex { index: Some(_), .. }
             | AssignTarget::NestedArrayIndex { .. }
+            | AssignTarget::ArrayIndex { index: None, .. }
             | AssignTarget::Property { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
+            AssignTarget::NestedArrayAppend { suffix_indices, .. } if suffix_indices.is_empty() => {
+                Ok(())
+            }
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NonDirectProperty { .. }
@@ -3574,8 +3578,7 @@ impl Parser {
             | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
-            | AssignTarget::NestedArrayAppend { .. }
-            | AssignTarget::ArrayIndex { index: None, .. } => {
+            | AssignTarget::NestedArrayAppend { .. } => {
                 Err(unsupported_increment_decrement_target_message())
             }
         }
@@ -3624,6 +3627,24 @@ impl Parser {
                     })
                 }
             }
+            Expr::AppendIndex { target, span } => match *target {
+                Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
+                    name,
+                    index: None,
+                    span,
+                }),
+                nested @ Expr::Index { .. } => {
+                    let (name, indices, _) = Self::array_index_path_from_expr(nested)
+                        .ok_or(unsupported_increment_decrement_target_message())?;
+                    Ok(AssignTarget::NestedArrayAppend {
+                        name,
+                        indices,
+                        suffix_indices: Vec::new(),
+                        span,
+                    })
+                }
+                _ => Err(unsupported_increment_decrement_target_message()),
+            },
             Expr::Property {
                 target,
                 property,
@@ -7505,7 +7526,7 @@ fn unsupported_increment_decrement_expression_message() -> &'static str {
 }
 
 fn unsupported_increment_decrement_target_message() -> &'static str {
-    "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented"
+    "unsupported increment/decrement target: only direct static variables, direct array/object offsets, append offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer, float, and append-null values; append suffixes and nested variable targets are not implemented"
 }
 
 fn unsupported_bracketed_namespace_message() -> &'static str {

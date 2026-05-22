@@ -9316,15 +9316,15 @@ impl CGenerator {
         _span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let Some((handle, indices, span)) = self.native_array_lvalue_key_target_parts(target)
+        let Some((handle, path)) =
+            self.materialize_array_lvalue_increment_decrement_target_path(target, failure_cleanup)?
         else {
             return Ok(None);
         };
 
         self.materialize_array_lvalue_increment_decrement_result_for_handle(
             &handle,
-            &indices,
-            span,
+            path,
             op,
             position,
             failure_cleanup,
@@ -9332,11 +9332,70 @@ impl CGenerator {
         .map(Some)
     }
 
+    fn materialize_array_lvalue_increment_decrement_target_path(
+        &mut self,
+        target: &AssignTarget,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<(String, CNativeArrayLvaluePath)>> {
+        match target {
+            AssignTarget::ArrayIndex { name, index, span } => {
+                let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+                    return Ok(None);
+                };
+                let path = if let Some(index) = index.as_ref() {
+                    self.materialize_native_array_lvalue_key_path(&[index], *span, failure_cleanup)?
+                } else {
+                    self.materialize_native_array_lvalue_append_path(
+                        &[],
+                        &[],
+                        *span,
+                        failure_cleanup,
+                    )?
+                };
+                Ok(Some((handle, path)))
+            }
+            AssignTarget::NestedArrayIndex {
+                name,
+                indices,
+                span,
+            } => {
+                let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+                    return Ok(None);
+                };
+                let indices = indices.iter().collect::<Vec<_>>();
+                let path = self.materialize_native_array_lvalue_key_path(
+                    &indices,
+                    *span,
+                    failure_cleanup,
+                )?;
+                Ok(Some((handle, path)))
+            }
+            AssignTarget::NestedArrayAppend {
+                name,
+                indices,
+                suffix_indices,
+                span,
+            } if suffix_indices.is_empty() => {
+                let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+                    return Ok(None);
+                };
+                let prefix_indices = indices.iter().collect::<Vec<_>>();
+                let path = self.materialize_native_array_lvalue_append_path(
+                    &prefix_indices,
+                    &[],
+                    *span,
+                    failure_cleanup,
+                )?;
+                Ok(Some((handle, path)))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn materialize_array_lvalue_increment_decrement_result_for_handle(
         &mut self,
         handle: &str,
-        indices: &[&Expr],
-        span: Span,
+        path: CNativeArrayLvaluePath,
         op: IncrementDecrementOp,
         position: IncrementDecrementPosition,
         failure_cleanup: &str,
@@ -9345,7 +9404,6 @@ impl CGenerator {
         self.uses_native_array_helpers = true;
         self.uses_native_array_lvalue_helpers = true;
 
-        let path = self.materialize_native_array_lvalue_key_path(indices, span, failure_cleanup)?;
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
         let owner = self.next_native_name("array_lvalue_increment_owner");
         let result = self.next_native_name("array_lvalue_increment_result");
