@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 18:57 CEST
+Updated: 2026-05-22 19:10 CEST
 Evaluation marker: `20260522T165426Z`
-Primary semantic HEAD: `aa94e4bd codegen: route GLOBALS request aliases through state ABI`
-Current pushed semantic baseline: `aa94e4bd codegen: route GLOBALS request aliases through state ABI`
+Primary semantic HEAD: `0b28771d codegen: route native value strict identity through comparison ABI`
+Current pushed semantic baseline: `0b28771d codegen: route native value strict identity through comparison ABI`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -19,9 +19,12 @@ primary now has generated-C `$GLOBALS[...]` write/unset/append paths,
 request-superglobal root/nested appends, request-superglobal null-coalescing
 reads, static `$GLOBALS["_GET"]`-style request-root aliases, and direct
 unresolved root-variable reads routed through shared runtime/compiler ABIs.
+Generated-C strict identity for owned `NativeValueHandle` values now also
+routes through the shared comparison operand/relation ABI instead of the static
+fallback path, covering stored array-read values, `$GLOBALS[...]` reads, and
+request-state reads.
 These are generalized symbol/path/key-driven slices with focused linked
-evidence, not fixture-shaped recognizers. No newer semantic primary commit has
-landed after the 18:51 CEST alias batch, so estimates are held stable.
+evidence, not fixture-shaped recognizers.
 
 The work remains bounded. Primary is stronger for selected request-state and
 `$GLOBALS[...]` path operations, but it still does not have complete PHP
@@ -36,7 +39,7 @@ substantial open systems.
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
-| Compiler/backend consumers | 89% | `[##################--]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, static request aliases, and direct undefined root reads; uneven across calls, objects, control flow, and LLVM/C parity. |
+| Compiler/backend consumers | 90% | `[##################--]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, static request aliases, direct undefined root reads, and generated-C native-value strict identity; uneven across calls, objects, control flow, and LLVM/C parity. |
 | Executable generalized PHP semantics | 73% | `[###############-----]` | Improving through executable path consumers, but many real PHP compositions still block. |
 | Arrays, lvalues, references, COW | 73% | `[###############-----]` | Arrays/lvalues advanced; full references/COW and arbitrary writable roots remain large. |
 | Symbols, globals, request state | 77% | `[###############-----]` | Request paths/null-coalesce, static `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, and direct undefined root reads are stronger; dynamic aliases, direct root appends, frames, and self-reference remain incomplete. |
@@ -76,6 +79,9 @@ substantial open systems.
   symbol-table diagnostic ABI in generated C, returning PHP null values while
   reporting undefined-variable diagnostics across output, assignment/storage,
   and discarded-read consumers.
+- [x] Generated-C strict identity/non-identity over owned `NativeValueHandle`
+  values through the shared comparison operand/relation ABI, including stored
+  array-read values, `$GLOBALS[...]` path reads, and request-state reads.
 - [ ] Dynamic `$GLOBALS[$expr]` request-root alias dispatch and direct no-key
   `$GLOBALS[]` root append.
 - [ ] Request append suffix wrapping after the append hole.
@@ -96,6 +102,7 @@ substantial open systems.
 
 Recent semantic commits on primary:
 
+- `0b28771d codegen: route native value strict identity through comparison ABI`
 - `aa94e4bd codegen: route GLOBALS request aliases through state ABI`
 - `f41f2342 codegen: route request null coalesce through state ABI`
 - `6adf3530 codegen: route undefined root reads through symbol ABI`
@@ -117,12 +124,14 @@ Primary-integrated capability now includes strong selected request-superglobal
 path execution through shared request-state ABIs, including root/nested
 appends, request null-coalescing reads, and static `$GLOBALS[request-root]`
 alias routing, generated-C `$GLOBALS[...]` read/probe/write/unset/append
-lowering through shared symbol-table path ABIs, and direct unresolved
-root-variable reads through a diagnostic symbol-table ABI. The latest alias
-slice intentionally leaves dynamic first-key request-root dispatch, exact
-diagnostic ordering through arbitrary control flow, request-root
-mutation/reference parity, direct no-key `$GLOBALS[]`, self-reference behavior,
-frames, references/COW, and LLVM/C assembly parity blocked.
+lowering through shared symbol-table path ABIs, direct unresolved root-variable
+reads through a diagnostic symbol-table ABI, and generated-C strict identity
+over owned native-value handles through the shared comparison ABI. The latest
+strict-identity slice intentionally leaves direct one-level array-offset
+comparison operands, LLVM/C assembly parity, dynamic first-key request-root
+dispatch, exact diagnostic ordering through arbitrary control flow,
+request-root mutation/reference parity, direct no-key `$GLOBALS[]`,
+self-reference behavior, frames, and references/COW blocked.
 
 ## Lane-Local And Active Candidate Work
 
@@ -132,9 +141,10 @@ Lane-local candidates, not counted:
   `explode()` / `implode()` through a shared string/list value-result ABI,
   following earlier `min()` / `max()` and scanner work. Plausible executable
   slices, but not present in primary.
-- `impl-global-symbols`: strict identity and type-introspection over owned
-  `NativeValueHandle` symbol/request/global families; useful, but must not
-  fork the primary request/global alias model.
+- `impl-global-symbols`: type-introspection and broader symbol-environment
+  consumers over owned `NativeValueHandle` symbol/request/global families;
+  useful, but must not fork the primary request/global alias model. The narrow
+  generated-C strict-identity value-handle consumer is now primary-integrated.
 - `impl-array-value-runtime`: direct and dynamic array value builtin frames
   through runtime call-frame/value-frame boundaries; high-value but
   conflict-heavy and requires small transplant notes.
