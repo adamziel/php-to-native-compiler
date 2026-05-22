@@ -6690,6 +6690,7 @@ struct CGenerator {
     uses_native_value_offset_mutation: bool,
     uses_native_value_offset_path_write: bool,
     uses_native_value_offset_path_append: bool,
+    uses_native_value_offset_path_unset: bool,
     uses_native_array_lvalue_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
@@ -7176,6 +7177,9 @@ impl CGenerator {
                     }
                     if self.uses_native_value_offset_path_append {
                         output.push_str("extern phpc_NativeValueHandle phpc_native_value_offset_path_append_with_diagnostic(phpc_NativeValueHandle subject, const phpc_NativeValueHandle *prefix_offsets, size_t prefix_offsets_len, const phpc_NativeValueHandle *suffix_offsets, size_t suffix_offsets_len, phpc_NativeValueHandle replacement, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    }
+                    if self.uses_native_value_offset_path_unset {
+                        output.push_str("extern phpc_NativeValueHandle phpc_native_value_offset_path_unset_with_diagnostic(phpc_NativeValueHandle subject, const phpc_NativeValueHandle *offsets, size_t offsets_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                     }
                 }
                 if self.uses_native_value_string_clone_bytes {
@@ -8608,6 +8612,61 @@ impl CGenerator {
         Ok(replacement_value)
     }
 
+    fn emit_value_offset_path_unset_statement(
+        &mut self,
+        name: &str,
+        subject: CValue,
+        indices: &[Expr],
+        span: Span,
+    ) -> CompileResult<()> {
+        let subject = self.materialize_native_array_c_value_handle(subject, span)?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let (offsets_ptr, offsets_len, offset_values) =
+            self.emit_native_value_offset_key_path(indices, &subject_cleanup)?;
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_value_offset_mutation = true;
+        self.uses_native_value_offset_path_unset = true;
+        self.uses_native_value_clone = true;
+
+        let diagnostic = self.next_native_name("value_offset_path_unset_diagnostic");
+        let path_value = self.next_native_name("value_offset_path_unset_value");
+        let value_to_clone = self.next_native_name("value_offset_path_unset_value_to_clone");
+        let stored_value = self.next_native_name("value_offset_path_unset_stored_value");
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {path_value} = phpc_native_value_offset_path_unset_with_diagnostic({}, {offsets_ptr}, {offsets_len}, &{diagnostic});",
+            subject.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value_to_clone} = {};",
+            subject.handle
+        ));
+        self.body.push(format!(
+            "if ({path_value}.ptr != NULL) {{ {value_to_clone} = {path_value}; }}"
+        ));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {stored_value} = phpc_native_value_clone({value_to_clone});"
+        ));
+        self.body
+            .push(format!("phpc_native_value_free({path_value});"));
+        for offset in offset_values {
+            self.body.extend(offset.cleanup_after_use);
+        }
+        self.body.extend(subject.cleanup_after_use);
+        self.store_native_value_result_variable(
+            name,
+            CNativeValueMaterialization {
+                handle: stored_value,
+                cleanup_after_use: Vec::new(),
+            },
+        );
+        Ok(())
+    }
+
     fn materialize_assignment_expression_replacement_value(
         &mut self,
         replacement_expr: &Expr,
@@ -9583,11 +9642,21 @@ impl CGenerator {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
         }
 
-        let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
-            return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
-        };
-
-        self.emit_array_lvalue_unset_for_handle(&handle, &[index_expr], span)
+        match self.variables.get(name).cloned() {
+            Some(CValue::ArrayHandle(handle)) => {
+                self.emit_array_lvalue_unset_for_handle(&handle, &[index_expr], span)
+            }
+            Some(CValue::String(_) | CValue::StringExpr(_)) => {
+                Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION))
+            }
+            Some(subject) => self.emit_value_offset_path_unset_statement(
+                name,
+                subject,
+                std::slice::from_ref(index_expr),
+                span,
+            ),
+            None => Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
+        }
     }
 
     fn emit_unset_nested_array_index(
@@ -9600,11 +9669,19 @@ impl CGenerator {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
         }
 
-        let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
-            return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
-        };
-        let indices = indices.iter().collect::<Vec<_>>();
-        self.emit_array_lvalue_unset_for_handle(&handle, &indices, span)
+        match self.variables.get(name).cloned() {
+            Some(CValue::ArrayHandle(handle)) => {
+                let indices = indices.iter().collect::<Vec<_>>();
+                self.emit_array_lvalue_unset_for_handle(&handle, &indices, span)
+            }
+            Some(CValue::String(_) | CValue::StringExpr(_)) => {
+                Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION))
+            }
+            Some(subject) => {
+                self.emit_value_offset_path_unset_statement(name, subject, indices, span)
+            }
+            None => Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
+        }
     }
 
     fn emit_unset_many(&mut self, targets: &[UnsetTarget], span: Span) -> CompileResult<()> {

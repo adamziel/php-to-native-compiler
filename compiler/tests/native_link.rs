@@ -557,6 +557,8 @@ const VALUE_OFFSET_PATH_MUTATION_SOURCE: &str = "<?php\n$key = \"a\";\n$null = n
 
 const VALUE_OFFSET_PATH_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$key = \"a\";\n$null = null;\necho ($null[$key][\"b\"] = \"A\"), \"|\", isset($null[$key]) ? 1 : 0, \"|\";\n$false = false;\n$value = \"B\";\necho ($false[\"bucket\"][][\"leaf\"] = $value), \"|\", isset($false[\"bucket\"]) ? 1 : 0, \"|\";\n$source = [\"rhs\" => \"C\"];\n$target = null;\n$stored = ($target[\"copy\"][\"leaf\"] = $source[\"rhs\"]);\necho $stored, \"|\", isset($target[\"copy\"]) ? 1 : 0;\n";
 
+const VALUE_OFFSET_PATH_UNSET_SOURCE: &str = "<?php\n$key = \"drop\";\n$leaf = \"leaf\";\n$items = null;\n$items[$key][\"value\"] = \"D\";\n$items[\"root\"][$leaf] = \"L\";\nunset($items[$key]);\nunset($items[\"root\"][$leaf]);\n$null = null;\nunset($null[\"missing\"]);\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho isset($items[\"root\"][$leaf]) ? 1 : 0;\necho \"|\";\necho isset($items[\"root\"]) ? 1 : 0;\necho \"|\", $null;\n";
+
 const VALUE_OFFSET_MUTATION_ARRAY_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$key = \"named\";\n$value = \"C\";\necho ($items[] = \"B\"), \"|\";\necho ($items[] = $value), \"|\";\necho ($items[$key] = \"D\"), \"|\";\necho $items[0], \"|\", $items[1], \"|\", $items[$key], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
 
 const VALUE_OFFSET_ARRAY_READ_SOURCE: &str = "<?php\n$items = [\"first\" => \"q\", 2 => \"B\"];\n$key = \"first\";\n$out = [];\n$out[] = $items[$key];\necho $items[$key], \"|\";\nprint $items[2];\necho \"|\", $out[0], \"|\";\necho strtoupper($items[$key]);\n";
@@ -1171,6 +1173,34 @@ fn native_executable_c_source_routes_nested_value_assignment_expressions_through
     assert!(
         body.contains("phpc_native_value_echo_stdout("),
         "native-value RHS assignment results should remain available to expression consumers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_value_path_unsets_through_path_boundary() {
+    let program = parse(VALUE_OFFSET_PATH_UNSET_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_offset_path_unset_with_diagnostic"
+        ),
+        "generated C should declare the shared value-offset path unset ABI:\n{source}"
+    );
+    assert_eq!(
+        body.matches(" = phpc_native_value_offset_path_unset_with_diagnostic(")
+            .count(),
+        3,
+        "direct, nested, and null-root value unsets should share one path unset ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_clone(value_offset_path_unset_value_to_clone_"),
+        "path unset results should be stored through native value clones:\n{source}"
+    );
+    assert!(
+        !body.contains("assembly array lowering rejects"),
+        "value path unsets should not fall through to the blanket array rejection:\n{source}"
     );
 }
 
@@ -2821,6 +2851,53 @@ fn emit_exe_links_and_runs_nested_value_path_assignment_expression_program() {
         stderr.contains("Automatic conversion of false to array is deprecated"),
         "stderr:\n{stderr}"
     );
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_value_path_unset_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("value_path_unset_boundary");
+    let source_path = native_link_output_path("value_path_unset_boundary_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, VALUE_OFFSET_PATH_UNSET_SOURCE)
+        .expect("native value path unset source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native value path unset source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"0|0|1|");
+    assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);

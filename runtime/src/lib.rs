@@ -4489,6 +4489,34 @@ pub unsafe extern "C" fn phpc_native_value_offset_path_write_with_diagnostic(
 
 /// # Safety
 ///
+/// `subject` and every value in `offsets` must be null or value handles
+/// previously returned by the runtime ABI and not yet freed. When
+/// `offsets_len` is nonzero, `offsets` must point to `offsets_len` readable
+/// `NativeValueHandle` values. `diagnostic` may be null; when non-null, it must
+/// point to writable storage for one `NativeDiagnosticHandle`. On failure the
+/// helper stores a diagnostic handle that the caller owns. Array subjects are
+/// cloned with the nested path removed; null subjects return null to model
+/// PHP's no-op offset unset behavior.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_offset_path_unset_with_diagnostic(
+    subject: NativeValueHandle,
+    offsets: *const NativeValueHandle,
+    offsets_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_offset_path_unset_value(subject, offsets, offsets_len) } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
 /// `subject`, every value in `prefix_offsets` and `suffix_offsets`, and
 /// `replacement` must be null or value handles previously returned by the
 /// runtime ABI and not yet freed. Nonzero path lengths require readable arrays
@@ -4719,6 +4747,33 @@ unsafe fn native_value_offset_path_write_value(
     native_value_offset_path_write_subject_value(subject, &keys, replacement)
 }
 
+unsafe fn native_value_offset_path_unset_value(
+    subject: NativeValueHandle,
+    offsets: *const NativeValueHandle,
+    offsets_len: usize,
+) -> RuntimeResult<Value> {
+    let keys = unsafe {
+        native_value_offset_key_path_from_handles(
+            offsets,
+            offsets_len,
+            "native value offset path unset",
+        )
+    }?;
+    if keys.is_empty() {
+        return Err(RuntimeError::invalid_array_access(
+            "native value offset path unset failed: offset path requires at least one key",
+        ));
+    }
+
+    let Some(subject) = (unsafe { subject.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_access(
+            "native value offset path unset failed: subject handle is null",
+        ));
+    };
+
+    native_value_offset_path_unset_subject_value(subject, &keys)
+}
+
 unsafe fn native_value_offset_path_append_value(
     subject: NativeValueHandle,
     prefix_offsets: *const NativeValueHandle,
@@ -4854,6 +4909,25 @@ fn native_value_offset_path_subject_error(
     ))
 }
 
+fn native_value_offset_path_unset_subject_value(
+    subject: &Value,
+    keys: &[ArrayKey],
+) -> RuntimeResult<Value> {
+    match subject {
+        Value::Array(array) => {
+            let mut array = array.clone();
+            native_php_array_unset_path(&mut array, keys)?;
+            Ok(Value::Array(array))
+        }
+        Value::Null => Ok(Value::Null),
+        other => Err(native_value_offset_path_subject_error(
+            "unset",
+            "native value offset path unset",
+            other,
+        )),
+    }
+}
+
 fn native_value_wrap_offset_path_suffix(
     suffix_keys: &[ArrayKey],
     replacement: Value,
@@ -4865,6 +4939,36 @@ fn native_value_wrap_offset_path_suffix(
     let mut array = PhpArray::new();
     native_php_array_write_path(&mut array, suffix_keys, replacement)?;
     Ok(Value::Array(array))
+}
+
+fn native_php_array_unset_path(array: &mut PhpArray, keys: &[ArrayKey]) -> RuntimeResult<()> {
+    let Some((key, rest)) = keys.split_first() else {
+        return Ok(());
+    };
+
+    if rest.is_empty() {
+        array.remove(key.clone());
+        return Ok(());
+    }
+
+    let Some(value) = array.get_cloned(key.clone()) else {
+        return Ok(());
+    };
+
+    let mut child = match value {
+        Value::Array(child) => child,
+        Value::Null => return Ok(()),
+        other => {
+            return Err(RuntimeError::invalid_array_access(format!(
+                "cannot unset offset on {}",
+                other.type_name()
+            )));
+        }
+    };
+
+    native_php_array_unset_path(&mut child, rest)?;
+    array.insert_checked(key.clone(), Value::Array(child))?;
+    Ok(())
 }
 
 fn native_php_array_write_path(
@@ -20311,6 +20415,159 @@ mod tests {
             .contains("string subjects pending mutable string-offset path append"));
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(failed_string) };
+    }
+
+    #[test]
+    fn native_value_offset_path_unset_removes_general_php_key_paths() {
+        fn path_unset(
+            subject: Value,
+            offsets: Vec<Value>,
+        ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+            let subject = NativeValueHandle::from_value(subject);
+            let offsets = offsets
+                .into_iter()
+                .map(NativeValueHandle::from_value)
+                .collect::<Vec<_>>();
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_offset_path_unset_with_diagnostic(
+                    subject,
+                    offsets.as_ptr(),
+                    offsets.len(),
+                    &mut diagnostic,
+                )
+            };
+            for offset in offsets {
+                unsafe { phpc_native_value_free(offset) };
+            }
+            unsafe { phpc_native_value_free(subject) };
+            (result, diagnostic)
+        }
+
+        fn offset_operation(
+            subject: NativeValueHandle,
+            offset: Value,
+            operation: NativeStringOffsetOperation,
+        ) -> NativeValueHandle {
+            let offset = NativeValueHandle::from_value(offset);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_offset_operation_with_diagnostic(
+                    subject,
+                    offset,
+                    operation as u8,
+                    &mut diagnostic,
+                )
+            };
+            assert!(diagnostic.is_null());
+            unsafe { phpc_native_value_free(offset) };
+            result
+        }
+
+        let mut child = PhpArray::new();
+        child.insert(
+            ArrayKey::String("l\0".to_string()),
+            Value::String("L\0".to_string()),
+        );
+        child.insert("drop", Value::String("gone".to_string()));
+        let mut root = PhpArray::new();
+        root.insert(ArrayKey::String("root".to_string()), Value::Array(child));
+        root.insert("direct", Value::String("remove".to_string()));
+
+        let (direct_unset, diagnostic) = path_unset(
+            Value::Array(root),
+            vec![Value::String("direct".to_string())],
+        );
+        assert!(diagnostic.is_null());
+        let direct_present = offset_operation(
+            direct_unset,
+            Value::String("direct".to_string()),
+            NativeStringOffsetOperation::Isset,
+        );
+        assert_eq!(native_value_echo_bytes_for_test(direct_present), b"");
+        unsafe { phpc_native_value_free(direct_present) };
+
+        let (nested_unset, diagnostic) = path_unset(
+            unsafe { direct_unset.as_ref() }
+                .expect("direct unset should produce a value")
+                .clone(),
+            vec![
+                Value::String("root".to_string()),
+                Value::String("drop".to_string()),
+            ],
+        );
+        assert!(diagnostic.is_null());
+        let root_slot = offset_operation(
+            nested_unset,
+            Value::String("root".to_string()),
+            NativeStringOffsetOperation::Read,
+        );
+        let dropped = offset_operation(
+            root_slot,
+            Value::String("drop".to_string()),
+            NativeStringOffsetOperation::Isset,
+        );
+        let binary = offset_operation(
+            root_slot,
+            Value::String("l\0".to_string()),
+            NativeStringOffsetOperation::Read,
+        );
+        assert_eq!(native_value_echo_bytes_for_test(dropped), b"");
+        assert_eq!(native_value_echo_bytes_for_test(binary), b"L\0");
+        unsafe { phpc_native_value_free(binary) };
+        unsafe { phpc_native_value_free(dropped) };
+        unsafe { phpc_native_value_free(root_slot) };
+
+        let mut scalar_parent = PhpArray::new();
+        scalar_parent.insert("scalar", Value::Int(9));
+        let (scalar_parent_unset, diagnostic) = path_unset(
+            Value::Array(scalar_parent),
+            vec![
+                Value::String("scalar".to_string()),
+                Value::String("leaf".to_string()),
+            ],
+        );
+        assert!(scalar_parent_unset.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: cannot unset offset on int"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let (null_unset, diagnostic) =
+            path_unset(Value::Null, vec![Value::String("missing".to_string())]);
+        assert!(diagnostic.is_null());
+        assert!(matches!(unsafe { null_unset.as_ref() }, Some(Value::Null)));
+
+        let (scalar_unset, diagnostic) = path_unset(
+            Value::Int(7),
+            vec![
+                Value::String("root".to_string()),
+                Value::String("leaf".to_string()),
+            ],
+        );
+        assert!(scalar_unset.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: cannot use a scalar value as an array"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let (string_unset, diagnostic) = path_unset(
+            Value::String("abc".to_string()),
+            vec![Value::String("leaf".to_string())],
+        );
+        assert!(string_unset.is_null());
+        assert!(native_diagnostic_message_for_test(diagnostic)
+            .contains("string subjects pending mutable string-offset path unset"));
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(string_unset) };
+        unsafe { phpc_native_value_free(scalar_unset) };
+        unsafe { phpc_native_value_free(scalar_parent_unset) };
+        unsafe { phpc_native_value_free(null_unset) };
+        unsafe { phpc_native_value_free(nested_unset) };
+        unsafe { phpc_native_value_free(direct_unset) };
     }
 
     #[test]
