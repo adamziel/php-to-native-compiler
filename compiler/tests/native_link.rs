@@ -2022,6 +2022,34 @@ const GLOBALS_DYNAMIC_REQUEST_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
     "echo empty($_COOKIE) ? 1 : 0;\n",
 );
 
+const GLOBALS_DYNAMIC_REQUEST_ROOT_READ_SOURCE: &str = concat!(
+    "<?php\n",
+    "$getRoot = \"_GET\";\n",
+    "$postRoot = \"_POST\";\n",
+    "$cookieRoot = \"_COOKIE\";\n",
+    "$plainRoot = \"ordinary\";\n",
+    "$missingRoot = \"missing\";\n",
+    "$_GET = \"Ada\";\n",
+    "$_POST = \"\";\n",
+    "$_COOKIE = false;\n",
+    "$ordinary = \"S\";\n",
+    "echo $GLOBALS[$getRoot];\n",
+    "echo \"|\";\n",
+    "echo isset($GLOBALS[$postRoot]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo empty($GLOBALS[$postRoot]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo empty($GLOBALS[$cookieRoot]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo $GLOBALS[$plainRoot];\n",
+    "echo \"|\";\n",
+    "echo isset($GLOBALS[$plainRoot]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo isset($GLOBALS[$missingRoot]) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo empty($GLOBALS[$missingRoot]) ? 1 : 0;\n",
+);
+
 const NATIVE_VALUE_VARIABLE_STORAGE_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$key = \"first\";\n$slot = $items[$key];\n$copy = $slot;\necho $slot, \"|\", $copy, \"|\";\n$upper = strtoupper($copy);\necho $upper, \"|\";\n$fallback = $items[\"missing\"] ?? \"m\";\necho $fallback, \"|\";\n$cast = (string) 42;\necho $cast, \"|\";\n$items[] = $upper;\necho $items[1];\n";
 
 const ACTIVE_SYMBOL_ROOT_OFFSET_MUTATION_SOURCE: &str = "<?php\n$items = [0 => \"seed\", \"first\" => \"q\"];\n$box = null;\n$path = null;\n$trigger = $items[\"missing\"] ?? \"m\";\n$items[] = strtoupper($items[\"first\"]);\n$items[\"first\"] = \"r\";\n$box[] = \"B\";\n$path[\"outer\"][] = \"P\";\necho $trigger, \"|\", $items[1], \"|\", $items[\"first\"], \"|\", $items[0], \"|\", $box[0], \"|\", isset($path[\"outer\"]) ? 1 : 0;\n";
@@ -4602,6 +4630,72 @@ fn native_executable_c_source_dispatches_dynamic_globals_request_root_assignment
     assert!(
         body.contains("globals_dynamic_symbol_path_"),
         "non-request dynamic roots should keep the ordinary $GLOBALS symbol path fallback:\n{source}"
+    );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("global-symbol-table lowering rejects $GLOBALS"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_dispatches_dynamic_globals_request_root_reads_and_probes() {
+    let program = parse(GLOBALS_DYNAMIC_REQUEST_ROOT_READ_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_key_matches_superglobal"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_key_from_value"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_snapshot_value"),
+        "matched dynamic request roots should read snapshots through request state:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_read_value_by_path_with_diagnostic"),
+        "ordinary dynamic $GLOBALS roots should still read through the symbol-table path ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_isset_value_by_path"),
+        "ordinary dynamic $GLOBALS root isset probes should stay on the symbol-table path ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_empty_value_by_path"),
+        "ordinary dynamic $GLOBALS root empty probes should stay on the symbol-table path ABI:\n{source}"
+    );
+    assert!(
+        body.matches("globals_dynamic_request_read_match_").count() >= 7,
+        "dynamic root reads should probe the request-superglobal root family:\n{source}"
+    );
+    assert!(
+        body.matches("globals_dynamic_request_presence_match_")
+            .count()
+            >= 7,
+        "dynamic root isset probes should probe the request-superglobal root family:\n{source}"
+    );
+    assert!(
+        body.matches("globals_dynamic_request_empty_match_").count() >= 7,
+        "dynamic root empty probes should probe the request-superglobal root family:\n{source}"
+    );
+    assert!(
+        body.contains("globals_dynamic_symbol_read_"),
+        "non-request dynamic roots should keep the ordinary $GLOBALS symbol read fallback:\n{source}"
+    );
+    assert!(
+        body.contains("globals_dynamic_symbol_presence_"),
+        "non-request dynamic roots should keep the ordinary $GLOBALS symbol presence fallback:\n{source}"
+    );
+    assert!(
+        body.contains("globals_dynamic_symbol_empty_"),
+        "non-request dynamic roots should keep the ordinary $GLOBALS symbol empty fallback:\n{source}"
     );
     assert!(
         !source.contains("request-superglobal lowering rejects"),
@@ -7856,6 +7950,53 @@ fn emit_exe_links_and_runs_globals_dynamic_request_root_assignment_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"Ada|P|P|S|1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_globals_dynamic_request_root_read_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("globals_dynamic_request_root_read");
+    let source_path = native_link_output_path("globals_dynamic_request_root_read_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, GLOBALS_DYNAMIC_REQUEST_ROOT_READ_SOURCE)
+        .expect("native globals dynamic request root read source can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native globals dynamic request root read source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native globals dynamic request root read executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"Ada|1|1|1|S|1|0|1");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
