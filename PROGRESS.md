@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 22:01 CEST
+Updated: 2026-05-22 22:10 CEST
 Evaluation marker: `20260522T192635Z`
 Primary management HEAD: this PROGRESS.md update
-Primary semantic HEAD: `b4945697 codegen: route direct symbol unsets through table ABI`
-Current pushed semantic baseline: `b4945697 codegen: route direct symbol unsets through table ABI`
+Primary semantic HEAD: `8b963fd4 codegen: allow foreach body array lvalue unsets`
+Current pushed semantic baseline: `8b963fd4 codegen: allow foreach body array lvalue unsets`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -63,7 +63,11 @@ assignment-expression values.
 Generated-C direct symbol-root `unset(...)` now routes through the native
 symbol-table root unset ABI for single and all-direct multi-target unsets,
 keeping subsequent reads, `isset()`, `empty()`, and reassignment on the active
-symbol table with executable linked proof.
+symbol table with executable linked proof. Generated-C by-value `foreach`
+bodies can now unset already-materialized array roots through the existing
+array-lvalue unset boundary, covering direct, nested, and multi-target unsets
+while preserving the loop iterable snapshot and keeping body-local storage
+creation blocked.
 
 That progress is primary-integrated: it is committed, pushed, focused-gated,
 and tied to executable generated-code behavior. It is not lane-local status
@@ -93,7 +97,7 @@ open systems.
 | Roadmap item | Estimate | Visual | Primary-integrated status |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong shared ABI base; avoid standalone vocabulary without immediate compiler consumers. |
-| Compiler/backend consumers | 95% | `[###################-]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, request append suffix writes, active root offset-mutation writeback, value-result offset reads, array-query value consumers, static and self-prefixed request aliases, direct undefined root reads, direct root-symbol unsets, generated-C symbol references, request-root and keyed request-slot reference assignment with ordinary symbol paths plus request-to-request aliases, direct request-root replacement through existing reference cells, generated-C native-value strict identity, and LLVM/generated-C native-value truthiness for unary `!` / `xor`; uneven across calls, objects, short-circuit control flow, and broader LLVM/C parity. |
+| Compiler/backend consumers | 95% | `[###################-]` | Good for selected request/array/string/`$GLOBALS` read/write/unset/append/null-coalesce paths, request append suffix writes, by-value foreach body array-lvalue unsets, active root offset-mutation writeback, value-result offset reads, array-query value consumers, static and self-prefixed request aliases, direct undefined root reads, direct root-symbol unsets, generated-C symbol references, request-root and keyed request-slot reference assignment with ordinary symbol paths plus request-to-request aliases, direct request-root replacement through existing reference cells, generated-C native-value strict identity, and LLVM/generated-C native-value truthiness for unary `!` / `xor`; uneven across calls, objects, short-circuit control flow, and broader LLVM/C parity. |
 | Executable generalized PHP semantics | 77% | `[###############-----]` | Improving through executable path/reference/logical consumers, but many real PHP compositions still block. |
 | Arrays, lvalues, references, COW | 80% | `[################----]` | Arrays/lvalues advanced with query/value-result consumers, selected symbol-path references, request-root reference replacement/source/root-alias paths, keyed request-slot references with ordinary symbol paths, keyed request-to-keyed request aliases, and value mutations through reference-backed request roots; full references/COW and arbitrary writable roots remain large. |
 | Symbols, globals, request state | 88% | `[##################--]` | Request paths/null-coalesce, append suffix writes, static and self-prefixed `$GLOBALS` request aliases, `$GLOBALS` reads/writes/probes/unsets/appends, active-root offset mutation writeback, direct undefined root reads, direct root-symbol unsets, ordinary symbol-path reference assignment, request-root reference replacement/source/root-alias paths, keyed request-slot aliases, direct request-root assignment through existing reference cells, and keyed/path value mutations through reference-backed roots are stronger; dynamic aliases, keyed reference binding through reference-backed roots, direct root appends, frames, nested/path request references, full references, and non-request self-reference remain incomplete. |
@@ -111,6 +115,10 @@ Done on primary:
   operations.
 - [x] Generated-C consumers for selected scalar/string/array/lvalue behavior,
   including tracked array owner mutations and natural sort families.
+- [x] Generated-C by-value `foreach` bodies can unset already-materialized
+  array roots through the shared array-lvalue unset boundary, including direct,
+  nested, and multi-target unsets while still blocking body-local storage
+  creation and by-reference iterable mutation.
 - [x] Request-state root, keyed, and nested/path reads, writes, unsets,
   `isset()`, `empty()`, assignment-expression values, and appends through
   shared request ABIs.
