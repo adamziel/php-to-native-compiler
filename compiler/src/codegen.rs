@@ -11,8 +11,8 @@ use php_runtime::{
     classify_php_numeric_string, is_php_truthy_string, php_primitive_arithmetic_result,
     php_strings_use_numeric_comparison, NativeComparisonOp, NativeFilesystemPathOperation,
     NativeIntConversionOperation, NativeStringDistanceOperation, NativeStringIntOperation,
-    NativeStringPredicate, PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation,
-    PhpPrimitiveArithmeticValue, PhpPrimitiveValue,
+    NativeStringPredicate, NativeStringResultOperation, PhpPrimitiveArithmeticError,
+    PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue, PhpPrimitiveValue,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -30,6 +30,8 @@ const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lower
 const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int builtin lowering rejects strcasecmp(), substr_count(), ord(), and crc32() forms outside the reusable native string-int operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_STRING_DISTANCE_OPERATION_REJECTION: &str = "LLVM string-distance builtin lowering rejects levenshtein() and similar_text() until native PHP value-to-string byte conversion, optional cost conversion, references/copy-on-write, by-reference percent output, and exact native diagnostics exist; generated-native C routes lowerable string-distance operands through the shared runtime contract";
 const ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION: &str = "assembly string-distance builtin lowering rejects levenshtein() and similar_text() forms outside the reusable native string-distance operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
+const LLVM_STRING_RESULT_OPERATION_REJECTION: &str = "LLVM string-result builtin lowering rejects strrev(), str_rot13(), bin2hex(), strtolower(), strtoupper(), ucfirst(), and lcfirst() until native PHP string result ownership, byte-preserving conversion, diagnostics, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable unary string-result operands through the shared runtime contract";
+const ASSEMBLY_STRING_RESULT_OPERATION_REJECTION: &str = "assembly string-result builtin lowering rejects forms outside the reusable native string-result operation contract until operands can reach byte-preserving value conversion, diagnostics, result ownership, and cleanup";
 const LLVM_BASENAME_REJECTION: &str = "LLVM basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const ASSEMBLY_BASENAME_REJECTION: &str = "assembly basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads and selected warning-plus-false recovery";
@@ -697,6 +699,7 @@ fn native_value_result_output_expr(expr: &Expr) -> bool {
         Expr::Call { name, .. } => {
             native_value_cast_builtin_op_tag(name).is_some()
                 || native_value_type_name_tag(name).is_some()
+                || native_string_result_operation_for_name(name).is_some()
         }
         _ => false,
     }
@@ -770,6 +773,14 @@ fn native_value_result_expr_call_operation(
             native_value_result_expr_call_operation(arg, blocker)
         }
         Expr::Call { name, args, span } if native_value_type_name_tag(name).is_some() => {
+            let [arg] = args.as_slice() else {
+                return Some(NativeCallOperation::direct_named_value(*span, blocker));
+            };
+            native_value_result_expr_call_operation(arg, blocker)
+        }
+        Expr::Call { name, args, span }
+            if native_string_result_operation_for_name(name).is_some() =>
+        {
             let [arg] = args.as_slice() else {
                 return Some(NativeCallOperation::direct_named_value(*span, blocker));
             };
@@ -2870,6 +2881,15 @@ impl LlvmGenerator {
                     args,
                     *span,
                     LLVM_STRING_DISTANCE_OPERATION_REJECTION,
+                ))
+            }
+            Expr::Call { name, args, span }
+                if native_string_result_operation_for_name(name).is_some() =>
+            {
+                Err(self.unsupported_direct_named_call(
+                    args,
+                    *span,
+                    LLVM_STRING_RESULT_OPERATION_REJECTION,
                 ))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
@@ -6409,6 +6429,7 @@ impl CGenerator {
                 output.push_str("extern _Bool phpc_native_value_string_predicate_with_diagnostic(phpc_NativeValueHandle haystack, phpc_NativeValueHandle needle, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_int_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_distance_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t insertion_cost, int64_t replacement_cost, int64_t deletion_cost, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_result_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, phpc_NativeValueHandle replacement, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_filesystem_path_operation_with_diagnostic(phpc_NativeValueHandle path, phpc_NativeValueHandle option, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_string_conversion_result_free(phpc_NativeStringConversionResult result);\n");
             }
@@ -6792,6 +6813,15 @@ impl CGenerator {
                 let operation = native_string_distance_operation_for_name(name)
                     .expect("string-distance guard should provide operation");
                 self.emit_string_distance_operation_call(operation, args, *span)
+            }
+            Expr::Call { name, args, span }
+                if native_string_result_operation_for_name(name).is_some() =>
+            {
+                Err(self.unsupported_direct_named_call(
+                    args,
+                    *span,
+                    ASSEMBLY_STRING_RESULT_OPERATION_REJECTION,
+                ))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
                 Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_BASENAME_REJECTION))
@@ -10560,6 +10590,20 @@ impl CGenerator {
                         failure_cleanup,
                     )));
                 }
+                if let Some(operation) = native_string_result_operation_for_name(name) {
+                    let [arg] = args.as_slice() else {
+                        return Err(
+                            self.unsupported(*span, ASSEMBLY_STRING_RESULT_OPERATION_REJECTION)
+                        );
+                    };
+                    let value =
+                        self.materialize_native_value_result_operand(arg, failure_cleanup)?;
+                    return Ok(Some(self.emit_native_string_result_operation_handle(
+                        value,
+                        operation,
+                        failure_cleanup,
+                    )));
+                }
                 Ok(None)
             }
             _ => Ok(None),
@@ -10704,6 +10748,41 @@ impl CGenerator {
         self.body
             .push(format!("phpc_native_diagnostic_free({diagnostic});"));
         self.body.extend(value.cleanup_after_use);
+
+        CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }
+    }
+
+    fn emit_native_string_result_operation_handle(
+        &mut self,
+        subject: CNativeValueMaterialization,
+        operation: NativeStringResultOperation,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        self.uses_native_string_helpers = true;
+
+        let subject_handle = subject.handle.clone();
+        let diagnostic = self.next_native_name("string_result_diagnostic");
+        let result = self.next_native_name(native_string_result_operation_prefix(operation));
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_string_result_operation_with_diagnostic({subject_handle}, (phpc_NativeValueHandle){{0}}, (phpc_NativeValueHandle){{0}}, 0, 0, 0, {}, &{diagnostic});",
+            operation as u8
+        ));
+        let cleanup = format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}",
+            c_cleanup_sequence(&subject.cleanup_after_use),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(subject.cleanup_after_use);
 
         CNativeValueMaterialization {
             handle: result.clone(),
@@ -11761,6 +11840,31 @@ fn native_string_distance_operation_for_name(name: &str) -> Option<NativeStringD
         "levenshtein" => Some(NativeStringDistanceOperation::Levenshtein),
         "similar_text" => Some(NativeStringDistanceOperation::SimilarText),
         _ => None,
+    }
+}
+
+fn native_string_result_operation_for_name(name: &str) -> Option<NativeStringResultOperation> {
+    match name.to_ascii_lowercase().as_str() {
+        "strrev" => Some(NativeStringResultOperation::Reverse),
+        "bin2hex" => Some(NativeStringResultOperation::BinToHex),
+        "str_rot13" => Some(NativeStringResultOperation::Rot13),
+        "strtolower" => Some(NativeStringResultOperation::AsciiLower),
+        "strtoupper" => Some(NativeStringResultOperation::AsciiUpper),
+        "ucfirst" => Some(NativeStringResultOperation::AsciiFirstUpper),
+        "lcfirst" => Some(NativeStringResultOperation::AsciiFirstLower),
+        _ => None,
+    }
+}
+
+fn native_string_result_operation_prefix(operation: NativeStringResultOperation) -> &'static str {
+    match operation {
+        NativeStringResultOperation::Reverse => "strrev_result",
+        NativeStringResultOperation::BinToHex => "bin2hex_result",
+        NativeStringResultOperation::Rot13 => "str_rot13_result",
+        NativeStringResultOperation::AsciiLower => "strtolower_result",
+        NativeStringResultOperation::AsciiUpper => "strtoupper_result",
+        NativeStringResultOperation::AsciiFirstUpper => "ucfirst_result",
+        NativeStringResultOperation::AsciiFirstLower => "lcfirst_result",
     }
 }
 

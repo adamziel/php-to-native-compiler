@@ -144,6 +144,18 @@ pub enum NativeStringDistanceOperation {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeStringResultOperation {
+    Reverse = 4,
+    BinToHex = 5,
+    Rot13 = 13,
+    AsciiLower = 48,
+    AsciiUpper = 49,
+    AsciiFirstUpper = 53,
+    AsciiFirstLower = 54,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeFilesystemPathOperation {
     FileGetContents = 0,
     Realpath = 1,
@@ -3818,6 +3830,55 @@ fn ascii_case_insensitive_compare_bytes(left: &[u8], right: &[u8]) -> i64 {
     }
 }
 
+fn php_strrev_bytes(bytes: &[u8]) -> Vec<u8> {
+    bytes.iter().rev().copied().collect()
+}
+
+fn php_bin2hex_bytes(bytes: &[u8]) -> Vec<u8> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut result = Vec::with_capacity(bytes.len().saturating_mul(2));
+    for byte in bytes {
+        result.push(HEX[(byte >> 4) as usize]);
+        result.push(HEX[(byte & 0x0f) as usize]);
+    }
+    result
+}
+
+fn php_str_rot13_bytes(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .iter()
+        .map(|byte| match *byte {
+            b'a'..=b'z' => ((*byte - b'a' + 13) % 26) + b'a',
+            b'A'..=b'Z' => ((*byte - b'A' + 13) % 26) + b'A',
+            other => other,
+        })
+        .collect()
+}
+
+fn php_ascii_lower_bytes(bytes: &[u8]) -> Vec<u8> {
+    bytes.iter().map(u8::to_ascii_lowercase).collect()
+}
+
+fn php_ascii_upper_bytes(bytes: &[u8]) -> Vec<u8> {
+    bytes.iter().map(u8::to_ascii_uppercase).collect()
+}
+
+fn php_ascii_first_upper_bytes(bytes: &[u8]) -> Vec<u8> {
+    let mut result = bytes.to_vec();
+    if let Some(first) = result.first_mut() {
+        *first = first.to_ascii_uppercase();
+    }
+    result
+}
+
+fn php_ascii_first_lower_bytes(bytes: &[u8]) -> Vec<u8> {
+    let mut result = bytes.to_vec();
+    if let Some(first) = result.first_mut() {
+        *first = first.to_ascii_lowercase();
+    }
+    result
+}
+
 fn php_substr_count_bytes(
     haystack: &[u8],
     needle: &[u8],
@@ -3925,6 +3986,89 @@ pub unsafe extern "C" fn phpc_native_value_string_distance_operation_with_diagno
             0
         }
     }
+}
+
+/// # Safety
+///
+/// `subject`, `operand`, and `replacement` must be null or value handles
+/// previously returned by the runtime ABI and not yet freed. `diagnostic` may
+/// be null; when non-null, it must point to writable storage for one
+/// `NativeDiagnosticHandle`. On failure the helper stores a diagnostic handle
+/// that the caller owns and must release with `phpc_native_diagnostic_free`.
+///
+/// This operation-tagged boundary currently implements the unary string-result
+/// family for lowerable PHP values: `strrev()`, `str_rot13()`, `bin2hex()`,
+/// `strtolower()`, `strtoupper()`, `ucfirst()`, and `lcfirst()`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_string_result_operation_with_diagnostic(
+    subject: NativeValueHandle,
+    _operand: NativeValueHandle,
+    _replacement: NativeValueHandle,
+    _offset: i64,
+    _length: i64,
+    flags: u8,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_string_result_operation_value(subject, flags, operation) } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            NativeValueHandle::null()
+        }
+    }
+}
+
+unsafe fn native_value_string_result_operation_value(
+    subject: NativeValueHandle,
+    flags: u8,
+    operation: u8,
+) -> RuntimeResult<Value> {
+    if flags != 0 {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string result operation failed: unary operation does not accept operation flags",
+        ));
+    }
+
+    let subject = unsafe { native_value_to_string_bytes(subject) }?;
+    let bytes = match operation {
+        value if value == NativeStringResultOperation::Reverse as u8 => php_strrev_bytes(&subject),
+        value if value == NativeStringResultOperation::BinToHex as u8 => {
+            php_bin2hex_bytes(&subject)
+        }
+        value if value == NativeStringResultOperation::Rot13 as u8 => php_str_rot13_bytes(&subject),
+        value if value == NativeStringResultOperation::AsciiLower as u8 => {
+            php_ascii_lower_bytes(&subject)
+        }
+        value if value == NativeStringResultOperation::AsciiUpper as u8 => {
+            php_ascii_upper_bytes(&subject)
+        }
+        value if value == NativeStringResultOperation::AsciiFirstUpper as u8 => {
+            php_ascii_first_upper_bytes(&subject)
+        }
+        value if value == NativeStringResultOperation::AsciiFirstLower as u8 => {
+            php_ascii_first_lower_bytes(&subject)
+        }
+        _ => {
+            return Err(RuntimeError::invalid_string_conversion(
+                "native string result operation failed: unsupported operation tag",
+            ))
+        }
+    };
+
+    value_from_native_string_result_bytes(bytes)
+}
+
+fn value_from_native_string_result_bytes(bytes: Vec<u8>) -> RuntimeResult<Value> {
+    String::from_utf8(bytes).map(Value::String).map_err(|_| {
+        RuntimeError::invalid_string_conversion(
+            "native string result operation failed: result bytes are not valid UTF-8",
+        )
+    })
 }
 
 unsafe fn native_value_string_distance_operation(
@@ -17120,6 +17264,130 @@ mod tests {
         unsafe { phpc_native_value_free(repeated) };
         unsafe { phpc_native_value_free(folded) };
         unsafe { phpc_native_value_free(payload) };
+    }
+
+    #[test]
+    fn native_string_result_operations_reuse_value_to_string_boundary() {
+        fn string_result(value: Value, operation: NativeStringResultOperation) -> Vec<u8> {
+            let subject = NativeValueHandle::from_value(value);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_string_result_operation_with_diagnostic(
+                    subject,
+                    NativeValueHandle::null(),
+                    NativeValueHandle::null(),
+                    0,
+                    0,
+                    0,
+                    operation as u8,
+                    &mut diagnostic,
+                )
+            };
+            unsafe { phpc_native_value_free(subject) };
+            assert!(
+                diagnostic.is_null(),
+                "unexpected string-result diagnostic: {}",
+                native_diagnostic_message_for_test(diagnostic)
+            );
+            assert!(
+                !result.is_null(),
+                "string-result operation produced no value"
+            );
+            let bytes = native_value_echo_bytes_for_test(result);
+            unsafe { phpc_native_value_free(result) };
+            bytes
+        }
+
+        assert_eq!(
+            string_result(
+                Value::String("A\0B42".to_string()),
+                NativeStringResultOperation::Reverse
+            ),
+            b"24B\0A"
+        );
+        assert_eq!(
+            string_result(
+                Value::String("A\0B".to_string()),
+                NativeStringResultOperation::BinToHex
+            ),
+            b"410042"
+        );
+        assert_eq!(
+            string_result(Value::Int(42042), NativeStringResultOperation::Rot13),
+            b"42042"
+        );
+        assert_eq!(
+            string_result(
+                Value::String("MiXeD".to_string()),
+                NativeStringResultOperation::AsciiLower
+            ),
+            b"mixed"
+        );
+        assert_eq!(
+            string_result(
+                Value::String("MiXeD".to_string()),
+                NativeStringResultOperation::AsciiUpper
+            ),
+            b"MIXED"
+        );
+        assert_eq!(
+            string_result(
+                Value::String("word".to_string()),
+                NativeStringResultOperation::AsciiFirstUpper
+            ),
+            b"Word"
+        );
+        assert_eq!(
+            string_result(
+                Value::String("Word".to_string()),
+                NativeStringResultOperation::AsciiFirstLower
+            ),
+            b"word"
+        );
+
+        let resource = NativeValueHandle::from_value(Value::Resource(7));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let blocked = unsafe {
+            phpc_native_value_string_result_operation_with_diagnostic(
+                resource,
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+                0,
+                0,
+                0,
+                NativeStringResultOperation::AsciiLower as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(blocked.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: resource cannot be converted to string"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let valid_subject = NativeValueHandle::from_value(Value::String("x".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let invalid = unsafe {
+            phpc_native_value_string_result_operation_with_diagnostic(
+                valid_subject,
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+                0,
+                0,
+                0,
+                99,
+                &mut diagnostic,
+            )
+        };
+        assert!(invalid.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string result operation failed: unsupported operation tag"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(valid_subject) };
+        unsafe { phpc_native_value_free(resource) };
     }
 
     #[test]
