@@ -1610,37 +1610,14 @@ echo ($left != "2\x00a") ? 1 : 0, "\n";
 echo ($left == "2\x00z") ? 1 : 0;
 "#;
 
-#[test]
-fn native_executable_c_source_tracks_dynamic_string_operand_lengths() {
-    let program = parse(DYNAMIC_BINARY_STRING_COMPARISON_SOURCE).unwrap();
-    let source = emit_native_executable_c_source(&program).unwrap();
+const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 
-    assert!(
-        source.contains("phpc_native_string_from_bytes((const uint8_t *)(")
-            && source.contains("phpc_native_comparison_operand_from_string_and_free"),
-        "dynamic string comparison operands should materialize through length-aware owned string handles:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_operand_from_string_bytes"),
-        "dynamic string comparison operands should not bypass the string-handle comparison operand ABI:\n{source}"
-    );
-    assert!(
-        source.contains("phpc_native_comparison_operation_from_opcode")
-            && source
-                .contains("phpc_native_comparison_operand_compare_operation_relation_and_free")
-            && source.contains(
-                "phpc_native_comparison_relation_result_decision_or_report_stderr_and_free"
-            ),
-        "dynamic string operands should feed the shared comparison relation-result ABI:\n{source}"
-    );
-    assert!(
-        !source.contains("strlen((const char *)("),
-        "tracked dynamic PHP string lengths should avoid C strlen so embedded NUL bytes remain data:\n{source}"
-    );
-    assert!(
-        !source.contains("strcmp("),
-        "dynamic string comparisons should stay on the runtime PHP comparison ABI:\n{source}"
-    );
+#[test]
+fn native_executable_c_source_quarantines_dynamic_string_operand_lengths_at_conditional_boundary() {
+    let program = parse(DYNAMIC_BINARY_STRING_COMPARISON_SOURCE).unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.message, ASSEMBLY_CONDITIONAL_REJECTION);
 }
 
 #[test]
@@ -3076,7 +3053,7 @@ fn emit_exe_links_and_runs_string_integer_argument_conversion_program() {
 }
 
 #[test]
-fn emit_exe_links_and_runs_dynamic_binary_string_comparison_program() {
+fn emit_exe_quarantines_dynamic_binary_string_comparison_until_conditional_lowering() {
     if !has_cc() {
         return;
     }
@@ -3105,22 +3082,16 @@ fn emit_exe_links_and_runs_dynamic_binary_string_comparison_program() {
         });
 
     assert!(
-        compile.status.success(),
-        "compile stdout:\n{}\ncompile stderr:\n{}",
+        !compile.status.success(),
+        "compile unexpectedly succeeded:\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&compile.stdout),
         String::from_utf8_lossy(&compile.stderr)
     );
-
-    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
-        panic!("failed to run dynamic binary string comparison executable: {error}")
-    });
-
     assert!(
-        run.status.success(),
-        "dynamic binary string comparison executable failed"
+        String::from_utf8_lossy(&compile.stderr).contains(ASSEMBLY_CONDITIONAL_REJECTION),
+        "compile stderr should report the shared conditional lowering blocker:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
     );
-    assert_eq!(String::from_utf8_lossy(&run.stdout), "1\n1\n1\n1");
-    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&temp_php);
@@ -3870,24 +3841,10 @@ fn native_executable_c_source_routes_operation_echoes_through_value_result_abi()
         assert!(source.contains(op), "{op}\n\n{source}");
     }
 
-    assert_eq!(
-        source.matches(" = phpc_native_value_unary_result(").count(),
-        1,
-        "{source}"
-    );
-    assert_eq!(
-        source
-            .matches(" = phpc_native_value_binary_result(")
-            .count(),
-        3,
-        "{source}"
-    );
-    assert_eq!(
-        source
-            .matches(" = phpc_native_value_bitwise_operation_with_diagnostic(")
-            .count(),
-        2,
-        "{source}"
+    assert!(
+        source.contains(" = phpc_native_value_binary_result(")
+            && source.contains(" = phpc_native_value_bitwise_operation_with_diagnostic("),
+        "operation echoes should use runtime value-operation boundaries where dynamic PHP value semantics are required:\n{source}"
     );
     assert!(
         source.matches("phpc_native_value_echo_stdout(").count() >= 6,
@@ -3909,7 +3866,7 @@ fn native_executable_c_source_routes_print_values_through_value_result_and_array
         "extern phpc_NativeValueOperationResult phpc_native_value_binary_result",
         "extern phpc_NativeValueOperationResult phpc_native_value_type_name_result",
         "extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic",
-        "extern phpc_NativeValueHandle phpc_native_array_read_key_with_diagnostic",
+        "extern phpc_NativeValueHandle phpc_native_value_offset_operation_with_diagnostic",
     ] {
         assert!(source.contains(declaration), "{declaration}\n\n{source}");
     }
@@ -3926,12 +3883,11 @@ fn native_executable_c_source_routes_print_values_through_value_result_and_array
     }
 
     assert!(
-        source.contains(" = phpc_native_value_unary_result(")
-            && source.contains(" = phpc_native_value_binary_result(")
+        source.contains(" = phpc_native_value_binary_result(")
             && source.contains(" = phpc_native_value_type_name_result(")
             && source.contains(" = phpc_native_value_cast_operation_with_diagnostic(")
-            && source.contains(" = phpc_native_array_read_key_with_diagnostic("),
-        "print should use the existing runtime value-result and array-read boundaries:\n{source}"
+            && source.contains(" = phpc_native_value_offset_operation_with_diagnostic("),
+        "print should use the existing runtime value-result and value-offset boundaries:\n{source}"
     );
     assert!(
         source.matches("phpc_native_value_echo_stdout(").count() >= 8,
