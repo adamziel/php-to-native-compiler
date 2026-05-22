@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 22:20 CEST
+Updated: 2026-05-22 22:37 CEST
 Evaluation marker: `20260522T201400Z`
-Primary management baseline before this update: `ecc1a6e2 docs: update progress dashboard`
-Primary semantic baseline: `4dc70807 codegen: sequence mixed unset targets`
+Primary management baseline before this update: `f8e4de88 docs: update progress after mixed unsets`
+Primary semantic baseline: `9e32c56e runtime: bind request path references`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Lane-local work
@@ -20,13 +20,18 @@ request/reference/global-symbol progress, direct symbol-root unsets through the
 native symbol table, request append suffix handling, `$GLOBALS["GLOBALS"]`
 self-prefixed request aliases, value mutations through reference-backed request
 roots, by-value `foreach` body array-lvalue unsets, and mixed `unset(...)`
-target sequencing across direct roots, array offsets, and `$GLOBALS` paths.
+target sequencing across direct roots, array offsets, `$GLOBALS` paths, and
+nested request-superglobal reference paths.
 
 The preserved `runtime/src/lib.rs` null-slot increment/decrement hunk is still
 unintegrated.
 
 ## Recent Primary-Integrated Progress
 
+- `9e32c56e`: nested request-superglobal reference assignments now acquire and
+  bind path reference cells through request-state path reference ABIs, including
+  request path targets, request path sources, request path-to-path aliases, and
+  runtime reference-backed request-root path materialization.
 - `4dc70807`: mixed `unset(...)` operands now sequence through the existing
   direct symbol-root, active symbol-table value-path writeback, and `$GLOBALS`
   symbol-path unset boundaries.
@@ -49,8 +54,8 @@ unintegrated.
 | Runtime and ABI foundations | 96% | `[###################-]` | Strong base of value, array, symbol-table, request-state, comparison, truthiness, and reference ABIs. |
 | Compiler/backend consumers | 95% | `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbol, value, array, lvalue, and reference consumers; uneven across calls, objects, control flow, and LLVM/C parity. |
 | Executable generalized PHP semantics | 78% | `[################----]` | Improving through linked executable gates, but still selected islands rather than a complete PHP execution model. |
-| Arrays, lvalues, references, COW | 80% | `[################----]` | Stronger arrays/lvalues and selected reference paths; full references/COW and arbitrary writable roots remain large. |
-| Symbols, globals, request state | 89% | `[##################--]` | Request paths, `$GLOBALS` static/self aliases, symbol paths, direct/mixed root unsets, and selected request references are strong; dynamic alias dispatch and several append/reference forms remain open. |
+| Arrays, lvalues, references, COW | 81% | `[################----]` | Stronger arrays/lvalues and selected reference paths; full references/COW and arbitrary writable roots remain large. |
+| Symbols, globals, request state | 90% | `[##################--]` | Request paths, `$GLOBALS` static/self aliases, symbol paths, direct/mixed root unsets, and selected request references are strong; dynamic alias dispatch and several append/reference forms remain open. |
 | Calls, functions, frames | 25% | `[#####---------------]` | Lane candidates exist, but broad executable call/frame semantics are not primary. |
 | Objects, properties, methods | 11% | `[##------------------]` | Mostly lane-local/runtime candidate work; primary still lacks general compiled object/property/method execution. |
 | Diagnostics and control flow | 29% | `[######--------------]` | Useful focused diagnostics exist; exact ordering and structured cleanup are not generalized. |
@@ -76,7 +81,7 @@ Done on primary:
 - [x] Mixed generated-C `unset(...)` target sequencing across supported direct
   roots, array-offset roots after symbol-table activation, and `$GLOBALS` paths.
 - [x] Selected generated-C reference assignment between ordinary symbol paths,
-  request roots, and keyed request slots.
+  request roots, keyed request slots, and nested request-superglobal paths.
 - [x] Generated-C array-query/value-offset consumers, active-root offset
   writeback, and by-value `foreach` body array-lvalue unsets.
 - [x] Focused executable linked gates for the newest primary semantic slices.
@@ -87,10 +92,10 @@ In progress or candidate only:
   request-root dispatch, direct no-key `$GLOBALS[]`, keyed reference binding
   through reference-backed request roots, request append reference/by-reference
   behavior, and non-request `$GLOBALS["GLOBALS"]` self-reference behavior.
-  Estimate: 56% `[###########---------]`.
+  Estimate: 58% `[############--------]`.
 - [ ] General generated PHP reference assignment over `$GLOBALS`, objects,
-  arbitrary owner/value/reference slots, frames, nested/path request slots, and
-  COW-aware boundaries. Estimate: 55% `[###########---------]`.
+  arbitrary owner/value/reference slots, frames, append request slots, and
+  COW-aware boundaries. Estimate: 57% `[###########---------]`.
 - [ ] Narrow real call/frame execution beyond helper/blocker routing.
   Estimate: 25% `[#####---------------]`.
 - [ ] Object/property/method executable semantics beyond lane-local candidates.
