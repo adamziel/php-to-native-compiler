@@ -27,7 +27,7 @@ const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects 
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects str_starts_with(), str_ends_with(), and str_contains() until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native predicate diagnostics exist; generated-native C routes lowerable predicate operands through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
-const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), substr_count(), ord(), and crc32() until native PHP string conversion, byte-preserving argument/result ownership, warning recovery, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable string-int operands through the shared runtime contract";
+const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), substr_count(), ord(), and crc32() forms outside the reusable native string-int operation contract, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string-int operands route through the shared runtime contract";
 const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), substr_count(), ord(), and crc32() forms outside the reusable native string-int operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_STRING_DISTANCE_OPERATION_REJECTION: &str = "LLVM string-distance builtin lowering rejects levenshtein() and similar_text() until native PHP value-to-string byte conversion, optional cost conversion, references/copy-on-write, by-reference percent output, and exact native diagnostics exist; generated-native C routes lowerable string-distance operands through the shared runtime contract";
 const ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION: &str = "assembly string-distance builtin lowering rejects levenshtein() and similar_text() forms outside the reusable native string-distance operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
@@ -2362,6 +2362,7 @@ struct LlvmGenerator {
     next_label: usize,
     uses_strcmp: bool,
     uses_native_value_echo_stdout: bool,
+    uses_native_string_int_operation: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -2545,6 +2546,13 @@ impl LlvmGenerator {
             output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
             output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
         }
+        if self.uses_native_string_int_operation {
+            if !self.uses_native_value_echo_stdout {
+                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
+                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
+            }
+            output.push_str("%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }\n");
+        }
         output.push_str("declare i32 @printf(ptr, ...)\n");
         if self.uses_strcmp {
             output.push_str("declare i32 @strcmp(ptr, ptr)\n");
@@ -2566,6 +2574,28 @@ impl LlvmGenerator {
                 "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
             );
             output.push_str("declare void @phpc_native_string_free(%phpc.NativeStringHandle)\n");
+        }
+        if self.uses_native_string_int_operation {
+            let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+            output.push_str("declare %phpc.NativeScalarValue @phpc_native_null()\n");
+            output.push_str("declare %phpc.NativeScalarValue @phpc_native_bool(i1)\n");
+            output.push_str("declare %phpc.NativeScalarValue @phpc_native_int(i64)\n");
+            output.push_str("declare %phpc.NativeScalarValue @phpc_native_float(double)\n");
+            output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue)\n");
+            output.push_str(&format!(
+                "declare %phpc.NativeValueHandle @phpc_native_value_from_string_bytes_with_diagnostic(ptr, {usize_type}, ptr)\n"
+            ));
+            output.push_str("declare i64 @phpc_native_value_to_int64_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)\n");
+            output.push_str("declare i64 @phpc_native_value_string_int_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
+            if !self.uses_native_value_echo_stdout {
+                output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
+                output.push_str(&format!(
+                    "declare {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)\n"
+                ));
+                output.push_str(
+                    "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
+                );
+            }
         }
         output.push('\n');
         output.push_str("@.fmt_int = private unnamed_addr constant [5 x i8] c\"%lld\\00\"\n");
@@ -2869,11 +2899,9 @@ impl LlvmGenerator {
             Expr::Call { name, args, span }
                 if native_string_int_operation_for_name(name).is_some() =>
             {
-                Err(self.unsupported_direct_named_call(
-                    args,
-                    *span,
-                    LLVM_STRING_INT_OPERATION_REJECTION,
-                ))
+                let operation = native_string_int_operation_for_name(name)
+                    .expect("string-int operation checked above");
+                self.emit_llvm_string_int_call(operation, args, *span)
             }
             Expr::Call { name, args, span }
                 if native_string_distance_operation_for_name(name).is_some() =>
@@ -3140,6 +3168,162 @@ impl LlvmGenerator {
             .ok_or_else(|| {
                 self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership)
             })
+    }
+
+    fn emit_llvm_string_int_call(
+        &mut self,
+        operation: NativeStringIntOperation,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(call_operation));
+        }
+
+        match operation {
+            NativeStringIntOperation::CaseCompare | NativeStringIntOperation::ByteCompare
+                if args.len() == 2 =>
+            {
+                let subject = self.emit_value_operand_expr(&args[0])?;
+                let operand = self.emit_value_operand_expr(&args[1])?;
+                self.emit_native_string_int_operation(
+                    operation,
+                    subject,
+                    Some(operand),
+                    "0".to_string(),
+                    "0".to_string(),
+                    false,
+                    span,
+                )
+            }
+            NativeStringIntOperation::BytePrefixCompare
+            | NativeStringIntOperation::CasePrefixCompare
+                if args.len() == 3 =>
+            {
+                let subject = self.emit_value_operand_expr(&args[0])?;
+                let operand = self.emit_value_operand_expr(&args[1])?;
+                let length = self.emit_value_operand_expr(&args[2])?;
+                let length = self.emit_native_int_for_ir_value(
+                    length,
+                    NativeIntConversionOperation::StringLength,
+                    span,
+                    LLVM_STRING_INT_OPERATION_REJECTION,
+                )?;
+                self.emit_native_string_int_operation(
+                    operation,
+                    subject,
+                    Some(operand),
+                    "0".to_string(),
+                    length,
+                    true,
+                    span,
+                )
+            }
+            NativeStringIntOperation::SubstrCount if (2..=4).contains(&args.len()) => {
+                let subject = self.emit_value_operand_expr(&args[0])?;
+                let operand = self.emit_value_operand_expr(&args[1])?;
+                let offset = if let Some(offset) = args.get(2) {
+                    let offset = self.emit_value_operand_expr(offset)?;
+                    self.emit_native_int_for_ir_value(
+                        offset,
+                        NativeIntConversionOperation::StringOffset,
+                        span,
+                        LLVM_STRING_INT_OPERATION_REJECTION,
+                    )?
+                } else {
+                    "0".to_string()
+                };
+                let (length, has_length) = if let Some(length) = args.get(3) {
+                    let length = self.emit_value_operand_expr(length)?;
+                    (
+                        self.emit_native_int_for_ir_value(
+                            length,
+                            NativeIntConversionOperation::StringLength,
+                            span,
+                            LLVM_STRING_INT_OPERATION_REJECTION,
+                        )?,
+                        true,
+                    )
+                } else {
+                    ("0".to_string(), false)
+                };
+                self.emit_native_string_int_operation(
+                    operation,
+                    subject,
+                    Some(operand),
+                    offset,
+                    length,
+                    has_length,
+                    span,
+                )
+            }
+            NativeStringIntOperation::Ordinal | NativeStringIntOperation::Crc32
+                if args.len() == 1 =>
+            {
+                let subject = self.emit_value_operand_expr(&args[0])?;
+                self.emit_native_string_int_operation(
+                    operation,
+                    subject,
+                    None,
+                    "0".to_string(),
+                    "0".to_string(),
+                    false,
+                    span,
+                )
+            }
+            _ => Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                LLVM_STRING_INT_OPERATION_REJECTION,
+            )),
+        }
+    }
+
+    fn emit_native_string_int_operation(
+        &mut self,
+        operation: NativeStringIntOperation,
+        subject: IrValue,
+        operand: Option<IrValue>,
+        offset: String,
+        length: String,
+        has_length: bool,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        let subject = self
+            .emit_native_value_for_ir_value(subject, span)
+            .map_err(|_| self.unsupported(span, LLVM_STRING_INT_OPERATION_REJECTION))?;
+        let operand = match operand {
+            Some(value) => Some(
+                self.emit_native_value_for_ir_value(value, span)
+                    .map_err(|_| self.unsupported(span, LLVM_STRING_INT_OPERATION_REJECTION))?,
+            ),
+            None => None,
+        };
+        let operand_value = operand.as_deref().unwrap_or("zeroinitializer").to_string();
+        let flags = u8::from(has_length);
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_string_int_operation = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call i64 @phpc_native_value_string_int_operation_with_diagnostic(%phpc.NativeValueHandle {subject}, %phpc.NativeValueHandle {operand_value}, i64 {offset}, i64 {length}, i8 {flags}, i8 {}, ptr {diagnostic_slot})",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        if let Some(operand) = operand {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {operand})"
+            ));
+        }
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {subject})"
+        ));
+        Ok(IrValue::Int(result))
     }
 
     fn emit_function_exists_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
@@ -5616,6 +5800,120 @@ impl LlvmGenerator {
         ));
         self.body.push(format!(
             "call void @phpc_native_string_free(%phpc.NativeStringHandle {string})"
+        ));
+    }
+
+    fn emit_native_int_for_ir_value(
+        &mut self,
+        value: IrValue,
+        operation: NativeIntConversionOperation,
+        span: Span,
+        rejection: &'static str,
+    ) -> CompileResult<String> {
+        let value_handle = self
+            .emit_native_value_for_ir_value(value, span)
+            .map_err(|_| self.unsupported(span, rejection))?;
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_string_int_operation = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call i64 @phpc_native_value_to_int64_with_diagnostic(%phpc.NativeValueHandle {value_handle}, i8 {}, ptr {diagnostic_slot})",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {value_handle})"
+        ));
+        Ok(result)
+    }
+
+    fn emit_native_value_for_ir_value(
+        &mut self,
+        value: IrValue,
+        span: Span,
+    ) -> CompileResult<String> {
+        self.uses_native_string_int_operation = true;
+        match value {
+            IrValue::Null => Ok(self.emit_native_value_from_scalar_call("@phpc_native_null()")),
+            IrValue::Bool(value) => Ok(self.emit_native_value_from_scalar_call(&format!(
+                "@phpc_native_bool(i1 {})",
+                if value { "true" } else { "false" }
+            ))),
+            IrValue::BoolExpr(value) => {
+                Ok(self
+                    .emit_native_value_from_scalar_call(&format!("@phpc_native_bool(i1 {value})")))
+            }
+            IrValue::Int(value) => {
+                Ok(self
+                    .emit_native_value_from_scalar_call(&format!("@phpc_native_int(i64 {value})")))
+            }
+            IrValue::Float(value) => Ok(self.emit_native_value_from_scalar_call(&format!(
+                "@phpc_native_float(double {value})"
+            ))),
+            IrValue::String(value) => {
+                let global = self.add_string(&value);
+                Ok(self.emit_native_value_from_string_bytes(
+                    &format!("@{global}"),
+                    &value.len().to_string(),
+                ))
+            }
+            IrValue::StringPtr(value) => {
+                let len = self
+                    .string_pointer_byte_len_operand(&value)
+                    .ok_or_else(|| self.unsupported(span, LLVM_STRING_INT_OPERATION_REJECTION))?;
+                Ok(self.emit_native_value_from_string_bytes(&value, &len))
+            }
+        }
+    }
+
+    fn emit_native_value_from_scalar_call(&mut self, scalar_call: &str) -> String {
+        let scalar = self.next_temp();
+        let handle = self.next_temp();
+        self.uses_native_string_int_operation = true;
+        self.body.push(format!(
+            "{scalar} = call %phpc.NativeScalarValue {scalar_call}"
+        ));
+        self.body.push(format!(
+            "{handle} = call %phpc.NativeValueHandle @phpc_native_value_from_scalar(%phpc.NativeScalarValue {scalar})"
+        ));
+        handle
+    }
+
+    fn emit_native_value_from_string_bytes(&mut self, ptr: &str, len: &str) -> String {
+        let diagnostic_slot = self.next_temp();
+        let handle = self.next_temp();
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        self.uses_native_string_int_operation = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{handle} = call %phpc.NativeValueHandle @phpc_native_value_from_string_bytes_with_diagnostic(ptr {ptr}, {usize_type} {len}, ptr {diagnostic_slot})"
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        handle
+    }
+
+    fn emit_report_native_diagnostic_slot(&mut self, diagnostic_slot: &str) {
+        let diagnostic = self.next_temp();
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        self.body.push(format!(
+            "{diagnostic} = load %phpc.NativeDiagnosticHandle, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "call {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle {diagnostic})"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle {diagnostic})"
         ));
     }
 
