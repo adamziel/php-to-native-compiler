@@ -4780,6 +4780,39 @@ pub unsafe extern "C" fn phpc_native_request_state_key_from_value(
     }
 }
 
+/// # Safety
+///
+/// `bag_ptr` must either be valid for `bag_len` bytes or null with a zero
+/// length. `key` must own a live request-state key buffer. The key result is
+/// not consumed by this probe.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_key_matches_superglobal(
+    key: NativeRequestStateKeyResult,
+    bag_ptr: *const u8,
+    bag_len: usize,
+) -> bool {
+    if key.status != NativeRequestStateOperationStatus::Ok.abi_tag() {
+        return false;
+    }
+    let Some(bag) = (unsafe { native_abi_bytes(bag_ptr, bag_len) }) else {
+        return false;
+    };
+    if NativeRequestStateBag::from_abi_bytes(bag).is_none() {
+        return false;
+    }
+    if key.buffer.len != bag.len() {
+        return false;
+    }
+    if key.buffer.len == 0 {
+        return false;
+    }
+    if key.buffer.ptr.is_null() {
+        return false;
+    }
+    let key_bytes = unsafe { std::slice::from_raw_parts(key.buffer.ptr, key.buffer.len) };
+    key_bytes == bag
+}
+
 #[no_mangle]
 pub extern "C" fn phpc_native_request_state_reference_result_report_diagnostic(
     result: NativeRequestStateReferenceResult,
@@ -21046,6 +21079,67 @@ mod tests {
             PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_ABI
         );
         assert_eq!(native_byte_buffer_to_vec_for_test(null_key.buffer), b"");
+    }
+
+    #[test]
+    fn native_request_state_key_matches_superglobal_names_after_php_key_coercion() {
+        for (value, expected_bag) in [
+            (Value::String("_GET".to_string()), b"_GET".as_slice()),
+            (Value::String("_POST".to_string()), b"_POST".as_slice()),
+            (Value::String("_COOKIE".to_string()), b"_COOKIE".as_slice()),
+        ] {
+            let handle = NativeValueHandle::from_value(value);
+            let key = unsafe { phpc_native_request_state_key_from_value(handle) };
+
+            assert!(unsafe {
+                phpc_native_request_state_key_matches_superglobal(
+                    key,
+                    expected_bag.as_ptr(),
+                    expected_bag.len(),
+                )
+            });
+            assert!(!unsafe {
+                phpc_native_request_state_key_matches_superglobal(
+                    key,
+                    b"_SERVER".as_ptr(),
+                    b"_SERVER".len(),
+                )
+            });
+
+            unsafe { phpc_native_byte_buffer_free(key.buffer) };
+            unsafe { phpc_native_value_free(handle) };
+        }
+
+        let ordinary = NativeValueHandle::from_value(Value::String("plain".to_string()));
+        let ordinary_key = unsafe { phpc_native_request_state_key_from_value(ordinary) };
+        assert!(!unsafe {
+            phpc_native_request_state_key_matches_superglobal(
+                ordinary_key,
+                b"_GET".as_ptr(),
+                b"_GET".len(),
+            )
+        });
+        assert!(!unsafe {
+            phpc_native_request_state_key_matches_superglobal(
+                ordinary_key,
+                b"plain".as_ptr(),
+                b"plain".len(),
+            )
+        });
+        unsafe { phpc_native_byte_buffer_free(ordinary_key.buffer) };
+        unsafe { phpc_native_value_free(ordinary) };
+
+        let unsupported = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let unsupported_key = unsafe { phpc_native_request_state_key_from_value(unsupported) };
+        assert!(!unsafe {
+            phpc_native_request_state_key_matches_superglobal(
+                unsupported_key,
+                b"_GET".as_ptr(),
+                b"_GET".len(),
+            )
+        });
+        unsafe { phpc_native_byte_buffer_free(unsupported_key.buffer) };
+        unsafe { phpc_native_value_free(unsupported) };
     }
 
     #[test]

@@ -2128,6 +2128,10 @@ fn is_request_superglobal_name(name: &str) -> bool {
     )
 }
 
+const REQUEST_SUPERGLOBAL_NAMES: [&str; 7] = [
+    "_SERVER", "_COOKIE", "_GET", "_POST", "_REQUEST", "_FILES", "_SESSION",
+];
+
 fn is_globals_superglobal_name(name: &str) -> bool {
     name == "GLOBALS"
 }
@@ -7409,6 +7413,11 @@ struct CRequestStateKeyMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+struct CGlobalsDynamicRootKeyMaterialization {
+    value: CNativeValueMaterialization,
+    request_key: String,
+}
+
 struct CRequestStatePathMaterialization {
     ptrs: String,
     lens: String,
@@ -7737,6 +7746,7 @@ impl CGenerator {
                     "extern phpc_NativeRequestStateHandle phpc_native_request_state_empty(void);\n",
                 );
                 output.push_str("extern phpc_NativeRequestStateKeyResult phpc_native_request_state_key_from_value(phpc_NativeValueHandle value);\n");
+                output.push_str("extern _Bool phpc_native_request_state_key_matches_superglobal(phpc_NativeRequestStateKeyResult key, const uint8_t *bag, size_t bag_len);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_path_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t **key_ptrs, const size_t *key_lens, size_t key_count, uint8_t key_status);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_keyed_mutation_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status, phpc_NativeValueHandle value);\n");
@@ -9472,6 +9482,35 @@ impl CGenerator {
         })
     }
 
+    fn materialize_globals_dynamic_root_key(
+        &mut self,
+        key_expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CGlobalsDynamicRootKeyMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_request_state_helpers = true;
+
+        let value = self.materialize_native_value_result_operand(key_expr, failure_cleanup)?;
+        let request_key = self.next_native_name("globals_dynamic_request_key");
+        self.body.push(format!(
+            "phpc_NativeRequestStateKeyResult {request_key} = phpc_native_request_state_key_from_value({});",
+            value.handle
+        ));
+
+        Ok(CGlobalsDynamicRootKeyMaterialization { value, request_key })
+    }
+
+    fn globals_dynamic_root_key_cleanup(
+        key: &CGlobalsDynamicRootKeyMaterialization,
+    ) -> Vec<String> {
+        let mut cleanup = vec![format!(
+            "phpc_native_byte_buffer_free({}.buffer);",
+            key.request_key
+        )];
+        cleanup.extend(key.value.cleanup_after_use.clone());
+        cleanup
+    }
+
     fn materialize_request_superglobal_path_key_refs(
         &mut self,
         indices: &[&Expr],
@@ -9674,6 +9713,138 @@ impl CGenerator {
             failure_cleanup,
         )?;
         Ok(result_value)
+    }
+
+    fn emit_globals_dynamic_request_root_assignment(
+        &mut self,
+        index: &Expr,
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let key = self.materialize_globals_dynamic_root_key(index, failure_cleanup)?;
+        let key_cleanup = Self::globals_dynamic_root_key_cleanup(&key);
+        let value = self.materialize_native_value_result_operand(
+            expr,
+            &format!("{}{}", c_cleanup_sequence(&key_cleanup), failure_cleanup),
+        )?;
+        self.emit_globals_dynamic_request_root_assignment_from_materialized(
+            key,
+            value,
+            span,
+            failure_cleanup,
+        )
+    }
+
+    fn emit_globals_dynamic_request_root_assignment_expr(
+        &mut self,
+        index: &Expr,
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let key = self.materialize_globals_dynamic_root_key(index, failure_cleanup)?;
+        let key_cleanup = Self::globals_dynamic_root_key_cleanup(&key);
+        let (result_value, value) = self.materialize_assignment_expression_replacement_value(
+            expr,
+            &format!("{}{}", c_cleanup_sequence(&key_cleanup), failure_cleanup),
+        )?;
+        self.emit_globals_dynamic_request_root_assignment_from_materialized(
+            key,
+            value,
+            span,
+            failure_cleanup,
+        )?;
+        Ok(result_value)
+    }
+
+    fn emit_globals_dynamic_request_root_assignment_from_materialized(
+        &mut self,
+        key: CGlobalsDynamicRootKeyMaterialization,
+        value: CNativeValueMaterialization,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_request_state_helpers = true;
+
+        let key_cleanup = Self::globals_dynamic_root_key_cleanup(&key);
+        let key_cleanup_sequence = c_cleanup_sequence(&key_cleanup);
+        let value_cleanup_sequence = c_cleanup_sequence(&value.cleanup_after_use);
+        let request_state = self.ensure_native_request_state_handle();
+        let table = self.ensure_globals_symbol_table(
+            &format!("{value_cleanup_sequence}{key_cleanup_sequence}{failure_cleanup}"),
+            span,
+        )?;
+        let matched = self.next_native_name("globals_dynamic_request_matched");
+        self.body.push(format!("_Bool {matched} = 0;"));
+
+        for name in REQUEST_SUPERGLOBAL_NAMES {
+            let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+            let is_match = self.next_native_name("globals_dynamic_request_match");
+            self.body.push(format!(
+                "_Bool {is_match} = phpc_native_request_state_key_matches_superglobal({}, {bag_bytes}, {});",
+                key.request_key,
+                name.len()
+            ));
+            self.body.push(format!("if (!{matched} && {is_match}) {{"));
+            self.body.push(format!("  {matched} = 1;"));
+            let bag = self.next_native_name("globals_dynamic_request_bag");
+            self.body.push(format!(
+                "  phpc_NativeStringHandle {bag} = phpc_native_string_from_bytes({bag_bytes}, {});",
+                name.len()
+            ));
+            let diagnostic = self.next_native_name("globals_dynamic_request_diagnostic");
+            let replaced = self.next_native_name("globals_dynamic_request_replaced");
+            self.body.push(format!(
+                "  phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
+            ));
+            self.body.push(format!(
+                "  _Bool {replaced} = phpc_native_request_state_superglobal_replace_value_with_diagnostic({request_state}, {bag}, {}, &{diagnostic});",
+                value.handle
+            ));
+            let branch_failure_cleanup = format!(
+                "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({bag}); {value_cleanup_sequence}{key_cleanup_sequence}{failure_cleanup}"
+            );
+            let error_exit = self.native_error_exit(&branch_failure_cleanup);
+            self.body
+                .push(format!("  if (!{replaced}) {{ {error_exit} }}"));
+            self.emit_report_native_diagnostic(&diagnostic);
+            self.body
+                .push(format!("  phpc_native_diagnostic_free({diagnostic});"));
+            self.body.push(format!("  phpc_native_string_free({bag});"));
+            self.body.push("}".to_string());
+        }
+
+        self.body.push(format!("if (!{matched}) {{"));
+        let keys = self.next_native_name("globals_dynamic_symbol_path");
+        self.body.push(format!(
+            "  phpc_NativeValueHandle {keys}[] = {{ {} }};",
+            key.value.handle
+        ));
+        let diagnostic = self.next_native_name("globals_dynamic_symbol_diagnostic");
+        let wrote = self.next_native_name("globals_dynamic_symbol_written");
+        self.body.push(format!(
+            "  phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "  bool {wrote} = phpc_native_symbol_table_set_value_by_path_with_diagnostic({table}, {keys}, 1, {}, &{diagnostic});",
+            value.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let fallback_failure_cleanup = format!(
+            "phpc_native_diagnostic_free({diagnostic}); {value_cleanup_sequence}{key_cleanup_sequence}{failure_cleanup}"
+        );
+        let error_exit = self.native_error_exit(&fallback_failure_cleanup);
+        self.body
+            .push(format!("  if (!{wrote}) {{ {error_exit} }}"));
+        self.body
+            .push(format!("  phpc_native_diagnostic_free({diagnostic});"));
+        self.body.push("}".to_string());
+
+        self.body.extend(value.cleanup_after_use);
+        self.body.extend(key_cleanup);
+        Ok(())
     }
 
     fn emit_globals_request_alias_append_assignment(
@@ -11495,6 +11666,15 @@ impl CGenerator {
                             )
                             .map(Some);
                     }
+                } else {
+                    return self
+                        .emit_globals_dynamic_request_root_assignment_expr(
+                            index,
+                            expr,
+                            span,
+                            failure_cleanup,
+                        )
+                        .map(Some);
                 }
                 self.emit_globals_symbol_path_assignment_expr(&[index], expr, span, failure_cleanup)
                     .map(Some)
@@ -15525,6 +15705,9 @@ impl CGenerator {
                                 "",
                             );
                         }
+                    } else {
+                        return self
+                            .emit_globals_dynamic_request_root_assignment(index, expr, *span, "");
                     }
                     return self.emit_globals_symbol_path_assignment(&[index], expr, *span, "");
                 }
