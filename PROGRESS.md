@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-22 18:51 CEST
-Evaluation marker: `20260522T165100Z`
+Updated: 2026-05-22 18:57 CEST
+Evaluation marker: `20260522T165426Z`
 Primary semantic HEAD: `aa94e4bd codegen: route GLOBALS request aliases through state ABI`
 Current pushed semantic baseline: `aa94e4bd codegen: route GLOBALS request aliases through state ABI`
 
@@ -14,13 +14,14 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 
 Overall estimated progress: **80%** `[################----]`
 
-This review confirms real integrated movement in the last cycle: primary now
-has generated-C `$GLOBALS[...]` write/unset/append paths, request-superglobal
-root/nested appends, request-superglobal null-coalescing reads, static
-`$GLOBALS["_GET"]`-style request-root aliases, and direct unresolved
-root-variable reads routed through shared runtime/compiler ABIs. These are
-generalized symbol/path/key-driven slices with focused linked evidence, not
-fixture-shaped recognizers.
+This review confirms real integrated movement across the latest primary cycle:
+primary now has generated-C `$GLOBALS[...]` write/unset/append paths,
+request-superglobal root/nested appends, request-superglobal null-coalescing
+reads, static `$GLOBALS["_GET"]`-style request-root aliases, and direct
+unresolved root-variable reads routed through shared runtime/compiler ABIs.
+These are generalized symbol/path/key-driven slices with focused linked
+evidence, not fixture-shaped recognizers. No newer semantic primary commit has
+landed after the 18:51 CEST alias batch, so estimates are held stable.
 
 The work remains bounded. Primary is stronger for selected request-state and
 `$GLOBALS[...]` path operations, but it still does not have complete PHP
@@ -127,20 +128,25 @@ frames, references/COW, and LLVM/C assembly parity blocked.
 
 Lane-local candidates, not counted:
 
-- `impl-native-integration-batch`: native diagnostic queue/state runtime
-  boundary with policy filtering and last-error tracking; useful foundation,
-  but no primary compiler consumer yet.
-- `impl-global-symbols`: function return-flow and call-dispatch contracts plus
-  ongoing request/global symbol-environment work; metadata/blocker-heavy and
-  must not split the primary alias model.
-- `impl-array-value-runtime`: scalar non-string offset read/`isset`/`empty`
-  continuation and byte-string value-frame work; includes pre-existing stale
-  expectation failures that need transplant notes before primary use.
-- `impl-native-diagnostics`: request-backed native builtin consumer blockers
-  survive `@` error control; classification only, not executable coercion.
-- Other fresh lanes continue around lvalue diagnostic spans, call cleanup,
-  control-flow state reconciliation, exit/termination handoff, references,
-  comparison metadata, type conversion, binary strings, and objects/properties.
+- `impl-native-integration-batch`: lane-local generated-C/runtime consumers for
+  `explode()` / `implode()` through a shared string/list value-result ABI,
+  following earlier `min()` / `max()` and scanner work. Plausible executable
+  slices, but not present in primary.
+- `impl-global-symbols`: strict identity and type-introspection over owned
+  `NativeValueHandle` symbol/request/global families; useful, but must not
+  fork the primary request/global alias model.
+- `impl-array-value-runtime`: direct and dynamic array value builtin frames
+  through runtime call-frame/value-frame boundaries; high-value but
+  conflict-heavy and requires small transplant notes.
+- `impl-native-diagnostics`: request-state reference-result
+  diagnostic/free lifecycle ABI; useful prerequisite for request references,
+  but generated request reference lowering remains blocked.
+- `impl-native-control-flow-seed`: CFG/effect-boundary consolidation for
+  recursive `if`/`switch`/state-reconciliation gates; structural cleanup, but
+  still mostly blocker infrastructure rather than broad executable control flow.
+- Other fresh lanes continue around call/frame contracts, object/property
+  runtime boundaries, binary strings, comparisons, type conversion,
+  exit/termination cleanup, and reference-cell ownership.
 
 ## Current Steering
 
@@ -175,9 +181,11 @@ Primary currently has one preserved unstaged implementation diff:
 as progress and still needs explicit classification, focused tests, and a
 separate commit or rejection before any runtime staging.
 
-Resource snapshot: `/dev/shm` has about 6.4G free of 22G and is close to the
-dispatcher floor; `/home` has about 197G free. Keep focused gates and avoid
-broad simultaneous cargo waves.
+Resource snapshot: `/dev/shm` has about 7.6G free of 22G (`du` reports 15G
+used) and remains close enough to the dispatcher floor to avoid broad cargo
+waves; `/home` has about 196G free (`du` reports 226G with container-overlay
+permission warnings). Keep focused gates and avoid broad simultaneous cargo
+waves.
 
 The supervisor dashboard tail is behind fresher worker evidence; use the
 bounded snapshot and status files for this review's current facts.
