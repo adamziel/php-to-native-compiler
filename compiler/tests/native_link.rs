@@ -168,7 +168,6 @@ fn native_executable_c_source_routes_by_value_foreach_through_array_lvalue_owner
 fn native_executable_c_source_blocks_foreach_forms_without_symbol_or_reference_storage() {
     for source in [
         "<?php\n$v = \"old\";\n$a = [\"new\"];\nforeach ($a as $v) { echo $v; }\n",
-        "<?php\n$a = [\"new\"];\nforeach ($a as &$v) { echo $v; }\n",
         "<?php\n$a = [\"new\"];\nforeach ($a as $v) { $seen = $v; }\n",
     ] {
         let program = parse(source).unwrap();
@@ -176,6 +175,34 @@ fn native_executable_c_source_blocks_foreach_forms_without_symbol_or_reference_s
         assert!(
             error.message.contains("assembly array lowering")
                 || error.message.contains("assembly mutation lowering"),
+            "{error:?}"
+        );
+    }
+}
+
+#[test]
+fn native_executable_c_source_blocks_by_reference_foreach_at_reference_slot_boundary() {
+    for source in [
+        "<?php\n$a = [1, 2];\nforeach ($a as &$value) { echo $value; }\n",
+        "<?php\n$a = [];\n$a[\"outer\"][\"x\"] = 1;\nforeach ($a[\"outer\"] as &$value) { echo $value; }\n",
+        "<?php\nforeach ([\"a\" => 1, \"b\" => 2] as $key => &$value) { echo $key, $value; }\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("native executable by-reference foreach lowering rejects"),
+            "{error:?}"
+        );
+        assert!(
+            error.message.contains("reference-slot symbol storage"),
+            "{error:?}"
+        );
+        assert!(
+            error
+                .message
+                .contains("phpc_native_array_lvalue_owner_foreach_value_reference_result()"),
             "{error:?}"
         );
     }

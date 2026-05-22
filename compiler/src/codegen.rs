@@ -98,6 +98,7 @@ const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespac
 const ASSEMBLY_NAMESPACE_REJECTION: &str = "assembly namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects unsupported arrays, unsupported array indexing forms, unsupported array assignment forms, unsupported foreach array iteration forms, unsupported array offset unset forms, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; generated-native C routes lowerable direct array offset writes, appends, unsets, and by-value foreach over tracked native array owners through shared native ABIs";
+const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects by-reference iteration until generated C has generalized reference-slot symbol storage, foreach cursor reference binding, owner/path value-reference acquisition through phpc_native_array_lvalue_owner_foreach_value_reference_result(), and loop-body cleanup ownership for array, nested-array, and value-root iterable owners; phpc run handles current by-reference foreach behavior";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
@@ -8628,7 +8629,9 @@ impl CGenerator {
         span: Span,
     ) -> CompileResult<()> {
         if by_reference {
-            return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
+            return Err(
+                self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
+            );
         }
         if key == Some(value) {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
