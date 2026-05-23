@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 02:52 CEST
+Updated: 2026-05-23 03:06 CEST
 Evaluation marker: `20260523T002315Z`
 
-Primary baseline: `codegen: lower lazy native value ternaries`
-Latest semantic baseline: `codegen: lower lazy native value ternaries`
+Primary baseline: `codegen: lower lazy native value short ternaries`
+Latest semantic baseline: `codegen: lower lazy native value short ternaries`
 Latest evaluator report: `20260523T002315Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -19,25 +19,27 @@ Overall estimated progress: **87%** `[#################---]`
 Momentum is positive. Primary now includes several generated-C executable
 semantic slices: selected request/global/array/reference paths from earlier
 work, direct `exit()`/`die()` cleanup, diagnostic report ownership cleanup, and
-bounded `if`/`else` lowering. The latest ternary slice is useful because it
-emits real generated-C `if`/`else` branch code for native value-result
-ternaries, assigns exactly the selected owned handle, and preserves lazy branch
-diagnostics/cleanup for the covered family instead of using eager lowering.
+bounded `if`/`else` lowering. The latest short-ternary slice is useful because
+it extends the existing lazy native value-result branch machinery to `?:`
+expressions, transfers exactly the selected owned handle, and preserves lazy
+fallback diagnostics/cleanup for the covered family instead of using eager
+lowering.
 
 This is still not a complete native PHP execution model. Calls/functions,
 objects/properties/methods, full references/COW, broad structured control flow,
 exact diagnostics, and LLVM/assembly parity remain the main gaps.
 
-Current primary cleanliness: primary is pushed through `a1ab542a`. Remaining
-dirty files are unintegrated lane/format/doc/runtime work and are not counted
-until reviewed and committed.
+Current primary cleanliness: semantic work is committed through `76ea0597`.
+Remaining dirty files are unintegrated doc work and the protected
+`runtime/src/lib.rs` null-slot hunk; they are not counted until reviewed and
+committed.
 
 ## Grand Roadmap
 
 | Roadmap item | Estimate | Visual | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **97%** | `[###################-]` | Strong value, array, symbol-table, request-state, reference, comparison, truthiness, diagnostic, and exit-result surfaces. |
-| Compiler/backend consumers | **98%** | `[####################]` | Good generated-C coverage for selected request, `$GLOBALS`, symbols, arrays, lvalues, references, exit, diagnostics, state-stable branches, cleanup-free scalar branch joins, and native value-result ternaries. LLVM/assembly parity is uneven. |
+| Compiler/backend consumers | **98%** | `[####################]` | Good generated-C coverage for selected request, `$GLOBALS`, symbols, arrays, lvalues, references, exit, diagnostics, state-stable branches, cleanup-free scalar branch joins, and native value-result ternary/short-ternary families. LLVM/assembly parity is uneven. |
 | Executable PHP semantics | **85%** | `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete execution model. |
 | Arrays, lvalues, references, COW | **87%** | `[#################---]` | Strong selected paths, including reference-backed active symbol-root array lvalues. Arbitrary writable roots, full COW, and by-reference foreach remain large. |
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
@@ -48,6 +50,9 @@ until reviewed and committed.
 
 ## Primary-Integrated Progress
 
+- [x] `76ea0597`: generated-C lazy native value-result short ternaries now
+  lower through real selected-branch owner transfer, shared PHP truthiness, and
+  focused linked executable proof.
 - [x] `a1ab542a`: generated-C lazy native value-result ternaries now lower
   through real branch bodies and a selected owned result handle, with focused
   source and linked executable gates.
