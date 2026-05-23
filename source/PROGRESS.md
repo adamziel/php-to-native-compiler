@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 04:36 CEST
+Updated: 2026-05-23 04:48 CEST
 Evaluation marker: `20260523T020211Z`
 
-Primary HEAD: `10be1209 codegen: cleanup branch-local non-value owners`
-Latest integrated semantic baseline: `10be1209 codegen: cleanup branch-local non-value owners`
+Primary HEAD: `2f7c236a codegen: output array owners`
+Latest integrated semantic baseline: `2f7c236a codegen: output array owners`
 Latest evaluator report: `20260523T020211Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -23,16 +23,22 @@ native-value cleanup, statement boundary cleanup for discarded native-value
 expression results, by-reference foreach slot execution for selected array
 lvalue owners, strict identity/non-identity routing through the shared native
 value-result comparison ABI, and branch-local cleanup for non-value owners such
-as native arrays and tracked byte buffers.
+as native arrays and tracked byte buffers. Stored native values can now feed
+shared type predicates and `gettype` / `get_debug_type` result ABIs instead of
+falling back to return-value ownership rejection, and `isset()` / `empty()`
+now classify stored native values through shared null predicates and PHP
+truthiness. Native array owners now also feed shared PHP truthiness for
+`empty()`, `if` conditions, logical operands, and unary-not checks, and array
+owners now route echo/print output through the shared native-value stdout ABI.
 
 This is still selected compiled PHP execution, not complete PHP semantics.
 Calls/functions/frames, object/property/method execution, full references/COW,
 arbitrary by-reference foreach, structured cleanup/unwinding, exact
 diagnostics, and LLVM/assembly parity remain the major completion blockers.
 
-Current primary cleanliness: semantic work is current through the branch-local
-non-value-owner cleanup batch. The protected `runtime/src/lib.rs` null-slot
-hunk is still dirty and uncounted.
+Current primary cleanliness: semantic work is current through the array-owner
+output batch. The protected `runtime/src/lib.rs` null-slot hunk is still dirty
+and uncounted.
 
 ## Grand Roadmap
 
@@ -40,7 +46,7 @@ hunk is still dirty and uncounted.
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **97%** | `[###################-]` | Strong value, array, symbol-table, request-state, reference, comparison, truthiness, diagnostic, exit, and cleanup surfaces. |
 | Compiler/backend consumers | **98%** | `[####################]` | Good generated-C coverage for selected request, globals, arrays, lvalues, references, foreach by-value storage, strict value-result comparison, exit, diagnostics, state-stable branches, branch owner joins, lazy ternaries, logical short-circuiting, and statement cleanup. LLVM/assembly parity is uneven. |
-| Executable PHP semantics | **86%** | `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete execution model. |
+| Executable PHP semantics | **87%** | `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete execution model. |
 | Arrays, lvalues, references, COW | **88%** | `[##################--]` | Strong selected paths, including reference-backed active symbol-root array lvalues, by-value foreach cursor storage, and selected by-reference foreach slot execution. Arbitrary writable roots, full COW, by-reference arguments, and broader by-reference foreach remain open. |
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement exists, but generated-native call/frame execution is still the major missing piece. |
@@ -50,6 +56,20 @@ hunk is still dirty and uncounted.
 
 ## Primary-Integrated Progress
 
+- [x] `2f7c236a`: generated-C echo/print over native array owners now
+  materializes the owner as a PHP-shaped native value and routes output through
+  the shared native-value stdout ABI.
+- [x] `15f20e03`: generated-C native array owners now materialize through the
+  shared native-value truthiness ABI for `empty()`, `if` conditions, logical
+  operands, and unary-not checks.
+- [x] `8f82a50f`: generated-C `isset()` and `empty()` over stored native-value
+  owners now use shared null type predicates and native PHP truthiness instead
+  of rejecting on return-value ownership, covering string, arithmetic, and cast
+  value owners.
+- [x] `2035a863`: generated-C stored native values and native references can
+  feed shared `is_*` type predicates plus `gettype` / `get_debug_type`
+  type-name result ABIs, covering values produced by arithmetic, string,
+  casts, comparisons, and array casts.
 - [x] `10be1209`: generated-C `if`/`else` branch lowering releases
   branch-local native array owners and tracked byte-buffer owners before
   rejoining when they do not survive the branch, while rejecting byte-buffer
