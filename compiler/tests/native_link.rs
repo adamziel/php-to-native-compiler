@@ -10685,6 +10685,18 @@ const NATIVE_VALUE_CAST_BUILTIN_SOURCE: &str = "<?php\n$a = [];\n$a[strval(5)] =
 
 const NATIVE_ARRAY_VALUE_OPERAND_SOURCE: &str = "<?php\n$a = [];\n$a[\"nested\"] = [1, 2];\necho (int)[1], \"|\", (int)[], \"|\", (float)[0], \"|\", boolval([0]), \"|\", gettype([1]);\n";
 
+const NATIVE_VALUE_OPERATION_DIAGNOSTIC_SOURCE: &str = concat!(
+    "<?php\n",
+    "echo [1] + [2];\n",
+    "echo (int)[1];\n",
+    "echo strrev([1]);\n",
+    "echo ~[1];\n",
+    "echo gettype([1] + [2]);\n",
+);
+
+const NATIVE_VALUE_OPERATION_DIAGNOSTIC_FAILURE_SOURCE: &str =
+    "<?php\necho \"before|\";\necho [1] + [2];\necho \"after\";\n";
+
 #[test]
 fn native_executable_c_source_routes_array_key_and_value_expressions_through_value_result_abi() {
     let program = parse(NATIVE_VALUE_OPERATION_ARRAY_SOURCE).unwrap();
@@ -11595,6 +11607,45 @@ fn native_executable_c_source_routes_operation_echoes_through_value_result_abi()
 }
 
 #[test]
+fn native_executable_c_source_reports_value_operation_diagnostics_through_shared_consumer() {
+    let program = parse(NATIVE_VALUE_OPERATION_DIAGNOSTIC_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for report in [
+        "phpc_native_diagnostic_report(native_value_binary_result_",
+        "phpc_native_diagnostic_report(native_value_type_name_result_",
+        "phpc_native_diagnostic_report(value_cast_diagnostic_",
+        "phpc_native_diagnostic_report(string_result_diagnostic_",
+        "phpc_native_diagnostic_report(value_bitwise_diagnostic_",
+    ] {
+        assert!(body.contains(report), "{report}\n\n{source}");
+    }
+
+    for old_consumer in [
+        "phpc_native_diagnostic_message_stderr(native_value_binary_result_",
+        "phpc_native_diagnostic_message_stderr(native_value_type_name_result_",
+        "phpc_native_diagnostic_message_stderr(value_cast_diagnostic_",
+        "phpc_native_diagnostic_message_stderr(string_result_diagnostic_",
+        "phpc_native_diagnostic_message_stderr(value_bitwise_diagnostic_",
+    ] {
+        assert!(
+            !body.contains(old_consumer),
+            "value operation diagnostics should not keep the old message/free path:\n{source}"
+        );
+    }
+
+    assert!(
+        body.contains(".diagnostic.ptr = NULL")
+            && body.contains("value_cast_diagnostic_")
+            && body.contains("string_result_diagnostic_")
+            && body.contains("value_bitwise_diagnostic_"),
+        "reported diagnostics must be nulled before later cleanup:\n{source}"
+    );
+    assert_no_diagnostic_report_double_free(&source);
+}
+
+#[test]
 fn native_executable_c_source_routes_print_values_through_value_result_and_array_read_abi() {
     let program = parse(NATIVE_VALUE_OPERATION_PRINT_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -11812,6 +11863,37 @@ fn emit_exe_links_and_runs_native_operation_echo_value_result_program() {
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn emit_exe_reports_native_value_operation_diagnostics_once() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_value_operation_diagnostic",
+        NATIVE_VALUE_OPERATION_DIAGNOSTIC_FAILURE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native value diagnostic executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "native value diagnostic executable should fail"
+    );
+    assert_eq!(run.stdout, b"before|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("native value binary operation rejects arrays"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("after"), "{stderr}");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
 }
 
 #[test]

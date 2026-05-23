@@ -22287,16 +22287,15 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeValueHandle {result} = phpc_native_value_bitwise_operation_with_diagnostic({subject_handle}, {operand_handle}, {op_tag}, &{diagnostic});"
         ));
+        self.emit_report_native_diagnostic(&diagnostic);
         let cleanup = format!(
-            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}",
+            "{}{}",
             c_cleanup_sequence(&cleanup_after_use),
             failure_cleanup
         );
         let error_exit = self.native_error_exit(&cleanup);
         self.body
             .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
-        self.body
-            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
         self.body.extend(cleanup_after_use);
 
         CNativeValueMaterialization {
@@ -22321,16 +22320,15 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeValueHandle {result} = phpc_native_value_cast_operation_with_diagnostic({value_handle}, {op_tag}, &{diagnostic});"
         ));
+        self.emit_report_native_diagnostic(&diagnostic);
         let cleanup = format!(
-            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}",
+            "{}{}",
             c_cleanup_sequence(&value.cleanup_after_use),
             failure_cleanup
         );
         let error_exit = self.native_error_exit(&cleanup);
         self.body
             .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
-        self.body
-            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
         self.body.extend(value.cleanup_after_use);
 
         CNativeValueMaterialization {
@@ -22356,16 +22354,15 @@ impl CGenerator {
             "phpc_NativeValueHandle {result} = phpc_native_value_string_result_operation_with_diagnostic({subject_handle}, (phpc_NativeValueHandle){{0}}, (phpc_NativeValueHandle){{0}}, 0, 0, 0, {}, &{diagnostic});",
             operation as u8
         ));
+        self.emit_report_native_diagnostic(&diagnostic);
         let cleanup = format!(
-            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}",
+            "{}{}",
             c_cleanup_sequence(&subject.cleanup_after_use),
             failure_cleanup
         );
         let error_exit = self.native_error_exit(&cleanup);
         self.body
             .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
-        self.body
-            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
         self.body.extend(subject.cleanup_after_use);
 
         CNativeValueMaterialization {
@@ -22447,7 +22444,10 @@ impl CGenerator {
             "{cleanup}phpc_native_value_operation_result_free({result}); "
         ));
         self.body.push(format!(
-            "if ({result}.tag != PHPC_NATIVE_VALUE_OPERATION_OK) {{ if ({result}.diagnostic.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({result}.diagnostic); }} {result_error_exit} }}"
+            "if ({result}.diagnostic.ptr != NULL) {{ phpc_native_diagnostic_report({result}.diagnostic); {result}.diagnostic.ptr = NULL; }}"
+        ));
+        self.body.push(format!(
+            "if ({result}.tag != PHPC_NATIVE_VALUE_OPERATION_OK) {{ {result_error_exit} }}"
         ));
     }
 
