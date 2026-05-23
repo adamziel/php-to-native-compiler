@@ -3,7 +3,8 @@
 Updated: 2026-05-24 00:33 CEST
 Evaluation marker: `20260523T220614Z`
 
-Primary HEAD: `0b0335e6 test: target try finally transfer blocker`
+Latest primary semantic/test baseline:
+`0b0335e6 test: target try finally transfer blocker`
 Latest integrated semantic baseline: `68eea573 codegen: block try finally jump transfers`
 Latest evaluator report: `20260523T220614Z`
 
@@ -27,10 +28,11 @@ calls/frames, object/property/method execution, complete references/COW
 identity, source-ordered diagnostics, cleanup/unwinding, and LLVM/assembly
 parity.
 
-Current primary state: primary is synced with `origin/master` through
-`0b0335e6`; the protected `runtime/src/lib.rs` null-slot hunk remains dirty,
-unstaged, and uncounted. The narrow generated-C user-function WIP was parked
-and is not counted.
+Current primary state: primary is synced with `origin/master`; only semantic
+and test baselines are named here so this roadmap does not go stale when the
+roadmap itself is committed. The protected `runtime/src/lib.rs` null-slot hunk
+remains dirty, unstaged, and uncounted. The narrow generated-C user-function
+WIP was parked and is not counted.
 
 ## Roadmap Snapshot
 
