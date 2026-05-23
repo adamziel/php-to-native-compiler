@@ -73,6 +73,18 @@ const NATIVE_VALUE_TERNARY_SOURCE: &str = concat!(
     "echo $items[\"flag\"] ? escapeshellarg(\"A\0B\") : strrev(\"ko\");\n",
 );
 
+const NATIVE_VALUE_SHORT_TERNARY_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"word\" => \"go\", \"empty\" => \"\"];\n",
+    "echo $items[\"word\"] ?: exit(\"bad\");\n",
+    "echo \"|\";\n",
+    "echo $items[\"empty\"] ?: strrev(\"ko\");\n",
+    "echo \"|\";\n",
+    "echo array_sum([0]) ?: strtoupper(\"fallback\");\n",
+    "echo \"|\";\n",
+    "echo array_sum([2]) ?: exit(\"bad\");\n",
+);
+
 const NATIVE_EXIT_STRING_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"message\" => \"bye\"];\n",
@@ -907,6 +919,39 @@ fn native_executable_c_source_routes_native_value_ternaries_through_lazy_branche
 }
 
 #[test]
+fn native_executable_c_source_routes_native_value_short_ternaries_through_lazy_owner_transfer() {
+    let program = parse(NATIVE_VALUE_SHORT_TERNARY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches("phpc_NativeValueHandle native_value_short_ternary_")
+            .count()
+            >= 4,
+        "short ternaries should materialize selected owned result handles:\n{source}"
+    );
+    assert!(
+        body.matches("if (native_value_truthy_").count() >= 4,
+        "short ternary conditions should use the shared PHP truthiness ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(value_offset_read_")
+            && body.contains("phpc_native_value_free(native_value_array_query_"),
+        "false branches should release the unselected condition owner before fallback materialization:\n{source}"
+    );
+    assert!(
+        body.contains("native_exit_result_")
+            && body.contains("strrev_result_")
+            && body.contains("strtoupper_result_"),
+        "fallback producers should remain inside generated C branch bodies:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly conditional lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_lazy_native_value_ternary_program() {
     if !has_cc() {
         return;
@@ -926,6 +971,34 @@ fn emit_exe_links_and_runs_lazy_native_value_ternary_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"GO|ok");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_lazy_native_value_short_ternary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "lazy_native_value_short_ternary",
+        NATIVE_VALUE_SHORT_TERNARY_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run lazy short ternary executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"go|ok|FALLBACK|2");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
