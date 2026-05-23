@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 03:04 CEST
+Updated: 2026-05-23 02:52 CEST
 Evaluation marker: `20260523T002315Z`
 
 Primary baseline: `codegen: lower lazy native value ternaries`
