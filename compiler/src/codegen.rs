@@ -17269,14 +17269,20 @@ impl CGenerator {
     }
 
     fn emit_strlen_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
-        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
-            return Err(self.unsupported_call_operation(operation));
-        }
-
         if args.len() != 1 {
             return Err(
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
             );
+        }
+
+        if self.uses_native_string_helpers {
+            if let Some(value) = self.try_materialize_native_value_result_expr(&args[0], "")? {
+                return Ok(self.emit_native_value_materialization_string_byte_len(value));
+            }
+        }
+
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
         }
 
         let value = self.emit_expr(&args[0])?;
@@ -19223,6 +19229,19 @@ impl CGenerator {
         span: Span,
     ) -> CompileResult<CValue> {
         let value_handle = self.emit_native_value_for_cvalue(value, span)?;
+        Ok(
+            self.emit_native_value_materialization_string_byte_len(CNativeValueMaterialization {
+                handle: value_handle.clone(),
+                cleanup_after_use: vec![format!("phpc_native_value_free({value_handle});")],
+            }),
+        )
+    }
+
+    fn emit_native_value_materialization_string_byte_len(
+        &mut self,
+        value: CNativeValueMaterialization,
+    ) -> CValue {
+        let value_handle = value.handle.clone();
         let conversion = format!("string_conversion_{}", self.next_native_temp);
         self.next_native_temp += 1;
         let byte_count = format!("byte_count_{}", self.next_native_temp);
@@ -19240,10 +19259,9 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_native_string_conversion_result_free({conversion});"
         ));
-        self.body
-            .push(format!("phpc_native_value_free({value_handle});"));
+        self.body.extend(value.cleanup_after_use);
 
-        Ok(CValue::Int(byte_count))
+        CValue::Int(byte_count)
     }
 
     fn emit_report_native_diagnostic(&mut self, diagnostic: &str) {

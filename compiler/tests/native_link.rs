@@ -2264,6 +2264,15 @@ fn emit_exe_links_and_runs_foreach_body_array_offset_unset_program() {
     let _ = fs::remove_file(&output_path);
 }
 
+const NATIVE_VALUE_RESULT_STRLEN_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"word\" => \"go\"];\n",
+    "echo strlen(strtoupper($items[\"word\"])), \"|\";\n",
+    "echo strlen((string)array_sum([12, 3])), \"|\";\n",
+    "echo strlen(gettype((array)null)), \"|\";\n",
+    "echo strlen($items[\"word\"] . \"!\");\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_strlen_through_string_conversion_result() {
     let program = parse(
@@ -2303,6 +2312,40 @@ fn native_executable_c_source_routes_strlen_through_string_conversion_result() {
     assert!(
         !source.contains("strlen((const char *)"),
         "generated C should not use C strlen for PHP strlen operands:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_strlen_value_results_through_string_conversion() {
+    let program = parse(NATIVE_VALUE_RESULT_STRLEN_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for producer in [
+        "strtoupper_result_",
+        "native_value_cast_",
+        "native_value_type_name_",
+        "native_value_binary_",
+    ] {
+        assert!(
+            body.contains(&format!("phpc_native_value_to_string_bytes({producer}")),
+            "strlen should consume {producer} through the native string conversion boundary:\n{source}"
+        );
+        assert!(
+            body.contains(&format!("phpc_native_value_free({producer}")),
+            "strlen should release the owned value-result producer {producer}:\n{source}"
+        );
+    }
+
+    assert!(
+        body.matches(" = phpc_native_value_to_string_bytes(")
+            .count()
+            >= 4,
+        "{source}"
+    );
+    assert!(
+        !source.contains("function-call lowering rejects function calls"),
+        "{source}"
     );
 }
 
@@ -7238,6 +7281,29 @@ fn emit_exe_links_and_runs_strlen_conversion_program() {
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "2003\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_strlen_value_result_conversion_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "strlen_value_result_conversion",
+        NATIVE_VALUE_RESULT_STRLEN_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native strlen value-result executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"2|2|5|3");
+    assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
