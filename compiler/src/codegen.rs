@@ -108,7 +108,7 @@ const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering re
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
-const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
+const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering rejects try blocks outside the bounded generated-C normal-flow subset until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during return/exit/goto/throw control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; generated-native C executes try bodies, skips catches, and runs finally bodies only when no unwinding-capable transfer is present";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_GLOBALS_ROOT_APPEND_REJECTION: &str = "Cannot append to $GLOBALS";
@@ -1354,6 +1354,340 @@ fn native_statement_operand_call_operation(stmt: &Stmt) -> Option<NativeCallOper
         | Stmt::Break { .. }
         | Stmt::Continue { .. }
         | Stmt::Global { .. } => None,
+    }
+}
+
+fn stmt_list_contains_try_unwind_blocker(statements: &[Stmt]) -> bool {
+    statements.iter().any(stmt_contains_try_unwind_blocker)
+}
+
+fn stmt_contains_try_unwind_blocker(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Return { .. } | Stmt::Throw { .. } | Stmt::Goto { .. } => true,
+        Stmt::Echo { exprs, .. } => exprs.iter().any(expr_contains_exit_construct),
+        Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } => expr_contains_exit_construct(expr),
+        Stmt::Assign { target, expr, .. }
+        | Stmt::CompoundAssign { target, expr, .. }
+        | Stmt::NullCoalesceAssign { target, expr, .. } => {
+            assign_target_contains_exit_construct(target) || expr_contains_exit_construct(expr)
+        }
+        Stmt::ReferenceAssign { target, .. } => assign_target_contains_exit_construct(target),
+        Stmt::IncrementDecrement { target, .. } => assign_target_contains_exit_construct(target),
+        Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            expr_contains_exit_construct(condition)
+                || stmt_list_contains_try_unwind_blocker(then_branch)
+                || stmt_list_contains_try_unwind_blocker(else_branch)
+        }
+        Stmt::While {
+            condition, body, ..
+        }
+        | Stmt::DoWhile {
+            condition, body, ..
+        } => expr_contains_exit_construct(condition) || stmt_list_contains_try_unwind_blocker(body),
+        Stmt::For {
+            initializers,
+            conditions,
+            increments,
+            body,
+            ..
+        } => {
+            initializers.iter().any(for_action_contains_exit_construct)
+                || conditions.iter().any(expr_contains_exit_construct)
+                || increments.iter().any(for_action_contains_exit_construct)
+                || stmt_list_contains_try_unwind_blocker(body)
+        }
+        Stmt::Switch { value, cases, .. } => {
+            expr_contains_exit_construct(value)
+                || cases.iter().any(|case| {
+                    case.condition
+                        .as_ref()
+                        .is_some_and(expr_contains_exit_construct)
+                        || stmt_list_contains_try_unwind_blocker(&case.body)
+                })
+        }
+        Stmt::Foreach { iterable, body, .. } => {
+            expr_contains_exit_construct(iterable) || stmt_list_contains_try_unwind_blocker(body)
+        }
+        Stmt::UnsetArrayIndex { index, .. } => expr_contains_exit_construct(index),
+        Stmt::UnsetNestedArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_exit_construct)
+        }
+        Stmt::UnsetDynamicObjectProperty { property, .. } => expr_contains_exit_construct(property),
+        Stmt::UnsetMany { targets, .. } => targets.iter().any(unset_target_contains_exit_construct),
+        Stmt::ConstDeclaration { declarations, .. } => declarations
+            .iter()
+            .any(|declaration| expr_contains_exit_construct(&declaration.value)),
+        Stmt::Require { path, .. } | Stmt::Include { path, .. } => {
+            expr_contains_exit_construct(path)
+        }
+        Stmt::Try {
+            body, finally_body, ..
+        } => {
+            stmt_list_contains_try_unwind_blocker(body)
+                || finally_body
+                    .as_ref()
+                    .is_some_and(|body| stmt_list_contains_try_unwind_blocker(body))
+        }
+        Stmt::StaticLocal { declarations, .. } => declarations
+            .iter()
+            .filter_map(|declaration| declaration.default.as_ref())
+            .any(expr_contains_exit_construct),
+        Stmt::Namespace { .. }
+        | Stmt::Use { .. }
+        | Stmt::Label { .. }
+        | Stmt::Function(_)
+        | Stmt::Interface(_)
+        | Stmt::Trait(_)
+        | Stmt::Enum(_)
+        | Stmt::Class(_)
+        | Stmt::UnsetVariable { .. }
+        | Stmt::UnsetObjectProperty { .. }
+        | Stmt::UnsetStaticProperty { .. }
+        | Stmt::UnsetSelfStaticProperty { .. }
+        | Stmt::UnsetParentStaticProperty { .. }
+        | Stmt::UnsetLateStaticProperty { .. }
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Global { .. } => false,
+    }
+}
+
+fn for_action_contains_exit_construct(action: &ForAction) -> bool {
+    match action {
+        ForAction::Assign { target, expr } | ForAction::CompoundAssign { target, expr, .. } => {
+            assign_target_contains_exit_construct(target) || expr_contains_exit_construct(expr)
+        }
+        ForAction::IncrementDecrement { target, .. } => {
+            assign_target_contains_exit_construct(target)
+        }
+        ForAction::Expr { expr } => expr_contains_exit_construct(expr),
+    }
+}
+
+fn array_item_contains_exit_construct(item: &ArrayItem) -> bool {
+    item.key.as_ref().is_some_and(expr_contains_exit_construct)
+        || expr_contains_exit_construct(&item.value)
+}
+
+fn assign_target_contains_exit_construct(target: &AssignTarget) -> bool {
+    match target {
+        AssignTarget::ArrayIndex { index, .. } => {
+            index.as_ref().is_some_and(expr_contains_exit_construct)
+        }
+        AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_exit_construct)
+        }
+        AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            indices.iter().any(expr_contains_exit_construct)
+                || suffix_indices.iter().any(expr_contains_exit_construct)
+        }
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            expr_contains_exit_construct(property)
+                || indices.iter().any(expr_contains_exit_construct)
+                || suffix_indices.iter().any(expr_contains_exit_construct)
+        }
+        AssignTarget::DynamicProperty { property, .. }
+        | AssignTarget::ObjectStaticProperty {
+            target: property, ..
+        } => expr_contains_exit_construct(property),
+        AssignTarget::NonDirectProperty { holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayIndex { holder, .. } => {
+            expr_contains_exit_construct(holder)
+        }
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            expr_contains_exit_construct(holder)
+                || indices.iter().any(expr_contains_exit_construct)
+                || suffix_indices.iter().any(expr_contains_exit_construct)
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        } => expr_contains_exit_construct(holder) || expr_contains_exit_construct(property),
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            expr_contains_exit_construct(holder)
+                || expr_contains_exit_construct(property)
+                || indices.iter().any(expr_contains_exit_construct)
+                || suffix_indices.iter().any(expr_contains_exit_construct)
+        }
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            expr_contains_exit_construct(property)
+                || indices.iter().any(expr_contains_exit_construct)
+        }
+        AssignTarget::Variable { .. }
+        | AssignTarget::List { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => false,
+    }
+}
+
+fn unset_target_contains_exit_construct(target: &UnsetTarget) -> bool {
+    match target {
+        UnsetTarget::ArrayIndex { index, .. }
+        | UnsetTarget::DynamicObjectProperty {
+            property: index, ..
+        } => expr_contains_exit_construct(index),
+        UnsetTarget::NestedArrayIndex { indices, .. }
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_exit_construct)
+        }
+        UnsetTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            expr_contains_exit_construct(property)
+                || indices.iter().any(expr_contains_exit_construct)
+        }
+        UnsetTarget::NonDirectObjectProperty { holder, .. }
+        | UnsetTarget::NonDirectObjectPropertyArrayIndex { holder, .. } => {
+            expr_contains_exit_construct(holder)
+        }
+        UnsetTarget::NonDirectDynamicObjectProperty {
+            holder, property, ..
+        }
+        | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        } => expr_contains_exit_construct(holder) || expr_contains_exit_construct(property),
+        UnsetTarget::Variable { .. }
+        | UnsetTarget::ObjectProperty { .. }
+        | UnsetTarget::StaticProperty { .. }
+        | UnsetTarget::SelfStaticProperty { .. }
+        | UnsetTarget::ParentStaticProperty { .. }
+        | UnsetTarget::LateStaticProperty { .. } => false,
+    }
+}
+
+fn expr_contains_exit_construct(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call { name, args, .. } => {
+            is_exit_construct_name(name) || args.iter().any(expr_contains_exit_construct)
+        }
+        Expr::DynamicCall { callee, args, .. } => {
+            expr_contains_exit_construct(callee) || args.iter().any(expr_contains_exit_construct)
+        }
+        Expr::MethodCall { target, args, .. }
+        | Expr::ObjectStaticMethodCall { target, args, .. } => {
+            expr_contains_exit_construct(target) || args.iter().any(expr_contains_exit_construct)
+        }
+        Expr::StaticMethodCall { args, .. } => args.iter().any(expr_contains_exit_construct),
+        Expr::DynamicMethodCall {
+            target,
+            method,
+            args,
+            ..
+        } => {
+            expr_contains_exit_construct(target)
+                || expr_contains_exit_construct(method)
+                || args.iter().any(expr_contains_exit_construct)
+        }
+        Expr::ParentMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. } => args.iter().any(expr_contains_exit_construct),
+        Expr::Array { items, .. } => items.iter().any(array_item_contains_exit_construct),
+        Expr::Index { target, index, .. } => {
+            expr_contains_exit_construct(target) || expr_contains_exit_construct(index)
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::InstanceOf { expr: target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => expr_contains_exit_construct(target),
+        Expr::DynamicProperty {
+            target, property, ..
+        } => expr_contains_exit_construct(target) || expr_contains_exit_construct(property),
+        Expr::New { args, .. } => args.iter().any(expr_contains_exit_construct),
+        Expr::Binary { left, right, .. } => {
+            expr_contains_exit_construct(left) || expr_contains_exit_construct(right)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            expr_contains_exit_construct(condition)
+                || expr_contains_exit_construct(if_true)
+                || expr_contains_exit_construct(if_false)
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => expr_contains_exit_construct(condition) || expr_contains_exit_construct(if_false),
+        Expr::Assign { target, expr, .. }
+        | Expr::CompoundAssign { target, expr, .. }
+        | Expr::NullCoalesceAssign { target, expr, .. } => {
+            assign_target_contains_exit_construct(target) || expr_contains_exit_construct(expr)
+        }
+        Expr::IncrementDecrement { target, .. } => assign_target_contains_exit_construct(target),
+        Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::InterpolatedString { .. }
+        | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::Closure { .. } => false,
     }
 }
 
@@ -13720,10 +14054,38 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_try_statement(
+        &mut self,
+        body: &[Stmt],
+        _catches: &[crate::ast::CatchClause],
+        finally_body: Option<&[Stmt]>,
+        span: Span,
+    ) -> CompileResult<()> {
+        if stmt_list_contains_try_unwind_blocker(body)
+            || finally_body.is_some_and(stmt_list_contains_try_unwind_blocker)
+        {
+            return Err(self.unsupported(span, ASSEMBLY_TRY_BLOCK_REJECTION));
+        }
+
+        for statement in body {
+            self.emit_statement(statement)?;
+        }
+        if let Some(finally_body) = finally_body {
+            for statement in finally_body {
+                self.emit_statement(statement)?;
+            }
+        }
+        Ok(())
+    }
+
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
         if !matches!(
             stmt,
-            Stmt::While { .. } | Stmt::For { .. } | Stmt::Switch { .. } | Stmt::Return { .. }
+            Stmt::While { .. }
+                | Stmt::For { .. }
+                | Stmt::Switch { .. }
+                | Stmt::Return { .. }
+                | Stmt::Try { .. }
         ) {
             if let Some(operation) = native_statement_operand_call_operation(stmt) {
                 return Err(self.unsupported_call_operation(operation));
@@ -14025,7 +14387,12 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_REQUIRE_REJECTION))
             }
             Stmt::Throw { span, .. } => Err(self.unsupported(*span, ASSEMBLY_EXCEPTION_REJECTION)),
-            Stmt::Try { span, .. } => Err(self.unsupported(*span, ASSEMBLY_TRY_BLOCK_REJECTION)),
+            Stmt::Try {
+                body,
+                catches,
+                finally_body,
+                span,
+            } => self.emit_try_statement(body, catches, finally_body.as_deref(), *span),
             Stmt::Return { value, .. } => self.emit_top_level_return_statement(value.as_ref()),
             Stmt::Global { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_DECLARATION_REJECTION))
