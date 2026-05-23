@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 05:35 CEST
+Updated: 2026-05-23 05:31 CEST
 Evaluation marker: `20260523T025130Z`
 
 Primary HEAD: `d6d5d1cf codegen: lower state-stable for loops`
