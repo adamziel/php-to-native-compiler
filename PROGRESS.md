@@ -1,12 +1,12 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 01:45 CEST
-Evaluation marker: `20260523T225737Z`
+Updated: 2026-05-24 01:51 CEST
+Evaluation marker: `20260523T235117Z`
 
 Latest primary semantic/test baseline:
 `089498c1 codegen: lower state-stable do while loops`
 Latest integrated semantic baseline: `089498c1 codegen: lower state-stable do while loops`
-Latest evaluator report: `20260523T225737Z`
+Latest evaluator report: `20260523T235117Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated,
@@ -34,11 +34,18 @@ generated-native calls/frames, object/property/method execution, complete
 references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
-Current primary state: primary semantic head is `089498c1`; push/sync is
-handled by the active primary integration worker.
-The protected `runtime/src/lib.rs` null-slot hunk remains dirty, unstaged, and
-uncounted. The narrow generated-C user-function WIP was parked and is not
-counted.
+Current primary state: primary semantic head is `089498c1`; `master` and
+`origin/master` are synced at `e4cef022 docs: update progress after do while
+lowering`. At the bounded evidence snapshot, the only known primary dirty state
+was the protected `runtime/src/lib.rs` null-slot hunk. Post-write verification
+found new unowned dirty WIP in `compiler/src/codegen.rs` and `runtime/src/lib.rs`
+after the snapshot; it is active primary WIP, was not edited by this evaluator,
+and is not counted. The narrow generated-C user-function WIP was parked and is
+not counted.
+
+Current resource read: `/dev/shm` is above the dispatch floor but tight at
+about 7.2G free. Keep broad waves conservative and reclaim large inactive
+target dirs only after live-owner checks.
 
 ## Roadmap Snapshot
 
@@ -134,9 +141,10 @@ counted.
 
 Lane-local work includes useful candidates around call-frame/reference
 contracts, object/property boundaries, conversion/request diagnostics, native
-loop cleanup blockers, and reference/COW-adjacent runtime ABI surfaces. These
-remain uncounted until primary integration reviews and lands a generalized
-semantic slice with focused source and executable proof.
+loop cleanup blockers, array-key/value diagnostics, assembly helper fallback
+parity, nested symbol result handles, and reference/COW-adjacent runtime ABI
+surfaces. These remain uncounted until primary integration reviews and lands a
+generalized semantic slice with focused source and executable proof.
 
 The narrow generated-C user-function WIP was parked because it looked too much
 like direct/top-level/single-return execution without real frame ownership,
@@ -156,8 +164,8 @@ be counted or repeated in that shape.
    progress, and no generated-source substring proof without a shared semantic
    boundary.
 4. Preserve primary hygiene: commit only owned semantic/progress hunks, keep
-   the protected null-slot runtime hunk uncommitted until it has its own
-   reviewed semantics batch.
+   the protected null-slot runtime hunk and any newer active WIP uncounted
+   until they have their own reviewed semantics batch.
 
 ## Major Blockers
 
