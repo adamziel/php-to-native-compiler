@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 01:48 CEST
+Updated: 2026-05-23 02:12 CEST
 Evaluation marker: `20260522T233339Z` was consumed as candid steering but
 produced a stale `PROGRESS.md` diff because primary advanced while it ran.
-Primary management baseline before this update: `9ade9293 runtime: enforce call-frame type metadata`
-Primary semantic baseline: `9ade9293 runtime: enforce call-frame type metadata`
+Primary management baseline before this update: `2545d173 codegen: centralize diagnostic report cleanup`
+Primary semantic baseline: `2545d173 codegen: centralize diagnostic report cleanup`
 Prior evaluator marker: `20260522T224455Z`; next scheduled marker
 `2026-05-23T02:23:15+02:00`.
 
@@ -15,12 +15,28 @@ and unstaged primary diffs do not count until reviewed, gated, committed to
 
 ## Executive Read
 
-Overall estimated progress: **85%** `[#################---]`
+Overall estimated progress: **86%** `[#################---]`
 
-Primary is synced at `9ade9293`. The newest landed slice enforces call-frame
-type metadata in runtime/interpreter call handling, which is generalized
-call/frame infrastructure rather than a fixture-shaped special case. It is
-useful groundwork, but it is not yet generated-native call lowering, so it only
+Primary is pushed at `2545d173`. The newest landed semantic slice centralizes
+generated-C diagnostic report cleanup so report consumers consistently own
+diagnostics after `phpc_native_diagnostic_report(...)`. It adds a source-level
+guard against report-plus-free double ownership and applies the path to
+request-superglobal replacement and shared diagnostic-report consumers.
+
+The preceding `0cfae034` routes bounded generated-native `exit()`/`die()`
+termination for direct no-argument
+and materializable `null`, `int`, and `string` operands on the
+`phpc compile --emit-exe` C-link path. It adds a runtime exit-result ABI,
+stdout/status handoff, runtime diagnostics, generated early-return cleanup,
+and focused native-link proof. This is real executable compiler progress, but
+still not full PHP termination semantics: shutdown callbacks, destructors,
+finally ordering, output buffers, SAPI behavior, broad dynamic operands, and
+LLVM/assembly parity remain open.
+
+The preceding `9ade9293` enforces call-frame type metadata in
+runtime/interpreter call handling, which is generalized call/frame
+infrastructure rather than a fixture-shaped special case. It is useful
+groundwork, but it is not yet generated-native call lowering, so it only
 modestly moves the call/frame roadmap item.
 
 The preceding `83e08c94` routes reference-backed symbol-table roots through
@@ -47,7 +63,8 @@ PHP-fatal direct no-key `$GLOBALS[]` rejection, request append reference slots,
 generated-native array-query routing for `array_change_key_case(...)` and
 `array_column(...)`, and reference-backed array-lvalue owners for active
 ordinary symbol roots. It now also includes call-frame type metadata checks in
-runtime/interpreter execution. The previously counted direct no-key
+runtime/interpreter execution and bounded generated-native direct termination
+on the C-link backend. The previously counted direct no-key
 `$GLOBALS[]` value append slice from `aad22967` is superseded by `59f83295` and
 is not counted as completed capability.
 
@@ -57,18 +74,33 @@ unintegrated and is not counted.
 ## Current Primary State
 
 - Primary `master` and `origin/master`: synced at
-  `9ade9293f0945bea6485abfb97dcd86432ec7828`.
-- Latest semantic commit: `9ade9293 runtime: enforce call-frame type metadata`.
-- Current product diff at refresh time: this `PROGRESS.md` update plus the
-  preserved unstaged `runtime/src/lib.rs` null-slot increment/decrement hunk.
-  After this progress commit lands, the runtime hunk should remain the only
-  known primary diff. The runtime hunk remains unintegrated and is not counted.
-- Resource note from this review: `/dev/shm` has about 11G available out of
-  22G; `/home` has about 166G available out of 459G. Headroom is serviceable,
-  but broad concurrent test waves still need owner-aware cleanup first.
+  `2545d173 codegen: centralize diagnostic report cleanup`.
+- Latest semantic commit: `2545d173 codegen: centralize diagnostic report cleanup`.
+- Current product diff at refresh time: the preserved unstaged
+  `runtime/src/lib.rs` null-slot increment/decrement hunk only. It remains
+  unintegrated and is not counted.
+- Resource note from this review: `/dev/shm` has about 8.8G available out of
+  22G; `/home` has about 165G available out of 459G. Headroom is above the 6G
+  dispatch floor, but broad extra test waves should still wait for active build
+  completion or owner-aware cleanup.
 
 ## Recent Primary-Integrated Progress
 
+- `2545d173`: generated-C diagnostic-report cleanup now uses one helper for
+  `phpc_native_diagnostic_report(...)` and extends native-link source tests to
+  reject generated lines that report and then free the same diagnostic. This
+  fixes ownership for request-superglobal replacement failures and shared
+  diagnostic-report consumers without adding source-shape lowering.
+- `0cfae034`: generated-native `exit()`/`die()` now lowers on the `--emit-exe`
+  C-link path for no-argument, `null`, `int`, and `string` operands. Strings
+  write to stdout, integers become process status, unsupported values produce a
+  runtime diagnostic, and generated early returns run the same native value,
+  request-state, symbol-table, byte-buffer, and array cleanup used by ordinary
+  executable failure paths. Focused proof covers runtime status classification,
+  no-argument/null/string/integer/unsupported operands, request cleanup, and
+  symbol cleanup. Shutdown callbacks, destructors/finally ordering, output
+  buffers, SAPI interaction, broad dynamic operands, exact PHP
+  diagnostics/`Throwable` behavior, and LLVM/assembly parity remain open.
 - `9ade9293`: runtime/interpreter call-frame execution now enforces declared
   call-frame type metadata instead of treating frame metadata as descriptive
   only. This is generalized call/frame infrastructure, not generated-native
@@ -170,13 +202,13 @@ backend parity.
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | 97% | `[###################-]` | Strong value, array, symbol-table, request-state, comparison, truthiness, and reference ABIs. |
 | Compiler/backend consumers | 96% | `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbol, value, array-query, lvalue, and reference consumers; still uneven across calls, objects, control flow, and LLVM/C parity. |
-| Executable generalized PHP semantics | 82% | `[################----]` | Improving through linked executable gates and array-query consumers, but still selected islands rather than a complete PHP execution model. |
+| Executable generalized PHP semantics | 83% | `[#################---]` | Improving through linked executable gates, array-query consumers, reference-backed lvalues, and bounded generated-native termination, but still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | 87% | `[#################---]` | Stronger arrays/lvalues, selected reference paths, generated-native array query consumers, and reference-backed array-lvalue owners for active symbol roots; full references/COW and arbitrary writable roots remain large. |
 | Symbols, globals, request state | 96% | `[###################-]` | Request paths, `$GLOBALS` static/self aliases, ordinary `$GLOBALS` symbol references, dynamic root assignment/read/probe dispatch, dynamic non-append `$GLOBALS` references, symbol paths, direct/mixed root unsets, selected request references, request append reference slots, and PHP-fatal direct no-key `$GLOBALS[]` rejection are strong; broader request/global reconciliation remains open. |
 | Calls, functions, frames | 27% | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement is now primary; broad generated-native call/frame execution remains open. |
 | Objects, properties, methods | 11% | `[##------------------]` | Mostly lane-local/runtime candidate work; primary still lacks general compiled object/property/method execution. |
-| Diagnostics and control flow | 29% | `[######--------------]` | Useful focused diagnostics exist; exact ordering and structured cleanup are not generalized. |
-| Broad integrated verification | 84% | `[#################---]` | Focused gates are strong and recent array-query/reference-owner adjacent gates help; cross-feature/backend-composition coverage is still thin. |
+| Diagnostics and control flow | 32% | `[######--------------]` | Bounded direct termination now executes with cleanup on generated C, and diagnostic report ownership is cleaner; exact diagnostic ordering, shutdown/finally/destructor behavior, and structured cleanup joins are not generalized. |
+| Broad integrated verification | 85% | `[#################---]` | Focused gates are strong and recent exit, array-query, and reference-owner adjacent gates help; cross-feature/backend-composition coverage is still thin. |
 
 ## Done / In Progress / Not Done
 
@@ -292,7 +324,11 @@ Ordinary static `$GLOBALS[...]` symbol-path references, dynamic non-append
 `$GLOBALS[$expr]` reference dispatch, keyed request references through
 reference-backed request roots, request append reference slots, direct no-key
 `$GLOBALS[]` fatal rejection, and active symbol-root reference-backed
-array-lvalue owners should all be treated as non-repeat guarded.
+array-lvalue owners should all be treated as non-repeat guarded. After
+`0cfae034`, bounded direct `exit()`/`die()` for no-argument, `null`, `int`, and
+`string` operands on the C-link backend is also non-repeat; the next
+termination work must broaden real shutdown/finally/destructor/output/SAPI or
+dynamic operand semantics rather than adding nearby fixtures.
 
 The next highest-value primary work is either request/global alias
 reconciliation, a compact reference/COW owner-slot slice, or a narrow executable
