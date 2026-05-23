@@ -7242,6 +7242,7 @@ struct CGenerator {
     native_reference_cleanup_handles: Vec<String>,
     native_request_state_handle: Option<String>,
     native_globals_symbol_table_handle: Option<String>,
+    loop_depth: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12655,9 +12656,11 @@ impl CGenerator {
         let mut body_generator = base.scoped_branch_generator();
         body_generator.next_native_temp = condition_generator.next_native_temp;
         body_generator.next_static_data = condition_generator.next_static_data;
+        body_generator.loop_depth += 1;
         for statement in body {
             body_generator.emit_statement(statement)?;
         }
+        body_generator.loop_depth -= 1;
         if !base.persistent_state_matches(&body_generator) {
             return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
         }
@@ -12678,6 +12681,20 @@ impl CGenerator {
         }
         self.body.push("}".to_string());
 
+        Ok(())
+    }
+
+    fn emit_loop_transfer_statement(
+        &mut self,
+        statement: &str,
+        depth: usize,
+        span: Span,
+    ) -> CompileResult<()> {
+        if depth != 1 || self.loop_depth == 0 {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+        }
+
+        self.body.push(format!("{statement};"));
         Ok(())
     }
 
@@ -12923,13 +12940,17 @@ impl CGenerator {
                 body,
                 span,
             } => self.emit_while_statement(condition, body, *span),
+            Stmt::Break { depth, span } => {
+                self.emit_loop_transfer_statement("break", *depth, *span)
+            }
+            Stmt::Continue { depth, span } => {
+                self.emit_loop_transfer_statement("continue", *depth, *span)
+            }
             Stmt::DoWhile { span, .. }
             | Stmt::For { span, .. }
             | Stmt::Switch { span, .. }
             | Stmt::Goto { span, .. }
-            | Stmt::Label { span, .. }
-            | Stmt::Break { span, .. }
-            | Stmt::Continue { span, .. } => {
+            | Stmt::Label { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_CONTROL_FLOW_REJECTION))
             }
             Stmt::Foreach {

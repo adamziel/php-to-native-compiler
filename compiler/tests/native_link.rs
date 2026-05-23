@@ -157,6 +157,32 @@ const NATIVE_STATE_STABLE_WHILE_SOURCE: &str = concat!(
     "echo \"done\";\n",
 );
 
+const NATIVE_WHILE_LOOP_TRANSFER_SOURCE: &str = concat!(
+    "<?php\n",
+    "$flags = [\"skip\" => \"1\", \"stop\" => \"1\"];\n",
+    "$items = [\"a\", \"b\"];\n",
+    "while (current($items) !== false) {\n",
+    "    echo strtoupper(current($items));\n",
+    "    next($items);\n",
+    "    if ($flags[\"skip\"]) {\n",
+    "        array_sum([1, 2]);\n",
+    "        continue;\n",
+    "    }\n",
+    "    echo \"bad\";\n",
+    "}\n",
+    "echo \"|\";\n",
+    "$more = [\"x\", \"y\"];\n",
+    "while (current($more) !== false) {\n",
+    "    echo strtoupper(current($more));\n",
+    "    if ($flags[\"stop\"]) {\n",
+    "        array_sum([3, 4]);\n",
+    "        break;\n",
+    "    }\n",
+    "    next($more);\n",
+    "}\n",
+    "echo \"|done\";\n",
+);
+
 const NATIVE_TOP_LEVEL_RETURN_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\"];\n",
@@ -1228,6 +1254,56 @@ fn native_executable_c_source_rejects_while_state_without_loop_join() {
 }
 
 #[test]
+fn native_executable_c_source_routes_while_loop_transfers() {
+    let program = parse(NATIVE_WHILE_LOOP_TRANSFER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("continue;"),
+        "loop-local continue should lower inside generated C while body:\n{source}"
+    );
+    assert!(
+        body.matches("break;").count() >= 3,
+        "loop-local break should lower inside generated C while body:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_free(native_value_array_query_")
+            .count()
+            >= 2,
+        "loop transfer branches should release discarded native values before transfer:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_compare_result"),
+        "loop transfer guards should compose existing native value comparison results:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_unsupported_loop_transfer_depths() {
+    for source in [
+        "<?php\nbreak;\n",
+        "<?php\ncontinue;\n",
+        "<?php\n$items = [\"x\"];\nwhile (current($items) !== false) { break 2; }\n",
+        "<?php\n$items = [\"x\"];\nwhile (current($items) !== false) { continue 2; }\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error
+                .message
+                .contains("while loops outside state-stable condition/body cleanup boundaries"),
+            "{error:?}"
+        );
+    }
+}
+
+#[test]
 fn native_executable_c_source_routes_top_level_return_through_cleanup() {
     let program = parse(NATIVE_TOP_LEVEL_RETURN_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2113,6 +2189,32 @@ fn emit_exe_links_and_runs_state_stable_while_loop_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCD|x=ef;y=gh;|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_while_loop_transfer_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("while_loop_transfer", NATIVE_WHILE_LOOP_TRANSFER_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native while-transfer executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"AB|X|done");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
