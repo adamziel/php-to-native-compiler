@@ -7550,6 +7550,10 @@ fn c_cleanup_sequence(cleanup: &[String]) -> String {
     }
 }
 
+fn c_diagnostic_report_call(diagnostic: &str) -> String {
+    format!("phpc_native_diagnostic_report({diagnostic});")
+}
+
 fn native_value_aux_cleanup_after_consuming_handle(
     value: &CNativeValueMaterialization,
 ) -> Vec<String> {
@@ -8902,8 +8906,9 @@ impl CGenerator {
                 self.body.push(format!(
                     "  _Bool {replaced} = phpc_native_request_state_superglobal_replace_reference_with_diagnostic({request_state}, {bag}, {source_ref}, &{diagnostic});"
                 ));
+                let report_cleanup = c_diagnostic_report_call(&diagnostic);
                 let branch_failure_cleanup = format!(
-                    "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({bag}); {path_cleanup}{failure_cleanup}"
+                    "{report_cleanup} phpc_native_string_free({bag}); {path_cleanup}{failure_cleanup}"
                 );
                 let error_exit = self.native_error_exit(&branch_failure_cleanup);
                 self.body
@@ -9101,8 +9106,9 @@ impl CGenerator {
         self.body.push(format!(
             "_Bool {replaced} = phpc_native_request_state_superglobal_replace_reference_with_diagnostic({request_state}, {bag}, {source_ref}, &{diagnostic});"
         ));
+        let report_cleanup = c_diagnostic_report_call(&diagnostic);
         let failure_cleanup = format!(
-            "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({bag}); phpc_native_reference_free({source_ref}); {failure_cleanup}"
+            "{report_cleanup} phpc_native_string_free({bag}); phpc_native_reference_free({source_ref}); {failure_cleanup}"
         );
         let error_exit = self.native_error_exit(&failure_cleanup);
         self.body
@@ -9153,8 +9159,9 @@ impl CGenerator {
         self.body.push(format!(
             "_Bool {replaced} = phpc_native_request_state_superglobal_replace_reference_with_diagnostic({request_state}, {target_bag}, {source_ref}, &{diagnostic});"
         ));
+        let report_cleanup = c_diagnostic_report_call(&diagnostic);
         let failure_cleanup = format!(
-            "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({target_bag}); phpc_native_reference_free({source_ref}); {failure_cleanup}"
+            "{report_cleanup} phpc_native_string_free({target_bag}); phpc_native_reference_free({source_ref}); {failure_cleanup}"
         );
         let error_exit = self.native_error_exit(&failure_cleanup);
         self.body
@@ -10676,8 +10683,9 @@ impl CGenerator {
                 "  _Bool {replaced} = phpc_native_request_state_superglobal_replace_value_with_diagnostic({request_state}, {bag}, {}, &{diagnostic});",
                 value.handle
             ));
+            let report_cleanup = c_diagnostic_report_call(&diagnostic);
             let branch_failure_cleanup = format!(
-                "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({bag}); {value_cleanup_sequence}{key_cleanup_sequence}{failure_cleanup}"
+                "{report_cleanup} phpc_native_string_free({bag}); {value_cleanup_sequence}{key_cleanup_sequence}{failure_cleanup}"
             );
             let error_exit = self.native_error_exit(&branch_failure_cleanup);
             self.body
@@ -11410,8 +11418,9 @@ impl CGenerator {
             "_Bool {replaced} = phpc_native_request_state_superglobal_replace_value_with_diagnostic({request_state}, {bag}, {}, &{diagnostic});",
             value.handle
         ));
+        let report_cleanup = c_diagnostic_report_call(&diagnostic);
         let failure_cleanup = format!(
-            "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); phpc_native_string_free({bag}); {}{failure_cleanup}",
+            "{report_cleanup} phpc_native_string_free({bag}); {}{failure_cleanup}",
             c_cleanup_sequence(&value.cleanup_after_use),
         );
         let error_exit = self.native_error_exit(&failure_cleanup);
@@ -18173,8 +18182,9 @@ impl CGenerator {
     }
 
     fn emit_report_native_diagnostic(&mut self, diagnostic: &str) {
+        let report_call = c_diagnostic_report_call(diagnostic);
         self.body.push(format!(
-            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }}"
+            "if ({diagnostic}.ptr != NULL) {{ {report_call} {diagnostic}.ptr = NULL; }}"
         ));
     }
 

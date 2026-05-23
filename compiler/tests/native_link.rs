@@ -132,6 +132,7 @@ fn native_executable_c_source_reports_owned_diagnostics_through_shared_consumer(
         !source.contains("phpc_native_diagnostic_message_stderr(string_offset_write_diagnostic_"),
         "{source}"
     );
+    assert_no_diagnostic_report_double_free(&source);
 }
 
 #[test]
@@ -5004,6 +5005,7 @@ fn native_executable_c_source_routes_request_root_assignments_through_replace_va
         source.contains("phpc_native_value_string_result_operation_with_diagnostic"),
         "request-root replacement should consume existing native value-result operands:\n{source}"
     );
+    assert_no_diagnostic_report_double_free(&source);
     assert!(
         !source.contains("request-superglobal lowering rejects"),
         "{source}"
@@ -10929,6 +10931,16 @@ fn main_body(source: &str) -> &str {
         .split_once("int main(void)")
         .map(|(_, body)| body)
         .unwrap_or(source)
+}
+
+fn assert_no_diagnostic_report_double_free(source: &str) {
+    for line in source.lines() {
+        assert!(
+            !(line.contains("phpc_native_diagnostic_report(")
+                && line.contains("phpc_native_diagnostic_free(")),
+            "generated C must not free diagnostics after the report consumer already owns them:\n{line}\n\n{source}"
+        );
+    }
 }
 
 fn strip_fixture_editor_newline(mut value: String) -> String {
