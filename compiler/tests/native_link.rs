@@ -183,6 +183,30 @@ const NATIVE_WHILE_LOOP_TRANSFER_SOURCE: &str = concat!(
     "echo \"|done\";\n",
 );
 
+const NATIVE_STATE_STABLE_FOR_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"ab\", \"cd\"];\n",
+    "for (; current($items) !== false; next($items)) {\n",
+    "    array_sum([1, 2]);\n",
+    "    echo strtoupper(current($items));\n",
+    "}\n",
+    "echo \"|\";\n",
+    "$more = [\"e\", \"f\", \"g\", \"h\"];\n",
+    "for (; current($more) !== false; next($more)) {\n",
+    "    echo strtoupper(current($more));\n",
+    "    next($more);\n",
+    "    continue;\n",
+    "    echo \"bad\";\n",
+    "}\n",
+    "echo \"|\";\n",
+    "$stop = [\"x\", \"y\"];\n",
+    "for (; current($stop) !== false; next($stop)) {\n",
+    "    echo strtoupper(current($stop));\n",
+    "    break;\n",
+    "}\n",
+    "echo \"|done\";\n",
+);
+
 const NATIVE_TOP_LEVEL_RETURN_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\"];\n",
@@ -1247,7 +1271,7 @@ fn native_executable_c_source_rejects_while_state_without_loop_join() {
         assert!(
             error
                 .message
-                .contains("while loops outside state-stable condition/body cleanup boundaries"),
+                .contains("while/for loops outside state-stable condition/body/increment cleanup boundaries"),
             "{error:?}"
         );
     }
@@ -1295,9 +1319,57 @@ fn native_executable_c_source_rejects_unsupported_loop_transfer_depths() {
         let error = emit_native_executable_c_source(&program).unwrap_err();
 
         assert!(
+            error.message.contains(
+                "while/for loops outside state-stable condition/body/increment cleanup boundaries"
+            ),
+            "{error:?}"
+        );
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_state_stable_for_loops() {
+    let program = parse(NATIVE_STATE_STABLE_FOR_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches("while (1)").count() >= 3,
+        "state-stable for loops should lower to scoped C loops:\n{source}"
+    );
+    assert!(
+        body.contains("goto for_continue_") && body.contains("for_continue_"),
+        "for-loop continue should run header increments through a generated label:\n{source}"
+    );
+    assert!(
+        body.matches("if (!(native_value_truthy_").count() >= 3,
+        "for-loop conditions should evaluate through the shared PHP truthiness guard:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(native_value_array_query_"),
+        "for-loop body-local native value results must be released before increment/next iteration:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_for_state_without_loop_join() {
+    for source in [
+        "<?php\nfor (;;) { echo \"forever\"; }\n",
+        "<?php\n$items = [\"go\" => \"1\"];\nfor (; $items[\"go\"]; ) { $value = \"loop\"; }\necho $value;\n",
+        "<?php\n$items = [\"go\" => \"1\"];\nfor (; $items[\"go\"]; ) { $value = strtoupper(\"loop\"); }\necho $value;\n",
+        "<?php\n$items = [\"x\"];\nfor (; current($items) !== false, current($items) !== false; next($items)) { echo current($items); }\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
             error
                 .message
-                .contains("while loops outside state-stable condition/body cleanup boundaries"),
+                .contains("while/for loops outside state-stable condition/body/increment cleanup boundaries"),
             "{error:?}"
         );
     }
@@ -2215,6 +2287,32 @@ fn emit_exe_links_and_runs_while_loop_transfer_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"AB|X|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_state_stable_for_loop_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("state_stable_for_loop", NATIVE_STATE_STABLE_FOR_SOURCE);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native state-stable for executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCD|EG|X|done");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
