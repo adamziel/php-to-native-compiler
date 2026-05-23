@@ -1,9 +1,9 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 00:31 CEST
+Updated: 2026-05-24 00:33 CEST
 Evaluation marker: `20260523T220614Z`
 
-Primary HEAD: `68eea573 codegen: block try finally jump transfers`
+Primary HEAD: `0b0335e6 test: target try finally transfer blocker`
 Latest integrated semantic baseline: `68eea573 codegen: block try finally jump transfers`
 Latest evaluator report: `20260523T220614Z`
 
@@ -28,7 +28,7 @@ identity, source-ordered diagnostics, cleanup/unwinding, and LLVM/assembly
 parity.
 
 Current primary state: primary is synced with `origin/master` through
-`68eea573`; the protected `runtime/src/lib.rs` null-slot hunk remains dirty,
+`0b0335e6`; the protected `runtime/src/lib.rs` null-slot hunk remains dirty,
 unstaged, and uncounted. The narrow generated-C user-function WIP was parked
 and is not counted.
 
