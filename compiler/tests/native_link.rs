@@ -137,6 +137,26 @@ const NATIVE_BRANCH_LOCAL_NON_VALUE_OWNER_CLEANUP_SOURCE: &str = concat!(
     "echo \"done\";\n",
 );
 
+const NATIVE_STATE_STABLE_WHILE_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"ab\", \"cd\"];\n",
+    "while (current($items) !== false) {\n",
+    "    array_sum([1, 2]);\n",
+    "    echo strtoupper(current($items));\n",
+    "    next($items);\n",
+    "}\n",
+    "echo \"|\";\n",
+    "$box = [\"letters\" => [\"x\" => \"ef\", \"y\" => \"gh\"]];\n",
+    "while (current($box[\"letters\"]) !== false) {\n",
+    "    echo key($box[\"letters\"]), \"=\", current($box[\"letters\"]), \";\";\n",
+    "    next($box[\"letters\"]);\n",
+    "}\n",
+    "echo \"|\";\n",
+    "$empty = [];\n",
+    "while (current($empty) !== false) { echo \"bad\"; }\n",
+    "echo \"done\";\n",
+);
+
 const NATIVE_DISCARDED_VALUE_STATEMENT_CLEANUP_SOURCE: &str = concat!(
     "<?php\n",
     "array_sum([2, 3]);\n",
@@ -1143,6 +1163,59 @@ fn native_executable_c_source_releases_branch_local_array_and_byte_buffer_cleanu
 }
 
 #[test]
+fn native_executable_c_source_routes_state_stable_while_loops_through_scoped_cleanup() {
+    let program = parse(NATIVE_STATE_STABLE_WHILE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches("while (1)").count() >= 3,
+        "state-stable while loops should lower to scoped C loops:\n{source}"
+    );
+    assert!(
+        body.matches("if (!(native_value_truthy_").count() >= 3,
+        "loop conditions should evaluate through the shared PHP truthiness guard:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_array_lvalue_owner_pointer_result")
+            .count()
+            >= 8,
+        "direct and nested array pointer calls should feed loop conditions and bodies through the lvalue owner ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_compare_result"),
+        "loop conditions should compose existing native value comparison results:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(native_value_array_query_"),
+        "loop-body local native value results must be released before the next iteration:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_while_state_without_loop_join() {
+    for source in [
+        "<?php\n$items = [\"go\" => \"1\"];\nwhile ($items[\"go\"]) { $value = \"loop\"; }\necho $value;\n",
+        "<?php\n$items = [\"go\" => \"1\"];\nwhile ($items[\"go\"]) { $value = strtoupper(\"loop\"); }\necho $value;\n",
+        "<?php\nwhile (true) { echo \"forever\"; }\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error
+                .message
+                .contains("while loops outside state-stable condition/body cleanup boundaries"),
+            "{error:?}"
+        );
+    }
+}
+
+#[test]
 fn native_executable_c_source_rejects_branch_local_byte_buffer_state_join() {
     let program = parse(
         "<?php\n$flags = [\"take\" => \"1\"];\nif ($flags[\"take\"]) { $letter = \"abc\"[1]; } else { $letter = \"xyz\"[2]; }\necho $letter;\n",
@@ -1975,6 +2048,32 @@ fn emit_exe_links_and_runs_if_branch_local_non_value_owner_cleanup_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"b|T|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_state_stable_while_loop_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("state_stable_while_loop", NATIVE_STATE_STABLE_WHILE_SOURCE);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native state-stable while executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCD|x=ef;y=gh;|done");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

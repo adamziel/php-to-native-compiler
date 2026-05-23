@@ -104,7 +104,7 @@ const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rej
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
-const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, and discarded branch-local native-value cleanup through scoped branch emission";
+const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while loops outside state-stable condition/body cleanup boundaries, elseif chains, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, and state-stable while loops through scoped control-flow emission";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
@@ -12623,6 +12623,64 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_while_statement(
+        &mut self,
+        condition: &Expr,
+        body: &[Stmt],
+        span: Span,
+    ) -> CompileResult<()> {
+        let base = self.clone();
+        let mut condition_generator = base.scoped_branch_generator();
+        let condition_value = condition_generator.emit_logical_truthiness_expr(condition, span)?;
+        if !base.persistent_state_matches(&condition_generator) {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+        }
+
+        if let Some(truthy) = condition_generator.known_truthiness_for_value(&condition_value) {
+            self.merge_scoped_branch_codegen(&condition_generator);
+            self.next_native_temp = condition_generator.next_native_temp;
+            self.next_static_data = condition_generator.next_static_data;
+            self.body.extend(condition_generator.body);
+            return if truthy {
+                Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION))
+            } else {
+                Ok(())
+            };
+        }
+
+        let Some(condition) = c_bool_operand(condition_value) else {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+        };
+
+        let mut body_generator = base.scoped_branch_generator();
+        body_generator.next_native_temp = condition_generator.next_native_temp;
+        body_generator.next_static_data = condition_generator.next_static_data;
+        for statement in body {
+            body_generator.emit_statement(statement)?;
+        }
+        if !base.persistent_state_matches(&body_generator) {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+        }
+
+        self.merge_scoped_branch_codegen(&condition_generator);
+        self.merge_scoped_branch_codegen(&body_generator);
+        self.next_native_temp = body_generator.next_native_temp;
+        self.next_static_data = body_generator.next_static_data;
+
+        self.body.push("while (1) {".to_string());
+        for line in &condition_generator.body {
+            self.body.push(format!("  {line}"));
+        }
+        self.body
+            .push(format!("  if (!({condition})) {{ break; }}"));
+        for line in &body_generator.body {
+            self.body.push(format!("  {line}"));
+        }
+        self.body.push("}".to_string());
+
+        Ok(())
+    }
+
     fn emit_discarded_expr_statement(&mut self, expr: &Expr) -> CompileResult<()> {
         if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
             self.body.extend(value.cleanup_after_use);
@@ -12639,8 +12697,10 @@ impl CGenerator {
     }
 
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
-        if let Some(operation) = native_statement_operand_call_operation(stmt) {
-            return Err(self.unsupported_call_operation(operation));
+        if !matches!(stmt, Stmt::While { .. }) {
+            if let Some(operation) = native_statement_operand_call_operation(stmt) {
+                return Err(self.unsupported_call_operation(operation));
+            }
         }
 
         match stmt {
@@ -12850,8 +12910,12 @@ impl CGenerator {
                 else_branch,
                 span,
             } => self.emit_if_statement(condition, then_branch, else_branch, *span),
-            Stmt::While { span, .. }
-            | Stmt::DoWhile { span, .. }
+            Stmt::While {
+                condition,
+                body,
+                span,
+            } => self.emit_while_statement(condition, body, *span),
+            Stmt::DoWhile { span, .. }
             | Stmt::For { span, .. }
             | Stmt::Switch { span, .. }
             | Stmt::Goto { span, .. }
