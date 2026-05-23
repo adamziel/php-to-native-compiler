@@ -972,6 +972,12 @@ fn native_value_result_output_expr(expr: &Expr) -> bool {
         Expr::Index { .. } => true,
         Expr::CompoundAssign { .. } => true,
         Expr::NullCoalesceAssign { .. } => true,
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => native_value_ternary_needs_lazy_materialization(condition, if_true, if_false),
         Expr::Unary { op, .. } => native_value_unary_op_tag(*op).is_some(),
         Expr::Binary { op, .. } => {
             native_value_binary_op_tag(*op).is_some() || matches!(op, BinaryOp::NullCoalesce)
@@ -1070,6 +1076,18 @@ fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
         | Expr::SelfMethodCall { .. }
         | Expr::LateStaticMethodCall { .. } => false,
     }
+}
+
+fn native_value_ternary_needs_lazy_materialization(
+    condition: &Expr,
+    if_true: &Expr,
+    if_false: &Expr,
+) -> bool {
+    native_value_result_output_expr(condition)
+        || native_value_result_output_expr(if_true)
+        || native_value_result_output_expr(if_false)
+        || native_conditional_rhs_needs_cleanup_boundary(if_true)
+        || native_conditional_rhs_needs_cleanup_boundary(if_false)
 }
 
 fn native_value_cast_op_tag(kind: CastKind) -> &'static str {
@@ -20586,6 +20604,20 @@ impl CGenerator {
                     },
                     |value| Ok(Some(value)),
                 ),
+            Expr::Ternary {
+                condition,
+                if_true,
+                if_false,
+                span,
+            } if native_value_ternary_needs_lazy_materialization(condition, if_true, if_false) => {
+                self.materialize_lazy_native_value_ternary_expr(
+                    condition,
+                    if_true,
+                    if_false,
+                    *span,
+                    failure_cleanup,
+                )
+            }
             Expr::Index {
                 target,
                 index,
@@ -20605,6 +20637,86 @@ impl CGenerator {
             }
             _ => Ok(None),
         }
+    }
+
+    fn materialize_lazy_native_value_ternary_expr(
+        &mut self,
+        condition: &Expr,
+        if_true: &Expr,
+        if_false: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let condition_value = self.emit_logical_truthiness_expr(condition, span)?;
+        if let Some(truthy) = self.known_truthiness_for_value(&condition_value) {
+            let selected = if truthy { if_true } else { if_false };
+            return self
+                .materialize_native_value_result_operand(selected, failure_cleanup)
+                .map(Some);
+        }
+
+        let Some(condition) = c_bool_operand(condition_value) else {
+            return Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION));
+        };
+
+        let result = self.next_native_name("native_value_ternary");
+        let base = self.clone();
+        let mut then_branch = base.scoped_branch_generator();
+        let then_value =
+            match then_branch.materialize_native_value_result_operand(if_true, failure_cleanup) {
+                Ok(value) => value,
+                Err(_) => return Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION)),
+            };
+        then_branch
+            .body
+            .push(format!("{result} = {};", then_value.handle));
+        then_branch
+            .body
+            .extend(native_value_aux_cleanup_after_consuming_handle(&then_value));
+
+        let mut else_branch = base.scoped_branch_generator();
+        else_branch.next_native_temp = then_branch.next_native_temp;
+        else_branch.next_static_data = then_branch.next_static_data;
+        let else_value =
+            match else_branch.materialize_native_value_result_operand(if_false, failure_cleanup) {
+                Ok(value) => value,
+                Err(_) => return Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION)),
+            };
+        else_branch
+            .body
+            .push(format!("{result} = {};", else_value.handle));
+        else_branch
+            .body
+            .extend(native_value_aux_cleanup_after_consuming_handle(&else_value));
+
+        if !base.persistent_state_matches(&then_branch)
+            || !base.persistent_state_matches(&else_branch)
+        {
+            return Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION));
+        }
+
+        self.merge_scoped_branch_codegen(&then_branch);
+        self.merge_scoped_branch_codegen(&else_branch);
+        self.uses_native_string_helpers = true;
+        self.next_native_temp = else_branch.next_native_temp;
+        self.next_static_data = else_branch.next_static_data;
+
+        self.body
+            .push(format!("phpc_NativeValueHandle {result} = {{0}};"));
+        self.body.push(format!("if ({condition}) {{"));
+        for line in &then_branch.body {
+            self.body.push(format!("  {line}"));
+        }
+        self.body.push("} else {".to_string());
+        for line in &else_branch.body {
+            self.body.push(format!("  {line}"));
+        }
+        self.body.push("}".to_string());
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
     }
 
     fn try_materialize_request_superglobal_path_value_read_expr(
