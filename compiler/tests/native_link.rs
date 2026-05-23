@@ -98,6 +98,23 @@ const NATIVE_BRANCH_NATIVE_VALUE_OWNER_SOURCE: &str = concat!(
     "echo $picked;\n",
 );
 
+const NATIVE_FOREACH_PRIOR_CURSOR_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"a\" => \"A\", \"b\" => \"B\"];\n",
+    "$k = \"old-key\";\n",
+    "$v = \"old-value\";\n",
+    "foreach ($items as $k => $v) { echo $k, \"=\", $v, \";\"; }\n",
+    "echo \"|\", $k, \"=\", $v;\n",
+    "$literalKey = \"before-key\";\n",
+    "$literalValue = \"before-value\";\n",
+    "foreach ([\"x\" => \"R\"] as $literalKey => $literalValue) { echo \"|\", strtoupper($literalValue); }\n",
+    "echo \"|\", $literalKey, \"=\", $literalValue;\n",
+    "$empty = [];\n",
+    "$carry = \"keep\";\n",
+    "foreach ($empty as $carry) { echo \"bad\"; }\n",
+    "echo \"|\", $carry;\n",
+);
+
 const NATIVE_VALUE_TERNARY_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\", \"word\" => \"go\"];\n",
@@ -478,6 +495,34 @@ fn native_executable_c_source_routes_by_value_foreach_through_array_lvalue_owner
     assert!(
         body.contains("phpc_native_value_string_result_operation_with_diagnostic"),
         "{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_preserves_prior_foreach_cursor_storage() {
+    let program = parse(NATIVE_FOREACH_PRIOR_CURSOR_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches("phpc_NativeValueHandle array_foreach_cursor_storage_")
+            .count()
+            >= 5,
+        "prior key/value targets and empty-loop fallback should keep post-loop cursor storage:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_clone(array_foreach_key_value_")
+            && body.contains("phpc_native_value_clone(array_foreach_value_value_"),
+        "foreach cursor storage should clone key and value handles through the shared native-value owner ABI:\n{source}"
+    );
+    assert!(
+        body.contains("if (array_foreach_cursor_storage_")
+            && body.contains("phpc_native_value_free(array_foreach_cursor_storage_"),
+        "cursor storage updates should release the previous owned value before each replacement:\n{source}"
     );
     assert!(
         !source.contains("assembly array lowering rejects arrays"),
@@ -1746,7 +1791,6 @@ fn emit_exe_links_and_runs_if_branch_native_value_owner_program() {
 #[test]
 fn native_executable_c_source_blocks_foreach_forms_without_symbol_or_reference_storage() {
     for source in [
-        "<?php\n$v = \"old\";\n$a = [\"new\"];\nforeach ($a as $v) { echo $v; }\n",
         "<?php\n$a = [\"new\"];\nforeach ($a as $v) { $seen = $v; }\n",
         "<?php\n$a = [\"new\"];\nforeach ($a as $v) { unset($missing[0]); }\n",
     ] {
@@ -1837,6 +1881,34 @@ fn emit_exe_links_and_runs_by_value_foreach_array_lvalue_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"x=AB;y=CD;n=EF;lit=GH;");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_prior_foreach_cursor_storage_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "foreach_prior_cursor_storage",
+        NATIVE_FOREACH_PRIOR_CURSOR_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native foreach prior-cursor executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"a=A;b=B;|b=B|R|x=R|keep");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

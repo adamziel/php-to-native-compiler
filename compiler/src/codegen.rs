@@ -7573,6 +7573,11 @@ struct CNativeValueMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+struct CNativeForeachCursorStorage {
+    name: String,
+    handle: String,
+}
+
 fn c_cleanup_sequence(cleanup: &[String]) -> String {
     if cleanup.is_empty() {
         String::new()
@@ -14882,13 +14887,6 @@ impl CGenerator {
         if key == Some(value) {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
         }
-        if key
-            .map(|name| self.native_foreach_symbol_target_has_prior_storage(name))
-            .unwrap_or(false)
-            || self.native_foreach_symbol_target_has_prior_storage(value)
-        {
-            return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
-        }
         if self.native_foreach_body_may_mutate_storage(body) {
             return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION));
         }
@@ -14897,6 +14895,15 @@ impl CGenerator {
         let iterable_handle = foreach_iterable.handle.clone();
         let len = self.next_native_name("array_foreach_len");
         let index = self.next_native_name("array_foreach_index");
+        let mut cursor_storage = Vec::new();
+        if let Some(key) = key {
+            if let Some(storage) = self.prepare_native_foreach_cursor_storage(key, span)? {
+                cursor_storage.push(storage);
+            }
+        }
+        if let Some(storage) = self.prepare_native_foreach_cursor_storage(value, span)? {
+            cursor_storage.push(storage);
+        }
 
         self.retain_native_value_cleanup_handle(&iterable_handle);
         self.body.push(format!(
@@ -14910,6 +14917,9 @@ impl CGenerator {
             let key_handle =
                 self.emit_native_array_foreach_cursor_value(&iterable_handle, &index, "key");
             self.retain_native_value_cleanup_handle(&key_handle);
+            if let Some(storage) = cursor_storage.iter().find(|storage| storage.name == key) {
+                self.emit_native_foreach_cursor_storage_update(&storage.handle, &key_handle);
+            }
             self.remember_variable_order(key);
             self.variables.insert(
                 key.to_string(),
@@ -14922,6 +14932,9 @@ impl CGenerator {
         let value_handle =
             self.emit_native_array_foreach_cursor_value(&iterable_handle, &index, "value");
         self.retain_native_value_cleanup_handle(&value_handle);
+        if let Some(storage) = cursor_storage.iter().find(|storage| storage.name == value) {
+            self.emit_native_foreach_cursor_storage_update(&storage.handle, &value_handle);
+        }
         self.remember_variable_order(value);
         self.variables.insert(
             value.to_string(),
@@ -14945,7 +14958,45 @@ impl CGenerator {
         self.body.push("}".to_string());
         self.release_native_value_cleanup_handle(&iterable_handle);
         self.body.extend(foreach_iterable.cleanup_after_use);
+        for storage in cursor_storage {
+            self.variables.insert(
+                storage.name,
+                CValue::NativeValueHandle(storage.handle.clone()),
+            );
+        }
         Ok(())
+    }
+
+    fn prepare_native_foreach_cursor_storage(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<Option<CNativeForeachCursorStorage>> {
+        let Some(previous) = self.variables.get(name).cloned() else {
+            return Ok(None);
+        };
+
+        self.uses_native_string_helpers = true;
+        let initial = self.emit_native_value_for_cvalue(previous, span)?;
+        let handle = self.next_native_name("array_foreach_cursor_storage");
+        self.body
+            .push(format!("phpc_NativeValueHandle {handle} = {initial};"));
+        self.release_variable_native_value_handle(name);
+        self.variables.remove(name);
+        self.retain_native_value_cleanup_handle(&handle);
+        Ok(Some(CNativeForeachCursorStorage {
+            name: name.to_string(),
+            handle,
+        }))
+    }
+
+    fn emit_native_foreach_cursor_storage_update(&mut self, storage: &str, cursor: &str) {
+        self.uses_native_value_clone = true;
+        self.body.push(format!(
+            "if ({storage}.ptr != NULL) {{ phpc_native_value_free({storage}); }}"
+        ));
+        self.body
+            .push(format!("{storage} = phpc_native_value_clone({cursor});"));
     }
 
     fn materialize_native_array_foreach_iterable(
@@ -15719,10 +15770,6 @@ impl CGenerator {
         self.body
             .push(format!("phpc_native_array_lvalue_result_free({result});"));
         cursor_value
-    }
-
-    fn native_foreach_symbol_target_has_prior_storage(&self, name: &str) -> bool {
-        self.variables.contains_key(name)
     }
 
     fn native_foreach_body_may_mutate_storage(&self, body: &[Stmt]) -> bool {
