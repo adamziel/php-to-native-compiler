@@ -27,11 +27,11 @@ identity, source-ordered diagnostics, cleanup/unwinding, and LLVM/assembly
 parity.
 
 Current primary state: primary is synced with `origin/master`; active dirty
-semantic WIP includes a fresh unaccepted `compiler/src/codegen.rs` generated-C
-top-level state-stable `goto`/label snapshot slice plus the protected
-`runtime/src/lib.rs` null-slot hunk. The narrow generated-C user-function WIP
-was parked and is not counted. This dashboard update is the only
-evaluator-owned product file.
+semantic WIP includes a fresh unaccepted `compiler/src/codegen.rs` /
+`compiler/tests/native_link.rs` generated-C top-level state-stable `goto`/label
+snapshot slice plus the protected `runtime/src/lib.rs` null-slot hunk. The
+narrow generated-C user-function WIP was parked and is not counted. This
+dashboard update is the only evaluator-owned product file.
 
 ## Roadmap Snapshot
 
@@ -100,10 +100,11 @@ like direct/top-level/single-return execution without real frame ownership,
 caller handoff, cleanup/failure exits, or accepted linked proof. It should not
 be counted or repeated in that shape.
 
-A fresh post-recovery `compiler/src/codegen.rs` WIP is exploring generated-C
-top-level state-stable `goto`/label snapshots. It is also uncounted until it
-has focused source and linked executable proof, explicit blockers for broader
-goto/control-flow state joins, and a clean primary integration.
+A fresh post-recovery `compiler/src/codegen.rs` / `compiler/tests/native_link.rs`
+WIP is exploring generated-C top-level state-stable `goto`/label snapshots. It
+is also uncounted until it has focused source and linked executable proof,
+explicit blockers for broader goto/control-flow state joins, and a clean
+primary integration.
 
 ## Active Focus
 
