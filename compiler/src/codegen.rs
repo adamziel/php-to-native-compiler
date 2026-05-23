@@ -12696,8 +12696,16 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_top_level_return_statement(&mut self, value: Option<&Expr>) -> CompileResult<()> {
+        if let Some(value) = value {
+            self.emit_discarded_expr_statement(value)?;
+        }
+        self.body.push(self.native_error_exit_with_code("", "0"));
+        Ok(())
+    }
+
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
-        if !matches!(stmt, Stmt::While { .. }) {
+        if !matches!(stmt, Stmt::While { .. } | Stmt::Return { .. }) {
             if let Some(operation) = native_statement_operand_call_operation(stmt) {
                 return Err(self.unsupported_call_operation(operation));
             }
@@ -12991,9 +12999,7 @@ impl CGenerator {
             }
             Stmt::Throw { span, .. } => Err(self.unsupported(*span, ASSEMBLY_EXCEPTION_REJECTION)),
             Stmt::Try { span, .. } => Err(self.unsupported(*span, ASSEMBLY_TRY_BLOCK_REJECTION)),
-            Stmt::Return { span, .. } => {
-                Err(self.native_call_diagnostics().return_statement(*span))
-            }
+            Stmt::Return { value, .. } => self.emit_top_level_return_statement(value.as_ref()),
             Stmt::Global { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_DECLARATION_REJECTION))
             }

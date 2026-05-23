@@ -157,6 +157,18 @@ const NATIVE_STATE_STABLE_WHILE_SOURCE: &str = concat!(
     "echo \"done\";\n",
 );
 
+const NATIVE_TOP_LEVEL_RETURN_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"flag\" => \"1\"];\n",
+    "$held = strtoupper(\"held\");\n",
+    "echo \"before|\";\n",
+    "if ($items[\"flag\"]) {\n",
+    "    array_sum([1, 2]);\n",
+    "    return strtoupper(\"ignored\");\n",
+    "}\n",
+    "echo $held;\n",
+);
+
 const NATIVE_DISCARDED_VALUE_STATEMENT_CLEANUP_SOURCE: &str = concat!(
     "<?php\n",
     "array_sum([2, 3]);\n",
@@ -1216,6 +1228,33 @@ fn native_executable_c_source_rejects_while_state_without_loop_join() {
 }
 
 #[test]
+fn native_executable_c_source_routes_top_level_return_through_cleanup() {
+    let program = parse(NATIVE_TOP_LEVEL_RETURN_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+    let return_pos = body
+        .find("return 0;")
+        .unwrap_or_else(|| panic!("top-level return should terminate main:\n{source}"));
+
+    assert!(
+        body[..return_pos].contains("phpc_native_value_free(native_value_array_query_"),
+        "discarded return-branch value results should be released before returning:\n{source}"
+    );
+    assert!(
+        body[..return_pos].contains("phpc_native_value_free(strtoupper_result_"),
+        "return operand and live native values should be cleaned before returning:\n{source}"
+    );
+    assert!(
+        body.contains("if (native_value_truthy_") && body.contains("return 0;"),
+        "return should compose with existing scoped branch lowering:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly user-function lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_rejects_branch_local_byte_buffer_state_join() {
     let program = parse(
         "<?php\n$flags = [\"take\" => \"1\"];\nif ($flags[\"take\"]) { $letter = \"abc\"[1]; } else { $letter = \"xyz\"[2]; }\necho $letter;\n",
@@ -2074,6 +2113,32 @@ fn emit_exe_links_and_runs_state_stable_while_loop_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCD|x=ef;y=gh;|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_top_level_return_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("top_level_return", NATIVE_TOP_LEVEL_RETURN_SOURCE);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native top-level return executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"before|");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
