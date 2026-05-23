@@ -207,6 +207,39 @@ const NATIVE_STATE_STABLE_FOR_SOURCE: &str = concat!(
     "echo \"|done\";\n",
 );
 
+const NATIVE_STATE_STABLE_DO_WHILE_SOURCE: &str = concat!(
+    "<?php\n",
+    "$keep = true;\n",
+    "do {\n",
+    "    if ($keep) { echo \"K\"; }\n",
+    "    $keep = false;\n",
+    "} while ($keep);\n",
+    "echo \"|\";\n",
+    "$i = 0;\n",
+    "do {\n",
+    "    array_sum([1, 2]);\n",
+    "    echo $i;\n",
+    "    $i = ($i << 1) | 1;\n",
+    "    if ($i == 1) {\n",
+    "        continue;\n",
+    "    }\n",
+    "    echo \"!\";\n",
+    "} while ($i < 3);\n",
+    "echo \"|\";\n",
+    "$f = 1.5;\n",
+    "do {\n",
+    "    echo $f;\n",
+    "    $f = $f + 1.0;\n",
+    "} while ($f < 3.0);\n",
+    "echo \"|\";\n",
+    "$flags = [\"go\" => \"1\"];\n",
+    "do {\n",
+    "    echo \"B\";\n",
+    "    break;\n",
+    "} while ($flags[\"go\"]);\n",
+    "echo \"|done\";\n",
+);
+
 const NATIVE_LOOP_CARRIED_SCALAR_SOURCE: &str = concat!(
     "<?php\n",
     "$i = 0;\n",
@@ -1753,6 +1786,59 @@ fn native_executable_c_source_rejects_for_state_without_loop_join() {
 }
 
 #[test]
+fn native_executable_c_source_routes_state_stable_do_while_loops() {
+    let program = parse(NATIVE_STATE_STABLE_DO_WHILE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches("while (1)").count() >= 4,
+        "state-stable do-while loops should lower to scoped C loops:\n{source}"
+    );
+    assert!(
+        body.contains("goto do_while_continue_") && body.contains("do_while_continue_"),
+        "do-while continue should target the trailing condition:\n{source}"
+    );
+    assert!(
+        body.contains("do_while_break_"),
+        "do-while break targets should be emitted for nested transfer routing:\n{source}"
+    );
+    assert!(
+        body.contains("long long loop_phi_")
+            && body.contains("_Bool loop_phi_")
+            && body.contains("double loop_phi_"),
+        "do-while loop-carried scalar state should use mutable scalar slots:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(native_value_array_query_"),
+        "do-while body-local native value results must be released before the condition:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_do_while_state_without_loop_join() {
+    for source in [
+        "<?php\n$items = [\"go\" => \"1\"];\ndo { $value = \"loop\"; } while ($items[\"go\"]); echo $value;\n",
+        "<?php\n$items = [\"go\" => \"1\"];\ndo { $value = strtoupper(\"loop\"); } while ($items[\"go\"]); echo $value;\n",
+        "<?php\ndo { echo \"forever\"; } while (true);\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error
+                .message
+                .contains("do-while loops outside state-stable body/condition cleanup boundaries"),
+            "{error:?}"
+        );
+    }
+}
+
+#[test]
 fn native_executable_c_source_routes_loop_carried_scalar_state() {
     let program = parse(NATIVE_LOOP_CARRIED_SCALAR_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2871,6 +2957,34 @@ fn emit_exe_links_and_runs_state_stable_for_loop_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCD|EG|X|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_state_stable_do_while_loop_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "state_stable_do_while_loop",
+        NATIVE_STATE_STABLE_DO_WHILE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native state-stable do-while executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"K|01!|1.52.5|B|done");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

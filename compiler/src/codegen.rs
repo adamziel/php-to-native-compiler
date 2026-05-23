@@ -104,7 +104,7 @@ const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rej
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
-const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries or loop-carried int/float/bool scalar storage, switch statements outside state-stable condition/case-body cleanup boundaries and switch-local continue, goto labels outside top-level state-stable target snapshots, top-level or depth-out-of-range break/continue, elseif chains, do-while loops, and unbounded loop headers until native PHP truthiness, branch layout, loop and switch control flow, broader goto state joins, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while/for loops, loop-carried scalar while/for state, multi-level while/for transfer targets, state-stable switch dispatch/fallthrough/break, and top-level state-stable goto labels through scoped control-flow emission";
+const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries or loop-carried int/float/bool scalar storage, do-while loops outside state-stable body/condition cleanup boundaries or loop-carried int/float/bool scalar storage, switch statements outside state-stable condition/case-body cleanup boundaries and switch-local continue, goto labels outside top-level state-stable target snapshots, top-level or depth-out-of-range break/continue, elseif chains, and unbounded loop headers until native PHP truthiness, branch layout, loop and switch control flow, broader goto state joins, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while/do-while/for loops, loop-carried scalar while/do-while/for state, multi-level while/do-while/for transfer targets, state-stable switch dispatch/fallthrough/break, and top-level state-stable goto labels through scoped control-flow emission";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
@@ -13891,6 +13891,76 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_do_while_statement(
+        &mut self,
+        body: &[Stmt],
+        condition: &Expr,
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut loop_assignments = BTreeSet::new();
+        collect_loop_assigned_direct_variables_from_stmts(body, &mut loop_assignments);
+        collect_loop_assigned_direct_variables_from_expr(condition, &mut loop_assignments);
+        let activated_slots = self.activate_loop_carried_scalar_slots(&loop_assignments);
+        let continue_label = self.next_native_name("do_while_continue");
+        let break_label = self.next_native_name("do_while_break");
+        let base = self.clone();
+
+        let mut body_generator = base.scoped_branch_generator();
+        body_generator
+            .loop_transfer_targets
+            .push(CLoopTransferTarget {
+                depth_one_continue: Some(continue_label.clone()),
+                continue_label: Some(continue_label.clone()),
+                depth_one_break: None,
+                break_label: break_label.clone(),
+            });
+        for statement in body {
+            body_generator.emit_statement(statement)?;
+        }
+        body_generator.loop_transfer_targets.pop();
+        if !base.persistent_state_matches(&body_generator) {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+        }
+
+        let mut condition_generator = base.scoped_branch_generator();
+        condition_generator.next_native_temp = body_generator.next_native_temp;
+        condition_generator.next_static_data = body_generator.next_static_data;
+        let condition_value = condition_generator.emit_logical_truthiness_expr(condition, span)?;
+        if !base.persistent_state_matches(&condition_generator) {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+        }
+        if condition_generator
+            .known_truthiness_for_value(&condition_value)
+            .is_some_and(|truthy| truthy)
+        {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+        }
+        let Some(condition) = c_bool_operand(condition_value) else {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+        };
+
+        self.merge_scoped_branch_codegen(&body_generator);
+        self.merge_scoped_branch_codegen(&condition_generator);
+        self.next_native_temp = condition_generator.next_native_temp;
+        self.next_static_data = condition_generator.next_static_data;
+
+        self.body.push("while (1) {".to_string());
+        for line in &body_generator.body {
+            self.body.push(format!("  {line}"));
+        }
+        self.body.push(format!("  {continue_label}: ;"));
+        for line in &condition_generator.body {
+            self.body.push(format!("  {line}"));
+        }
+        self.body
+            .push(format!("  if (!({condition})) {{ break; }}"));
+        self.body.push("}".to_string());
+        self.body.push(format!("{break_label}: ;"));
+        self.deactivate_loop_carried_scalar_slots(&activated_slots);
+
+        Ok(())
+    }
+
     fn emit_switch_statement(
         &mut self,
         value: &Expr,
@@ -14394,6 +14464,11 @@ impl CGenerator {
                 body,
                 span,
             } => self.emit_for_statement(initializers, conditions, increments, body, *span),
+            Stmt::DoWhile {
+                body,
+                condition,
+                span,
+            } => self.emit_do_while_statement(body, condition, *span),
             Stmt::Break { depth, span } => {
                 self.emit_loop_transfer_statement("break", *depth, *span)
             }
@@ -14401,7 +14476,7 @@ impl CGenerator {
                 self.emit_loop_transfer_statement("continue", *depth, *span)
             }
             Stmt::Switch { value, cases, span } => self.emit_switch_statement(value, cases, *span),
-            Stmt::DoWhile { span, .. } | Stmt::Goto { span, .. } | Stmt::Label { span, .. } => {
+            Stmt::Goto { span, .. } | Stmt::Label { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_CONTROL_FLOW_REJECTION))
             }
             Stmt::Foreach {
