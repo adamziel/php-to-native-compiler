@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassMember, CompoundAssignOp, Expr, ForAction,
     FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, Program,
-    ReferenceSource, Span, Stmt, UnaryOp, UnsetTarget,
+    ReferenceSource, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
@@ -104,7 +104,7 @@ const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rej
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
-const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries or loop-carried int/float/bool scalar storage, elseif chains, do-while loops, switch statements, goto labels, top-level or loop-depth-out-of-range break/continue, and unbounded loop headers until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while/for loops, loop-carried scalar while/for state, and multi-level while/for transfer targets through scoped control-flow emission";
+const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries or loop-carried int/float/bool scalar storage, switch statements outside state-stable condition/case-body cleanup boundaries and switch-local continue, elseif chains, do-while loops, goto labels, top-level or depth-out-of-range break/continue, and unbounded loop headers until native PHP truthiness, branch layout, loop and switch control flow, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while/for loops, loop-carried scalar while/for state, multi-level while/for transfer targets, and state-stable switch dispatch/fallthrough/break through scoped control-flow emission";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
@@ -7277,7 +7277,8 @@ enum CMutableScalarSlotKind {
 #[derive(Debug, Clone)]
 struct CLoopTransferTarget {
     depth_one_continue: Option<String>,
-    continue_label: String,
+    continue_label: Option<String>,
+    depth_one_break: Option<String>,
     break_label: String,
 }
 
@@ -13241,7 +13242,8 @@ impl CGenerator {
             .loop_transfer_targets
             .push(CLoopTransferTarget {
                 depth_one_continue: None,
-                continue_label: continue_label.clone(),
+                continue_label: Some(continue_label.clone()),
+                depth_one_break: None,
                 break_label: break_label.clone(),
             });
         for statement in body {
@@ -13331,7 +13333,8 @@ impl CGenerator {
             .loop_transfer_targets
             .push(CLoopTransferTarget {
                 depth_one_continue: Some(continue_label.clone()),
-                continue_label: continue_label.clone(),
+                continue_label: Some(continue_label.clone()),
+                depth_one_break: None,
                 break_label: break_label.clone(),
             });
         for statement in body {
@@ -13376,6 +13379,120 @@ impl CGenerator {
         self.deactivate_loop_carried_scalar_slots(&activated_slots);
 
         Ok(())
+    }
+
+    fn emit_switch_statement(
+        &mut self,
+        value: &Expr,
+        cases: &[SwitchCase],
+        span: Span,
+    ) -> CompileResult<()> {
+        if !self.uses_native_string_helpers {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+        }
+
+        let subject = self.materialize_native_value_result_operand(value, "")?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let break_label = self.next_native_name("switch_break");
+        let case_labels = (0..cases.len())
+            .map(|_| self.next_native_name("switch_case"))
+            .collect::<Vec<_>>();
+        let default_target = cases
+            .iter()
+            .position(|case| case.condition.is_none())
+            .map(|index| case_labels[index].clone())
+            .unwrap_or_else(|| break_label.clone());
+
+        for (index, case) in cases.iter().enumerate() {
+            let Some(condition) = &case.condition else {
+                continue;
+            };
+
+            let condition_base = self.clone();
+            let mut condition_generator = condition_base.scoped_branch_generator();
+            let condition = condition_generator.emit_switch_case_condition(
+                &subject.handle,
+                condition,
+                &subject_cleanup,
+            )?;
+            if !condition_base.persistent_state_matches(&condition_generator) {
+                return Err(self.unsupported(case.span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+            }
+
+            self.merge_scoped_branch_codegen(&condition_generator);
+            self.next_native_temp = condition_generator.next_native_temp;
+            self.next_static_data = condition_generator.next_static_data;
+            self.body.extend(condition_generator.body);
+            self.body.push(format!(
+                "if ({condition}) {{ {subject_cleanup}goto {}; }}",
+                case_labels[index]
+            ));
+        }
+
+        self.body
+            .push(format!("{subject_cleanup}goto {default_target};"));
+
+        let case_base = self.clone();
+        let switch_target = CLoopTransferTarget {
+            depth_one_continue: None,
+            continue_label: None,
+            depth_one_break: Some(break_label.clone()),
+            break_label: break_label.clone(),
+        };
+        let mut generated_cases = Vec::with_capacity(cases.len());
+        let mut next_native_temp = self.next_native_temp;
+        let mut next_static_data = self.next_static_data;
+        for (index, case) in cases.iter().enumerate() {
+            let mut case_generator = case_base.scoped_branch_generator();
+            case_generator.next_native_temp = next_native_temp;
+            case_generator.next_static_data = next_static_data;
+            case_generator
+                .loop_transfer_targets
+                .push(switch_target.clone());
+            for statement in &case.body {
+                case_generator.emit_statement(statement)?;
+            }
+            case_generator.loop_transfer_targets.pop();
+            if !case_base.persistent_state_matches(&case_generator) {
+                return Err(self.unsupported(case.span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+            }
+
+            self.merge_scoped_branch_codegen(&case_generator);
+            next_native_temp = case_generator.next_native_temp;
+            next_static_data = case_generator.next_static_data;
+            generated_cases.push((case_labels[index].clone(), case_generator.body));
+        }
+
+        self.next_native_temp = next_native_temp;
+        self.next_static_data = next_static_data;
+        for (label, body) in generated_cases {
+            self.body.push(format!("{label}: ;"));
+            self.body.extend(body);
+        }
+        self.body.push(format!("{break_label}: ;"));
+        Ok(())
+    }
+
+    fn emit_switch_case_condition(
+        &mut self,
+        switch_subject_handle: &str,
+        condition: &Expr,
+        subject_cleanup: &str,
+    ) -> CompileResult<String> {
+        let case_value =
+            self.materialize_native_value_result_operand(condition, subject_cleanup)?;
+        let comparison = self.emit_native_value_compare_result_handle(
+            CNativeValueMaterialization {
+                handle: switch_subject_handle.to_string(),
+                cleanup_after_use: Vec::new(),
+            },
+            "PHPC_NATIVE_VALUE_COMPARISON_EQ",
+            case_value,
+            subject_cleanup,
+        );
+        let condition = self.emit_native_value_handle_truthiness(&comparison.handle);
+        self.body.extend(comparison.cleanup_after_use);
+        Ok(condition)
     }
 
     fn emit_for_action(&mut self, action: &ForAction, span: Span) -> CompileResult<()> {
@@ -13442,19 +13559,28 @@ impl CGenerator {
 
         if statement == "continue" {
             if depth > 1 {
-                self.body.push(format!("goto {};", target.continue_label));
+                let Some(label) = target.continue_label else {
+                    return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+                };
+                self.body.push(format!("goto {label};"));
             } else if let Some(label) = target.depth_one_continue {
                 self.body.push(format!("goto {label};"));
+            } else if target.continue_label.is_none() {
+                return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
             } else {
                 self.body.push("continue;".to_string());
             }
             return Ok(());
         }
 
-        if depth > 1 {
-            self.body.push(format!("goto {};", target.break_label));
+        if depth == 1 {
+            if let Some(label) = target.depth_one_break {
+                self.body.push(format!("goto {label};"));
+            } else {
+                self.body.push(format!("{statement};"));
+            }
         } else {
-            self.body.push(format!("{statement};"));
+            self.body.push(format!("goto {};", target.break_label));
         }
         Ok(())
     }
@@ -13485,7 +13611,7 @@ impl CGenerator {
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
         if !matches!(
             stmt,
-            Stmt::While { .. } | Stmt::For { .. } | Stmt::Return { .. }
+            Stmt::While { .. } | Stmt::For { .. } | Stmt::Switch { .. } | Stmt::Return { .. }
         ) {
             if let Some(operation) = native_statement_operand_call_operation(stmt) {
                 return Err(self.unsupported_call_operation(operation));
@@ -13717,10 +13843,8 @@ impl CGenerator {
             Stmt::Continue { depth, span } => {
                 self.emit_loop_transfer_statement("continue", *depth, *span)
             }
-            Stmt::DoWhile { span, .. }
-            | Stmt::Switch { span, .. }
-            | Stmt::Goto { span, .. }
-            | Stmt::Label { span, .. } => {
+            Stmt::Switch { value, cases, span } => self.emit_switch_statement(value, cases, *span),
+            Stmt::DoWhile { span, .. } | Stmt::Goto { span, .. } | Stmt::Label { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_CONTROL_FLOW_REJECTION))
             }
             Stmt::Foreach {

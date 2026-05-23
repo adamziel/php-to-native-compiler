@@ -283,6 +283,42 @@ const NATIVE_MULTI_LEVEL_LOOP_TRANSFER_SOURCE: &str = concat!(
     "echo \"|done\";\n",
 );
 
+const NATIVE_SWITCH_DISPATCH_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"kind\" => \"b\", \"fall\" => 1];\n",
+    "switch ($items[\"kind\"]) {\n",
+    "    case \"a\":\n",
+    "        echo \"A\";\n",
+    "        break;\n",
+    "    case strtolower(\"B\"):\n",
+    "        array_sum([1, 2]);\n",
+    "        echo \"B\";\n",
+    "        break;\n",
+    "    default:\n",
+    "        echo \"D\";\n",
+    "}\n",
+    "echo \"|\";\n",
+    "switch ($items[\"fall\"]) {\n",
+    "    case 1:\n",
+    "        echo \"one\";\n",
+    "    default:\n",
+    "        echo \"default\";\n",
+    "    case 2:\n",
+    "        echo \"two\";\n",
+    "        break;\n",
+    "}\n",
+    "echo \"|\";\n",
+    "switch (\"later\") {\n",
+    "    default:\n",
+    "        echo \"default\";\n",
+    "        break;\n",
+    "    case strtolower(\"LATER\"):\n",
+    "        echo \"later\";\n",
+    "        break;\n",
+    "}\n",
+    "echo \"|done\";\n",
+);
+
 const NATIVE_TOP_LEVEL_RETURN_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\"];\n",
@@ -1431,6 +1467,56 @@ fn native_executable_c_source_routes_multi_level_loop_transfers() {
 }
 
 #[test]
+fn native_executable_c_source_routes_state_stable_switch_dispatch() {
+    let program = parse(NATIVE_SWITCH_DISPATCH_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_compare_result"),
+        "switch case matching should use the shared PHP value comparison result ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_compare_result").count() >= 5,
+        "switch subjects and case labels should compare through one reusable runtime path:\n{source}"
+    );
+    assert!(
+        body.contains("switch_case_") && body.contains("switch_break_"),
+        "switch lowering should emit explicit fallthrough and break labels:\n{source}"
+    );
+    assert!(
+        body.contains("goto switch_case_") && body.contains("goto switch_break_"),
+        "matched cases and PHP break should route through generated labels:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(native_value_array_query_"),
+        "case-body discarded native values should be released before switch transfer:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_switch_state_joins_and_continue() {
+    for source in [
+        "<?php\n$value = \"base\";\nswitch (1) { case 1: $value = \"changed\"; break; }\necho $value;\n",
+        "<?php\nswitch (1) { case 1: continue; }\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error.message.contains(
+                "switch statements outside state-stable condition/case-body cleanup boundaries"
+            ),
+            "{error:?}"
+        );
+    }
+}
+
+#[test]
 fn native_executable_c_source_routes_state_stable_for_loops() {
     let program = parse(NATIVE_STATE_STABLE_FOR_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2465,6 +2551,34 @@ fn emit_exe_links_and_runs_multi_level_loop_transfer_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"01|01|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_state_stable_switch_dispatch_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "state_stable_switch_dispatch",
+        NATIVE_SWITCH_DISPATCH_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native switch-dispatch executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"B|onedefaulttwo|later|done");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
