@@ -15,7 +15,7 @@ exact-shape fixtures do not.
 
 ## Executive Read
 
-Overall estimated progress: **88%** `[##################--]`
+Overall estimated progress: **49%** `[##########----------]`
 
 Primary integrated progress now includes generated-C top-level state-stable
 `goto`/label dispatch, normal-flow `try`/`finally`, top-level `return` transfer
@@ -28,10 +28,11 @@ generated-C islands for native values, arrays, selected references,
 request/symbol state, diagnostics, cleanup, lazy expressions, and bounded
 control flow.
 
-This is still not full PHP semantics. The largest gaps remain generated-native
-calls/frames, object/property/method execution, complete references/COW
-identity, source-ordered diagnostics, cleanup/unwinding, and LLVM/assembly
-parity.
+This is still not close to complete PHP execution. The foundation is strong,
+but the remaining gaps are central language semantics rather than edge cases:
+generated-native calls/frames, object/property/method execution, complete
+references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
+LLVM/assembly parity.
 
 Current primary state: primary semantic head is `b53a1e88`; push/sync is
 handled by the active primary integration worker.
@@ -43,15 +44,15 @@ counted.
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **97%** | `[###################-]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, diagnostic, termination, and cleanup surfaces. |
-| Compiler/backend consumers | **98%** | `[####################]` | Generated-C has broad selected coverage. LLVM/assembly parity remains uneven. |
-| Executable PHP semantics | **88%** | `[##################--]` | Many focused linked programs run, but behavior is still selected islands rather than a complete PHP execution model. |
-| Arrays, lvalues, references, COW | **88%** | `[##################--]` | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, and by-reference call/foreach parity remain open. |
-| Symbols, globals, request state | **96%** | `[###################-]` | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
-| Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter metadata and lane contracts exist, but real generated-native frame execution is still missing. |
-| Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **53%** | `[###########---------]` | Bounded generated-C branches, loops, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, top-level return through finally, and diagnostic-aware stdout formatting exist; owner/reference joins, broad unwinding, handlers, and exact ordering remain open. |
-| Broad integrated verification | **88%** | `[##################--]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
+| Runtime and ABI foundations | **78%** | `[################----]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, diagnostic, termination, and cleanup surfaces, but several are still scaffolding until consumed end-to-end. |
+| Compiler/backend consumers | **62%** | `[############--------]` | Generated-C has broad selected coverage. LLVM/assembly parity remains uneven and many consumers still stop at blockers. |
+| Executable PHP semantics | **42%** | `[########------------]` | Many focused linked programs run, but behavior is still selected islands rather than a complete PHP execution model. |
+| Arrays, lvalues, references, COW | **58%** | `[############--------]` | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, and by-reference call/foreach parity remain open. |
+| Symbols, globals, request state | **64%** | `[#############-------]` | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
+| Calls, functions, frames | **22%** | `[####----------------]` | Runtime/interpreter metadata and lane contracts exist, but real generated-native frame execution is still missing. |
+| Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
+| Control flow, cleanup, diagnostics | **43%** | `[#########-----------]` | Bounded generated-C branches, loops, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, top-level return through finally, and diagnostic-aware stdout formatting exist; owner/reference joins, broad unwinding, handlers, and exact ordering remain open. |
+| Broad integrated verification | **39%** | `[########------------]` | Focused gates are strong. Cross-feature composition, end-to-end PHP programs, and backend parity need much broader proof. |
 
 ## Done / In Progress / Not Done
 
