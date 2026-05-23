@@ -1390,16 +1390,28 @@ fn native_statement_operand_call_operation(stmt: &Stmt) -> Option<NativeCallOper
 }
 
 fn stmt_list_contains_try_unwind_blocker(statements: &[Stmt]) -> bool {
-    statements.iter().any(stmt_contains_try_unwind_blocker)
+    stmt_list_contains_try_unwind_blocker_with_return(statements, false)
 }
 
-fn stmt_contains_try_unwind_blocker(stmt: &Stmt) -> bool {
+fn stmt_list_contains_try_unwind_blocker_allowing_return(statements: &[Stmt]) -> bool {
+    stmt_list_contains_try_unwind_blocker_with_return(statements, true)
+}
+
+fn stmt_list_contains_try_unwind_blocker_with_return(
+    statements: &[Stmt],
+    allow_return: bool,
+) -> bool {
+    statements
+        .iter()
+        .any(|stmt| stmt_contains_try_unwind_blocker(stmt, allow_return))
+}
+
+fn stmt_contains_try_unwind_blocker(stmt: &Stmt, allow_return: bool) -> bool {
     match stmt {
-        Stmt::Return { .. }
-        | Stmt::Throw { .. }
-        | Stmt::Goto { .. }
-        | Stmt::Break { .. }
-        | Stmt::Continue { .. } => true,
+        Stmt::Return { value, .. } => {
+            !allow_return || value.as_ref().is_some_and(expr_contains_exit_construct)
+        }
+        Stmt::Throw { .. } | Stmt::Goto { .. } | Stmt::Break { .. } | Stmt::Continue { .. } => true,
         Stmt::Echo { exprs, .. } => exprs.iter().any(expr_contains_exit_construct),
         Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } => expr_contains_exit_construct(expr),
         Stmt::Assign { target, expr, .. }
@@ -1416,15 +1428,18 @@ fn stmt_contains_try_unwind_blocker(stmt: &Stmt) -> bool {
             ..
         } => {
             expr_contains_exit_construct(condition)
-                || stmt_list_contains_try_unwind_blocker(then_branch)
-                || stmt_list_contains_try_unwind_blocker(else_branch)
+                || stmt_list_contains_try_unwind_blocker_with_return(then_branch, allow_return)
+                || stmt_list_contains_try_unwind_blocker_with_return(else_branch, allow_return)
         }
         Stmt::While {
             condition, body, ..
         }
         | Stmt::DoWhile {
             condition, body, ..
-        } => expr_contains_exit_construct(condition) || stmt_list_contains_try_unwind_blocker(body),
+        } => {
+            expr_contains_exit_construct(condition)
+                || stmt_list_contains_try_unwind_blocker_with_return(body, allow_return)
+        }
         Stmt::For {
             initializers,
             conditions,
@@ -1435,7 +1450,7 @@ fn stmt_contains_try_unwind_blocker(stmt: &Stmt) -> bool {
             initializers.iter().any(for_action_contains_exit_construct)
                 || conditions.iter().any(expr_contains_exit_construct)
                 || increments.iter().any(for_action_contains_exit_construct)
-                || stmt_list_contains_try_unwind_blocker(body)
+                || stmt_list_contains_try_unwind_blocker_with_return(body, allow_return)
         }
         Stmt::Switch { value, cases, .. } => {
             expr_contains_exit_construct(value)
@@ -1443,11 +1458,15 @@ fn stmt_contains_try_unwind_blocker(stmt: &Stmt) -> bool {
                     case.condition
                         .as_ref()
                         .is_some_and(expr_contains_exit_construct)
-                        || stmt_list_contains_try_unwind_blocker(&case.body)
+                        || stmt_list_contains_try_unwind_blocker_with_return(
+                            &case.body,
+                            allow_return,
+                        )
                 })
         }
         Stmt::Foreach { iterable, body, .. } => {
-            expr_contains_exit_construct(iterable) || stmt_list_contains_try_unwind_blocker(body)
+            expr_contains_exit_construct(iterable)
+                || stmt_list_contains_try_unwind_blocker_with_return(body, allow_return)
         }
         Stmt::UnsetArrayIndex { index, .. } => expr_contains_exit_construct(index),
         Stmt::UnsetNestedArrayIndex { indices, .. } => {
@@ -1464,7 +1483,7 @@ fn stmt_contains_try_unwind_blocker(stmt: &Stmt) -> bool {
         Stmt::Try {
             body, finally_body, ..
         } => {
-            stmt_list_contains_try_unwind_blocker(body)
+            stmt_list_contains_try_unwind_blocker_with_return(body, allow_return)
                 || finally_body
                     .as_ref()
                     .is_some_and(|body| stmt_list_contains_try_unwind_blocker(body))
@@ -7623,6 +7642,7 @@ struct CGenerator {
     native_request_state_handle: Option<String>,
     native_globals_symbol_table_handle: Option<String>,
     loop_transfer_targets: Vec<CLoopTransferTarget>,
+    active_finally_bodies: Vec<Vec<Stmt>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14094,7 +14114,18 @@ impl CGenerator {
         if let Some(value) = value {
             self.emit_discarded_expr_statement(value)?;
         }
+        self.emit_active_finally_bodies_before_terminal_transfer()?;
         self.body.push(self.native_error_exit_with_code("", "0"));
+        Ok(())
+    }
+
+    fn emit_active_finally_bodies_before_terminal_transfer(&mut self) -> CompileResult<()> {
+        let active_finally_bodies = self.active_finally_bodies.clone();
+        for finally_body in active_finally_bodies.iter().rev() {
+            for statement in finally_body {
+                self.emit_statement(statement)?;
+            }
+        }
         Ok(())
     }
 
@@ -14105,16 +14136,24 @@ impl CGenerator {
         finally_body: Option<&[Stmt]>,
         span: Span,
     ) -> CompileResult<()> {
-        if stmt_list_contains_try_unwind_blocker(body)
-            || finally_body.is_some_and(stmt_list_contains_try_unwind_blocker)
-        {
+        let can_schedule_return = finally_body.is_some() || !self.active_finally_bodies.is_empty();
+        let body_has_blocker = if can_schedule_return {
+            stmt_list_contains_try_unwind_blocker_allowing_return(body)
+        } else {
+            stmt_list_contains_try_unwind_blocker(body)
+        };
+        if body_has_blocker || finally_body.is_some_and(stmt_list_contains_try_unwind_blocker) {
             return Err(self.unsupported(span, ASSEMBLY_TRY_BLOCK_REJECTION));
         }
 
+        if let Some(finally_body) = finally_body {
+            self.active_finally_bodies.push(finally_body.to_vec());
+        }
         for statement in body {
             self.emit_statement(statement)?;
         }
         if let Some(finally_body) = finally_body {
+            self.active_finally_bodies.pop();
             for statement in finally_body {
                 self.emit_statement(statement)?;
             }

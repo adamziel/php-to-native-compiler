@@ -352,6 +352,19 @@ const NATIVE_TRY_FINALLY_NORMAL_FLOW_SOURCE: &str = concat!(
     "echo \"after\";\n",
 );
 
+const NATIVE_TRY_FINALLY_RETURN_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"flag\" => \"old\"];\n",
+    "try {\n",
+    "    echo \"try|\";\n",
+    "    array_sum([1, 2]);\n",
+    "    return $items[\"flag\"] = array_sum([3, 4]);\n",
+    "} finally {\n",
+    "    echo \"finally:\", $items[\"flag\"], \"|\";\n",
+    "}\n",
+    "echo \"after\";\n",
+);
+
 const NATIVE_TOP_LEVEL_RETURN_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\"];\n",
@@ -1633,9 +1646,43 @@ fn native_executable_c_source_routes_try_finally_normal_flow() {
 }
 
 #[test]
+fn native_executable_c_source_runs_finally_before_try_return_transfer() {
+    let program = parse(NATIVE_TRY_FINALLY_RETURN_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+    let return_pos = body
+        .find("return 0;")
+        .unwrap_or_else(|| panic!("try return should terminate main:\n{source}"));
+
+    assert!(
+        body[..return_pos].contains("phpc_native_value_free(native_value_array_query_"),
+        "try-body discarded native values should be cleaned on the return path:\n{source}"
+    );
+    assert!(
+        body[..return_pos]
+            .matches("phpc_native_value_format_stdout_with_diagnostic")
+            .count()
+            >= 3,
+        "try output and finally output should be emitted before return:\n{source}"
+    );
+    assert!(
+        body[..return_pos]
+            .matches("phpc_native_value_free(native_value_array_query_")
+            .count()
+            >= 2,
+        "return operand value results should be released before terminal return:\n{source}"
+    );
+    assert!(
+        !source.contains("try/catch/finally lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_rejects_try_unwind_transfers() {
     for source in [
-        "<?php\ntry { return; } finally { echo \"finally\"; }\n",
+        "<?php\ntry { return; } catch (Exception $e) { echo \"catch\"; }\n",
+        "<?php\ntry { return exit(\"bye\"); } finally { echo \"finally\"; }\n",
         "<?php\ntry { exit(\"bye\"); } finally { echo \"finally\"; }\n",
         "<?php\ntry { echo \"try\"; } finally { return; }\n",
         "<?php\ntry { throw new Exception(\"boom\"); } catch (Exception $e) { echo \"catch\"; } finally { echo \"finally\"; }\n",
@@ -2772,6 +2819,32 @@ fn emit_exe_links_and_runs_try_finally_normal_flow_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"try|BODY|finally|after");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_try_finally_return_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("try_finally_return", NATIVE_TRY_FINALLY_RETURN_SOURCE);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native try/finally return executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"try|finally:7|");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
