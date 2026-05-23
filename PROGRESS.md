@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 05:11 CEST
+Updated: 2026-05-23 05:23 CEST
 Evaluation marker: `20260523T025130Z`
 
-Primary HEAD: `6b5e480f codegen: lower state-stable while loops`
-Latest integrated semantic baseline: `6b5e480f codegen: lower state-stable while loops`
+Primary HEAD: `dcd99134 codegen: terminate top-level returns`
+Latest integrated semantic baseline: `dcd99134 codegen: terminate top-level returns`
 Latest evaluator report: `20260523T025130Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -34,16 +34,18 @@ Native value-operation diagnostics now report through the shared diagnostic
 consumer, and `strlen()` can consume owned native value-result producers through
 the shared value-to-string conversion boundary. Generated-C `while` statements
 now execute when the condition and body both stay within existing scoped
-truthiness/value-result and cleanup-stability boundaries.
+truthiness/value-result and cleanup-stability boundaries. Generated-C
+main-script `return` statements now terminate the executable path after
+evaluating and cleaning return operands and live native owners.
 
 This is still selected compiled PHP execution, not complete PHP semantics.
 Calls/functions/frames, object/property/method execution, full references/COW,
 arbitrary by-reference foreach, structured cleanup/unwinding, exact
 diagnostics, and LLVM/assembly parity remain the major completion blockers.
 
-Current primary cleanliness: semantic work is current through the `strlen()`
-value-result conversion and state-stable `while` loop batches. The protected
-`runtime/src/lib.rs` null-slot hunk is still dirty and uncounted.
+Current primary cleanliness: semantic work is current through the top-level
+`return` terminal-transfer batch. The protected `runtime/src/lib.rs`
+null-slot hunk is still dirty and uncounted.
 
 ## Grand Roadmap
 
@@ -56,11 +58,16 @@ value-result conversion and state-stable `while` loop batches. The protected
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement exists, but generated-native call/frame execution is still the major missing piece. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary still lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **40%** | `[########------------]` | Direct exit, diagnostic ownership/reporting, bounded `if`/`else`, selected branch joins, logical short-circuiting, state-stable `while`, branch-local value/non-value cleanup, and statement cleanup execute on generated C. Loop-carried joins, break/continue, switch, cleanup stacks, exact ordering, and unwinding are not generalized. |
+| Control flow, cleanup, diagnostics | **41%** | `[########------------]` | Direct exit, diagnostic ownership/reporting, top-level return termination, bounded `if`/`else`, selected branch joins, logical short-circuiting, state-stable `while`, branch-local value/non-value cleanup, and statement cleanup execute on generated C. Loop-carried joins, function returns/frames, break/continue, switch, cleanup stacks, exact ordering, and unwinding are not generalized. |
 | Broad integrated verification | **87%** | `[#################---]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Primary-Integrated Progress
 
+- [x] `dcd99134`: generated-C main-script `return` statements now evaluate
+  optional operands for side effects, release discarded operand values and live
+  native owners through existing cleanup paths, and terminate the linked
+  executable path with PHP CLI-compatible success status. User-function
+  return, include/require return values, and frame handoff remain out of scope.
 - [x] `6b5e480f`: generated-C `while` statements now emit scoped C loops when
   the condition and body leave compiler-visible ownership state unchanged,
   re-evaluate the condition inside the loop through shared truthiness/value
@@ -148,11 +155,12 @@ Not counted until primary integrates it cleanly:
   including non-append reference paths and fatal direct no-key `$GLOBALS[]`
   rejection.
 - [x] Selected generated-C array query, array lvalue, reference-backed lvalue,
-  diagnostic cleanup, direct termination, state-stable branch, branch-owner,
-  state-stable `while`, branch-local cleanup, foreach by-value storage,
-  selected by-reference foreach slots, strict value-result comparison,
-  value-operation diagnostic reporting, value-result string conversion, lazy
-  expression, logical short-circuit, and statement-discard cleanup consumers.
+  diagnostic cleanup, direct termination, top-level return termination,
+  state-stable branch, branch-owner, state-stable `while`, branch-local
+  cleanup, foreach by-value storage, selected by-reference foreach slots,
+  strict value-result comparison, value-operation diagnostic reporting,
+  value-result string conversion, lazy expression, logical short-circuit, and
+  statement-discard cleanup consumers.
 - [x] Focused source and linked executable gates for the newest primary
   semantic slices.
 
@@ -170,9 +178,10 @@ Not counted until primary integrates it cleanly:
   visibility/magic hooks, constructor behavior, and ArrayAccess boundaries.
   Estimate: **11%** `[##------------------]`
 - [ ] Structured control flow beyond selected `if`/`else`, state-stable
-  `while`, and expression cleanup: broader cleanup-owner joins, loop-carried
-  state, switch, goto, break/continue, cleanup stacks, and source-ordered
-  diagnostics. Estimate: **40%**
+  `while`, top-level `return`, and expression cleanup: broader cleanup-owner
+  joins, loop-carried state, function-return/frame handoff, switch, goto,
+  break/continue, cleanup stacks, and source-ordered diagnostics. Estimate:
+  **41%**
   `[########------------]`
 - [ ] Broader conversion/comparison/callback behavior that removes shared
   blockers rather than adding one-off builtin slices.
@@ -198,9 +207,11 @@ blockers with clean staging and focused proof. The best next work removes major
 shared blockers:
 generated-native call/frame execution, object/property/method execution,
 reference/COW through real control flow, broader cleanup and diagnostic
-ordering, or backend parity. Treat `4efa12ba`, `9a05a58b`, and `6b5e480f` as
-non-repeat; future diagnostic/string-conversion/control-flow work should target
-source ordering, suppression/custom handlers, object/resource/string hooks,
-loop-carried cleanup/state, terminal transfers, cleanup/unwind ordering, or
-backend parity. Continue rejecting docs-only progress, nearby builtin-only
-expansions, interpreter-only metadata patches, and exact-shape lowering.
+ordering, or backend parity. Treat `4efa12ba`, `9a05a58b`, `6b5e480f`, and
+`dcd99134` as non-repeat; future diagnostic/string-conversion/control-flow
+work should target source ordering, suppression/custom handlers,
+object/resource/string hooks, loop-carried cleanup/state, real function
+return/frame handoff, terminal transfers beyond top-level return,
+cleanup/unwind ordering, or backend parity. Continue rejecting docs-only
+progress, nearby builtin-only expansions, interpreter-only metadata patches,
+and exact-shape lowering.
