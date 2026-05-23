@@ -15,6 +15,30 @@ const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "echo ((array_sum([2]) xor $items[\"one\"]) ? \"T\" : \"F\");\n",
 );
 
+const NATIVE_SCOPED_IF_SOURCE: &str = concat!(
+    "<?php\n",
+    "$sum = 2 + \"1\";\n",
+    "if ($sum) {\n",
+    "    echo \"truthy\";\n",
+    "} else {\n",
+    "    echo \"false\";\n",
+    "}\n",
+    "echo \"|\";\n",
+    "$left = \"10\";\n",
+    "$right = 2;\n",
+    "if ($left > $right) {\n",
+    "    echo \"numeric\";\n",
+    "} else {\n",
+    "    echo \"lexical\";\n",
+    "}\n",
+    "echo \"|\";\n",
+    "if ($sum == 3) {\n",
+    "    print \"equal\";\n",
+    "} else {\n",
+    "    print \"different\";\n",
+    "}\n",
+);
+
 const NATIVE_EXIT_STRING_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"message\" => \"bye\"];\n",
@@ -766,6 +790,53 @@ fn native_executable_c_source_routes_native_value_truthiness_through_runtime_abi
 }
 
 #[test]
+fn native_executable_c_source_routes_scoped_if_branches_through_truthiness_boundary() {
+    let program = parse(NATIVE_SCOPED_IF_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains(" = phpc_native_value_is_truthy(")
+            && body.contains("if (native_value_truthy_"),
+        "native value conditions should route through the shared truthiness ABI:\n{source}"
+    );
+    assert!(
+        body.contains(" = phpc_native_value_compare_result("),
+        "comparison conditions should feed the shared native value comparison result ABI:\n{source}"
+    );
+    assert!(
+        body.contains(" = phpc_native_value_binary_result(")
+            && body.contains(" = phpc_native_value_compare_result("),
+        "if conditions should compose existing native value and comparison producers:\n{source}"
+    );
+    assert!(
+        body.contains("} else {"),
+        "generated C should preserve both scoped branch bodies:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_if_branches_that_need_environment_merge() {
+    let program = parse(
+        "<?php\n$flag = 1 == \"1\";\nif ($flag) { $value = \"then\"; } else { $value = \"else\"; }\necho $value;\n",
+    )
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert!(
+        error
+            .message
+            .contains("branches that need persistent environment merging"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_array_pointer_lvalue_owner_program() {
     if !has_cc() {
         return;
@@ -1278,6 +1349,27 @@ fn emit_exe_links_and_runs_native_value_truthiness_program() {
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "TTFTFF");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_scoped_if_branch_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("scoped_if_branches", NATIVE_SCOPED_IF_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native scoped-if executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"truthy|numeric|equal");
+    assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
     let _ = fs::remove_file(&output_path);

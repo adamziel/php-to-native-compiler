@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added bounded generated-native executable `if`/`else` statement lowering for
+  the `phpc compile --emit-exe` C-link path when the condition can be lowered
+  through the existing native truthiness/value-comparison boundaries and both
+  branch bodies leave the compiler's persistent variable and cleanup state
+  unchanged. The branch emitter evaluates the condition once, emits scoped C
+  branch bodies, and rejects branches that would need environment merging
+  instead of recording misleading post-branch locals or cleanup handles.
+  Focused tests cover native-value truthiness conditions, native value
+  comparison conditions, executable branch output, and rejection for branch
+  assignments that require persistent environment merging. `elseif`, loops,
+  switch/goto/break/continue, branch-local variable merging, branch-created
+  persistent request/symbol/array/value handles, exact PHP diagnostic ordering,
+  and LLVM IR/assembly lowering remain unsupported.
+
 - Added bounded generated-native executable termination for direct
   `exit()`/`die()` calls on the `phpc compile --emit-exe` C-link path. The
   generated C now lowers direct no-argument termination and materializable

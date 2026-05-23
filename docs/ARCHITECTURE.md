@@ -968,7 +968,12 @@ The interpreter represents `break N;` and `continue N;` as control-flow signals
 whose depth is consumed one active `while`, `for`, `do ... while`, `foreach`,
 or `switch` level at a time. Plain `continue;` that targets a switch remains a
 runtime boundary, while `continue 2;` can pass through the switch to an outer
-loop. Native lowering rejects all current structured control flow.
+loop. The generated-native C-link path has a bounded `if`/`else` statement
+emitter for conditions that already lower through native truthiness or value
+comparison boundaries; it emits branch bodies in scoped generators and accepts
+them only when persistent variable/cleanup state is unchanged after each
+branch. Native lowering still rejects branch environment merging, `elseif`,
+loops, switch/goto/break/continue, and LLVM IR/assembly statement control flow.
 `for` headers store initializer, condition, and increment slots as ordered
 lists. The interpreter executes initializer and increment actions left to
 right; condition expressions also evaluate left to right and the final

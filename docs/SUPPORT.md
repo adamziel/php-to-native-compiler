@@ -5479,6 +5479,13 @@
   PHP diagnostics/`Throwable` behavior, and LLVM IR/assembly lowering remain
   unsupported; `--emit-ir` and `--emit-asm` still reject `exit()`/`die()` with
   the dedicated termination diagnostic.
+- `phpc compile --emit-exe` handles a bounded generated-C `if`/`else` statement
+  subset when conditions lower through existing native value truthiness or
+  value-comparison boundaries and both branch bodies leave persistent
+  variable/cleanup state unchanged. Branch-local variables, branch-created
+  persistent native handles, environment merging after divergent assignments,
+  `elseif`, loops, switch/goto/break/continue, exact PHP diagnostic ordering,
+  and LLVM IR/assembly lowering remain unsupported.
 - Native lowering rejects `try`/`catch`/`finally` blocks through a dedicated
   try-block diagnostic until generated code has `Throwable` objects, stack
   unwinding, catch type matching, catch variable binding, finally execution

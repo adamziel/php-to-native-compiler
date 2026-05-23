@@ -245,13 +245,17 @@ direct output through runtime string/value stdout helpers. Bounded direct
 `exit()`/`die()` calls now terminate generated-native executables for
 materializable `null`, `int`, and `string` operands: strings are written to
 stdout, integer operands become the process status, and owned native runtime
-handles are cleaned before returning from `main`.
+handles are cleaned before returning from `main`. Bounded `if`/`else`
+statements can also lower when conditions use the existing native truthiness or
+value-comparison boundaries and both branches leave persistent variable/cleanup
+state unchanged.
 
 This is not broad native PHP support. Objects, functions, references,
 request/session/stream/header state, exceptions, includes, shutdown callbacks,
-destructors/finally ordering, output buffers, SAPI interaction, dynamic
-string-pointer helper lowering, and broad PHP coercions remain unsupported or
-limited to the existing native diagnostics.
+destructors/finally ordering, output buffers, SAPI interaction, branch
+environment merging, loops/switch/goto/break/continue, dynamic string-pointer
+helper lowering, and broad PHP coercions remain unsupported or limited to the
+existing native diagnostics.
 
 ## Current Status
 
@@ -932,14 +936,16 @@ broad production runtime string-helper lowering are not implemented.
 
 The linked native executable C path handles bounded direct `exit()`/`die()`
 termination for materializable no-argument, `null`, `int`, and `string`
-operands. LLVM IR and assembly lowering still reject `exit()`/`die()`.
+operands, plus scoped `if`/`else` branches that do not require persistent
+environment merging. LLVM IR and assembly lowering still reject `exit()`/`die()`
+and structured statement control flow.
 
 Native lowering rejects arrays, array destructuring, objects, `instanceof`
 relationship checks, static class members, ArrayAccess object-offset dispatch,
 clone expressions, user functions, closure values,
-include/require, broad control flow, exception boundaries, scalar casts,
-mutation forms that require symbol-table effects, double-quoted string
-interpolation, dynamic calls, `assert()`, runtime constant tables,
+include/require, broad control flow, branch environment merging, exception
+boundaries, scalar casts, mutation forms that require symbol-table effects,
+double-quoted string interpolation, dynamic calls, `assert()`, runtime constant tables,
 direct request superglobal reads such as `$_GET`/`$_POST`/`$_COOKIE`/
 `$_REQUEST`/`$_FILES`,
 direct `str_starts_with(...)` string-prefix calls,
