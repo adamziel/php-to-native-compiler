@@ -22645,7 +22645,12 @@ impl CGenerator {
                     self.emit_c_stdout_printf(format!("printf(\"%s\", {value});"));
                 }
             }
-            CValue::ArrayHandle(_) => return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION)),
+            value @ CValue::ArrayHandle(_) => {
+                let value = self.materialize_native_array_c_value_handle(value, span)?;
+                self.body
+                    .push(format!("phpc_native_value_echo_stdout({});", value.handle));
+                self.body.extend(value.cleanup_after_use);
+            }
             CValue::NativeValueHandle(handle) => {
                 self.body
                     .push(format!("phpc_native_value_echo_stdout({handle});"));

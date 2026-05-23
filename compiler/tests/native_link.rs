@@ -10667,6 +10667,14 @@ const NATIVE_ARRAY_OWNER_TRUTHINESS_SOURCE: &str = concat!(
     "if ($filled && !$empty) { echo \"truthy\"; } else { echo \"bad\"; }\n",
 );
 
+const NATIVE_ARRAY_OWNER_OUTPUT_SOURCE: &str = concat!(
+    "<?php\n",
+    "$empty = [];\n",
+    "$filled = [\"x\" => \"y\"];\n",
+    "echo $empty, \"|\";\n",
+    "print $filled;\n",
+);
+
 const NATIVE_VALUE_CAST_ECHO_SOURCE: &str = "<?php\necho (int)\"5.9\", \"|\";\necho (float)\"3.5\", \"|\";\necho (string)(2 + 3), \"|\";\necho (bool)\"0\", \"|\";\necho gettype((string)123);\n";
 
 const NATIVE_VALUE_OPERATION_ECHO_SOURCE: &str = "<?php\n$left = \"6\";\n$right = 2;\necho -$left, \"|\";\necho $left + $right, \"|\";\necho $left / $right, \"|\";\necho \"A\" . \"\0B\", \"|\";\necho \"B\" & \"A\", \"|\";\necho 8 << \"1\";\n";
@@ -11445,6 +11453,53 @@ fn emit_exe_links_and_runs_array_owner_truthiness_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"empty|filled|falsey|truthy");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_array_owner_output_through_runtime_abi() {
+    let program = parse(NATIVE_ARRAY_OWNER_OUTPUT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .contains("extern size_t phpc_native_value_echo_stdout(phpc_NativeValueHandle value);"),
+        "{source}"
+    );
+    assert!(
+        source.matches("phpc_native_value_from_array(").count() >= 2
+            && source.matches("phpc_native_value_echo_stdout(").count() >= 3,
+        "echo and print should materialize array owners as PHP-shaped values and send them through runtime echo:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_owner_output_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("array_owner_output", NATIVE_ARRAY_OWNER_OUTPUT_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run array owner output executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"Array|Array");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
