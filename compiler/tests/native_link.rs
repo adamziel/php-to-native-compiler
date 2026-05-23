@@ -207,6 +207,29 @@ const NATIVE_STATE_STABLE_FOR_SOURCE: &str = concat!(
     "echo \"|done\";\n",
 );
 
+const NATIVE_LOOP_CARRIED_SCALAR_SOURCE: &str = concat!(
+    "<?php\n",
+    "$i = 0;\n",
+    "while ($i < 3) {\n",
+    "    echo $i;\n",
+    "    $i = ($i << 1) | 1;\n",
+    "}\n",
+    "echo \"|\";\n",
+    "$keep = true;\n",
+    "$seen = 0;\n",
+    "while ($keep) {\n",
+    "    echo $seen;\n",
+    "    $seen = ($seen << 1) | 1;\n",
+    "    if ($seen >= 1) {\n",
+    "        $keep = false;\n",
+    "    }\n",
+    "}\n",
+    "echo \"|\";\n",
+    "for ($j = 1; $j < 5; $j = $j << 1) {\n",
+    "    echo $j;\n",
+    "}\n",
+);
+
 const NATIVE_TOP_LEVEL_RETURN_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\"];\n",
@@ -1376,6 +1399,35 @@ fn native_executable_c_source_rejects_for_state_without_loop_join() {
 }
 
 #[test]
+fn native_executable_c_source_routes_loop_carried_scalar_state() {
+    let program = parse(NATIVE_LOOP_CARRIED_SCALAR_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("long long loop_phi_"),
+        "integer loop-carried state should use mutable scalar storage:\n{source}"
+    );
+    assert!(
+        body.contains("_Bool loop_phi_"),
+        "boolean loop-carried state should use mutable scalar storage:\n{source}"
+    );
+    assert!(
+        body.matches("while (1)").count() >= 3,
+        "while and for loop phis should still lower through scoped C loops:\n{source}"
+    );
+    assert!(
+        (body.contains(" = (loop_phi_") || body.contains(" = ((loop_phi_"))
+            && body.contains("(int64_t)(loop_phi_"),
+        "loop conditions and writes should read and update the same scalar slots:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_top_level_return_through_cleanup() {
     let program = parse(NATIVE_TOP_LEVEL_RETURN_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2313,6 +2365,34 @@ fn emit_exe_links_and_runs_state_stable_for_loop_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCD|EG|X|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_loop_carried_scalar_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "loop_carried_scalar_state",
+        NATIVE_LOOP_CARRIED_SCALAR_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native loop-carried scalar executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"01|0|124");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

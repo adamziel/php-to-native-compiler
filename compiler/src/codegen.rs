@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -104,7 +104,7 @@ const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rej
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
-const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries, elseif chains, do-while loops, switch statements, goto labels, top-level or multi-level break/continue, and unbounded loop headers until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while loops, and state-stable for loops through scoped control-flow emission";
+const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries or loop-carried int/float/bool scalar storage, elseif chains, do-while loops, switch statements, goto labels, top-level or multi-level break/continue, and unbounded loop headers until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while/for loops, and loop-carried scalar while/for state through scoped control-flow emission";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
@@ -7210,6 +7210,7 @@ struct CGenerator {
     static_data: Vec<String>,
     variables: HashMap<String, CValue>,
     variable_order: Vec<String>,
+    mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
     by_reference_foreach_linger_variables: HashSet<String>,
     array_cleanup_handles: Vec<String>,
     owned_native_byte_buffers: Vec<String>,
@@ -7258,6 +7259,37 @@ enum CValue {
     NativeValueHandle(String),
     NativeReferenceHandle(String),
     Null,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct CMutableScalarSlot {
+    name: String,
+    kind: CMutableScalarSlotKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CMutableScalarSlotKind {
+    Int,
+    Float,
+    Bool,
+}
+
+impl CMutableScalarSlotKind {
+    fn c_type(self) -> &'static str {
+        match self {
+            Self::Int => "long long",
+            Self::Float => "double",
+            Self::Bool => "_Bool",
+        }
+    }
+
+    fn c_value(self, name: &str) -> CValue {
+        match self {
+            Self::Int => CValue::Int(name.to_string()),
+            Self::Float => CValue::Float(name.to_string()),
+            Self::Bool => CValue::BoolExpr(name.to_string()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -7663,6 +7695,464 @@ fn native_value_aux_cleanup_after_consuming_handle(
         .collect()
 }
 
+fn collect_loop_assigned_direct_variables_from_stmts(
+    statements: &[Stmt],
+    names: &mut BTreeSet<String>,
+) {
+    for statement in statements {
+        collect_loop_assigned_direct_variables_from_stmt(statement, names);
+    }
+}
+
+fn collect_loop_assigned_direct_variables_from_stmt(stmt: &Stmt, names: &mut BTreeSet<String>) {
+    match stmt {
+        Stmt::Echo { exprs, .. } => {
+            for expr in exprs {
+                collect_loop_assigned_direct_variables_from_expr(expr, names);
+            }
+        }
+        Stmt::Print { expr, .. }
+        | Stmt::Expr { expr, .. }
+        | Stmt::Require { path: expr, .. }
+        | Stmt::Include { path: expr, .. }
+        | Stmt::Throw { expr, .. } => collect_loop_assigned_direct_variables_from_expr(expr, names),
+        Stmt::Assign { target, expr, .. }
+        | Stmt::CompoundAssign { target, expr, .. }
+        | Stmt::NullCoalesceAssign { target, expr, .. } => {
+            collect_loop_assigned_direct_variables_from_assign_target(target, names);
+            collect_loop_assigned_direct_variables_from_expr(expr, names);
+        }
+        Stmt::IncrementDecrement { target, .. } => {
+            collect_loop_assigned_direct_variables_from_assign_target(target, names);
+        }
+        Stmt::ReferenceAssign { target, .. } => {
+            collect_loop_assigned_direct_variables_from_assign_target(target, names);
+        }
+        Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(condition, names);
+            collect_loop_assigned_direct_variables_from_stmts(then_branch, names);
+            collect_loop_assigned_direct_variables_from_stmts(else_branch, names);
+        }
+        Stmt::While {
+            condition, body, ..
+        }
+        | Stmt::DoWhile {
+            condition, body, ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(condition, names);
+            collect_loop_assigned_direct_variables_from_stmts(body, names);
+        }
+        Stmt::For {
+            initializers,
+            conditions,
+            increments,
+            body,
+            ..
+        } => {
+            collect_loop_assigned_direct_variables_from_for_actions(initializers, names);
+            for condition in conditions {
+                collect_loop_assigned_direct_variables_from_expr(condition, names);
+            }
+            collect_loop_assigned_direct_variables_from_for_actions(increments, names);
+            collect_loop_assigned_direct_variables_from_stmts(body, names);
+        }
+        Stmt::Switch { value, cases, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(value, names);
+            for case in cases {
+                if let Some(condition) = &case.condition {
+                    collect_loop_assigned_direct_variables_from_expr(condition, names);
+                }
+                collect_loop_assigned_direct_variables_from_stmts(&case.body, names);
+            }
+        }
+        Stmt::Foreach { iterable, body, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(iterable, names);
+            collect_loop_assigned_direct_variables_from_stmts(body, names);
+        }
+        Stmt::UnsetArrayIndex { index, .. }
+        | Stmt::UnsetDynamicObjectProperty {
+            property: index, ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(index, names);
+        }
+        Stmt::UnsetNestedArrayIndex { indices, .. } => {
+            for index in indices {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        Stmt::UnsetMany { targets, .. } => {
+            for target in targets {
+                collect_loop_assigned_direct_variables_from_unset_target(target, names);
+            }
+        }
+        Stmt::ConstDeclaration { declarations, .. } => {
+            for declaration in declarations {
+                collect_loop_assigned_direct_variables_from_expr(&declaration.value, names);
+            }
+        }
+        Stmt::Return { value, .. } => {
+            if let Some(value) = value {
+                collect_loop_assigned_direct_variables_from_expr(value, names);
+            }
+        }
+        Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            collect_loop_assigned_direct_variables_from_stmts(body, names);
+            for catch in catches {
+                collect_loop_assigned_direct_variables_from_stmts(&catch.body, names);
+            }
+            if let Some(finally_body) = finally_body {
+                collect_loop_assigned_direct_variables_from_stmts(finally_body, names);
+            }
+        }
+        Stmt::StaticLocal { declarations, .. } => {
+            for declaration in declarations {
+                if let Some(default) = &declaration.default {
+                    collect_loop_assigned_direct_variables_from_expr(default, names);
+                }
+            }
+        }
+        Stmt::Namespace { .. }
+        | Stmt::Use { .. }
+        | Stmt::Goto { .. }
+        | Stmt::Label { .. }
+        | Stmt::UnsetVariable { .. }
+        | Stmt::UnsetObjectProperty { .. }
+        | Stmt::UnsetStaticProperty { .. }
+        | Stmt::UnsetSelfStaticProperty { .. }
+        | Stmt::UnsetParentStaticProperty { .. }
+        | Stmt::UnsetLateStaticProperty { .. }
+        | Stmt::Function(_)
+        | Stmt::Interface(_)
+        | Stmt::Trait(_)
+        | Stmt::Enum(_)
+        | Stmt::Class(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Global { .. } => {}
+    }
+}
+
+fn collect_loop_assigned_direct_variables_from_for_actions(
+    actions: &[ForAction],
+    names: &mut BTreeSet<String>,
+) {
+    for action in actions {
+        match action {
+            ForAction::Assign { target, expr } | ForAction::CompoundAssign { target, expr, .. } => {
+                collect_loop_assigned_direct_variables_from_assign_target(target, names);
+                collect_loop_assigned_direct_variables_from_expr(expr, names);
+            }
+            ForAction::IncrementDecrement { target, .. } => {
+                collect_loop_assigned_direct_variables_from_assign_target(target, names);
+            }
+            ForAction::Expr { expr } => {
+                collect_loop_assigned_direct_variables_from_expr(expr, names)
+            }
+        }
+    }
+}
+
+fn collect_loop_assigned_direct_variables_from_assign_target(
+    target: &AssignTarget,
+    names: &mut BTreeSet<String>,
+) {
+    match target {
+        AssignTarget::Variable { name, .. } => {
+            names.insert(name.clone());
+        }
+        AssignTarget::List { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => {}
+        AssignTarget::ArrayIndex { index, .. } => {
+            if let Some(index) = index {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayAppend { indices, .. } => {
+            for index in indices {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        }
+        | AssignTarget::DynamicObjectPropertyArrayAppend {
+            property, indices, ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(property, names);
+            for index in indices {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        AssignTarget::NonDirectProperty { holder, .. }
+        | AssignTarget::ObjectStaticProperty { target: holder, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(holder, names);
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(holder, names);
+            collect_loop_assigned_direct_variables_from_expr(property, names);
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(holder, names);
+            collect_loop_assigned_direct_variables_from_expr(property, names);
+            for index in indices {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        AssignTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(holder, names);
+            for index in indices {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(holder, names);
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(holder, names);
+            collect_loop_assigned_direct_variables_from_expr(property, names);
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        AssignTarget::DynamicProperty { property, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(property, names);
+        }
+    }
+}
+
+fn collect_loop_assigned_direct_variables_from_unset_target(
+    target: &UnsetTarget,
+    names: &mut BTreeSet<String>,
+) {
+    match target {
+        UnsetTarget::ArrayIndex { index, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(index, names);
+        }
+        UnsetTarget::NestedArrayIndex { indices, .. }
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
+        | UnsetTarget::DynamicObjectPropertyArrayIndex { indices, .. } => {
+            for index in indices {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        UnsetTarget::DynamicObjectProperty { property, .. }
+        | UnsetTarget::NonDirectDynamicObjectProperty { property, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(property, names);
+        }
+        UnsetTarget::NonDirectObjectProperty { holder, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(holder, names);
+        }
+        UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(holder, names);
+            collect_loop_assigned_direct_variables_from_expr(property, names);
+            for index in indices {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        UnsetTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(holder, names);
+            for index in indices {
+                collect_loop_assigned_direct_variables_from_expr(index, names);
+            }
+        }
+        UnsetTarget::Variable { .. }
+        | UnsetTarget::ObjectProperty { .. }
+        | UnsetTarget::StaticProperty { .. }
+        | UnsetTarget::SelfStaticProperty { .. }
+        | UnsetTarget::ParentStaticProperty { .. }
+        | UnsetTarget::LateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_loop_assigned_direct_variables_from_expr(expr: &Expr, names: &mut BTreeSet<String>) {
+    match expr {
+        Expr::Array { items, .. } => {
+            for item in items {
+                if let Some(key) = &item.key {
+                    collect_loop_assigned_direct_variables_from_expr(key, names);
+                }
+                collect_loop_assigned_direct_variables_from_expr(&item.value, names);
+            }
+        }
+        Expr::Index { target, index, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(target, names);
+            collect_loop_assigned_direct_variables_from_expr(index, names);
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::InstanceOf { expr: target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(target, names);
+        }
+        Expr::Property { target, .. } | Expr::ObjectStaticProperty { target, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(target, names);
+        }
+        Expr::MethodCall { target, args, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(target, names);
+            for arg in args {
+                collect_loop_assigned_direct_variables_from_expr(arg, names);
+            }
+        }
+        Expr::DynamicProperty {
+            target, property, ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(target, names);
+            collect_loop_assigned_direct_variables_from_expr(property, names);
+        }
+        Expr::DynamicMethodCall {
+            target,
+            method,
+            args,
+            ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(target, names);
+            collect_loop_assigned_direct_variables_from_expr(method, names);
+            for arg in args {
+                collect_loop_assigned_direct_variables_from_expr(arg, names);
+            }
+        }
+        Expr::ParentMethodCall { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. }
+        | Expr::Call { args, .. }
+        | Expr::New { args, .. } => {
+            for arg in args {
+                collect_loop_assigned_direct_variables_from_expr(arg, names);
+            }
+        }
+        Expr::ObjectStaticMethodCall { target, args, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(target, names);
+            for arg in args {
+                collect_loop_assigned_direct_variables_from_expr(arg, names);
+            }
+        }
+        Expr::DynamicCall { callee, args, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(callee, names);
+            for arg in args {
+                collect_loop_assigned_direct_variables_from_expr(arg, names);
+            }
+        }
+        Expr::Binary { left, right, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(left, names);
+            collect_loop_assigned_direct_variables_from_expr(right, names);
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(condition, names);
+            collect_loop_assigned_direct_variables_from_expr(if_true, names);
+            collect_loop_assigned_direct_variables_from_expr(if_false, names);
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(condition, names);
+            collect_loop_assigned_direct_variables_from_expr(if_false, names);
+        }
+        Expr::Assign { target, expr, .. }
+        | Expr::CompoundAssign { target, expr, .. }
+        | Expr::NullCoalesceAssign { target, expr, .. } => {
+            collect_loop_assigned_direct_variables_from_assign_target(target, names);
+            collect_loop_assigned_direct_variables_from_expr(expr, names);
+        }
+        Expr::IncrementDecrement { target, .. } => {
+            collect_loop_assigned_direct_variables_from_assign_target(target, names);
+        }
+        Expr::Closure { .. }
+        | Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::InterpolatedString { .. }
+        | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. } => {}
+    }
+}
+
 impl CGenerator {
     fn next_native_name(&mut self, prefix: &str) -> String {
         let index = self.next_native_temp;
@@ -7677,9 +8167,81 @@ impl CGenerator {
         branch
     }
 
+    fn mutable_scalar_slot_initializer(
+        &self,
+        value: &CValue,
+    ) -> Option<(CMutableScalarSlotKind, String)> {
+        match value {
+            CValue::Int(value) => Some((CMutableScalarSlotKind::Int, value.clone())),
+            CValue::Float(value) => Some((CMutableScalarSlotKind::Float, value.clone())),
+            CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ComparisonDecision(_) => {
+                c_bool_operand(value.clone()).map(|value| (CMutableScalarSlotKind::Bool, value))
+            }
+            _ => None,
+        }
+    }
+
+    fn activate_loop_carried_scalar_slots(
+        &mut self,
+        assigned_names: &BTreeSet<String>,
+    ) -> Vec<String> {
+        let mut activated = Vec::new();
+        for name in self.variable_order.clone() {
+            if !assigned_names.contains(&name) || self.mutable_scalar_slots.contains_key(&name) {
+                continue;
+            }
+            let Some(value) = self.variables.get(&name).cloned() else {
+                continue;
+            };
+            let Some((kind, initializer)) = self.mutable_scalar_slot_initializer(&value) else {
+                continue;
+            };
+            let slot_name = self.next_native_name("loop_phi");
+            self.body
+                .push(format!("{} {slot_name} = {initializer};", kind.c_type()));
+            self.variables
+                .insert(name.clone(), kind.c_value(&slot_name));
+            self.mutable_scalar_slots.insert(
+                name.clone(),
+                CMutableScalarSlot {
+                    name: slot_name,
+                    kind,
+                },
+            );
+            activated.push(name);
+        }
+        activated
+    }
+
+    fn deactivate_loop_carried_scalar_slots(&mut self, activated: &[String]) {
+        for name in activated {
+            self.mutable_scalar_slots.remove(name);
+        }
+    }
+
+    fn try_store_mutable_scalar_slot_value(&mut self, name: &str, value: &CValue) -> bool {
+        let Some(slot) = self.mutable_scalar_slots.get(name).cloned() else {
+            return false;
+        };
+        let assignment = match (slot.kind, value) {
+            (CMutableScalarSlotKind::Int, CValue::Int(value))
+            | (CMutableScalarSlotKind::Float, CValue::Float(value)) => Some(value.clone()),
+            (CMutableScalarSlotKind::Bool, value) => c_bool_operand(value.clone()),
+            _ => None,
+        };
+        let Some(assignment) = assignment else {
+            return false;
+        };
+        self.body.push(format!("{} = {assignment};", slot.name));
+        self.variables
+            .insert(name.to_string(), slot.kind.c_value(&slot.name));
+        true
+    }
+
     fn persistent_state_matches(&self, other: &Self) -> bool {
         self.variables == other.variables
             && self.variable_order == other.variable_order
+            && self.mutable_scalar_slots == other.mutable_scalar_slots
             && self.by_reference_foreach_linger_variables
                 == other.by_reference_foreach_linger_variables
             && self.array_cleanup_handles == other.array_cleanup_handles
@@ -7692,7 +8254,9 @@ impl CGenerator {
     }
 
     fn non_joined_cleanup_state_matches(&self, other: &Self) -> bool {
-        self.by_reference_foreach_linger_variables == other.by_reference_foreach_linger_variables
+        self.mutable_scalar_slots == other.mutable_scalar_slots
+            && self.by_reference_foreach_linger_variables
+                == other.by_reference_foreach_linger_variables
             && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
@@ -10838,6 +11402,9 @@ impl CGenerator {
 
     fn store_variable_value(&mut self, name: &str, value: CValue) {
         self.remember_variable_order(name);
+        if self.try_store_mutable_scalar_slot_value(name, &value) {
+            return;
+        }
         let stored = self.value_for_variable_storage(value);
         self.release_variable_native_value_handle(name);
         self.variables.insert(name.to_string(), stored);
@@ -12630,6 +13197,10 @@ impl CGenerator {
         body: &[Stmt],
         span: Span,
     ) -> CompileResult<()> {
+        let mut loop_assignments = BTreeSet::new();
+        collect_loop_assigned_direct_variables_from_expr(condition, &mut loop_assignments);
+        collect_loop_assigned_direct_variables_from_stmts(body, &mut loop_assignments);
+        let activated_slots = self.activate_loop_carried_scalar_slots(&loop_assignments);
         let base = self.clone();
         let mut condition_generator = base.scoped_branch_generator();
         let condition_value = condition_generator.emit_logical_truthiness_expr(condition, span)?;
@@ -12645,6 +13216,7 @@ impl CGenerator {
             return if truthy {
                 Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION))
             } else {
+                self.deactivate_loop_carried_scalar_slots(&activated_slots);
                 Ok(())
             };
         }
@@ -12680,6 +13252,7 @@ impl CGenerator {
             self.body.push(format!("  {line}"));
         }
         self.body.push("}".to_string());
+        self.deactivate_loop_carried_scalar_slots(&activated_slots);
 
         Ok(())
     }
@@ -12700,6 +13273,13 @@ impl CGenerator {
             self.emit_for_action(action, span)?;
         }
 
+        let mut loop_assignments = BTreeSet::new();
+        for condition in conditions {
+            collect_loop_assigned_direct_variables_from_expr(condition, &mut loop_assignments);
+        }
+        collect_loop_assigned_direct_variables_from_for_actions(increments, &mut loop_assignments);
+        collect_loop_assigned_direct_variables_from_stmts(body, &mut loop_assignments);
+        let activated_slots = self.activate_loop_carried_scalar_slots(&loop_assignments);
         let continue_label = self.next_native_name("for_continue");
         let base = self.clone();
         let mut condition_generator = base.scoped_branch_generator();
@@ -12717,6 +13297,7 @@ impl CGenerator {
             return if truthy {
                 Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION))
             } else {
+                self.deactivate_loop_carried_scalar_slots(&activated_slots);
                 Ok(())
             };
         }
@@ -12769,6 +13350,7 @@ impl CGenerator {
             self.body.push(format!("  {line}"));
         }
         self.body.push("}".to_string());
+        self.deactivate_loop_carried_scalar_slots(&activated_slots);
 
         Ok(())
     }
@@ -18423,7 +19005,8 @@ impl CGenerator {
                         "",
                     );
                 }
-                if self.uses_native_string_helpers {
+                if self.uses_native_string_helpers && !self.mutable_scalar_slots.contains_key(name)
+                {
                     if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
                         if self.globals_symbol_table_is_active()
                             && !is_globals_superglobal_name(name)

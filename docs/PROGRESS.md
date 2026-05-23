@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added generated-native executable loop-carried scalar storage for the C-link
+  `while`/bounded-`for` path. Direct int, float, and bool variables assigned
+  by loop conditions, bodies, or `for` increments can be promoted to mutable C
+  slots before scoped loop lowering, so loop conditions, nested branches,
+  increments, and post-loop reads observe the carried value across iterations
+  instead of requiring state-stable bodies. Focused tests cover integer
+  bitwise/shift-carried state, boolean branch-updated loop guards, `for`
+  increment slots, and linked executable behavior. Overflow-sensitive integer
+  arithmetic/coercions, type-changing loop joins, native value/array/reference
+  owner phis, unbounded or multi-condition `for` headers, do-while,
+  switch/goto, multi-level transfers, exact diagnostic ordering, cleanup
+  unwinding, and LLVM IR/assembly parity remain unsupported.
+
 - Added bounded generated-native executable `if`/`else` statement lowering for
   the `phpc compile --emit-exe` C-link path when the condition can be lowered
   through the existing native truthiness/value-comparison boundaries and both
