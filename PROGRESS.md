@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 00:09 CEST
+Updated: 2026-05-24 00:14 CEST
 Evaluation marker: `20260523T220614Z`
 
-Primary HEAD: `2a1e21cb docs: update progress after switch dispatch`
-Latest integrated semantic baseline: `97ba85b6 codegen: lower state-stable switch dispatch`
+Primary HEAD: `0d049a06 codegen: lower state-stable goto labels`
+Latest integrated semantic baseline: `0d049a06 codegen: lower state-stable goto labels`
 Latest evaluator report: `20260523T220614Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -16,22 +16,21 @@ exact-shape fixtures do not.
 
 Overall estimated progress: **88%** `[##################--]`
 
-Primary integrated progress is unchanged since generated-C state-stable switch
-dispatch. The compiler has strong generated-C islands for native values,
-arrays, selected references, request/symbol state, diagnostics, cleanup, lazy
-expressions, and bounded control flow.
+Primary integrated progress now includes generated-C top-level state-stable
+`goto`/label dispatch with target-state validation. The compiler has strong
+generated-C islands for native values, arrays, selected references,
+request/symbol state, diagnostics, cleanup, lazy expressions, and bounded
+control flow.
 
 This is still not full PHP semantics. The largest gaps remain generated-native
 calls/frames, object/property/method execution, complete references/COW
 identity, source-ordered diagnostics, cleanup/unwinding, and LLVM/assembly
 parity.
 
-Current primary state: primary is synced with `origin/master`; active dirty
-semantic WIP includes a fresh unaccepted `compiler/src/codegen.rs` /
-`compiler/tests/native_link.rs` generated-C top-level state-stable `goto`/label
-snapshot slice plus the protected `runtime/src/lib.rs` null-slot hunk. The
-narrow generated-C user-function WIP was parked and is not counted. This
-dashboard update is the only evaluator-owned product file.
+Current primary state: primary is synced with `origin/master` through
+`0d049a06`; the protected `runtime/src/lib.rs` null-slot hunk remains dirty,
+unstaged, and uncounted. The narrow generated-C user-function WIP was parked
+and is not counted.
 
 ## Roadmap Snapshot
 
@@ -44,14 +43,14 @@ dashboard update is the only evaluator-owned product file.
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter metadata and lane contracts exist, but real generated-native frame execution is still missing. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **49%** | `[##########----------]` | Bounded generated-C branches, loops, returns, transfers, and switches exist; owner/reference joins, unwinding, and exact ordering remain open. |
+| Control flow, cleanup, diagnostics | **50%** | `[##########----------]` | Bounded generated-C branches, loops, returns, transfers, switches, and top-level state-stable gotos exist; owner/reference joins, unwinding, and exact ordering remain open. |
 | Broad integrated verification | **88%** | `[##################--]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Done / In Progress / Not Done
 
 - [x] Generated-C value-result diagnostics through shared diagnostic reporting.
 - [x] Generated-C native value-result `strlen()` consumption.
-- [x] Generated-C top-level `return`, state-stable `while`/`for`, scalar loop-carried slots, multi-level loop transfers, and state-stable `switch` dispatch/fallthrough/break.
+- [x] Generated-C top-level `return`, state-stable `while`/`for`, scalar loop-carried slots, multi-level loop transfers, state-stable `switch` dispatch/fallthrough/break, and top-level state-stable `goto` labels.
 - [x] Strong selected generated-C arrays, lvalues, references, request state, `$GLOBALS`, lazy ternaries, logical short-circuiting, branch cleanup, foreach storage, and output/truthiness paths.
 - [ ] Primary-integrated generated-native user-function/call-frame execution.
 - [ ] Primary-integrated object construction, property access, method dispatch, `$this`, static context, visibility, and magic behavior.
@@ -62,6 +61,10 @@ dashboard update is the only evaluator-owned product file.
 
 ## Recent Primary-Integrated Work
 
+- `0d049a06`: generated-C top-level `goto`/label lowering emits C labels for
+  accepted statement-list targets, validates every transfer against the
+  target's persistent compiler state snapshot, and rejects state-changing
+  target joins plus nested gotos instead of claiming broader goto semantics.
 - `97ba85b6`: generated-C `switch` dispatches accepted state-stable case
   conditions through shared native value comparison/truthiness, preserves
   source-order fallthrough/default/break labels, and rejects state-changing
@@ -100,12 +103,6 @@ like direct/top-level/single-return execution without real frame ownership,
 caller handoff, cleanup/failure exits, or accepted linked proof. It should not
 be counted or repeated in that shape.
 
-A fresh post-recovery `compiler/src/codegen.rs` / `compiler/tests/native_link.rs`
-WIP is exploring generated-C top-level state-stable `goto`/label snapshots. It
-is also uncounted until it has focused source and linked executable proof,
-explicit blockers for broader goto/control-flow state joins, and a clean
-primary integration.
-
 ## Active Focus
 
 1. Integrate one small generalized primary slice at a time, with focused gates
@@ -121,8 +118,7 @@ primary integration.
    restarted lane processes as fresh semantic momentum.
 5. Preserve primary hygiene: commit only owned semantic/progress hunks, keep
    the protected null-slot runtime hunk uncommitted until it has its own
-   reviewed semantics batch, and keep the fresh goto/label WIP uncounted until
-   accepted.
+   reviewed semantics batch.
 
 ## Major Blockers
 
