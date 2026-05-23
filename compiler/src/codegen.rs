@@ -104,7 +104,7 @@ const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rej
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
-const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries or loop-carried int/float/bool scalar storage, elseif chains, do-while loops, switch statements, goto labels, top-level or multi-level break/continue, and unbounded loop headers until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while/for loops, and loop-carried scalar while/for state through scoped control-flow emission";
+const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries or loop-carried int/float/bool scalar storage, elseif chains, do-while loops, switch statements, goto labels, top-level or loop-depth-out-of-range break/continue, and unbounded loop headers until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while/for loops, loop-carried scalar while/for state, and multi-level while/for transfer targets through scoped control-flow emission";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
@@ -7243,7 +7243,7 @@ struct CGenerator {
     native_reference_cleanup_handles: Vec<String>,
     native_request_state_handle: Option<String>,
     native_globals_symbol_table_handle: Option<String>,
-    loop_continue_targets: Vec<Option<String>>,
+    loop_transfer_targets: Vec<CLoopTransferTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -7272,6 +7272,13 @@ enum CMutableScalarSlotKind {
     Int,
     Float,
     Bool,
+}
+
+#[derive(Debug, Clone)]
+struct CLoopTransferTarget {
+    depth_one_continue: Option<String>,
+    continue_label: String,
+    break_label: String,
 }
 
 impl CMutableScalarSlotKind {
@@ -13201,6 +13208,8 @@ impl CGenerator {
         collect_loop_assigned_direct_variables_from_expr(condition, &mut loop_assignments);
         collect_loop_assigned_direct_variables_from_stmts(body, &mut loop_assignments);
         let activated_slots = self.activate_loop_carried_scalar_slots(&loop_assignments);
+        let continue_label = self.next_native_name("while_continue");
+        let break_label = self.next_native_name("while_break");
         let base = self.clone();
         let mut condition_generator = base.scoped_branch_generator();
         let condition_value = condition_generator.emit_logical_truthiness_expr(condition, span)?;
@@ -13228,11 +13237,17 @@ impl CGenerator {
         let mut body_generator = base.scoped_branch_generator();
         body_generator.next_native_temp = condition_generator.next_native_temp;
         body_generator.next_static_data = condition_generator.next_static_data;
-        body_generator.loop_continue_targets.push(None);
+        body_generator
+            .loop_transfer_targets
+            .push(CLoopTransferTarget {
+                depth_one_continue: None,
+                continue_label: continue_label.clone(),
+                break_label: break_label.clone(),
+            });
         for statement in body {
             body_generator.emit_statement(statement)?;
         }
-        body_generator.loop_continue_targets.pop();
+        body_generator.loop_transfer_targets.pop();
         if !base.persistent_state_matches(&body_generator) {
             return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
         }
@@ -13243,6 +13258,7 @@ impl CGenerator {
         self.next_static_data = body_generator.next_static_data;
 
         self.body.push("while (1) {".to_string());
+        self.body.push(format!("  {continue_label}: ;"));
         for line in &condition_generator.body {
             self.body.push(format!("  {line}"));
         }
@@ -13252,6 +13268,7 @@ impl CGenerator {
             self.body.push(format!("  {line}"));
         }
         self.body.push("}".to_string());
+        self.body.push(format!("{break_label}: ;"));
         self.deactivate_loop_carried_scalar_slots(&activated_slots);
 
         Ok(())
@@ -13281,6 +13298,7 @@ impl CGenerator {
         collect_loop_assigned_direct_variables_from_stmts(body, &mut loop_assignments);
         let activated_slots = self.activate_loop_carried_scalar_slots(&loop_assignments);
         let continue_label = self.next_native_name("for_continue");
+        let break_label = self.next_native_name("for_break");
         let base = self.clone();
         let mut condition_generator = base.scoped_branch_generator();
         let condition_value =
@@ -13310,12 +13328,16 @@ impl CGenerator {
         body_generator.next_native_temp = condition_generator.next_native_temp;
         body_generator.next_static_data = condition_generator.next_static_data;
         body_generator
-            .loop_continue_targets
-            .push(Some(continue_label.clone()));
+            .loop_transfer_targets
+            .push(CLoopTransferTarget {
+                depth_one_continue: Some(continue_label.clone()),
+                continue_label: continue_label.clone(),
+                break_label: break_label.clone(),
+            });
         for statement in body {
             body_generator.emit_statement(statement)?;
         }
-        body_generator.loop_continue_targets.pop();
+        body_generator.loop_transfer_targets.pop();
         if !base.persistent_state_matches(&body_generator) {
             return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
         }
@@ -13350,6 +13372,7 @@ impl CGenerator {
             self.body.push(format!("  {line}"));
         }
         self.body.push("}".to_string());
+        self.body.push(format!("{break_label}: ;"));
         self.deactivate_loop_carried_scalar_slots(&activated_slots);
 
         Ok(())
@@ -13408,16 +13431,19 @@ impl CGenerator {
         depth: usize,
         span: Span,
     ) -> CompileResult<()> {
-        if depth != 1 {
+        if depth == 0 || depth > self.loop_transfer_targets.len() {
             return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
         }
 
-        let Some(continue_target) = self.loop_continue_targets.last() else {
+        let target_index = self.loop_transfer_targets.len() - depth;
+        let Some(target) = self.loop_transfer_targets.get(target_index).cloned() else {
             return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
         };
 
         if statement == "continue" {
-            if let Some(label) = continue_target {
+            if depth > 1 {
+                self.body.push(format!("goto {};", target.continue_label));
+            } else if let Some(label) = target.depth_one_continue {
                 self.body.push(format!("goto {label};"));
             } else {
                 self.body.push("continue;".to_string());
@@ -13425,7 +13451,11 @@ impl CGenerator {
             return Ok(());
         }
 
-        self.body.push(format!("{statement};"));
+        if depth > 1 {
+            self.body.push(format!("goto {};", target.break_label));
+        } else {
+            self.body.push(format!("{statement};"));
+        }
         Ok(())
     }
 

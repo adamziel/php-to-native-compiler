@@ -230,6 +230,59 @@ const NATIVE_LOOP_CARRIED_SCALAR_SOURCE: &str = concat!(
     "}\n",
 );
 
+const NATIVE_LOOP_CARRIED_FLOAT_SOURCE: &str = concat!(
+    "<?php\n",
+    "$f = 1.5;\n",
+    "while ($f < 4.0) {\n",
+    "    $f = $f + 0.5;\n",
+    "}\n",
+    "echo $f;\n",
+);
+
+const NATIVE_MULTI_LEVEL_LOOP_TRANSFER_SOURCE: &str = concat!(
+    "<?php\n",
+    "$outer = 0;\n",
+    "$inner = 0;\n",
+    "while ($outer < 2) {\n",
+    "    echo $outer;\n",
+    "    $inner = 0;\n",
+    "    while ($inner < 1) {\n",
+    "        if ($outer == 0) {\n",
+    "            $outer = 1;\n",
+    "            continue 2;\n",
+    "        }\n",
+    "        if ($outer == 1) {\n",
+    "            break 2;\n",
+    "        }\n",
+    "        $inner = 1;\n",
+    "        echo \"bad\";\n",
+    "    }\n",
+    "    echo \"after\";\n",
+    "    $outer = 2;\n",
+    "}\n",
+    "echo \"|\";\n",
+    "$item = 0;\n",
+    "$again = 0;\n",
+    "for (; $item < 2; ) {\n",
+    "    echo $item;\n",
+    "    $again = 0;\n",
+    "    for (; $again < 1; ) {\n",
+    "        if ($item == 0) {\n",
+    "            $item = 1;\n",
+    "            continue 2;\n",
+    "        }\n",
+    "        if ($item == 1) {\n",
+    "            break 2;\n",
+    "        }\n",
+    "        $again = 1;\n",
+    "        echo \"bad\";\n",
+    "    }\n",
+    "    echo \"after\";\n",
+    "    $item = 2;\n",
+    "}\n",
+    "echo \"|done\";\n",
+);
+
 const NATIVE_TOP_LEVEL_RETURN_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\"];\n",
@@ -1351,6 +1404,33 @@ fn native_executable_c_source_rejects_unsupported_loop_transfer_depths() {
 }
 
 #[test]
+fn native_executable_c_source_routes_multi_level_loop_transfers() {
+    let program = parse(NATIVE_MULTI_LEVEL_LOOP_TRANSFER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("goto while_continue_") && body.contains("goto while_break_"),
+        "nested while continue/break depths should target enclosing loop labels:\n{source}"
+    );
+    assert!(
+        body.contains("goto for_continue_") && body.contains("goto for_break_"),
+        "nested for continue/break depths should target enclosing loop labels:\n{source}"
+    );
+    assert!(
+        body.contains("while_continue_")
+            && body.contains("while_break_")
+            && body.contains("for_continue_")
+            && body.contains("for_break_"),
+        "all generated multi-level transfer targets should be emitted:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_state_stable_for_loops() {
     let program = parse(NATIVE_STATE_STABLE_FOR_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -1385,6 +1465,8 @@ fn native_executable_c_source_rejects_for_state_without_loop_join() {
         "<?php\n$items = [\"go\" => \"1\"];\nfor (; $items[\"go\"]; ) { $value = \"loop\"; }\necho $value;\n",
         "<?php\n$items = [\"go\" => \"1\"];\nfor (; $items[\"go\"]; ) { $value = strtoupper(\"loop\"); }\necho $value;\n",
         "<?php\n$items = [\"x\"];\nfor (; current($items) !== false, current($items) !== false; next($items)) { echo current($items); }\n",
+        "<?php\n$value = 1;\nwhile ($value < 3) { $value = \"changed\"; }\necho $value;\n",
+        "<?php\n$value = 0;\nwhile ($value < 1) { $value = strtoupper(\"native\"); }\necho $value;\n",
     ] {
         let program = parse(source).unwrap();
         let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -1424,6 +1506,22 @@ fn native_executable_c_source_routes_loop_carried_scalar_state() {
     assert!(
         !source.contains("assembly control-flow lowering rejects"),
         "{source}"
+    );
+
+    let float_program = parse(NATIVE_LOOP_CARRIED_FLOAT_SOURCE).unwrap();
+    let float_source = emit_native_executable_c_source(&float_program).unwrap();
+    let float_body = main_body(&float_source);
+    assert!(
+        float_body.contains("double loop_phi_"),
+        "float loop-carried state should use mutable scalar storage:\n{float_source}"
+    );
+    assert!(
+        float_body.contains(" = (loop_phi_") || float_body.contains(" = ((loop_phi_"),
+        "float loop conditions and writes should share the same scalar slot:\n{float_source}"
+    );
+    assert!(
+        !float_source.contains("assembly control-flow lowering rejects"),
+        "{float_source}"
     );
 }
 
@@ -2339,6 +2437,34 @@ fn emit_exe_links_and_runs_while_loop_transfer_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"AB|X|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_multi_level_loop_transfer_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "multi_level_loop_transfer",
+        NATIVE_MULTI_LEVEL_LOOP_TRANSFER_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native multi-level loop-transfer executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"01|01|done");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

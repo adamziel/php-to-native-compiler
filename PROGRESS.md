@@ -1,11 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 05:31 CEST
-Evaluation marker: `20260523T025130Z`
+Updated: 2026-05-23 05:57 CEST
+Evaluation marker: `20260523T034337Z`
 
-Primary HEAD: `d6d5d1cf codegen: lower state-stable for loops`
-Latest integrated semantic baseline: `d6d5d1cf codegen: lower state-stable for loops`
-Latest evaluator report: `20260523T025130Z`
+Primary HEAD: `fe73cc3e codegen: lower loop-carried scalar state`
+Latest integrated semantic baseline: `fe73cc3e codegen: lower loop-carried scalar state`
+Latest evaluator report: `20260523T034337Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated,
@@ -14,23 +14,23 @@ do not.
 
 ## Executive Read
 
-Overall estimated progress: **87%** `[#################---]`
+Overall estimated progress: **88%** `[##################--]`
 
 The compiler now has strong generated-C islands for native values, arrays,
 symbol/request state, selected references, diagnostics, cleanup, branch
-ownership, foreach storage, lazy expressions, and state-stable control flow.
-Recent primary integration has been useful because it lands small generalized
-semantic slices and pushes them immediately, rather than accumulating
-lane-local artifacts.
+ownership, foreach storage, lazy expressions, and bounded generated-C control
+flow. Recent primary integration has been useful because it lands small
+generalized semantic slices and pushes them immediately, rather than
+accumulating lane-local artifacts.
 
 This is still not full PHP semantics. The largest remaining gaps are
 generated-native calls/frames, object/property/method execution, complete
 references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
-Current primary cleanliness: semantic work is current through the state-stable
-`for` loop batch. The protected `runtime/src/lib.rs` null-slot hunk remains
-dirty, unstaged, and uncounted.
+Current primary cleanliness: semantic work is current through the loop-carried
+scalar-state and multi-level loop-transfer follow-up. The protected
+`runtime/src/lib.rs` null-slot hunk remains dirty, unstaged, and uncounted.
 
 ## Roadmap
 
@@ -38,16 +38,22 @@ dirty, unstaged, and uncounted.
 | --- | ---: | --- |
 | Runtime and ABI foundations | **97%** | Strong shared value, array, reference, symbol, request, comparison, truthiness, diagnostic, termination, and cleanup surfaces. |
 | Compiler/backend consumers | **98%** | Generated-C has broad selected coverage. LLVM/assembly parity remains uneven. |
-| Executable PHP semantics | **87%** | Many focused linked programs run, but behavior is still selected islands rather than a complete PHP execution model. |
+| Executable PHP semantics | **88%** | Many focused linked programs run, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **88%** | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, and by-reference argument/foreach parity remain open. |
 | Symbols, globals, request state | **96%** | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
 | Calls, functions, frames | **27%** | Runtime/interpreter metadata exists, but generated-native call/frame execution is the biggest missing block. |
 | Objects, properties, methods | **11%** | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **43%** | Generated-C now has bounded branches, lazy expressions, top-level return, state-stable `while`, depth-1 `while` transfers, and state-stable `for`; loop-carried joins, switch/goto, multi-level transfers, unwinding, and exact ordering are still missing. |
-| Broad integrated verification | **87%** | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
+| Control flow, cleanup, diagnostics | **46%** | Generated-C now has bounded branches, lazy expressions, top-level return, state-stable loops, scalar loop-carried state, and loop-local/multi-level loop transfers; owner/reference phis, switch/goto, unwinding, and exact ordering are still missing. |
+| Broad integrated verification | **88%** | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Recent Integrated Work
 
+- `fe73cc3e`: generated-C `while` and bounded `for` loops can carry
+  int/float/bool scalar variables through mutable C slots while preserving
+  blockers for unsupported owner/reference/native-value state.
+- Follow-up after `fe73cc3e`: generated-C nested loop `break N`/`continue N`
+  now route through explicit loop target labels for accepted `while`/`for`
+  loops, with focused source and linked executable proof.
 - `d6d5d1cf`: generated-C state-stable `for` loops lower through scoped
   initializer, single PHP-truthiness condition, body, increment, and loop-local
   depth-1 `break`/`continue`; `continue` runs the increment section before the
@@ -100,9 +106,10 @@ dirty, unstaged, and uncounted.
 - Full references/COW identity across arbitrary writable roots, function
   arguments/returns, foreach, arrays, objects, request/global storage, and
   control-flow joins.
-- Structured control flow beyond the accepted generated-C subset: loop-carried
-  state, switch, goto/labels, multi-level transfers, finally/destructors,
-  shutdown behavior, output buffers, and SAPI interactions.
+- Structured control flow beyond the accepted generated-C subset:
+  owner/reference/native-value loop-carried state, switch, goto/labels,
+  cleanup joins, finally/destructors, shutdown behavior, output buffers, and
+  SAPI interactions.
 - Exact diagnostics: severity, ordering, suppression, custom handlers, source
   spans, recovery values, fatal/throw behavior, and cleanup during diagnostics.
 - LLVM/assembly parity for newer generated-C/runtime ABI consumers.
