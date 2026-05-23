@@ -751,6 +751,13 @@ pub struct NativeArrayLvalueResult {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeArrayLvalueReferenceResult {
+    reference: NativeReferenceHandle,
+    diagnostic: NativeDiagnosticHandle,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeArrayEntrySnapshotHandle {
     ptr: *mut NativeArrayEntrySnapshot,
 }
@@ -2063,6 +2070,30 @@ impl NativeArrayLvalueResult {
             tag,
             value: NativeValueHandle::null(),
             diagnostic: NativeDiagnosticHandle::from_message(message),
+        }
+    }
+}
+
+impl NativeArrayLvalueReferenceResult {
+    fn reference(reference: PhpReferenceCell) -> Self {
+        Self {
+            reference: NativeReferenceHandle::from_cell(reference),
+            diagnostic: NativeDiagnosticHandle::null(),
+        }
+    }
+
+    fn diagnostic(message: impl Into<String>) -> Self {
+        Self {
+            reference: NativeReferenceHandle::null(),
+            diagnostic: NativeDiagnosticHandle::from_message(message),
+        }
+    }
+
+    fn from_lvalue_result(result: NativeArrayLvalueResult) -> Self {
+        unsafe { phpc_native_value_free(result.value) };
+        Self {
+            reference: NativeReferenceHandle::null(),
+            diagnostic: result.diagnostic,
         }
     }
 }
@@ -9638,9 +9669,94 @@ pub unsafe extern "C" fn phpc_native_array_foreach_iterable_value_result(
     NativeArrayLvalueResult::value(entry.value_cloned())
 }
 
+/// # Safety
+///
+/// `owner`, every value in `segments`, and `key` must be null or handles
+/// returned by the runtime ABI and not yet freed. `segments` must be null when
+/// `segment_count` is zero, or point to `segment_count` initialized key-only
+/// path segments. The returned reference aliases the live array slot selected
+/// by the foreach iterable path plus the current snapshot key.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_lvalue_owner_foreach_value_reference_result(
+    mut owner: NativeArrayLvalueOwner,
+    segments: *const NativeArrayPathSegment,
+    segment_count: usize,
+    key: NativeValueHandle,
+) -> NativeArrayLvalueReferenceResult {
+    let mut keys = if segment_count == 0 {
+        Vec::new()
+    } else {
+        match unsafe {
+            native_array_lvalue_key_path_from_segments(segments, segment_count, "foreach reference")
+        } {
+            Ok(keys) => keys,
+            Err(result) => return NativeArrayLvalueReferenceResult::from_lvalue_result(result),
+        }
+    };
+    let Some(key_value) = (unsafe { key.as_ref() }) else {
+        return NativeArrayLvalueReferenceResult::diagnostic(
+            "array foreach reference key handle is null",
+        );
+    };
+    let key = match native_array_key_from_runtime_value(key_value) {
+        Ok(key) => key,
+        Err(error) => return NativeArrayLvalueReferenceResult::diagnostic(error.message()),
+    };
+    keys.push(key);
+
+    match owner.tag {
+        NATIVE_ARRAY_LVALUE_OWNER_ARRAY => {
+            let Some(array) = (unsafe { owner.array.as_mut() }) else {
+                return NativeArrayLvalueReferenceResult::diagnostic(
+                    "array foreach reference root is not a live native array handle",
+                );
+            };
+            match array.value.reference_path(&keys) {
+                Ok(reference) => NativeArrayLvalueReferenceResult::reference(reference),
+                Err(error) => NativeArrayLvalueReferenceResult::diagnostic(error.message()),
+            }
+        }
+        NATIVE_ARRAY_LVALUE_OWNER_REFERENCE_SLOT => {
+            let Some(reference) = (unsafe { owner.reference.as_ref() }) else {
+                return NativeArrayLvalueReferenceResult::diagnostic(
+                    "array foreach reference owner is not a live native reference handle",
+                );
+            };
+            let mut array = match reference.cell.value_cloned() {
+                Value::Array(array) => array,
+                other => {
+                    return NativeArrayLvalueReferenceResult::diagnostic(format!(
+                        "array foreach reference owner contains {}",
+                        other.type_name()
+                    ))
+                }
+            };
+            match array.reference_path(&keys) {
+                Ok(slot_reference) => {
+                    reference.cell.set_value(Value::Array(array));
+                    NativeArrayLvalueReferenceResult::reference(slot_reference)
+                }
+                Err(error) => NativeArrayLvalueReferenceResult::diagnostic(error.message()),
+            }
+        }
+        _ => NativeArrayLvalueReferenceResult::diagnostic(format!(
+            "array foreach reference owner tag {} is not supported",
+            owner.tag
+        )),
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_array_lvalue_result_free(result: NativeArrayLvalueResult) {
     unsafe { phpc_native_value_free(result.value) };
+    unsafe { phpc_native_diagnostic_free(result.diagnostic) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_lvalue_reference_result_free(
+    result: NativeArrayLvalueReferenceResult,
+) {
+    unsafe { phpc_native_reference_free(result.reference) };
     unsafe { phpc_native_diagnostic_free(result.diagnostic) };
 }
 

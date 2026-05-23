@@ -141,6 +141,17 @@ const NATIVE_FOREACH_PRIOR_CURSOR_SOURCE: &str = concat!(
     "echo \"|\", $carry;\n",
 );
 
+const NATIVE_BY_REFERENCE_FOREACH_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"a\" => \"ab\", \"b\" => \"cd\"];\n",
+    "foreach ($items as $k => &$value) { echo $k, \"=\", $value, \";\"; $value = strtoupper($value); }\n",
+    "echo \"|\", $items[\"a\"], \":\", $items[\"b\"];\n",
+    "$nested = [];\n",
+    "$nested[\"outer\"][\"x\"] = \"hi\";\n",
+    "foreach ($nested[\"outer\"] as &$leaf) { $leaf = $leaf . \"!\"; }\n",
+    "echo \"|\", $nested[\"outer\"][\"x\"];\n",
+);
+
 const NATIVE_VALUE_TERNARY_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\", \"word\" => \"go\"];\n",
@@ -1926,11 +1937,50 @@ fn native_executable_c_source_blocks_foreach_forms_without_symbol_or_reference_s
 }
 
 #[test]
-fn native_executable_c_source_blocks_by_reference_foreach_at_reference_slot_boundary() {
+fn native_executable_c_source_routes_by_reference_foreach_through_reference_slots() {
+    let program = parse(NATIVE_BY_REFERENCE_FOREACH_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_NativeArrayLvalueReferenceResult"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_foreach_value_reference_result"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_lvalue_reference_result_free"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_reference_set_value"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_reference_value_clone"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_NativeReferenceHandle array_foreach_value_reference_")
+            .count()
+            >= 2,
+        "{source}"
+    );
+    assert!(
+        !source.contains("native executable by-reference foreach lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_blocks_unsupported_by_reference_foreach_forms() {
     for source in [
-        "<?php\n$a = [1, 2];\nforeach ($a as &$value) { echo $value; }\n",
-        "<?php\n$a = [];\n$a[\"outer\"][\"x\"] = 1;\nforeach ($a[\"outer\"] as &$value) { echo $value; }\n",
         "<?php\nforeach ([\"a\" => 1, \"b\" => 2] as $key => &$value) { echo $key, $value; }\n",
+        "<?php\n$a = [1, 2];\nforeach ($a as &$value) { $seen = $value; }\n",
+        "<?php\n$a = [1, 2];\nforeach ($a as $value => &$value) { echo $value; }\n",
+        "<?php\n$a = [1, 2];\nforeach ($a as &$value) { $value = $value + 1; }\necho $value;\n",
     ] {
         let program = parse(source).unwrap();
         let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -1941,7 +1991,11 @@ fn native_executable_c_source_blocks_by_reference_foreach_at_reference_slot_boun
             "{error:?}"
         );
         assert!(
-            error.message.contains("reference-slot symbol storage"),
+            error.message.contains("temporary iterable owners")
+                && error.message.contains("arbitrary body mutation")
+                && error
+                    .message
+                    .contains("lingering post-loop reference binding"),
             "{error:?}"
         );
         assert!(
@@ -2002,6 +2056,34 @@ fn emit_exe_links_and_runs_by_value_foreach_array_lvalue_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"x=AB;y=CD;n=EF;lit=GH;");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_by_reference_foreach_array_lvalue_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "foreach_by_reference_lvalue",
+        NATIVE_BY_REFERENCE_FOREACH_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native by-reference foreach executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"a=ab;b=cd;|AB:CD|hi!");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

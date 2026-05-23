@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -98,7 +98,7 @@ const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespac
 const ASSEMBLY_NAMESPACE_REJECTION: &str = "assembly namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects unsupported arrays, unsupported array indexing forms, unsupported array assignment forms, unsupported foreach array iteration forms, unsupported array offset unset forms, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; generated-native C routes lowerable direct array offset writes, appends, unsets, and by-value foreach over tracked native array owners through shared native ABIs";
-const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects by-reference iteration until generated C has generalized reference-slot symbol storage, foreach cursor reference binding, owner/path value-reference acquisition through phpc_native_array_lvalue_owner_foreach_value_reference_result(), and loop-body cleanup ownership for array, nested-array, and value-root iterable owners; phpc run handles current by-reference foreach behavior";
+const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects this by-reference iteration form; generated C currently supports array and nested-array lvalue owners with compact value-reference assignment bodies through phpc_native_array_lvalue_owner_foreach_value_reference_result(), while temporary iterable owners, arbitrary body mutation, lingering post-loop reference binding, symbol-table/request owners, references/copy-on-write parity, and exact cleanup ownership remain unsupported; phpc run handles current by-reference foreach behavior";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
@@ -7169,6 +7169,7 @@ struct CGenerator {
     static_data: Vec<String>,
     variables: HashMap<String, CValue>,
     variable_order: Vec<String>,
+    by_reference_foreach_linger_variables: HashSet<String>,
     array_cleanup_handles: Vec<String>,
     owned_native_byte_buffers: Vec<String>,
     known_ints: HashMap<String, KnownInt>,
@@ -7196,6 +7197,7 @@ struct CGenerator {
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
+    native_reference_cleanup_handles: Vec<String>,
     native_request_state_handle: Option<String>,
     native_globals_symbol_table_handle: Option<String>,
 }
@@ -7211,6 +7213,7 @@ enum CValue {
     BoolExpr(String),
     ComparisonDecision(String),
     NativeValueHandle(String),
+    NativeReferenceHandle(String),
     Null,
 }
 
@@ -7630,16 +7633,22 @@ impl CGenerator {
     fn persistent_state_matches(&self, other: &Self) -> bool {
         self.variables == other.variables
             && self.variable_order == other.variable_order
+            && self.by_reference_foreach_linger_variables
+                == other.by_reference_foreach_linger_variables
             && self.array_cleanup_handles == other.array_cleanup_handles
             && self.owned_native_byte_buffers == other.owned_native_byte_buffers
             && self.native_value_cleanup_handles == other.native_value_cleanup_handles
+            && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
     }
 
     fn non_native_value_cleanup_state_matches(&self, other: &Self) -> bool {
         self.array_cleanup_handles == other.array_cleanup_handles
+            && self.by_reference_foreach_linger_variables
+                == other.by_reference_foreach_linger_variables
             && self.owned_native_byte_buffers == other.owned_native_byte_buffers
+            && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
     }
@@ -8043,6 +8052,7 @@ impl CGenerator {
                     output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle key; } phpc_NativeArrayPathSegment;\n");
                     output.push_str("typedef struct { uint8_t tag; phpc_NativeArrayHandle array; phpc_NativeValueHandle value; phpc_NativeValueHandle *value_slot; phpc_NativeReferenceHandle reference; } phpc_NativeArrayLvalueOwner;\n");
                     output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeArrayLvalueResult;\n");
+                    output.push_str("typedef struct { phpc_NativeReferenceHandle reference; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeArrayLvalueReferenceResult;\n");
                     output.push_str("#define PHPC_NATIVE_ARRAY_LVALUE_OK 0\n");
                     output.push_str(&format!(
                         "#define PHPC_NATIVE_ARRAY_PATH_KEY {NATIVE_ARRAY_PATH_KEY_TAG}\n"
@@ -8310,7 +8320,9 @@ impl CGenerator {
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern void phpc_native_diagnostic_free(phpc_NativeDiagnosticHandle diagnostic);\n");
-            if self.uses_native_symbol_table_helpers {
+            if self.uses_native_symbol_table_helpers || self.uses_native_array_lvalue_helpers {
+                output.push_str("extern phpc_NativeValueHandle phpc_native_reference_value_clone(phpc_NativeReferenceHandle reference);\n");
+                output.push_str("extern bool phpc_native_reference_set_value(phpc_NativeReferenceHandle reference, phpc_NativeValueHandle value);\n");
                 output.push_str("extern void phpc_native_reference_free(phpc_NativeReferenceHandle reference);\n");
             }
             output.push_str(
@@ -8348,7 +8360,9 @@ impl CGenerator {
                     output.push_str("extern size_t phpc_native_array_foreach_iterable_len(phpc_NativeValueHandle iterable);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_foreach_iterable_key_result(phpc_NativeValueHandle iterable, size_t index);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_foreach_iterable_value_result(phpc_NativeValueHandle iterable, size_t index);\n");
+                    output.push_str("extern phpc_NativeArrayLvalueReferenceResult phpc_native_array_lvalue_owner_foreach_value_reference_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, phpc_NativeValueHandle key);\n");
                     output.push_str("extern void phpc_native_array_lvalue_result_free(phpc_NativeArrayLvalueResult result);\n");
+                    output.push_str("extern void phpc_native_array_lvalue_reference_result_free(phpc_NativeArrayLvalueReferenceResult result);\n");
                 }
                 output.push_str(
                     "extern void phpc_native_array_free(phpc_NativeArrayHandle array);\n\n",
@@ -8388,6 +8402,11 @@ impl CGenerator {
         for handle in self.native_value_cleanup_handles.iter().rev() {
             output.push_str("  ");
             output.push_str(&format!("phpc_native_value_free({handle});"));
+            output.push('\n');
+        }
+        for handle in self.native_reference_cleanup_handles.iter().rev() {
+            output.push_str("  ");
+            output.push_str(&format!("phpc_native_reference_free({handle});"));
             output.push('\n');
         }
         for buffer in self.owned_native_byte_buffers.iter().rev() {
@@ -8432,14 +8451,37 @@ impl CGenerator {
         }
     }
 
+    fn retain_native_reference_cleanup_handle(&mut self, handle: &str) {
+        self.native_reference_cleanup_handles
+            .push(handle.to_string());
+    }
+
+    fn release_native_reference_cleanup_handle(&mut self, handle: &str) -> bool {
+        if let Some(index) = self
+            .native_reference_cleanup_handles
+            .iter()
+            .rposition(|owned| owned == handle)
+        {
+            self.native_reference_cleanup_handles.remove(index);
+            true
+        } else {
+            false
+        }
+    }
+
     fn release_variable_native_value_handle(&mut self, name: &str) {
-        let handle = self.variables.get(name).and_then(|value| match value {
-            CValue::NativeValueHandle(handle) => Some(handle.clone()),
-            _ => None,
-        });
-        if let Some(handle) = handle {
-            self.release_native_value_cleanup_handle(&handle);
-            self.body.push(format!("phpc_native_value_free({handle});"));
+        let value = self.variables.get(name).cloned();
+        match value {
+            Some(CValue::NativeValueHandle(handle)) => {
+                self.release_native_value_cleanup_handle(&handle);
+                self.body.push(format!("phpc_native_value_free({handle});"));
+            }
+            Some(CValue::NativeReferenceHandle(handle)) => {
+                self.release_native_reference_cleanup_handle(&handle);
+                self.body
+                    .push(format!("phpc_native_reference_free({handle});"));
+            }
+            _ => {}
         }
     }
 
@@ -10583,10 +10625,26 @@ impl CGenerator {
         cloned
     }
 
+    fn clone_native_reference_value_handle(&mut self, reference: &str) -> String {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+        let cloned = self.next_native_name("native_reference_value");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {cloned} = phpc_native_reference_value_clone({reference});"
+        ));
+        cloned
+    }
+
     fn value_for_variable_storage(&mut self, value: CValue) -> CValue {
         match value {
             CValue::NativeValueHandle(handle) => {
                 let cloned = self.clone_native_value_handle(&handle);
+                self.retain_native_value_cleanup_handle(&cloned);
+                CValue::NativeValueHandle(cloned)
+            }
+            CValue::NativeReferenceHandle(reference) => {
+                let cloned = self.clone_native_reference_value_handle(&reference);
                 self.retain_native_value_cleanup_handle(&cloned);
                 CValue::NativeValueHandle(cloned)
             }
@@ -12635,6 +12693,11 @@ impl CGenerator {
                 *span,
             ),
             Stmt::UnsetVariable { name, span } => {
+                if self.by_reference_foreach_linger_variables.remove(name) {
+                    self.release_variable_native_value_handle(name);
+                    self.variables.remove(name);
+                    return Ok(());
+                }
                 if is_request_superglobal_name(name) {
                     return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
                 }
@@ -12830,6 +12893,10 @@ impl CGenerator {
             | Expr::SelfMethodCall { .. }
             | Expr::LateStaticMethodCall { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Variable(name, span) => {
+                if self.by_reference_foreach_linger_variables.contains(name) {
+                    return Err(self
+                        .unsupported(*span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION));
+                }
                 if is_globals_superglobal_name(name) {
                     let value = self.materialize_globals_snapshot_value("", *span)?;
                     self.retain_native_value_cleanup_handle(&value.handle);
@@ -13033,6 +13100,27 @@ impl CGenerator {
             Expr::Assign { target, expr, span } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
+                }
+                if let AssignTarget::Variable { name, .. } = target.as_ref() {
+                    if self.by_reference_foreach_linger_variables.contains(name) {
+                        return Err(self.unsupported(
+                            *span,
+                            ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION,
+                        ));
+                    }
+                    if let Some(CValue::NativeReferenceHandle(reference)) =
+                        self.variables.get(name).cloned()
+                    {
+                        let (result_value, replacement) =
+                            self.materialize_assignment_expression_replacement_value(expr, "")?;
+                        self.emit_reference_variable_assignment_from_materialized(
+                            &reference,
+                            replacement,
+                            *span,
+                            "",
+                        )?;
+                        return Ok(result_value);
+                    }
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
@@ -14942,8 +15030,8 @@ impl CGenerator {
         span: Span,
     ) -> CompileResult<()> {
         if by_reference {
-            return Err(
-                self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
+            return self.emit_native_array_by_reference_foreach_statement(
+                iterable, key, value, body, span,
             );
         }
         if key == Some(value) {
@@ -15026,6 +15114,165 @@ impl CGenerator {
                 CValue::NativeValueHandle(storage.handle.clone()),
             );
         }
+        Ok(())
+    }
+
+    fn emit_native_array_by_reference_foreach_statement(
+        &mut self,
+        iterable: &Expr,
+        key: Option<&str>,
+        value: &str,
+        body: &[Stmt],
+        span: Span,
+    ) -> CompileResult<()> {
+        if key == Some(value) {
+            return Err(
+                self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
+            );
+        }
+        if key.is_some_and(|key| self.by_reference_foreach_linger_variables.contains(key))
+            || self.by_reference_foreach_linger_variables.contains(value)
+        {
+            return Err(
+                self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
+            );
+        }
+        if !self.native_by_reference_foreach_body_supported(value, body) {
+            return Err(
+                self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
+            );
+        }
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let Some((handle, indices, lvalue_span)) = self.native_array_foreach_lvalue_parts(iterable)
+        else {
+            return Err(
+                self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
+            );
+        };
+
+        let (path_arg, path_len, path_cleanup) = if indices.is_empty() {
+            ("NULL".to_string(), 0, Vec::new())
+        } else {
+            let path = self.materialize_native_array_lvalue_key_path(&indices, lvalue_span, "")?;
+            (path.path, path.len, path.cleanup_after_use)
+        };
+        let path_cleanup_sequence = c_cleanup_sequence(&path_cleanup);
+
+        let owner = self.next_native_name("array_foreach_reference_owner");
+        let foreach_result = self.next_native_name("array_foreach_iterable_result");
+        let iterable_handle = self.next_native_name("array_foreach_iterable");
+        let len = self.next_native_name("array_foreach_len");
+        let index = self.next_native_name("array_foreach_index");
+
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {foreach_result} = phpc_native_array_lvalue_owner_foreach_iterable_result({owner}, {path_arg}, {path_len});"
+        ));
+        self.emit_native_array_lvalue_result_check(&foreach_result, &path_cleanup_sequence);
+        self.body.push(format!(
+            "phpc_NativeValueHandle {iterable_handle} = {foreach_result}.value;"
+        ));
+        self.body.push(format!(
+            "{foreach_result}.value = (phpc_NativeValueHandle){{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_native_array_lvalue_result_free({foreach_result});"
+        ));
+
+        let mut cursor_storage = Vec::new();
+        if let Some(key) = key {
+            if let Some(storage) = self.prepare_native_foreach_cursor_storage(key, span)? {
+                cursor_storage.push(storage);
+            }
+        }
+
+        self.retain_native_value_cleanup_handle(&iterable_handle);
+        self.body.push(format!(
+            "size_t {len} = phpc_native_array_foreach_iterable_len({iterable_handle});"
+        ));
+        self.body.push(format!(
+            "for (size_t {index} = 0; {index} < {len}; ++{index}) {{"
+        ));
+
+        let key_handle =
+            self.emit_native_array_foreach_cursor_value(&iterable_handle, &index, "key");
+        self.retain_native_value_cleanup_handle(&key_handle);
+        let exposed_key = if let Some(key) = key {
+            if let Some(storage) = cursor_storage.iter().find(|storage| storage.name == key) {
+                self.emit_native_foreach_cursor_storage_update(&storage.handle, &key_handle);
+            }
+            self.remember_variable_order(key);
+            self.variables.insert(
+                key.to_string(),
+                CValue::NativeValueHandle(key_handle.clone()),
+            );
+            Some(key.to_string())
+        } else {
+            None
+        };
+
+        let reference_result = self.next_native_name("array_foreach_value_reference_result");
+        let reference = self.next_native_name("array_foreach_value_reference");
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueReferenceResult {reference_result} = phpc_native_array_lvalue_owner_foreach_value_reference_result({owner}, {path_arg}, {path_len}, {key_handle});"
+        ));
+        self.emit_native_array_lvalue_reference_result_check(
+            &reference_result,
+            &path_cleanup_sequence,
+        );
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {reference} = {reference_result}.reference;"
+        ));
+        self.body.push(format!(
+            "{reference_result}.reference = (phpc_NativeReferenceHandle){{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_native_array_lvalue_reference_result_free({reference_result});"
+        ));
+        self.retain_native_reference_cleanup_handle(&reference);
+        let previous_value = self.variables.insert(
+            value.to_string(),
+            CValue::NativeReferenceHandle(reference.clone()),
+        );
+
+        for statement in body {
+            self.emit_statement(statement)?;
+        }
+
+        self.variables.remove(value);
+        if let Some(previous_value) = previous_value {
+            self.variables.insert(value.to_string(), previous_value);
+        }
+        self.release_native_reference_cleanup_handle(&reference);
+        self.body
+            .push(format!("phpc_native_reference_free({reference});"));
+
+        if let Some(key) = exposed_key {
+            self.variables.remove(&key);
+        }
+        self.release_native_value_cleanup_handle(&key_handle);
+        self.body
+            .push(format!("phpc_native_value_free({key_handle});"));
+        self.body.push("}".to_string());
+
+        self.release_native_value_cleanup_handle(&iterable_handle);
+        self.body
+            .push(format!("phpc_native_value_free({iterable_handle});"));
+        self.body.extend(path_cleanup);
+        for storage in cursor_storage {
+            self.variables.insert(
+                storage.name,
+                CValue::NativeValueHandle(storage.handle.clone()),
+            );
+        }
+        self.by_reference_foreach_linger_variables
+            .insert(value.to_string());
         Ok(())
     }
 
@@ -15837,6 +16084,22 @@ impl CGenerator {
     fn native_foreach_body_may_mutate_storage(&self, body: &[Stmt]) -> bool {
         body.iter()
             .any(|statement| self.native_foreach_stmt_may_mutate_storage(statement))
+    }
+
+    fn native_by_reference_foreach_body_supported(&self, value: &str, body: &[Stmt]) -> bool {
+        body.iter().all(|statement| match statement {
+            Stmt::Echo { exprs, .. } => exprs
+                .iter()
+                .all(|expr| !native_foreach_expr_may_mutate_storage(expr)),
+            Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } => {
+                !native_foreach_expr_may_mutate_storage(expr)
+            }
+            Stmt::Assign { target, expr, .. } => {
+                matches!(target, AssignTarget::Variable { name, .. } if name == value)
+                    && !native_foreach_expr_may_mutate_storage(expr)
+            }
+            _ => false,
+        })
     }
 
     fn native_foreach_stmt_may_mutate_storage(&self, stmt: &Stmt) -> bool {
@@ -17529,7 +17792,7 @@ impl CGenerator {
             | CValue::BoolExpr(_)
             | CValue::ComparisonDecision(_)
             | CValue::ArrayHandle(_) => Some(false),
-            CValue::NativeValueHandle(_) => None,
+            CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_) => None,
             CValue::String(value) => Some(classify_php_numeric_string(value).is_numeric()),
             CValue::StringExpr(_) => {
                 let values = self.known_string_values_for_value(value)?;
@@ -17584,6 +17847,49 @@ impl CGenerator {
         }
     }
 
+    fn emit_reference_variable_assignment(
+        &mut self,
+        reference: &str,
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let replacement = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
+        self.emit_reference_variable_assignment_from_materialized(
+            reference,
+            replacement,
+            span,
+            failure_cleanup,
+        )
+    }
+
+    fn emit_reference_variable_assignment_from_materialized(
+        &mut self,
+        reference: &str,
+        replacement: CNativeValueMaterialization,
+        _span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let stored = self.next_native_name("native_reference_set");
+        self.body.push(format!(
+            "bool {stored} = phpc_native_reference_set_value({reference}, {});",
+            replacement.handle
+        ));
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&replacement.cleanup_after_use),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body.push(format!("if (!{stored}) {{ {error_exit} }}"));
+        self.body.extend(replacement.cleanup_after_use);
+        Ok(())
+    }
+
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
         if let Some(operation) = native_assignment_target_call_operation(target) {
             return Err(self.unsupported_call_operation(operation));
@@ -17591,6 +17897,22 @@ impl CGenerator {
 
         match target {
             AssignTarget::Variable { name, .. } => {
+                if self.by_reference_foreach_linger_variables.contains(name) {
+                    return Err(self.unsupported(
+                        target.span(),
+                        ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION,
+                    ));
+                }
+                if let Some(CValue::NativeReferenceHandle(reference)) =
+                    self.variables.get(name).cloned()
+                {
+                    return self.emit_reference_variable_assignment(
+                        &reference,
+                        expr,
+                        target.span(),
+                        "",
+                    );
+                }
                 if is_request_superglobal_name(name) {
                     return self.emit_request_superglobal_root_assignment(name, expr);
                 }
@@ -18505,6 +18827,13 @@ impl CGenerator {
                 ));
                 Ok(NativeCComparisonOperand { operand })
             }
+            CValue::NativeReferenceHandle(reference) => {
+                self.uses_native_array_lvalue_helpers = true;
+                self.body.push(format!(
+                    "phpc_NativeComparisonOperand {operand} = (phpc_NativeComparisonOperand){{phpc_native_reference_value_clone({reference}), (phpc_NativeDiagnosticHandle){{0}}}};"
+                ));
+                Ok(NativeCComparisonOperand { operand })
+            }
             CValue::Int(value) => {
                 self.body.push(format!(
                     "phpc_NativeComparisonOperand {operand} = phpc_native_comparison_operand_from_scalar((phpc_NativeScalarValue){{2, 0, (int64_t)({value}), 0.0}});"
@@ -18630,6 +18959,13 @@ impl CGenerator {
                 self.uses_native_value_clone = true;
                 self.body.push(format!(
                     "phpc_NativeValueHandle {value_handle} = phpc_native_value_clone({handle});"
+                ));
+            }
+            CValue::NativeReferenceHandle(reference) => {
+                self.uses_native_array_helpers = true;
+                self.uses_native_array_lvalue_helpers = true;
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value_handle} = phpc_native_reference_value_clone({reference});"
                 ));
             }
         }
@@ -19733,7 +20069,9 @@ impl CGenerator {
             CValue::StringExpr(value) => self
                 .known_string_values(value)
                 .and_then(|values| known_string_truthiness(&values)),
-            CValue::ArrayHandle(_) | CValue::NativeValueHandle(_) => None,
+            CValue::ArrayHandle(_)
+            | CValue::NativeValueHandle(_)
+            | CValue::NativeReferenceHandle(_) => None,
             CValue::Null => Some(false),
         }
     }
@@ -19978,7 +20316,9 @@ impl CGenerator {
                 }
             }
             CValue::Null => self.emit_expr(if_false),
-            CValue::ArrayHandle(_) | CValue::NativeValueHandle(_) => {
+            CValue::ArrayHandle(_)
+            | CValue::NativeValueHandle(_)
+            | CValue::NativeReferenceHandle(_) => {
                 Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION))
             }
             condition @ (CValue::BoolExpr(_) | CValue::ComparisonDecision(_)) => {
@@ -20172,7 +20512,8 @@ impl CGenerator {
                 .map(BackendPrimitiveSource::string_values),
             CValue::ArrayHandle(_)
             | CValue::ComparisonDecision(_)
-            | CValue::NativeValueHandle(_) => None,
+            | CValue::NativeValueHandle(_)
+            | CValue::NativeReferenceHandle(_) => None,
         }
     }
 
@@ -20387,6 +20728,12 @@ impl CGenerator {
                 let truthy = self.emit_native_value_handle_truthiness(&handle);
                 Ok(CValue::BoolExpr(format!("!({truthy})")))
             }
+            CValue::NativeReferenceHandle(reference) => {
+                let value = self.clone_native_reference_value_handle(&reference);
+                let truthy = self.emit_native_value_handle_truthiness(&value);
+                self.body.push(format!("phpc_native_value_free({value});"));
+                Ok(CValue::BoolExpr(format!("!({truthy})")))
+            }
             CValue::ArrayHandle(_) => Err(self.unsupported(span, ASSEMBLY_UNARY_REJECTION)),
         }
     }
@@ -20580,10 +20927,24 @@ impl CGenerator {
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
         if let Expr::Variable(name, span) = expr {
+            if self.by_reference_foreach_linger_variables.contains(name) {
+                return Err(
+                    self.unsupported(*span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
+                );
+            }
             if is_globals_superglobal_name(name) {
                 return self
                     .materialize_globals_snapshot_value(failure_cleanup, *span)
                     .map(Some);
+            }
+            if let Some(CValue::NativeReferenceHandle(reference)) =
+                self.variables.get(name).cloned()
+            {
+                let handle = self.clone_native_reference_value_handle(&reference);
+                return Ok(Some(CNativeValueMaterialization {
+                    handle: handle.clone(),
+                    cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+                }));
             }
             if self.globals_symbol_table_is_active() && !is_request_superglobal_name(name) {
                 return self
@@ -21847,6 +22208,18 @@ impl CGenerator {
         ));
     }
 
+    fn emit_native_array_lvalue_reference_result_check(&mut self, result: &str, cleanup: &str) {
+        let result_error_exit = self.native_error_exit(&format!(
+            "{cleanup}phpc_native_array_lvalue_reference_result_free({result}); "
+        ));
+        self.body.push(format!(
+            "if ({result}.diagnostic.ptr != NULL) {{ phpc_native_diagnostic_report({result}.diagnostic); {result}.diagnostic.ptr = NULL; }}"
+        ));
+        self.body.push(format!(
+            "if ({result}.reference.ptr == NULL) {{ {result_error_exit} }}"
+        ));
+    }
+
     fn materialize_native_array_key(
         &mut self,
         key: &Expr,
@@ -21947,6 +22320,9 @@ impl CGenerator {
         for handle in self.native_value_cleanup_handles.iter().rev() {
             cleanup.push_str(&format!(" phpc_native_value_free({handle});"));
         }
+        for handle in self.native_reference_cleanup_handles.iter().rev() {
+            cleanup.push_str(&format!(" phpc_native_reference_free({handle});"));
+        }
         for buffer in self.owned_native_byte_buffers.iter().rev() {
             cleanup.push_str(&format!(" phpc_native_byte_buffer_free({buffer});"));
         }
@@ -22018,6 +22394,12 @@ impl CGenerator {
             CValue::NativeValueHandle(handle) => {
                 self.body
                     .push(format!("phpc_native_value_echo_stdout({handle});"));
+            }
+            CValue::NativeReferenceHandle(reference) => {
+                let value = self.clone_native_reference_value_handle(&reference);
+                self.body
+                    .push(format!("phpc_native_value_echo_stdout({value});"));
+                self.body.push(format!("phpc_native_value_free({value});"));
             }
         }
         Ok(())
@@ -23647,7 +24029,7 @@ fn c_gettype_name(value: &CValue) -> &'static str {
         CValue::Float(_) => "double",
         CValue::String(_) | CValue::StringExpr(_) => "string",
         CValue::ArrayHandle(_) => "array",
-        CValue::NativeValueHandle(_) => "unknown",
+        CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_) => "unknown",
     }
 }
 
@@ -23659,7 +24041,7 @@ fn c_debug_type_name(value: &CValue) -> &'static str {
         CValue::Float(_) => "float",
         CValue::String(_) | CValue::StringExpr(_) => "string",
         CValue::ArrayHandle(_) => "array",
-        CValue::NativeValueHandle(_) => "unknown",
+        CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_) => "unknown",
     }
 }
 
