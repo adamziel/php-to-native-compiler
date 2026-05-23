@@ -10531,6 +10531,8 @@ const NATIVE_VALUE_BITWISE_SOURCE: &str = "<?php\n$a = [];\n$a[\"and\"] = \"B\" 
 
 const NATIVE_VALUE_COMPARE_CAST_TYPE_NAME_SOURCE: &str = "<?php\n$a = [];\n$a[(int)\"5\"] = (string)((2 + 3) > 4);\n$a[(int)(3 <= 2)] = get_debug_type((string)123);\n$a[(float)\"3\"] = gettype((float)\"3.5\");\necho $a[5], \"|\", $a[0], \"|\", $a[3];\n";
 
+const NATIVE_VALUE_RESULT_STRICT_IDENTITY_SOURCE: &str = "<?php\n$items = [\"word\" => \"go\"];\necho strtoupper($items[\"word\"]) === \"GO\";\necho \"|\";\necho array_sum([1]) !== \"1\";\necho \"|\";\necho strrev(\"ko\") === \"ok\";\necho \"|\";\n$store = [];\n$store[\"same\"] = strtoupper(\"x\") === \"X\";\necho $store[\"same\"];\n";
+
 const NATIVE_VALUE_STRICT_IDENTITY_SOURCE: &str = "<?php\n$a = [\"i\" => 1, \"s\" => \"1\", \"n\" => null];\n$i = $a[\"i\"];\n$s = $a[\"s\"];\n$n = $a[\"n\"];\n$copy = $i;\n$GLOBALS[\"g\"] = 7;\n$_GET[\"id\"] = \"7\";\necho $i === 1;\necho \"|\";\necho $i !== 1;\necho \"|\";\necho $s !== 1;\necho \"|\";\necho $n === null;\necho \"|\";\necho $copy === 1;\necho \"|\";\necho $GLOBALS[\"g\"] === 7;\necho \"|\";\necho $_GET[\"id\"] === \"7\";\n";
 
 const NATIVE_VALUE_TYPE_PREDICATE_SOURCE: &str = "<?php\necho is_int(\"6\" + 1), \"|\";\necho is_float(\"7\" / 2), \"|\";\necho is_string((string)(2 + 3)), \"|\";\necho is_bool((2 + 3) > 4), \"|\";\necho is_array((array)\"x\"), \"|\";\necho is_scalar(gettype((float)\"3.5\")), \"|\";\necho is_numeric((string)(2 + 3)), \"|\";\necho is_countable((array)null), \"|\";\necho is_iterable((array)\"x\"), \"|\";\necho is_null((array)null), \"|\";\necho is_object((array)\"x\");\n";
@@ -10870,6 +10872,40 @@ fn native_executable_c_source_routes_compare_cast_and_type_name_results_through_
 }
 
 #[test]
+fn native_executable_c_source_routes_value_result_strict_identity_through_compare_result() {
+    let program = parse(NATIVE_VALUE_RESULT_STRICT_IDENTITY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("#define PHPC_NATIVE_VALUE_COMPARISON_STRICT_EQ 6")
+            && source.contains("#define PHPC_NATIVE_VALUE_COMPARISON_STRICT_NE 7"),
+        "{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_VALUE_COMPARISON_STRICT_EQ")
+            && source.contains("PHPC_NATIVE_VALUE_COMPARISON_STRICT_NE"),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_compare_result(")
+            .count()
+            >= 4,
+        "value-result strict identity should route through the shared value comparison result ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_string_result_operation_with_diagnostic")
+            && source
+                .contains("phpc_native_value_array_query_operation_with_operands_and_diagnostic"),
+        "strict identity operands should reuse existing value-result producers:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly comparison lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_native_compare_cast_type_name_result_program() {
     if !has_cc() {
         return;
@@ -10913,6 +10949,34 @@ fn emit_exe_links_and_runs_native_compare_cast_type_name_result_program() {
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_value_result_strict_identity_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_value_result_strict_identity",
+        NATIVE_VALUE_RESULT_STRICT_IDENTITY_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native value-result strict identity executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"1|1|1|1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
 }
 
 #[test]

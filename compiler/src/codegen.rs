@@ -947,14 +947,14 @@ fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
         BinaryOp::Le => Some("PHPC_NATIVE_VALUE_COMPARISON_LE"),
         BinaryOp::Gt => Some("PHPC_NATIVE_VALUE_COMPARISON_GT"),
         BinaryOp::Ge => Some("PHPC_NATIVE_VALUE_COMPARISON_GE"),
+        BinaryOp::StrictEq => Some("PHPC_NATIVE_VALUE_COMPARISON_STRICT_EQ"),
+        BinaryOp::StrictNe => Some("PHPC_NATIVE_VALUE_COMPARISON_STRICT_NE"),
         BinaryOp::Add
         | BinaryOp::Sub
         | BinaryOp::Mul
         | BinaryOp::Div
         | BinaryOp::Mod
         | BinaryOp::Concat
-        | BinaryOp::StrictEq
-        | BinaryOp::StrictNe
         | BinaryOp::NullCoalesce
         | BinaryOp::LogicalAnd
         | BinaryOp::LogicalOr
@@ -999,6 +999,47 @@ fn native_value_result_output_expr(expr: &Expr) -> bool {
         }
         _ => false,
     }
+}
+
+fn native_value_strict_identity_operand_needs_materialization(expr: &Expr) -> bool {
+    match expr {
+        Expr::CompoundAssign { .. }
+        | Expr::NullCoalesceAssign { .. }
+        | Expr::IncrementDecrement { .. }
+        | Expr::Cast { .. } => true,
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => native_value_ternary_needs_lazy_materialization(condition, if_true, if_false),
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => native_value_short_ternary_needs_lazy_materialization(condition, if_false),
+        Expr::Unary { op, .. } => native_value_unary_op_tag(*op).is_some(),
+        Expr::Binary { op, .. } => {
+            native_value_binary_op_tag(*op).is_some()
+                || native_value_bitwise_binary_op_tag(*op).is_some()
+                || native_value_comparison_op_tag(*op).is_some()
+        }
+        Expr::Call { name, args, .. } => {
+            native_value_cast_builtin_op_tag(name).is_some()
+                || native_value_type_name_tag(name).is_some()
+                || native_string_result_operation_for_name(name).is_some()
+                || native_array_pointer_builtin(name, args).is_some()
+                || native_array_mutation_builtin(name, args).is_some()
+                || native_value_array_callback_builtin(name, args).is_some()
+                || native_value_array_query_builtin(name, args).is_some()
+        }
+        _ => false,
+    }
+}
+
+fn native_value_strict_identity_needs_materialization(left: &Expr, right: &Expr) -> bool {
+    native_value_strict_identity_operand_needs_materialization(left)
+        || native_value_strict_identity_operand_needs_materialization(right)
 }
 
 fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
@@ -8187,6 +8228,8 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_LE 3\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_GT 4\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_GE 5\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_STRICT_EQ 6\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_STRICT_NE 7\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_CAST_STRING 0\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_CAST_INT 1\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_CAST_BOOL 2\n");
@@ -13238,6 +13281,13 @@ impl CGenerator {
                         return Err(self.unsupported_call_operation(operation));
                     }
                     return Err(self.unsupported(*span, ASSEMBLY_CONDITIONAL_REJECTION));
+                }
+                if matches!(op, BinaryOp::StrictEq | BinaryOp::StrictNe)
+                    && native_value_strict_identity_needs_materialization(left, right)
+                {
+                    let value = self.materialize_native_value_result_operand(expr, "")?;
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
                 }
                 if matches!(op, BinaryOp::Concat) {
                     return self.emit_static_string_concat_expr(left, right, *span);

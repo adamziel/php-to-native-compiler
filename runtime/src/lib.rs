@@ -652,6 +652,8 @@ const NATIVE_VALUE_COMPARISON_LT: u8 = 2;
 const NATIVE_VALUE_COMPARISON_LE: u8 = 3;
 const NATIVE_VALUE_COMPARISON_GT: u8 = 4;
 const NATIVE_VALUE_COMPARISON_GE: u8 = 5;
+const NATIVE_VALUE_COMPARISON_STRICT_EQ: u8 = 6;
+const NATIVE_VALUE_COMPARISON_STRICT_NE: u8 = 7;
 const NATIVE_VALUE_CAST_STRING: u8 = 0;
 const NATIVE_VALUE_CAST_INT: u8 = 1;
 const NATIVE_VALUE_CAST_BOOL: u8 = 2;
@@ -18184,7 +18186,7 @@ pub unsafe extern "C" fn phpc_native_value_compare_result(
         return NativeValueOperationResult::diagnostic(message);
     }
 
-    match left.php_cmp_checked(right, op) {
+    match left.php_compare_checked(right, op) {
         Ok(value) => NativeValueOperationResult::value(Value::Bool(value)),
         Err(error) => NativeValueOperationResult::diagnostic(format!(
             "native value comparison rejected by runtime comparison semantics: {}",
@@ -18193,14 +18195,16 @@ pub unsafe extern "C" fn phpc_native_value_compare_result(
     }
 }
 
-fn native_value_comparison_op(op: u8) -> Option<Comparison> {
+fn native_value_comparison_op(op: u8) -> Option<PhpComparisonOp> {
     Some(match op {
-        NATIVE_VALUE_COMPARISON_EQ => Comparison::Eq,
-        NATIVE_VALUE_COMPARISON_NE => Comparison::Ne,
-        NATIVE_VALUE_COMPARISON_LT => Comparison::Lt,
-        NATIVE_VALUE_COMPARISON_LE => Comparison::Le,
-        NATIVE_VALUE_COMPARISON_GT => Comparison::Gt,
-        NATIVE_VALUE_COMPARISON_GE => Comparison::Ge,
+        NATIVE_VALUE_COMPARISON_EQ => PhpComparisonOp::LooseEq,
+        NATIVE_VALUE_COMPARISON_NE => PhpComparisonOp::LooseNe,
+        NATIVE_VALUE_COMPARISON_LT => PhpComparisonOp::LooseLt,
+        NATIVE_VALUE_COMPARISON_LE => PhpComparisonOp::LooseLe,
+        NATIVE_VALUE_COMPARISON_GT => PhpComparisonOp::LooseGt,
+        NATIVE_VALUE_COMPARISON_GE => PhpComparisonOp::LooseGe,
+        NATIVE_VALUE_COMPARISON_STRICT_EQ => PhpComparisonOp::StrictEq,
+        NATIVE_VALUE_COMPARISON_STRICT_NE => PhpComparisonOp::StrictNe,
         _ => return None,
     })
 }
@@ -19785,6 +19789,31 @@ mod tests {
         assert!(greater.succeeded());
         assert_eq!(native_value_echo_bytes_for_test(greater.value), b"1");
         unsafe { phpc_native_value_operation_result_free(greater) };
+
+        let strict_equal = unsafe {
+            phpc_native_value_compare_result(
+                int_value,
+                NATIVE_VALUE_COMPARISON_STRICT_EQ,
+                smaller_value,
+            )
+        };
+        assert!(strict_equal.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(strict_equal.value), b"");
+        unsafe { phpc_native_value_operation_result_free(strict_equal) };
+
+        let strict_different = unsafe {
+            phpc_native_value_compare_result(
+                int_value,
+                NATIVE_VALUE_COMPARISON_STRICT_NE,
+                numeric_string,
+            )
+        };
+        assert!(strict_different.succeeded());
+        assert_eq!(
+            native_value_echo_bytes_for_test(strict_different.value),
+            b"1"
+        );
+        unsafe { phpc_native_value_operation_result_free(strict_different) };
 
         let int_cast =
             unsafe { phpc_native_value_cast_result(string_float, NATIVE_VALUE_CAST_INT) };
